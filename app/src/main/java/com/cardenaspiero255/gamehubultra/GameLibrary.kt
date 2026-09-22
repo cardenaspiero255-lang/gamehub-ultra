@@ -45,9 +45,16 @@ object GameLibrary {
         GameDiscoveryResult(emptyList(), failed = true)
     }
 
-    fun discoverLaunchableApps(context: Context): List<GameInfo> = runCatching {
+    fun discoverNonGameLaunchableApps(context: Context): List<GameInfo> = runCatching {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         queryLaunchableApps(context, intent)
+            .filter { app ->
+                !isGameApplication(
+                    category = app.applicationInfo.category,
+                    flags = app.applicationInfo.flags,
+                    sdkInt = Build.VERSION.SDK_INT
+                )
+            }
             .map { app -> GameInfo(app.packageName, app.label) }
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
