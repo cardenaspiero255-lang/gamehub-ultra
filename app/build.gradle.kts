@@ -57,5 +57,5 @@ dependencies {
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
     baselineProfile(project(":baseline-profile"))
     debugImplementation("androidx.compose.ui:ui-tooling")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.21")
 }
