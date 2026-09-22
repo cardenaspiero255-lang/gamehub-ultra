@@ -1,22 +1,23 @@
 package com.cardenaspiero255.gamehubultra
 
 import android.content.Context
+import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 
 object ProfileSelectionStore {
-    private const val PREFS_NAME = "gamehub_ultra"
-    private const val KEY_SELECTED_PROFILE = "selected_profile"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    fun getSelectedProfile(context: Context): PerformanceProfile =
-        PerformanceProfile.entries.firstOrNull {
-            it.name == context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_SELECTED_PROFILE, PerformanceProfile.BALANCED.name)
-        } ?: PerformanceProfile.BALANCED
+    fun selectedProfileFlow(context: Context): Flow<PerformanceProfile> =
+        GameHubPreferencesRepository(context).selectedProfileFlow()
 
     fun saveSelectedProfile(context: Context, profile: PerformanceProfile) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_SELECTED_PROFILE, profile.name)
-            .apply()
+        scope.launch {
+            GameHubPreferencesRepository(context).saveSelectedProfile(profile)
+        }
     }
 }
