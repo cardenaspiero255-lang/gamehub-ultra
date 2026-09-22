@@ -269,15 +269,16 @@ private fun SettingsScreen(modifier: Modifier) {
     }
 }
 
+@Composable
 private fun thermalLabel(status: Int?): String =
     when (status) {
-        PowerManager.THERMAL_STATUS_NONE -> "normal"
-        PowerManager.THERMAL_STATUS_LIGHT -> "leve"
-        PowerManager.THERMAL_STATUS_MODERATE -> "moderado"
-        PowerManager.THERMAL_STATUS_SEVERE -> "severo"
-        PowerManager.THERMAL_STATUS_CRITICAL -> "crítico"
-        PowerManager.THERMAL_STATUS_EMERGENCY -> "emergencia"
-        PowerManager.THERMAL_STATUS_SHUTDOWN -> "apagado térmico"
-        null -> "no disponible"
-        else -> "desconocido"
+        PowerManager.THERMAL_STATUS_NONE -> stringResource(R.string.normal)
+        PowerManager.THERMAL_STATUS_LIGHT -> stringResource(R.string.thermal_light)
+        PowerManager.THERMAL_STATUS_MODERATE -> stringResource(R.string.thermal_moderate)
+        PowerManager.THERMAL_STATUS_SEVERE -> stringResource(R.string.thermal_severe)
+        PowerManager.THERMAL_STATUS_CRITICAL -> stringResource(R.string.thermal_critical)
+        PowerManager.THERMAL_STATUS_EMERGENCY -> stringResource(R.string.thermal_emergency)
+        PowerManager.THERMAL_STATUS_SHUTDOWN -> stringResource(R.string.thermal_shutdown)
+        null -> stringResource(R.string.not_available)
+        else -> stringResource(R.string.thermal_unknown)
     }
