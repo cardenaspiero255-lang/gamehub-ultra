@@ -17,33 +17,66 @@ data class GameDiscoveryResult(
 )
 
 object GameLibrary {
-    fun discover(context: Context): GameDiscoveryResult = runCatching {
+    fun discover(
+        context: Context,
+        additionalPackages: Set<String> = emptySet()
+    ): GameDiscoveryResult = runCatching {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val games = context.packageManager
-            .queryIntentActivities(intent, PackageManager.MATCH_ALL)
-            .asSequence()
-            .filter { it.activityInfo.packageName != context.packageName }
-            .filter {
+        val launchableApps = queryLaunchableApps(context, intent)
+        val games = launchableApps
+            .filter { app ->
                 isGameApplication(
-                    category = it.activityInfo.applicationInfo.category,
-                    flags = it.activityInfo.applicationInfo.flags,
+                    category = app.applicationInfo.category,
+                    flags = app.applicationInfo.flags,
                     sdkInt = Build.VERSION.SDK_INT
-                )
+                ) || additionalPackages.contains(app.packageName)
             }
-            .map {
+            .map { app ->
                 GameInfo(
-                    packageName = it.activityInfo.packageName,
-                    label = it.loadLabel(context.packageManager).toString()
+                    packageName = app.packageName,
+                    label = app.label
                 )
             }
             .distinctBy { it.packageName }
             .sortedBy { it.label.lowercase() }
-            .toList()
 
         GameDiscoveryResult(games)
     }.getOrElse {
         GameDiscoveryResult(emptyList(), failed = true)
     }
+
+    fun discoverNonGameLaunchableApps(context: Context): List<GameInfo> = runCatching {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        queryLaunchableApps(context, intent)
+            .filter { app ->
+                !isGameApplication(
+                    category = app.applicationInfo.category,
+                    flags = app.applicationInfo.flags,
+                    sdkInt = Build.VERSION.SDK_INT
+                )
+            }
+            .map { app -> GameInfo(app.packageName, app.label) }
+            .distinctBy { it.packageName }
+            .sortedBy { it.label.lowercase() }
+    }.getOrDefault(emptyList())
+
+    private fun queryLaunchableApps(
+        context: Context,
+        intent: Intent
+    ): List<LaunchableApp> =
+        context.packageManager
+            .queryIntentActivities(intent, PackageManager.MATCH_ALL)
+            .asSequence()
+            .filter { it.activityInfo.packageName != context.packageName }
+            .map {
+                LaunchableApp(
+                    packageName = it.activityInfo.packageName,
+                    applicationInfo = it.activityInfo.applicationInfo,
+                    label = it.loadLabel(context.packageManager).toString()
+                )
+            }
+            .distinctBy { it.packageName }
+            .toList()
 
     internal fun isGameApplication(category: Int, flags: Int, sdkInt: Int): Boolean {
         val isDeclaredGame = category == ApplicationInfo.CATEGORY_GAME
@@ -51,4 +84,10 @@ object GameLibrary {
             (flags and ApplicationInfo.FLAG_IS_GAME) != 0
         return isDeclaredGame || isFlaggedGame
     }
+
+    private data class LaunchableApp(
+        val packageName: String,
+        val applicationInfo: ApplicationInfo,
+        val label: String
+    )
 }

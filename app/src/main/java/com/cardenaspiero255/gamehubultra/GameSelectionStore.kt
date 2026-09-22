@@ -9,25 +9,26 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
-object ProfileSelectionStore {
+object GameSelectionStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    fun selectedProfileFlow(context: Context): Flow<PerformanceProfile> =
-        GameHubPreferencesRepository(context).selectedProfileFlow()
+    fun selectedGameFlow(context: Context): Flow<String?> =
+        GameHubPreferencesRepository(context).selectedGameFlow()
 
-    fun saveSelectedProfile(context: Context, profile: PerformanceProfile) {
+    fun saveSelectedGame(context: Context, packageName: String) {
         scope.launch {
-            GameHubPreferencesRepository(context).saveSelectedProfile(profile)
+            GameHubPreferencesRepository(context).saveSelectedGame(packageName)
         }
     }
 
-    fun saveProfileForGame(
+    fun saveSelectedGameAndProfile(
         context: Context,
         packageName: String,
         profile: PerformanceProfile
     ) {
         scope.launch {
-            GameHubPreferencesRepository(context).saveProfileForGame(packageName, profile)
+            GameHubPreferencesRepository(context)
+                .saveSelectedGameAndProfile(packageName, profile)
         }
     }
 }

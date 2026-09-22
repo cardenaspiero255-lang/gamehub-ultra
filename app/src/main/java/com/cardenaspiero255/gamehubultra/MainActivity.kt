@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +34,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -60,6 +62,9 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
@@ -72,45 +77,36 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
-    private var selectedProfileName: String = PerformanceProfile.BALANCED.name
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        selectedProfileName = savedInstanceState?.getString(KEY_PROFILE)
-            ?: ProfileSelectionStore.getSelectedProfile(this).name
-        val selectedProfile = PerformanceProfile.entries.firstOrNull { it.name == selectedProfileName }
-            ?: PerformanceProfile.BALANCED
+        val initialTab = when (intent?.data?.host) {
+            "library" -> 1
+            else -> 0
+        }
 
         val capabilities = DeviceCapabilitiesProvider.get(this)
         performanceController = PerformanceController(capabilities)
-        val initialState = performanceController.apply(selectedProfile, window)
+        val initialState = performanceController.apply(PerformanceProfile.BALANCED, window)
         val device = DeviceInfoProvider.get(this)
 
         setContent {
+            val gameHubViewModel: GameHubViewModel = viewModel()
             GameHubUltraTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GameHubUltraApp(
                         initialState = initialState,
                         device = device,
-                        onProfileSelected = { profile ->
-                            selectedProfileName = profile.name
-                            ProfileSelectionStore.saveSelectedProfile(this@MainActivity, profile)
+                        viewModel = gameHubViewModel,
+                        initialTab = initialTab,
+                        onProfileApplied = { profile ->
                             performanceController.apply(profile, window)
                         }
                     )
                 }
             }
         }
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(KEY_PROFILE, selectedProfileName)
-        super.onSaveInstanceState(outState)
-    }
-
-    private companion object {
-        const val KEY_PROFILE = "selected_profile"
     }
 }
 
@@ -119,25 +115,34 @@ class MainActivity : ComponentActivity() {
 private fun GameHubUltraApp(
     initialState: PerformanceState,
     device: DeviceInfo,
-    onProfileSelected: (PerformanceProfile) -> PerformanceState
+    viewModel: GameHubViewModel,
+    initialTab: Int,
+    onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
     val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var state by remember { mutableStateOf(initialState) }
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var selectedProfileName by rememberSaveable { mutableStateOf(initialState.selectedProfile.name) }
-    var selectedGamePackage by rememberSaveable {
-        mutableStateOf(GameSelectionStore.getSelectedGame(context))
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+
+    LaunchedEffect(uiState.effectiveProfile) {
+        state = onProfileApplied(uiState.effectiveProfile)
     }
 
     fun selectProfile(profile: PerformanceProfile) {
-        selectedProfileName = profile.name
-        state = onProfileSelected(profile)
+        uiState.selectedGamePackage?.let { packageName ->
+            viewModel.selectGameProfile(packageName, profile)
+        } ?: viewModel.selectGlobalProfile(profile)
     }
 
     fun selectGame(packageName: String) {
-        selectedGamePackage = packageName
-        GameSelectionStore.saveSelectedGame(context, packageName)
+        viewModel.selectGame(packageName)
     }
+
+    val selectedProfileName = uiState.effectiveProfile.name
+    val selectedGamePackage = uiState.selectedGamePackage
+    val favoriteGames = uiState.favoriteGames
+    val recentGamePackages = uiState.recentGamePackages
+    val manualGamePackages = uiState.manualGamePackages
 
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
@@ -180,7 +185,13 @@ private fun GameHubUltraApp(
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
                 selectedGamePackage = selectedGamePackage,
-                onGameSelected = ::selectGame
+                favoriteGames = favoriteGames,
+                recentGamePackages = recentGamePackages,
+                manualGamePackages = manualGamePackages,
+                onGameSelected = ::selectGame,
+                onToggleFavorite = viewModel::setFavoriteGame,
+                onGameOpened = viewModel::recordRecentGame,
+                onToggleManualGame = viewModel::setManualGame
             )
             else -> SettingsScreen(Modifier.padding(padding))
         }
@@ -291,6 +302,13 @@ private fun VoiceAssistantCard(
                         },
                         saveSelectedProfile = { profile ->
                             ProfileSelectionStore.saveSelectedProfile(context, profile)
+                        },
+                        saveSelectedGameWithProfile = { packageName, profile ->
+                            GameSelectionStore.saveSelectedGameAndProfile(
+                                context,
+                                packageName,
+                                profile
+                            )
                         },
                         isProfileAvailable = { profile ->
                             profile != PerformanceProfile.X4 ||
@@ -769,16 +787,32 @@ private fun DeviceRow(
 private fun LibraryScreen(
     modifier: Modifier,
     selectedGamePackage: String?,
-    onGameSelected: (String) -> Unit
+    favoriteGames: Set<String>,
+    recentGamePackages: List<String>,
+    manualGamePackages: Set<String>,
+    onGameSelected: (String) -> Unit,
+    onToggleFavorite: (String, Boolean) -> Unit,
+    onGameOpened: (String) -> Unit,
+    onToggleManualGame: (String, Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var refreshToken by rememberSaveable { mutableIntStateOf(0) }
     var discovery by remember { mutableStateOf<GameDiscoveryResult?>(null) }
     var launchFailed by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(context, refreshToken) {
+    var showAddGameDialog by rememberSaveable { mutableStateOf(false) }
+    var launchableApps by remember { mutableStateOf<List<GameInfo>>(emptyList()) }
+    LaunchedEffect(context, refreshToken, manualGamePackages) {
         discovery = withContext(Dispatchers.IO) {
-            GameLibrary.discover(context)
+            GameLibrary.discover(context, manualGamePackages)
+        }
+    }
+
+    LaunchedEffect(context, showAddGameDialog) {
+        if (showAddGameDialog) {
+            launchableApps = withContext(Dispatchers.IO) {
+                GameLibrary.discoverNonGameLaunchableApps(context)
+            }
         }
     }
 
@@ -795,16 +829,41 @@ private fun LibraryScreen(
     }
 
     val result = discovery
+    val orderedGames = remember(result?.games, favoriteGames, recentGamePackages) {
+        val recentOrder = recentGamePackages.withIndex()
+            .associate { indexed -> indexed.value to indexed.index }
+        result?.games.orEmpty().sortedWith(
+            compareBy<GameInfo> {
+                when {
+                    favoriteGames.contains(it.packageName) -> 0
+                    recentOrder.containsKey(it.packageName) -> 1
+                    else -> 2
+                }
+            }.thenBy { recentOrder[it.packageName] ?: Int.MAX_VALUE }
+                .thenBy { it.label.lowercase() }
+        )
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            stringResource(R.string.library_title),
-            style = MaterialTheme.typography.headlineSmall
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                stringResource(R.string.library_title),
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = { showAddGameDialog = true }
+            ) {
+                Text(stringResource(R.string.add_game))
+            }
+        }
 
         if (launchFailed) {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -863,9 +922,17 @@ private fun LibraryScreen(
                     }?.let { game ->
                         SelectedGameCard(
                             game = game,
+                            favorite = favoriteGames.contains(game.packageName),
+                            onToggleFavorite = {
+                                onToggleFavorite(
+                                    game.packageName,
+                                    !favoriteGames.contains(game.packageName)
+                                )
+                            },
                             onOpen = {
                                 if (openGame(context, game.packageName)) {
                                     launchFailed = false
+                                    onGameOpened(game.packageName)
                                 } else {
                                     launchFailed = true
                                 }
@@ -879,19 +946,27 @@ private fun LibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(
-                        items = result.games,
+                        items = orderedGames,
                         key = { it.packageName }
                     ) { game ->
                         GameRow(
                             game = game,
                             selected = selectedGamePackage == game.packageName,
+                            favorite = favoriteGames.contains(game.packageName),
                             onSelect = {
                                 launchFailed = false
                                 onGameSelected(game.packageName)
                             },
+                            onToggleFavorite = {
+                                onToggleFavorite(
+                                    game.packageName,
+                                    !favoriteGames.contains(game.packageName)
+                                )
+                            },
                             onOpen = {
                                 if (openGame(context, game.packageName)) {
                                     launchFailed = false
+                                    onGameOpened(game.packageName)
                                 } else {
                                     launchFailed = true
                                 }
@@ -902,11 +977,58 @@ private fun LibraryScreen(
             }
         }
     }
+
+    if (showAddGameDialog) {
+        val candidates = launchableApps
+        AlertDialog(
+            onDismissRequest = { showAddGameDialog = false },
+            title = { Text(stringResource(R.string.add_game_title)) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.height(360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(candidates, key = { it.packageName }) { app ->
+                        val manuallyAdded = manualGamePackages.contains(app.packageName)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                app.label,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = {
+                                    onToggleManualGame(app.packageName, !manuallyAdded)
+                                }
+                            ) {
+                                Text(
+                                    if (manuallyAdded) {
+                                        stringResource(R.string.remove_game)
+                                    } else {
+                                        stringResource(R.string.add_game)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddGameDialog = false }) {
+                    Text(stringResource(R.string.close))
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun SelectedGameCard(
     game: GameInfo,
+    favorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -921,6 +1043,18 @@ private fun SelectedGameCard(
             Text(game.label, style = MaterialTheme.typography.titleMedium)
             Text(game.packageName, style = MaterialTheme.typography.bodySmall)
             Button(
+                onClick = onToggleFavorite,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (favorite) {
+                        stringResource(R.string.remove_favorite)
+                    } else {
+                        stringResource(R.string.add_favorite)
+                    }
+                )
+            }
+            Button(
                 onClick = onOpen,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -934,7 +1068,9 @@ private fun SelectedGameCard(
 private fun GameRow(
     game: GameInfo,
     selected: Boolean,
+    favorite: Boolean,
     onSelect: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -944,6 +1080,18 @@ private fun GameRow(
         ) {
             Text(game.label, style = MaterialTheme.typography.titleMedium)
             Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = onToggleFavorite,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (favorite) {
+                        stringResource(R.string.remove_favorite)
+                    } else {
+                        stringResource(R.string.add_favorite)
+                    }
+                )
+            }
             Button(
                 onClick = onSelect,
                 modifier = Modifier.fillMaxWidth()
@@ -970,22 +1118,6 @@ private fun GameRow(
 
 private fun openGame(context: Context, packageName: String): Boolean =
     GameLauncher.launch(context, packageName)
-
-object GameSelectionStore {
-    private const val PREFS_NAME = "gamehub_ultra"
-    private const val KEY_SELECTED_GAME = "selected_game_package"
-
-    fun getSelectedGame(context: Context): String? =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_SELECTED_GAME, null)
-
-    fun saveSelectedGame(context: Context, packageName: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_SELECTED_GAME, packageName)
-            .apply()
-    }
-}
 
 @Composable
 private fun SettingsScreen(modifier: Modifier) {

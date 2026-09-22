@@ -146,6 +146,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
             saveSelectedProfile = { profile ->
                 ProfileSelectionStore.saveSelectedProfile(context, profile)
             },
+            saveSelectedGameWithProfile = { packageName, profile ->
+                GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
+            },
             isProfileAvailable = { profile ->
                 profile != PerformanceProfile.X4 ||
                     DeviceCapabilitiesProvider.get(context).sustainedPerformanceSupported

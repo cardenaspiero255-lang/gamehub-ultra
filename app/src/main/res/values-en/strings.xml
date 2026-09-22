@@ -43,6 +43,16 @@
     <string name="selected_game">Selected game</string>
     <string name="select_game">Select game</string>
     <string name="game_selected">Game selected</string>
+    <string name="add_favorite">Add to favorites</string>
+    <string name="remove_favorite">Remove from favorites</string>
+    <string name="shortcut_library_short">Library</string>
+    <string name="shortcut_library_long">Open game library</string>
+    <string name="shortcut_performance_short">Performance</string>
+    <string name="shortcut_performance_long">Open performance modes</string>
+    <string name="add_game">Add game</string>
+    <string name="add_game_title">Add an app as a game</string>
+    <string name="remove_game">Remove</string>
+    <string name="close">Close</string>
     <string name="settings_title">Settings</string>
     <string name="about">About GameHub Ultra</string>
     <string name="about_text">Performance interface built with public Android APIs.</string>

@@ -13,6 +13,10 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.GameHubUltra">
+        <meta-data
+            android:name="android.app.shortcuts"
+            android:resource="@xml/shortcuts" />
+
         <service
             android:name=".voice.GameHubVoiceInteractionService"
             android:exported="true"
