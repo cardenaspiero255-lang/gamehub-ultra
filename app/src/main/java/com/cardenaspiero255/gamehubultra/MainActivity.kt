@@ -55,6 +55,11 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveRuntimeSnapshot
+import com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator
+import com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
@@ -70,8 +75,12 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -123,6 +132,35 @@ private fun GameHubUltraApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+    var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
+    var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
+    val adaptiveEngine = remember(uiState.effectiveProfile) {
+        AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
+    }
+
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            val diagnostics = withContext(Dispatchers.IO) {
+                RuntimeDiagnosticsProvider.get(context)
+            }
+            runtimeDiagnostics = diagnostics
+            adaptiveDecision = adaptiveEngine.evaluate(
+                AdaptiveRuntimeSnapshot(
+                    thermalStatus = diagnostics.thermal.status,
+                    thermalHeadroom = diagnostics.thermal.headroom,
+                    batteryPercent = diagnostics.battery.percent,
+                    charging = diagnostics.battery.charging,
+                    powerSaveMode = diagnostics.battery.powerSaveMode,
+                    sessionActive = true,
+                    sustainedPerformanceSupported =
+                        state.capabilities?.sustainedPerformanceSupported == true,
+                    performanceHintsAvailable =
+                        state.capabilities?.performanceHintsAvailable == true
+                )
+            )
+            delay(5_000)
+        }
+    }
 
     LaunchedEffect(uiState.effectiveProfile) {
         state = onProfileApplied(uiState.effectiveProfile)
@@ -180,7 +218,12 @@ private fun GameHubUltraApp(
                 device = device,
                 selectedProfileName = selectedProfileName,
                 onProfileSelected = ::selectProfile,
-                onGameSelected = ::selectGame
+                onGameSelected = ::selectGame,
+                runtimeDiagnostics = runtimeDiagnostics,
+                adaptiveDecision = adaptiveDecision,
+                onApplyAdaptiveProfile = {
+                    adaptiveDecision?.let { selectProfile(it.profile) }
+                }
             )
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
@@ -205,7 +248,10 @@ private fun HomeScreen(
     device: DeviceInfo,
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
-    onGameSelected: (String) -> Unit
+    onGameSelected: (String) -> Unit,
+    runtimeDiagnostics: RuntimeDiagnostics?,
+    adaptiveDecision: AdaptiveDecision?,
+    onApplyAdaptiveProfile: () -> Unit
 ) {
     LazyColumn(
         modifier = modifier
@@ -249,7 +295,16 @@ private fun HomeScreen(
                 onProfileSelected = onProfileSelected
             )
         }
+
         item { DeviceStatusCard(device, state.capabilities) }
+        item {
+            RuntimeDiagnosticsCard(
+                device = device,
+                diagnostics = runtimeDiagnostics,
+                adaptiveDecision = adaptiveDecision,
+                onApplyAdaptiveProfile = onApplyAdaptiveProfile
+            )
+        }
     }
 }
 
