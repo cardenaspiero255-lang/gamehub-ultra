@@ -60,7 +60,6 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
-import com.cardenaspiero255.gamehubultra.ui.GameHubUiState
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -80,6 +79,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val initialTab = when (intent?.data?.host) {
+            "library" -> 1
+            else -> 0
+        }
+
         val capabilities = DeviceCapabilitiesProvider.get(this)
         performanceController = PerformanceController(capabilities)
         val initialState = performanceController.apply(PerformanceProfile.BALANCED, window)
@@ -93,6 +97,7 @@ class MainActivity : ComponentActivity() {
                         initialState = initialState,
                         device = device,
                         viewModel = gameHubViewModel,
+                        initialTab = initialTab,
                         onProfileApplied = { profile ->
                             performanceController.apply(profile, window)
                         }
@@ -109,12 +114,13 @@ private fun GameHubUltraApp(
     initialState: PerformanceState,
     device: DeviceInfo,
     viewModel: GameHubViewModel,
+    initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var state by remember { mutableStateOf(initialState) }
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
 
     LaunchedEffect(uiState.effectiveProfile) {
         state = onProfileApplied(uiState.effectiveProfile)
@@ -130,6 +136,8 @@ private fun GameHubUltraApp(
 
     val selectedProfileName = uiState.effectiveProfile.name
     val selectedGamePackage = uiState.selectedGamePackage
+    val favoriteGames = uiState.favoriteGames
+    val recentGamePackages = uiState.recentGamePackages
 
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
@@ -172,7 +180,11 @@ private fun GameHubUltraApp(
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
                 selectedGamePackage = selectedGamePackage,
-                onGameSelected = ::selectGame
+                favoriteGames = favoriteGames,
+                recentGamePackages = recentGamePackages,
+                onGameSelected = ::selectGame,
+                onToggleFavorite = viewModel::setFavoriteGame,
+                onGameOpened = viewModel::recordRecentGame
             )
             else -> SettingsScreen(Modifier.padding(padding))
         }
@@ -761,7 +773,11 @@ private fun DeviceRow(
 private fun LibraryScreen(
     modifier: Modifier,
     selectedGamePackage: String?,
-    onGameSelected: (String) -> Unit
+    favoriteGames: Set<String>,
+    recentGamePackages: List<String>,
+    onGameSelected: (String) -> Unit,
+    onToggleFavorite: (String, Boolean) -> Unit,
+    onGameOpened: (String) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -787,6 +803,20 @@ private fun LibraryScreen(
     }
 
     val result = discovery
+    val orderedGames = remember(result?.games, favoriteGames, recentGamePackages) {
+        val recentOrder = recentGamePackages.withIndex()
+            .associate { indexed -> indexed.value to indexed.index }
+        result?.games.orEmpty().sortedWith(
+            compareBy<GameInfo> {
+                when {
+                    favoriteGames.contains(it.packageName) -> 0
+                    recentOrder.containsKey(it.packageName) -> 1
+                    else -> 2
+                }
+            }.thenBy { recentOrder[it.packageName] ?: Int.MAX_VALUE }
+                .thenBy { it.label.lowercase() }
+        )
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -855,9 +885,17 @@ private fun LibraryScreen(
                     }?.let { game ->
                         SelectedGameCard(
                             game = game,
+                            favorite = favoriteGames.contains(game.packageName),
+                            onToggleFavorite = {
+                                onToggleFavorite(
+                                    game.packageName,
+                                    !favoriteGames.contains(game.packageName)
+                                )
+                            },
                             onOpen = {
                                 if (openGame(context, game.packageName)) {
                                     launchFailed = false
+                                    onGameOpened(game.packageName)
                                 } else {
                                     launchFailed = true
                                 }
@@ -871,19 +909,27 @@ private fun LibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(
-                        items = result.games,
+                        items = orderedGames,
                         key = { it.packageName }
                     ) { game ->
                         GameRow(
                             game = game,
                             selected = selectedGamePackage == game.packageName,
+                            favorite = favoriteGames.contains(game.packageName),
                             onSelect = {
                                 launchFailed = false
                                 onGameSelected(game.packageName)
                             },
+                            onToggleFavorite = {
+                                onToggleFavorite(
+                                    game.packageName,
+                                    !favoriteGames.contains(game.packageName)
+                                )
+                            },
                             onOpen = {
                                 if (openGame(context, game.packageName)) {
                                     launchFailed = false
+                                    onGameOpened(game.packageName)
                                 } else {
                                     launchFailed = true
                                 }
@@ -899,6 +945,8 @@ private fun LibraryScreen(
 @Composable
 private fun SelectedGameCard(
     game: GameInfo,
+    favorite: Boolean,
+    onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -913,6 +961,18 @@ private fun SelectedGameCard(
             Text(game.label, style = MaterialTheme.typography.titleMedium)
             Text(game.packageName, style = MaterialTheme.typography.bodySmall)
             Button(
+                onClick = onToggleFavorite,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (favorite) {
+                        stringResource(R.string.remove_favorite)
+                    } else {
+                        stringResource(R.string.add_favorite)
+                    }
+                )
+            }
+            Button(
                 onClick = onOpen,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -926,7 +986,9 @@ private fun SelectedGameCard(
 private fun GameRow(
     game: GameInfo,
     selected: Boolean,
+    favorite: Boolean,
     onSelect: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -936,6 +998,18 @@ private fun GameRow(
         ) {
             Text(game.label, style = MaterialTheme.typography.titleMedium)
             Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = onToggleFavorite,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (favorite) {
+                        stringResource(R.string.remove_favorite)
+                    } else {
+                        stringResource(R.string.add_favorite)
+                    }
+                )
+            }
             Button(
                 onClick = onSelect,
                 modifier = Modifier.fillMaxWidth()
