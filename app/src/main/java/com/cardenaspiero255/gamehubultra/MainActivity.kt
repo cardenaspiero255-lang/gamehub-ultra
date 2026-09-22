@@ -539,6 +539,7 @@ private fun LibraryScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var refreshToken by rememberSaveable { mutableIntStateOf(0) }
     var discovery by remember { mutableStateOf<GameDiscoveryResult?>(null) }
+    var launchFailed by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(context, refreshToken) {
         discovery = withContext(Dispatchers.IO) {
             GameLibrary.discover(context)
@@ -568,6 +569,15 @@ private fun LibraryScreen(
             stringResource(R.string.library_title),
             style = MaterialTheme.typography.headlineSmall
         )
+
+        if (launchFailed) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.library_open_error),
+                    modifier = Modifier.padding(18.dp)
+                )
+            }
+        }
 
         when {
             result == null -> {
@@ -617,7 +627,13 @@ private fun LibraryScreen(
                     }?.let { game ->
                         SelectedGameCard(
                             game = game,
-                            context = context
+                            onOpen = {
+                                if (openGame(context, game.packageName)) {
+                                    launchFailed = false
+                                } else {
+                                    launchFailed = true
+                                }
+                            }
                         )
                     }
                 }
@@ -634,10 +650,15 @@ private fun LibraryScreen(
                             game = game,
                             selected = selectedGamePackage == game.packageName,
                             onSelect = {
+                                launchFailed = false
                                 onGameSelected(game.packageName)
                             },
                             onOpen = {
-                                openGame(context, game.packageName)
+                                if (openGame(context, game.packageName)) {
+                                    launchFailed = false
+                                } else {
+                                    launchFailed = true
+                                }
                             }
                         )
                     }
@@ -650,7 +671,7 @@ private fun LibraryScreen(
 @Composable
 private fun SelectedGameCard(
     game: GameInfo,
-    context: Context
+    onOpen: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -664,7 +685,7 @@ private fun SelectedGameCard(
             Text(game.label, style = MaterialTheme.typography.titleMedium)
             Text(game.packageName, style = MaterialTheme.typography.bodySmall)
             Button(
-                onClick = { openGame(context, game.packageName) },
+                onClick = onOpen,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.open_game))
@@ -711,9 +732,8 @@ private fun GameRow(
     }
 }
 
-private fun openGame(context: Context, packageName: String) {
+private fun openGame(context: Context, packageName: String): Boolean =
     GameLauncher.launch(context, packageName)
-}
 
 object GameSelectionStore {
     private const val PREFS_NAME = "gamehub_ultra"
