@@ -583,7 +583,13 @@ private fun RuntimeDiagnosticsCard(
                 )
                 DeviceRow(
                     stringResource(R.string.runtime_inputs),
-                    diagnostics.inputDeviceCount.toString()
+                    stringResource(
+                        R.string.peripherals_summary,
+                        diagnostics.peripherals.gamepadCount,
+                        diagnostics.peripherals.keyboardCount,
+                        diagnostics.peripherals.mouseCount,
+                        diagnostics.peripherals.externalAudioCount
+                    )
                 )
                 adaptiveDecision?.let { decision ->
                     Text(
