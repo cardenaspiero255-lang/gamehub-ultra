@@ -43,18 +43,18 @@ private class GameHubVoiceInteractionSession(context: Context) :
         executor.execute {
             val result = VoiceCommandEngine.execute(
                 command = VoiceCommandParser.parse(transcript),
-                gamesProvider = { GameLibrary.discover(this).games },
-                launchGame = { packageName -> GameLauncher.launch(this, packageName) },
+                gamesProvider = { GameLibrary.discover(getContext()).games },
+                launchGame = { packageName -> GameLauncher.launch(getContext(), packageName) },
                 saveSelectedGame = { packageName ->
-                    GameSelectionStore.saveSelectedGame(this, packageName)
+                    GameSelectionStore.saveSelectedGame(getContext(), packageName)
                 },
                 saveSelectedProfile = { profile ->
-                    ProfileSelectionStore.saveSelectedProfile(this, profile)
+                    ProfileSelectionStore.saveSelectedProfile(getContext(), profile)
                 },
                 isProfileAvailable = { profile ->
                     profile != PerformanceProfile.X4 ||
                         com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
-                            .get(this).sustainedPerformanceSupported
+                            .get(getContext()).sustainedPerformanceSupported
                 },
                 statusProvider = { readStatus() }
             )
@@ -75,8 +75,8 @@ private class GameHubVoiceInteractionSession(context: Context) :
     }
 
     private fun readStatus(): VoiceDeviceStatus {
-        val batteryManager = getSystemService(BatteryManager::class.java)
-        val powerManager = getSystemService(PowerManager::class.java)
+        val batteryManager = getContext().getSystemService(BatteryManager::class.java)
+        val powerManager = getContext().getSystemService(PowerManager::class.java)
         val battery = batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
             ?.takeIf { it in 0..100 }
 
