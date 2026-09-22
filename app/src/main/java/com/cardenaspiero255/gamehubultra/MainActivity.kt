@@ -70,7 +70,9 @@ private fun GameHubUltraApp(
     var state by remember { mutableStateOf(initialState) }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -94,6 +96,20 @@ private fun GameHubUltraApp(
                             "Sustained Performance Mode: aplicado a GameHub Ultra."
                         else
                             "Sustained Performance Mode: no aplicado."
+                    )
+                    Text(
+                        "Intención de interpolación: " +
+                            if (state.selectedProfile.frameInterpolationIntent)
+                                "priorizada, pero requiere una API compatible."
+                            else
+                                "no solicitada."
+                    )
+                    Text(
+                        "Trade-off térmico: " +
+                            if (state.selectedProfile.acceptsHigherTemperature)
+                                "acepta mayor temperatura para priorizar su objetivo."
+                            else
+                                "no añade una tolerancia térmica explícita."
                     )
                 }
             }
@@ -166,7 +182,9 @@ private fun DeviceStatusCard(
             )
             Text("Estado térmico: ${thermalLabel(thermal)}")
             Text(
-                "Límite real: GameHub Ultra no puede cambiar por sí solo la frecuencia de CPU/GPU, activar interpolación de frames ni modificar el modo de rendimiento de otra aplicación sin APIs privilegiadas o soporte del fabricante."
+                "Límite real: GameHub Ultra no puede cambiar por sí solo la frecuencia de CPU/GPU, " +
+                    "activar interpolación de frames ni modificar el modo de rendimiento de otra " +
+                    "aplicación sin APIs privilegiadas o soporte del fabricante."
             )
         }
     }
