@@ -57,7 +57,7 @@
     <string name="runtime_diagnostics_loading">Reading device telemetry…</string>
     <string name="readiness_score">Gaming Readiness: %1$d/100 — %2$s</string>
     <string name="runtime_thermal">Thermal</string>
-    <string name="thermal_headroom">Thermal headroom</string>
+    <string name="thermal_headroom">Thermal envelope usage</string>
     <string name="thermal_headroom_value">%1$d%%</string>
     <string name="runtime_battery">Battery</string>
     <string name="battery_charging">%1$d%% · charging</string>

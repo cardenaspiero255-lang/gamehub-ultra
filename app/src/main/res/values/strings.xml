@@ -57,7 +57,7 @@
     <string name="runtime_diagnostics_loading">Obteniendo telemetría del dispositivo…</string>
     <string name="readiness_score">Gaming Readiness: %1$d/100 — %2$s</string>
     <string name="runtime_thermal">Térmica</string>
-    <string name="thermal_headroom">Margen térmico</string>
+    <string name="thermal_headroom">Uso del sobre térmico</string>
     <string name="thermal_headroom_value">%1$d%%</string>
     <string name="runtime_battery">Batería</string>
     <string name="battery_charging">%1$d%% · cargando</string>
