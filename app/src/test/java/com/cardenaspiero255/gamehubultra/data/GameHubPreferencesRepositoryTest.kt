@@ -182,6 +182,7 @@ class GameHubPreferencesRepositoryTest {
                 PerformanceEvent(
                     timestampMillis = index.toLong(),
                     type = PerformanceEventType.POLICY_CHANGED,
+                    sessionId = "session-test",
                     profile = if (index % 2 == 0) {
                         PerformanceProfile.BALANCED
                     } else {
