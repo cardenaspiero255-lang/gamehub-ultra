@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.platform
 
 import android.content.Context
 import android.os.Build
+import android.os.PerformanceHintManager
 import android.os.PowerManager
 
 data class DeviceCapabilities(
@@ -13,13 +14,18 @@ data class DeviceCapabilities(
 object DeviceCapabilitiesProvider {
     fun get(context: Context): DeviceCapabilities {
         val powerManager = context.getSystemService(PowerManager::class.java)
+        val performanceHintManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(PerformanceHintManager::class.java)
+        } else {
+            null
+        }
+
         return DeviceCapabilities(
             sustainedPerformanceSupported =
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
                     powerManager?.isSustainedPerformanceModeSupported == true,
             thermalStatusAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
-            performanceHintsAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                context.getSystemService("performance_hint") != null
+            performanceHintsAvailable = performanceHintManager != null
         )
     }
 }
