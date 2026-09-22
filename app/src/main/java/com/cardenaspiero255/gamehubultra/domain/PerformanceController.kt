@@ -21,7 +21,7 @@ class PerformanceController(
         )
 
     fun apply(profile: PerformanceProfile, window: Window): PerformanceState {
-        val enableSustained = profile == PerformanceProfile.X4 &&
+        val enableSustained = profile.sustainedPerformanceIntent &&
             capabilities.sustainedPerformanceSupported &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
 
