@@ -799,6 +799,14 @@ private fun LibraryScreen(
         }
     }
 
+    LaunchedEffect(context, showAddGameDialog) {
+        if (showAddGameDialog) {
+            launchableApps = withContext(Dispatchers.IO) {
+                GameLibrary.discoverNonGameLaunchableApps(context)
+            }
+        }
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -842,12 +850,7 @@ private fun LibraryScreen(
                 modifier = Modifier.weight(1f)
             )
             TextButton(
-                onClick = {
-                    launchableApps = withContext(Dispatchers.IO) {
-                        GameLibrary.discoverLaunchableApps(context)
-                    }
-                    showAddGameDialog = true
-                }
+                onClick = { showAddGameDialog = true }
             ) {
                 Text(stringResource(R.string.add_game))
             }
@@ -967,14 +970,7 @@ private fun LibraryScreen(
     }
 
     if (showAddGameDialog) {
-        val detectedPackages = result?.games?.map { it.packageName }.orEmpty().toSet()
-        val candidates = launchableApps.filter { app ->
-            !GameLibrary.isGameApplication(
-                category = context.packageManager.getApplicationInfo(app.packageName, 0).category,
-                flags = context.packageManager.getApplicationInfo(app.packageName, 0).flags,
-                sdkInt = Build.VERSION.SDK_INT
-            ) || manualGamePackages.contains(app.packageName)
-        }
+        val candidates = launchableApps
         AlertDialog(
             onDismissRequest = { showAddGameDialog = false },
             title = { Text(stringResource(R.string.add_game_title)) },
