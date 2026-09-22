@@ -138,7 +138,8 @@ private fun GameHubUltraApp(
     val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
-    var gameSessionActive by rememberSaveable { mutableStateOf(false) }
+    var activeSessionPackage by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
@@ -146,10 +147,11 @@ private fun GameHubUltraApp(
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
 
-    LaunchedEffect(lifecycleOwner, adaptiveEngine, uiState.selectedGamePackage, gameSessionActive) {
+    LaunchedEffect(lifecycleOwner, adaptiveEngine, activeSessionPackage, activeSessionId) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            val selectedGame = uiState.selectedGamePackage
-            if (selectedGame == null || !gameSessionActive) {
+            val selectedGame = activeSessionPackage
+            val sessionId = activeSessionId
+            if (selectedGame == null || sessionId == null) {
                 runtimeDiagnostics = null
                 latencyMs = null
                 adaptiveDecision = adaptiveEngine.evaluate(
@@ -168,16 +170,6 @@ private fun GameHubUltraApp(
                 )
                 return@repeatOnLifecycle
             }
-
-            val sessionId = UUID.randomUUID().toString()
-            viewModel.recordPerformanceEvent(
-                PerformanceEvent(
-                    timestampMillis = System.currentTimeMillis(),
-                    type = PerformanceEventType.SESSION_STARTED,
-                    sessionId = sessionId,
-                    detail = selectedGame
-                )
-            )
 
             var lastThermalStatus: Int? = null
             var initializedThermalStatus = false
@@ -240,7 +232,7 @@ private fun GameHubUltraApp(
                             batteryPercent = diagnostics.battery.percent,
                             charging = diagnostics.battery.charging,
                             powerSaveMode = diagnostics.battery.powerSaveMode,
-                            sessionActive = gameSessionActive,
+                            sessionActive = activeSessionPackage != null,
                             sustainedPerformanceSupported =
                                 initialState.capabilities?.sustainedPerformanceSupported == true,
                             performanceHintsAvailable =
@@ -265,14 +257,7 @@ private fun GameHubUltraApp(
                     delay(10_000)
                 }
             } finally {
-                viewModel.recordPerformanceEvent(
-                    PerformanceEvent(
-                        timestampMillis = System.currentTimeMillis(),
-                        type = PerformanceEventType.SESSION_ENDED,
-                        sessionId = sessionId,
-                        detail = selectedGame
-                    )
-                )
+                // Lifecycle cancellation only pauses telemetry polling; it does not end the game session.
             }
         }
     }
@@ -287,8 +272,25 @@ private fun GameHubUltraApp(
         } ?: viewModel.selectGlobalProfile(profile)
     }
 
+    fun endGameSession() {
+        val sessionId = activeSessionId
+        val packageName = activeSessionPackage
+        if (sessionId != null && packageName != null) {
+            viewModel.recordPerformanceEvent(
+                PerformanceEvent(
+                    timestampMillis = System.currentTimeMillis(),
+                    type = PerformanceEventType.SESSION_ENDED,
+                    sessionId = sessionId,
+                    detail = packageName
+                )
+            )
+        }
+        activeSessionId = null
+        activeSessionPackage = null
+    }
+
     fun selectGame(packageName: String) {
-        gameSessionActive = false
+        endGameSession()
         viewModel.selectGame(packageName)
     }
 
@@ -351,7 +353,18 @@ private fun GameHubUltraApp(
                 onGameSelected = ::selectGame,
                 onToggleFavorite = viewModel::setFavoriteGame,
                 onGameOpened = { packageName ->
-                    gameSessionActive = true
+                    endGameSession()
+                    val sessionId = UUID.randomUUID().toString()
+                    activeSessionPackage = packageName
+                    activeSessionId = sessionId
+                    viewModel.recordPerformanceEvent(
+                        PerformanceEvent(
+                            timestampMillis = System.currentTimeMillis(),
+                            type = PerformanceEventType.SESSION_STARTED,
+                            sessionId = sessionId,
+                            detail = packageName
+                        )
+                    )
                     viewModel.recordRecentGame(packageName)
                 },
                 onToggleManualGame = viewModel::setManualGame
