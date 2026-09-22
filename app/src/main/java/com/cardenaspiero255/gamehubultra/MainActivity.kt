@@ -15,19 +15,16 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
-
-private enum class PerformanceProfile(val title: String, val description: String) {
-    BALANCED("FPS balanceado", "Equilibra rendimiento, consumo y temperatura."),
-    FRAME_INTERPOLATION("Priorizar interpolación", "Prioriza la experiencia de frames cuando el dispositivo lo permite."),
-    X4("X4", "Perfil experimental para futuras integraciones compatibles.")
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,9 +39,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@androidx.compose.runtime.Composable
+@Composable
 private fun GameHubUltraApp() {
     var selected by remember { mutableStateOf(PerformanceProfile.BALANCED) }
+    val device = remember { DeviceInfoProvider.get() }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(20.dp),
@@ -59,7 +57,10 @@ private fun GameHubUltraApp() {
 
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text("Perfil activo", style = MaterialTheme.typography.titleLarge)
                     Text(selected.title, style = MaterialTheme.typography.headlineSmall)
                     Text(selected.description)
@@ -83,17 +84,36 @@ private fun GameHubUltraApp() {
 
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Text("Estado del dispositivo", style = MaterialTheme.typography.titleLarge)
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Android")
-                        Text(android.os.Build.VERSION.RELEASE)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Fabricante")
+                        Text(device.manufacturer)
                     }
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Text("Modelo")
-                        Text(android.os.Build.MODEL)
+                        Text(device.model)
                     }
-                    Text("Las optimizaciones avanzadas dependerán de las APIs y permisos disponibles en cada dispositivo.")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Android")
+                        Text(device.androidVersion)
+                    }
+                    Text("ABI: ${device.supportedAbis.joinToString()}")
+                    Text(
+                        "Las optimizaciones avanzadas dependerán de las APIs, permisos y capacidades expuestas por cada dispositivo."
+                    )
                 }
             }
         }
