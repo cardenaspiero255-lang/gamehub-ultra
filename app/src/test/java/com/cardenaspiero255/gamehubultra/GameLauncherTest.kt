@@ -1,81 +1,72 @@
 package com.cardenaspiero255.gamehubultra
 
-import android.content.ActivityNotFoundException
-import android.content.ContextWrapper
-import android.content.Intent
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class GameLauncherTest {
     @Test
-    fun nullIntentDoesNotLaunch() {
-        val context = RecordingContext()
-
-        assertFalse(GameLauncher.launchIntent(context, null))
-        assertFalse(context.started)
-    }
-
-    @Test
     fun successfulLaunchReturnsTrue() {
-        val context = RecordingContext()
+        var started = false
 
-        assertTrue(GameLauncher.launchIntent(context, Intent(Intent.ACTION_MAIN)))
-        assertTrue(context.started)
+        assertTrue(
+            GameLauncher.resolveAndLaunch(
+                packageName = "game.package",
+                resolver = { "resolved-intent" },
+                starter = { started = true }
+            )
+        )
+        assertTrue(started)
     }
 
     @Test
-    fun activityNotFoundDoesNotCrash() {
-        val context = RecordingContext(throwOnStart = ActivityNotFoundException())
-
-        assertFalse(GameLauncher.launchIntent(context, Intent(Intent.ACTION_MAIN)))
-        assertFalse(context.started)
-    }
-
-    @Test
-    fun permissionFailureDoesNotCrash() {
-        val context = RecordingContext(throwOnStart = SecurityException("blocked"))
-
-        assertFalse(GameLauncher.launchIntent(context, Intent(Intent.ACTION_MAIN)))
-        assertFalse(context.started)
-    }
-
-    @Test
-    fun missingLaunchIntentReturnsFalse() {
-        val context = RecordingContext()
+    fun missingLaunchTargetReturnsFalse() {
+        var started = false
 
         assertFalse(
-            GameLauncher.launch(
-                context = context,
+            GameLauncher.resolveAndLaunch(
                 packageName = "missing.package",
-                intentResolver = { null }
+                resolver = { null },
+                starter = { started = true }
             )
         )
-        assertFalse(context.started)
+        assertFalse(started)
     }
 
     @Test
-    fun packageManagerFailureReturnsFalse() {
-        val context = RecordingContext()
+    fun resolverFailureReturnsFalse() {
+        var started = false
 
         assertFalse(
-            GameLauncher.launch(
-                context = context,
+            GameLauncher.resolveAndLaunch(
                 packageName = "broken.package",
-                intentResolver = { throw IllegalStateException("package manager unavailable") }
+                resolver = { throw IllegalStateException("resolver unavailable") },
+                starter = { started = true }
             )
         )
-        assertFalse(context.started)
+        assertFalse(started)
     }
 
-    private class RecordingContext(
-        private val throwOnStart: RuntimeException? = null
-    ) : ContextWrapper(null) {
-        var started: Boolean = false
+    @Test
+    fun launcherFailureReturnsFalse() {
+        assertFalse(
+            GameLauncher.resolveAndLaunch(
+                packageName = "blocked.package",
+                resolver = { "resolved-intent" },
+                starter = { throw SecurityException("blocked") }
+            )
+        )
+    }
 
-        override fun startActivity(intent: Intent) {
-            if (throwOnStart != null) throw throwOnStart
-            started = true
+    @Test
+    fun fatalErrorsAreNotSwallowed() {
+        assertFailsWith<AssertionError> {
+            GameLauncher.resolveAndLaunch(
+                packageName = "fatal.package",
+                resolver = { throw AssertionError("fatal") },
+                starter = {}
+            )
         }
     }
 }
