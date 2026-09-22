@@ -14,5 +14,9 @@ class VoiceInteractionProtocolTest {
 
     @Test
     fun transcriptExtraIdentifierIsStable() {
-        assertEquals("transcript", GameHubVoiceInteractionSessionService.EXTRA_TRANSCRIPT)
+        assertEquals(
+            "transcript",
+            GameHubVoiceInteractionSessionService.EXTRA_TRANSCRIPT
+        )
     }
+}
