@@ -73,6 +73,51 @@ class AdaptivePerformanceEngineTest {
     }
 
     @Test
+    fun inactiveSessionNeverRecommendsAggressiveProfile() {
+        val engine = AdaptivePerformanceEngine(initialProfile = PerformanceProfile.X4)
+        val idle = snapshot(
+            thermalHeadroom = 0.2f,
+            batteryPercent = 100,
+            charging = true,
+            sessionActive = false,
+            sustained = true,
+            hints = true
+        )
+
+        engine.evaluate(idle)
+        val decision = engine.evaluate(idle)
+
+        assertEquals(PerformanceProfile.BALANCED, decision.profile)
+        assertEquals(false, decision.enableSustainedPerformance)
+    }
+
+    @Test
+    fun thermalThresholdUsesDirectionalHysteresis() {
+        val engine = AdaptivePerformanceEngine(initialProfile = PerformanceProfile.X4)
+
+        val warmButBelowEntry = snapshot(
+            thermalStatus = 0,
+            thermalHeadroom = 0.70f,
+            batteryPercent = 90,
+            charging = true,
+            sustained = true
+        )
+        assertEquals(PerformanceProfile.X4, engine.evaluate(warmButBelowEntry).profile)
+
+        val nearSevere = warmButBelowEntry.copy(thermalHeadroom = 0.81f)
+        engine.evaluate(nearSevere)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(nearSevere).profile)
+
+        val recovering = warmButBelowEntry.copy(thermalHeadroom = 0.65f)
+        engine.evaluate(recovering)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(recovering).profile)
+
+        val cool = warmButBelowEntry.copy(thermalHeadroom = 0.55f)
+        engine.evaluate(cool)
+        assertEquals(PerformanceProfile.X4, engine.evaluate(cool).profile)
+    }
+
+    @Test
     fun fallsBackToInterpolationWhenSustainedModeIsUnavailable() {
         val engine = AdaptivePerformanceEngine()
         val ready = snapshot(
@@ -96,14 +141,15 @@ class AdaptivePerformanceEngineTest {
         charging: Boolean = false,
         powerSave: Boolean = false,
         sustained: Boolean = false,
-        hints: Boolean = false
+        hints: Boolean = false,
+        sessionActive: Boolean = true
     ) = AdaptiveRuntimeSnapshot(
         thermalStatus = thermalStatus,
         thermalHeadroom = thermalHeadroom,
         batteryPercent = batteryPercent,
         charging = charging,
         powerSaveMode = powerSave,
-        sessionActive = true,
+        sessionActive = sessionActive,
         sustainedPerformanceSupported = sustained,
         performanceHintsAvailable = hints
     )
