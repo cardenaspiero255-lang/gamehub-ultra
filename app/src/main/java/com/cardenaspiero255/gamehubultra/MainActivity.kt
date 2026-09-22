@@ -32,10 +32,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -538,15 +538,11 @@ private fun LibraryScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var refreshToken by rememberSaveable { mutableIntStateOf(0) }
-    val discovery by produceState<GameDiscoveryResult?>(
-        initialValue = null,
-        key1 = context,
-        key2 = refreshToken
-    ) {
-        val discovered = withContext(Dispatchers.IO) {
+    var discovery by remember { mutableStateOf<GameDiscoveryResult?>(null) }
+    LaunchedEffect(context, refreshToken) {
+        discovery = withContext(Dispatchers.IO) {
             GameLibrary.discover(context)
         }
-        value = discovered
     }
 
     DisposableEffect(lifecycleOwner) {
