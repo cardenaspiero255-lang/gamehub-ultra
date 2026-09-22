@@ -49,4 +49,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
 }
