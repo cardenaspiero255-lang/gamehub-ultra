@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +34,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -138,6 +140,7 @@ private fun GameHubUltraApp(
     val selectedGamePackage = uiState.selectedGamePackage
     val favoriteGames = uiState.favoriteGames
     val recentGamePackages = uiState.recentGamePackages
+    val manualGamePackages = uiState.manualGamePackages
 
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
@@ -182,9 +185,11 @@ private fun GameHubUltraApp(
                 selectedGamePackage = selectedGamePackage,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
+                manualGamePackages = manualGamePackages,
                 onGameSelected = ::selectGame,
                 onToggleFavorite = viewModel::setFavoriteGame,
-                onGameOpened = viewModel::recordRecentGame
+                onGameOpened = viewModel::recordRecentGame,
+                onToggleManualGame = viewModel::setManualGame
             )
             else -> SettingsScreen(Modifier.padding(padding))
         }
@@ -775,18 +780,22 @@ private fun LibraryScreen(
     selectedGamePackage: String?,
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
+    manualGamePackages: Set<String>,
     onGameSelected: (String) -> Unit,
     onToggleFavorite: (String, Boolean) -> Unit,
-    onGameOpened: (String) -> Unit
+    onGameOpened: (String) -> Unit,
+    onToggleManualGame: (String, Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var refreshToken by rememberSaveable { mutableIntStateOf(0) }
     var discovery by remember { mutableStateOf<GameDiscoveryResult?>(null) }
     var launchFailed by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(context, refreshToken) {
+    var showAddGameDialog by rememberSaveable { mutableStateOf(false) }
+    var launchableApps by remember { mutableStateOf<List<GameInfo>>(emptyList()) }
+    LaunchedEffect(context, refreshToken, manualGamePackages) {
         discovery = withContext(Dispatchers.IO) {
-            GameLibrary.discover(context)
+            GameLibrary.discover(context, manualGamePackages)
         }
     }
 
@@ -823,10 +832,26 @@ private fun LibraryScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            stringResource(R.string.library_title),
-            style = MaterialTheme.typography.headlineSmall
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                stringResource(R.string.library_title),
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = {
+                    launchableApps = withContext(Dispatchers.IO) {
+                        GameLibrary.discoverLaunchableApps(context)
+                    }
+                    showAddGameDialog = true
+                }
+            ) {
+                Text(stringResource(R.string.add_game))
+            }
+        }
 
         if (launchFailed) {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -939,6 +964,58 @@ private fun LibraryScreen(
                 }
             }
         }
+    }
+
+    if (showAddGameDialog) {
+        val detectedPackages = result?.games?.map { it.packageName }.orEmpty().toSet()
+        val candidates = launchableApps.filter { app ->
+            !GameLibrary.isGameApplication(
+                category = context.packageManager.getApplicationInfo(app.packageName, 0).category,
+                flags = context.packageManager.getApplicationInfo(app.packageName, 0).flags,
+                sdkInt = Build.VERSION.SDK_INT
+            ) || manualGamePackages.contains(app.packageName)
+        }
+        AlertDialog(
+            onDismissRequest = { showAddGameDialog = false },
+            title = { Text(stringResource(R.string.add_game_title)) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.height(360.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(candidates, key = { it.packageName }) { app ->
+                        val manuallyAdded = manualGamePackages.contains(app.packageName)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                app.label,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = {
+                                    onToggleManualGame(app.packageName, !manuallyAdded)
+                                }
+                            ) {
+                                Text(
+                                    if (manuallyAdded) {
+                                        stringResource(R.string.remove_game)
+                                    } else {
+                                        stringResource(R.string.add_game)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAddGameDialog = false }) {
+                    Text(stringResource(R.string.close))
+                }
+            }
+        )
     }
 }
 
