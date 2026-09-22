@@ -16,9 +16,13 @@ object VoiceCommandParser {
 
         if (
             clean.contains("temperatura") ||
+            clean.contains("temperature") ||
             clean.contains("bateria") ||
+            clean.contains("battery") ||
             clean.contains("estado del dispositivo") ||
-            clean == "estado"
+            clean.contains("device status") ||
+            clean == "estado" ||
+            clean == "status"
         ) {
             return VoiceCommand.DeviceStatus
         }
@@ -34,8 +38,11 @@ object VoiceCommandParser {
 
         if (
             clean == "ayuda" ||
+            clean == "help" ||
             clean.contains("que puedo hacer") ||
-            clean.contains("comandos disponibles")
+            clean.contains("what can i do") ||
+            clean.contains("comandos disponibles") ||
+            clean.contains("available commands")
         ) {
             return VoiceCommand.Help
         }
@@ -48,7 +55,7 @@ object VoiceCommandParser {
         }
     }
 
-    internal fun normalize(value: String): String =
+    internal fun normalize(value: String): String = 
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
             .replace(Regex("""\p{M}+"""), "")
             .replace(Regex("""[^a-z0-9x4]+"""), " ")
@@ -57,28 +64,25 @@ object VoiceCommandParser {
 
     private fun profileFromText(clean: String): PerformanceProfile? =
         when {
-            Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar)\b""")
+            Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.BALANCED
-            Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados)\b""")
+            Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|interpolation|interpolate)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.FRAME_INTERPOLATION
-            Regex("""\b(x4|modo x4|maximo rendimiento|alto rendimiento|configura todo|todo al maximo)\b""")
+            Regex("""\b(x4|modo x4|x4 mode|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.X4
             else -> null
         }
 
     private fun extractGameQuery(clean: String): String {
         val withoutProfile = clean
-            .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar)\b"""), " ")
-            .replace(Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados)\b"""), " ")
-            .replace(Regex("""\b(x4|modo x4|maximo rendimiento|alto rendimiento|configura todo|todo al maximo)\b"""), " ")
+            .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
+            .replace(Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|interpolation|interpolate)\b"""), " ")
+            .replace(Regex("""\b(x4|modo x4|x4 mode|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
 
         return withoutProfile
-            .replace(
-                Regex("""^\s*(gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon)\s*"""),
-                ""
-            )
-            .replace(Regex("""\b(la|el|un|una|juego|juegos)\b"""), " ")
-            .replace(Regex("""\b(y|con|en|por favor)\b"""), " ")
+            .replace(Regex("""^\s*(gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|open|opens|open me|launch|start|run|play)\s*"""), "")
+            .replace(Regex("""\b(la|el|un|una|the|a|an|juego|juegos|game|games)\b"""), " ")
+            .replace(Regex("""\b(y|con|en|por favor|and|with|in|please)\b"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
     }
