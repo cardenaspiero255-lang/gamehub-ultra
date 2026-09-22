@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GameHub Ultra</string>
+    <string name="nav_inicio">Home</string><string name="nav_biblioteca">Library</string><string name="nav_ajustes">Settings</string>
+    <string name="hero_title">GAMEHUB ULTRA</string><string name="hero_subtitle">Performance center for your games</string>
+    <string name="active_profile">Active profile</string><string name="performance_modes">Performance modes</string><string name="selected">Selected</string><string name="apply">Apply</string>
+    <string name="device_status">Device status</string><string name="battery">Battery</string><string name="temperature">Temperature</string><string name="available">Available</string><string name="not_available">Not available</string>
+    <string name="normal">Normal</string><string name="thermal_light">Light</string><string name="thermal_moderate">Moderate</string><string name="thermal_severe">Severe</string><string name="thermal_critical">Critical</string><string name="thermal_emergency">Emergency</string><string name="thermal_shutdown">Thermal shutdown</string><string name="thermal_unknown">Unknown</string>
+    <string name="sustained_performance">Sustained Performance</string><string name="supported">Supported</string><string name="not_supported">Not available</string><string name="thermal_api">Thermal API</string><string name="performance_hint_api">Performance Hint API</string>
+    <string name="capability_note">Unavailable features are informational and are not activated.</string>
+    <string name="library_title">Game library</string><string name="library_empty">Your library will appear here.</string><string name="library_empty_hint">Game management will expand in future versions.</string>
+    <string name="settings_title">Settings</string><string name="about">About GameHub Ultra</string><string name="about_text">Performance interface built with public Android APIs.</string><string name="limitations">Limitations</string><string name="limitations_text">GameHub Ultra cannot by itself change CPU/GPU frequencies, force frame interpolation, or modify another app's performance mode without privileged APIs or manufacturer support.</string>
+    <string name="language">Language</string><string name="language_value">Spanish</string>
+    <string name="manufacturer">Manufacturer</string><string name="model">Model</string><string name="android_version">Android</string><string name="cpu">CPU</string><string name="cores">Logical cores</string><string name="ram">Total RAM</string><string name="gpu_vendor">GPU vendor</string><string name="gpu_renderer">GPU renderer</string><string name="abi">ABI</string>
+    <string name="interpolation_intent">Interpolation intent</string><string name="interpolation_prioritized">Prioritized; requires a compatible API.</string><string name="interpolation_not_requested">Not requested.</string><string name="thermal_tradeoff">Thermal trade-off</string><string name="accepts_higher_temperature">Accepts higher temperature to prioritize its goal.</string><string name="no_extra_thermal">No explicit thermal tolerance added.</string>
+    <string name="sustained_applied">Sustained Performance: applied to GameHub Ultra.</string><string name="sustained_not_applied">Sustained Performance: not applied.</string>
+</resources>
