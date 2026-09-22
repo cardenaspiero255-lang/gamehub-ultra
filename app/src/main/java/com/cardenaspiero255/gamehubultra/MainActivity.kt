@@ -820,6 +820,8 @@ private object VoiceResponseFormatter {
                         ?: context.getString(R.string.not_available),
                     result.status.thermalLabel
                 )
+            is VoiceActionResult.AiAdvice ->
+                result.advice.title + " " + result.advice.explanation
             VoiceActionResult.Help ->
                 context.getString(R.string.voice_result_help)
             is VoiceActionResult.NotAvailable ->
