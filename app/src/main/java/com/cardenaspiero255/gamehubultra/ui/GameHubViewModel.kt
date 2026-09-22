@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,6 +37,8 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
             favoriteGames = favoriteGames
         )
     }
+
+    val performanceHistory = repository.performanceHistoryFlow()
 
     val uiState = combine(
         baseStateFlow,
@@ -116,6 +119,10 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
 
     fun setManualGame(packageName: String, manual: Boolean) {
         viewModelScope.launch { repository.setManualGame(packageName, manual) }
+    }
+
+    fun recordPerformanceEvent(event: PerformanceEvent) {
+        viewModelScope.launch { repository.appendPerformanceEvent(event) }
     }
 
     private data class BaseUiState(

@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import java.io.File
@@ -171,6 +173,32 @@ class GameHubPreferencesRepositoryTest {
         } finally {
             restartedScope.cancel()
         }
+    }
+
+    @Test
+    fun performanceHistoryPersistsAndKeepsLatestEvents() = runBlocking {
+        repeat(55) { index ->
+            repository.appendPerformanceEvent(
+                PerformanceEvent(
+                    timestampMillis = index.toLong(),
+                    type = PerformanceEventType.POLICY_CHANGED,
+                    sessionId = "session-test",
+                    profile = if (index % 2 == 0) {
+                        PerformanceProfile.BALANCED
+                    } else {
+                        PerformanceProfile.X4
+                    },
+                    score = index.coerceIn(0, 100),
+                    detail = "event-$index"
+                )
+            )
+        }
+
+        val history = repository.performanceHistoryFlow(limit = 50).first()
+
+        assertEquals(50, history.size)
+        assertEquals(5L, history.first().timestampMillis)
+        assertEquals(54L, history.last().timestampMillis)
     }
 
     @Test

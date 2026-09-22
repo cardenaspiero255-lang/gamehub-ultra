@@ -55,6 +55,14 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveRuntimeSnapshot
+import com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator
+import com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
@@ -70,10 +78,15 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
@@ -120,9 +133,145 @@ private fun GameHubUltraApp(
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+    var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
+    var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
+    var latencyMs by remember { mutableStateOf<Long?>(null) }
+    val adaptiveEngine = remember(uiState.effectiveProfile) {
+        AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
+    }
+
+    LaunchedEffect(lifecycleOwner, adaptiveEngine, uiState.selectedGamePackage) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val selectedGame = uiState.selectedGamePackage
+            if (selectedGame == null) {
+                adaptiveDecision = adaptiveEngine.evaluate(
+                    AdaptiveRuntimeSnapshot(
+                        thermalStatus = null,
+                        thermalHeadroom = null,
+                        batteryPercent = null,
+                        charging = false,
+                        powerSaveMode = false,
+                        sessionActive = false,
+                        sustainedPerformanceSupported =
+                            initialState.capabilities?.sustainedPerformanceSupported == true,
+                        performanceHintsAvailable =
+                            initialState.capabilities?.performanceHintsAvailable == true
+                    )
+                )
+                return@repeatOnLifecycle
+            }
+
+            val sessionId = UUID.randomUUID().toString()
+            viewModel.recordPerformanceEvent(
+                PerformanceEvent(
+                    timestampMillis = System.currentTimeMillis(),
+                    type = PerformanceEventType.SESSION_STARTED,
+                    sessionId = sessionId,
+                    detail = selectedGame
+                )
+            )
+
+            var lastThermalStatus: Int? = null
+            var initializedThermalStatus = false
+            var lastLatencyCheckAt = 0L
+            var lastLatencyNetworkHandle: Long? = null
+
+            try {
+                while (isActive) {
+                    val diagnostics = withContext(Dispatchers.IO) {
+                        RuntimeDiagnosticsProvider.get(context)
+                    }
+                    val now = System.currentTimeMillis()
+                    val network = diagnostics.connectivity
+                    if (!network.connected ||
+                        !network.validated ||
+                        network.networkHandle == null
+                    ) {
+                        latencyMs = null
+                        lastLatencyNetworkHandle = null
+                        lastLatencyCheckAt = 0L
+                    } else if (
+                        network.networkHandle != lastLatencyNetworkHandle ||
+                        now - lastLatencyCheckAt >= 30_000L
+                    ) {
+                        latencyMs = withContext(Dispatchers.IO) {
+                            com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe.measure(
+                                context = context,
+                                expectedNetworkHandle = network.networkHandle
+                            )
+                        }
+                        lastLatencyNetworkHandle = network.networkHandle
+                        lastLatencyCheckAt = now
+                    }
+
+                    val enrichedDiagnostics = diagnostics.copy(
+                        connectivity = network.copy(latencyMs = latencyMs)
+                    )
+                    runtimeDiagnostics = enrichedDiagnostics
+
+                    if (initializedThermalStatus &&
+                        diagnostics.thermal.status != lastThermalStatus
+                    ) {
+                        viewModel.recordPerformanceEvent(
+                            PerformanceEvent(
+                                timestampMillis = now,
+                                type = PerformanceEventType.THERMAL_CHANGED,
+                                sessionId = sessionId,
+                                detail = diagnostics.thermal.status?.toString() ?: "unavailable"
+                            )
+                        )
+                    }
+                    lastThermalStatus = diagnostics.thermal.status
+                    initializedThermalStatus = true
+
+                    val decision = adaptiveEngine.evaluate(
+                        AdaptiveRuntimeSnapshot(
+                            thermalStatus = diagnostics.thermal.status,
+                            thermalHeadroom = diagnostics.thermal.headroom,
+                            batteryPercent = diagnostics.battery.percent,
+                            charging = diagnostics.battery.charging,
+                            powerSaveMode = diagnostics.battery.powerSaveMode,
+                            sessionActive = true,
+                            sustainedPerformanceSupported =
+                                initialState.capabilities?.sustainedPerformanceSupported == true,
+                            performanceHintsAvailable =
+                                initialState.capabilities?.performanceHintsAvailable == true
+                        )
+                    )
+                    adaptiveDecision = decision
+
+                    if (decision.changed) {
+                        viewModel.recordPerformanceEvent(
+                            PerformanceEvent(
+                                timestampMillis = now,
+                                type = PerformanceEventType.POLICY_CHANGED,
+                                sessionId = sessionId,
+                                profile = decision.profile,
+                                score = decision.score,
+                                detail = decision.reason
+                            )
+                        )
+                    }
+
+                    delay(5_000)
+                }
+            } finally {
+                viewModel.recordPerformanceEvent(
+                    PerformanceEvent(
+                        timestampMillis = System.currentTimeMillis(),
+                        type = PerformanceEventType.SESSION_ENDED,
+                        sessionId = sessionId,
+                        detail = selectedGame
+                    )
+                )
+            }
+        }
+    }
 
     LaunchedEffect(uiState.effectiveProfile) {
         state = onProfileApplied(uiState.effectiveProfile)
@@ -180,7 +329,13 @@ private fun GameHubUltraApp(
                 device = device,
                 selectedProfileName = selectedProfileName,
                 onProfileSelected = ::selectProfile,
-                onGameSelected = ::selectGame
+                onGameSelected = ::selectGame,
+                runtimeDiagnostics = runtimeDiagnostics,
+                adaptiveDecision = adaptiveDecision,
+                performanceHistory = performanceHistory,
+                onApplyAdaptiveProfile = {
+                    adaptiveDecision?.let { selectProfile(it.profile) }
+                }
             )
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
@@ -205,7 +360,11 @@ private fun HomeScreen(
     device: DeviceInfo,
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
-    onGameSelected: (String) -> Unit
+    onGameSelected: (String) -> Unit,
+    runtimeDiagnostics: RuntimeDiagnostics?,
+    adaptiveDecision: AdaptiveDecision?,
+    performanceHistory: List<PerformanceEvent>,
+    onApplyAdaptiveProfile: () -> Unit
 ) {
     LazyColumn(
         modifier = modifier
@@ -249,10 +408,152 @@ private fun HomeScreen(
                 onProfileSelected = onProfileSelected
             )
         }
+
         item { DeviceStatusCard(device, state.capabilities) }
+        item {
+            RuntimeDiagnosticsCard(
+                device = device,
+                diagnostics = runtimeDiagnostics,
+                adaptiveDecision = adaptiveDecision,
+                performanceHistory = performanceHistory,
+                onApplyAdaptiveProfile = onApplyAdaptiveProfile
+            )
+        }
     }
 }
 
+
+@Composable
+private fun RuntimeDiagnosticsCard(
+    device: DeviceInfo,
+    diagnostics: RuntimeDiagnostics?,
+    adaptiveDecision: AdaptiveDecision?,
+    performanceHistory: List<PerformanceEvent>,
+    onApplyAdaptiveProfile: () -> Unit
+) {
+    val readiness = diagnostics?.let { telemetry ->
+        GamingReadinessCalculator.calculate(
+            GamingReadinessInput(
+                cpuCores = device.cpuCores,
+                totalRamMb = device.totalRamMb,
+                gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
+                    !device.gpuVendor.isNullOrBlank(),
+                thermalStatus = telemetry.thermal.status,
+                thermalHeadroom = telemetry.thermal.headroom,
+                batteryPercent = telemetry.battery.percent,
+                charging = telemetry.battery.charging,
+                refreshRateHz = telemetry.refresh.currentRefreshRateHz,
+                networkValidated = telemetry.connectivity.validated,
+                networkLatencyMs = telemetry.connectivity.latencyMs,
+                downstreamBandwidthKbps = telemetry.connectivity.downstreamBandwidthKbps,
+                storageFreePercent = telemetry.storage.freePercent,
+                inputDeviceCount = telemetry.inputDeviceCount
+            )
+        )
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.runtime_diagnostics_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            if (diagnostics == null || readiness == null) {
+                Text(stringResource(R.string.runtime_diagnostics_loading))
+            } else {
+                Text(
+                    stringResource(R.string.readiness_score, readiness.score, readiness.label),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_thermal),
+                    diagnostics.thermal.status?.let { thermalLabel(it) }
+                        ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.thermal_headroom),
+                    diagnostics.thermal.headroom?.let {
+                        stringResource(R.string.thermal_headroom_value, (it * 100).roundToInt())
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_battery),
+                    diagnostics.battery.percent?.let {
+                        if (diagnostics.battery.charging) {
+                            stringResource(R.string.battery_charging, it)
+                        } else {
+                            stringResource(R.string.battery_level, it)
+                        }
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_network),
+                    diagnostics.connectivity.transport
+                        ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_latency),
+                    diagnostics.connectivity.latencyMs?.let {
+                        stringResource(R.string.latency_value, it)
+                    } ?: stringResource(R.string.not_measured)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_bandwidth),
+                    diagnostics.connectivity.downstreamBandwidthKbps?.let {
+                        stringResource(R.string.bandwidth_value, it)
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_storage),
+                    stringResource(R.string.storage_free_value, diagnostics.storage.freePercent)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_refresh),
+                    diagnostics.refresh.currentRefreshRateHz?.let {
+                        stringResource(R.string.refresh_value, it.roundToInt())
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_inputs),
+                    diagnostics.inputDeviceCount.toString()
+                )
+                adaptiveDecision?.let { decision ->
+                    Text(
+                        stringResource(R.string.adaptive_recommendation, decision.profile.title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(decision.reason)
+                    if (decision.profile != PerformanceProfile.BALANCED) {
+                        Button(
+                            onClick = onApplyAdaptiveProfile,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.apply_adaptive))
+                        }
+                    }
+                }
+                readiness.reasons.take(4).forEach { reason ->
+                    Text(reason, style = MaterialTheme.typography.bodySmall)
+                }
+                if (performanceHistory.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.performance_history_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    performanceHistory.takeLast(5).asReversed().forEach { event ->
+                        Text(
+                            eventLabel(event),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun VoiceAssistantCard(
@@ -1210,4 +1511,23 @@ private fun thermalLabel(status: Int?): String =
             stringResource(R.string.not_available)
         else ->
             stringResource(R.string.thermal_unknown)
+    }
+
+
+private fun Float.roundToInt(): Int = kotlin.math.round(this).toInt()
+
+@Composable
+private fun eventLabel(event: PerformanceEvent): String =
+    when (event.type) {
+        PerformanceEventType.SESSION_STARTED ->
+            "• " + stringResource(R.string.event_session_started)
+        PerformanceEventType.SESSION_ENDED ->
+            "• " + stringResource(R.string.event_session_ended)
+        PerformanceEventType.THERMAL_CHANGED ->
+            "• " + stringResource(R.string.event_thermal_changed) +
+                (event.detail.takeIf(String::isNotBlank)?.let { ": $it" } ?: "")
+        PerformanceEventType.POLICY_CHANGED ->
+            "• " + stringResource(R.string.event_policy_changed) +
+                (event.profile?.title?.let { ": $it" } ?: "") +
+                (event.score?.let { " ($it/100)" } ?: "")
     }
