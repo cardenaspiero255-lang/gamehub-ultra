@@ -4,8 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -19,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -42,7 +41,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
@@ -95,11 +97,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-data class GameInfo(
-    val packageName: String,
-    val label: String
-)
-
 @Composable
 private fun GameHubUltraApp(
     initialState: PerformanceState,
@@ -121,6 +118,7 @@ private fun GameHubUltraApp(
         stringResource(R.string.nav_biblioteca),
         stringResource(R.string.nav_ajustes)
     )
+    val tabIcons = listOf("⌂", "▦", "⚙")
 
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.hero_title)) }) },
@@ -130,7 +128,12 @@ private fun GameHubUltraApp(
                     NavigationBarItem(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
-                        icon = {},
+                        icon = {
+                            Text(
+                                tabIcons[index],
+                                modifier = Modifier.semantics { contentDescription = label }
+                            )
+                        },
                         label = { Text(label) }
                     )
                 }
@@ -176,7 +179,11 @@ private fun HomeScreen(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(stringResource(R.string.performance_modes), style = MaterialTheme.typography.titleLarge)
                 PerformanceProfile.entries.forEach { profile ->
-                    ProfileCard(profile, selectedProfileName == profile.name, { onProfileSelected(profile) })
+                    ProfileCard(
+                        profile = profile,
+                        selected = selectedProfileName == profile.name,
+                        onClick = { onProfileSelected(profile) }
+                    )
                 }
             }
         }
@@ -203,20 +210,30 @@ private fun ActiveProfileCard(state: PerformanceState) {
             )
             Text(
                 stringResource(R.string.interpolation_intent) + ": " +
-                    if (state.selectedProfile.frameInterpolationIntent) stringResource(R.string.interpolation_prioritized)
-                    else stringResource(R.string.interpolation_not_requested)
+                    if (state.selectedProfile.frameInterpolationIntent) {
+                        stringResource(R.string.interpolation_prioritized)
+                    } else {
+                        stringResource(R.string.interpolation_not_requested)
+                    }
             )
             Text(
                 stringResource(R.string.thermal_tradeoff) + ": " +
-                    if (state.selectedProfile.acceptsHigherTemperature) stringResource(R.string.accepts_higher_temperature)
-                    else stringResource(R.string.no_extra_thermal)
+                    if (state.selectedProfile.acceptsHigherTemperature) {
+                        stringResource(R.string.accepts_higher_temperature)
+                    } else {
+                        stringResource(R.string.no_extra_thermal)
+                    }
             )
         }
     }
 }
 
 @Composable
-private fun ProfileCard(profile: PerformanceProfile, selected: Boolean, onClick: () -> Unit) {
+private fun ProfileCard(
+    profile: PerformanceProfile,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -225,13 +242,15 @@ private fun ProfileCard(profile: PerformanceProfile, selected: Boolean, onClick:
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
-                if (selected) Text(stringResource(R.string.selected))
+                if (selected) {
+                    Text(
+                        stringResource(R.string.selected),
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                }
             }
             Text(localizedProfileDescription(profile))
-            Button(
-                onClick = onClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.apply))
             }
         }
@@ -273,29 +292,39 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
     val context = LocalContext.current
     val powerManager = remember(context) { context.getSystemService(PowerManager::class.java) }
     val batteryManager = remember(context) { context.getSystemService(android.os.BatteryManager::class.java) }
+
     var batteryPercent by remember {
         mutableStateOf(
-            batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
-                ?.takeIf { it in 0..100 }
+            BatteryTelemetry.sanitizePercentage(
+                batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            )
         )
     }
     var thermalStatus by remember {
         mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) powerManager?.currentThermalStatus else null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                powerManager?.currentThermalStatus
+            } else {
+                null
+            }
         )
     }
 
     DisposableEffect(context, batteryManager, powerManager) {
         val batteryReceiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context, intent: Intent) {
-                batteryPercent = intent.getIntExtra(
-                    android.os.BatteryManager.EXTRA_LEVEL,
-                    batteryPercent ?: -1
-                ).takeIf { it in 0..100 }
+                val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
+                batteryPercent = BatteryTelemetry.fromBroadcast(level, scale)
             }
         }
 
-        context.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        ContextCompat.registerReceiver(
+            context,
+            batteryReceiver,
+            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         val thermalListener = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null) {
             PowerManager.OnThermalStatusChangedListener { status -> thermalStatus = status }
@@ -327,19 +356,44 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
             } else {
                 Text(stringResource(R.string.battery) + ": " + stringResource(R.string.not_available))
             }
+
             Text(stringResource(R.string.thermal_status) + ": " + thermalLabel(thermalStatus))
             DeviceRow(stringResource(R.string.manufacturer), device.manufacturer)
             DeviceRow(stringResource(R.string.model), device.model)
-            DeviceRow(stringResource(R.string.android_version), device.androidVersion + " (API " + device.sdkInt + ")")
-            DeviceRow(stringResource(R.string.cpu), device.cpuModel.ifBlank { stringResource(R.string.not_available) })
+            DeviceRow(
+                stringResource(R.string.android_version),
+                device.androidVersion + " (API " + device.sdkInt + ")"
+            )
+            DeviceRow(
+                stringResource(R.string.cpu),
+                device.cpuModel.ifBlank { stringResource(R.string.not_available) }
+            )
             DeviceRow(stringResource(R.string.cores), device.cpuCores.toString())
             DeviceRow(stringResource(R.string.ram), device.totalRamMb.toString() + " MB")
-            DeviceRow(stringResource(R.string.gpu_vendor), device.gpuVendor ?: stringResource(R.string.not_available))
-            DeviceRow(stringResource(R.string.gpu_renderer), device.gpuRenderer ?: stringResource(R.string.not_available))
-            DeviceRow(stringResource(R.string.abi), device.supportedAbis.joinToString().ifBlank { stringResource(R.string.not_available) })
-            CapabilityRow(stringResource(R.string.sustained_performance), capabilities?.sustainedPerformanceSupported == true)
-            CapabilityRow(stringResource(R.string.thermal_api), capabilities?.thermalStatusAvailable == true)
-            CapabilityRow(stringResource(R.string.performance_hint_api), capabilities?.performanceHintsAvailable == true)
+            DeviceRow(
+                stringResource(R.string.gpu_vendor),
+                device.gpuVendor ?: stringResource(R.string.not_available)
+            )
+            DeviceRow(
+                stringResource(R.string.gpu_renderer),
+                device.gpuRenderer ?: stringResource(R.string.not_available)
+            )
+            DeviceRow(
+                stringResource(R.string.abi),
+                device.supportedAbis.joinToString().ifBlank { stringResource(R.string.not_available) }
+            )
+            CapabilityRow(
+                stringResource(R.string.sustained_performance),
+                capabilities?.sustainedPerformanceSupported == true
+            )
+            CapabilityRow(
+                stringResource(R.string.thermal_api),
+                capabilities?.thermalStatusAvailable == true
+            )
+            CapabilityRow(
+                stringResource(R.string.performance_hint_api),
+                capabilities?.performanceHintsAvailable == true
+            )
             Text(stringResource(R.string.capability_note))
         }
     }
@@ -347,7 +401,11 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
 
 @Composable
 private fun CapabilityRow(label: String, supported: Boolean) {
-    DeviceRow(label, if (supported) stringResource(R.string.supported) else stringResource(R.string.not_supported))
+    DeviceRow(
+        label,
+        if (supported) stringResource(R.string.supported)
+        else stringResource(R.string.not_supported)
+    )
 }
 
 @Composable
@@ -368,39 +426,80 @@ private fun LibraryScreen(
     onGameSelected: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val games = remember(context) { discoverGames(context) }
+    val discovery = remember(context) { GameLibrary.discover(context) }
+    val games = discovery.games
 
     Column(
         modifier = modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
-        if (games.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.library_empty_hint))
+
+        when {
+            discovery.failed -> {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(stringResource(R.string.library_error), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.library_error_hint))
+                    }
                 }
             }
-        } else {
-            Text(stringResource(R.string.library_count, games.size))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(games, key = { it.packageName }) { game ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(game.label, style = MaterialTheme.typography.titleMedium)
-                            Text(game.packageName, style = MaterialTheme.typography.bodySmall)
-                            Button(
-                                onClick = { onGameSelected(game.packageName) },
-                                modifier = Modifier.fillMaxWidth()
+            games.isEmpty() -> {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.library_empty_hint))
+                    }
+                }
+            }
+            else -> {
+                Text(stringResource(R.string.library_count, games.size))
+
+                selectedGamePackage?.let { selected ->
+                    games.firstOrNull { it.packageName == selected }?.let { game ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Text(
-                                    if (selectedGamePackage == game.packageName) {
-                                        stringResource(R.string.game_selected)
-                                    } else {
-                                        stringResource(R.string.select_game)
-                                    }
-                                )
+                                Text(stringResource(R.string.selected_game), style = MaterialTheme.typography.labelLarge)
+                                Text(game.label, style = MaterialTheme.typography.titleMedium)
+                                Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(games, key = { it.packageName }) { game ->
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(game.label, style = MaterialTheme.typography.titleMedium)
+                                Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+                                Button(
+                                    onClick = { onGameSelected(game.packageName) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        if (selectedGamePackage == game.packageName) {
+                                            stringResource(R.string.game_selected)
+                                        } else {
+                                            stringResource(R.string.select_game)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -410,29 +509,12 @@ private fun LibraryScreen(
     }
 }
 
-private fun discoverGames(context: Context): List<GameInfo> {
-    val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-    return context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL)
-        .asSequence()
-        .filter { it.activityInfo.packageName != context.packageName }
-        .filter { info ->
-            val applicationInfo = info.activityInfo.applicationInfo
-            applicationInfo.category == ApplicationInfo.CATEGORY_GAME
-        }
-        .map {
-            GameInfo(
-                packageName = it.activityInfo.packageName,
-                label = it.loadLabel(context.packageManager).toString()
-            )
-        }
-        .distinctBy { it.packageName }
-        .sortedBy { it.label.lowercase() }
-        .toList()
-}
-
 @Composable
 private fun SettingsScreen(modifier: Modifier) {
-    Column(modifier = modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
