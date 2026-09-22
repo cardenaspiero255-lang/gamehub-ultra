@@ -1,6 +1,11 @@
 package com.cardenaspiero255.gamehubultra
 
-import android.os.BatteryManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
@@ -25,12 +31,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -47,12 +54,19 @@ import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
+    private var selectedProfileName: String = PerformanceProfile.BALANCED.name
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        selectedProfileName = savedInstanceState?.getString(KEY_PROFILE)
+            ?: PerformanceProfile.BALANCED.name
+        val selectedProfile = PerformanceProfile.entries.firstOrNull { it.name == selectedProfileName }
+            ?: PerformanceProfile.BALANCED
+
         val capabilities = DeviceCapabilitiesProvider.get(this)
         performanceController = PerformanceController(capabilities)
-        val initialState = performanceController.apply(PerformanceProfile.BALANCED, window)
+        val initialState = performanceController.apply(selectedProfile, window)
         val device = DeviceInfoProvider.get(this)
 
         setContent {
@@ -62,6 +76,7 @@ class MainActivity : ComponentActivity() {
                         initialState = initialState,
                         device = device,
                         onProfileSelected = { profile ->
+                            selectedProfileName = profile.name
                             performanceController.apply(profile, window)
                         }
                     )
@@ -69,9 +84,22 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(KEY_PROFILE, selectedProfileName)
+        super.onSaveInstanceState(outState)
+    }
+
+    private companion object {
+        const val KEY_PROFILE = "selected_profile"
+    }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+data class GameInfo(
+    val packageName: String,
+    val label: String
+)
+
 @Composable
 private fun GameHubUltraApp(
     initialState: PerformanceState,
@@ -79,7 +107,15 @@ private fun GameHubUltraApp(
     onProfileSelected: (PerformanceProfile) -> PerformanceState
 ) {
     var state by remember { mutableStateOf(initialState) }
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedProfileName by rememberSaveable { mutableStateOf(initialState.selectedProfile.name) }
+    var selectedGamePackage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    fun selectProfile(profile: PerformanceProfile) {
+        selectedProfileName = profile.name
+        state = onProfileSelected(profile)
+    }
+
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
         stringResource(R.string.nav_biblioteca),
@@ -94,7 +130,7 @@ private fun GameHubUltraApp(
                     NavigationBarItem(
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
-                        icon = { Text((index + 1).toString()) },
+                        icon = {},
                         label = { Text(label) }
                     )
                 }
@@ -106,9 +142,14 @@ private fun GameHubUltraApp(
                 modifier = Modifier.padding(padding),
                 state = state,
                 device = device,
-                onProfileSelected = { profile -> state = onProfileSelected(profile) }
+                selectedProfileName = selectedProfileName,
+                onProfileSelected = ::selectProfile
             )
-            1 -> LibraryScreen(Modifier.padding(padding))
+            1 -> LibraryScreen(
+                modifier = Modifier.padding(padding),
+                selectedGamePackage = selectedGamePackage,
+                onGameSelected = { selectedGamePackage = it }
+            )
             else -> SettingsScreen(Modifier.padding(padding))
         }
     }
@@ -119,6 +160,7 @@ private fun HomeScreen(
     modifier: Modifier,
     state: PerformanceState,
     device: DeviceInfo,
+    selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit
 ) {
     LazyColumn(
@@ -134,9 +176,15 @@ private fun HomeScreen(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(stringResource(R.string.performance_modes), style = MaterialTheme.typography.titleLarge)
                 PerformanceProfile.entries.forEach { profile ->
-                    ProfileCard(profile, state.selectedProfile == profile, { onProfileSelected(profile) })
+                    ProfileCard(profile, selectedProfileName == profile.name, { onProfileSelected(profile) })
                 }
             }
+        }
+        item {
+            BoosterOptions(
+                selectedProfileName = selectedProfileName,
+                onProfileSelected = onProfileSelected
+            )
         }
         item { DeviceStatusCard(device, state.capabilities) }
     }
@@ -147,9 +195,12 @@ private fun ActiveProfileCard(state: PerformanceState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.active_profile), style = MaterialTheme.typography.labelLarge)
-            Text(state.selectedProfile.title, style = MaterialTheme.typography.headlineSmall)
-            Text(state.selectedProfile.description)
-            Text(if (state.sustainedModeApplied) stringResource(R.string.sustained_applied) else stringResource(R.string.sustained_not_applied))
+            Text(localizedProfileTitle(state.selectedProfile), style = MaterialTheme.typography.headlineSmall)
+            Text(localizedProfileDescription(state.selectedProfile))
+            Text(
+                if (state.sustainedModeApplied) stringResource(R.string.sustained_applied)
+                else stringResource(R.string.sustained_not_applied)
+            )
             Text(
                 stringResource(R.string.interpolation_intent) + ": " +
                     if (state.selectedProfile.frameInterpolationIntent) stringResource(R.string.interpolation_prioritized)
@@ -169,12 +220,49 @@ private fun ProfileCard(profile: PerformanceProfile, selected: Boolean, onClick:
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(profile.title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    localizedProfileTitle(profile),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f)
+                )
                 if (selected) Text(stringResource(R.string.selected))
             }
-            Text(profile.description, style = MaterialTheme.typography.bodyMedium)
-            Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            Text(localizedProfileDescription(profile))
+            Button(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(stringResource(R.string.apply))
+            }
+        }
+    }
+}
+
+@Composable
+private fun BoosterOptions(
+    selectedProfileName: String,
+    onProfileSelected: (PerformanceProfile) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(stringResource(R.string.booster_title), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.booster_subtitle))
+            PerformanceProfile.entries.forEach { profile ->
+                Button(
+                    onClick = { onProfileSelected(profile) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (selectedProfileName == profile.name) {
+                            stringResource(R.string.booster_selected, localizedProfileTitle(profile))
+                        } else {
+                            localizedProfileTitle(profile)
+                        }
+                    )
+                }
             }
         }
     }
@@ -184,12 +272,47 @@ private fun ProfileCard(profile: PerformanceProfile, selected: Boolean, onClick:
 private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilities?) {
     val context = LocalContext.current
     val powerManager = remember(context) { context.getSystemService(PowerManager::class.java) }
-    val batteryManager = remember(context) { context.getSystemService(BatteryManager::class.java) }
-    val batteryPercent = remember(batteryManager) {
-        batteryManager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+    val batteryManager = remember(context) { context.getSystemService(android.os.BatteryManager::class.java) }
+    var batteryPercent by remember {
+        mutableStateOf(
+            batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                ?.takeIf { it in 0..100 }
+        )
     }
-    val thermal = remember(powerManager) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) powerManager?.currentThermalStatus else null
+    var thermalStatus by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) powerManager?.currentThermalStatus else null
+        )
+    }
+
+    DisposableEffect(context, batteryManager, powerManager) {
+        val batteryReceiver = object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context, intent: Intent) {
+                batteryPercent = intent.getIntExtra(
+                    android.os.BatteryManager.EXTRA_LEVEL,
+                    batteryPercent ?: -1
+                ).takeIf { it in 0..100 }
+            }
+        }
+
+        context.registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+        val thermalListener = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null) {
+            PowerManager.OnThermalStatusChangedListener { status -> thermalStatus = status }
+        } else {
+            null
+        }
+
+        if (thermalListener != null) {
+            powerManager.addThermalStatusListener(context.mainExecutor, thermalListener)
+        }
+
+        onDispose {
+            runCatching { context.unregisterReceiver(batteryReceiver) }
+            if (thermalListener != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null) {
+                powerManager.removeThermalStatusListener(thermalListener)
+            }
+        }
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -198,13 +321,13 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
             if (batteryPercent != null) {
                 Text(stringResource(R.string.battery) + ": " + batteryPercent + "%")
                 LinearProgressIndicator(
-                    progress = { batteryPercent / 100f },
+                    progress = { (batteryPercent ?: 0) / 100f },
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
                 Text(stringResource(R.string.battery) + ": " + stringResource(R.string.not_available))
             }
-            Text(stringResource(R.string.temperature) + ": " + thermalLabel(thermal))
+            Text(stringResource(R.string.thermal_status) + ": " + thermalLabel(thermalStatus))
             DeviceRow(stringResource(R.string.manufacturer), device.manufacturer)
             DeviceRow(stringResource(R.string.model), device.model)
             DeviceRow(stringResource(R.string.android_version), device.androidVersion + " (API " + device.sdkInt + ")")
@@ -229,23 +352,82 @@ private fun CapabilityRow(label: String, supported: Boolean) {
 
 @Composable
 private fun DeviceRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label)
-        Text(value)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(label, modifier = Modifier.weight(0.9f))
+        Text(value, modifier = Modifier.weight(1.6f))
     }
 }
 
 @Composable
-private fun LibraryScreen(modifier: Modifier) {
-    Column(modifier = modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun LibraryScreen(
+    modifier: Modifier,
+    selectedGamePackage: String?,
+    onGameSelected: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val games = remember(context) { discoverGames(context) }
+
+    Column(
+        modifier = modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.library_empty_hint))
+        if (games.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.library_empty_hint))
+                }
+            }
+        } else {
+            Text(stringResource(R.string.library_count, games.size))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(games, key = { it.packageName }) { game ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(game.label, style = MaterialTheme.typography.titleMedium)
+                            Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+                            Button(
+                                onClick = { onGameSelected(game.packageName) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (selectedGamePackage == game.packageName) {
+                                        stringResource(R.string.game_selected)
+                                    } else {
+                                        stringResource(R.string.select_game)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+private fun discoverGames(context: Context): List<GameInfo> {
+    val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+    return context.packageManager.queryIntentActivities(intent, PackageManager.MATCH_ALL)
+        .asSequence()
+        .filter { it.activityInfo.packageName != context.packageName }
+        .filter { info ->
+            val applicationInfo = info.activityInfo.applicationInfo
+            applicationInfo.category == ApplicationInfo.CATEGORY_GAME
+        }
+        .map {
+            GameInfo(
+                packageName = it.activityInfo.packageName,
+                label = it.loadLabel(context.packageManager).toString()
+            )
+        }
+        .distinctBy { it.packageName }
+        .sortedBy { it.label.lowercase() }
+        .toList()
 }
 
 @Composable
@@ -268,6 +450,22 @@ private fun SettingsScreen(modifier: Modifier) {
         }
     }
 }
+
+@Composable
+private fun localizedProfileTitle(profile: PerformanceProfile): String =
+    when (profile) {
+        PerformanceProfile.BALANCED -> stringResource(R.string.profile_balanced_title)
+        PerformanceProfile.FRAME_INTERPOLATION -> stringResource(R.string.profile_interpolation_title)
+        PerformanceProfile.X4 -> stringResource(R.string.profile_x4_title)
+    }
+
+@Composable
+private fun localizedProfileDescription(profile: PerformanceProfile): String =
+    when (profile) {
+        PerformanceProfile.BALANCED -> stringResource(R.string.profile_balanced_description)
+        PerformanceProfile.FRAME_INTERPOLATION -> stringResource(R.string.profile_interpolation_description)
+        PerformanceProfile.X4 -> stringResource(R.string.profile_x4_description)
+    }
 
 @Composable
 private fun thermalLabel(status: Int?): String =
