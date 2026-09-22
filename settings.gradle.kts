@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "GameHubUltra"
-include(":app")
+include(":app", ":baseline-profile")
