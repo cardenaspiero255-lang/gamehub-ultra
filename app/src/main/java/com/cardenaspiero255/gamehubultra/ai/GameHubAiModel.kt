@@ -2,6 +2,19 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
+enum class AiAdviceReason {
+    THERMAL,
+    LOW_BATTERY,
+    LOW_STORAGE,
+    NETWORK,
+    X4_READY,
+    INTERPOLATION,
+    BALANCED_GENERAL,
+    LOCAL_MODEL_BALANCED,
+    LOCAL_MODEL_INTERPOLATION,
+    LOCAL_MODEL_X4
+}
+
 data class GameHubAiContext(
     val selectedGamePackage: String?,
     val sustainedPerformanceSupported: Boolean,
@@ -23,9 +36,9 @@ data class GameHubAiContext(
 )
 
 data class GameHubAiAdvice(
-    val title: String,
-    val explanation: String,
-    val suggestedProfile: PerformanceProfile?,
+    val readiness: Int,
+    val suggestedProfile: PerformanceProfile,
+    val reason: AiAdviceReason,
     val localModelUsed: Boolean,
     val fallbackUsed: Boolean
 )
