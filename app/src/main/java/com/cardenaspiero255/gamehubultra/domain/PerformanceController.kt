@@ -13,6 +13,17 @@ data class PerformanceState(
 class PerformanceController(
     private val capabilities: DeviceCapabilities
 ) {
+    companion object {
+        internal fun shouldEnableSustainedMode(
+            profile: PerformanceProfile,
+            platformSupportsSustainedMode: Boolean,
+            deviceSupportsSustainedMode: Boolean
+        ): Boolean =
+            profile.sustainedPerformanceIntent &&
+                platformSupportsSustainedMode &&
+                deviceSupportsSustainedMode
+    }
+
     fun select(profile: PerformanceProfile): PerformanceState =
         PerformanceState(
             selectedProfile = profile,
@@ -21,11 +32,14 @@ class PerformanceController(
         )
 
     fun apply(profile: PerformanceProfile, window: Window): PerformanceState {
-        val enableSustained = profile.sustainedPerformanceIntent &&
-            capabilities.sustainedPerformanceSupported &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+        val platformSupportsSustainedMode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
+        val enableSustained = shouldEnableSustainedMode(
+            profile = profile,
+            platformSupportsSustainedMode = platformSupportsSustainedMode,
+            deviceSupportsSustainedMode = capabilities.sustainedPerformanceSupported
+        )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (platformSupportsSustainedMode) {
             window.setSustainedPerformanceMode(enableSustained)
         }
 
