@@ -118,6 +118,31 @@ class AdaptivePerformanceEngineTest {
     }
 
     @Test
+    fun batteryThresholdUsesEntryAndExitHysteresis() {
+        val engine = AdaptivePerformanceEngine(initialProfile = PerformanceProfile.X4)
+
+        val safeBattery = snapshot(
+            thermalHeadroom = 0.20f,
+            batteryPercent = 52,
+            charging = false,
+            sustained = true
+        )
+        assertEquals(PerformanceProfile.X4, engine.evaluate(safeBattery).profile)
+
+        val lowBattery = safeBattery.copy(batteryPercent = 49)
+        engine.evaluate(lowBattery)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(lowBattery).profile)
+
+        val recoveringButBelowEntry = lowBattery.copy(batteryPercent = 52)
+        engine.evaluate(recoveringButBelowEntry)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(recoveringButBelowEntry).profile)
+
+        val recovered = lowBattery.copy(batteryPercent = 66)
+        engine.evaluate(recovered)
+        assertEquals(PerformanceProfile.X4, engine.evaluate(recovered).profile)
+    }
+
+    @Test
     fun fallsBackToInterpolationWhenSustainedModeIsUnavailable() {
         val engine = AdaptivePerformanceEngine()
         val ready = snapshot(
