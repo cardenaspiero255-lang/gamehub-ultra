@@ -135,4 +135,21 @@
     <string name="ai_fallback_active">Sin modelo local: fallback determinista offline activo.</string>
     <string name="ai_analyze">Analizar recomendación</string>
     <string name="ai_apply_profile">Aplicar perfil recomendado</string>
+
+    <string name="ai_profile_balanced_title">FPS balanceado</string>
+    <string name="ai_profile_interpolation_title">Priorizar interpolación</string>
+    <string name="ai_profile_x4_title">X4</string>
+    <string name="ai_reason_with_readiness">Preparación %1$d/100. %2$s</string>
+    <string name="ai_reason_thermal">La carga térmica está elevada; prioriza estabilidad.</string>
+    <string name="ai_reason_battery">La batería está baja; limita el coste sostenido.</string>
+    <string name="ai_reason_storage">Queda poco almacenamiento libre; evita un perfil agresivo.</string>
+    <string name="ai_reason_network">La red o la latencia no son óptimas; el asesor no fuerza controles externos.</string>
+    <string name="ai_reason_x4_ready">Hay capacidad gráfica, refresco y Sustained Performance compatibles para X4.</string>
+    <string name="ai_reason_interpolation">La prioridad es la interpolación; solo se solicita mediante capacidades compatibles.</string>
+    <string name="ai_reason_balanced">El perfil balanceado mantiene una política conservadora para fluidez, consumo y temperatura.</string>
+    <string name="ai_reason_model_balanced">El modelo local recomendó el perfil balanceado.</string>
+    <string name="ai_reason_model_interpolation">El modelo local recomendó priorizar interpolación; GameHub Ultra no fuerza controles en otras apps.</string>
+    <string name="ai_reason_model_x4">El modelo local recomendó X4 y el dispositivo expone Sustained Performance compatible.</string>
+    <string name="ai_local_model_configured">Modelo local configurado; si Gemini Nano no está disponible, se usa el fallback offline.</string>
+
 </resources>
