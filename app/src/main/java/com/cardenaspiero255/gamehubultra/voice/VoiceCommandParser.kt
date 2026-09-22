@@ -40,6 +40,7 @@ object VoiceCommandParser {
             clean == "ayuda" ||
             clean == "help" ||
             clean.contains("que puedo hacer") ||
+            clean.contains("que comandos puedo hacer") ||
             clean.contains("what can i do") ||
             clean.contains("comandos disponibles") ||
             clean.contains("available commands")
