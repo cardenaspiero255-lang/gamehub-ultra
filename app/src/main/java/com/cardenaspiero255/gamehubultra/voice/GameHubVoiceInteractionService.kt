@@ -179,6 +179,34 @@ private class GameHubVoiceInteractionSession(context: Context) :
         }
     }
 
+    private fun readStatus(): VoiceDeviceStatus {
+        val batteryManager = getContext().getSystemService(BatteryManager::class.java)
+        val powerManager = getContext().getSystemService(PowerManager::class.java)
+        val battery = batteryManager?.getIntProperty(
+            BatteryManager.BATTERY_PROPERTY_CAPACITY
+        )?.takeIf { it in 0..100 }
+
+        val thermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            when (powerManager?.currentThermalStatus) {
+                PowerManager.THERMAL_STATUS_NONE -> "Normal"
+                PowerManager.THERMAL_STATUS_LIGHT -> "Leve"
+                PowerManager.THERMAL_STATUS_MODERATE -> "Moderado"
+                PowerManager.THERMAL_STATUS_SEVERE -> "Severo"
+                PowerManager.THERMAL_STATUS_CRITICAL -> "Crítico"
+                PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergencia"
+                PowerManager.THERMAL_STATUS_SHUTDOWN -> "Apagado térmico"
+                else -> "Desconocido"
+            }
+        } else {
+            "No disponible"
+        }
+
+        return VoiceDeviceStatus(
+            batteryPercent = battery,
+            thermalLabel = thermal
+        )
+    }
+
     private fun responseText(result: VoiceActionResult): String =
         when (result) {
             is VoiceActionResult.ProfileSelected ->
