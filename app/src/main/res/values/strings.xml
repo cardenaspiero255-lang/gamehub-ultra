@@ -43,6 +43,12 @@
     <string name="selected_game">Juego seleccionado</string>
     <string name="select_game">Seleccionar juego</string>
     <string name="game_selected">Juego seleccionado</string>
+    <string name="add_favorite">Añadir a favoritos</string>
+    <string name="remove_favorite">Quitar de favoritos</string>
+    <string name="shortcut_library_short">Biblioteca</string>
+    <string name="shortcut_library_long">Abrir biblioteca de juegos</string>
+    <string name="shortcut_performance_short">Rendimiento</string>
+    <string name="shortcut_performance_long">Abrir modos de rendimiento</string>
     <string name="settings_title">Ajustes</string>
     <string name="about">Acerca de GameHub Ultra</string>
     <string name="about_text">Interfaz de rendimiento construida con APIs públicas de Android.</string>
