@@ -21,15 +21,22 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         packageName?.let(repository::profileForGameFlow) ?: flowOf(null)
     }
 
+    private val favoriteGamesFlow = repository.favoriteGamesFlow()
+    private val recentGamesFlow = repository.recentGamesFlow()
+
     val uiState = combine(
         repository.selectedProfileFlow(),
         selectedGameFlow,
-        selectedGameProfileFlow
-    ) { globalProfile, selectedGamePackage, selectedGameProfile ->
+        selectedGameProfileFlow,
+        favoriteGamesFlow,
+        recentGamesFlow
+    ) { globalProfile, selectedGamePackage, selectedGameProfile, favoriteGames, recentGames ->
         GameHubUiState(
             globalProfile = globalProfile,
             selectedGamePackage = selectedGamePackage,
-            selectedGameProfile = selectedGameProfile
+            selectedGameProfile = selectedGameProfile,
+            favoriteGames = favoriteGames,
+            recentGamePackages = recentGames
         )
     }.stateIn(
         viewModelScope,
@@ -49,6 +56,18 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     fun selectGame(packageName: String) {
         viewModelScope.launch {
             repository.saveSelectedGame(packageName)
+        }
+    }
+
+    fun setFavoriteGame(packageName: String, favorite: Boolean) {
+        viewModelScope.launch {
+            repository.setFavoriteGame(packageName, favorite)
+        }
+    }
+
+    fun recordRecentGame(packageName: String) {
+        viewModelScope.launch {
+            repository.recordRecentGame(packageName)
         }
     }
 }
