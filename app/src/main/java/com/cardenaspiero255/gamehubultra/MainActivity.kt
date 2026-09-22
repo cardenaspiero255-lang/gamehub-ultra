@@ -1323,15 +1323,16 @@ private fun thermalLabel(status: Int?): String =
     }
 
 
+@Composable
 private fun eventLabel(event: PerformanceEvent): String =
     when (event.type) {
         PerformanceEventType.SESSION_STARTED ->
-            "• " + "session_started"
+            "• " + stringResource(R.string.event_session_started)
         PerformanceEventType.THERMAL_CHANGED ->
-            "• " + "thermal_changed" +
+            "• " + stringResource(R.string.event_thermal_changed) +
                 (event.detail.takeIf(String::isNotBlank)?.let { ": $it" } ?: "")
         PerformanceEventType.POLICY_CHANGED ->
-            "• " + "policy_changed" +
+            "• " + stringResource(R.string.event_policy_changed) +
                 (event.profile?.title?.let { ": $it" } ?: "") +
                 (event.score?.let { " ($it/100)" } ?: "")
     }
