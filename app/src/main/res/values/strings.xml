@@ -34,6 +34,7 @@
     <string name="library_title">Biblioteca de juegos</string>
     <string name="library_loading">Cargando juegos detectados…</string>
     <string name="open_game">Abrir juego</string>
+    <string name="library_open_error">No se pudo abrir el juego seleccionado.</string>
     <string name="library_empty">No se detectaron juegos compatibles.</string>
     <string name="library_empty_hint">La biblioteca muestra juegos que Android identifica explícitamente como aplicaciones de juego.</string>
     <string name="library_error">No se pudo consultar la biblioteca.</string>
