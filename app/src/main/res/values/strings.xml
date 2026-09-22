@@ -32,6 +32,8 @@
     <string name="performance_hint_api">API Performance Hint</string>
     <string name="capability_note">Las funciones no disponibles se muestran como informativas y no se activan.</string>
     <string name="library_title">Biblioteca de juegos</string>
+    <string name="library_loading">Cargando juegos detectados…</string>
+    <string name="open_game">Abrir juego</string>
     <string name="library_empty">No se detectaron juegos compatibles.</string>
     <string name="library_empty_hint">La biblioteca muestra juegos que Android identifica explícitamente como aplicaciones de juego.</string>
     <string name="library_error">No se pudo consultar la biblioteca.</string>
