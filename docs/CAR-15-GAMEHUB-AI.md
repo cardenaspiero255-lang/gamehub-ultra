@@ -7,7 +7,7 @@ CAR-15 adds a local-first advisory boundary on top of the existing GameHub Ultra
 ## Architecture
 
 - GameHubAiContext carries structured device, thermal, battery, refresh-rate, network, storage, peripheral, profile, and session signals.
-- LocalAiModelAdapter is an optional provider boundary for a compatible on-device model. No remote endpoint or API key is required by the core app.
+- LocalAiModelAdapter is a provider boundary for compatible on-device generation. The production Android implementation uses the ML Kit Prompt API / Gemini Nano when the feature reports AVAILABLE; unsupported or unavailable devices use the deterministic fallback. No remote endpoint or API key is required by the core advisor.
 - GameHubAiAdvisor first accepts only allowlisted model actions and otherwise falls back to a deterministic offline policy.
 - AiActionAllowlist explicitly permits only profile selection, installed-game targeting, device status, help, and advisory actions. Shell commands, arbitrary URLs, and generic intents are rejected.
 - Voice advice is represented by VoiceCommand.AskAi; it never bypasses VoiceCommandEngine.
