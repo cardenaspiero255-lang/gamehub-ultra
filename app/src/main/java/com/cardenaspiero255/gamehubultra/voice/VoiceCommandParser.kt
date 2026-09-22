@@ -50,36 +50,36 @@ object VoiceCommandParser {
 
     internal fun normalize(value: String): String =
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
-            .replace("\p{M}+".toRegex(), "")
-            .replace(Regex("[^a-z0-9x4]+"), " ")
+            .replace(Regex("""\p{M}+"""), "")
+            .replace(Regex("""[^a-z0-9x4]+"""), " ")
             .trim()
-            .replace(Regex("\s+"), " ")
+            .replace(Regex("""\s+"""), " ")
 
     private fun profileFromText(clean: String): PerformanceProfile? =
         when {
-            Regex("\b(fps balanceado|balanceado|equilibrado|equilibrar)\b")
+            Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.BALANCED
-            Regex("\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados)\b")
+            Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.FRAME_INTERPOLATION
-            Regex("\b(x4|modo x4|maximo rendimiento|alto rendimiento|configura todo|todo al maximo)\b")
+            Regex("""\b(x4|modo x4|maximo rendimiento|alto rendimiento|configura todo|todo al maximo)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.X4
             else -> null
         }
 
     private fun extractGameQuery(clean: String): String {
         val withoutProfile = clean
-            .replace(Regex("\b(fps balanceado|balanceado|equilibrado|equilibrar)\b"), " ")
-            .replace(Regex("\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados)\b"), " ")
-            .replace(Regex("\b(x4|modo x4|maximo rendimiento|alto rendimiento|configura todo|todo al maximo)\b"), " ")
+            .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar)\b"""), " ")
+            .replace(Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados)\b"""), " ")
+            .replace(Regex("""\b(x4|modo x4|maximo rendimiento|alto rendimiento|configura todo|todo al maximo)\b"""), " ")
 
         return withoutProfile
             .replace(
-                Regex("^\s*(gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon)\s*"),
+                Regex("""^\s*(gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon)\s*"""),
                 ""
             )
-            .replace(Regex("\b(la|el|un|una|juego|juegos)\b"), " ")
-            .replace(Regex("\b(y|con|en|por favor)\b"), " ")
-            .replace(Regex("\s+"), " ")
+            .replace(Regex("""\b(la|el|un|una|juego|juegos)\b"""), " ")
+            .replace(Regex("""\b(y|con|en|por favor)\b"""), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
     }
 }
