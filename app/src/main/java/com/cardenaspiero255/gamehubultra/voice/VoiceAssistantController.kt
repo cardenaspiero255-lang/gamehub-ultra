@@ -1,12 +1,15 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import androidx.core.content.ContextCompat
 import java.util.Locale
 
 class VoiceAssistantController(
@@ -28,8 +31,21 @@ class VoiceAssistantController(
     }
 
     fun startListening() {
-        if (!SpeechRecognizer.isRecognitionAvailable(appContext)) {
-            onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+        val microphoneGranted =
+            ContextCompat.checkSelfPermission(
+                appContext,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        val recognitionAvailable = SpeechRecognizer.isRecognitionAvailable(appContext)
+
+        if (!VoicePermissionGate.canStartRecognition(microphoneGranted, recognitionAvailable)) {
+            onError(
+                if (!microphoneGranted) {
+                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
+                } else {
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+                }
+            )
             return
         }
 
@@ -38,7 +54,10 @@ class VoiceAssistantController(
         recognizer = SpeechRecognizer.createSpeechRecognizer(appContext).also { speech ->
             speech.setRecognitionListener(listener)
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
