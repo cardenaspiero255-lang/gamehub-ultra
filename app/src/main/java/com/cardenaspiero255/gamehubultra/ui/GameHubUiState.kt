@@ -7,7 +7,8 @@ data class GameHubUiState(
     val selectedGamePackage: String? = null,
     val selectedGameProfile: PerformanceProfile? = null,
     val favoriteGames: Set<String> = emptySet(),
-    val recentGamePackages: List<String> = emptyList()
+    val recentGamePackages: List<String> = emptyList(),
+    val manualGamePackages: Set<String> = emptySet()
 ) {
     val effectiveProfile: PerformanceProfile
         get() = selectedGameProfile ?: globalProfile
