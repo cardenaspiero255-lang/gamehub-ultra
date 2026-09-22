@@ -104,6 +104,13 @@ private fun GameHubUltraApp(
                             else
                                 "no solicitada."
                     )
+                    Text(
+                        "Trade-off térmico: " +
+                            if (state.selectedProfile.acceptsHigherTemperature)
+                                "acepta mayor temperatura para priorizar su objetivo."
+                            else
+                                "no añade una tolerancia térmica explícita."
+                    )
                 }
             }
         }
