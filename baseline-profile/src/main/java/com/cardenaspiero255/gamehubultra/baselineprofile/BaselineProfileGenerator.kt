@@ -18,10 +18,5 @@ class BaselineProfileGenerator {
         packageName = "com.cardenaspiero255.gamehubultra"
     ) {
         startActivityAndWait()
-        device.waitForIdle()
-
-        device.pressHome()
-        startActivityAndWait()
-        device.waitForIdle()
     }
 }
