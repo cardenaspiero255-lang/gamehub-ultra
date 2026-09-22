@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -33,8 +35,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
     }
 
     buildFeatures {
@@ -54,7 +58,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
     baselineProfile(project(":baseline-profile"))
     debugImplementation("androidx.compose.ui:ui-tooling")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.21")
 }

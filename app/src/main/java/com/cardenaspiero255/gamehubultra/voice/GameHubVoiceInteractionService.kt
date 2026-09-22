@@ -24,9 +24,17 @@ import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.GameSelectionStore
 import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
+import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
+import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import java.util.Locale
 import java.util.concurrent.Executors
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 class GameHubVoiceInteractionService : VoiceInteractionService()
 
@@ -50,6 +58,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
+    private val aiAdvisor = GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter())
 
     override fun onCreateContentView(): View =
         TextView(getContext()).apply {
@@ -136,8 +145,37 @@ private class GameHubVoiceInteractionSession(context: Context) :
 
     private fun handleTranscript(transcript: String) {
         val context = getContext()
+        val selectedGamePackage = runCatching {
+            runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
+        }.getOrNull()
+        val selectedProfile = runCatching {
+            runBlocking { ProfileSelectionStore.selectedProfileFlow(context).first() }
+        }.getOrNull() ?: PerformanceProfile.BALANCED
+        val device = DeviceInfoProvider.get(context)
+        val diagnostics = RuntimeDiagnosticsProvider.get(context)
+        val capabilities = DeviceCapabilitiesProvider.get(context)
+        val aiContext = GameHubAiContext(
+            selectedGamePackage = selectedGamePackage,
+            sustainedPerformanceSupported = capabilities.sustainedPerformanceSupported,
+            cpuCores = device.cpuCores,
+            totalRamMb = device.totalRamMb.toInt(),
+            gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
+                !device.gpuVendor.isNullOrBlank(),
+            thermalStatus = diagnostics.thermal.status,
+            thermalHeadroom = diagnostics.thermal.headroom,
+            batteryPercent = diagnostics.battery.percent,
+            charging = diagnostics.battery.charging,
+            refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
+            networkValidated = diagnostics.connectivity.validated,
+            networkLatencyMs = diagnostics.connectivity.latencyMs,
+            downstreamBandwidthKbps = diagnostics.connectivity.downstreamBandwidthKbps?.toLong(),
+            storageFreePercent = diagnostics.storage.freePercent,
+            inputDeviceCount = diagnostics.inputDeviceCount,
+            selectedProfile = selectedProfile,
+            sessionActive = selectedGamePackage != null
+        )
         val result = VoiceCommandEngine.execute(
-            command = VoiceCommandParser.parse(transcript),
+            command = VoiceCommandParser.parse(transcript, aiAdvisor.intentResolver()),
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
             saveSelectedGame = { packageName ->
@@ -154,7 +192,8 @@ private class GameHubVoiceInteractionSession(context: Context) :
                     DeviceCapabilitiesProvider.get(context).sustainedPerformanceSupported
             },
             statusProvider = { readStatus() },
-            deferProfileApplication = true
+            deferProfileApplication = true,
+            aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
         )
 
         val response = responseText(result)
@@ -238,6 +277,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
                     (result.status.batteryPercent?.toString() ?: "no disponible") +
                     " por ciento, térmica " + result.status.thermalLabel + "."
 
+            is VoiceActionResult.AiAdvice ->
+                AiAdviceFormatter.fullResponse(getContext(), result.advice)
+
             VoiceActionResult.Help ->
                 "Puedes decir: abre un juego, pon X4, prioriza interpolación, FPS balanceado o dime el estado."
 
@@ -281,6 +323,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
         tts?.stop()
         tts?.shutdown()
         tts = null
+        aiAdvisor.close()
         super.onDestroy()
     }
 }

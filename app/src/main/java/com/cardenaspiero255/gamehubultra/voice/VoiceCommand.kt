@@ -11,6 +11,7 @@ sealed interface VoiceCommand {
     data class SelectProfile(val profile: PerformanceProfile) : VoiceCommand
     data object DeviceStatus : VoiceCommand
     data object Help : VoiceCommand
+    data class AskAi(val question: String) : VoiceCommand
     data class Unknown(val transcript: String) : VoiceCommand
 }
 
