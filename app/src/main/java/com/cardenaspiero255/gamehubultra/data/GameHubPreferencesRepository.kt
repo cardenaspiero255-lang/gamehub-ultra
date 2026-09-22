@@ -26,6 +26,7 @@ class GameHubPreferencesRepository(context: Context) {
     private val selectedGameKey = stringPreferencesKey("selected_game_package")
     private val favoriteGamesKey = stringSetPreferencesKey("favorite_games")
     private val recentGamesKey = stringPreferencesKey("recent_games")
+    private val manualGamesKey = stringSetPreferencesKey("manual_game_packages")
 
     fun selectedProfileFlow(): Flow<PerformanceProfile> =
         appContext.gameHubDataStore.data
@@ -61,6 +62,11 @@ class GameHubPreferencesRepository(context: Context) {
                     .map(String::trim)
                     .filter(String::isNotEmpty)
             }
+
+    fun manualGamesFlow(): Flow<Set<String>> =
+        appContext.gameHubDataStore.data
+            .safePreferences()
+            .map { preferences -> preferences[manualGamesKey] ?: emptySet() }
 
     suspend fun saveSelectedProfile(profile: PerformanceProfile) {
         appContext.gameHubDataStore.edit { preferences ->
@@ -103,6 +109,18 @@ class GameHubPreferencesRepository(context: Context) {
             current.remove(packageName)
             current.add(0, packageName)
             preferences[recentGamesKey] = current.take(10).joinToString(",")
+        }
+    }
+
+    suspend fun setManualGame(packageName: String, manual: Boolean) {
+        appContext.gameHubDataStore.edit { preferences ->
+            val current = preferences[manualGamesKey].orEmpty().toMutableSet()
+            if (manual) {
+                current += packageName
+            } else {
+                current -= packageName
+            }
+            preferences[manualGamesKey] = current
         }
     }
 
