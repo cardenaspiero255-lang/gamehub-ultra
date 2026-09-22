@@ -9,16 +9,30 @@ import kotlin.test.assertTrue
 
 class PerformanceProfileTest {
     @Test
-    fun profilesHaveStableTitles() {
+    fun profilesExposeStableTitlesAndSafeIntents() {
         assertEquals("FPS balanceado", PerformanceProfile.BALANCED.title)
         assertEquals("Priorizar interpolación", PerformanceProfile.FRAME_INTERPOLATION.title)
         assertEquals("X4", PerformanceProfile.X4.title)
+
+        assertFalse(PerformanceProfile.BALANCED.sustainedPerformanceIntent)
+        assertTrue(PerformanceProfile.FRAME_INTERPOLATION.frameInterpolationIntent)
+        assertTrue(PerformanceProfile.X4.sustainedPerformanceIntent)
     }
 
     @Test
     fun interpolationProfileDoesNotClaimUnsupportedControl() {
-        assertTrue(PerformanceProfile.FRAME_INTERPOLATION.description.contains("No puede forzar"))
-        assertFalse(PerformanceProfile.FRAME_INTERPOLATION.description.contains("activa interpolación"))
+        val description = PerformanceProfile.FRAME_INTERPOLATION.description
+        assertTrue(description.contains("API compatible"))
+        assertTrue(description.contains("no expone una API pública"))
+        assertFalse(description.contains("activa interpolación"))
+    }
+
+    @Test
+    fun x4ProfileIsExplicitAboutItsScope() {
+        val description = PerformanceProfile.X4.description
+        assertTrue(description.contains("GameHub Ultra"))
+        assertTrue(description.contains("solo cuando Android y el dispositivo lo soportan"))
+        assertFalse(description.contains("multiplicador de frames"))
     }
 
     @Test
