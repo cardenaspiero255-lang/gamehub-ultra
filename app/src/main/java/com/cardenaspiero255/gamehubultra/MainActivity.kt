@@ -7,8 +7,6 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -39,7 +37,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -48,9 +45,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
@@ -59,6 +57,8 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
@@ -109,11 +109,12 @@ private fun GameHubUltraApp(
     device: DeviceInfo,
     onProfileSelected: (PerformanceProfile) -> PerformanceState
 ) {
+    val context = LocalContext.current
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedProfileName by rememberSaveable { mutableStateOf(initialState.selectedProfile.name) }
     var selectedGamePackage by rememberSaveable {
-        mutableStateOf(GameSelectionStore.getSelectedGame(LocalContext.current))
+        mutableStateOf(GameSelectionStore.getSelectedGame(context))
     }
 
     fun selectProfile(profile: PerformanceProfile) {
@@ -139,7 +140,9 @@ private fun GameHubUltraApp(
                         icon = {
                             Text(
                                 tabIcons[index],
-                                modifier = Modifier.semantics { contentDescription = label }
+                                modifier = Modifier.semantics {
+                                    contentDescription = label
+                                }
                             )
                         },
                         label = { Text(label) }
@@ -161,7 +164,7 @@ private fun GameHubUltraApp(
                 selectedGamePackage = selectedGamePackage,
                 onGameSelected = {
                     selectedGamePackage = it
-                    GameSelectionStore.saveSelectedGame(LocalContext.current, it)
+                    GameSelectionStore.saveSelectedGame(context, it)
                 }
             )
             else -> SettingsScreen(Modifier.padding(padding))
@@ -178,17 +181,25 @@ private fun HomeScreen(
     onProfileSelected: (PerformanceProfile) -> Unit
 ) {
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(horizontal = 20.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             Spacer(Modifier.height(4.dp))
-            Text(stringResource(R.string.hero_subtitle), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.hero_subtitle),
+                style = MaterialTheme.typography.titleMedium
+            )
         }
         item { ActiveProfileCard(state) }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(stringResource(R.string.performance_modes), style = MaterialTheme.typography.titleLarge)
+                Text(
+                    stringResource(R.string.performance_modes),
+                    style = MaterialTheme.typography.titleLarge
+                )
                 PerformanceProfile.entries.forEach { profile ->
                     ProfileCard(
                         profile = profile,
@@ -211,13 +222,25 @@ private fun HomeScreen(
 @Composable
 private fun ActiveProfileCard(state: PerformanceState) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.active_profile), style = MaterialTheme.typography.labelLarge)
-            Text(localizedProfileTitle(state.selectedProfile), style = MaterialTheme.typography.headlineSmall)
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.active_profile),
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(
+                localizedProfileTitle(state.selectedProfile),
+                style = MaterialTheme.typography.headlineSmall
+            )
             Text(localizedProfileDescription(state.selectedProfile))
             Text(
-                if (state.sustainedModeApplied) stringResource(R.string.sustained_applied)
-                else stringResource(R.string.sustained_not_applied)
+                if (state.sustainedModeApplied) {
+                    stringResource(R.string.sustained_applied)
+                } else {
+                    stringResource(R.string.sustained_not_applied)
+                }
             )
             Text(
                 stringResource(R.string.interpolation_intent) + ": " +
@@ -246,8 +269,14 @@ private fun ProfileCard(
     onClick: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
                     localizedProfileTitle(profile),
                     style = MaterialTheme.typography.titleMedium,
@@ -261,7 +290,10 @@ private fun ProfileCard(
                 }
             }
             Text(localizedProfileDescription(profile))
-            Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(stringResource(R.string.apply))
             }
         }
@@ -278,7 +310,10 @@ private fun BoosterOptions(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(stringResource(R.string.booster_title), style = MaterialTheme.typography.titleLarge)
+            Text(
+                stringResource(R.string.booster_title),
+                style = MaterialTheme.typography.titleLarge
+            )
             Text(stringResource(R.string.booster_subtitle))
             PerformanceProfile.entries.forEach { profile ->
                 Button(
@@ -287,7 +322,10 @@ private fun BoosterOptions(
                 ) {
                     Text(
                         if (selectedProfileName == profile.name) {
-                            stringResource(R.string.booster_selected, localizedProfileTitle(profile))
+                            stringResource(
+                                R.string.booster_selected,
+                                localizedProfileTitle(profile)
+                            )
                         } else {
                             localizedProfileTitle(profile)
                         }
@@ -299,15 +337,24 @@ private fun BoosterOptions(
 }
 
 @Composable
-private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilities?) {
+private fun DeviceStatusCard(
+    device: DeviceInfo,
+    capabilities: DeviceCapabilities?
+) {
     val context = LocalContext.current
-    val powerManager = remember(context) { context.getSystemService(PowerManager::class.java) }
-    val batteryManager = remember(context) { context.getSystemService(android.os.BatteryManager::class.java) }
+    val powerManager = remember(context) {
+        context.getSystemService(PowerManager::class.java)
+    }
+    val batteryManager = remember(context) {
+        context.getSystemService(android.os.BatteryManager::class.java)
+    }
 
     var batteryPercent by remember {
         mutableStateOf(
             BatteryTelemetry.sanitizePercentage(
-                batteryManager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                batteryManager?.getIntProperty(
+                    android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY
+                )
             )
         )
     }
@@ -324,8 +371,14 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
     DisposableEffect(context, batteryManager, powerManager) {
         val batteryReceiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context, intent: Intent) {
-                val level = intent.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1)
-                val scale = intent.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1)
+                val level = intent.getIntExtra(
+                    android.os.BatteryManager.EXTRA_LEVEL,
+                    -1
+                )
+                val scale = intent.getIntExtra(
+                    android.os.BatteryManager.EXTRA_SCALE,
+                    -1
+                )
                 batteryPercent = BatteryTelemetry.fromBroadcast(level, scale)
             }
         }
@@ -337,38 +390,63 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
-        val thermalListener = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null) {
-            PowerManager.OnThermalStatusChangedListener { status -> thermalStatus = status }
-        } else {
-            null
-        }
+        val thermalListener =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null) {
+                PowerManager.OnThermalStatusChangedListener { status ->
+                    thermalStatus = status
+                }
+            } else {
+                null
+            }
 
         if (thermalListener != null) {
-            powerManager?.addThermalStatusListener(context.mainExecutor, thermalListener)
+            powerManager?.addThermalStatusListener(
+                context.mainExecutor,
+                thermalListener
+            )
         }
 
         onDispose {
             runCatching { context.unregisterReceiver(batteryReceiver) }
-            if (thermalListener != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && powerManager != null) {
+            if (
+                thermalListener != null &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                powerManager != null
+            ) {
                 powerManager.removeThermalStatusListener(thermalListener)
             }
         }
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.device_status), style = MaterialTheme.typography.titleLarge)
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.device_status),
+                style = MaterialTheme.typography.titleLarge
+            )
             if (batteryPercent != null) {
-                Text(stringResource(R.string.battery) + ": " + batteryPercent + "%")
+                Text(
+                    stringResource(R.string.battery) + ": " +
+                        batteryPercent + "%"
+                )
                 LinearProgressIndicator(
                     progress = { (batteryPercent ?: 0) / 100f },
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
-                Text(stringResource(R.string.battery) + ": " + stringResource(R.string.not_available))
+                Text(
+                    stringResource(R.string.battery) + ": " +
+                        stringResource(R.string.not_available)
+                )
             }
 
-            Text(stringResource(R.string.thermal_status) + ": " + thermalLabel(thermalStatus))
+            Text(
+                stringResource(R.string.thermal_status) + ": " +
+                    thermalLabel(thermalStatus)
+            )
             DeviceRow(stringResource(R.string.manufacturer), device.manufacturer)
             DeviceRow(stringResource(R.string.model), device.model)
             DeviceRow(
@@ -377,10 +455,18 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
             )
             DeviceRow(
                 stringResource(R.string.cpu),
-                device.cpuModel.ifBlank { stringResource(R.string.not_available) }
+                device.cpuModel.ifBlank {
+                    stringResource(R.string.not_available)
+                }
             )
-            DeviceRow(stringResource(R.string.cores), device.cpuCores.toString())
-            DeviceRow(stringResource(R.string.ram), device.totalRamMb.toString() + " MB")
+            DeviceRow(
+                stringResource(R.string.cores),
+                device.cpuCores.toString()
+            )
+            DeviceRow(
+                stringResource(R.string.ram),
+                device.totalRamMb.toString() + " MB"
+            )
             DeviceRow(
                 stringResource(R.string.gpu_vendor),
                 device.gpuVendor ?: stringResource(R.string.not_available)
@@ -391,7 +477,9 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
             )
             DeviceRow(
                 stringResource(R.string.abi),
-                device.supportedAbis.joinToString().ifBlank { stringResource(R.string.not_available) }
+                device.supportedAbis.joinToString().ifBlank {
+                    stringResource(R.string.not_available)
+                }
             )
             CapabilityRow(
                 stringResource(R.string.sustained_performance),
@@ -411,16 +499,25 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
 }
 
 @Composable
-private fun CapabilityRow(label: String, supported: Boolean) {
+private fun CapabilityRow(
+    label: String,
+    supported: Boolean
+) {
     DeviceRow(
         label,
-        if (supported) stringResource(R.string.supported)
-        else stringResource(R.string.not_supported)
+        if (supported) {
+            stringResource(R.string.supported)
+        } else {
+            stringResource(R.string.not_supported)
+        }
     )
 }
 
 @Composable
-private fun DeviceRow(label: String, value: String) {
+private fun DeviceRow(
+    label: String,
+    value: String
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -437,12 +534,12 @@ private fun LibraryScreen(
     onGameSelected: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     var refreshToken by rememberSaveable { mutableIntStateOf(0) }
     val discovery by produceState<GameDiscoveryResult?>(
         initialValue = null,
-        context,
-        refreshToken
+        key1 = context,
+        key2 = refreshToken
     ) {
         value = withContext(Dispatchers.IO) {
             GameLibrary.discover(context)
@@ -461,108 +558,164 @@ private fun LibraryScreen(
         }
     }
 
-            discovery.failed -> {
-
+    val result = discovery
     Column(
-        modifier = modifier.fillMaxSize().padding(20.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(stringResource(R.string.library_title), style = MaterialTheme.typography.headlineSmall)
+        Text(
+            stringResource(R.string.library_title),
+            style = MaterialTheme.typography.headlineSmall
+        )
 
         when {
-            discovery.failed -> {
+            result == null -> {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        stringResource(R.string.library_loading),
+                        modifier = Modifier.padding(18.dp)
+                    )
+                }
+            }
+            result.failed -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(stringResource(R.string.library_error), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.library_error),
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         Text(stringResource(R.string.library_error_hint))
                     }
                 }
             }
-            discovery != null && discovery.games.isEmpty() -> {
+            result.games.isEmpty() -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(stringResource(R.string.library_empty), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.library_empty),
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         Text(stringResource(R.string.library_empty_hint))
                     }
                 }
             }
             else -> {
-                val games = discovery.games
-                Text(stringResource(R.string.library_count, games.size))
+                Text(
+                    stringResource(R.string.library_count, result.games.size)
+                )
 
                 selectedGamePackage?.let { selected ->
-                    games.firstOrNull { it.packageName == selected }?.let { game ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(stringResource(R.string.selected_game), style = MaterialTheme.typography.labelLarge)
-                                Text(game.label, style = MaterialTheme.typography.titleMedium)
-                                Text(game.packageName, style = MaterialTheme.typography.bodySmall)
-                                Button(
-                                    onClick = {
-                                        context.packageManager.getLaunchIntentForPackage(game.packageName)?.let {
-                                            context.startActivity(it)
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(stringResource(R.string.open_game))
-                                }
-                            }
-                        }
+                    result.games.firstOrNull {
+                        it.packageName == selected
+                    }?.let { game ->
+                        SelectedGameCard(
+                            game = game,
+                            context = context
+                        )
                     }
+                }
 
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(games, key = { it.packageName }) { game ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(game.label, style = MaterialTheme.typography.titleMedium)
-                                Text(game.packageName, style = MaterialTheme.typography.bodySmall)
-                                Button(
-                                    onClick = { onGameSelected(game.packageName) },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        if (selectedGamePackage == game.packageName) {
-                                            stringResource(R.string.game_selected)
-                                        } else {
-                                            stringResource(R.string.select_game)
-                                        }
-                                    )
-                                }
-                                if (selectedGamePackage == game.packageName) {
-                                    Button(
-                                        onClick = {
-                                            context.packageManager
-                                                .getLaunchIntentForPackage(game.packageName)
-                                                ?.let(context::startActivity)
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(stringResource(R.string.open_game))
-                                    }
-                                }
+                    items(
+                        items = result.games,
+                        key = { it.packageName }
+                    ) { game ->
+                        GameRow(
+                            game = game,
+                            selected = selectedGamePackage == game.packageName,
+                            onSelect = {
+                                onGameSelected(game.packageName)
+                            },
+                            onOpen = {
+                                openGame(context, game.packageName)
                             }
-                        }
+                        )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SelectedGameCard(
+    game: GameInfo,
+    context: Context
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                stringResource(R.string.selected_game),
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(game.label, style = MaterialTheme.typography.titleMedium)
+            Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = { openGame(context, game.packageName) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.open_game))
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameRow(
+    game: GameInfo,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onOpen: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(game.label, style = MaterialTheme.typography.titleMedium)
+            Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+            Button(
+                onClick = onSelect,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    if (selected) {
+                        stringResource(R.string.game_selected)
+                    } else {
+                        stringResource(R.string.select_game)
+                    }
+                )
+            }
+            if (selected) {
+                Button(
+                    onClick = onOpen,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.open_game))
+                }
+            }
+        }
+    }
+}
+
+private fun openGame(context: Context, packageName: String) {
+    context.packageManager
+        .getLaunchIntentForPackage(packageName)
+        ?.let(context::startActivity)
 }
 
 object GameSelectionStore {
@@ -584,21 +737,41 @@ object GameSelectionStore {
 @Composable
 private fun SettingsScreen(modifier: Modifier) {
     Column(
-        modifier = modifier.fillMaxSize().padding(20.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
+        Text(
+            stringResource(R.string.settings_title),
+            style = MaterialTheme.typography.headlineSmall
+        )
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.language), style = MaterialTheme.typography.titleMedium)
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    stringResource(R.string.language),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 Text(stringResource(R.string.language_value))
             }
         }
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium)
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    stringResource(R.string.about),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 Text(stringResource(R.string.about_text))
-                Text(stringResource(R.string.limitations), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.limitations),
+                    style = MaterialTheme.typography.titleMedium
+                )
                 Text(stringResource(R.string.limitations_text))
             }
         }
@@ -606,31 +779,50 @@ private fun SettingsScreen(modifier: Modifier) {
 }
 
 @Composable
-private fun localizedProfileTitle(profile: PerformanceProfile): String =
+private fun localizedProfileTitle(
+    profile: PerformanceProfile
+): String =
     when (profile) {
-        PerformanceProfile.BALANCED -> stringResource(R.string.profile_balanced_title)
-        PerformanceProfile.FRAME_INTERPOLATION -> stringResource(R.string.profile_interpolation_title)
-        PerformanceProfile.X4 -> stringResource(R.string.profile_x4_title)
+        PerformanceProfile.BALANCED ->
+            stringResource(R.string.profile_balanced_title)
+        PerformanceProfile.FRAME_INTERPOLATION ->
+            stringResource(R.string.profile_interpolation_title)
+        PerformanceProfile.X4 ->
+            stringResource(R.string.profile_x4_title)
     }
 
 @Composable
-private fun localizedProfileDescription(profile: PerformanceProfile): String =
+private fun localizedProfileDescription(
+    profile: PerformanceProfile
+): String =
     when (profile) {
-        PerformanceProfile.BALANCED -> stringResource(R.string.profile_balanced_description)
-        PerformanceProfile.FRAME_INTERPOLATION -> stringResource(R.string.profile_interpolation_description)
-        PerformanceProfile.X4 -> stringResource(R.string.profile_x4_description)
+        PerformanceProfile.BALANCED ->
+            stringResource(R.string.profile_balanced_description)
+        PerformanceProfile.FRAME_INTERPOLATION ->
+            stringResource(R.string.profile_interpolation_description)
+        PerformanceProfile.X4 ->
+            stringResource(R.string.profile_x4_description)
     }
 
 @Composable
 private fun thermalLabel(status: Int?): String =
     when (status) {
-        PowerManager.THERMAL_STATUS_NONE -> stringResource(R.string.normal)
-        PowerManager.THERMAL_STATUS_LIGHT -> stringResource(R.string.thermal_light)
-        PowerManager.THERMAL_STATUS_MODERATE -> stringResource(R.string.thermal_moderate)
-        PowerManager.THERMAL_STATUS_SEVERE -> stringResource(R.string.thermal_severe)
-        PowerManager.THERMAL_STATUS_CRITICAL -> stringResource(R.string.thermal_critical)
-        PowerManager.THERMAL_STATUS_EMERGENCY -> stringResource(R.string.thermal_emergency)
-        PowerManager.THERMAL_STATUS_SHUTDOWN -> stringResource(R.string.thermal_shutdown)
-        null -> stringResource(R.string.not_available)
-        else -> stringResource(R.string.thermal_unknown)
+        PowerManager.THERMAL_STATUS_NONE ->
+            stringResource(R.string.normal)
+        PowerManager.THERMAL_STATUS_LIGHT ->
+            stringResource(R.string.thermal_light)
+        PowerManager.THERMAL_STATUS_MODERATE ->
+            stringResource(R.string.thermal_moderate)
+        PowerManager.THERMAL_STATUS_SEVERE ->
+            stringResource(R.string.thermal_severe)
+        PowerManager.THERMAL_STATUS_CRITICAL ->
+            stringResource(R.string.thermal_critical)
+        PowerManager.THERMAL_STATUS_EMERGENCY ->
+            stringResource(R.string.thermal_emergency)
+        PowerManager.THERMAL_STATUS_SHUTDOWN ->
+            stringResource(R.string.thermal_shutdown)
+        null ->
+            stringResource(R.string.not_available)
+        else ->
+            stringResource(R.string.thermal_unknown)
     }
