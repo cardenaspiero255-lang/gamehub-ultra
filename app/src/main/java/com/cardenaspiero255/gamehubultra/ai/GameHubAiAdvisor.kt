@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.ai
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
+import java.text.Normalizer
 import java.util.Locale
 
 class GameHubAiAdvisor(
@@ -180,8 +181,9 @@ class GameHubAiAdvisor(
         patterns.any(value::contains)
 
     private fun normalize(value: String): String =
-        value.lowercase(Locale.ROOT)
-            .replace(Regex("[^a-z0-9áéíóúüñ ]"), " ")
+        Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
 }
