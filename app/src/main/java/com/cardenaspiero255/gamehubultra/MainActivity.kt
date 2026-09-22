@@ -543,9 +543,10 @@ private fun LibraryScreen(
         key1 = context,
         key2 = refreshToken
     ) {
-        value = withContext(Dispatchers.IO) {
+        val discovered = withContext(Dispatchers.IO) {
             GameLibrary.discover(context)
         }
+        value = discovered
     }
 
     DisposableEffect(lifecycleOwner) {
