@@ -5,6 +5,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -43,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -299,6 +303,23 @@ private fun GameHubUltraApp(
     val favoriteGames = uiState.favoriteGames
     val recentGamePackages = uiState.recentGamePackages
     val manualGamePackages = uiState.manualGamePackages
+    val aiContext = GameHubAiContext(
+        cpuCores = device.cpuCores,
+        totalRamMb = device.totalRamMb,
+        gpuAvailable = !device.gpuRenderer.isNullOrBlank() || !device.gpuVendor.isNullOrBlank(),
+        thermalStatus = runtimeDiagnostics?.thermal?.status,
+        thermalHeadroom = runtimeDiagnostics?.thermal?.headroom,
+        batteryPercent = runtimeDiagnostics?.battery?.percent,
+        charging = runtimeDiagnostics?.battery?.charging == true,
+        refreshRateHz = runtimeDiagnostics?.refresh?.currentRefreshRateHz,
+        networkValidated = runtimeDiagnostics?.connectivity?.validated == true,
+        networkLatencyMs = runtimeDiagnostics?.connectivity?.latencyMs,
+        downstreamBandwidthKbps = runtimeDiagnostics?.connectivity?.downstreamBandwidthKbps,
+        storageFreePercent = runtimeDiagnostics?.storage?.freePercent ?: 100,
+        inputDeviceCount = runtimeDiagnostics?.inputDeviceCount ?: 0,
+        selectedProfile = uiState.effectiveProfile,
+        sessionActive = activeSessionPackage != null
+    )
 
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
@@ -342,7 +363,8 @@ private fun GameHubUltraApp(
                 performanceHistory = performanceHistory,
                 onApplyAdaptiveProfile = {
                     adaptiveDecision?.let { selectProfile(it.profile) }
-                }
+                },
+                aiContext = aiContext
             )
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
@@ -385,7 +407,8 @@ private fun HomeScreen(
     runtimeDiagnostics: RuntimeDiagnostics?,
     adaptiveDecision: AdaptiveDecision?,
     performanceHistory: List<PerformanceEvent>,
-    onApplyAdaptiveProfile: () -> Unit
+    onApplyAdaptiveProfile: () -> Unit,
+    aiContext: GameHubAiContext
 ) {
     LazyColumn(
         modifier = modifier
@@ -402,10 +425,17 @@ private fun HomeScreen(
         }
         item { ActiveProfileCard(state) }
         item {
+            AiAdvisorCard(
+                context = aiContext,
+                onProfileSelected = onProfileSelected
+            )
+        }
+        item {
             VoiceAssistantCard(
                 selectedProfileName = selectedProfileName,
                 onProfileSelected = onProfileSelected,
-                onGameSelected = onGameSelected
+                onGameSelected = onGameSelected,
+                aiContext = aiContext
             )
         }
         item {
@@ -580,10 +610,14 @@ private fun RuntimeDiagnosticsCard(
 private fun VoiceAssistantCard(
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
-    onGameSelected: (String) -> Unit
+    onGameSelected: (String) -> Unit,
+    aiContext: GameHubAiContext
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val aiAdvisor = remember { GameHubAiAdvisor() }
+    val aiIntentResolver = remember(aiAdvisor) { aiAdvisor.intentResolver() }
+    val latestAiContext by rememberUpdatedState(aiContext)
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
@@ -614,7 +648,7 @@ private fun VoiceAssistantCard(
                 transcript = spokenText
                 scope.launch(Dispatchers.IO) {
                     val result = VoiceCommandEngine.execute(
-                        command = VoiceCommandParser.parse(spokenText),
+                        command = VoiceCommandParser.parse(spokenText, aiIntentResolver),
                         gamesProvider = { GameLibrary.discover(context).games },
                         launchGame = { packageName ->
                             GameLauncher.launch(context, packageName)
@@ -637,7 +671,10 @@ private fun VoiceAssistantCard(
                                 DeviceCapabilitiesProvider.get(context)
                                     .sustainedPerformanceSupported
                         },
-                        statusProvider = { VoiceDeviceStatusProvider.read(context) }
+                        statusProvider = { VoiceDeviceStatusProvider.read(context) },
+                        aiAdvisor = { question ->
+                            aiAdvisor.advise(question, latestAiContext)
+                        }
                     )
                     val spokenResponse = VoiceResponseFormatter.format(context, result)
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
@@ -794,6 +831,59 @@ private object VoiceResponseFormatter {
                 context.getString(R.string.voice_status_failed) +
                     " " + result.detail
         }
+}
+
+@Composable
+private fun AiAdvisorCard(
+    context: GameHubAiContext,
+    onProfileSelected: (PerformanceProfile) -> Unit
+) {
+    val advisor = remember { GameHubAiAdvisor() }
+    var advice by remember { mutableStateOf<GameHubAiAdvice?>(null) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.ai_advisor_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(stringResource(R.string.ai_advisor_subtitle))
+            Text(
+                if (advisor.isLocalModelAvailable()) {
+                    stringResource(R.string.ai_local_model_ready)
+                } else {
+                    stringResource(R.string.ai_fallback_active)
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(
+                onClick = {
+                    advice = advisor.advise(
+                        question = "que modo me recomiendas",
+                        context = context
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.ai_analyze))
+            }
+            advice?.let { result ->
+                Text(result.title, style = MaterialTheme.typography.titleMedium)
+                Text(result.explanation)
+                result.suggestedProfile?.let { profile ->
+                    Button(
+                        onClick = { onProfileSelected(profile) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.ai_apply_profile))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
