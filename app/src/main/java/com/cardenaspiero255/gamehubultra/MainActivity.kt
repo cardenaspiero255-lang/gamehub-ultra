@@ -1521,6 +1521,8 @@ private fun eventLabel(event: PerformanceEvent): String =
     when (event.type) {
         PerformanceEventType.SESSION_STARTED ->
             "• " + stringResource(R.string.event_session_started)
+        PerformanceEventType.SESSION_ENDED ->
+            "• " + stringResource(R.string.event_session_ended)
         PerformanceEventType.THERMAL_CHANGED ->
             "• " + stringResource(R.string.event_thermal_changed) +
                 (event.detail.takeIf(String::isNotBlank)?.let { ": $it" } ?: "")
