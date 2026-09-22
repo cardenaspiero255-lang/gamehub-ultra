@@ -65,7 +65,7 @@ object DeviceInfoProvider {
 }
 
 object CpuInfoParser {
-    private val modelKeys = listOf("model name", "hardware", "processor")
+    private val modelKeys = setOf("model name", "hardware", "processor")
 
     fun parseModel(cpuInfo: String?): String? {
         if (cpuInfo.isNullOrBlank()) return null
@@ -78,7 +78,12 @@ object CpuInfoParser {
                 val key = line.substring(0, separator).trim().lowercase()
                 if (key !in modelKeys) return@mapNotNull null
 
-                line.substring(separator + 1).trim().takeIf { it.isNotEmpty() }
+                val value = line.substring(separator + 1).trim()
+                if (value.isEmpty() || (key == "processor" && value.all(Char::isDigit))) {
+                    return@mapNotNull null
+                }
+
+                value
             }
             .firstOrNull()
     }
