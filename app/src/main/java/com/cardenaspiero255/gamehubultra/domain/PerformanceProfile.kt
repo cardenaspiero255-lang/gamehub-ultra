@@ -24,4 +24,4 @@ enum class PerformanceProfile(
         sustainedPerformanceIntent = true,
         frameInterpolationIntent = false
     )
-)
+}
