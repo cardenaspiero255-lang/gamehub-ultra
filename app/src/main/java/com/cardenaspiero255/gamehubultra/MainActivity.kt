@@ -138,6 +138,7 @@ private fun GameHubUltraApp(
     val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+    var gameSessionActive by rememberSaveable { mutableStateOf(false) }
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
@@ -145,10 +146,12 @@ private fun GameHubUltraApp(
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
 
-    LaunchedEffect(lifecycleOwner, adaptiveEngine, uiState.selectedGamePackage) {
+    LaunchedEffect(lifecycleOwner, adaptiveEngine, uiState.selectedGamePackage, gameSessionActive) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             val selectedGame = uiState.selectedGamePackage
-            if (selectedGame == null) {
+            if (selectedGame == null || !gameSessionActive) {
+                runtimeDiagnostics = null
+                latencyMs = null
                 adaptiveDecision = adaptiveEngine.evaluate(
                     AdaptiveRuntimeSnapshot(
                         thermalStatus = null,
@@ -190,7 +193,8 @@ private fun GameHubUltraApp(
                     val network = diagnostics.connectivity
                     if (!network.connected ||
                         !network.validated ||
-                        network.networkHandle == null
+                        network.networkHandle == null ||
+                        network.metered
                     ) {
                         latencyMs = null
                         lastLatencyNetworkHandle = null
@@ -236,7 +240,7 @@ private fun GameHubUltraApp(
                             batteryPercent = diagnostics.battery.percent,
                             charging = diagnostics.battery.charging,
                             powerSaveMode = diagnostics.battery.powerSaveMode,
-                            sessionActive = true,
+                            sessionActive = gameSessionActive,
                             sustainedPerformanceSupported =
                                 initialState.capabilities?.sustainedPerformanceSupported == true,
                             performanceHintsAvailable =
@@ -258,7 +262,7 @@ private fun GameHubUltraApp(
                         )
                     }
 
-                    delay(5_000)
+                    delay(10_000)
                 }
             } finally {
                 viewModel.recordPerformanceEvent(
@@ -284,6 +288,7 @@ private fun GameHubUltraApp(
     }
 
     fun selectGame(packageName: String) {
+        gameSessionActive = false
         viewModel.selectGame(packageName)
     }
 
@@ -345,7 +350,10 @@ private fun GameHubUltraApp(
                 manualGamePackages = manualGamePackages,
                 onGameSelected = ::selectGame,
                 onToggleFavorite = viewModel::setFavoriteGame,
-                onGameOpened = viewModel::recordRecentGame,
+                onGameOpened = { packageName ->
+                    gameSessionActive = true
+                    viewModel.recordRecentGame(packageName)
+                },
                 onToggleManualGame = viewModel::setManualGame
             )
             else -> SettingsScreen(Modifier.padding(padding))
