@@ -9,12 +9,18 @@ data class VoiceDeviceStatus(
 )
 
 sealed interface VoiceActionResult {
-    data class ProfileApplied(val profile: PerformanceProfile) : VoiceActionResult
+    data class ProfileSelected(
+        val profile: PerformanceProfile,
+        val deferred: Boolean
+    ) : VoiceActionResult
+
     data class GameOpened(
         val game: GameInfo,
         val profile: PerformanceProfile?,
-        val profileUnavailable: Boolean
+        val profileUnavailable: Boolean,
+        val profileDeferred: Boolean
     ) : VoiceActionResult
+
     data class DeviceStatus(val status: VoiceDeviceStatus) : VoiceActionResult
     data object Help : VoiceActionResult
     data class NotAvailable(val detail: String) : VoiceActionResult
@@ -30,7 +36,8 @@ object VoiceCommandEngine {
         saveSelectedGame: (String) -> Unit,
         saveSelectedProfile: (PerformanceProfile) -> Unit,
         isProfileAvailable: (PerformanceProfile) -> Boolean,
-        statusProvider: () -> VoiceDeviceStatus
+        statusProvider: () -> VoiceDeviceStatus,
+        deferProfileApplication: Boolean = false
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -40,7 +47,10 @@ object VoiceCommandEngine {
                     )
                 } else {
                     saveSelectedProfile(command.profile)
-                    VoiceActionResult.ProfileApplied(command.profile)
+                    VoiceActionResult.ProfileSelected(
+                        profile = command.profile,
+                        deferred = deferProfileApplication
+                    )
                 }
             }
 
@@ -48,7 +58,7 @@ object VoiceCommandEngine {
                 val match = GameMatchFinder.find(command.query, gamesProvider())
                 if (match == null) {
                     VoiceActionResult.NotAvailable(
-                        """No encontré un juego instalado que coincida con “${command.query}”.""".trimIndent()
+                        "No encontré un juego instalado que coincida con \"" + command.query + "\"."
                     )
                 } else {
                     saveSelectedGame(match.packageName)
@@ -64,7 +74,11 @@ object VoiceCommandEngine {
                         VoiceActionResult.GameOpened(
                             game = match,
                             profile = command.requestedProfile?.takeUnless { profileUnavailable },
-                            profileUnavailable = profileUnavailable
+                            profileUnavailable = profileUnavailable,
+                            profileDeferred =
+                                command.requestedProfile != null &&
+                                    !profileUnavailable &&
+                                    deferProfileApplication
                         )
                     } else {
                         VoiceActionResult.Failed(
@@ -88,10 +102,7 @@ internal object GameMatchFinder {
         if (games.isEmpty()) return null
 
         val normalizedQuery = VoiceCommandParser.normalize(query)
-        games.firstOrNull {
-            VoiceCommandParser.normalize(it.label) == normalizedQuery ||
-                it.packageName.equals(query.trim(), ignoreCase = true)
-        }?.let { return it }
+        if (normalizedQuery.isBlank()) return null
 
         val scored = games.map { game ->
             val label = VoiceCommandParser.normalize(game.label)
@@ -101,8 +112,11 @@ internal object GameMatchFinder {
             else queryTokens.intersect(labelTokens).size.toDouble() / queryTokens.size
 
             game to when {
-                label.contains(normalizedQuery) -> 1.0
-                normalizedQuery.contains(label) -> 0.9
+                label == normalizedQuery ||
+                    game.packageName.equals(query.trim(), ignoreCase = true) -> 1.0
+                label.startsWith(normalizedQuery + " ") -> 0.9
+                label.contains(normalizedQuery) -> 0.8
+                normalizedQuery.contains(label) -> 0.78
                 else -> overlap
             }
         }.sortedByDescending { it.second }
@@ -112,7 +126,11 @@ internal object GameMatchFinder {
 
         return if (
             best.second >= 0.6 &&
-            (second == null || best.second - second.second >= 0.15 || best.second == 1.0)
-        ) best.first else null
+            (second == null || best.second - second.second >= 0.15)
+        ) {
+            best.first
+        } else {
+            null
+        }
     }
 }
