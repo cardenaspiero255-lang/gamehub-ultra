@@ -40,6 +40,34 @@ class GameLauncherTest {
         assertFalse(context.started)
     }
 
+    @Test
+    fun missingLaunchIntentReturnsFalse() {
+        val context = RecordingContext()
+
+        assertFalse(
+            GameLauncher.launch(
+                context = context,
+                packageName = "missing.package",
+                intentResolver = { null }
+            )
+        )
+        assertFalse(context.started)
+    }
+
+    @Test
+    fun packageManagerFailureReturnsFalse() {
+        val context = RecordingContext()
+
+        assertFalse(
+            GameLauncher.launch(
+                context = context,
+                packageName = "broken.package",
+                intentResolver = { throw IllegalStateException("package manager unavailable") }
+            )
+        )
+        assertFalse(context.started)
+    }
+
     private class RecordingContext(
         private val throwOnStart: RuntimeException? = null
     ) : ContextWrapper(null) {
