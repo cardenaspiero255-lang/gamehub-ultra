@@ -17,6 +17,7 @@ Independent Android gaming companion project designed to coexist with the origin
 - Smart game library with persistent selection and safe launching.
 - Battery and thermal telemetry.
 - Optional bilingual voice assistant with deterministic, allowlisted actions.
+- Local-first AI advisor with structured telemetry context, deterministic offline fallback, and a strict action allowlist.
 - Clear documentation of Android limitations and permissions.
 
 ## Planned expansion
@@ -25,7 +26,7 @@ Independent Android gaming companion project designed to coexist with the origin
 - Core architecture 2.0 and per-game profiles.
 - Adaptive thermal/performance engine.
 - Gaming readiness, refresh-rate and connectivity diagnostics.
-- Local AI advisor with deterministic fallback.
+- Release hardening and final validation.
 - Shortcuts, Quick Settings and session history.
 - Baseline Profile, benchmarks and release hardening.
 
@@ -35,4 +36,4 @@ GameHub Ultra reports and applies only capabilities that Android or a supported 
 
 ## Detailed plan
 
-See [docs/CAR-6-TECHNICAL-AUDIT.md](docs/CAR-6-TECHNICAL-AUDIT.md).
+See [docs/CAR-6-TECHNICAL-AUDIT.md](docs/CAR-6-TECHNICAL-AUDIT.md) and [docs/CAR-15-GAMEHUB-AI.md](docs/CAR-15-GAMEHUB-AI.md).
