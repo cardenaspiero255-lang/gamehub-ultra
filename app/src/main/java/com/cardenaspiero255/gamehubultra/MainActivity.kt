@@ -712,9 +712,7 @@ private fun GameRow(
 }
 
 private fun openGame(context: Context, packageName: String) {
-    context.packageManager
-        .getLaunchIntentForPackage(packageName)
-        ?.let(context::startActivity)
+    GameLauncher.launch(context, packageName)
 }
 
 object GameSelectionStore {
