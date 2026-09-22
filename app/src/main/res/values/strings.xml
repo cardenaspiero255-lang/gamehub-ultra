@@ -49,6 +49,10 @@
     <string name="shortcut_library_long">Abrir biblioteca de juegos</string>
     <string name="shortcut_performance_short">Rendimiento</string>
     <string name="shortcut_performance_long">Abrir modos de rendimiento</string>
+    <string name="add_game">Añadir juego</string>
+    <string name="add_game_title">Añadir una aplicación como juego</string>
+    <string name="remove_game">Quitar</string>
+    <string name="close">Cerrar</string>
     <string name="settings_title">Ajustes</string>
     <string name="about">Acerca de GameHub Ultra</string>
     <string name="about_text">Interfaz de rendimiento construida con APIs públicas de Android.</string>
