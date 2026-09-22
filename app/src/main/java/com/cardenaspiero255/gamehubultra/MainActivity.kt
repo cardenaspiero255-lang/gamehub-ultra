@@ -134,6 +134,8 @@ private fun GameHubUltraApp(
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
+    var latencyMs by remember { mutableStateOf<Long?>(null) }
+    var lastLatencyCheckAt by remember { mutableStateOf(0L) }
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
@@ -143,7 +145,17 @@ private fun GameHubUltraApp(
             val diagnostics = withContext(Dispatchers.IO) {
                 RuntimeDiagnosticsProvider.get(context)
             }
-            runtimeDiagnostics = diagnostics
+            val now = System.currentTimeMillis()
+            if (now - lastLatencyCheckAt >= 30_000L) {
+                latencyMs = withContext(Dispatchers.IO) {
+                    com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe.measure()
+                }
+                lastLatencyCheckAt = now
+            }
+            val enrichedDiagnostics = diagnostics.copy(
+                connectivity = diagnostics.connectivity.copy(latencyMs = latencyMs)
+            )
+            runtimeDiagnostics = enrichedDiagnostics
             adaptiveDecision = adaptiveEngine.evaluate(
                 AdaptiveRuntimeSnapshot(
                     thermalStatus = diagnostics.thermal.status,
