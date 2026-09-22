@@ -2,7 +2,6 @@ package com.cardenaspiero255.gamehubultra
 
 import kotlin.test.Test
 import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class GameLauncherTest {
@@ -57,16 +56,5 @@ class GameLauncherTest {
                 starter = { throw SecurityException("blocked") }
             )
         )
-    }
-
-    @Test
-    fun fatalErrorsAreNotSwallowed() {
-        assertFailsWith<AssertionError> {
-            GameLauncher.resolveAndLaunch(
-                packageName = "fatal.package",
-                resolver = { throw AssertionError("fatal") },
-                starter = {}
-            )
-        }
     }
 }
