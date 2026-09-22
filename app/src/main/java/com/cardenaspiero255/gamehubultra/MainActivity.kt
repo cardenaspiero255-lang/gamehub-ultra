@@ -67,6 +67,7 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
