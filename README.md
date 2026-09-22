@@ -8,29 +8,31 @@ Independent Android gaming companion project designed to coexist with the origin
 - **GitHub:** source control and review.
 - **GitHub Copilot:** implementation assistance using `.github/copilot-instructions.md` and the linked Linear tasks.
 
-## Planned capabilities
+## Current capabilities
 
-- Gaming-oriented interface.
+- Gaming-oriented Compose interface.
 - Performance profiles: FPS balanceado, priorizar interpolación de frames, and X4.
 - Safe Android hardware information.
 - Independent application ID so it can be installed beside the original GameHub.
+- Smart game library with persistent selection and safe launching.
+- Battery and thermal telemetry.
+- Optional bilingual voice assistant with deterministic, allowlisted actions.
 - Clear documentation of Android limitations and permissions.
 
-## CAR-8 — automatic hardware detection
+## Planned expansion
 
-The current implementation detects, using public Android/platform APIs:
+- Android 16/API 36 migration.
+- Core architecture 2.0 and per-game profiles.
+- Adaptive thermal/performance engine.
+- Gaming readiness, refresh-rate and connectivity diagnostics.
+- Local AI advisor with deterministic fallback.
+- Shortcuts, Quick Settings and session history.
+- Baseline Profile, benchmarks and release hardening.
 
-- Manufacturer, model, Android release and API level.
-- Supported ABIs and logical CPU cores.
-- CPU/SoC model when `Build.SOC_MODEL` is available, with a safe `/proc/cpuinfo` fallback.
-- Total device RAM through `ActivityManager.MemoryInfo`.
-- GPU vendor and renderer through a temporary OpenGL ES 2.0 EGL context; failure to create/query the context is reported as unavailable rather than guessed.
-- Sustained Performance Mode support.
-- Thermal API availability and current thermal status.
-- Performance Hint API service availability on Android 12/API 31+.
+## Engineering policy
 
-GameHub Ultra does not claim to control CPU/GPU frequencies, force frame interpolation inside another game, or change another app's performance mode without a supported Android/vendor API and required privileges.
+GameHub Ultra reports and applies only capabilities that Android or a supported vendor API actually exposes. It does not claim universal CPU/GPU overclocking, arbitrary Game Mode switching, X4 frame generation injection into other games, or other privileged controls that the platform does not provide.
 
-## Status
+## Detailed plan
 
-Features are only considered complete after implementation and build validation. CAR-8 is being validated with unit tests, debug build, and lint in GitHub Actions.
+See [docs/CAR-6-TECHNICAL-AUDIT.md](docs/CAR-6-TECHNICAL-AUDIT.md).
