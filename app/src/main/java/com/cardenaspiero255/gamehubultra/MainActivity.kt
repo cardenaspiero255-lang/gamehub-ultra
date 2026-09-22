@@ -60,6 +60,8 @@ import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveRuntimeSnapshot
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
@@ -130,6 +132,7 @@ private fun GameHubUltraApp(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
@@ -141,6 +144,17 @@ private fun GameHubUltraApp(
     }
 
     LaunchedEffect(Unit) {
+        viewModel.recordPerformanceEvent(
+            PerformanceEvent(
+                timestampMillis = System.currentTimeMillis(),
+                type = PerformanceEventType.SESSION_STARTED,
+                detail = "GameHub Ultra session"
+            )
+        )
+
+        var lastThermalStatus: Int? = null
+        var initializedThermalStatus = false
+
         while (isActive) {
             val diagnostics = withContext(Dispatchers.IO) {
                 RuntimeDiagnosticsProvider.get(context)
@@ -156,7 +170,20 @@ private fun GameHubUltraApp(
                 connectivity = diagnostics.connectivity.copy(latencyMs = latencyMs)
             )
             runtimeDiagnostics = enrichedDiagnostics
-            adaptiveDecision = adaptiveEngine.evaluate(
+
+            if (initializedThermalStatus && diagnostics.thermal.status != lastThermalStatus) {
+                viewModel.recordPerformanceEvent(
+                    PerformanceEvent(
+                        timestampMillis = now,
+                        type = PerformanceEventType.THERMAL_CHANGED,
+                        detail = diagnostics.thermal.status?.toString() ?: "unavailable"
+                    )
+                )
+            }
+            lastThermalStatus = diagnostics.thermal.status
+            initializedThermalStatus = true
+
+            val decision = adaptiveEngine.evaluate(
                 AdaptiveRuntimeSnapshot(
                     thermalStatus = diagnostics.thermal.status,
                     thermalHeadroom = diagnostics.thermal.headroom,
@@ -170,6 +197,20 @@ private fun GameHubUltraApp(
                         state.capabilities?.performanceHintsAvailable == true
                 )
             )
+            adaptiveDecision = decision
+
+            if (decision.changed) {
+                viewModel.recordPerformanceEvent(
+                    PerformanceEvent(
+                        timestampMillis = now,
+                        type = PerformanceEventType.POLICY_CHANGED,
+                        profile = decision.profile,
+                        score = decision.score,
+                        detail = decision.reason
+                    )
+                )
+            }
+
             delay(5_000)
         }
     }
@@ -263,6 +304,7 @@ private fun HomeScreen(
     onGameSelected: (String) -> Unit,
     runtimeDiagnostics: RuntimeDiagnostics?,
     adaptiveDecision: AdaptiveDecision?,
+    performanceHistory: List<PerformanceEvent>,
     onApplyAdaptiveProfile: () -> Unit
 ) {
     LazyColumn(
@@ -314,6 +356,7 @@ private fun HomeScreen(
                 device = device,
                 diagnostics = runtimeDiagnostics,
                 adaptiveDecision = adaptiveDecision,
+                performanceHistory = performanceHistory,
                 onApplyAdaptiveProfile = onApplyAdaptiveProfile
             )
         }
@@ -1277,4 +1320,17 @@ private fun thermalLabel(status: Int?): String =
             stringResource(R.string.not_available)
         else ->
             stringResource(R.string.thermal_unknown)
+    }
+
+
+private fun eventLabel(event: PerformanceEvent): String =
+    when (event.type) {
+        PerformanceEventType.SESSION_STARTED ->
+            "• " + "Sesión iniciada"
+        PerformanceEventType.THERMAL_CHANGED ->
+            "• " + "Cambio térmico" + (event.detail.takeIf(String::isNotBlank)?.let { ": $it" } ?: "")
+        PerformanceEventType.POLICY_CHANGED ->
+            "• " + "Política: " +
+                (event.profile?.title ?: "Equilibrado") +
+                (event.score?.let { " ($it/100)" } ?: "")
     }
