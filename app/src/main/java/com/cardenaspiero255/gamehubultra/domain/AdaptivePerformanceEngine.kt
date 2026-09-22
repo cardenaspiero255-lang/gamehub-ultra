@@ -143,8 +143,8 @@ class AdaptivePerformanceEngine(
         when {
             snapshot.thermalHeadroom == null || snapshot.thermalHeadroom.isNaN() -> Unit
             snapshot.thermalHeadroom <= 0.30f -> score += 10
-            snapshot.thermalHeadroom < THERMAL_EXIT_USAGE -> score += 3
-            snapshot.thermalHeadroom < THERMAL_ENTRY_USAGE -> score -= 10
+            snapshot.thermalHeadroom < THERMAL_RECOVERY_USAGE -> score += 3
+            snapshot.thermalHeadroom < THERMAL_THROTTLE_USAGE -> score -= 10
             else -> score -= 25
         }
 
