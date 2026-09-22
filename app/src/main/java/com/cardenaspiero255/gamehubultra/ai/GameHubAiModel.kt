@@ -3,6 +3,8 @@ package com.cardenaspiero255.gamehubultra.ai
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
 data class GameHubAiContext(
+    val selectedGamePackage: String?,
+    val sustainedPerformanceSupported: Boolean,
     val cpuCores: Int,
     val totalRamMb: Int,
     val gpuAvailable: Boolean,
