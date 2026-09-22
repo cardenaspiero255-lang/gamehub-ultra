@@ -85,6 +85,8 @@
     <string name="voice_result_profile_applied">Applied: profile %1$s selected.</string>
     <string name="voice_result_game_opened">Applied: opened %1$s.</string>
     <string name="voice_result_profile_applied_short">Profile %1$s selected in GameHub Ultra.</string>
+    <string name="voice_result_profile_deferred">Profile %1$s saved; it will apply when GameHub Ultra becomes active.</string>
+    <string name="voice_result_profile_deferred_short">Profile %1$s saved for when GameHub Ultra is active.</string>
     <string name="voice_result_profile_unavailable">The requested profile is not available on this device.</string>
     <string name="voice_result_status">Status: battery %1$s%%, thermal %2$s.</string>
     <string name="voice_result_help">You can say: open a game, set X4, prioritize interpolation, balanced FPS, or tell me the status.</string>
