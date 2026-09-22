@@ -48,7 +48,7 @@ object VoiceCommandEngine {
                 val match = GameMatchFinder.find(command.query, gamesProvider())
                 if (match == null) {
                     VoiceActionResult.NotAvailable(
-                        "No encontré un juego instalado que coincida con \\"" + command.query + "\\"."
+                        """No encontré un juego instalado que coincida con “${command.query}”.""".trimIndent()
                     )
                 } else {
                     saveSelectedGame(match.packageName)
