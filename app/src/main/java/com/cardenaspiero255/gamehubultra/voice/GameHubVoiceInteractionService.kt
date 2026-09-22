@@ -34,6 +34,7 @@ import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 class GameHubVoiceInteractionService : VoiceInteractionService()
 
@@ -145,10 +146,10 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private fun handleTranscript(transcript: String) {
         val context = getContext()
         val selectedGamePackage = runCatching {
-            GameSelectionStore.selectedGameFlow(context).first()
+            runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
         }.getOrNull()
         val selectedProfile = runCatching {
-            ProfileSelectionStore.selectedProfileFlow(context).first()
+            runBlocking { ProfileSelectionStore.selectedProfileFlow(context).first() }
         }.getOrNull() ?: PerformanceProfile.BALANCED
         val device = DeviceInfoProvider.get(context)
         val diagnostics = RuntimeDiagnosticsProvider.get(context)
