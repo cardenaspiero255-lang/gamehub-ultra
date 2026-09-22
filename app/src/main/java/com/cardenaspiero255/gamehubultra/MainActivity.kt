@@ -304,7 +304,7 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
         }
 
         if (thermalListener != null) {
-            powerManager.addThermalStatusListener(context.mainExecutor, thermalListener)
+            powerManager?.addThermalStatusListener(context.mainExecutor, thermalListener)
         }
 
         onDispose {
