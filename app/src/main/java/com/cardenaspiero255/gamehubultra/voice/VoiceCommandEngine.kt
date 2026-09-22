@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import com.cardenaspiero255.gamehubultra.GameInfo
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
 data class VoiceDeviceStatus(
@@ -22,6 +23,7 @@ sealed interface VoiceActionResult {
     ) : VoiceActionResult
 
     data class DeviceStatus(val status: VoiceDeviceStatus) : VoiceActionResult
+    data class AiAdvice(val advice: GameHubAiAdvice) : VoiceActionResult
     data object Help : VoiceActionResult
     data class NotAvailable(val detail: String) : VoiceActionResult
     data object RequiresPermission : VoiceActionResult
@@ -38,7 +40,8 @@ object VoiceCommandEngine {
         saveSelectedGameWithProfile: ((String, PerformanceProfile) -> Unit)? = null,
         isProfileAvailable: (PerformanceProfile) -> Boolean,
         statusProvider: () -> VoiceDeviceStatus,
-        deferProfileApplication: Boolean = false
+        deferProfileApplication: Boolean = false,
+        aiAdvisor: ((String) -> GameHubAiAdvice)? = null
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -98,6 +101,9 @@ object VoiceCommandEngine {
             }
 
             VoiceCommand.DeviceStatus -> VoiceActionResult.DeviceStatus(statusProvider())
+            is VoiceCommand.AskAi ->
+                aiAdvisor?.invoke(command.question)?.let(VoiceActionResult::AiAdvice)
+                    ?: VoiceActionResult.NotAvailable("El asesor IA no está disponible sin un proveedor local compatible.")
             VoiceCommand.Help -> VoiceActionResult.Help
             is VoiceCommand.Unknown ->
                 VoiceActionResult.NotAvailable(
