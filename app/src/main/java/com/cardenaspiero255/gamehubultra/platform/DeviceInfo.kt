@@ -54,7 +54,7 @@ object DeviceInfoProvider {
 
         return socModel
             ?: CpuInfoParser.parseModel(readCpuInfo())
-            ?: "No disponible"
+            ?: ""
     }
 
     private fun readCpuInfo(): String? = runCatching {
