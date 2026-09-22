@@ -33,11 +33,13 @@ data class LocalAiActionCandidate(
     val argument: String? = null
 )
 
-interface LocalAiModelAdapter {
+interface LocalAiModelAdapter : AutoCloseable {
     fun isAvailable(): Boolean
 
     fun advise(
         question: String,
         context: GameHubAiContext
     ): LocalAiActionCandidate?
+
+    override fun close() = Unit
 }
