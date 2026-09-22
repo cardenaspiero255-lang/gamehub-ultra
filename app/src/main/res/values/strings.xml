@@ -152,4 +152,7 @@
     <string name="ai_reason_model_x4">El modelo local recomendó X4 y el dispositivo expone Sustained Performance compatible.</string>
     <string name="ai_local_model_configured">Modelo local configurado; si Gemini Nano no está disponible, se usa el fallback offline.</string>
 
+    <string name="qs_gamehub_label">GameHub Ultra</string>
+    <string name="qs_gamehub_description">Abrir GameHub Ultra</string>
+    <string name="peripherals_summary">Gamepad %1$d · Teclado %2$d · Ratón %3$d · Audio externo %4$d</string>
 </resources>
