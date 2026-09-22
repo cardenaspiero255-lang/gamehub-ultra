@@ -7,6 +7,8 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +37,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -44,6 +48,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -106,7 +112,9 @@ private fun GameHubUltraApp(
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var selectedProfileName by rememberSaveable { mutableStateOf(initialState.selectedProfile.name) }
-    var selectedGamePackage by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedGamePackage by rememberSaveable {
+        mutableStateOf(GameSelectionStore.getSelectedGame(LocalContext.current))
+    }
 
     fun selectProfile(profile: PerformanceProfile) {
         selectedProfileName = profile.name
@@ -151,7 +159,10 @@ private fun GameHubUltraApp(
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
                 selectedGamePackage = selectedGamePackage,
-                onGameSelected = { selectedGamePackage = it }
+                onGameSelected = {
+                    selectedGamePackage = it
+                    GameSelectionStore.saveSelectedGame(LocalContext.current, it)
+                }
             )
             else -> SettingsScreen(Modifier.padding(padding))
         }
@@ -426,8 +437,31 @@ private fun LibraryScreen(
     onGameSelected: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val discovery = remember(context) { GameLibrary.discover(context) }
-    val games = discovery.games
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var refreshToken by rememberSaveable { mutableIntStateOf(0) }
+    val discovery by produceState<GameDiscoveryResult?>(
+        initialValue = null,
+        context,
+        refreshToken
+    ) {
+        value = withContext(Dispatchers.IO) {
+            GameLibrary.discover(context)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshToken += 1
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+            discovery.failed -> {
 
     Column(
         modifier = modifier.fillMaxSize().padding(20.dp),
@@ -447,7 +481,7 @@ private fun LibraryScreen(
                     }
                 }
             }
-            games.isEmpty() -> {
+            discovery != null && discovery.games.isEmpty() -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.padding(18.dp),
@@ -459,6 +493,7 @@ private fun LibraryScreen(
                 }
             }
             else -> {
+                val games = discovery.games
                 Text(stringResource(R.string.library_count, games.size))
 
                 selectedGamePackage?.let { selected ->
@@ -471,10 +506,19 @@ private fun LibraryScreen(
                                 Text(stringResource(R.string.selected_game), style = MaterialTheme.typography.labelLarge)
                                 Text(game.label, style = MaterialTheme.typography.titleMedium)
                                 Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+                                Button(
+                                    onClick = {
+                                        context.packageManager.getLaunchIntentForPackage(game.packageName)?.let {
+                                            context.startActivity(it)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(stringResource(R.string.open_game))
+                                }
                             }
                         }
                     }
-                }
 
                 LazyColumn(
                     modifier = Modifier.weight(1f),
@@ -500,12 +544,40 @@ private fun LibraryScreen(
                                         }
                                     )
                                 }
+                                if (selectedGamePackage == game.packageName) {
+                                    Button(
+                                        onClick = {
+                                            context.packageManager
+                                                .getLaunchIntentForPackage(game.packageName)
+                                                ?.let(context::startActivity)
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(stringResource(R.string.open_game))
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+object GameSelectionStore {
+    private const val PREFS_NAME = "gamehub_ultra"
+    private const val KEY_SELECTED_GAME = "selected_game_package"
+
+    fun getSelectedGame(context: Context): String? =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_SELECTED_GAME, null)
+
+    fun saveSelectedGame(context: Context, packageName: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_SELECTED_GAME, packageName)
+            .apply()
     }
 }
 
