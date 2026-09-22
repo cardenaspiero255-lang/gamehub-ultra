@@ -17,14 +17,47 @@ Rama de auditoría: `cardenaspiero255/car-6-auditoria-y-plan-tecnico-de-gamehub-
 | Biblioteca | Funcional | Descubrimiento de juegos, selección persistente y lanzamiento seguro cuando Android expone una actividad válida. |
 | Compatibilidad | Reforzada | Pruebas de lanzamiento, control de errores y guardas de capacidades. |
 | Asistente por voz | Completo | Reconocimiento puntual, TTS, parser español/inglés, integración opcional con asistente del sistema. |
-| Documentación | Base creada | README, documentación de voz y este plan técnico. |
+| Dependencias | Revisadas | Kotlin 2.0.21, AGP 8.7.3, Compose BOM 2024.12.01, AndroidX Core 1.15.0, Activity Compose 1.10.0, Lifecycle Runtime Compose 2.8.7 y Kotlin Test JUnit 2.0.21. |
 | Android 16 | Pendiente | `compileSdk/targetSdk` siguen en 35; siguiente fase debe migrar a API 36 y validar cambios de comportamiento. |
 | Arquitectura a escala | Pendiente | `MainActivity.kt` concentra demasiado estado/UI; siguiente fase debe separar UI, ViewModel, repositorios, dominio y plataforma. |
 | Engine adaptativo | Pendiente | Falta combinar temperatura, thermal headroom, batería, pantalla y carga sostenida en una política dinámica. |
 | IA local | Pendiente | Existe una base determinista/allowlist para voz; la siguiente fase puede añadir IA en dispositivo con fallback seguro. |
 | Release/performance | Pendiente | Falta Baseline Profile, optimización release y benchmarks de arranque/fluidez. |
 
-## 2. Funcionalidad ya implementada y límites reales
+## 2. Auditoría de dependencias y toolchain
+
+### Toolchain actual
+
+| Componente | Versión actual | Evaluación para la siguiente fase |
+| --- | --- | --- |
+| Android Gradle Plugin | 8.7.3 | Funciona con la base actual; evaluar actualización antes de adoptar API 36/QPRs. |
+| Kotlin | 2.0.21 | Base funcional y ya usada por el proyecto. |
+| Compose compiler plugin | 2.0.21 | Alineado con Kotlin 2.0.21. |
+| compileSdk | 35 | Debe subir a 36 para la migración Android 16. |
+| targetSdk | 35 | Debe subir a 36 para adoptar los comportamientos target Android 16. |
+| minSdk | 26 | Mantener salvo que una función futura obligue a cambiarlo. |
+| Java | 17 | Mantener como baseline del build. |
+
+### Dependencias Android/Compose
+
+| Dependencia | Versión |
+| --- | --- |
+| androidx.core:core-ktx | 1.15.0 |
+| androidx.activity:activity-compose | 1.10.0 |
+| androidx.compose:compose-bom | 2024.12.01 |
+| androidx.compose.ui:ui | BOM |
+| androidx.compose.ui:ui-tooling-preview | BOM |
+| androidx.compose.material3:material3 | BOM |
+| androidx.lifecycle:lifecycle-runtime-compose | 2.8.7 |
+| org.jetbrains.kotlin:kotlin-test-junit | 2.0.21 |
+
+### Bloqueadores observados
+
+No se encontró una dependencia externa obligatoria de alto riesgo en la base actual. El principal trabajo de compatibilidad está en el toolchain de Android 16 y en validar el conjunto de versiones durante CAR-13.
+
+No conviene incorporar una dependencia de IA, base de datos o telemetría hasta que el módulo que la necesite esté definido; las siguientes fases deben preferir APIs de plataforma/Jetpack cuando cubran el requisito y mantener la superficie de permisos pequeña.
+
+## 3. Funcionalidad ya implementada y límites reales
 
 GameHub Ultra ya puede inspeccionar información pública del dispositivo, mostrar capacidades y seleccionar perfiles.
 
@@ -34,11 +67,11 @@ El perfil X4 se mantiene como una intención de rendimiento sostenido compatible
 
 El asistente de voz es de captura puntual y opcional. No se debe convertir en un hotword permanente propio sin un diseño explícito para las restricciones de micrófono y servicios en segundo plano.
 
-## 3. Riesgos y prioridades detectadas
+## 4. Riesgos y prioridades detectadas
 
 ### P0 — Plataforma
 
-Migrar el proyecto a Android 16 (API 36), actualizar el toolchain compatible y probar los cambios de comportamiento asociados a target 36. Desde el 31 de agosto de 2026, Google Play exige API 36+ para nuevas apps y actualizaciones de apps Android estándar.
+Migrar el proyecto a Android 16 (API 36), actualizar el toolchain compatible y probar los cambios de comportamiento asociados a target 36. La guía oficial de Google Play publicada actualmente indica que, desde el 31 de agosto de 2026, las apps nuevas y las actualizaciones deben apuntar a Android 16/API 36 o superior para su envío a Google Play.
 
 ### P0 — Arquitectura
 
@@ -79,7 +112,7 @@ Añadir un asesor local cuando el dispositivo sea compatible, usando contexto de
 
 Añadir Baseline Profile, revisar estabilidad Compose, reducir trabajo en recomposición, optimizar release y añadir benchmarks de inicio/navegación/biblioteca.
 
-## 4. Plan consolidado después de CAR-6
+## 5. Plan consolidado después de CAR-6
 
 ### CAR-13 — GameHub Ultra Core 2.0
 - Migración a Android 16/API 36 y toolchain compatible.
@@ -116,7 +149,7 @@ Añadir Baseline Profile, revisar estabilidad Compose, reducir trabajo en recomp
 - Matriz de compatibilidad.
 - APK/AAB de release validado.
 
-## 5. Criterio de finalización de cada fase
+## 6. Criterio de finalización de cada fase
 
 Una fase solo se considera terminada cuando:
 1. El código está integrado en `main`.
@@ -126,7 +159,7 @@ Una fase solo se considera terminada cuando:
 5. No se documentan capacidades que Android no permita realmente.
 6. Las funciones nuevas tienen fallback seguro cuando la capacidad del dispositivo no existe.
 
-## 6. Referencias oficiales
+## 7. Referencias oficiales
 
 - Android 16 SDK setup: https://developer.android.com/about/versions/16/setup-sdk
 - Google Play target API requirements: https://developer.android.com/google/play/requirements/target-sdk
