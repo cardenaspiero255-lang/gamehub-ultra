@@ -95,8 +95,8 @@ class GameHubPreferencesRepository(
                 .orEmpty()
                 .lineSequence()
                 .mapNotNull(PerformanceEventCodec::decode)
-                .takeLast(limit.coerceIn(1, 50))
                 .toList()
+                .takeLast(limit.coerceIn(1, 50))
         }
 
     suspend fun saveSelectedProfile(profile: PerformanceProfile) {
