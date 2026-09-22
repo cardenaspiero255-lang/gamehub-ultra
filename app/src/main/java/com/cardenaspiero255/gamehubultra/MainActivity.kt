@@ -331,7 +331,7 @@ private fun DeviceStatusCard(device: DeviceInfo, capabilities: DeviceCapabilitie
             DeviceRow(stringResource(R.string.manufacturer), device.manufacturer)
             DeviceRow(stringResource(R.string.model), device.model)
             DeviceRow(stringResource(R.string.android_version), device.androidVersion + " (API " + device.sdkInt + ")")
-            DeviceRow(stringResource(R.string.cpu), device.cpuModel)
+            DeviceRow(stringResource(R.string.cpu), device.cpuModel.ifBlank { stringResource(R.string.not_available) })
             DeviceRow(stringResource(R.string.cores), device.cpuCores.toString())
             DeviceRow(stringResource(R.string.ram), device.totalRamMb.toString() + " MB")
             DeviceRow(stringResource(R.string.gpu_vendor), device.gpuVendor ?: stringResource(R.string.not_available))
