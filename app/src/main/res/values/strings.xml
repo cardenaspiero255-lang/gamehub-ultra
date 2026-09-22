@@ -73,4 +73,23 @@
     <string name="profile_balanced_description">Equilibra fluidez, consumo y temperatura.</string>
     <string name="profile_interpolation_description">Prioriza opciones de interpolación cuando exista una API compatible y acepta un mayor coste térmico. Android no permite forzar interpolación en otros juegos mediante una API pública.</string>
     <string name="profile_x4_description">Preset de alto rendimiento. Solicita Sustained Performance solo cuando Android y el dispositivo lo soportan; no genera frames por sí mismo.</string>
+    <string name="voice_assistant_title">Asistente de voz</string>
+    <string name="voice_assistant_subtitle">Habla una vez para abrir juegos, seleccionar perfiles o consultar el estado. No hay escucha permanente.</string>
+    <string name="voice_start">Hablar</string>
+    <string name="voice_stop">Detener</string>
+    <string name="voice_permission_button">Permitir micrófono</string>
+    <string name="voice_permission_required">Se necesita permiso de micrófono para usar el asistente.</string>
+    <string name="voice_recognition_error">No pude entender la voz. Inténtalo de nuevo.</string>
+    <string name="voice_selected_profile">Perfil seleccionado: %1$s</string>
+    <string name="voice_transcript">Escuché: %1$s</string>
+    <string name="voice_result_profile_applied">Aplicado: perfil %1$s seleccionado.</string>
+    <string name="voice_result_game_opened">Aplicado: abrí %1$s.</string>
+    <string name="voice_result_profile_applied_short">Perfil %1$s seleccionado en GameHub Ultra.</string>
+    <string name="voice_result_profile_deferred">Perfil %1$s guardado; se aplicará al activar GameHub Ultra.</string>
+    <string name="voice_result_profile_deferred_short">Perfil %1$s guardado para cuando GameHub Ultra esté activo.</string>
+    <string name="voice_result_profile_unavailable">El perfil solicitado no está disponible en este dispositivo.</string>
+    <string name="voice_result_status">Estado: batería %1$s%%, térmica %2$s.</string>
+    <string name="voice_result_help">Puedes decir: abre un juego, pon X4, prioriza interpolación, FPS balanceado o dime el estado.</string>
+    <string name="voice_status_unavailable">No disponible.</string>
+    <string name="voice_status_failed">No se pudo completar.</string>
 </resources>

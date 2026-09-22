@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -7,8 +8,11 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.content.pm.PackageManager
 import android.annotation.SuppressLint
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -50,6 +54,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
+import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
+import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
+import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
+import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
+import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
@@ -58,6 +67,7 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -68,7 +78,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         selectedProfileName = savedInstanceState?.getString(KEY_PROFILE)
-            ?: PerformanceProfile.BALANCED.name
+            ?: ProfileSelectionStore.getSelectedProfile(this).name
         val selectedProfile = PerformanceProfile.entries.firstOrNull { it.name == selectedProfileName }
             ?: PerformanceProfile.BALANCED
 
@@ -85,6 +95,7 @@ class MainActivity : ComponentActivity() {
                         device = device,
                         onProfileSelected = { profile ->
                             selectedProfileName = profile.name
+                            ProfileSelectionStore.saveSelectedProfile(this@MainActivity, profile)
                             performanceController.apply(profile, window)
                         }
                     )
@@ -123,6 +134,11 @@ private fun GameHubUltraApp(
         state = onProfileSelected(profile)
     }
 
+    fun selectGame(packageName: String) {
+        selectedGamePackage = packageName
+        GameSelectionStore.saveSelectedGame(context, packageName)
+    }
+
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
         stringResource(R.string.nav_biblioteca),
@@ -158,15 +174,13 @@ private fun GameHubUltraApp(
                 state = state,
                 device = device,
                 selectedProfileName = selectedProfileName,
-                onProfileSelected = ::selectProfile
+                onProfileSelected = ::selectProfile,
+                onGameSelected = ::selectGame
             )
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
                 selectedGamePackage = selectedGamePackage,
-                onGameSelected = {
-                    selectedGamePackage = it
-                    GameSelectionStore.saveSelectedGame(context, it)
-                }
+                onGameSelected = ::selectGame
             )
             else -> SettingsScreen(Modifier.padding(padding))
         }
@@ -179,7 +193,8 @@ private fun HomeScreen(
     state: PerformanceState,
     device: DeviceInfo,
     selectedProfileName: String,
-    onProfileSelected: (PerformanceProfile) -> Unit
+    onProfileSelected: (PerformanceProfile) -> Unit,
+    onGameSelected: (String) -> Unit
 ) {
     LazyColumn(
         modifier = modifier
@@ -195,6 +210,13 @@ private fun HomeScreen(
             )
         }
         item { ActiveProfileCard(state) }
+        item {
+            VoiceAssistantCard(
+                selectedProfileName = selectedProfileName,
+                onProfileSelected = onProfileSelected,
+                onGameSelected = onGameSelected
+            )
+        }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
@@ -218,6 +240,220 @@ private fun HomeScreen(
         }
         item { DeviceStatusCard(device, state.capabilities) }
     }
+}
+
+
+@Composable
+private fun VoiceAssistantCard(
+    selectedProfileName: String,
+    onProfileSelected: (PerformanceProfile) -> Unit,
+    onGameSelected: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var listening by remember { mutableStateOf(false) }
+    var transcript by rememberSaveable { mutableStateOf("") }
+    var response by rememberSaveable { mutableStateOf<String?>(null) }
+    var permissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        permissionGranted = granted
+        if (!granted) {
+            response = context.getString(R.string.voice_permission_required)
+        }
+    }
+
+    val voiceController = remember(context) {
+        lateinit var controller: VoiceAssistantController
+        controller = VoiceAssistantController(
+            context = context,
+            onListeningChanged = { listening = it },
+            onTranscript = { spokenText ->
+                transcript = spokenText
+                scope.launch(Dispatchers.IO) {
+                    val result = VoiceCommandEngine.execute(
+                        command = VoiceCommandParser.parse(spokenText),
+                        gamesProvider = { GameLibrary.discover(context).games },
+                        launchGame = { packageName ->
+                            GameLauncher.launch(context, packageName)
+                        },
+                        saveSelectedGame = { packageName ->
+                            GameSelectionStore.saveSelectedGame(context, packageName)
+                        },
+                        saveSelectedProfile = { profile ->
+                            ProfileSelectionStore.saveSelectedProfile(context, profile)
+                        },
+                        isProfileAvailable = { profile ->
+                            profile != PerformanceProfile.X4 ||
+                                DeviceCapabilitiesProvider.get(context)
+                                    .sustainedPerformanceSupported
+                        },
+                        statusProvider = { VoiceDeviceStatusProvider.read(context) }
+                    )
+                    val spokenResponse = VoiceResponseFormatter.format(context, result)
+                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                        when (result) {
+                            is VoiceActionResult.ProfileSelected ->
+                                onProfileSelected(result.profile)
+                            is VoiceActionResult.GameOpened -> {
+                                onGameSelected(result.game.packageName)
+                                if (!result.profileDeferred) {
+                                    result.profile?.let(onProfileSelected)
+                                }
+                            }
+                            else -> Unit
+                        }
+                        response = spokenResponse
+                        controller.speak(spokenResponse)
+                    }
+                }
+            },
+            onError = {
+                response = context.getString(R.string.voice_recognition_error)
+            }
+        )
+        controller
+    }
+
+    DisposableEffect(voiceController) {
+        onDispose { voiceController.release() }
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.voice_assistant_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(stringResource(R.string.voice_assistant_subtitle))
+            Button(
+                onClick = {
+                    if (permissionGranted) {
+                        if (listening) {
+                            voiceController.stopListening()
+                        } else {
+                            voiceController.startListening()
+                        }
+                    } else {
+                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    when {
+                        listening -> stringResource(R.string.voice_stop)
+                        permissionGranted -> stringResource(R.string.voice_start)
+                        else -> stringResource(R.string.voice_permission_button)
+                    }
+                )
+            }
+            Text(
+                stringResource(
+                    R.string.voice_selected_profile,
+                    selectedProfileName
+                )
+            )
+            if (transcript.isNotBlank()) {
+                Text(stringResource(R.string.voice_transcript, transcript))
+            }
+            response?.let { Text(it) }
+        }
+    }
+}
+
+private object VoiceDeviceStatusProvider {
+    fun read(context: Context): VoiceDeviceStatus {
+        val batteryManager = context.getSystemService(android.os.BatteryManager::class.java)
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        val battery = BatteryTelemetry.sanitizePercentage(
+            batteryManager?.getIntProperty(
+                android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY
+            )
+        )
+        val thermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            when (powerManager?.currentThermalStatus) {
+                PowerManager.THERMAL_STATUS_NONE -> context.getString(R.string.normal)
+                PowerManager.THERMAL_STATUS_LIGHT -> context.getString(R.string.thermal_light)
+                PowerManager.THERMAL_STATUS_MODERATE -> context.getString(R.string.thermal_moderate)
+                PowerManager.THERMAL_STATUS_SEVERE -> context.getString(R.string.thermal_severe)
+                PowerManager.THERMAL_STATUS_CRITICAL -> context.getString(R.string.thermal_critical)
+                PowerManager.THERMAL_STATUS_EMERGENCY -> context.getString(R.string.thermal_emergency)
+                PowerManager.THERMAL_STATUS_SHUTDOWN -> context.getString(R.string.thermal_shutdown)
+                else -> context.getString(R.string.thermal_unknown)
+            }
+        } else {
+            context.getString(R.string.not_available)
+        }
+        return VoiceDeviceStatus(battery, thermal)
+    }
+}
+
+private object VoiceResponseFormatter {
+    fun format(context: Context, result: VoiceActionResult): String =
+        when (result) {
+            is VoiceActionResult.ProfileSelected ->
+                context.getString(
+                    if (result.deferred) {
+                        R.string.voice_result_profile_deferred
+                    } else {
+                        R.string.voice_result_profile_applied
+                    },
+                    result.profile.title
+                )
+            is VoiceActionResult.GameOpened -> {
+                val base = context.getString(
+                    R.string.voice_result_game_opened,
+                    result.game.label
+                )
+                when {
+                    result.profileDeferred && result.profile != null ->
+                        base + " " + context.getString(
+                            R.string.voice_result_profile_deferred_short,
+                            result.profile.title
+                        )
+                    result.profileUnavailable ->
+                        base + " " + context.getString(
+                            R.string.voice_result_profile_unavailable
+                        )
+                    result.profile != null ->
+                        base + " " + context.getString(
+                            R.string.voice_result_profile_applied_short,
+                            result.profile.title
+                        )
+                    else -> base
+                }
+            }
+            is VoiceActionResult.DeviceStatus ->
+                context.getString(
+                    R.string.voice_result_status,
+                    result.status.batteryPercent?.toString()
+                        ?: context.getString(R.string.not_available),
+                    result.status.thermalLabel
+                )
+            VoiceActionResult.Help ->
+                context.getString(R.string.voice_result_help)
+            is VoiceActionResult.NotAvailable ->
+                context.getString(R.string.voice_status_unavailable) +
+                    " " + result.detail
+            VoiceActionResult.RequiresPermission ->
+                context.getString(R.string.voice_permission_required)
+            is VoiceActionResult.Failed ->
+                context.getString(R.string.voice_status_failed) +
+                    " " + result.detail
+        }
 }
 
 @Composable
