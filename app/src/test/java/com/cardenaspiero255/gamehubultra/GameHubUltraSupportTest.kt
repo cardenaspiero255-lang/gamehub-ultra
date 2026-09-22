@@ -1,6 +1,6 @@
 package com.cardenaspiero255.gamehubultra
 
-import android.app.ApplicationInfo
+import android.content.pm.ApplicationInfo
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,30 +19,46 @@ class GameHubUltraSupportTest {
 
     @Test
     fun gameDiscoveryAcceptsDeclaredGames() {
-        val info = ApplicationInfo().apply {
-            category = ApplicationInfo.CATEGORY_GAME
-        }
-
-        assertTrue(GameLibrary.isGameApplication(info))
+        assertTrue(
+            GameLibrary.isGameApplication(
+                category = ApplicationInfo.CATEGORY_GAME,
+                flags = 0,
+                sdkInt = 35
+            )
+        )
     }
 
     @Test
     fun gameDiscoveryAcceptsGameFlag() {
-        val info = ApplicationInfo().apply {
-            flags = ApplicationInfo.FLAG_IS_GAME
-        }
-
-        assertTrue(GameLibrary.isGameApplication(info))
+        assertTrue(
+            GameLibrary.isGameApplication(
+                category = ApplicationInfo.CATEGORY_UNDEFINED,
+                flags = ApplicationInfo.FLAG_IS_GAME,
+                sdkInt = 35
+            )
+        )
     }
 
     @Test
     fun gameDiscoveryRejectsNonGameApplications() {
-        val info = ApplicationInfo().apply {
-            category = ApplicationInfo.CATEGORY_UNDEFINED
-            flags = 0
-        }
+        assertFalse(
+            GameLibrary.isGameApplication(
+                category = ApplicationInfo.CATEGORY_UNDEFINED,
+                flags = 0,
+                sdkInt = 35
+            )
+        )
+    }
 
-        assertFalse(GameLibrary.isGameApplication(info))
+    @Test
+    fun gameDiscoveryDoesNotReadGameFlagBeforeApi26() {
+        assertFalse(
+            GameLibrary.isGameApplication(
+                category = ApplicationInfo.CATEGORY_UNDEFINED,
+                flags = ApplicationInfo.FLAG_IS_GAME,
+                sdkInt = 25
+            )
+        )
     }
 
     @Test
