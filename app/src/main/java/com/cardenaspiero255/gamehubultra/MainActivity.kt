@@ -5,9 +5,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
+import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -149,6 +151,11 @@ private fun GameHubUltraApp(
     var latencyMs by remember { mutableStateOf<Long?>(null) }
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
+    }
+    val aiAdvisor = remember { GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter()) }
+
+    DisposableEffect(aiAdvisor) {
+        onDispose { aiAdvisor.close() }
     }
 
     LaunchedEffect(lifecycleOwner, adaptiveEngine, activeSessionPackage, activeSessionId) {
@@ -304,6 +311,9 @@ private fun GameHubUltraApp(
     val recentGamePackages = uiState.recentGamePackages
     val manualGamePackages = uiState.manualGamePackages
     val aiContext = GameHubAiContext(
+        selectedGamePackage = selectedGamePackage,
+        sustainedPerformanceSupported =
+            initialState.capabilities?.sustainedPerformanceSupported == true,
         cpuCores = device.cpuCores,
         totalRamMb = device.totalRamMb.toInt(),
         gpuAvailable = !device.gpuRenderer.isNullOrBlank() || !device.gpuVendor.isNullOrBlank(),
@@ -364,7 +374,8 @@ private fun GameHubUltraApp(
                 onApplyAdaptiveProfile = {
                     adaptiveDecision?.let { selectProfile(it.profile) }
                 },
-                aiContext = aiContext
+                aiContext = aiContext,
+                aiAdvisor = aiAdvisor
             )
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
@@ -408,7 +419,8 @@ private fun HomeScreen(
     adaptiveDecision: AdaptiveDecision?,
     performanceHistory: List<PerformanceEvent>,
     onApplyAdaptiveProfile: () -> Unit,
-    aiContext: GameHubAiContext
+    aiContext: GameHubAiContext,
+    aiAdvisor: GameHubAiAdvisor
 ) {
     LazyColumn(
         modifier = modifier
@@ -427,6 +439,7 @@ private fun HomeScreen(
         item {
             AiAdvisorCard(
                 context = aiContext,
+                advisor = aiAdvisor,
                 onProfileSelected = onProfileSelected
             )
         }
@@ -435,7 +448,8 @@ private fun HomeScreen(
                 selectedProfileName = selectedProfileName,
                 onProfileSelected = onProfileSelected,
                 onGameSelected = onGameSelected,
-                aiContext = aiContext
+                aiContext = aiContext,
+                aiAdvisor = aiAdvisor
             )
         }
         item {
@@ -611,11 +625,11 @@ private fun VoiceAssistantCard(
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit,
-    aiContext: GameHubAiContext
+    aiContext: GameHubAiContext,
+    aiAdvisor: GameHubAiAdvisor
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val aiAdvisor = remember { GameHubAiAdvisor() }
     val aiIntentResolver = remember(aiAdvisor) { aiAdvisor.intentResolver() }
     val latestAiContext by rememberUpdatedState(aiContext)
     var listening by remember { mutableStateOf(false) }
@@ -821,7 +835,7 @@ private object VoiceResponseFormatter {
                     result.status.thermalLabel
                 )
             is VoiceActionResult.AiAdvice ->
-                result.advice.title + " " + result.advice.explanation
+                AiAdviceFormatter.fullResponse(context, result.advice)
             VoiceActionResult.Help ->
                 context.getString(R.string.voice_result_help)
             is VoiceActionResult.NotAvailable ->
@@ -838,9 +852,10 @@ private object VoiceResponseFormatter {
 @Composable
 private fun AiAdvisorCard(
     context: GameHubAiContext,
+    advisor: GameHubAiAdvisor,
     onProfileSelected: (PerformanceProfile) -> Unit
 ) {
-    val advisor = remember { GameHubAiAdvisor() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var advice by remember { mutableStateOf<GameHubAiAdvice?>(null) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -854,34 +869,36 @@ private fun AiAdvisorCard(
             )
             Text(stringResource(R.string.ai_advisor_subtitle))
             Text(
-                if (advisor.isLocalModelAvailable()) {
-                    stringResource(R.string.ai_local_model_ready)
-                } else {
-                    stringResource(R.string.ai_fallback_active)
-                },
+                stringResource(R.string.ai_local_model_configured),
                 style = MaterialTheme.typography.bodySmall
             )
             Button(
                 onClick = {
-                    advice = advisor.advise(
-                        question = "que modo me recomiendas",
-                        context = context
-                    )
+                    scope.launch(Dispatchers.IO) {
+                        val result = advisor.advise(
+                            question = "que modo me recomiendas",
+                            context = context
+                        )
+                        withContext(Dispatchers.Main) {
+                            advice = result
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.ai_analyze))
             }
             advice?.let { result ->
-                Text(result.title, style = MaterialTheme.typography.titleMedium)
-                Text(result.explanation)
-                result.suggestedProfile?.let { profile ->
-                    Button(
-                        onClick = { onProfileSelected(profile) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.ai_apply_profile))
-                    }
+                Text(
+                    AiAdviceFormatter.title(LocalContext.current, result),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(AiAdviceFormatter.explanation(LocalContext.current, result))
+                Button(
+                    onClick = { onProfileSelected(result.suggestedProfile) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.ai_apply_profile))
                 }
             }
         }
