@@ -35,6 +35,7 @@ object VoiceCommandEngine {
         launchGame: (String) -> Boolean,
         saveSelectedGame: (String) -> Unit,
         saveSelectedProfile: (PerformanceProfile) -> Unit,
+        saveSelectedGameWithProfile: ((String, PerformanceProfile) -> Unit)? = null,
         isProfileAvailable: (PerformanceProfile) -> Boolean,
         statusProvider: () -> VoiceDeviceStatus,
         deferProfileApplication: Boolean = false
@@ -61,13 +62,21 @@ object VoiceCommandEngine {
                         "No encontré un juego instalado que coincida con \"" + command.query + "\"."
                     )
                 } else {
-                    saveSelectedGame(match.packageName)
                     val profileUnavailable =
                         command.requestedProfile != null &&
                             !isProfileAvailable(command.requestedProfile)
 
-                    if (!profileUnavailable && command.requestedProfile != null) {
-                        saveSelectedProfile(command.requestedProfile)
+                    when {
+                        command.requestedProfile == null ->
+                            saveSelectedGame(match.packageName)
+                        profileUnavailable ->
+                            saveSelectedGame(match.packageName)
+                        saveSelectedGameWithProfile != null ->
+                            saveSelectedGameWithProfile(match.packageName, command.requestedProfile)
+                        else -> {
+                            saveSelectedGame(match.packageName)
+                            saveSelectedProfile(command.requestedProfile)
+                        }
                     }
 
                     if (launchGame(match.packageName)) {
