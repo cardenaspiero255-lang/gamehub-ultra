@@ -6,48 +6,58 @@ import kotlin.test.assertTrue
 
 class AiActionAllowlistTest {
     @Test
-    fun acceptsOnlyKnownProfileActions() {
+    fun acceptsOnlySupportedAdvisorActions() {
         assertTrue(AiActionAllowlist.validate(LocalAiActionCandidate(AiActionAllowlist.PROFILE_BALANCED)))
         assertTrue(AiActionAllowlist.validate(LocalAiActionCandidate(AiActionAllowlist.PROFILE_INTERPOLATION)))
         assertTrue(AiActionAllowlist.validate(LocalAiActionCandidate(AiActionAllowlist.PROFILE_X4)))
-        assertTrue(AiActionAllowlist.validate(LocalAiActionCandidate(AiActionAllowlist.DEVICE_STATUS)))
-        assertTrue(AiActionAllowlist.validate(LocalAiActionCandidate(AiActionAllowlist.HELP)))
         assertTrue(AiActionAllowlist.validate(LocalAiActionCandidate(AiActionAllowlist.ADVICE)))
     }
 
     @Test
-    fun rejectsShellUrlsAndGenericIntents() {
+    fun rejectsShellUrlsGenericIntentsAndUnsupportedFlows() {
         assertFalse(AiActionAllowlist.validate(LocalAiActionCandidate("SHELL")))
-        assertFalse(AiActionAllowlist.validate(LocalAiActionCandidate("EXECUTE_SHELL", "rm -rf /")))
-        assertFalse(AiActionAllowlist.validate(LocalAiActionCandidate("OPEN_URL", "https://example.com")))
-        assertFalse(AiActionAllowlist.validate(LocalAiActionCandidate("GENERIC_INTENT", "intent://settings")))
-        assertFalse(AiActionAllowlist.validate(LocalAiActionCandidate(AiActionAllowlist.PROFILE_X4, "extra")))
+        assertFalse(
+            AiActionAllowlist.validate(
+                LocalAiActionCandidate("EXECUTE_SHELL", "rm -rf /")
+            )
+        )
+        assertFalse(
+            AiActionAllowlist.validate(
+                LocalAiActionCandidate("OPEN_URL", "https://example.com")
+            )
+        )
+        assertFalse(
+            AiActionAllowlist.validate(
+                LocalAiActionCandidate("GENERIC_INTENT", "intent://settings")
+            )
+        )
+        assertFalse(
+            AiActionAllowlist.validate(
+                LocalAiActionCandidate("OPEN_INSTALLED_GAME", "Resident Evil 4 Remake")
+            )
+        )
+        assertFalse(
+            AiActionAllowlist.validate(
+                LocalAiActionCandidate("DEVICE_STATUS")
+            )
+        )
+        assertFalse(
+            AiActionAllowlist.validate(
+                LocalAiActionCandidate("HELP")
+            )
+        )
     }
 
     @Test
-    fun openGameArgumentIsRestrictedToSafeText() {
-        assertTrue(
+    fun profileAndAdviceActionsCannotCarryArguments() {
+        assertFalse(
             AiActionAllowlist.validate(
-                LocalAiActionCandidate(
-                    AiActionAllowlist.OPEN_INSTALLED_GAME,
-                    "Resident Evil 4 Remake"
-                )
+                LocalAiActionCandidate(AiActionAllowlist.PROFILE_X4, "extra")
             )
         )
         assertFalse(
             AiActionAllowlist.validate(
-                LocalAiActionCandidate(
-                    AiActionAllowlist.OPEN_INSTALLED_GAME,
-                    "https://example.com"
-                )
-            )
-        )
-        assertFalse(
-            AiActionAllowlist.validate(
-                LocalAiActionCandidate(
-                    AiActionAllowlist.OPEN_INSTALLED_GAME,
-                    "com.example.app;drop table"
-                )
+                LocalAiActionCandidate(AiActionAllowlist.ADVICE, "open settings")
             )
         )
     }
