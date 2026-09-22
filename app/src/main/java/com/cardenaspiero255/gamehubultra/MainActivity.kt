@@ -55,6 +55,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveRuntimeSnapshot
@@ -85,6 +86,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.UUID
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
@@ -131,6 +133,7 @@ private fun GameHubUltraApp(
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     var state by remember { mutableStateOf(initialState) }
@@ -138,80 +141,135 @@ private fun GameHubUltraApp(
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
-    var lastLatencyCheckAt by remember { mutableStateOf(0L) }
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
 
-    LaunchedEffect(Unit) {
-        viewModel.recordPerformanceEvent(
-            PerformanceEvent(
-                timestampMillis = System.currentTimeMillis(),
-                type = PerformanceEventType.SESSION_STARTED,
-                detail = "GameHub Ultra session"
-            )
-        )
-
-        var lastThermalStatus: Int? = null
-        var initializedThermalStatus = false
-
-        while (isActive) {
-            val diagnostics = withContext(Dispatchers.IO) {
-                RuntimeDiagnosticsProvider.get(context)
+    LaunchedEffect(lifecycleOwner, adaptiveEngine, uiState.selectedGamePackage) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val selectedGame = uiState.selectedGamePackage
+            if (selectedGame == null) {
+                adaptiveDecision = adaptiveEngine.evaluate(
+                    AdaptiveRuntimeSnapshot(
+                        thermalStatus = null,
+                        thermalHeadroom = null,
+                        batteryPercent = null,
+                        charging = false,
+                        powerSaveMode = false,
+                        sessionActive = false,
+                        sustainedPerformanceSupported =
+                            initialState.capabilities?.sustainedPerformanceSupported == true,
+                        performanceHintsAvailable =
+                            initialState.capabilities?.performanceHintsAvailable == true
+                    )
+                )
+                return@repeatOnLifecycle
             }
-            val now = System.currentTimeMillis()
-            if (now - lastLatencyCheckAt >= 30_000L) {
-                latencyMs = withContext(Dispatchers.IO) {
-                    com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe.measure()
+
+            val sessionId = UUID.randomUUID().toString()
+            viewModel.recordPerformanceEvent(
+                PerformanceEvent(
+                    timestampMillis = System.currentTimeMillis(),
+                    type = PerformanceEventType.SESSION_STARTED,
+                    sessionId = sessionId,
+                    detail = selectedGame
+                )
+            )
+
+            var lastThermalStatus: Int? = null
+            var initializedThermalStatus = false
+            var lastLatencyCheckAt = 0L
+            var lastLatencyNetworkHandle: Long? = null
+
+            try {
+                while (isActive) {
+                    val diagnostics = withContext(Dispatchers.IO) {
+                        RuntimeDiagnosticsProvider.get(context)
+                    }
+                    val now = System.currentTimeMillis()
+                    val network = diagnostics.connectivity
+                    if (!network.connected ||
+                        !network.validated ||
+                        network.networkHandle == null
+                    ) {
+                        latencyMs = null
+                        lastLatencyNetworkHandle = null
+                        lastLatencyCheckAt = 0L
+                    } else if (
+                        network.networkHandle != lastLatencyNetworkHandle ||
+                        now - lastLatencyCheckAt >= 30_000L
+                    ) {
+                        latencyMs = withContext(Dispatchers.IO) {
+                            com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe.measure(
+                                context = context,
+                                expectedNetworkHandle = network.networkHandle
+                            )
+                        }
+                        lastLatencyNetworkHandle = network.networkHandle
+                        lastLatencyCheckAt = now
+                    }
+
+                    val enrichedDiagnostics = diagnostics.copy(
+                        connectivity = network.copy(latencyMs = latencyMs)
+                    )
+                    runtimeDiagnostics = enrichedDiagnostics
+
+                    if (initializedThermalStatus &&
+                        diagnostics.thermal.status != lastThermalStatus
+                    ) {
+                        viewModel.recordPerformanceEvent(
+                            PerformanceEvent(
+                                timestampMillis = now,
+                                type = PerformanceEventType.THERMAL_CHANGED,
+                                sessionId = sessionId,
+                                detail = diagnostics.thermal.status?.toString() ?: "unavailable"
+                            )
+                        )
+                    }
+                    lastThermalStatus = diagnostics.thermal.status
+                    initializedThermalStatus = true
+
+                    val decision = adaptiveEngine.evaluate(
+                        AdaptiveRuntimeSnapshot(
+                            thermalStatus = diagnostics.thermal.status,
+                            thermalHeadroom = diagnostics.thermal.headroom,
+                            batteryPercent = diagnostics.battery.percent,
+                            charging = diagnostics.battery.charging,
+                            powerSaveMode = diagnostics.battery.powerSaveMode,
+                            sessionActive = true,
+                            sustainedPerformanceSupported =
+                                initialState.capabilities?.sustainedPerformanceSupported == true,
+                            performanceHintsAvailable =
+                                initialState.capabilities?.performanceHintsAvailable == true
+                        )
+                    )
+                    adaptiveDecision = decision
+
+                    if (decision.changed) {
+                        viewModel.recordPerformanceEvent(
+                            PerformanceEvent(
+                                timestampMillis = now,
+                                type = PerformanceEventType.POLICY_CHANGED,
+                                sessionId = sessionId,
+                                profile = decision.profile,
+                                score = decision.score,
+                                detail = decision.reason
+                            )
+                        )
+                    }
+
+                    delay(5_000)
                 }
-                lastLatencyCheckAt = now
-            }
-            val enrichedDiagnostics = diagnostics.copy(
-                connectivity = diagnostics.connectivity.copy(latencyMs = latencyMs)
-            )
-            runtimeDiagnostics = enrichedDiagnostics
-
-            if (initializedThermalStatus && diagnostics.thermal.status != lastThermalStatus) {
+            } finally {
                 viewModel.recordPerformanceEvent(
                     PerformanceEvent(
-                        timestampMillis = now,
-                        type = PerformanceEventType.THERMAL_CHANGED,
-                        detail = diagnostics.thermal.status?.toString() ?: "unavailable"
+                        timestampMillis = System.currentTimeMillis(),
+                        type = PerformanceEventType.SESSION_ENDED,
+                        sessionId = sessionId,
+                        detail = selectedGame
                     )
                 )
             }
-            lastThermalStatus = diagnostics.thermal.status
-            initializedThermalStatus = true
-
-            val decision = adaptiveEngine.evaluate(
-                AdaptiveRuntimeSnapshot(
-                    thermalStatus = diagnostics.thermal.status,
-                    thermalHeadroom = diagnostics.thermal.headroom,
-                    batteryPercent = diagnostics.battery.percent,
-                    charging = diagnostics.battery.charging,
-                    powerSaveMode = diagnostics.battery.powerSaveMode,
-                    sessionActive = true,
-                    sustainedPerformanceSupported =
-                        state.capabilities?.sustainedPerformanceSupported == true,
-                    performanceHintsAvailable =
-                        state.capabilities?.performanceHintsAvailable == true
-                )
-            )
-            adaptiveDecision = decision
-
-            if (decision.changed) {
-                viewModel.recordPerformanceEvent(
-                    PerformanceEvent(
-                        timestampMillis = now,
-                        type = PerformanceEventType.POLICY_CHANGED,
-                        profile = decision.profile,
-                        score = decision.score,
-                        detail = decision.reason
-                    )
-                )
-            }
-
-            delay(5_000)
         }
     }
 
