@@ -412,7 +412,7 @@ private fun RuntimeDiagnosticsCard(
                 )
                 DeviceRow(
                     stringResource(R.string.runtime_thermal),
-                    diagnostics.thermal.status?.let(::thermalLabel)
+                    diagnostics.thermal.status?.let { thermalLabel(it) }
                         ?: stringResource(R.string.not_available)
                 )
                 DeviceRow(
@@ -1456,9 +1456,9 @@ private fun thermalLabel(status: Int?): String =
     }
 
 
-@Composable
 private fun Float.roundToInt(): Int = kotlin.math.round(this).toInt()
 
+@Composable
 private fun eventLabel(event: PerformanceEvent): String =
     when (event.type) {
         PerformanceEventType.SESSION_STARTED ->
