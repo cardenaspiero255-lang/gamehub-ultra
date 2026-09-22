@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.input.InputManager
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
@@ -13,6 +14,10 @@ import android.os.StatFs
 import android.view.Display
 import android.view.WindowManager
 import com.cardenaspiero255.gamehubultra.BatteryTelemetry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
 
 data class ThermalTelemetry(
     val status: Int?,
@@ -31,6 +36,7 @@ data class RefreshTelemetry(
 )
 
 data class ConnectivityTelemetry(
+    val networkHandle: Long?,
     val connected: Boolean,
     val validated: Boolean,
     val metered: Boolean,
@@ -128,9 +134,10 @@ object RuntimeDiagnosticsProvider {
 
     private fun readConnectivity(context: Context): ConnectivityTelemetry {
         val manager = context.getSystemService(ConnectivityManager::class.java)
-            ?: return ConnectivityTelemetry(false, false, true, null, null, null)
+            ?: return ConnectivityTelemetry(null, false, false, true, null, null, null)
 
         val network = manager.activeNetwork ?: return ConnectivityTelemetry(
+            networkHandle = null,
             connected = false,
             validated = false,
             metered = manager.isActiveNetworkMetered,
@@ -139,7 +146,15 @@ object RuntimeDiagnosticsProvider {
             latencyMs = null
         )
         val capabilities = manager.getNetworkCapabilities(network)
-            ?: return ConnectivityTelemetry(false, false, manager.isActiveNetworkMetered, null, null, null)
+            ?: return ConnectivityTelemetry(
+                networkHandle = network.networkHandle,
+                connected = false,
+                validated = false,
+                metered = manager.isActiveNetworkMetered,
+                transport = null,
+                downstreamBandwidthKbps = null,
+                latencyMs = null
+            )
 
         val transport = when {
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi‑Fi"
@@ -150,6 +165,7 @@ object RuntimeDiagnosticsProvider {
         }
 
         return ConnectivityTelemetry(
+            networkHandle = network.networkHandle,
             connected = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
             validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
             metered = manager.isActiveNetworkMetered,
@@ -181,11 +197,26 @@ object RuntimeDiagnosticsProvider {
 
 object ConnectivityLatencyProbe {
     suspend fun measure(
+        context: Context,
+        expectedNetworkHandle: Long,
         endpoint: String = "https://www.gstatic.com/generate_204"
-    ): Long? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+    ): Long? = withContext(Dispatchers.IO) {
+        val manager = context.applicationContext
+            .getSystemService(ConnectivityManager::class.java)
+            ?: return@withContext null
+
+        val network = manager.activeNetwork ?: return@withContext null
+        if (network.networkHandle != expectedNetworkHandle) return@withContext null
+
+        val capabilities = manager.getNetworkCapabilities(network)
+            ?: return@withContext null
+        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+            return@withContext null
+        }
+
         runCatching {
             val start = android.os.SystemClock.elapsedRealtime()
-            val connection = java.net.URL(endpoint).openConnection() as java.net.HttpURLConnection
+            val connection = network.openConnection(URL(endpoint)) as HttpURLConnection
             connection.connectTimeout = 1500
             connection.readTimeout = 1500
             connection.instanceFollowRedirects = false
@@ -194,7 +225,11 @@ object ConnectivityLatencyProbe {
             connection.inputStream.close()
             val elapsed = android.os.SystemClock.elapsedRealtime() - start
             connection.disconnect()
-            elapsed.takeIf { it in 1..10_000 }
+
+            val currentNetwork = manager.activeNetwork
+            elapsed.takeIf {
+                currentNetwork?.networkHandle == expectedNetworkHandle && it in 1..10_000
+            }
         }.getOrNull()
     }
 }
