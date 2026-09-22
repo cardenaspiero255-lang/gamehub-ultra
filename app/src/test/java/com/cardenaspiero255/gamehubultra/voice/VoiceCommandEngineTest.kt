@@ -46,6 +46,39 @@ class VoiceCommandEngineTest {
     }
 
     @Test
+    fun selectsSupportedProfileAndCanDeferApplication() {
+        var saved: PerformanceProfile? = null
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            gamesProvider = { games },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = { saved = it },
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            deferProfileApplication = true
+        )
+        val selected = assertIs<VoiceActionResult.ProfileSelected>(result)
+        assertTrue(selected.deferred)
+        assertEquals(PerformanceProfile.X4, saved)
+    }
+
+    @Test
+    fun appliesImmediatelyWhenUsedByInAppPath() {
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            gamesProvider = { games },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") }
+        )
+        val selected = assertIs<VoiceActionResult.ProfileSelected>(result)
+        assertEquals(false, selected.deferred)
+    }
+
+    @Test
     fun opensGameAndReportsUnsupportedRequestedProfile() {
         val result = VoiceCommandEngine.execute(
             command = VoiceCommand.OpenGame("Resident Evil 4 Remake", PerformanceProfile.X4),
@@ -59,6 +92,39 @@ class VoiceCommandEngineTest {
         val opened = assertIs<VoiceActionResult.GameOpened>(result)
         assertTrue(opened.profileUnavailable)
         assertEquals(null, opened.profile)
+        assertEquals(false, opened.profileDeferred)
+    }
+
+    @Test
+    fun defersProfileWhenOpeningGameFromSystemAssistant() {
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("Minecraft", PerformanceProfile.X4),
+            gamesProvider = { games },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            deferProfileApplication = true
+        )
+        val opened = assertIs<VoiceActionResult.GameOpened>(result)
+        assertTrue(opened.profileDeferred)
+        assertEquals(PerformanceProfile.X4, opened.profile)
+    }
+
+    @Test
+    fun reportsFailedGameLaunch() {
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("Minecraft"),
+            gamesProvider = { games },
+            launchGame = { false },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") }
+        )
+        val failed = assertIs<VoiceActionResult.Failed>(result)
+        assertTrue(failed.detail.contains("Minecraft"))
     }
 
     @Test
