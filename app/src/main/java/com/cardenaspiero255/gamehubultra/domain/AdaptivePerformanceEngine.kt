@@ -79,7 +79,7 @@ class AdaptivePerformanceEngine(
             return PerformanceProfile.BALANCED
         }
 
-        if (isThermallyConstrained(snapshot)) {
+        if (thermalBlocksHighPerformance(snapshot)) {
             return PerformanceProfile.BALANCED
         }
 
@@ -111,7 +111,9 @@ class AdaptivePerformanceEngine(
         }
     }
 
-    private fun isThermallyConstrained(snapshot: AdaptiveRuntimeSnapshot): Boolean {
+    private fun thermalBlocksHighPerformance(
+        snapshot: AdaptiveRuntimeSnapshot
+    ): Boolean {
         val status = snapshot.thermalStatus
         if (status != null && status >= THERMAL_STATUS_SEVERE) return true
 
@@ -119,11 +121,14 @@ class AdaptivePerformanceEngine(
         if (usage == null || usage.isNaN()) return false
 
         return if (currentProfile == PerformanceProfile.BALANCED) {
-            usage >= THERMAL_ENTRY_USAGE
+            usage > THERMAL_RECOVERY_USAGE
         } else {
-            usage >= THERMAL_EXIT_USAGE
+            usage >= THERMAL_THROTTLE_USAGE
         }
     }
+
+    private fun isThermallyConstrained(snapshot: AdaptiveRuntimeSnapshot): Boolean =
+        thermalBlocksHighPerformance(snapshot)
 
     private fun readinessScore(snapshot: AdaptiveRuntimeSnapshot): Int {
         var score = 50
@@ -198,8 +203,8 @@ class AdaptivePerformanceEngine(
         const val THERMAL_STATUS_MODERATE = 2
         const val THERMAL_STATUS_SEVERE = 3
 
-        const val THERMAL_ENTRY_USAGE = 0.80f
-        const val THERMAL_EXIT_USAGE = 0.60f
+        const val THERMAL_THROTTLE_USAGE = 0.80f
+        const val THERMAL_RECOVERY_USAGE = 0.60f
 
         const val BATTERY_ENTRY_PERCENT = 65
         const val BATTERY_EXIT_PERCENT = 50
