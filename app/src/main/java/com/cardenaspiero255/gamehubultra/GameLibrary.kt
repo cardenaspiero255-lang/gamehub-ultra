@@ -23,7 +23,13 @@ object GameLibrary {
             .queryIntentActivities(intent, PackageManager.MATCH_ALL)
             .asSequence()
             .filter { it.activityInfo.packageName != context.packageName }
-            .filter { isGameApplication(it.activityInfo.applicationInfo) }
+            .filter {
+                isGameApplication(
+                    category = it.activityInfo.applicationInfo.category,
+                    flags = it.activityInfo.applicationInfo.flags,
+                    sdkInt = Build.VERSION.SDK_INT
+                )
+            }
             .map {
                 GameInfo(
                     packageName = it.activityInfo.packageName,
@@ -39,10 +45,10 @@ object GameLibrary {
         GameDiscoveryResult(emptyList(), failed = true)
     }
 
-    internal fun isGameApplication(applicationInfo: ApplicationInfo): Boolean {
-        val isDeclaredGame = applicationInfo.category == ApplicationInfo.CATEGORY_GAME
-        val isFlaggedGame = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            (applicationInfo.flags and ApplicationInfo.FLAG_IS_GAME) != 0
+    internal fun isGameApplication(category: Int, flags: Int, sdkInt: Int): Boolean {
+        val isDeclaredGame = category == ApplicationInfo.CATEGORY_GAME
+        val isFlaggedGame = sdkInt >= Build.VERSION_CODES.O &&
+            (flags and ApplicationInfo.FLAG_IS_GAME) != 0
         return isDeclaredGame || isFlaggedGame
     }
 }
