@@ -23,8 +23,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
@@ -43,13 +43,14 @@ class MainActivity : ComponentActivity() {
         val capabilities = DeviceCapabilitiesProvider.get(this)
         performanceController = PerformanceController(capabilities)
         val initialState = performanceController.apply(PerformanceProfile.BALANCED, window)
+        val device = DeviceInfoProvider.get(this)
 
         setContent {
             GameHubUltraTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GameHubUltraApp(
                         initialState = initialState,
-                        device = DeviceInfoProvider.get(),
+                        device = device,
                         onProfileSelected = { profile ->
                             performanceController.apply(profile, window)
                         }
@@ -141,19 +142,15 @@ private fun DeviceStatusCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("Estado real del dispositivo", style = MaterialTheme.typography.titleLarge)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Fabricante")
-                Text(device.manufacturer)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Modelo")
-                Text(device.model)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Android")
-                Text("${device.androidVersion} (API ${device.sdkInt})")
-            }
-            Text("ABI: ${device.supportedAbis.joinToString()}")
+            DeviceRow("Fabricante", device.manufacturer)
+            DeviceRow("Modelo", device.model)
+            DeviceRow("Android", "${device.androidVersion} (API ${device.sdkInt})")
+            DeviceRow("CPU", device.cpuModel)
+            DeviceRow("Núcleos lógicos", device.cpuCores.toString())
+            DeviceRow("RAM total", "${device.totalRamMb} MB")
+            DeviceRow("GPU vendor", device.gpuVendor ?: "No disponible")
+            DeviceRow("GPU renderer", device.gpuRenderer ?: "No disponible")
+            DeviceRow("ABI", device.supportedAbis.joinToString().ifBlank { "No disponible" })
 
             Text(
                 "Sustained Performance: " +
@@ -172,6 +169,17 @@ private fun DeviceStatusCard(
                 "Límite real: GameHub Ultra no puede cambiar por sí solo la frecuencia de CPU/GPU, activar interpolación de frames ni modificar el modo de rendimiento de otra aplicación sin APIs privilegiadas o soporte del fabricante."
             )
         }
+    }
+}
+
+@Composable
+private fun DeviceRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label)
+        Text(value)
     }
 }
 
