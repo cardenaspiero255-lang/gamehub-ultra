@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.migrations.SharedPreferencesMigration
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +24,8 @@ class GameHubPreferencesRepository(context: Context) {
 
     private val selectedProfileKey = stringPreferencesKey("selected_profile")
     private val selectedGameKey = stringPreferencesKey("selected_game_package")
+    private val favoriteGamesKey = stringSetPreferencesKey("favorite_games")
+    private val recentGamesKey = stringPreferencesKey("recent_games")
 
     fun selectedProfileFlow(): Flow<PerformanceProfile> =
         appContext.gameHubDataStore.data
@@ -43,6 +46,22 @@ class GameHubPreferencesRepository(context: Context) {
                 decodeProfile(preferences[gameProfileKey(packageName)])
             }
 
+    fun favoriteGamesFlow(): Flow<Set<String>> =
+        appContext.gameHubDataStore.data
+            .safePreferences()
+            .map { preferences -> preferences[favoriteGamesKey] ?: emptySet() }
+
+    fun recentGamesFlow(): Flow<List<String>> =
+        appContext.gameHubDataStore.data
+            .safePreferences()
+            .map { preferences ->
+                preferences[recentGamesKey]
+                    .orEmpty()
+                    .split(',')
+                    .map(String::trim)
+                    .filter(String::isNotEmpty)
+            }
+
     suspend fun saveSelectedProfile(profile: PerformanceProfile) {
         appContext.gameHubDataStore.edit { preferences ->
             preferences[selectedProfileKey] = profile.name
@@ -58,6 +77,32 @@ class GameHubPreferencesRepository(context: Context) {
     suspend fun saveProfileForGame(packageName: String, profile: PerformanceProfile) {
         appContext.gameHubDataStore.edit { preferences ->
             preferences[gameProfileKey(packageName)] = profile.name
+        }
+    }
+
+    suspend fun setFavoriteGame(packageName: String, favorite: Boolean) {
+        appContext.gameHubDataStore.edit { preferences ->
+            val current = preferences[favoriteGamesKey].orEmpty().toMutableSet()
+            if (favorite) {
+                current += packageName
+            } else {
+                current -= packageName
+            }
+            preferences[favoriteGamesKey] = current
+        }
+    }
+
+    suspend fun recordRecentGame(packageName: String) {
+        appContext.gameHubDataStore.edit { preferences ->
+            val current = preferences[recentGamesKey]
+                .orEmpty()
+                .split(',')
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .toMutableList()
+            current.remove(packageName)
+            current.add(0, packageName)
+            preferences[recentGamesKey] = current.take(10).joinToString(",")
         }
     }
 
