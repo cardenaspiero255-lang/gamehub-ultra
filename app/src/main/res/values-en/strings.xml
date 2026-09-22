@@ -76,6 +76,9 @@
     <string name="adaptive_recommendation">Adaptive recommendation: %1$s</string>
     <string name="apply_adaptive">Apply recommendation</string>
     <string name="performance_history_title">Recent performance events</string>
+    <string name="event_session_started">Session started</string>
+    <string name="event_thermal_changed">Thermal change</string>
+    <string name="event_policy_changed">Policy change</string>
     <string name="settings_title">Settings</string>
     <string name="about">About GameHub Ultra</string>
     <string name="about_text">Performance interface built with public Android APIs.</string>
