@@ -305,7 +305,7 @@ private fun GameHubUltraApp(
     val manualGamePackages = uiState.manualGamePackages
     val aiContext = GameHubAiContext(
         cpuCores = device.cpuCores,
-        totalRamMb = device.totalRamMb,
+        totalRamMb = device.totalRamMb.toInt(),
         gpuAvailable = !device.gpuRenderer.isNullOrBlank() || !device.gpuVendor.isNullOrBlank(),
         thermalStatus = runtimeDiagnostics?.thermal?.status,
         thermalHeadroom = runtimeDiagnostics?.thermal?.headroom,
@@ -314,7 +314,7 @@ private fun GameHubUltraApp(
         refreshRateHz = runtimeDiagnostics?.refresh?.currentRefreshRateHz,
         networkValidated = runtimeDiagnostics?.connectivity?.validated == true,
         networkLatencyMs = runtimeDiagnostics?.connectivity?.latencyMs,
-        downstreamBandwidthKbps = runtimeDiagnostics?.connectivity?.downstreamBandwidthKbps,
+        downstreamBandwidthKbps = runtimeDiagnostics?.connectivity?.downstreamBandwidthKbps?.toLong(),
         storageFreePercent = runtimeDiagnostics?.storage?.freePercent ?: 100,
         inputDeviceCount = runtimeDiagnostics?.inputDeviceCount ?: 0,
         selectedProfile = uiState.effectiveProfile,
