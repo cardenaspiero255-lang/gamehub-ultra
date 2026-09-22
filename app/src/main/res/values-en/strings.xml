@@ -44,7 +44,7 @@
     <string name="about">About GameHub Ultra</string>
     <string name="about_text">Performance interface built with public Android APIs.</string>
     <string name="limitations">Limitations</string>
-    <string name="limitations_text">GameHub Ultra cannot by itself change CPU/GPU frequencies, force frame interpolation, or modify another app's performance mode without privileged APIs or support from the device manufacturer.</string>
+    <string name="limitations_text">GameHub Ultra cannot by itself change CPU/GPU frequencies, force frame interpolation, or modify the performance mode of another application without privileged APIs or support from the device manufacturer.</string>
     <string name="language">Language</string>
     <string name="language_value">English</string>
     <string name="manufacturer">Manufacturer</string>
