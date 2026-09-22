@@ -60,6 +60,10 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.ui.GameHubUiState
+import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
@@ -72,45 +76,30 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
-    private var selectedProfileName: String = PerformanceProfile.BALANCED.name
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        selectedProfileName = savedInstanceState?.getString(KEY_PROFILE)
-            ?: ProfileSelectionStore.getSelectedProfile(this).name
-        val selectedProfile = PerformanceProfile.entries.firstOrNull { it.name == selectedProfileName }
-            ?: PerformanceProfile.BALANCED
-
         val capabilities = DeviceCapabilitiesProvider.get(this)
         performanceController = PerformanceController(capabilities)
-        val initialState = performanceController.apply(selectedProfile, window)
+        val initialState = performanceController.apply(PerformanceProfile.BALANCED, window)
         val device = DeviceInfoProvider.get(this)
 
         setContent {
+            val gameHubViewModel: GameHubViewModel = viewModel()
             GameHubUltraTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     GameHubUltraApp(
                         initialState = initialState,
                         device = device,
-                        onProfileSelected = { profile ->
-                            selectedProfileName = profile.name
-                            ProfileSelectionStore.saveSelectedProfile(this@MainActivity, profile)
+                        viewModel = gameHubViewModel,
+                        onProfileApplied = { profile ->
                             performanceController.apply(profile, window)
                         }
                     )
                 }
             }
         }
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString(KEY_PROFILE, selectedProfileName)
-        super.onSaveInstanceState(outState)
-    }
-
-    private companion object {
-        const val KEY_PROFILE = "selected_profile"
     }
 }
 
@@ -119,25 +108,28 @@ class MainActivity : ComponentActivity() {
 private fun GameHubUltraApp(
     initialState: PerformanceState,
     device: DeviceInfo,
-    onProfileSelected: (PerformanceProfile) -> PerformanceState
+    viewModel: GameHubViewModel,
+    onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
     val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var selectedProfileName by rememberSaveable { mutableStateOf(initialState.selectedProfile.name) }
-    var selectedGamePackage by rememberSaveable {
-        mutableStateOf(GameSelectionStore.getSelectedGame(context))
+
+    LaunchedEffect(uiState.effectiveProfile) {
+        state = onProfileApplied(uiState.effectiveProfile)
     }
 
     fun selectProfile(profile: PerformanceProfile) {
-        selectedProfileName = profile.name
-        state = onProfileSelected(profile)
+        viewModel.selectProfile(profile)
     }
 
     fun selectGame(packageName: String) {
-        selectedGamePackage = packageName
-        GameSelectionStore.saveSelectedGame(context, packageName)
+        viewModel.selectGame(packageName)
     }
+
+    val selectedProfileName = uiState.effectiveProfile.name
+    val selectedGamePackage = uiState.selectedGamePackage
 
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
@@ -970,22 +962,6 @@ private fun GameRow(
 
 private fun openGame(context: Context, packageName: String): Boolean =
     GameLauncher.launch(context, packageName)
-
-object GameSelectionStore {
-    private const val PREFS_NAME = "gamehub_ultra"
-    private const val KEY_SELECTED_GAME = "selected_game_package"
-
-    fun getSelectedGame(context: Context): String? =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_SELECTED_GAME, null)
-
-    fun saveSelectedGame(context: Context, packageName: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_SELECTED_GAME, packageName)
-            .apply()
-    }
-}
 
 @Composable
 private fun SettingsScreen(modifier: Modifier) {
