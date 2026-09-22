@@ -1,15 +1,18 @@
 package com.cardenaspiero255.gamehubultra.data
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.SharedPreferencesMigration
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 private val Context.gameHubDataStore by preferencesDataStore(
@@ -17,10 +20,12 @@ private val Context.gameHubDataStore by preferencesDataStore(
     produceMigrations = { context ->
         listOf(SharedPreferencesMigration(context, "gamehub_ultra"))
     }
-  )
+)
 
-class GameHubPreferencesRepository(context: Context) {
-    private val appContext = context.applicationContext
+class GameHubPreferencesRepository(
+    private val dataStore: DataStore<Preferences>
+) {
+    constructor(context: Context) : this(context.applicationContext.gameHubDataStore)
 
     private val selectedProfileKey = stringPreferencesKey("selected_profile")
     private val selectedGameKey = stringPreferencesKey("selected_game_package")
@@ -29,77 +34,109 @@ class GameHubPreferencesRepository(context: Context) {
     private val manualGamesKey = stringSetPreferencesKey("manual_game_packages")
 
     fun selectedProfileFlow(): Flow<PerformanceProfile> =
-        appContext.gameHubDataStore.data
-            .safePreferences()
-            .map { preferences ->
-                decodeProfile(preferences[selectedProfileKey]) ?: PerformanceProfile.BALANCED
-            }
+        dataStore.data.map { preferences ->
+            decodeProfile(preferences[selectedProfileKey]) ?: PerformanceProfile.BALANCED
+        }
 
     fun selectedGameFlow(): Flow<String?> =
-        appContext.gameHubDataStore.data
-            .safePreferences()
-            .map { preferences -> preferences[selectedGameKey] }
+        dataStore.data.map { preferences -> preferences[selectedGameKey] }
 
     fun profileForGameFlow(packageName: String): Flow<PerformanceProfile?> =
-        appContext.gameHubDataStore.data
-            .safePreferences()
-            .map { preferences ->
-                decodeProfile(preferences[gameProfileKey(packageName)])
+        gameProfileConfigFlow(packageName).map { it?.performanceProfile }
+
+    fun gameProfileConfigFlow(packageName: String): Flow<GameProfileConfig?> =
+        dataStore.data.map { preferences ->
+            val profile = decodeProfile(preferences[gameProfileKey(packageName)])
+            val thermal = decodeThermalPreference(preferences[gameThermalKey(packageName)])
+            val refresh = preferences[gameRefreshKey(packageName)]
+                ?.toIntOrNull()
+                ?.takeIf { it in 30..360 }
+
+            if (profile == null && thermal == null && refresh == null) {
+                null
+            } else {
+                GameProfileConfig(
+                    performanceProfile = profile ?: PerformanceProfile.BALANCED,
+                    thermalPreference = thermal ?: ThermalPreference.ADAPTIVE,
+                    refreshRateTargetHz = refresh
+                )
             }
+        }
 
     fun favoriteGamesFlow(): Flow<Set<String>> =
-        appContext.gameHubDataStore.data
-            .safePreferences()
-            .map { preferences -> preferences[favoriteGamesKey] ?: emptySet() }
+        dataStore.data.map { preferences ->
+            preferences[favoriteGamesKey] ?: emptySet()
+        }
 
     fun recentGamesFlow(): Flow<List<String>> =
-        appContext.gameHubDataStore.data
-            .safePreferences()
-            .map { preferences ->
-                preferences[recentGamesKey]
-                    .orEmpty()
-                    .split(',')
-                    .map(String::trim)
-                    .filter(String::isNotEmpty)
-            }
+        dataStore.data.map { preferences ->
+            preferences[recentGamesKey]
+                .orEmpty()
+                .split(',')
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+        }
 
     fun manualGamesFlow(): Flow<Set<String>> =
-        appContext.gameHubDataStore.data
-            .safePreferences()
-            .map { preferences -> preferences[manualGamesKey] ?: emptySet() }
+        dataStore.data.map { preferences ->
+            preferences[manualGamesKey] ?: emptySet()
+        }
 
     suspend fun saveSelectedProfile(profile: PerformanceProfile) {
-        appContext.gameHubDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[selectedProfileKey] = profile.name
         }
     }
 
     suspend fun saveSelectedGame(packageName: String) {
-        appContext.gameHubDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[selectedGameKey] = packageName
         }
     }
 
-    suspend fun saveProfileForGame(packageName: String, profile: PerformanceProfile) {
-        appContext.gameHubDataStore.edit { preferences ->
+    suspend fun saveSelectedGameAndProfile(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        dataStore.edit { preferences ->
+            preferences[selectedGameKey] = packageName
             preferences[gameProfileKey(packageName)] = profile.name
         }
     }
 
+    suspend fun saveProfileForGame(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        dataStore.edit { preferences ->
+            preferences[gameProfileKey(packageName)] = profile.name
+        }
+    }
+
+    suspend fun saveGameProfileConfig(
+        packageName: String,
+        config: GameProfileConfig
+    ) {
+        dataStore.edit { preferences ->
+            preferences[gameProfileKey(packageName)] = config.performanceProfile.name
+            preferences[gameThermalKey(packageName)] = config.thermalPreference.name
+            config.refreshRateTargetHz
+                ?.takeIf { it in 30..360 }
+                ?.let { preferences[gameRefreshKey(packageName)] = it.toString() }
+                ?: preferences.remove(gameRefreshKey(packageName))
+        }
+    }
+
     suspend fun setFavoriteGame(packageName: String, favorite: Boolean) {
-        appContext.gameHubDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = preferences[favoriteGamesKey].orEmpty().toMutableSet()
-            if (favorite) {
-                current += packageName
-            } else {
-                current -= packageName
-            }
+            if (favorite) current += packageName else current -= packageName
             preferences[favoriteGamesKey] = current
         }
     }
 
     suspend fun recordRecentGame(packageName: String) {
-        appContext.gameHubDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = preferences[recentGamesKey]
                 .orEmpty()
                 .split(',')
@@ -113,13 +150,9 @@ class GameHubPreferencesRepository(context: Context) {
     }
 
     suspend fun setManualGame(packageName: String, manual: Boolean) {
-        appContext.gameHubDataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             val current = preferences[manualGamesKey].orEmpty().toMutableSet()
-            if (manual) {
-                current += packageName
-            } else {
-                current -= packageName
-            }
+            if (manual) current += packageName else current -= packageName
             preferences[manualGamesKey] = current
         }
     }
@@ -127,11 +160,19 @@ class GameHubPreferencesRepository(context: Context) {
     private fun gameProfileKey(packageName: String): Preferences.Key<String> =
         stringPreferencesKey("game_profile_$packageName")
 
+    private fun gameThermalKey(packageName: String): Preferences.Key<String> =
+        stringPreferencesKey("game_thermal_$packageName")
+
+    private fun gameRefreshKey(packageName: String): Preferences.Key<String> =
+        stringPreferencesKey("game_refresh_$packageName")
+
     private fun decodeProfile(value: String?): PerformanceProfile? =
         value?.let { raw ->
             PerformanceProfile.entries.firstOrNull { it.name == raw }
         }
-}
 
-private fun Flow<Preferences>.safePreferences(): Flow<Preferences> =
-    catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
+    private fun decodeThermalPreference(value: String?): ThermalPreference? =
+        value?.let { raw ->
+            ThermalPreference.entries.firstOrNull { it.name == raw }
+        }
+}
