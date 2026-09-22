@@ -129,7 +129,9 @@ private fun GameHubUltraApp(
     }
 
     fun selectProfile(profile: PerformanceProfile) {
-        viewModel.selectProfile(profile)
+        uiState.selectedGamePackage?.let { packageName ->
+            viewModel.selectGameProfile(packageName, profile)
+        } ?: viewModel.selectGlobalProfile(profile)
     }
 
     fun selectGame(packageName: String) {
@@ -300,6 +302,13 @@ private fun VoiceAssistantCard(
                         },
                         saveSelectedProfile = { profile ->
                             ProfileSelectionStore.saveSelectedProfile(context, profile)
+                        },
+                        saveSelectedGameWithProfile = { packageName, profile ->
+                            GameSelectionStore.saveSelectedGameAndProfile(
+                                context,
+                                packageName,
+                                profile
+                            )
                         },
                         isProfileAvailable = { profile ->
                             profile != PerformanceProfile.X4 ||
