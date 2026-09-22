@@ -161,7 +161,7 @@ class AdaptivePerformanceEngineTest {
 
     private fun snapshot(
         thermalStatus: Int? = 0,
-        thermalHeadroom: Float? = 0.8f,
+        thermalHeadroom: Float? = 0.2f,
         batteryPercent: Int? = 80,
         charging: Boolean = false,
         powerSave: Boolean = false,
