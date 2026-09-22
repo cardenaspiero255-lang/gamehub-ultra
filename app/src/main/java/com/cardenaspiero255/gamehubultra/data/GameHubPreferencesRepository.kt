@@ -3,7 +3,7 @@ package com.cardenaspiero255.gamehubultra.data
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.migrations.SharedPreferencesMigration
+import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
