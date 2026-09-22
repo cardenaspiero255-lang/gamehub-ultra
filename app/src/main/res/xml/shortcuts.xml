@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="library"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_gamehub"
+        android:shortcutShortLabel="@string/shortcut_library_short"
+        android:shortcutLongLabel="@string/shortcut_library_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.cardenaspiero255.gamehubultra"
+            android:targetClass="com.cardenaspiero255.gamehubultra.MainActivity"
+            android:data="gamehubultra://library" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="performance"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_gamehub"
+        android:shortcutShortLabel="@string/shortcut_performance_short"
+        android:shortcutLongLabel="@string/shortcut_performance_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.cardenaspiero255.gamehubultra"
+            android:targetClass="com.cardenaspiero255.gamehubultra.MainActivity"
+            android:data="gamehubultra://performance" />
+    </shortcut>
+</shortcuts>
