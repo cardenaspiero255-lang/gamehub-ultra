@@ -1326,11 +1326,12 @@ private fun thermalLabel(status: Int?): String =
 private fun eventLabel(event: PerformanceEvent): String =
     when (event.type) {
         PerformanceEventType.SESSION_STARTED ->
-            "• " + "Sesión iniciada"
+            "• " + "session_started"
         PerformanceEventType.THERMAL_CHANGED ->
-            "• " + "Cambio térmico" + (event.detail.takeIf(String::isNotBlank)?.let { ": $it" } ?: "")
+            "• " + "thermal_changed" +
+                (event.detail.takeIf(String::isNotBlank)?.let { ": $it" } ?: "")
         PerformanceEventType.POLICY_CHANGED ->
-            "• " + "Política: " +
-                (event.profile?.title ?: "Equilibrado") +
+            "• " + "policy_changed" +
+                (event.profile?.title?.let { ": $it" } ?: "") +
                 (event.score?.let { " ($it/100)" } ?: "")
     }
