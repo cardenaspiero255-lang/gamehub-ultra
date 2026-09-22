@@ -1,8 +1,11 @@
 package com.cardenaspiero255.gamehubultra.domain
 
 /**
- * Pure adaptive policy. It decides what profile GameHub Ultra should apply to itself;
- * it never claims control over another application's renderer or frame generation.
+ * Pure adaptive policy for GameHub Ultra's own workload/session.
+ * It never claims control over another application's renderer or frame generation.
+ *
+ * Android's getThermalHeadroom value represents thermal-envelope usage:
+ * 1.0 corresponds to the SEVERE throttling threshold; higher means closer to throttling.
  */
 data class AdaptiveRuntimeSnapshot(
     val thermalStatus: Int?,
@@ -80,25 +83,31 @@ class AdaptivePerformanceEngine(
             return PerformanceProfile.BALANCED
         }
 
-        val battery = snapshot.batteryPercent ?: 50
-        if (!snapshot.charging && battery <= 15) {
+        if (currentProfile == PerformanceProfile.BALANCED &&
+            snapshot.batteryPercent != null &&
+            !snapshot.charging &&
+            snapshot.batteryPercent < BATTERY_ENTRY_PERCENT
+        ) {
             return PerformanceProfile.BALANCED
         }
 
-        if (battery >= 65 || snapshot.charging) {
-            return if (snapshot.sustainedPerformanceSupported) {
-                PerformanceProfile.X4
-            } else if (snapshot.performanceHintsAvailable) {
-                PerformanceProfile.FRAME_INTERPOLATION
-            } else {
-                PerformanceProfile.BALANCED
-            }
+        val batteryAllowsHighPerformance = when {
+            snapshot.charging -> true
+            snapshot.batteryPercent == null -> true
+            currentProfile == PerformanceProfile.BALANCED ->
+                snapshot.batteryPercent >= BATTERY_ENTRY_PERCENT
+            else ->
+                snapshot.batteryPercent > BATTERY_EXIT_PERCENT
         }
 
-        return if (snapshot.performanceHintsAvailable) {
-            PerformanceProfile.FRAME_INTERPOLATION
-        } else {
-            PerformanceProfile.BALANCED
+        if (!batteryAllowsHighPerformance) {
+            return PerformanceProfile.BALANCED
+        }
+
+        return when {
+            snapshot.sustainedPerformanceSupported -> PerformanceProfile.X4
+            snapshot.performanceHintsAvailable -> PerformanceProfile.FRAME_INTERPOLATION
+            else -> PerformanceProfile.BALANCED
         }
     }
 
@@ -106,34 +115,44 @@ class AdaptivePerformanceEngine(
         val status = snapshot.thermalStatus
         if (status != null && status >= THERMAL_STATUS_SEVERE) return true
 
-        val headroom = snapshot.thermalHeadroom
-        return headroom != null && !headroom.isNaN() && headroom < 0.20f
+        val usage = snapshot.thermalHeadroom
+        if (usage == null || usage.isNaN()) return false
+
+        return if (currentProfile == PerformanceProfile.BALANCED) {
+            usage >= THERMAL_ENTRY_USAGE
+        } else {
+            usage >= THERMAL_EXIT_USAGE
+        }
     }
 
     private fun readinessScore(snapshot: AdaptiveRuntimeSnapshot): Int {
-        var score = 70
-        score += when {
-            snapshot.thermalStatus == null -> 0
-            snapshot.thermalStatus <= THERMAL_STATUS_LIGHT -> 15
-            snapshot.thermalStatus == THERMAL_STATUS_MODERATE -> 5
-            snapshot.thermalStatus >= THERMAL_STATUS_SEVERE -> -35
-            else -> 0
+        var score = 50
+
+        when {
+            snapshot.thermalStatus == null -> Unit
+            snapshot.thermalStatus <= THERMAL_STATUS_LIGHT -> score += 15
+            snapshot.thermalStatus == THERMAL_STATUS_MODERATE -> score += 5
+            else -> score -= 35
         }
-        score += when {
-            snapshot.thermalHeadroom == null || snapshot.thermalHeadroom.isNaN() -> 0
-            snapshot.thermalHeadroom >= 0.50f -> 10
-            snapshot.thermalHeadroom >= 0.30f -> 5
-            snapshot.thermalHeadroom < 0.20f -> -20
-            else -> 0
+
+        when {
+            snapshot.thermalHeadroom == null || snapshot.thermalHeadroom.isNaN() -> Unit
+            snapshot.thermalHeadroom <= 0.30f -> score += 10
+            snapshot.thermalHeadroom < THERMAL_EXIT_USAGE -> score += 3
+            snapshot.thermalHeadroom < THERMAL_ENTRY_USAGE -> score -= 10
+            else -> score -= 25
         }
-        score += when {
-            snapshot.batteryPercent == null -> 0
-            snapshot.batteryPercent >= 60 -> 5
-            snapshot.batteryPercent <= 15 && !snapshot.charging -> -20
-            else -> 0
+
+        when {
+            snapshot.batteryPercent == null -> Unit
+            snapshot.batteryPercent >= 60 || snapshot.charging -> score += 10
+            snapshot.batteryPercent > BATTERY_EXIT_PERCENT -> score += 2
+            else -> score -= 20
         }
+
         if (snapshot.powerSaveMode) score -= 20
         if (snapshot.sessionActive) score += 5
+
         return score.coerceIn(0, 100)
     }
 
@@ -148,14 +167,17 @@ class AdaptivePerformanceEngine(
             snapshot.sustainedPerformanceSupported
 
         val reason = when {
-            snapshot.powerSaveMode -> "Ahorro de energía activo: se mantiene un perfil conservador."
-            isThermallyConstrained(snapshot) -> "La condición térmica requiere reducir carga sostenida."
-            !snapshot.sessionActive -> "No hay una sesión de juego activa."
+            snapshot.powerSaveMode ->
+                "Ahorro de energía activo: se mantiene un perfil conservador."
+            isThermallyConstrained(snapshot) ->
+                "El uso térmico previsto está cerca del umbral de throttling."
+            !snapshot.sessionActive ->
+                "No hay una sesión de rendimiento activa."
             else -> when (profile) {
                 PerformanceProfile.X4 ->
-                    "Térmica y energía disponibles para una carga sostenida compatible."
+                    "Condiciones térmicas y de energía aptas para carga sostenida compatible."
                 PerformanceProfile.FRAME_INTERPOLATION ->
-                    "La sesión permite priorizar APIs compatibles de interpolación."
+                    "El dispositivo expone capacidades de rendimiento compatibles."
                 PerformanceProfile.BALANCED ->
                     "Se prioriza un equilibrio seguro de consumo y temperatura."
             }
@@ -175,5 +197,11 @@ class AdaptivePerformanceEngine(
         const val THERMAL_STATUS_LIGHT = 1
         const val THERMAL_STATUS_MODERATE = 2
         const val THERMAL_STATUS_SEVERE = 3
+
+        const val THERMAL_ENTRY_USAGE = 0.80f
+        const val THERMAL_EXIT_USAGE = 0.60f
+
+        const val BATTERY_ENTRY_PERCENT = 65
+        const val BATTERY_EXIT_PERCENT = 50
     }
 }
