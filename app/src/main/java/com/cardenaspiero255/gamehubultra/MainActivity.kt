@@ -134,6 +134,11 @@ private fun GameHubUltraApp(
         state = onProfileSelected(profile)
     }
 
+    fun selectGame(packageName: String) {
+        selectedGamePackage = packageName
+        GameSelectionStore.saveSelectedGame(context, packageName)
+    }
+
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
         stringResource(R.string.nav_biblioteca),
@@ -170,15 +175,12 @@ private fun GameHubUltraApp(
                 device = device,
                 selectedProfileName = selectedProfileName,
                 onProfileSelected = ::selectProfile,
-                onGameSelected = { GameSelectionStore.saveSelectedGame(context, it) }
+                onGameSelected = ::selectGame
             )
             1 -> LibraryScreen(
                 modifier = Modifier.padding(padding),
                 selectedGamePackage = selectedGamePackage,
-                onGameSelected = {
-                    selectedGamePackage = it
-                    GameSelectionStore.saveSelectedGame(context, it)
-                }
+                onGameSelected = ::selectGame
             )
             else -> SettingsScreen(Modifier.padding(padding))
         }
@@ -300,11 +302,13 @@ private fun VoiceAssistantCard(
                     val spokenResponse = VoiceResponseFormatter.format(context, result)
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
                         when (result) {
-                            is VoiceActionResult.ProfileApplied ->
+                            is VoiceActionResult.ProfileSelected ->
                                 onProfileSelected(result.profile)
                             is VoiceActionResult.GameOpened -> {
                                 onGameSelected(result.game.packageName)
-                                result.profile?.let(onProfileSelected)
+                                if (!result.profileDeferred) {
+                                    result.profile?.let(onProfileSelected)
+                                }
                             }
                             else -> Unit
                         }
@@ -400,9 +404,13 @@ private object VoiceDeviceStatusProvider {
 private object VoiceResponseFormatter {
     fun format(context: Context, result: VoiceActionResult): String =
         when (result) {
-            is VoiceActionResult.ProfileApplied ->
+            is VoiceActionResult.ProfileSelected ->
                 context.getString(
-                    R.string.voice_result_profile_applied,
+                    if (result.deferred) {
+                        R.string.voice_result_profile_deferred
+                    } else {
+                        R.string.voice_result_profile_applied
+                    },
                     result.profile.title
                 )
             is VoiceActionResult.GameOpened -> {
@@ -411,14 +419,19 @@ private object VoiceResponseFormatter {
                     result.game.label
                 )
                 when {
-                    result.profile != null ->
+                    result.profileDeferred && result.profile != null ->
                         base + " " + context.getString(
-                            R.string.voice_result_profile_applied_short,
+                            R.string.voice_result_profile_deferred_short,
                             result.profile.title
                         )
                     result.profileUnavailable ->
                         base + " " + context.getString(
                             R.string.voice_result_profile_unavailable
+                        )
+                    result.profile != null ->
+                        base + " " + context.getString(
+                            R.string.voice_result_profile_applied_short,
+                            result.profile.title
                         )
                     else -> base
                 }
