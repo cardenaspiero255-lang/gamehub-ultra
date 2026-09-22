@@ -238,6 +238,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
                     (result.status.batteryPercent?.toString() ?: "no disponible") +
                     " por ciento, térmica " + result.status.thermalLabel + "."
 
+            is VoiceActionResult.AiAdvice ->
+                result.advice.title + " " + result.advice.explanation
+
             VoiceActionResult.Help ->
                 "Puedes decir: abre un juego, pon X4, prioriza interpolación, FPS balanceado o dime el estado."
 
