@@ -29,6 +29,39 @@ class GamingReadinessTest {
     }
 
     @Test
+    fun everyReadinessFactorHasAnExplanation() {
+        val result = GamingReadinessCalculator.calculate(
+            GamingReadinessInput(
+                cpuCores = 4,
+                totalRamMb = 4096,
+                gpuAvailable = false,
+                thermalStatus = null,
+                thermalHeadroom = null,
+                batteryPercent = null,
+                charging = false,
+                refreshRateHz = null,
+                networkValidated = false,
+                networkLatencyMs = null,
+                downstreamBandwidthKbps = null,
+                storageFreePercent = 20,
+                inputDeviceCount = 0
+            )
+        )
+        assertTrue(result.reasons.any { it.startsWith("CPU:") })
+        assertTrue(result.reasons.any { it.startsWith("RAM:") })
+        assertTrue(result.reasons.any { it.startsWith("GPU:") })
+        assertTrue(result.reasons.any { it.startsWith("Térmica:") })
+        assertTrue(result.reasons.any { it.startsWith("Margen térmico:") })
+        assertTrue(result.reasons.any { it.startsWith("Batería:") })
+        assertTrue(result.reasons.any { it.startsWith("Refresco:") })
+        assertTrue(result.reasons.any { it.startsWith("Red:") })
+        assertTrue(result.reasons.any { it.startsWith("Latencia:") })
+        assertTrue(result.reasons.any { it.startsWith("Ancho de banda:") })
+        assertTrue(result.reasons.any { it.startsWith("Almacenamiento:") })
+        assertTrue(result.reasons.any { it.startsWith("Periféricos:") })
+    }
+
+    @Test
     fun constrainedConfigurationIsFlagged() {
         val result = GamingReadinessCalculator.calculate(
             GamingReadinessInput(
