@@ -66,7 +66,7 @@ object VoiceCommandParser {
         when {
             Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.BALANCED
-            Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|interpolation|interpolate)\b""")
+            Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.FRAME_INTERPOLATION
             Regex("""\b(x4|modo x4|x4 mode|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b""")
                 .containsMatchIn(clean) -> PerformanceProfile.X4
@@ -76,7 +76,7 @@ object VoiceCommandParser {
     private fun extractGameQuery(clean: String): String {
         val withoutProfile = clean
             .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
-            .replace(Regex("""\b(priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|interpolation|interpolate)\b"""), " ")
+            .replace(Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b"""), " ")
             .replace(Regex("""\b(x4|modo x4|x4 mode|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
 
         return withoutProfile
