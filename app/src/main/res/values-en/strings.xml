@@ -129,4 +129,10 @@
     <string name="voice_result_help">You can say: open a game, set X4, prioritize interpolation, balanced FPS, or tell me the status.</string>
     <string name="voice_status_unavailable">Not available.</string>
     <string name="voice_status_failed">Could not complete.</string>
+    <string name="ai_advisor_title">AI advisor</string>
+    <string name="ai_advisor_subtitle">Analyzes device state and recommends a profile without executing arbitrary commands or controlling other apps.</string>
+    <string name="ai_local_model_ready">Compatible local model available.</string>
+    <string name="ai_fallback_active">No local model: deterministic offline fallback is active.</string>
+    <string name="ai_analyze">Analyze recommendation</string>
+    <string name="ai_apply_profile">Apply recommended profile</string>
 </resources>
