@@ -34,6 +34,7 @@
     <string name="library_title">Game library</string>
     <string name="library_loading">Loading detected games…</string>
     <string name="open_game">Open game</string>
+    <string name="library_open_error">The selected game could not be opened.</string>
     <string name="library_empty">No compatible games were detected.</string>
     <string name="library_empty_hint">The library shows games that Android explicitly identifies as game applications.</string>
     <string name="library_error">The library could not be queried.</string>
