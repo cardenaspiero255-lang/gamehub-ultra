@@ -1,12 +1,8 @@
 package com.cardenaspiero255.gamehubultra
 
 import android.content.Context
-import android.content.Intent
-import android.util.Log
 
 object GameLauncher {
-    private const val TAG = "GameHubUltraLauncher"
-
     fun launch(context: Context, packageName: String): Boolean =
         resolveAndLaunch(
             packageName = packageName,
@@ -21,8 +17,7 @@ object GameLauncher {
     ): Boolean {
         val value = try {
             resolver(packageName)
-        } catch (error: Exception) {
-            Log.w(TAG, "Unable to resolve launch target for package=$packageName", error)
+        } catch (_: Exception) {
             return false
         }
 
@@ -33,8 +28,7 @@ object GameLauncher {
         return try {
             starter(value)
             true
-        } catch (error: Exception) {
-            Log.w(TAG, "Unable to start launch target for package=$packageName", error)
+        } catch (_: Exception) {
             false
         }
     }
