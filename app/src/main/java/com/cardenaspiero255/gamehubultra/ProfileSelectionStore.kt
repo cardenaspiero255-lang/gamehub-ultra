@@ -20,4 +20,14 @@ object ProfileSelectionStore {
             GameHubPreferencesRepository(context).saveSelectedProfile(profile)
         }
     }
+
+    fun saveProfileForGame(
+        context: Context,
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        scope.launch {
+            GameHubPreferencesRepository(context).saveProfileForGame(packageName, profile)
+        }
+    }
 }
