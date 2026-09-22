@@ -9,6 +9,8 @@ import kotlin.test.assertIs
 
 class VoiceAiIntentTest {
     private val context = GameHubAiContext(
+        selectedGamePackage = "com.example.game",
+        sustainedPerformanceSupported = true,
         cpuCores = 6,
         totalRamMb = 8192,
         gpuAvailable = true,
