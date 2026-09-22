@@ -77,6 +77,7 @@
     <string name="apply_adaptive">Aplicar recomendación</string>
     <string name="performance_history_title">Eventos de rendimiento recientes</string>
     <string name="event_session_started">Sesión iniciada</string>
+    <string name="event_session_ended">Sesión finalizada</string>
     <string name="event_thermal_changed">Cambio térmico</string>
     <string name="event_policy_changed">Cambio de política</string>
     <string name="settings_title">Ajustes</string>
