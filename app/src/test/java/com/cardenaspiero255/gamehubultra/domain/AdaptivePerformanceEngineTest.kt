@@ -118,6 +118,25 @@ class AdaptivePerformanceEngineTest {
     }
 
     @Test
+    fun alternatingThermalSamplesDoNotCausePrematureProfileFlip() {
+        val engine = AdaptivePerformanceEngine(initialProfile = PerformanceProfile.X4)
+        val safe = snapshot(thermalStatus = 0, thermalHeadroom = 0.79f, batteryPercent = 90, charging = true, sustained = true)
+        assertEquals(PerformanceProfile.X4, engine.evaluate(safe).profile)
+
+        val hot = safe.copy(thermalHeadroom = 0.81f)
+        assertEquals(PerformanceProfile.X4, engine.evaluate(hot).profile)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(hot).profile)
+
+        val recovering = safe.copy(thermalHeadroom = 0.61f)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(recovering).profile)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(recovering).profile)
+
+        val cool = safe.copy(thermalHeadroom = 0.59f)
+        assertEquals(PerformanceProfile.BALANCED, engine.evaluate(cool).profile)
+        assertEquals(PerformanceProfile.X4, engine.evaluate(cool).profile)
+    }
+
+    @Test
     fun batteryThresholdUsesEntryAndExitHysteresis() {
         val engine = AdaptivePerformanceEngine(initialProfile = PerformanceProfile.X4)
 
