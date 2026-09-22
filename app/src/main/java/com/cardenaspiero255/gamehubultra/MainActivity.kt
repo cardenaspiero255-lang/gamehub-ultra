@@ -274,6 +274,7 @@ private fun GameHubUltraApp(
                 onGameSelected = ::selectGame,
                 runtimeDiagnostics = runtimeDiagnostics,
                 adaptiveDecision = adaptiveDecision,
+                performanceHistory = performanceHistory,
                 onApplyAdaptiveProfile = {
                     adaptiveDecision?.let { selectProfile(it.profile) }
                 }
@@ -363,6 +364,138 @@ private fun HomeScreen(
     }
 }
 
+
+@Composable
+private fun RuntimeDiagnosticsCard(
+    device: DeviceInfo,
+    diagnostics: RuntimeDiagnostics?,
+    adaptiveDecision: AdaptiveDecision?,
+    performanceHistory: List<PerformanceEvent>,
+    onApplyAdaptiveProfile: () -> Unit
+) {
+    val readiness = diagnostics?.let { telemetry ->
+        GamingReadinessCalculator.calculate(
+            GamingReadinessInput(
+                cpuCores = device.cpuCores,
+                totalRamMb = device.totalRamMb,
+                gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
+                    !device.gpuVendor.isNullOrBlank(),
+                thermalStatus = telemetry.thermal.status,
+                thermalHeadroom = telemetry.thermal.headroom,
+                batteryPercent = telemetry.battery.percent,
+                charging = telemetry.battery.charging,
+                refreshRateHz = telemetry.refresh.currentRefreshRateHz,
+                networkValidated = telemetry.connectivity.validated,
+                networkLatencyMs = telemetry.connectivity.latencyMs,
+                downstreamBandwidthKbps = telemetry.connectivity.downstreamBandwidthKbps,
+                storageFreePercent = telemetry.storage.freePercent,
+                inputDeviceCount = telemetry.inputDeviceCount
+            )
+        )
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.runtime_diagnostics_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            if (diagnostics == null || readiness == null) {
+                Text(stringResource(R.string.runtime_diagnostics_loading))
+            } else {
+                Text(
+                    stringResource(R.string.readiness_score, readiness.score, readiness.label),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_thermal),
+                    diagnostics.thermal.status?.let(::thermalStatusText)
+                        ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.thermal_headroom),
+                    diagnostics.thermal.headroom?.let {
+                        stringResource(R.string.thermal_headroom_value, (it * 100).roundToInt())
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_battery),
+                    diagnostics.battery.percent?.let {
+                        if (diagnostics.battery.charging) {
+                            stringResource(R.string.battery_charging, it)
+                        } else {
+                            stringResource(R.string.battery_level, it)
+                        }
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_network),
+                    diagnostics.connectivity.transport
+                        ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_latency),
+                    diagnostics.connectivity.latencyMs?.let {
+                        stringResource(R.string.latency_value, it)
+                    } ?: stringResource(R.string.not_measured)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_bandwidth),
+                    diagnostics.connectivity.downstreamBandwidthKbps?.let {
+                        stringResource(R.string.bandwidth_value, it)
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_storage),
+                    stringResource(R.string.storage_free_value, diagnostics.storage.freePercent)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_refresh),
+                    diagnostics.refresh.currentRefreshRateHz?.let {
+                        stringResource(R.string.refresh_value, it.roundToInt())
+                    } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    stringResource(R.string.runtime_inputs),
+                    diagnostics.inputDeviceCount.toString()
+                )
+                adaptiveDecision?.let { decision ->
+                    Text(
+                        stringResource(R.string.adaptive_recommendation, decision.profile.title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(decision.reason)
+                    if (decision.profile != PerformanceProfile.BALANCED) {
+                        Button(
+                            onClick = onApplyAdaptiveProfile,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.apply_adaptive))
+                        }
+                    }
+                }
+                readiness.reasons.take(4).forEach { reason ->
+                    Text(reason, style = MaterialTheme.typography.bodySmall)
+                }
+                if (performanceHistory.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.performance_history_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    performanceHistory.takeLast(5).asReversed().forEach { event ->
+                        Text(
+                            eventLabel(event),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun VoiceAssistantCard(
