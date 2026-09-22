@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEventCodec
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +38,7 @@ class GameHubPreferencesRepository(
     private val favoriteGamesKey = stringSetPreferencesKey("favorite_games")
     private val recentGamesKey = stringPreferencesKey("recent_games")
     private val manualGamesKey = stringSetPreferencesKey("manual_game_packages")
+    private val performanceHistoryKey = stringPreferencesKey("performance_history")
 
     fun selectedProfileFlow(): Flow<PerformanceProfile> =
         dataStore.data.map { preferences ->
@@ -84,6 +87,16 @@ class GameHubPreferencesRepository(
     fun manualGamesFlow(): Flow<Set<String>> =
         dataStore.data.map { preferences ->
             preferences[manualGamesKey] ?: emptySet()
+        }
+
+    fun performanceHistoryFlow(limit: Int = 20): Flow<List<PerformanceEvent>> =
+        dataStore.data.map { preferences ->
+            preferences[performanceHistoryKey]
+                .orEmpty()
+                .lineSequence()
+                .mapNotNull(PerformanceEventCodec::decode)
+                .takeLast(limit.coerceIn(1, 50))
+                .toList()
         }
 
     suspend fun saveSelectedProfile(profile: PerformanceProfile) {
@@ -158,6 +171,18 @@ class GameHubPreferencesRepository(
             val current = preferences[manualGamesKey].orEmpty().toMutableSet()
             if (manual) current += packageName else current -= packageName
             preferences[manualGamesKey] = current
+        }
+    }
+
+    suspend fun appendPerformanceEvent(event: PerformanceEvent) {
+        dataStore.edit { preferences ->
+            val current = preferences[performanceHistoryKey]
+                .orEmpty()
+                .lineSequence()
+                .filter(String::isNotBlank)
+                .toMutableList()
+            current += PerformanceEventCodec.encode(event)
+            preferences[performanceHistoryKey] = current.takeLast(50).joinToString("\n")
         }
     }
 
