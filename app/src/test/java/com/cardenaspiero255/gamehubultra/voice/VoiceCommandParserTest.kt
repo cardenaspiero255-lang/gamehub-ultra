@@ -15,7 +15,15 @@ class VoiceCommandParserTest {
     }
 
     @Test
-    fun parsesGameOpenWithX4() {
+    fun parsesEnglishGameOpenWithProfile() {
+        val command = VoiceCommandParser.parse("open Resident Evil 4 Remake with X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("resident evil 4 remake", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
+    fun parsesSpanishGameOpenWithProfile() {
         val command = VoiceCommandParser.parse("abre Resident Evil 4 Remake en X4")
         val parsed = assertIs<VoiceCommand.OpenGame>(command)
         assertEquals("resident evil 4 remake", parsed.query)
@@ -23,15 +31,62 @@ class VoiceCommandParserTest {
     }
 
     @Test
-    fun parsesProfileCommands() {
-        assertEquals(VoiceCommand.SelectProfile(PerformanceProfile.BALANCED), VoiceCommandParser.parse("fps balanceado"))
-        assertEquals(VoiceCommand.SelectProfile(PerformanceProfile.FRAME_INTERPOLATION), VoiceCommandParser.parse("prioriza interpolación"))
-        assertEquals(VoiceCommand.SelectProfile(PerformanceProfile.X4), VoiceCommandParser.parse("configura todo"))
+    fun parsesEnglishProfiles() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            VoiceCommandParser.parse("balanced fps")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.FRAME_INTERPOLATION),
+            VoiceCommandParser.parse("prioritize interpolation")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("set X4")
+        )
     }
 
     @Test
-    fun parsesStatusAndHelp() {
-        assertEquals(VoiceCommand.DeviceStatus, VoiceCommandParser.parse("dime la temperatura"))
-        assertEquals(VoiceCommand.Help, VoiceCommandParser.parse("qué comandos puedo hacer"))
+    fun parsesSpanishProfiles() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            VoiceCommandParser.parse("fps balanceado")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.FRAME_INTERPOLATION),
+            VoiceCommandParser.parse("prioriza interpolación")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("configura todo")
+        )
+    }
+
+    @Test
+    fun parsesStatusAndHelpInBothLanguages() {
+        assertEquals(
+            VoiceCommand.DeviceStatus,
+            VoiceCommandParser.parse("dime la temperatura")
+        )
+        assertEquals(
+            VoiceCommand.DeviceStatus,
+            VoiceCommandParser.parse("what is the temperature")
+        )
+        assertEquals(
+            VoiceCommand.Help,
+            VoiceCommandParser.parse("qué comandos puedo hacer")
+        )
+        assertEquals(
+            VoiceCommand.Help,
+            VoiceCommandParser.parse("what can I do")
+        )
+    }
+
+    @Test
+    fun normalizesAccentsAndPunctuation() {
+        assertEquals(
+            VoiceCommand.DeviceStatus,
+            VoiceCommandParser.parse("Dime, ¿la temperatura?")
+        )
     }
 }
