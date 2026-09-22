@@ -2,7 +2,6 @@ package com.cardenaspiero255.gamehubultra.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -23,23 +22,30 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         packageName?.let(repository::gameProfileConfigFlow) ?: flowOf(null)
     }
 
-    private val favoriteGamesFlow = repository.favoriteGamesFlow()
-    private val recentGamesFlow = repository.recentGamesFlow()
-    private val manualGamesFlow = repository.manualGamesFlow()
-
-    val uiState = combine(
+    private val baseStateFlow = combine(
         repository.selectedProfileFlow(),
         selectedGameFlow,
         selectedGameConfigFlow,
-        favoriteGamesFlow,
-        recentGamesFlow,
-        manualGamesFlow
-    ) { globalProfile, selectedGamePackage, selectedGameConfig, favoriteGames, recentGames, manualGames ->
-        GameHubUiState(
+        repository.favoriteGamesFlow()
+    ) { globalProfile, selectedGamePackage, selectedGameConfig, favoriteGames ->
+        BaseUiState(
             globalProfile = globalProfile,
             selectedGamePackage = selectedGamePackage,
             selectedGameConfig = selectedGameConfig,
-            favoriteGames = favoriteGames,
+            favoriteGames = favoriteGames
+        )
+    }
+
+    val uiState = combine(
+        baseStateFlow,
+        repository.recentGamesFlow(),
+        repository.manualGamesFlow()
+    ) { base, recentGames, manualGames ->
+        GameHubUiState(
+            globalProfile = base.globalProfile,
+            selectedGamePackage = base.selectedGamePackage,
+            selectedGameConfig = base.selectedGameConfig,
+            favoriteGames = base.favoriteGames,
             recentGamePackages = recentGames,
             manualGamePackages = manualGames
         )
@@ -50,9 +56,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     )
 
     fun selectGlobalProfile(profile: PerformanceProfile) {
-        viewModelScope.launch {
-            repository.saveSelectedProfile(profile)
-        }
+        viewModelScope.launch { repository.saveSelectedProfile(profile) }
     }
 
     fun selectGameProfile(packageName: String, profile: PerformanceProfile) {
@@ -73,9 +77,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun selectGame(packageName: String) {
-        viewModelScope.launch {
-            repository.saveSelectedGame(packageName)
-        }
+        viewModelScope.launch { repository.saveSelectedGame(packageName) }
     }
 
     fun setGameThermalPreference(
@@ -104,20 +106,21 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setFavoriteGame(packageName: String, favorite: Boolean) {
-        viewModelScope.launch {
-            repository.setFavoriteGame(packageName, favorite)
-        }
+        viewModelScope.launch { repository.setFavoriteGame(packageName, favorite) }
     }
 
     fun recordRecentGame(packageName: String) {
-        viewModelScope.launch {
-            repository.recordRecentGame(packageName)
-        }
+        viewModelScope.launch { repository.recordRecentGame(packageName) }
     }
 
     fun setManualGame(packageName: String, manual: Boolean) {
-        viewModelScope.launch {
-            repository.setManualGame(packageName, manual)
-        }
+        viewModelScope.launch { repository.setManualGame(packageName, manual) }
     }
+
+    private data class BaseUiState(
+        val globalProfile: PerformanceProfile,
+        val selectedGamePackage: String?,
+        val selectedGameConfig: GameProfileConfig?,
+        val favoriteGames: Set<String>
+    )
 }
