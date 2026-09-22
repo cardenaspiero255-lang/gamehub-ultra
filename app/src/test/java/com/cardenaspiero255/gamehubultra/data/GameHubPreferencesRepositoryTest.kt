@@ -220,10 +220,29 @@ class GameHubPreferencesRepositoryTest {
                 "getInt" -> values[args?.getOrNull(0)] as? Int ?: 0
                 "getLong" -> values[args?.getOrNull(0)] as? Long ?: 0L
                 "getFloat" -> values[args?.getOrNull(0)] as? Float ?: 0f
+                "edit" -> proxySharedPreferencesEditor()
                 "toString" -> "FakeSharedPreferences"
                 else -> defaultValue(method.returnType)
             }
         } as SharedPreferences
+
+    private fun proxySharedPreferencesEditor(): SharedPreferences.Editor {
+        lateinit var editor: SharedPreferences.Editor
+        editor = Proxy.newProxyInstance(
+            SharedPreferences.Editor::class.java.classLoader,
+            arrayOf(SharedPreferences.Editor::class.java)
+        ) { _, method, _ ->
+            when (method.name) {
+                "remove", "putString", "putStringSet", "putBoolean", "putInt",
+                "putLong", "putFloat", "clear" -> editor
+                "commit" -> true
+                "apply" -> Unit
+                "toString" -> "FakeSharedPreferences.Editor"
+                else -> defaultValue(method.returnType)
+            }
+        } as SharedPreferences.Editor
+        return editor
+    }
 
     private fun defaultValue(type: Class<*>): Any? =
         when (type) {
