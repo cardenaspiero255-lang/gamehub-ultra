@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.SharedPreferencesMigration
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -19,6 +20,9 @@ private val Context.gameHubDataStore by preferencesDataStore(
     name = "gamehub_ultra",
     produceMigrations = { context ->
         listOf(SharedPreferencesMigration(context, "gamehub_ultra"))
+    },
+    corruptionHandler = ReplaceFileCorruptionHandler {
+        emptyPreferences()
     }
 )
 
