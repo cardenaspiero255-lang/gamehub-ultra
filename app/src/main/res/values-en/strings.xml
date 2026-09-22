@@ -73,4 +73,21 @@
     <string name="profile_balanced_description">Balances smoothness, power use, and temperature.</string>
     <string name="profile_interpolation_description">Prioritizes interpolation options when a compatible API exists and accepts higher thermal cost. Android does not expose a public API to force interpolation in other games.</string>
     <string name="profile_x4_description">High-performance preset. Requests Sustained Performance only when Android and the device support it; it does not generate frames by itself.</string>
+    <string name="voice_assistant_title">Voice assistant</string>
+    <string name="voice_assistant_subtitle">Speak once to open games, select profiles, or check device status. There is no always-on listening.</string>
+    <string name="voice_start">Speak</string>
+    <string name="voice_stop">Stop</string>
+    <string name="voice_permission_button">Allow microphone</string>
+    <string name="voice_permission_required">Microphone permission is required to use the assistant.</string>
+    <string name="voice_recognition_error">I could not understand the speech. Try again.</string>
+    <string name="voice_selected_profile">Selected profile: %1$s</string>
+    <string name="voice_transcript">Heard: %1$s</string>
+    <string name="voice_result_profile_applied">Applied: profile %1$s selected.</string>
+    <string name="voice_result_game_opened">Applied: opened %1$s.</string>
+    <string name="voice_result_profile_applied_short">Profile %1$s selected in GameHub Ultra.</string>
+    <string name="voice_result_profile_unavailable">The requested profile is not available on this device.</string>
+    <string name="voice_result_status">Status: battery %1$s%%, thermal %2$s.</string>
+    <string name="voice_result_help">You can say: open a game, set X4, prioritize interpolation, balanced FPS, or tell me the status.</string>
+    <string name="voice_status_unavailable">Not available.</string>
+    <string name="voice_status_failed">Could not complete.</string>
 </resources>
