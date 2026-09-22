@@ -2,34 +2,39 @@ package com.cardenaspiero255.gamehubultra
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 
 object GameLauncher {
-    fun launch(context: Context, packageName: String): Boolean =
-        launch(context, packageName) {
-            context.packageManager.getLaunchIntentForPackage(it)
-        }
+    private const val TAG = "GameHubUltraLauncher"
 
-    internal fun launch(
-        context: Context,
+    fun launch(context: Context, packageName: String): Boolean =
+        resolveAndLaunch(
+            packageName = packageName,
+            resolver = { context.packageManager.getLaunchIntentForPackage(it) },
+            starter = context::startActivity
+        )
+
+    internal fun <T> resolveAndLaunch(
         packageName: String,
-        intentResolver: (String) -> Intent?
+        resolver: (String) -> T?,
+        starter: (T) -> Unit
     ): Boolean {
-        val intent = try {
-            intentResolver(packageName)
-        } catch (_: Exception) {
+        val value = try {
+            resolver(packageName)
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to resolve launch target for package=$packageName", error)
             return false
         }
 
-        return launchIntent(context, intent)
-    }
-
-    internal fun launchIntent(context: Context, intent: Intent?): Boolean {
-        if (intent == null) return false
+        if (value == null) {
+            return false
+        }
 
         return try {
-            context.startActivity(intent)
+            starter(value)
             true
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.w(TAG, "Unable to start launch target for package=$packageName", error)
             false
         }
     }
