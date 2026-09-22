@@ -1,6 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
-import com.google.mlkit.genai.prompt.FeatureStatus
+import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.prompt.Generation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
