@@ -43,10 +43,13 @@ class GameHubMacrobenchmark {
         compilationMode = CompilationMode.DEFAULT,
         setupBlock = {
             pressHome()
-        },
-        measureBlock = {
             startActivityAndWait()
             val libraryNavigation = By.res("nav_biblioteca")
+            check(device.wait(Until.hasObject(libraryNavigation), 5_000)) {
+                "Library navigation item not found"
+            }
+        },
+        measureBlock = {
             check(device.wait(Until.hasObject(libraryNavigation), 5_000)) {
                 "Library navigation item not found"
             }
@@ -66,10 +69,13 @@ class GameHubMacrobenchmark {
         compilationMode = CompilationMode.DEFAULT,
         setupBlock = {
             pressHome()
-        },
-        measureBlock = {
             startActivityAndWait()
             val settingsNavigation = By.res("nav_ajustes")
+            check(device.wait(Until.hasObject(settingsNavigation), 5_000)) {
+                "Settings navigation item not found"
+            }
+        },
+        measureBlock = {
             check(device.wait(Until.hasObject(settingsNavigation), 5_000)) {
                 "Settings navigation item not found"
             }
