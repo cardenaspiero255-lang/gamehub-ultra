@@ -12,12 +12,13 @@ import kotlinx.coroutines.runBlocking
  * GameHubAiAdvisor and AiActionAllowlist.
  */
 class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
-    private val model = Generation.getClient()
+    private val model = lazy { runCatching { Generation.getClient() }.getOrNull() }
 
     override fun isAvailable(): Boolean =
         runCatching {
             runBlocking(Dispatchers.IO) {
-                model.checkStatus() == FeatureStatus.AVAILABLE
+                val client = model.value ?: return@runBlocking false
+                client.checkStatus() == FeatureStatus.AVAILABLE
             }
         }.getOrDefault(false)
 
@@ -27,11 +28,12 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
     ): LocalAiActionCandidate? =
         runCatching {
             runBlocking(Dispatchers.IO) {
-                if (model.checkStatus() != FeatureStatus.AVAILABLE) {
+                val client = model.value ?: return@runBlocking null
+                if (client.checkStatus() != FeatureStatus.AVAILABLE) {
                     return@runBlocking null
                 }
 
-                val response = model.generateContent(buildPrompt(question, context))
+                val response = client.generateContent(buildPrompt(question, context))
                 val raw = response.candidates
                     .firstOrNull()
                     ?.text
@@ -47,7 +49,9 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
         }.getOrNull()
 
     override fun close() {
-        model.close()
+        if (model.isInitialized()) {
+            model.value?.close()
+        }
     }
 
     override fun chat(
@@ -57,14 +61,15 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
     ): String? =
         runCatching {
             runBlocking(Dispatchers.IO) {
-                if (model.checkStatus() != FeatureStatus.AVAILABLE) return@runBlocking null
-                val prompt = buildChatPrompt(message, context, conversation)
-                model.generateContent(prompt).candidates.firstOrNull()?.text?.trim()
+                val client = model.value ?: return@runBlocking null
+                if (client.checkStatus() != FeatureStatus.AVAILABLE) return@runBlocking null
+                val prompt = buildGeminiChatPrompt(message, context, conversation)
+                client.generateContent(prompt).candidates.firstOrNull()?.text?.trim()
                     ?.takeIf { it.isNotBlank() }
             }
         }.getOrNull()
 
-    private fun buildChatPrompt(
+internal fun buildGeminiChatPrompt(
         message: String,
         context: GameHubAiContext,
         conversation: List<String>
