@@ -2,12 +2,15 @@ package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
+import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class GameHubUiStateTest {
     @Test
@@ -54,6 +57,18 @@ class GameHubUiStateTest {
         assertEquals(GamePlatform.STEAM, steam.platform)
         assertEquals(GamePlatform.EPIC_GAMES, epic.platform)
         assertEquals("Player", epic.displayName)
+        assertTrue(GamePlatformLinks.isPublicProfileIdSupported(steam))
+        assertTrue(
+            GamePlatformLinks.isPublicProfileIdSupported(
+                steam.copy(publicId = "piero_player")
+            )
+        )
+        assertFalse(
+            GamePlatformLinks.isPublicProfileIdSupported(
+                steam.copy(publicId = "not a valid id")
+            )
+        )
+        assertFalse(GamePlatformLinks.isPublicProfileIdSupported(epic))
     }
 
 }
