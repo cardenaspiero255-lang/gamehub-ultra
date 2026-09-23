@@ -93,16 +93,10 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
-          pre-emulator-launch-script: |
-            set -euo pipefail
-            # Reset any stale ADB daemon left by previous Android tooling before
-            # the runner launches the emulator. The runner itself owns ADB while
-            # the emulator is running; we do not reconnect it from the test script.
-            adb kill-server || true
-            adb start-server
           script: |
             set -euo pipefail
-            adb devices
+            adb wait-for-device
+            adb shell getprop sys.boot_completed | grep -m1 "1"
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --stacktrace
 
       - name: Run macrobenchmarks on API 35
@@ -123,7 +117,8 @@ jobs:
             set -euo pipefail
             # android-emulator-runner owns ADB lifecycle and waits for boot.
             # Starting/reconnecting ADB here races with its emulator process.
-            adb devices
+            adb wait-for-device
+            adb shell getprop sys.boot_completed | grep -m1 "1"
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --stacktrace
 
       - name: Upload debug APK
