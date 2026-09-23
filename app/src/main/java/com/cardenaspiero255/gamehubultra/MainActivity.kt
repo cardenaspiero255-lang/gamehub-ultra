@@ -22,6 +22,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -997,8 +999,7 @@ private object VoiceDeviceStatusProvider {
         val battery = BatteryTelemetry.sanitizePercentage(
             batteryManager?.getIntProperty(
                 android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY
-            )
-        )
+            )        )
         val thermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             when (powerManager?.currentThermalStatus) {
                 PowerManager.THERMAL_STATUS_NONE -> context.getString(R.string.normal)
@@ -1602,10 +1603,6 @@ private fun LibraryScreen(
             label = { Text(stringResource(R.string.library_search)) }
         )
 
-        if (visibleGames.isEmpty() && libraryQuery.isNotBlank()) {
-            Text(stringResource(R.string.library_search_empty))
-        }
-
         if (launchFailed) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -1657,8 +1654,12 @@ private fun LibraryScreen(
                     stringResource(R.string.library_count, result.games.size)
                 )
 
+                if (libraryQuery.isNotBlank() && result.games.isNotEmpty() && visibleGames.isEmpty()) {
+                    Text(stringResource(R.string.library_search_empty))
+                }
+
                 selectedGamePackage?.let { selected ->
-                    result.games.firstOrNull {
+                    visibleGames.firstOrNull {
                         it.packageName == selected
                     }?.let { game ->
                         SelectedGameCard(
@@ -1930,7 +1931,11 @@ private fun ConnectedAccountsCard() {
                 ConnectedAccountRow(
                     account = account,
                     onRemove = { scope.launch { store.remove(account.id) } },
-                    onOpen = { GamePlatformLinks.openPublicProfile(context, account) }
+                    onOpen = {
+                        if (!GamePlatformLinks.openPublicProfile(context, account)) {
+                            browserError = true
+                        }
+                    }
                 )
             }
 
@@ -1997,8 +2002,7 @@ private fun ConnectedAccountsCard() {
                             displayName = ""
                             publicId = ""
                             showAddDialog = false
-                        }
-                    }
+                        }                    }
                 ) {
                     Text(stringResource(R.string.accounts_save))
                 }
@@ -2047,6 +2051,7 @@ private fun SettingsScreen(modifier: Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
