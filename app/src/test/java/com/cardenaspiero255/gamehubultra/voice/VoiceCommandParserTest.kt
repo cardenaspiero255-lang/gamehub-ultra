@@ -89,4 +89,34 @@ class VoiceCommandParserTest {
             VoiceCommandParser.parse("Dime, ¿la temperatura?")
         )
     }
+    @Test
+    fun parsesWakeWordSpanishCommand() {
+        val command = VoiceCommandParser.parse("Ultra, abre Resident Evil 4 Remake")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("resident evil 4 remake", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
+    @Test
+    fun parsesWakeWordProfileCommands() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra, pon X4")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.FRAME_INTERPOLATION),
+            VoiceCommandParser.parse("ULTRA prioriza interpolación")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            VoiceCommandParser.parse("Ultra FPS balanceado")
+        )
+    }
+
+    @Test
+    fun wakeWordIsRemovedBeforeNaturalLanguageResolution() {
+        val command = VoiceCommandParser.parse("Ultra dime la temperatura")
+        assertEquals(VoiceCommand.DeviceStatus, command)
+    }
+
 }
