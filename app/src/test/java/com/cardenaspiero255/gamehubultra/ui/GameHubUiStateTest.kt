@@ -36,13 +36,17 @@ class GameHubUiStateTest {
         assertEquals(ThermalPreference.ADAPTIVE, state.effectiveThermalPreference)
         assertNull(state.effectiveRefreshRateTargetHz)
     }
+
     @Test
     fun accountIdentifiersValidateByPlatform() {
         assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "76561198000000000"))
+        assertEquals(true, GameAccountValidation.isSteamId64("76561198000000000"))
         assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "player_one"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "1234567890"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "123456789012345678"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "99999999999999999999"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "not valid"))
         assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.EPIC_GAMES, "player.name"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.EPIC_GAMES, "x"))
     }
-
 }
