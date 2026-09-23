@@ -32,6 +32,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -1604,15 +1607,17 @@ private fun LibraryScreen(
                     }
                 }
 
-                LazyColumn(
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
                     modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(
                         items = visibleGames,
                         key = { it.packageName }
                     ) { game ->
-                        GameRow(
+                        GameTile(
                             game = game,
                             selected = selectedGamePackage == game.packageName,
                             favorite = favoriteGames.contains(game.packageName),
@@ -1728,7 +1733,7 @@ private fun SelectedGameCard(
 }
 
 @Composable
-private fun GameRow(
+private fun GameTile(
     game: GameInfo,
     selected: Boolean,
     favorite: Boolean,
@@ -1736,48 +1741,56 @@ private fun GameRow(
     onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Text(game.label, style = MaterialTheme.typography.titleMedium)
-            Text(game.packageName, style = MaterialTheme.typography.bodySmall)
-            Button(
-                onClick = onToggleFavorite,
-                modifier = Modifier.fillMaxWidth()
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                onClick = onSelect
             ) {
-                Text(
-                    if (favorite) {
-                        stringResource(R.string.remove_favorite)
-                    } else {
-                        stringResource(R.string.add_favorite)
-                    }
-                )
-            }
-            Button(
-                onClick = onSelect,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    if (selected) {
-                        stringResource(R.string.game_selected)
-                    } else {
-                        stringResource(R.string.select_game)
-                    }
-                )
-            }
-            if (selected) {
-                Button(
-                    onClick = onOpen,
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier.padding(9.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Text(stringResource(R.string.open_game))
+                    Text(
+                        game.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 2
+                    )
+                    Text(
+                        if (selected) "SELECCIONADO" else game.packageName,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TextButton(onClick = onToggleFavorite) {
+                    Text(if (favorite) "★" else "☆")
+                }
+                TextButton(onClick = onOpen) {
+                    Text("JUGAR")
                 }
             }
         }
     }
 }
+
 
 private fun openGame(context: Context, packageName: String): Boolean =
     GameLauncher.launch(context, packageName)
