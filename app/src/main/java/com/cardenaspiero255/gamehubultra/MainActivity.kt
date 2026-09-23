@@ -57,6 +57,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -338,13 +340,16 @@ private fun GameHubUltraApp(
         stringResource(R.string.nav_ajustes)
     )
     val tabIcons = listOf("⌂", "▦", "⚙")
+    val tabTestTags = listOf("nav_inicio", "nav_biblioteca", "nav_ajustes")
 
     Scaffold(
+        modifier = Modifier.semantics { testTagsAsResourceId = true },
         topBar = { TopAppBar(title = { Text(stringResource(R.string.hero_title)) }) },
         bottomBar = {
             NavigationBar {
                 tabs.forEachIndexed { index, label ->
                     NavigationBarItem(
+                        modifier = Modifier.testTag(tabTestTags[index]),
                         selected = selectedTab == index,
                         onClick = { selectedTab = index },
                         icon = {

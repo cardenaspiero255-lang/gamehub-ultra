@@ -102,6 +102,54 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun unsafeLocalChatOutputIsReplacedWithSafeGuidance() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ) = "I executed adb shell settings put system peak_refresh_rate 120 and changed the game settings."
+        }
+
+        val result = GameHubAiAdvisor(adapter).chat("haz esto", healthyContext)
+
+        assertTrue(result.contains("Ultra"))
+        assertTrue(result.contains("ejecuta") || result.contains("execute"))
+        assertFalse(result.contains("adb shell"))
+    }
+
+    @Test
+    fun safeLocalChatOutputIsPreserved() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ) = "La temperatura está estable y puedo analizar el rendimiento."
+        }
+
+        assertEquals(
+            "La temperatura está estable y puedo analizar el rendimiento.",
+            GameHubAiAdvisor(adapter).chat("como estoy de temperatura", healthyContext)
+        )
+    }
+
+
+    @Test
     fun providerFailureFallsBack() {
         val adapter = object : LocalAiModelAdapter {
             override fun isAvailable(): Boolean = error("provider unavailable")

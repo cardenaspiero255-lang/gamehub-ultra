@@ -43,7 +43,9 @@ class GameHubAiAdvisor(
     ): String {
         val local = runCatching {
             modelAdapter?.takeIf { it.isAvailable() }?.chat(message, context, conversation)
-        }.getOrNull()?.takeIf { it.isNotBlank() }
+        }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { AiChatSafetyFilter.sanitize(it, message) }
         if (local != null) return local
 
         val normalized = normalize(message)

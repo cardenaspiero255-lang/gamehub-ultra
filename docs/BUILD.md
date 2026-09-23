@@ -3,9 +3,9 @@
 ## Requirements
 
 - JDK 17
-- Android SDK Platform 35
-- Android Build Tools 35.0.0
-- Gradle 8.9 or a compatible Gradle 8.x version
+- Android SDK Platforms 35 and 36
+- Android Build Tools 36.0.0
+- Gradle 8.11.1
 
 ## Debug build
 
@@ -13,7 +13,7 @@ From the repository root:
 
     gradle :app:assembleDebug
 
-The GitHub Actions workflow performs the same debug build on Ubuntu with JDK 17 and Android SDK 35.
+The GitHub Actions workflow uses JDK 17, Android SDK Platforms 35/36, Build Tools 36.0.0, Gradle 8.11.1, release APK/AAB builds, and an API 35 connected benchmark/baseline-profile validation.
 
 ## Android Studio
 
