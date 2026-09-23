@@ -42,7 +42,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -159,7 +158,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(\n    androidx.compose.material3.ExperimentalMaterial3Api::class,\n    androidx.compose.ui.ExperimentalComposeUiApi::class\n)
+@OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class
+)
 @Composable
 private fun GameHubUltraApp(
     initialState: PerformanceState,
@@ -763,7 +765,13 @@ private fun RuntimeDiagnosticsCard(
                 )
                 DeviceRow(
                     stringResource(R.string.runtime_inputs),
-                    stringResource(\n                        R.string.peripherals_summary,\n                        diagnostics.peripherals.gamepadCount,\n                        diagnostics.peripherals.keyboardCount,\n                        diagnostics.peripherals.mouseCount,\n                        diagnostics.peripherals.externalAudioCount\n                    )
+                    stringResource(
+                        R.string.peripherals_summary,
+                        diagnostics.peripherals.gamepadCount,
+                        diagnostics.peripherals.keyboardCount,
+                        diagnostics.peripherals.mouseCount,
+                        diagnostics.peripherals.externalAudioCount
+                    )
                 )
                 adaptiveDecision?.let { decision ->
                     Text(
@@ -1142,7 +1150,9 @@ private fun AiAdvisorCard(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(stringResource(R.string.ai_advisor_subtitle))
-            Button(onClick = { showChat = true }, modifier = Modifier.fillMaxWidth()) {\n                Text(stringResource(R.string.ai_chat_input_label))\n            }
+            Button(onClick = { showChat = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.ai_chat_input_label))
+            }
             Text(
                 stringResource(R.string.ai_local_model_configured),
                 style = MaterialTheme.typography.bodySmall
