@@ -6,16 +6,23 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
+// GameHub Ultra: red/black gaming palette.
 private val UltraColors = darkColorScheme(
-    primary = Color(0xFFFFC107),
-    onPrimary = Color(0xFF181200),
-    secondary = Color(0xFFFF5252),
-    onSecondary = Color(0xFF2B0000),
-    background = Color(0xFF090909),
-    surface = Color(0xFF141414),
-    surfaceVariant = Color(0xFF211C1C),
+    primary = Color(0xFFE50914),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF5C0005),
+    onPrimaryContainer = Color(0xFFFFDAD9),
+    secondary = Color(0xFFFF3B30),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFF3A0002),
+    onSecondaryContainer = Color(0xFFFFDAD9),
+    background = Color(0xFF050505),
+    surface = Color(0xFF0B0B0B),
+    surfaceVariant = Color(0xFF171717),
     onBackground = Color(0xFFF5F5F5),
-    onSurface = Color(0xFFF5F5F5)
+    onSurface = Color(0xFFF5F5F5),
+    onSurfaceVariant = Color(0xFFBDBDBD),
+    outline = Color(0xFF3A3A3A)
 )
 
 @Composable
