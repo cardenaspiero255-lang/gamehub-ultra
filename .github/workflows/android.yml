@@ -1,5 +1,6 @@
 name: Android build
 # CAR-18 validation trigger
+# CAR-18 force-run 2
 
 on:
   workflow_dispatch:
