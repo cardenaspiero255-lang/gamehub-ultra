@@ -378,7 +378,12 @@ private fun GameHubUltraApp(
             TopAppBar(
                 title = { Text("GAMEHUB ULTRA") },
                 actions = {
-                    TextButton(onClick = { settingsOpen = !settingsOpen }) {
+                    TextButton(
+                        onClick = { settingsOpen = !settingsOpen },
+                        modifier = Modifier.semantics {
+                            contentDescription = "nav_ajustes"
+                        }
+                    ) {
                         Text("⚙")
                     }
                 }
@@ -391,13 +396,21 @@ private fun GameHubUltraApp(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        modifier = Modifier.testTag(tabTestTags[0]),
+                        modifier = Modifier
+                            .testTag(tabTestTags[0])
+                            .semantics {
+                                contentDescription = "nav_inicio"
+                            },
                         text = { Text(tabs[0].uppercase()) }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        modifier = Modifier.testTag(tabTestTags[1]),
+                        modifier = Modifier
+                            .testTag(tabTestTags[1])
+                            .semantics {
+                                contentDescription = "nav_biblioteca"
+                            },
                         text = { Text(tabs[1].uppercase()) }
                     )
                 }
