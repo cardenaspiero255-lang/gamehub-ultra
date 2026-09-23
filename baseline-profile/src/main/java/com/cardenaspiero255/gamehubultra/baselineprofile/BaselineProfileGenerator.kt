@@ -24,26 +24,9 @@ class BaselineProfileGenerator {
             "GameHub Ultra activity did not become visible"
         }
 
-        // The release test process can resolve resources differently from the target
-        // app context. Use the user-visible label as the stable UI contract instead.
-        val libraryLabel = "BIBLIOTECA"
-        val resourceSelector = By.res("nav_biblioteca")
-        val textSelector = By.text(libraryLabel)
-
-        val navigationFound =
-            device.wait(Until.hasObject(resourceSelector), 15_000) ||
-                device.wait(Until.hasObject(textSelector), 5_000)
-
-        check(navigationFound) {
-            "Library navigation item not found. label=$libraryLabel"
-        }
-
-        val navigation = if (device.hasObject(resourceSelector)) {
-            device.findObject(resourceSelector)
-        } else {
-            device.findObject(textSelector)
-        }
-
+        val target = By.desc("nav_biblioteca")
+        val navigation = device.wait(Until.findObject(target), 10_000)
+            ?: error("Library navigation item not found")
         navigation.click()
         device.waitForIdle()
     }
