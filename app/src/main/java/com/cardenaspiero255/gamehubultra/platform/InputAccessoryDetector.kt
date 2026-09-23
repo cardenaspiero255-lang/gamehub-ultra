@@ -16,7 +16,7 @@ data class InputAccessorySummary(
 object InputAccessoryDetector {
     fun detect(context: Context): InputAccessorySummary {
         val inputManager = context.getSystemService(InputManager::class.java)
-        val ids = inputManager?.inputDeviceIds.orEmpty()
+        val ids = inputManager?.inputDeviceIds ?: IntArray(0)
         var gamepads = 0
         var keyboards = 0
         var mice = 0
