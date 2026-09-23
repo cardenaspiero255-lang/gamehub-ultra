@@ -95,23 +95,9 @@ jobs:
           disable-animations: true
           script: |
             set -euo pipefail
-            adb start-server
-            for attempt in $(seq 1 20); do
-              if adb devices | awk 'NR > 1 && $2 == "device" { found=1 } END { exit(found ? 0 : 1) }'; then
-                break
-              fi
-              adb reconnect offline || true
-              sleep 2
-            done
-            adb wait-for-device
-            for attempt in $(seq 1 30); do
-              boot="$(adb shell getprop sys.boot_completed 2>/dev/null || true)"
-              if [ "$boot" = "1" ]; then
-                break
-              fi
-              sleep 2
-            done
-            test "$(adb shell getprop sys.boot_completed)" = "1"
+            # android-emulator-runner owns ADB lifecycle and waits for boot.
+            # Starting/reconnecting ADB here races with its emulator process.
+            adb devices
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --stacktrace
 
       - name: Run macrobenchmarks on API 35
@@ -130,23 +116,9 @@ jobs:
           disable-animations: true
           script: |
             set -euo pipefail
-            adb start-server
-            for attempt in $(seq 1 20); do
-              if adb devices | awk 'NR > 1 && $2 == "device" { found=1 } END { exit(found ? 0 : 1) }'; then
-                break
-              fi
-              adb reconnect offline || true
-              sleep 2
-            done
-            adb wait-for-device
-            for attempt in $(seq 1 30); do
-              boot="$(adb shell getprop sys.boot_completed 2>/dev/null || true)"
-              if [ "$boot" = "1" ]; then
-                break
-              fi
-              sleep 2
-            done
-            test "$(adb shell getprop sys.boot_completed)" = "1"
+            # android-emulator-runner owns ADB lifecycle and waits for boot.
+            # Starting/reconnecting ADB here races with its emulator process.
+            adb devices
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --stacktrace
 
       - name: Upload debug APK
