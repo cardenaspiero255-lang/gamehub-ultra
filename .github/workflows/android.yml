@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +25,7 @@ jobs:
         uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        run: sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;36.0.0" "emulator"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -47,16 +47,38 @@ jobs:
       - name: Build release AAB
         run: gradle :app:bundleRelease --stacktrace
 
+      - name: Launch API 35 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          emulator-options: -no-window -no-audio -no-boot-anim
+          disable-animations: true
+          script: |
+            gradle :baseline-profile:connectedCheck --stacktrace
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: gamehub-ultra-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload release artifacts
+      - name: Upload benchmark reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gamehub-ultra-benchmark-reports
+          path: |
+            baseline-profile/build/outputs/**
+            app/build/reports/**
+
+      - name: Upload release validation outputs
         uses: actions/upload-artifact@v4
         with:
-          name: gamehub-ultra-release
+          name: gamehub-ultra-release-validation-unsigned
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
