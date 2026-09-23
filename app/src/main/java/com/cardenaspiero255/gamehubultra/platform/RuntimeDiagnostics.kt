@@ -61,7 +61,8 @@ data class RuntimeDiagnostics(
     val refresh: RefreshTelemetry,
     val connectivity: ConnectivityTelemetry,
     val storage: StorageTelemetry,
-    val inputDeviceCount: Int
+    val inputDeviceCount: Int,
+    val peripherals: PeripheralDiagnostics
 )
 
 object RuntimeDiagnosticsProvider {
@@ -73,7 +74,8 @@ object RuntimeDiagnosticsProvider {
             refresh = readRefresh(appContext),
             connectivity = readConnectivity(appContext),
             storage = readStorage(),
-            inputDeviceCount = readInputDevices(appContext)
+            inputDeviceCount = readInputDevices(appContext),
+            peripherals = PeripheralDiagnosticsProvider.get(appContext)
         )
     }
 
