@@ -448,7 +448,7 @@ private fun HomeScreen(
             UltraDashboard(
                 device = device,
                 diagnostics = runtimeDiagnostics,
-                profile = state.profile,
+                profile = state.selectedProfile,
                 adaptiveDecision = adaptiveDecision
             )
         }
