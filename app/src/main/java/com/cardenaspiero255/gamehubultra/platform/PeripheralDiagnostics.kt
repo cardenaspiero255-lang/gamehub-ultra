@@ -80,7 +80,6 @@ object PeripheralDiagnosticsProvider {
             AudioDeviceInfo.TYPE_BLE_HEADSET,
             AudioDeviceInfo.TYPE_BLE_SPEAKER,
             AudioDeviceInfo.TYPE_BLE_BROADCAST,
-            AudioDeviceInfo.TYPE_BLE_HEARING_AID,
             AudioDeviceInfo.TYPE_DOCK_ANALOG -> true
 
             AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,
