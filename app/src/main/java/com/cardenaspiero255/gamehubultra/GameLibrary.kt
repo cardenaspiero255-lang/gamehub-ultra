@@ -17,6 +17,15 @@ data class GameDiscoveryResult(
 )
 
 object GameLibrary {
+    internal fun filterGames(games: List<GameInfo>, query: String): List<GameInfo> {
+        val normalizedQuery = query.trim().lowercase()
+        if (normalizedQuery.isBlank()) return games
+        return games.filter { game ->
+            game.label.lowercase().contains(normalizedQuery) ||
+                game.packageName.lowercase().contains(normalizedQuery)
+        }
+    }
+
     fun discover(
         context: Context,
         additionalPackages: Set<String> = emptySet()
