@@ -1900,7 +1900,11 @@ private fun ConnectedAccountsCard() {
 
     val platform = GamePlatform.valueOf(platformName)
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("connected_accounts")
+    ) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -2067,6 +2071,7 @@ private fun SettingsScreen(modifier: Modifier) {
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
+            .testTag("settings_scroll")
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
