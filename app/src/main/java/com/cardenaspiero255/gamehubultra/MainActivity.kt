@@ -10,6 +10,8 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -29,6 +31,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -76,6 +80,8 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.GamePlatform
+import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -86,6 +92,7 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
+import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -1601,10 +1608,168 @@ private fun openGame(context: Context, packageName: String): Boolean =
     GameLauncher.launch(context, packageName)
 
 @Composable
+private fun ConnectedAccountsCard() {
+    val context = LocalContext.current
+    val store = remember(context) { ConnectedGameAccountsStore(context) }
+    val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var platformName by rememberSaveable { mutableStateOf(GamePlatform.STEAM.name) }
+    var displayName by rememberSaveable { mutableStateOf("") }
+    var publicId by rememberSaveable { mutableStateOf("") }
+    var validationError by rememberSaveable { mutableStateOf(false) }
+    var browserError by rememberSaveable { mutableStateOf(false) }
+
+    val platform = GamePlatform.valueOf(platformName)
+    val validPublicId = GameAccountValidation.isValidPublicId(platform, publicId)
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(stringResource(R.string.accounts_title), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.accounts_subtitle))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { browserError = !GamePlatformLinks.openOfficialLogin(context, GamePlatform.STEAM) },
+                    modifier = Modifier.weight(1f)
+                ) { Text(stringResource(R.string.accounts_steam_login)) }
+                Button(
+                    onClick = { browserError = !GamePlatformLinks.openOfficialLogin(context, GamePlatform.EPIC_GAMES) },
+                    modifier = Modifier.weight(1f)
+                ) { Text(stringResource(R.string.accounts_epic_login)) }
+            }
+            TextButton(
+                onClick = {
+                    platformName = GamePlatform.STEAM.name
+                    displayName = ""
+                    publicId = ""
+                    validationError = false
+                    browserError = false
+                    showAddDialog = true
+                }
+            ) { Text(stringResource(R.string.accounts_add)) }
+
+            accounts.forEach { account ->
+                ConnectedAccountRow(
+                    account = account,
+                    onRemove = { scope.launch { store.remove(account.id) } },
+                    onOpen = {
+                        if (!GamePlatformLinks.openPublicProfile(context, account)) browserError = true
+                    }
+                )
+            }
+            if (accounts.isEmpty()) {
+                Text(stringResource(R.string.accounts_empty), style = MaterialTheme.typography.bodySmall)
+            }
+            if (browserError) {
+                Text(stringResource(R.string.accounts_browser_failed), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text(stringResource(R.string.accounts_add_title, platform.title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        GamePlatform.entries.forEach { item ->
+                            TextButton(
+                                onClick = {
+                                    platformName = item.name
+                                    publicId = ""
+                                    validationError = false
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text(if (platform == item) "✓ " + item.title else item.title) }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = displayName,
+                        onValueChange = { displayName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.accounts_display_name)) }
+                    )
+                    OutlinedTextField(
+                        value = publicId,
+                        onValueChange = {
+                            publicId = it
+                            validationError = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = validationError,
+                        label = { Text(stringResource(R.string.accounts_public_id)) }
+                    )
+                    if (validationError) {
+                        Text(stringResource(R.string.accounts_public_id_invalid), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = displayName.isNotBlank() && validPublicId,
+                    onClick = {
+                        if (!validPublicId) {
+                            validationError = true
+                            return@TextButton
+                        }
+                        scope.launch {
+                            store.add(platform, displayName, publicId)
+                            displayName = ""
+                            publicId = ""
+                            validationError = false
+                            showAddDialog = false
+                        }
+                    }
+                ) { Text(stringResource(R.string.accounts_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) { Text(stringResource(R.string.close)) }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ConnectedAccountRow(
+    account: ConnectedGameAccount,
+    onRemove: () -> Unit,
+    onOpen: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(account.platform.title + " · " + account.displayName)
+                Text(account.publicId, style = MaterialTheme.typography.bodySmall)
+            }
+            if (account.platform == GamePlatform.STEAM) {
+                TextButton(onClick = onOpen) { Text(stringResource(R.string.accounts_open)) }
+            }
+            TextButton(onClick = onRemove) { Text(stringResource(R.string.remove_game)) }
+        }
+    }
+}
+
+@Composable
 private fun SettingsScreen(modifier: Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -1612,6 +1777,7 @@ private fun SettingsScreen(modifier: Modifier) {
             stringResource(R.string.settings_title),
             style = MaterialTheme.typography.headlineSmall
         )
+        ConnectedAccountsCard()
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(18.dp),
