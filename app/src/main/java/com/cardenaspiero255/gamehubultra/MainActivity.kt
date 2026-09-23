@@ -863,6 +863,10 @@ private fun AiAdvisorCard(
 ) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var advice by remember { mutableStateOf<GameHubAiAdvice?>(null) }
+    var showChat by rememberSaveable { mutableStateOf(false) }
+    var chatMessage by rememberSaveable { mutableStateOf("") }
+    var chatHistory by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var chatSending by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
