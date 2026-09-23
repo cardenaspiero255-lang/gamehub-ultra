@@ -33,6 +33,16 @@ class GamePlatformLinksTest {
     }
 
     @Test
+    fun rejectsMalformedSteamProfileId() {
+        assertFalse(
+            GamePlatformLinks.isPublicProfileIdSupported(
+                GamePlatform.STEAM,
+                "not a valid profile id!"
+            )
+        )
+    }
+
+    @Test
     fun rejectsUnsupportedPlatformAndBlankProfile() {
         val epic = ConnectedGameAccount(
             id = "3",
