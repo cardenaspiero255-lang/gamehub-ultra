@@ -97,7 +97,7 @@ jobs:
             set -e
             adb wait-for-device
             adb shell getprop sys.boot_completed
-            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest --stacktrace
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --stacktrace
 
       - name: Run macrobenchmarks on API 35
         uses: reactivecircus/android-emulator-runner@v2
