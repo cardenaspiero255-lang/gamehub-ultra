@@ -7,6 +7,9 @@
         </intent>
     </queries>
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
@@ -36,6 +39,11 @@
             android:exported="false"
             android:process=":voice"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <service
+            android:name=".voice.UltraWakeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <service
             android:name=".QuickSettingsTileService"
