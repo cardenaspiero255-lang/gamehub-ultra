@@ -385,7 +385,14 @@ private fun GameHubUltraApp(
                 title = { Text("GAMEHUB ULTRA") },
                 actions = {
                     TextButton(
-                        onClick = { settingsOpen = !settingsOpen },
+                        onClick = {
+                            Trace.beginSection("GameHubUltra.Navigation.Settings")
+                            try {
+                                settingsOpen = !settingsOpen
+                            } finally {
+                                Trace.endSection()
+                            }
+                        },
                         modifier = Modifier
                             .testTag("nav_ajustes")
                             .semantics(mergeDescendants = true) {
@@ -415,7 +422,14 @@ private fun GameHubUltraApp(
                     )
                     Tab(
                         selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
+                        onClick = {
+                            Trace.beginSection("GameHubUltra.Navigation.Library")
+                            try {
+                                selectedTab = 1
+                            } finally {
+                                Trace.endSection()
+                            }
+                        },
                         modifier = Modifier
                             .testTag(tabTestTags[1])
                             .semantics(mergeDescendants = true) {
@@ -428,14 +442,7 @@ private fun GameHubUltraApp(
             }
 
             when {
-                settingsOpen -> {
-                    Trace.beginSection("GameHubUltra.Navigation.Settings")
-                    try {
-                        SettingsScreen(Modifier.fillMaxSize())
-                    } finally {
-                        Trace.endSection()
-                    }
-                }
+                settingsOpen -> SettingsScreen(Modifier.fillMaxSize())
                 selectedTab == 0 -> HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     state = state,
@@ -455,10 +462,7 @@ private fun GameHubUltraApp(
                     recentGamePackages = recentGamePackages,
                     manualGamePackages = manualGamePackages
                 )
-                else -> {
-                    Trace.beginSection("GameHubUltra.Navigation.Library")
-                    try {
-                        LibraryScreen(
+                else -> LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
                     selectedGamePackage = selectedGamePackage,
                     favoriteGames = favoriteGames,
@@ -481,12 +485,8 @@ private fun GameHubUltraApp(
                         )
                         viewModel.recordRecentGame(packageName)
                     },
-                            onToggleManualGame = viewModel::setManualGame
-                        )
-                    } finally {
-                        Trace.endSection()
-                    }
-                }
+                    onToggleManualGame = viewModel::setManualGame
+                )
             }
         }
     }
