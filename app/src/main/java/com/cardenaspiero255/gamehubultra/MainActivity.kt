@@ -444,6 +444,14 @@ private fun HomeScreen(
                 style = MaterialTheme.typography.titleMedium
             )
         }
+        item {
+            UltraDashboard(
+                device = device,
+                diagnostics = runtimeDiagnostics,
+                profile = state.profile,
+                adaptiveDecision = adaptiveDecision
+            )
+        }
         item { ActiveProfileCard(state) }
         item {
             AiAdvisorCard(
