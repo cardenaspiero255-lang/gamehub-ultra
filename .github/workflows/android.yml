@@ -13,8 +13,8 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,9 +27,37 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Use current Android command-line tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
+          test -n "$CMDLINE_DIR"
+          echo "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin" >> "$GITHUB_PATH"
+          "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin/sdkmanager" --version
+
+      - name: Enable KVM for Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          if [ ! -e /dev/kvm ]; then
+            echo "KVM device /dev/kvm is unavailable on this runner."
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+          ls -l /dev/kvm
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;36.0.0" "emulator"
+        run: |
+          sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;36.0.0" "emulator" "platform-tools" "system-images;android-35;google_apis;x86_64"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -51,20 +79,45 @@ jobs:
       - name: Build release AAB
         run: gradle :app:bundleRelease --stacktrace
 
-      - name: Launch API 35 emulator
+      - name: Run baseline profile instrumentation on API 35
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           target: google_apis
           arch: x86_64
           profile: pixel_2
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
           force-avd-creation: true
-          emulator-boot-timeout: 600
+          emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
-          disable-linux-hw-accel: true
           script: |
+            set -e
+            adb wait-for-device
+            adb shell getprop sys.boot_completed
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest --stacktrace
+
+      - name: Run macrobenchmarks on API 35
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
+          force-avd-creation: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            set -e
+            adb wait-for-device
+            adb shell getprop sys.boot_completed
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
