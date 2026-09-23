@@ -22,7 +22,7 @@ object GamePlatformLinks {
         val uri = when (account.platform) {
             GamePlatform.STEAM -> {
                 val id = account.publicId.trim()
-                if (id.matches(Regex("[0-9]{10,20}"))) {
+                if (GameAccountValidation.isSteamId64(id)) {
                     Uri.parse("https://steamcommunity.com/profiles/$id")
                 } else {
                     Uri.parse("https://steamcommunity.com/id/$id")
