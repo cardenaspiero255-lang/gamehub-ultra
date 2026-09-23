@@ -20,6 +20,21 @@ class GameHubMacrobenchmark {
     private val device: UiDevice
         get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
+    private fun prepareAppForNavigation() {
+        // Release builds can surface runtime-permission/system dialogs before the
+        // Compose hierarchy is exposed to UiAutomator. Grant the permissions used
+        // by the app in the benchmark emulator so navigation measures the app UI,
+        // not a first-run permission flow.
+        device.executeShellCommand(
+            "pm grant com.cardenaspiero255.gamehubultra android.permission.RECORD_AUDIO"
+        )
+        device.executeShellCommand(
+            "pm grant com.cardenaspiero255.gamehubultra android.permission.POST_NOTIFICATIONS"
+        )
+        device.pressBack()
+        device.waitForIdle()
+    }
+
     private fun requireNavigationTarget(
         description: String,
         visibleTexts: List<String>
@@ -68,6 +83,7 @@ class GameHubMacrobenchmark {
             compilationMode = CompilationMode.DEFAULT,
             setupBlock = {
                 pressHome()
+                prepareAppForNavigation()
                 startActivityAndWait()
                 device.waitForIdle()
                 requireNavigationTarget(targetDescription, listOf("BIBLIOTECA", "LIBRARY"))
@@ -90,6 +106,7 @@ class GameHubMacrobenchmark {
             compilationMode = CompilationMode.DEFAULT,
             setupBlock = {
                 pressHome()
+                prepareAppForNavigation()
                 startActivityAndWait()
                 device.waitForIdle()
                 requireNavigationTarget(targetDescription, listOf("⚙"))
