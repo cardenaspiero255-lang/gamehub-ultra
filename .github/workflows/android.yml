@@ -8,7 +8,7 @@ on:
     branches: ["main"]
 
 concurrency:
-  group: android-${{ github.event.pull_request.number || github.ref }}
+  group: android-${{ github.workflow }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
