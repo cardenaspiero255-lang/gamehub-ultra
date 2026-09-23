@@ -1577,15 +1577,7 @@ private fun LibraryScreen(
         )
     }
     val visibleGames = remember(orderedGames, libraryQuery) {
-        val query = libraryQuery.trim().lowercase()
-        if (query.isBlank()) {
-            orderedGames
-        } else {
-            orderedGames.filter { game ->
-                game.label.lowercase().contains(query) ||
-                    game.packageName.lowercase().contains(query)
-            }
-        }
+        GameLibrary.filterGames(orderedGames, libraryQuery)
     }
 
     Column(
