@@ -878,6 +878,9 @@ private fun AiAdvisorCard(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(stringResource(R.string.ai_advisor_subtitle))
+            Button(onClick = { showChat = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.ai_chat_input_label))
+            }
             Text(
                 stringResource(R.string.ai_local_model_configured),
                 style = MaterialTheme.typography.bodySmall
