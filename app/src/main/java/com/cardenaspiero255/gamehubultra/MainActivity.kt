@@ -869,6 +869,69 @@ private fun AiAdvisorCard(
     var chatHistory by rememberSaveable { mutableStateOf(listOf<String>()) }
     var chatSending by remember { mutableStateOf(false) }
 
+    fun sendChatMessage() {
+        val message = chatMessage.trim()
+        if (message.isBlank() || chatSending) return
+        chatMessage = ""
+        chatHistory = chatHistory + ("Tú: " + message)
+        chatSending = true
+        scope.launch(Dispatchers.IO) {
+            val answer = advisor.chat(message, context, chatHistory)
+            withContext(Dispatchers.Main) {
+                chatHistory = chatHistory + ("Ultra: " + answer)
+                chatSending = false
+            }
+        }
+    }
+
+    if (showChat) {
+        AlertDialog(
+            onDismissRequest = { if (!chatSending) showChat = false },
+            title = { Text("Ultra") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    chatHistory.takeLast(8).forEach { entry ->
+                        Text(entry, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    OutlinedTextField(
+                        value = chatMessage,
+                        onValueChange = { chatMessage = it.take(1000) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.ai_chat_input_label)) },
+                        placeholder = { Text(stringResource(R.string.ai_chat_input_hint)) },
+                        enabled = !chatSending,
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = ::sendChatMessage,
+                    enabled = chatMessage.isNotBlank() && !chatSending
+                ) {
+                    Text(
+                        if (chatSending) {
+                            stringResource(R.string.ai_chat_thinking)
+                        } else {
+                            stringResource(R.string.ai_chat_send)
+                        }
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        chatHistory = emptyList()
+                        chatMessage = ""
+                    },
+                    enabled = !chatSending
+                ) {
+                    Text(stringResource(R.string.ai_chat_clear))
+                }
+            }
+        )
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(18.dp),
