@@ -37,3 +37,15 @@ GameHub Ultra reports and applies only capabilities that Android or a supported 
 ## Detailed plan
 
 See [docs/CAR-6-TECHNICAL-AUDIT.md](docs/CAR-6-TECHNICAL-AUDIT.md) and [docs/CAR-15-GAMEHUB-AI.md](docs/CAR-15-GAMEHUB-AI.md).
+## CAR-17..19 — Accounts, compact UI, library search
+
+### CAR-17 — Steam/Epic account hub
+GameHub Ultra can open the official Steam and Epic sign-in pages and locally keep multiple public account entries. Passwords, Steam Guard codes, and provider tokens are never stored.
+
+### CAR-18 — Compact visual polish
+The red/black Material 3 theme uses reduced typography, spacing, and card padding. The duplicate profile block was removed from Inicio while keeping the three performance presets available.
+
+### CAR-19 — Library search
+The Biblioteca tab now filters games by visible name or package name without re-querying Android's PackageManager. Search misses display a dedicated empty-state message.
+
+These CARs are considered complete only after the Android workflow passes JVM tests, debug APK compilation, and lint on the updated branch.
