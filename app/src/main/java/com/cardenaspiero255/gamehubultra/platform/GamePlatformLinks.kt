@@ -20,8 +20,10 @@ object GamePlatformLinks {
     }
 
     fun isPublicProfileIdSupported(account: ConnectedGameAccount): Boolean =
-        account.platform == GamePlatform.STEAM &&
-            isSteamProfileIdSupported(account.publicId)
+        isPublicProfileIdSupported(account.platform, account.publicId)
+
+    fun isPublicProfileIdSupported(platform: GamePlatform, publicId: String): Boolean =
+        platform == GamePlatform.STEAM && isSteamProfileIdSupported(publicId)
 
     private fun isSteamProfileIdSupported(publicId: String): Boolean {
         val id = publicId.trim()
