@@ -64,7 +64,8 @@ jobs:
           profile: pixel_2
           force-avd-creation: true
           wipe-data: true
-          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          emulator-boot-timeout: 300
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
             gradle :baseline-profile:connectedCheck --stacktrace
