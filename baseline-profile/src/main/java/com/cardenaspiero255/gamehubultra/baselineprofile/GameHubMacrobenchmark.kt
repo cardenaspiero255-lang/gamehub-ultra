@@ -22,7 +22,7 @@ class GameHubMacrobenchmark {
 
     private fun requireNavigationTarget(
         description: String,
-        visibleText: String
+        visibleTexts: List<String>
     ): androidx.test.uiautomator.UiObject2 {
         device.waitForIdle()
         val selectors = listOf(
@@ -63,7 +63,7 @@ class GameHubMacrobenchmark {
                 pressHome()
                 startActivityAndWait()
                 device.waitForIdle()
-                requireNavigationTarget(targetDescription, "BIBLIOTECA")
+                requireNavigationTarget(targetDescription, listOf("BIBLIOTECA", "LIBRARY"))
             },
             measureBlock = {
                 requireNavigationTarget(targetDescription, "BIBLIOTECA").click()
@@ -85,7 +85,7 @@ class GameHubMacrobenchmark {
                 pressHome()
                 startActivityAndWait()
                 device.waitForIdle()
-                requireNavigationTarget(targetDescription, "⚙")
+                requireNavigationTarget(targetDescription, listOf("⚙"))
             },
             measureBlock = {
                 requireNavigationTarget(targetDescription, "⚙").click()
