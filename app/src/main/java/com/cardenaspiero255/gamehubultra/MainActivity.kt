@@ -10,6 +10,8 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -35,6 +37,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -76,6 +79,7 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -86,6 +90,7 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
+import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -425,8 +430,8 @@ private fun HomeScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
             GameHubStyleHeader(
@@ -455,21 +460,6 @@ private fun HomeScreen(
                 aiContext = aiContext,
                 aiAdvisor = aiAdvisor
             )
-        }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    stringResource(R.string.performance_modes),
-                    style = MaterialTheme.typography.titleLarge
-                )
-                PerformanceProfile.entries.forEach { profile ->
-                    ProfileCard(
-                        profile = profile,
-                        selected = selectedProfileName == profile.name,
-                        onClick = { onProfileSelected(profile) }
-                    )
-                }
-            }
         }
         item {
             BoosterOptions(
@@ -569,7 +559,7 @@ private fun RuntimeDiagnosticsCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -771,7 +761,7 @@ private fun VoiceAssistantCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -910,7 +900,7 @@ private fun AiAdvisorCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -959,7 +949,7 @@ private fun AiAdvisorCard(
 private fun ActiveProfileCard(state: PerformanceState) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -1006,7 +996,7 @@ private fun ProfileCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
@@ -1043,7 +1033,7 @@ private fun BoosterOptions(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -1157,7 +1147,7 @@ private fun DeviceStatusCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(18.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -1283,6 +1273,7 @@ private fun LibraryScreen(
     var launchFailed by rememberSaveable { mutableStateOf(false) }
     var showAddGameDialog by rememberSaveable { mutableStateOf(false) }
     var launchableApps by remember { mutableStateOf<List<GameInfo>>(emptyList()) }
+    var libraryQuery by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(context, refreshToken, manualGamePackages) {
         discovery = withContext(Dispatchers.IO) {
             GameLibrary.discover(context, manualGamePackages)
@@ -1324,10 +1315,22 @@ private fun LibraryScreen(
                 .thenBy { it.label.lowercase() }
         )
     }
+    val visibleGames = remember(orderedGames, libraryQuery) {
+        val query = libraryQuery.trim().lowercase()
+        if (query.isBlank()) {
+            orderedGames
+        } else {
+            orderedGames.filter { game ->
+                game.label.lowercase().contains(query) ||
+                    game.packageName.lowercase().contains(query)
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(20.dp),
+            .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Row(
@@ -1346,11 +1349,23 @@ private fun LibraryScreen(
             }
         }
 
+        OutlinedTextField(
+            value = libraryQuery,
+            onValueChange = { libraryQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text(stringResource(R.string.library_search)) }
+        )
+
+        if (visibleGames.isEmpty() && libraryQuery.isNotBlank()) {
+            Text(stringResource(R.string.library_search_empty))
+        }
+
         if (launchFailed) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     stringResource(R.string.library_open_error),
-                    modifier = Modifier.padding(18.dp)
+                    modifier = Modifier.padding(14.dp)
                 )
             }
         }
@@ -1360,14 +1375,14 @@ private fun LibraryScreen(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         stringResource(R.string.library_loading),
-                        modifier = Modifier.padding(18.dp)
+                        modifier = Modifier.padding(14.dp)
                     )
                 }
             }
             result.failed -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
-                        modifier = Modifier.padding(18.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
@@ -1381,7 +1396,7 @@ private fun LibraryScreen(
             result.games.isEmpty() -> {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
-                        modifier = Modifier.padding(18.dp),
+                        modifier = Modifier.padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
@@ -1427,7 +1442,7 @@ private fun LibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(
-                        items = orderedGames,
+                        items = visibleGames,
                         key = { it.packageName }
                     ) { game ->
                         GameRow(
@@ -1514,7 +1529,7 @@ private fun SelectedGameCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
@@ -1556,7 +1571,7 @@ private fun GameRow(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(game.label, style = MaterialTheme.typography.titleMedium)
@@ -1601,20 +1616,193 @@ private fun openGame(context: Context, packageName: String): Boolean =
     GameLauncher.launch(context, packageName)
 
 @Composable
+private fun ConnectedAccountsCard() {
+    val context = LocalContext.current
+    val store = remember(context) { ConnectedGameAccountsStore(context) }
+    val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var platformName by rememberSaveable { mutableStateOf(GamePlatform.STEAM.name) }
+    var displayName by rememberSaveable { mutableStateOf("") }
+    var publicId by rememberSaveable { mutableStateOf("") }
+    var browserError by rememberSaveable { mutableStateOf(false) }
+
+    val platform = GamePlatform.valueOf(platformName)
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                stringResource(R.string.accounts_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(stringResource(R.string.accounts_subtitle))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        browserError = !GamePlatformLinks.openOfficialLogin(context, GamePlatform.STEAM)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.accounts_steam_login))
+                }
+                Button(
+                    onClick = {
+                        browserError = !GamePlatformLinks.openOfficialLogin(context, GamePlatform.EPIC_GAMES)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.accounts_epic_login))
+                }
+            }
+            TextButton(
+                onClick = {
+                    platformName = GamePlatform.STEAM.name
+                    displayName = ""
+                    publicId = ""
+                    showAddDialog = true
+                }
+            ) {
+                Text(stringResource(R.string.accounts_add))
+            }
+
+            accounts.forEach { account ->
+                ConnectedAccountRow(
+                    account = account,
+                    onRemove = { scope.launch { store.remove(account.id) } },
+                    onOpen = { GamePlatformLinks.openPublicProfile(context, account) }
+                )
+            }
+
+            if (accounts.isEmpty()) {
+                Text(
+                    stringResource(R.string.accounts_empty),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (browserError) {
+                Text(
+                    stringResource(R.string.accounts_browser_failed),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = {
+                Text(stringResource(R.string.accounts_add_title, platform.title))
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        GamePlatform.entries.forEach { item ->
+                            TextButton(
+                                onClick = { platformName = item.name },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    if (platform == item) "✓ " + item.title else item.title
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = displayName,
+                        onValueChange = { displayName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.accounts_display_name)) }
+                    )
+                    OutlinedTextField(
+                        value = publicId,
+                        onValueChange = { publicId = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.accounts_public_id)) }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = displayName.isNotBlank() && publicId.isNotBlank(),
+                    onClick = {
+                        scope.launch {
+                            store.add(platform, displayName, publicId)
+                            displayName = ""
+                            publicId = ""
+                            showAddDialog = false
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.accounts_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) {
+                    Text(stringResource(R.string.close))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ConnectedAccountRow(
+    account: ConnectedGameAccount,
+    onRemove: () -> Unit,
+    onOpen: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(account.platform.title + " · " + account.displayName)
+                Text(
+                    account.publicId,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (account.platform == GamePlatform.STEAM) {
+                TextButton(onClick = onOpen) {
+                    Text(stringResource(R.string.accounts_open))
+                }
+            }
+            TextButton(onClick = onRemove) {
+                Text(stringResource(R.string.remove_game))
+            }
+        }
+    }
+}
+
+@Composable
 private fun SettingsScreen(modifier: Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
             stringResource(R.string.settings_title),
             style = MaterialTheme.typography.headlineSmall
         )
+        ConnectedAccountsCard()
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(18.dp),
+                modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
@@ -1626,7 +1814,7 @@ private fun SettingsScreen(modifier: Modifier) {
         }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(18.dp),
+                modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
