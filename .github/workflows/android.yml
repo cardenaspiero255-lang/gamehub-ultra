@@ -94,9 +94,24 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -e
+            set -euo pipefail
+            adb start-server
+            for attempt in $(seq 1 20); do
+              if adb devices | awk 'NR > 1 && $2 == "device" { found=1 } END { exit(found ? 0 : 1) }'; then
+                break
+              fi
+              adb reconnect offline || true
+              sleep 2
+            done
             adb wait-for-device
-            adb shell getprop sys.boot_completed
+            for attempt in $(seq 1 30); do
+              boot="$(adb shell getprop sys.boot_completed 2>/dev/null || true)"
+              if [ "$boot" = "1" ]; then
+                break
+              fi
+              sleep 2
+            done
+            test "$(adb shell getprop sys.boot_completed)" = "1"
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --stacktrace
 
       - name: Run macrobenchmarks on API 35
@@ -114,9 +129,24 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -e
+            set -euo pipefail
+            adb start-server
+            for attempt in $(seq 1 20); do
+              if adb devices | awk 'NR > 1 && $2 == "device" { found=1 } END { exit(found ? 0 : 1) }'; then
+                break
+              fi
+              adb reconnect offline || true
+              sleep 2
+            done
             adb wait-for-device
-            adb shell getprop sys.boot_completed
+            for attempt in $(seq 1 30); do
+              boot="$(adb shell getprop sys.boot_completed 2>/dev/null || true)"
+              if [ "$boot" = "1" ]; then
+                break
+              fi
+              sleep 2
+            done
+            test "$(adb shell getprop sys.boot_completed)" = "1"
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --stacktrace
 
       - name: Upload debug APK
