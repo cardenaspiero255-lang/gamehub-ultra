@@ -135,6 +135,11 @@
     <string name="ai_fallback_active">Sin modelo local: fallback determinista offline activo.</string>
     <string name="ai_analyze">Analizar recomendación</string>
     <string name="ai_apply_profile">Aplicar perfil recomendado</string>
+    <string name="ai_chat_input_label">Habla con Ultra</string>
+    <string name="ai_chat_input_hint">Escribe tu pregunta sobre gaming…</string>
+    <string name="ai_chat_send">Enviar</string>
+    <string name="ai_chat_thinking">Ultra está pensando…</string>
+    <string name="ai_chat_clear">Limpiar conversación</string>
     <string name="ai_profile_balanced_title">FPS balanceado</string>
     <string name="ai_profile_interpolation_title">Priorizar interpolación</string>
     <string name="ai_profile_x4_title">X4</string>
