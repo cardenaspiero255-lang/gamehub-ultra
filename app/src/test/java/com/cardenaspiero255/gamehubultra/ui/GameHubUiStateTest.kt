@@ -41,6 +41,8 @@ class GameHubUiStateTest {
         assertEquals(true, GameAccountValidation.isSteamId64("76561202255233023"))
         assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "player_one"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "1234567890"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "1234567890123456"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "765611980000000000"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "76561197960265727"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "76561202255233024"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "99999999999999999999"))
