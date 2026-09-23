@@ -106,6 +106,19 @@ import java.util.UUID
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
 
+    override fun onStart() {
+        super.onStart()
+        if (
+            continuousListeningEnabled(this) &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            startVoiceWakeService(this)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -792,6 +805,7 @@ private fun VoiceAssistantCard(
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingContinuousListening by rememberSaveable { mutableStateOf(false) }
     var permissionGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -805,7 +819,13 @@ private fun VoiceAssistantCard(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         permissionGranted = granted
-        if (!granted) {
+        if (granted && pendingContinuousListening) {
+            pendingContinuousListening = false
+            setContinuousListeningEnabled(context, true)
+            startVoiceWakeService(context)
+            response = "Escucha continua activada."
+        } else if (!granted) {
+            pendingContinuousListening = false
             response = context.getString(R.string.voice_permission_required)
         }
     }
@@ -900,11 +920,16 @@ private fun VoiceAssistantCard(
                 Switch(
                     checked = continuousListeningEnabled(context),
                     onCheckedChange = { enabled ->
-                        setContinuousListeningEnabled(context, enabled)
-                        if (enabled) {
+                        if (enabled && !permissionGranted) {
+                            pendingContinuousListening = true
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        } else if (enabled) {
+                            setContinuousListeningEnabled(context, true)
                             startVoiceWakeService(context)
                             response = "Escucha continua activada."
                         } else {
+                            pendingContinuousListening = false
+                            setContinuousListeningEnabled(context, false)
                             stopVoiceWakeService(context)
                             response = "Escucha continua desactivada."
                         }
@@ -2041,3 +2066,34 @@ private fun eventLabel(event: PerformanceEvent): String =
                 (event.profile?.title?.let { ": $it" } ?: "") +
                 (event.score?.let { " ($it/100)" } ?: "")
     }
+
+private const val VOICE_PREFS = "gamehub_ultra_voice"
+private const val VOICE_CONTINUOUS_KEY = "continuous_enabled"
+
+private fun continuousListeningEnabled(context: Context): Boolean =
+    context.getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(VOICE_CONTINUOUS_KEY, false)
+
+private fun setContinuousListeningEnabled(context: Context, enabled: Boolean) {
+    context.getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(VOICE_CONTINUOUS_KEY, enabled)
+        .apply()
+}
+
+private fun startVoiceWakeService(context: Context) {
+    if (
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+    ) return
+
+    val intent = Intent(context, com.cardenaspiero255.gamehubultra.voice.UltraWakeService::class.java)
+        .setAction(com.cardenaspiero255.gamehubultra.voice.UltraWakeService.ACTION_START)
+    ContextCompat.startForegroundService(context, intent)
+}
+
+private fun stopVoiceWakeService(context: Context) {
+    val intent = Intent(context, com.cardenaspiero255.gamehubultra.voice.UltraWakeService::class.java)
+        .setAction(com.cardenaspiero255.gamehubultra.voice.UltraWakeService.ACTION_STOP)
+    context.stopService(intent)
+}
