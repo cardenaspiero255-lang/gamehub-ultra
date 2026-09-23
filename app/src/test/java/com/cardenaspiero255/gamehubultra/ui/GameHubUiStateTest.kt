@@ -1,6 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
+import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlin.test.Test
@@ -34,4 +36,13 @@ class GameHubUiStateTest {
         assertEquals(ThermalPreference.ADAPTIVE, state.effectiveThermalPreference)
         assertNull(state.effectiveRefreshRateTargetHz)
     }
+    @Test
+    fun accountIdentifiersValidateByPlatform() {
+        assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "76561198000000000"))
+        assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "player_one"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "not valid"))
+        assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.EPIC_GAMES, "player.name"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.EPIC_GAMES, "x"))
+    }
+
 }
