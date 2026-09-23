@@ -20,21 +20,24 @@ class GameHubMacrobenchmark {
     private val device: UiDevice
         get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
-    private fun requireNavigationTarget(description: String, visibleText: String): androidx.test.uiautomator.UiObject2 =
-        requireNotNull(
-            device.wait(
-                Until.findObject(By.res("com.cardenaspiero255.gamehubultra:id/$description")),
-                3_000
-            ) ?: device.wait(
-                Until.findObject(By.desc(description)),
-                3_000
-            ) ?: device.wait(
-                Until.findObject(By.text(visibleText)),
-                3_000
-            )
-        ) {
-            "Navigation target not found: $description / $visibleText"
+    private fun requireNavigationTarget(
+        description: String,
+        visibleText: String
+    ): androidx.test.uiautomator.UiObject2 {
+        device.waitForIdle()
+        val selectors = listOf(
+            By.res("com.cardenaspiero255.gamehubultra:id/$description"),
+            By.desc(description),
+            By.text(visibleText)
+        )
+        repeat(5) {
+            selectors.forEach { selector ->
+                device.wait(Until.findObject(selector), 2_000)?.let { return it }
+            }
+            device.waitForIdle()
         }
+        error("Navigation target not found after 10s: $description / $visibleText")
+    }
 
     @Test
     fun coldStartup() = benchmarkRule.measureRepeated(
@@ -59,6 +62,7 @@ class GameHubMacrobenchmark {
             setupBlock = {
                 pressHome()
                 startActivityAndWait()
+                device.waitForIdle()
                 requireNavigationTarget(targetDescription, "BIBLIOTECA")
             },
             measureBlock = {
@@ -80,6 +84,7 @@ class GameHubMacrobenchmark {
             setupBlock = {
                 pressHome()
                 startActivityAndWait()
+                device.waitForIdle()
                 requireNavigationTarget(targetDescription, "⚙")
             },
             measureBlock = {
