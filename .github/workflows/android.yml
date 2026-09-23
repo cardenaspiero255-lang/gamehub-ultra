@@ -93,6 +93,7 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
+          shell: bash
           script: |
             set -euo pipefail
             adb wait-for-device
@@ -113,6 +114,7 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
+          shell: bash
           script: |
             set -euo pipefail
             # android-emulator-runner owns ADB lifecycle and waits for boot.
