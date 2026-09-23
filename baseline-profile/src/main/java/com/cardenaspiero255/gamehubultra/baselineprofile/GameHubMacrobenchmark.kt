@@ -1,10 +1,10 @@
 package com.cardenaspiero255.gamehubultra.baselineprofile
 
 import androidx.benchmark.macro.CompilationMode
-import androidx.benchmark.macro.StartupMode
-import androidx.benchmark.macro.junit4.MacrobenchmarkRule
-import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.FrameTimingMetric
+import androidx.benchmark.macro.StartupMode
+import androidx.benchmark.macro.StartupTimingMetric
+import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -20,6 +20,16 @@ class GameHubMacrobenchmark {
     private val device: UiDevice
         get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
+    private fun requireNavigationTarget(description: String) =
+        requireNotNull(
+            device.wait(
+                Until.findObject(By.desc(description)),
+                10_000
+            )
+        ) {
+            "Navigation target not found: $description"
+        }
+
     @Test
     fun coldStartup() = benchmarkRule.measureRepeated(
         packageName = "com.cardenaspiero255.gamehubultra",
@@ -33,7 +43,7 @@ class GameHubMacrobenchmark {
 
     @Test
     fun navigationToLibrary() {
-        val target = By.res("nav_biblioteca")
+        val targetDescription = "nav_biblioteca"
         benchmarkRule.measureRepeated(
             packageName = "com.cardenaspiero255.gamehubultra",
             metrics = listOf(FrameTimingMetric()),
@@ -43,15 +53,18 @@ class GameHubMacrobenchmark {
             setupBlock = {
                 pressHome()
                 startActivityAndWait()
-                check(device.wait(Until.hasObject(target), 5_000))
+                requireNavigationTarget(targetDescription)
             },
-            measureBlock = { device.findObject(target).click(); device.waitForIdle() }
+            measureBlock = {
+                requireNavigationTarget(targetDescription).click()
+                device.waitForIdle()
+            }
         )
     }
 
     @Test
     fun navigationToSettings() {
-        val target = By.res("nav_ajustes")
+        val targetDescription = "nav_ajustes"
         benchmarkRule.measureRepeated(
             packageName = "com.cardenaspiero255.gamehubultra",
             metrics = listOf(FrameTimingMetric()),
@@ -61,9 +74,12 @@ class GameHubMacrobenchmark {
             setupBlock = {
                 pressHome()
                 startActivityAndWait()
-                check(device.wait(Until.hasObject(target), 5_000))
+                requireNavigationTarget(targetDescription)
             },
-            measureBlock = { device.findObject(target).click(); device.waitForIdle() }
+            measureBlock = {
+                requireNavigationTarget(targetDescription).click()
+                device.waitForIdle()
+            }
         )
     }
 }
