@@ -145,7 +145,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             val gameHubViewModel: GameHubViewModel = viewModel()
             GameHubUltraTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics { testTagsAsResourceId = true }
+                ) {
                     GameHubUltraApp(
                         initialState = initialState,
                         device = device,
@@ -374,7 +378,6 @@ private fun GameHubUltraApp(
     val tabTestTags = listOf("nav_inicio", "nav_biblioteca")
 
     Scaffold(
-        modifier = Modifier.semantics { testTagsAsResourceId = true },
         topBar = {
             TopAppBar(
                 title = { Text("GAMEHUB ULTRA") },
@@ -383,7 +386,7 @@ private fun GameHubUltraApp(
                         onClick = { settingsOpen = !settingsOpen },
                         modifier = Modifier
                             .testTag("nav_ajustes")
-                            .semantics {
+                            .semantics(mergeDescendants = true) {
                                 contentDescription = "nav_ajustes"
                             }
                     ) {
@@ -401,7 +404,7 @@ private fun GameHubUltraApp(
                         onClick = { selectedTab = 0 },
                         modifier = Modifier
                             .testTag(tabTestTags[0])
-                            .semantics {
+                            .semantics(mergeDescendants = true) {
                                 contentDescription = "nav_inicio"
                             },
                         text = { Text(tabs[0].uppercase()) }
@@ -411,7 +414,7 @@ private fun GameHubUltraApp(
                         onClick = { selectedTab = 1 },
                         modifier = Modifier
                             .testTag(tabTestTags[1])
-                            .semantics {
+                            .semantics(mergeDescendants = true) {
                                 contentDescription = "nav_biblioteca"
                             },
                         text = { Text(tabs[1].uppercase()) }
