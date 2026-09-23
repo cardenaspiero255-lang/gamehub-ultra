@@ -429,7 +429,11 @@ private fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Spacer(Modifier.height(4.dp))
+            GameHubStyleHeader(
+                selectedProfileName = selectedProfileName
+            )
+        }
+        item {
             Text(
                 stringResource(R.string.hero_subtitle),
                 style = MaterialTheme.typography.titleMedium
@@ -487,6 +491,52 @@ private fun HomeScreen(
     }
 }
 
+
+@Composable
+private fun GameHubStyleHeader(
+    selectedProfileName: String
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "GAMEHUB ULTRA",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "● $selectedProfileName",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                "PC Games    Steam Games    Epic Games    Retro Games",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Text(
+                    "⌕  Buscar juegos",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun RuntimeDiagnosticsCard(
