@@ -18,12 +18,12 @@ class BaselineProfileGenerator {
     fun startupAndCoreNavigation() = baselineProfileRule.collect(
         packageName = "com.cardenaspiero255.gamehubultra"
     ) {
+        startActivityAndWait()
+
         val appPackage = "com.cardenaspiero255.gamehubultra"
         check(device.wait(Until.hasObject(By.pkg(appPackage)), 15_000)) {
             "GameHub Ultra activity did not become visible"
         }
-
-        startActivityAndWait()
 
         val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
         val libraryStringId = targetContext.resources.getIdentifier(
