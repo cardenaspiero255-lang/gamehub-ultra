@@ -46,12 +46,12 @@ fun UltraDashboard(
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(
                 listOf(
-                    "RAM" to "\${device.totalRamMb / 1024} GB",
-                    "CPU" to "\${device.cpuCores} núcleos",
-                    "Hz" to (refresh?.let { "\${it.toInt()} Hz" } ?: "—"),
-                    "Red" to (latency?.let { "\${it} ms" } ?: "—"),
-                    "Batería" to (battery?.let { "\${it}%" } ?: "—"),
-                    "Almacenamiento" to (storage?.let { "\${it}% libre" } ?: "—")
+                    "RAM" to "${device.totalRamMb / 1024} GB",
+                    "CPU" to "${device.cpuCores} núcleos",
+                    "Hz" to (refresh?.let { "${it.toInt()} Hz" } ?: "—"),
+                    "Red" to (latency?.let { "${it} ms" } ?: "—"),
+                    "Batería" to (battery?.let { "${it}%" } ?: "—"),
+                    "Almacenamiento" to (storage?.let { "${it}% libre" } ?: "—")
                 )
             ) { (label, value) ->
                 MetricChip(label, value)
@@ -76,7 +76,7 @@ fun UltraDashboard(
                 }
 
                 thermal?.let {
-                    Text("Margen térmico: \${it}%", style = MaterialTheme.typography.bodySmall)
+                    Text("Margen térmico: ${it}%", style = MaterialTheme.typography.bodySmall)
                     LinearProgressIndicator(
                         progress = { (it / 100f).coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth()
@@ -89,7 +89,7 @@ fun UltraDashboard(
                         shape = MaterialTheme.shapes.small
                     ) {
                         Text(
-                            "Adaptación: \${it.reason}",
+                            "Adaptación: ${it.reason}",
                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
                             style = MaterialTheme.typography.bodySmall
                         )
