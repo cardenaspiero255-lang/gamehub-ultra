@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,6 +45,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -148,7 +152,8 @@ private fun GameHubUltraApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     var state by remember { mutableStateOf(initialState) }
-    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var activeSessionPackage by rememberSaveable { mutableStateOf<String?>(null) }
     var activeSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
@@ -344,70 +349,80 @@ private fun GameHubUltraApp(
     val tabIcons = listOf("⌂", "▦", "⚙")
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.hero_title)) }) },
-        bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, label ->
-                    NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        icon = {
-                            Text(
-                                tabIcons[index],
-                                modifier = Modifier.semantics {
-                                    contentDescription = label
-                                }
-                            )
-                        },
-                        label = { Text(label) }
+        topBar = {
+            TopAppBar(
+                title = { Text("GAMEHUB ULTRA") },
+                actions = {
+                    TextButton(onClick = { settingsOpen = !settingsOpen }) {
+                        Text("⚙")
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            if (!settingsOpen) {
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("HOME") }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("BIBLIOTECA") }
                     )
                 }
             }
-        }
-    ) { padding ->
-        when (selectedTab) {
-            0 -> HomeScreen(
-                modifier = Modifier.padding(padding),
-                state = state,
-                device = device,
-                selectedProfileName = selectedProfileName,
-                onProfileSelected = ::selectProfile,
-                onGameSelected = ::selectGame,
-                runtimeDiagnostics = runtimeDiagnostics,
-                adaptiveDecision = adaptiveDecision,
-                performanceHistory = performanceHistory,
-                onApplyAdaptiveProfile = {
-                    adaptiveDecision?.let { selectProfile(it.profile) }
-                },
-                aiContext = aiContext,
-                aiAdvisor = aiAdvisor
-            )
-            1 -> LibraryScreen(
-                modifier = Modifier.padding(padding),
-                selectedGamePackage = selectedGamePackage,
-                favoriteGames = favoriteGames,
-                recentGamePackages = recentGamePackages,
-                manualGamePackages = manualGamePackages,
-                onGameSelected = ::selectGame,
-                onToggleFavorite = viewModel::setFavoriteGame,
-                onGameOpened = { packageName ->
-                    endGameSession()
-                    val sessionId = UUID.randomUUID().toString()
-                    activeSessionPackage = packageName
-                    activeSessionId = sessionId
-                    viewModel.recordPerformanceEvent(
-                        PerformanceEvent(
-                            timestampMillis = System.currentTimeMillis(),
-                            type = PerformanceEventType.SESSION_STARTED,
-                            sessionId = sessionId,
-                            detail = packageName
+
+            when {
+                settingsOpen -> SettingsScreen(Modifier.fillMaxSize())
+                selectedTab == 0 -> HomeScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    state = state,
+                    device = device,
+                    selectedProfileName = selectedProfileName,
+                    onProfileSelected = ::selectProfile,
+                    onGameSelected = ::selectGame,
+                    runtimeDiagnostics = runtimeDiagnostics,
+                    adaptiveDecision = adaptiveDecision,
+                    performanceHistory = performanceHistory,
+                    onApplyAdaptiveProfile = {
+                        adaptiveDecision?.let { selectProfile(it.profile) }
+                    },
+                    aiContext = aiContext,
+                    aiAdvisor = aiAdvisor,
+                    favoriteGames = favoriteGames,
+                    recentGamePackages = recentGamePackages,
+                    manualGamePackages = manualGamePackages
+                )
+                else -> LibraryScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    selectedGamePackage = selectedGamePackage,
+                    favoriteGames = favoriteGames,
+                    recentGamePackages = recentGamePackages,
+                    manualGamePackages = manualGamePackages,
+                    onGameSelected = ::selectGame,
+                    onToggleFavorite = viewModel::setFavoriteGame,
+                    onGameOpened = { packageName ->
+                        endGameSession()
+                        val sessionId = UUID.randomUUID().toString()
+                        activeSessionPackage = packageName
+                        activeSessionId = sessionId
+                        viewModel.recordPerformanceEvent(
+                            PerformanceEvent(
+                                timestampMillis = System.currentTimeMillis(),
+                                type = PerformanceEventType.SESSION_STARTED,
+                                sessionId = sessionId,
+                                detail = packageName
+                            )
                         )
-                    )
-                    viewModel.recordRecentGame(packageName)
-                },
-                onToggleManualGame = viewModel::setManualGame
-            )
-            else -> SettingsScreen(Modifier.padding(padding))
+                        viewModel.recordRecentGame(packageName)
+                    },
+                    onToggleManualGame = viewModel::setManualGame
+                )
+            }
         }
     }
 }
@@ -425,7 +440,10 @@ private fun HomeScreen(
     performanceHistory: List<PerformanceEvent>,
     onApplyAdaptiveProfile: () -> Unit,
     aiContext: GameHubAiContext,
-    aiAdvisor: GameHubAiAdvisor
+    aiAdvisor: GameHubAiAdvisor,
+    favoriteGames: Set<String>,
+    recentGamePackages: List<String>,
+    manualGamePackages: Set<String>
 ) {
     LazyColumn(
         modifier = modifier
@@ -453,6 +471,15 @@ private fun HomeScreen(
             )
         }
         item { ActiveProfileCard(state) }
+        item {
+            TusJuegosShelf(
+                favoriteGames = favoriteGames,
+                recentGamePackages = recentGamePackages,
+                manualGamePackages = manualGamePackages,
+                selectedGamePackage = aiContext.selectedGamePackage,
+                onGameSelected = onGameSelected
+            )
+        }
         item {
             AiAdvisorCard(
                 context = aiContext,
@@ -494,12 +521,10 @@ private fun HomeScreen(
 private fun GameHubStyleHeader(
     selectedProfileName: String
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -510,16 +535,21 @@ private fun GameHubStyleHeader(
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
-                Text(
-                    "● $selectedProfileName",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        selectedProfileName,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
             }
             Text(
-                "PC Games    Steam Games    Epic Games    Retro Games",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface
+                "PC • STEAM • EPIC • RETRO",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -527,14 +557,93 @@ private fun GameHubStyleHeader(
                 color = MaterialTheme.colorScheme.surfaceVariant
             ) {
                 Text(
-                    "⌕  Buscar juegos",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "⌕  Buscar juegos, aplicaciones o comandos…",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }
     }
 }
+
+@Composable
+private fun TusJuegosShelf(
+    favoriteGames: Set<String>,
+    recentGamePackages: List<String>,
+    manualGamePackages: Set<String>,
+    selectedGamePackage: String?,
+    onGameSelected: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val games = remember {
+        GameLibrary.discover(context).games.associateBy { it.packageName }
+    }
+    val packageOrder = buildList {
+        recentGamePackages.forEach { add(it) }
+        favoriteGames.forEach { add(it) }
+        manualGamePackages.forEach { add(it) }
+        selectedGamePackage?.let { add(it) }
+    }.distinct()
+    val visible = packageOrder.mapNotNull { games[it] }.take(10)
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Tus juegos", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "${visible.size}",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+
+            if (visible.isEmpty()) {
+                Text(
+                    "Añade juegos desde Biblioteca para verlos aquí.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(visible, key = { it.packageName }) { game ->
+                        Surface(
+                            onClick = { onGameSelected(game.packageName) },
+                            color = if (game.packageName == selectedGamePackage) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text(
+                                    game.label,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    "Jugar",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun RuntimeDiagnosticsCard(
@@ -777,6 +886,31 @@ private fun VoiceAssistantCard(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(stringResource(R.string.voice_assistant_subtitle))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Escucha continua", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Responde solo cuando digas “Ultra”.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(
+                    checked = continuousListeningEnabled(context),
+                    onCheckedChange = { enabled ->
+                        setContinuousListeningEnabled(context, enabled)
+                        if (enabled) {
+                            startVoiceWakeService(context)
+                            response = "Escucha continua activada."
+                        } else {
+                            stopVoiceWakeService(context)
+                            response = "Escucha continua desactivada."
+                        }
+                    }
+                )
+            }
             Button(
                 onClick = {
                     if (permissionGranted) {
