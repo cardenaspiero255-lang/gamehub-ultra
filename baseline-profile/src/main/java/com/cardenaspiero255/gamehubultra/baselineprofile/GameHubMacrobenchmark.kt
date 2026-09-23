@@ -33,7 +33,10 @@ class GameHubMacrobenchmark {
     )
 
     @Test
-    fun navigationToLibrary() = benchmarkRule.measureRepeated(
+    fun navigationToLibrary() {
+        val libraryNavigation = By.res("nav_biblioteca")
+
+        benchmarkRule.measureRepeated(
         packageName = "com.cardenaspiero255.gamehubultra",
         metrics = listOf(
             androidx.benchmark.macro.FrameTimingMetric()
@@ -50,16 +53,17 @@ class GameHubMacrobenchmark {
             }
         },
         measureBlock = {
-            check(device.wait(Until.hasObject(libraryNavigation), 5_000)) {
-                "Library navigation item not found"
-            }
             device.findObject(libraryNavigation).click()
             device.waitForIdle()
         }
     )
+    }
 
     @Test
-    fun navigationToSettings() = benchmarkRule.measureRepeated(
+    fun navigationToSettings() {
+        val settingsNavigation = By.res("nav_ajustes")
+
+        benchmarkRule.measureRepeated(
         packageName = "com.cardenaspiero255.gamehubultra",
         metrics = listOf(
             androidx.benchmark.macro.FrameTimingMetric()
@@ -76,11 +80,9 @@ class GameHubMacrobenchmark {
             }
         },
         measureBlock = {
-            check(device.wait(Until.hasObject(settingsNavigation), 5_000)) {
-                "Settings navigation item not found"
-            }
             device.findObject(settingsNavigation).click()
             device.waitForIdle()
         }
     )
+    }
 }
