@@ -42,6 +42,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -66,6 +67,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -105,6 +108,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+
+private const val MAX_CHAT_HISTORY = 8
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
@@ -154,7 +159,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(\n    androidx.compose.material3.ExperimentalMaterial3Api::class,\n    androidx.compose.ui.ExperimentalComposeUiApi::class\n)
 @Composable
 private fun GameHubUltraApp(
     initialState: PerformanceState,
@@ -363,8 +368,10 @@ private fun GameHubUltraApp(
         stringResource(R.string.nav_ajustes)
     )
     val tabIcons = listOf("⌂", "▦", "⚙")
+    val tabTestTags = listOf("nav_inicio", "nav_biblioteca", "nav_ajustes")
 
     Scaffold(
+        modifier = Modifier.semantics { testTagsAsResourceId = true },
         topBar = {
             TopAppBar(
                 title = { Text("GAMEHUB ULTRA") },
@@ -756,7 +763,7 @@ private fun RuntimeDiagnosticsCard(
                 )
                 DeviceRow(
                     stringResource(R.string.runtime_inputs),
-                    diagnostics.inputDeviceCount.toString()
+                    stringResource(\n                        R.string.peripherals_summary,\n                        diagnostics.peripherals.gamepadCount,\n                        diagnostics.peripherals.keyboardCount,\n                        diagnostics.peripherals.mouseCount,\n                        diagnostics.peripherals.externalAudioCount\n                    )
                 )
                 adaptiveDecision?.let { decision ->
                     Text(
@@ -1067,6 +1074,63 @@ private fun AiAdvisorCard(
 ) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var advice by remember { mutableStateOf<GameHubAiAdvice?>(null) }
+    var showChat by rememberSaveable { mutableStateOf(false) }
+    var chatMessage by rememberSaveable { mutableStateOf("") }
+    var chatHistory by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var chatSending by remember { mutableStateOf(false) }
+
+    fun sendChatMessage() {
+        val message = chatMessage.trim()
+        if (message.isBlank() || chatSending) return
+        val previousConversation = chatHistory.takeLast(MAX_CHAT_HISTORY - 1)
+        chatMessage = ""
+        chatHistory = (previousConversation + ("Tú: " + message)).takeLast(MAX_CHAT_HISTORY)
+        chatSending = true
+        scope.launch(Dispatchers.IO) {
+            val answer = advisor.chat(message, context, previousConversation)
+            withContext(Dispatchers.Main) {
+                chatHistory = (chatHistory + ("Ultra: " + answer)).takeLast(MAX_CHAT_HISTORY)
+                chatSending = false
+            }
+        }
+    }
+
+    if (showChat) {
+        AlertDialog(
+            onDismissRequest = { if (!chatSending) showChat = false },
+            title = { Text("Ultra") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    chatHistory.takeLast(MAX_CHAT_HISTORY).forEach { entry ->
+                        Text(entry, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    OutlinedTextField(
+                        value = chatMessage,
+                        onValueChange = { chatMessage = it.take(1000) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.ai_chat_input_label)) },
+                        placeholder = { Text(stringResource(R.string.ai_chat_input_hint)) },
+                        enabled = !chatSending,
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = ::sendChatMessage,
+                    enabled = chatMessage.isNotBlank() && !chatSending
+                ) {
+                    Text(if (chatSending) stringResource(R.string.ai_chat_thinking) else stringResource(R.string.ai_chat_send))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { chatHistory = emptyList(); chatMessage = "" },
+                    enabled = !chatSending
+                ) { Text(stringResource(R.string.ai_chat_clear)) }
+            }
+        )
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1078,6 +1142,7 @@ private fun AiAdvisorCard(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(stringResource(R.string.ai_advisor_subtitle))
+            Button(onClick = { showChat = true }, modifier = Modifier.fillMaxWidth()) {\n                Text(stringResource(R.string.ai_chat_input_label))\n            }
             Text(
                 stringResource(R.string.ai_local_model_configured),
                 style = MaterialTheme.typography.bodySmall
