@@ -20,14 +20,17 @@ class GameHubMacrobenchmark {
     private val device: UiDevice
         get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
-    private fun requireNavigationTarget(description: String) =
+    private fun requireNavigationTarget(description: String, visibleText: String) =
         requireNotNull(
             device.wait(
                 Until.findObject(By.desc(description)),
-                10_000
+                5_000
+            ) ?: device.wait(
+                Until.findObject(By.text(visibleText)),
+                5_000
             )
         ) {
-            "Navigation target not found: $description"
+            "Navigation target not found: $description / $visibleText"
         }
 
     @Test
@@ -53,10 +56,10 @@ class GameHubMacrobenchmark {
             setupBlock = {
                 pressHome()
                 startActivityAndWait()
-                requireNavigationTarget(targetDescription)
+                requireNavigationTarget(targetDescription, "BIBLIOTECA")
             },
             measureBlock = {
-                requireNavigationTarget(targetDescription).click()
+                requireNavigationTarget(targetDescription, "⚙").click()
                 device.waitForIdle()
             }
         )
