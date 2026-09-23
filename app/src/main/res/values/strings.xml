@@ -110,15 +110,15 @@
     <string name="profile_balanced_description">Equilibra fluidez, consumo y temperatura.</string>
     <string name="profile_interpolation_description">Prioriza opciones de interpolación cuando exista una API compatible y acepta un mayor coste térmico. Android no permite forzar interpolación en otros juegos mediante una API pública.</string>
     <string name="profile_x4_description">Preset de alto rendimiento. Solicita Sustained Performance solo cuando Android y el dispositivo lo soportan; no genera frames por sí mismo.</string>
-    <string name="voice_assistant_title">Asistente de voz</string>
-    <string name="voice_assistant_subtitle">Habla una vez para abrir juegos, seleccionar perfiles o consultar el estado. No hay escucha permanente.</string>
-    <string name="voice_start">Hablar</string>
+    <string name="voice_assistant_title">Ultra</string>
+    <string name="voice_assistant_subtitle">Habla una vez con Ultra para abrir juegos, seleccionar perfiles o consultar el estado. No hay escucha permanente.</string>
+    <string name="voice_start">Hablar con Ultra</string>
     <string name="voice_stop">Detener</string>
     <string name="voice_permission_button">Permitir micrófono</string>
-    <string name="voice_permission_required">Se necesita permiso de micrófono para usar el asistente.</string>
-    <string name="voice_recognition_error">No pude entender la voz. Inténtalo de nuevo.</string>
+    <string name="voice_permission_required">Se necesita permiso de micrófono para usar Ultra.</string>
+    <string name="voice_recognition_error">Ultra no pudo entender la voz. Inténtalo de nuevo.</string>
     <string name="voice_selected_profile">Perfil seleccionado: %1$s</string>
-    <string name="voice_transcript">Escuché: %1$s</string>
+    <string name="voice_transcript">Ultra escuchó: %1$s</string>
     <string name="voice_result_profile_applied">Aplicado: perfil %1$s seleccionado.</string>
     <string name="voice_result_game_opened">Aplicado: abrí %1$s.</string>
     <string name="voice_result_profile_applied_short">Perfil %1$s seleccionado en GameHub Ultra.</string>
@@ -135,7 +135,6 @@
     <string name="ai_fallback_active">Sin modelo local: fallback determinista offline activo.</string>
     <string name="ai_analyze">Analizar recomendación</string>
     <string name="ai_apply_profile">Aplicar perfil recomendado</string>
-
     <string name="ai_profile_balanced_title">FPS balanceado</string>
     <string name="ai_profile_interpolation_title">Priorizar interpolación</string>
     <string name="ai_profile_x4_title">X4</string>
@@ -151,7 +150,6 @@
     <string name="ai_reason_model_interpolation">El modelo local recomendó priorizar interpolación; GameHub Ultra no fuerza controles en otras apps.</string>
     <string name="ai_reason_model_x4">El modelo local recomendó X4 y el dispositivo expone Sustained Performance compatible.</string>
     <string name="ai_local_model_configured">Modelo local configurado; si Gemini Nano no está disponible, se usa el fallback offline.</string>
-
     <string name="qs_gamehub_label">GameHub Ultra</string>
     <string name="qs_gamehub_description">Abrir GameHub Ultra</string>
     <string name="peripherals_summary">Gamepad %1$d · Teclado %2$d · Ratón %3$d · Audio externo %4$d</string>
