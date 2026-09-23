@@ -18,7 +18,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -147,7 +149,7 @@ class GameHubPreferencesRepositoryTest {
             )
         )
 
-        scope.cancel()
+        scope.coroutineContext.job.cancelAndJoin()
 
         val restartedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
