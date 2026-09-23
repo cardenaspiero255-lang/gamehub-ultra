@@ -135,6 +135,11 @@
     <string name="ai_fallback_active">No local model: deterministic offline fallback is active.</string>
     <string name="ai_analyze">Analyze recommendation</string>
     <string name="ai_apply_profile">Apply recommended profile</string>
+    <string name="ai_chat_input_label">Talk to Ultra</string>
+    <string name="ai_chat_input_hint">Write your gaming question…</string>
+    <string name="ai_chat_send">Send</string>
+    <string name="ai_chat_thinking">Ultra is thinking…</string>
+    <string name="ai_chat_clear">Clear conversation</string>
 
     <string name="ai_profile_balanced_title">Balanced FPS</string>
     <string name="ai_profile_interpolation_title">Prioritize interpolation</string>
