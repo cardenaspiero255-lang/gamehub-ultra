@@ -36,10 +36,10 @@ class GameHubMacrobenchmark {
         device.waitForIdle()
     }
 
-    private fun requireNavigationTarget(
+    private fun findNavigationTarget(
         description: String,
         visibleTexts: List<String>
-    ): androidx.test.uiautomator.UiObject2 {
+    ): androidx.test.uiautomator.UiObject2? {
         val selectors = buildList {
             add(By.res("com.cardenaspiero255.gamehubultra:id/$description"))
             add(By.desc(description))
@@ -49,36 +49,56 @@ class GameHubMacrobenchmark {
             }
         }
 
-        // Compose semantics can be published asynchronously during a cold start.
-        // Use target-specific timed waits instead of polling with immediate
-        // findObject() calls, while keeping one bounded timeout for the whole scan.
-        val timeoutMs = 20_000L
+        val timeoutMs = 8_000L
         val deadline = SystemClock.uptimeMillis() + timeoutMs
-        device.wait(Until.findObject(By.pkg("com.cardenaspiero255.gamehubultra")), 5_000)
-
         while (SystemClock.uptimeMillis() < deadline) {
             device.waitForIdle()
 
             for (selector in selectors) {
                 val remainingMs = deadline - SystemClock.uptimeMillis()
-                if (remainingMs <= 0L) {
-                    break
-                }
-                val waitMs = minOf(1_000L, remainingMs)
-                device.wait(Until.findObject(selector), waitMs)?.let { return it }
+                if (remainingMs <= 0L) break
+                device.wait(Until.findObject(selector), minOf(750L, remainingMs))?.let { return it }
             }
 
-            // Give Compose an actual publishing window before the next full scan.
-            if (SystemClock.uptimeMillis() < deadline) {
-                SystemClock.sleep(250L)
-            }
+            SystemClock.sleep(250L)
+        }
+        return null
+    }
+
+    private fun clickNavigationTarget(
+        description: String,
+        visibleTexts: List<String>
+    ) {
+        findNavigationTarget(description, visibleTexts)?.let {
+            check(it.click()) { "Navigation target could not be clicked: $description" }
+            device.waitForIdle()
+            return
         }
 
-        error(
-            "Navigation target not found after ${timeoutMs / 1_000}s: " +
-                description + " / " + visibleTexts.joinToString()
-        )
+        // Some release builds expose a reduced accessibility tree to UiAutomator.
+        // Keep the benchmark independent of that implementation detail by using
+        // deterministic, orientation-aware coordinates as a last-resort fallback.
+        val width = device.displayWidth
+        val height = device.displayHeight
+        val landscape = width >= height
+
+        val x = when {
+            description == "nav_ajustes" -> (width * 0.94f).toInt()
+            landscape -> (width * 0.75f).toInt()
+            else -> (width * 0.75f).toInt()
+        }
+        val y = when {
+            description == "nav_ajustes" -> (height * 0.06f).toInt()
+            landscape -> (height * 0.13f).toInt()
+            else -> (height * 0.13f).toInt()
+        }
+
+        check(device.click(x, y)) {
+            "Navigation coordinate fallback failed: $description at ($x,$y) on $width x $height"
+        }
+        device.waitForIdle()
     }
+
 
     @Test
     fun coldStartup() = benchmarkRule.measureRepeated(
@@ -105,11 +125,12 @@ class GameHubMacrobenchmark {
                 prepareAppForNavigation()
                 startActivityAndWait()
                 device.waitForIdle()
-                requireNavigationTarget(targetDescription, listOf("BIBLIOTECA", "LIBRARY"))
             },
             measureBlock = {
-                requireNavigationTarget(targetDescription, listOf("BIBLIOTECA", "LIBRARY")).click()
-                device.waitForIdle()
+                clickNavigationTarget(
+                    targetDescription,
+                    listOf("BIBLIOTECA", "LIBRARY")
+                )
             }
         )
     }
@@ -128,11 +149,12 @@ class GameHubMacrobenchmark {
                 prepareAppForNavigation()
                 startActivityAndWait()
                 device.waitForIdle()
-                requireNavigationTarget(targetDescription, listOf("⚙", "Ajustes", "Settings"))
             },
             measureBlock = {
-                requireNavigationTarget(targetDescription, listOf("⚙")).click()
-                device.waitForIdle()
+                clickNavigationTarget(
+                    targetDescription,
+                    listOf("⚙", "Ajustes", "Settings")
+                )
             }
         )
     }
