@@ -18,15 +18,19 @@ class BaselineProfileGenerator {
         packageName = "com.cardenaspiero255.gamehubultra"
     ) {
         startActivityAndWait()
+        device.waitForIdle()
 
-        val appPackage = "com.cardenaspiero255.gamehubultra"
-        check(device.wait(Until.hasObject(By.pkg(appPackage)), 15_000)) {
-            "GameHub Ultra activity did not become visible"
-        }
+        val navigation = device.wait(
+            Until.findObject(By.res("com.cardenaspiero255.gamehubultra:id/nav_biblioteca")),
+            10_000
+        ) ?: device.wait(
+            Until.findObject(By.desc("nav_biblioteca")),
+            10_000
+        ) ?: device.wait(
+            Until.findObject(By.text("BIBLIOTECA")),
+            10_000
+        ) ?: error("Library navigation item not found after startup")
 
-        val target = By.desc("nav_biblioteca")
-        val navigation = device.wait(Until.findObject(target), 10_000)
-            ?: error("Library navigation item not found")
         navigation.click()
         device.waitForIdle()
     }
