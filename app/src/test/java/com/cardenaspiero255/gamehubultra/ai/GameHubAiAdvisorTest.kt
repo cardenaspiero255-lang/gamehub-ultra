@@ -126,6 +126,63 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun actionClaimVariantsAreRejectedByLocalChatSafetyFilter() {
+        val unsafeOutputs = listOf(
+            "I successfully changed the game settings.",
+            "I just opened the game for you.",
+            "I have applied the X4 profile."
+        )
+
+        unsafeOutputs.forEach { unsafeOutput ->
+            val adapter = object : LocalAiModelAdapter {
+                override fun isAvailable() = true
+
+                override fun advise(
+                    question: String,
+                    context: GameHubAiContext
+                ): LocalAiActionCandidate? = null
+
+                override fun chat(
+                    message: String,
+                    context: GameHubAiContext,
+                    conversation: List<String>
+                ) = unsafeOutput
+            }
+
+            val result = GameHubAiAdvisor(adapter).chat("haz esto", healthyContext)
+
+            assertTrue(result.contains("Ultra"))
+            assertTrue(result.contains("ejecuta") || result.contains("execute"))
+            assertFalse(result.contains("successfully"))
+            assertFalse(result.contains("applied"))
+        }
+    }
+
+    @Test
+    fun directAdbCommandIsRejectedByLocalChatSafetyFilter() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ) = "Run adb devices and then change the settings."
+        }
+
+        val result = GameHubAiAdvisor(adapter).chat("haz esto", healthyContext)
+
+        assertTrue(result.contains("Ultra"))
+        assertFalse(result.contains("adb devices"))
+    }
+
+
+    @Test
     fun safeLocalChatOutputIsPreserved() {
         val adapter = object : LocalAiModelAdapter {
             override fun isAvailable() = true

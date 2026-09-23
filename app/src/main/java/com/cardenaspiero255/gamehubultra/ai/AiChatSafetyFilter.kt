@@ -8,9 +8,9 @@ object AiChatSafetyFilter {
     private const val MAX_RESPONSE_LENGTH = 4_000
 
     private val unsafePatterns = listOf(
-        Regex("(?i)\\badb\\s+shell\\b|\\bfastboot\\b|\\bsettings\\s+(put|delete|read)\\b|\\bam\\s+(start|force-stop)\\b|\\bpm\\s+(grant|revoke|install|uninstall)\\b"),
+        Regex("(?i)\\badb(?:\\s|$)|\\bfastboot\\b|\\bsettings\\s+(put|delete|read)\\b|\\bam\\s+(start|force-stop)\\b|\\bpm\\s+(grant|revoke|install|uninstall)\\b"),
         Regex("(?i)\\b(startActivity|startService|sendBroadcast|Runtime\\.getRuntime|exec\\s*\\(|intent\\s*\\(|tool call|tool invocation)\\b"),
-        Regex("(?i)\\b(i|yo|he|ya|acabo de)\\s+(activated|changed|modified|executed|opened|closed|applied|injected|overclocked|controlled|activé|cambié|modifiqué|ejecuté|abrí|cerré|apliqué|inyecté|overclockeé|controlé)\\b"),
+        Regex("(?i)\\b(?:i|yo|we|ultra|assistant)\\b(?:\\s+(?:have|has|had|just|already|successfully|directly|now|he|ya|acabo(?:\\s+de)?)){0,4}\\s+(?:activated|changed|modified|executed|opened|closed|applied|injected|overclocked|controlled|activé|cambié|modifiqué|ejecuté|abrí|cerré|apliqué|inyecté|overclockeé|controlé)\\b"),
         Regex("(?i)\\b(i|yo)\\s+(can|puedo)\\s+(execute|run|control|change|modify|inject|open|close|apply|ejecutar|correr|controlar|cambiar|modificar|inyectar|abrir|cerrar|aplicar)\\b")
     )
 
