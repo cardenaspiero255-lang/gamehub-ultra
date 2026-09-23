@@ -1,7 +1,8 @@
 package com.cardenaspiero255.gamehubultra.domain
 
 object GameAccountValidation {
-    private val steamId64 = Regex("[0-9]{17}")
+    private const val STEAM_ID64_MIN = 76561197960265728L
+    private const val STEAM_ID64_MAX = 76561202255233023L
     private val steamVanity = Regex("[A-Za-z0-9_-]{2,32}")
     private val epicPublicId = Regex("[A-Za-z0-9._-]{2,64}")
 
@@ -15,5 +16,5 @@ object GameAccountValidation {
     }
 
     fun isSteamId64(value: String): Boolean =
-        steamId64.matches(value.trim())
+        value.trim().toLongOrNull()?.let { it in STEAM_ID64_MIN..STEAM_ID64_MAX } == true
 }
