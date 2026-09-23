@@ -263,4 +263,30 @@ class GameHubAiAdvisorTest {
         assertEquals("com.example.game", receivedGame)
         assertTrue(receivedSustained)
     }
+
+    @Test
+    fun englishChatFallbackUsesEnglishForEnglishQuestions() {
+        val result = GameHubAiAdvisor().chat("battery", healthyContext)
+
+        assertTrue(result.contains("battery", ignoreCase = true))
+        assertFalse(result.contains("La batería"))
+    }
+
+    @Test
+    fun geminiChatPromptIncludesCurrentTurnOnce() {
+        val prompt = buildGeminiChatPrompt(
+            message = "hello there",
+            context = healthyContext,
+            conversation = listOf(
+                "User: previous question",
+                "Ultra: previous answer"
+            )
+        )
+
+        val occurrences = prompt.windowed("User: hello there".length)
+            .count { it == "User: hello there" }
+
+        assertEquals(1, occurrences)
+    }
+
 }
