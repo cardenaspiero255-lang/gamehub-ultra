@@ -14,6 +14,7 @@ import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import android.os.Build
 import android.os.Bundle
+import android.os.Trace
 import android.os.PowerManager
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
@@ -427,7 +428,14 @@ private fun GameHubUltraApp(
             }
 
             when {
-                settingsOpen -> SettingsScreen(Modifier.fillMaxSize())
+                settingsOpen -> {
+                    Trace.beginSection("GameHubUltra.Navigation.Settings")
+                    try {
+                        SettingsScreen(Modifier.fillMaxSize())
+                    } finally {
+                        Trace.endSection()
+                    }
+                }
                 selectedTab == 0 -> HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     state = state,
@@ -447,7 +455,10 @@ private fun GameHubUltraApp(
                     recentGamePackages = recentGamePackages,
                     manualGamePackages = manualGamePackages
                 )
-                else -> LibraryScreen(
+                else -> {
+                    Trace.beginSection("GameHubUltra.Navigation.Library")
+                    try {
+                        LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
                     selectedGamePackage = selectedGamePackage,
                     favoriteGames = favoriteGames,
@@ -470,8 +481,12 @@ private fun GameHubUltraApp(
                         )
                         viewModel.recordRecentGame(packageName)
                     },
-                    onToggleManualGame = viewModel::setManualGame
-                )
+                            onToggleManualGame = viewModel::setManualGame
+                        )
+                    } finally {
+                        Trace.endSection()
+                    }
+                }
             }
         }
     }
