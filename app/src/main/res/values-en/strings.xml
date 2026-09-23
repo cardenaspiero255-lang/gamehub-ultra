@@ -178,6 +178,5 @@
     <string name="ai_chat_thinking">Ultra is thinking…</string>
     <string name="ai_chat_clear">Clear conversation</string>
     <string name="qs_gamehub_label">GameHub Ultra</string>
-    <string name="qs_gamehub_description">Open GameHub Ultra</string>
     <string name="peripherals_summary">Gamepad %1$d · Keyboard %2$d · Mouse %3$d · External audio %4$d</string>
 </resources>
