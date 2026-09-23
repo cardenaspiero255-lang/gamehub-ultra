@@ -3,7 +3,7 @@ package com.cardenaspiero255.gamehubultra.domain
 object GameAccountValidation {
     private const val STEAM_ID64_MIN = 76561197960265728L
     private const val STEAM_ID64_MAX = 76561202255233023L
-    private val steamVanity = Regex("[A-Za-z0-9_-]{2,32}")
+    private val steamVanity = Regex("(?=.*[A-Za-z_-])[A-Za-z0-9_-]{2,32}")
     private val epicPublicId = Regex("[A-Za-z0-9._-]{2,64}")
 
     fun isValidPublicId(platform: GamePlatform, value: String): Boolean {
