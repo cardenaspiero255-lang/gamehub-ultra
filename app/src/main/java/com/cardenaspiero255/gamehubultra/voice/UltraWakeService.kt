@@ -74,7 +74,7 @@ class UltraWakeService : Service() {
                 mainHandler.post { startRecognition() }
             }
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun ensureForeground() {
