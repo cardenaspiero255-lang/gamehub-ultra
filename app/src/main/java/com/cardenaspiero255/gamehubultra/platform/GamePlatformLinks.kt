@@ -6,10 +6,9 @@ import android.content.Intent
 import android.net.Uri
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
+import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 
 object GamePlatformLinks {
-    private val steamNumericProfileId = Regex("[0-9]{10,20}")
-    private val steamVanityProfileId = Regex("[A-Za-z0-9_-]{1,64}")
 
     fun openOfficialLogin(context: Context, platform: GamePlatform): Boolean {
         val uri = when (platform) {
@@ -27,16 +26,16 @@ object GamePlatformLinks {
 
     private fun isSteamProfileIdSupported(publicId: String): Boolean {
         val id = publicId.trim()
-        return id.matches(steamNumericProfileId) || id.matches(steamVanityProfileId)
+        return GameAccountValidation.isValidPublicId(GamePlatform.STEAM, id)
     }
 
     fun openPublicProfile(context: Context, account: ConnectedGameAccount): Boolean {
         val publicId = account.publicId.trim()
         val uri = when (account.platform) {
             GamePlatform.STEAM -> when {
-                publicId.matches(steamNumericProfileId) ->
+                GameAccountValidation.isSteamId64(publicId) ->
                     Uri.parse("https://steamcommunity.com/profiles/$publicId")
-                publicId.matches(steamVanityProfileId) ->
+                GameAccountValidation.isValidPublicId(GamePlatform.STEAM, publicId) ->
                     Uri.parse("https://steamcommunity.com/id/$publicId")
                 else -> null
             }
