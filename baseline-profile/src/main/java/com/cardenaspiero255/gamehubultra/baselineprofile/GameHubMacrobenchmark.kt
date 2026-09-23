@@ -6,7 +6,9 @@ import androidx.benchmark.macro.MacrobenchmarkRule
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
@@ -15,6 +17,8 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class GameHubMacrobenchmark {
     @get:Rule val benchmarkRule = MacrobenchmarkRule()
+    private val device: UiDevice
+        get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
     @Test
     fun coldStartup() = benchmarkRule.measureRepeated(
