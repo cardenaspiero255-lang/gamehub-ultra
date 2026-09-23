@@ -380,9 +380,11 @@ private fun GameHubUltraApp(
                 actions = {
                     TextButton(
                         onClick = { settingsOpen = !settingsOpen },
-                        modifier = Modifier.semantics {
-                            contentDescription = "nav_ajustes"
-                        }
+                        modifier = Modifier
+                            .testTag("nav_ajustes")
+                            .semantics {
+                                contentDescription = "nav_ajustes"
+                            }
                     ) {
                         Text("⚙")
                     }
