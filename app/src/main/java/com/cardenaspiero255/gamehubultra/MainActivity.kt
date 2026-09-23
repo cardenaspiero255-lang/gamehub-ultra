@@ -1889,7 +1889,6 @@ private fun ConnectedAccountsCard() {
     var displayName by rememberSaveable { mutableStateOf("") }
     var publicId by rememberSaveable { mutableStateOf("") }
     var browserError by rememberSaveable { mutableStateOf(false) }
-    var accountIdError by rememberSaveable { mutableStateOf(false) }
 
     val platform = GamePlatform.valueOf(platformName)
     val profileIdSupported = platform != GamePlatform.STEAM ||
@@ -1984,7 +1983,6 @@ private fun ConnectedAccountsCard() {
                             TextButton(
                                 onClick = {
                                     platformName = item.name
-                                    accountIdError = false
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -2005,7 +2003,6 @@ private fun ConnectedAccountsCard() {
                         value = publicId,
                         onValueChange = {
                             publicId = it
-                            accountIdError = false
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
