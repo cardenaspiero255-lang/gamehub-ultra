@@ -366,11 +366,9 @@ private fun GameHubUltraApp(
 
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
-        stringResource(R.string.nav_biblioteca),
-        stringResource(R.string.nav_ajustes)
+        stringResource(R.string.nav_biblioteca)
     )
-    val tabIcons = listOf("⌂", "▦", "⚙")
-    val tabTestTags = listOf("nav_inicio", "nav_biblioteca", "nav_ajustes")
+    val tabTestTags = listOf("nav_inicio", "nav_biblioteca")
 
     Scaffold(
         modifier = Modifier.semantics { testTagsAsResourceId = true },
@@ -391,12 +389,14 @@ private fun GameHubUltraApp(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("HOME") }
+                        modifier = Modifier.testTag(tabTestTags[0]),
+                        text = { Text(tabs[0].uppercase()) }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("BIBLIOTECA") }
+                        modifier = Modifier.testTag(tabTestTags[1]),
+                        text = { Text(tabs[1].uppercase()) }
                     )
                 }
             }
