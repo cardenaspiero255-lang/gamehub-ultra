@@ -10,9 +10,11 @@ object VoiceCommandParser {
         optionalResolver: NaturalLanguageIntentResolver? = null
     ): VoiceCommand {
         val clean = normalize(transcript)
+            .replace(Regex("""^ultra\\s+"""), "")
+            .trim()
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
 
-        optionalResolver?.resolve(transcript)?.let { return it }
+        optionalResolver?.resolve(clean)?.let { return it }
 
         if (
             clean.contains("temperatura") ||
