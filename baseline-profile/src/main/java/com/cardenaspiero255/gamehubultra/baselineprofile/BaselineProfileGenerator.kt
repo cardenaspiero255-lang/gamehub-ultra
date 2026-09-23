@@ -2,7 +2,6 @@ package com.cardenaspiero255.gamehubultra.baselineprofile
 
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Until
 import org.junit.Rule
@@ -25,35 +24,24 @@ class BaselineProfileGenerator {
             "GameHub Ultra activity did not become visible"
         }
 
-        val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
-        val libraryStringId = targetContext.resources.getIdentifier(
-            "nav_biblioteca",
-            "string",
-            appPackage
-        )
-        val libraryLabel = checkNotNull(
-            libraryStringId.takeIf { it != 0 }?.let(targetContext.resources::getString)
-        ) {
-            "Library navigation label resource not found"
-        }
-
+        // The release test process can resolve resources differently from the target
+        // app context. Use the user-visible label as the stable UI contract instead.
+        val libraryLabel = "BIBLIOTECA"
         val resourceSelector = By.res("nav_biblioteca")
-        val descriptionSelector = By.desc(libraryLabel)
         val textSelector = By.text(libraryLabel)
 
         val navigationFound =
             device.wait(Until.hasObject(resourceSelector), 15_000) ||
-                device.wait(Until.hasObject(descriptionSelector), 5_000) ||
                 device.wait(Until.hasObject(textSelector), 5_000)
 
         check(navigationFound) {
             "Library navigation item not found. label=$libraryLabel"
         }
 
-        val navigation = when {
-            device.hasObject(resourceSelector) -> device.findObject(resourceSelector)
-            device.hasObject(descriptionSelector) -> device.findObject(descriptionSelector)
-            else -> device.findObject(textSelector)
+        val navigation = if (device.hasObject(resourceSelector)) {
+            device.findObject(resourceSelector)
+        } else {
+            device.findObject(textSelector)
         }
 
         navigation.click()
