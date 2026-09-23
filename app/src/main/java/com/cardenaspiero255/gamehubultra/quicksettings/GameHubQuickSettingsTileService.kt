@@ -41,12 +41,12 @@ class GameHubQuickSettingsTileService : TileService() {
     private fun updateTile() {
         qsTile?.apply {
             label = getString(R.string.qs_gamehub_label)
+            icon = Icon.createWithResource(
+                this@GameHubQuickSettingsTileService,
+                R.drawable.ic_qs_gamehub
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentDescription = getString(R.string.qs_gamehub_description)
-                icon = Icon.createWithResource(
-                    this@GameHubQuickSettingsTileService,
-                    R.drawable.ic_qs_gamehub
-                )
             }
             state = Tile.STATE_INACTIVE
             updateTile()
