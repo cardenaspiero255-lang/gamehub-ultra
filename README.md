@@ -49,3 +49,15 @@ The red/black Material 3 theme uses reduced typography, spacing, and card paddin
 The Biblioteca tab now filters games by visible name or package name without re-querying Android's PackageManager. Search misses display a dedicated empty-state message.
 
 These CARs are considered complete only after the Android workflow passes JVM tests, debug APK compilation, and lint on the updated branch.
+
+## 0.3.0 — Ultra UI + voice overhaul
+
+- GameHub-style top navigation with **HOME** and **BIBLIOTECA** tabs.
+- **Tus juegos** shelf on Home with recent/favorite/manual selections.
+- Compact landscape library grid designed for four game columns.
+- Ultra dashboard with thermal, battery, refresh-rate, network and storage telemetry.
+- Persistent, opt-in **Escucha continua** mode. When enabled, GameHub Ultra runs a microphone foreground service and ignores speech that does not contain the wake word **“Ultra”**.
+- Commands such as **“Ultra, abre Resident Evil 4 Remake”**, **“Ultra, pon X4”**, or **“Ultra, FPS balanceado”** are routed through the existing allowlisted voice command engine.
+
+### Continuous voice limitations
+Android requires microphone access to be explicitly granted and, on recent versions, microphone foreground services must be started while the app is visible. The continuous mode is therefore an explicit user opt-in with a persistent notification; it does not attempt to bypass Android privacy controls.
