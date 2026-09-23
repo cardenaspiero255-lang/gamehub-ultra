@@ -5,7 +5,9 @@ name: Android build
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches:
+      - "main"
+      - "codex/car-18-final"
   pull_request:
     branches: ["main"]
 
