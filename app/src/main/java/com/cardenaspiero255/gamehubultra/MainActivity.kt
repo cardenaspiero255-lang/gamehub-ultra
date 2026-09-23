@@ -132,7 +132,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class
+)
 @Composable
 private fun GameHubUltraApp(
     initialState: PerformanceState,
