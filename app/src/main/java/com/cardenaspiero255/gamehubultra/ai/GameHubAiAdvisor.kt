@@ -36,6 +36,53 @@ class GameHubAiAdvisor(
         return deterministicAdvice(question, context)
     }
 
+    fun chat(
+        message: String,
+        context: GameHubAiContext,
+        conversation: List<String> = emptyList()
+    ): String {
+        val local = runCatching {
+            modelAdapter?.takeIf { it.isAvailable() }?.chat(message, context, conversation)
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        if (local != null) return local
+
+        val normalized = normalize(message)
+        val advice = advise(message, context)
+        return when {
+            normalized.contains("temperatura") || normalized.contains("caliente") ->
+                "Puedo ayudarte con la temperatura. El estado térmico actual es " +
+                    (context.thermalStatus?.toString() ?: "no disponible") +
+                    " y el margen térmico es " +
+                    (context.thermalHeadroom?.let { (it * 100).toInt().toString() + "%" } ?: "no disponible") +
+                    ". Para priorizar estabilidad, " + profileLabel(advice.suggestedProfile) +
+                    " es la opción conservadora."
+            normalized.contains("bateria") ->
+                "La batería actual es " +
+                    (context.batteryPercent?.let { "$it%" } ?: "no disponible") +
+                    (if (context.charging) " y está cargando" else "") +
+                    ". Si está baja, recomiendo FPS balanceado para reducir el coste sostenido."
+            normalized.contains("fps") || normalized.contains("modo") || normalized.contains("perfil") ->
+                "Con los datos actuales, mi recomendación es " +
+                    profileLabel(advice.suggestedProfile) +
+                    ". Preparación gaming estimada: " + advice.readiness + "/100."
+            normalized.contains("red") || normalized.contains("latencia") || normalized.contains("internet") ->
+                "La red validada es " + (if (context.networkValidated) "sí" else "no") +
+                    " y la latencia es " +
+                    (context.networkLatencyMs?.let { "$it ms" } ?: "no medida") +
+                    ". Puedo analizarla, pero no puedo modificar la conexión de otra aplicación."
+            normalized.contains("hola") || normalized.contains("quien eres") ->
+                "Soy Ultra, el asistente de GameHub Ultra. Puedo conversar sobre gaming, analizar el estado disponible del dispositivo y ayudarte a elegir perfiles."
+            else ->
+                "Soy Ultra. Puedo hablar contigo sobre rendimiento, FPS, temperatura, batería, red y perfiles de GameHub Ultra. En este dispositivo el chat local puede estar limitado si no hay un modelo compatible."
+        }
+    }
+
+    private fun profileLabel(profile: PerformanceProfile): String = when (profile) {
+        PerformanceProfile.BALANCED -> "FPS balanceado"
+        PerformanceProfile.FRAME_INTERPOLATION -> "Priorizar interpolación"
+        PerformanceProfile.X4 -> "X4"
+    }
+
     fun intentResolver(): NaturalLanguageIntentResolver =
         object : NaturalLanguageIntentResolver {
             override fun resolve(transcript: String): VoiceCommand? {
