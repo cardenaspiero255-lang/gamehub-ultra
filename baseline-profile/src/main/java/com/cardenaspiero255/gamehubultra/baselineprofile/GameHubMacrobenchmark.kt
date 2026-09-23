@@ -49,7 +49,7 @@ class GameHubMacrobenchmark {
     fun navigationToSettings() {
         val target = By.res("nav_ajustes")
         benchmarkRule.measureRepeated(
-            packageName = "com.cardenasppiero255.gamehubultra",
+            packageName = "com.cardenaspiero255.gamehubultra",
             metrics = listOf(FrameTimingMetric()),
             iterations = 5,
             startupMode = StartupMode.COLD,
