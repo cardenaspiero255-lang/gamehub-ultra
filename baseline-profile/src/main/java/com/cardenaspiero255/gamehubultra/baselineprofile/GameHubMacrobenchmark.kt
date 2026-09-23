@@ -39,20 +39,23 @@ class GameHubMacrobenchmark {
         description: String,
         visibleTexts: List<String>
     ): androidx.test.uiautomator.UiObject2 {
-        device.waitForIdle()
-        val selectors = mutableListOf(
-            By.res("com.cardenaspiero255.gamehubultra:id/$description"),
-            By.desc(description)
-        )
-        visibleTexts.forEach { text ->
-            selectors += By.text(text)
+        val selectors = buildList {
+            add(By.res("com.cardenaspiero255.gamehubultra:id/$description"))
+            add(By.desc(description))
+            visibleTexts.forEach { text ->
+                add(By.text(text))
+                add(By.textContains(text))
+            }
         }
 
-        repeat(5) {
-            selectors.forEach { selector ->
-                device.wait(Until.findObject(selector), 2_000)?.let { return it }
-            }
+        // Compose semantics are exposed asynchronously on first launch. Keep the
+        // lookup deterministic and allow the hierarchy to settle before failing.
+        repeat(10) {
             device.waitForIdle()
+            selectors.forEach { selector ->
+                device.findObject(selector)?.let { return it }
+            }
+            device.wait(Until.findObject(By.pkg("com.cardenaspiero255.gamehubultra")), 1_000)
         }
 
         error(
@@ -109,7 +112,7 @@ class GameHubMacrobenchmark {
                 prepareAppForNavigation()
                 startActivityAndWait()
                 device.waitForIdle()
-                requireNavigationTarget(targetDescription, listOf("⚙"))
+                requireNavigationTarget(targetDescription, listOf("⚙", "Ajustes", "Settings"))
             },
             measureBlock = {
                 requireNavigationTarget(targetDescription, listOf("⚙")).click()
