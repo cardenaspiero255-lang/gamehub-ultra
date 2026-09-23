@@ -1889,8 +1889,11 @@ private fun ConnectedAccountsCard() {
     var displayName by rememberSaveable { mutableStateOf("") }
     var publicId by rememberSaveable { mutableStateOf("") }
     var browserError by rememberSaveable { mutableStateOf(false) }
+    var accountIdError by rememberSaveable { mutableStateOf(false) }
 
     val platform = GamePlatform.valueOf(platformName)
+    val profileIdSupported = platform != GamePlatform.STEAM ||
+        GamePlatformLinks.isPublicProfileIdSupported(platform, publicId)
 
     Card(
         modifier = Modifier
@@ -1979,7 +1982,10 @@ private fun ConnectedAccountsCard() {
                     ) {
                         GamePlatform.entries.forEach { item ->
                             TextButton(
-                                onClick = { platformName = item.name },
+                                onClick = {
+                                    platformName = item.name
+                                    accountIdError = false
+                                },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(
@@ -1997,16 +2003,25 @@ private fun ConnectedAccountsCard() {
                     )
                     OutlinedTextField(
                         value = publicId,
-                        onValueChange = { publicId = it },
+                        onValueChange = {
+                            publicId = it
+                            accountIdError = false
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text(stringResource(R.string.accounts_public_id)) }
                     )
+                    if (platform == GamePlatform.STEAM && !profileIdSupported) {
+                        Text(
+                            stringResource(R.string.accounts_public_id_invalid),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
-                    enabled = displayName.isNotBlank() && publicId.isNotBlank(),
+                    enabled = displayName.isNotBlank() && publicId.isNotBlank() && profileIdSupported,
                     onClick = {
                         scope.launch {
                             store.add(platform, displayName, publicId)
