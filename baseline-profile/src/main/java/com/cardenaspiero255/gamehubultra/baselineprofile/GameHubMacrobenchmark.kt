@@ -27,10 +27,12 @@ class GameHubMacrobenchmark {
         device.waitForIdle()
         val selectors = mutableListOf(
             By.res("com.cardenaspiero255.gamehubultra:id/$description"),
-            By.desc(description)
+            By.desc(description),
+            By.descContains(description)
         )
         visibleTexts.forEach { text ->
             selectors += By.text(text)
+            selectors += By.textContains(text)
         }
 
         repeat(5) {
