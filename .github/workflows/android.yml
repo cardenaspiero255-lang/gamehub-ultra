@@ -41,8 +41,22 @@ jobs:
       - name: Run lint
         run: gradle :app:lintDebug --stacktrace
 
-      - name: Upload APK
+      - name: Build release APK
+        run: gradle :app:assembleRelease --stacktrace
+
+      - name: Build release AAB
+        run: gradle :app:bundleRelease --stacktrace
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: gamehub-ultra-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gamehub-ultra-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
