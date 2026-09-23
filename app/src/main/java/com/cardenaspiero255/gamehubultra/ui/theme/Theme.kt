@@ -5,7 +5,9 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Shapes
 
 // GameHub Ultra: red/black gaming palette.
 private val UltraColors = darkColorScheme(
@@ -46,11 +48,20 @@ private val UltraTypography = Typography(
     labelSmall = DefaultTypography.labelSmall.copy(fontSize = 10.sp)
 )
 
+private val UltraShapes = Shapes(
+    extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+    small = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+    medium = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+    large = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+)
+
 @Composable
 fun GameHubUltraTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = UltraColors,
         typography = UltraTypography,
+        shapes = UltraShapes,
         content = content
     )
 }
