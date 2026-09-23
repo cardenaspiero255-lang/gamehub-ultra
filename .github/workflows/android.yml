@@ -59,12 +59,12 @@ jobs:
           arch: x86_64
           profile: pixel_2
           force-avd-creation: true
-          wipe-data: true
           emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
+          disable-linux-hw-accel: true
           script: |
-            gradle :baseline-profile:connectedCheck --stacktrace
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
