@@ -25,18 +25,25 @@ class GameHubMacrobenchmark {
         visibleTexts: List<String>
     ): androidx.test.uiautomator.UiObject2 {
         device.waitForIdle()
-        val selectors = listOf(
+        val selectors = mutableListOf(
             By.res("com.cardenaspiero255.gamehubultra:id/$description"),
-            By.desc(description),
-            By.text(visibleText)
+            By.desc(description)
         )
+        visibleTexts.forEach { text ->
+            selectors += By.text(text)
+        }
+
         repeat(5) {
             selectors.forEach { selector ->
                 device.wait(Until.findObject(selector), 2_000)?.let { return it }
             }
             device.waitForIdle()
         }
-        error("Navigation target not found after 10s: $description / $visibleText")
+
+        error(
+            "Navigation target not found after 10s: " +
+                description + " / " + visibleTexts.joinToString()
+        )
     }
 
     @Test
@@ -66,7 +73,7 @@ class GameHubMacrobenchmark {
                 requireNavigationTarget(targetDescription, listOf("BIBLIOTECA", "LIBRARY"))
             },
             measureBlock = {
-                requireNavigationTarget(targetDescription, "BIBLIOTECA").click()
+                requireNavigationTarget(targetDescription, listOf("BIBLIOTECA", "LIBRARY")).click()
                 device.waitForIdle()
             }
         )
@@ -88,7 +95,7 @@ class GameHubMacrobenchmark {
                 requireNavigationTarget(targetDescription, listOf("⚙"))
             },
             measureBlock = {
-                requireNavigationTarget(targetDescription, "⚙").click()
+                requireNavigationTarget(targetDescription, listOf("⚙")).click()
                 device.waitForIdle()
             }
         )
