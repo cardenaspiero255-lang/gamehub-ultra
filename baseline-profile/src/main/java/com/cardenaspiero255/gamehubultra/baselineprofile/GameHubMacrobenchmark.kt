@@ -50,12 +50,13 @@ class GameHubMacrobenchmark {
 
         // Compose semantics are exposed asynchronously on first launch. Keep the
         // lookup deterministic and allow the hierarchy to settle before failing.
-        repeat(10) {
+        repeat(15) {
             device.waitForIdle()
             selectors.forEach { selector ->
                 device.findObject(selector)?.let { return it }
             }
             device.wait(Until.findObject(By.pkg("com.cardenaspiero255.gamehubultra")), 1_000)
+            device.waitForIdle()
         }
 
         error(
