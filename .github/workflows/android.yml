@@ -47,13 +47,20 @@ jobs:
       - name: Build release AAB
         run: gradle :app:bundleRelease --stacktrace
 
+      # Catch baseline-profile/Kotlin/Java/test packaging problems before paying
+      # the API 35 emulator boot cost.
+      - name: Preflight baseline profile tests
+        run: gradle :baseline-profile:assembleDebug --stacktrace
+
       - name: Launch API 35 emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          emulator-options: -no-window -no-audio -no-boot-anim
+          force-avd-creation: true
+          wipe-data: true
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
           disable-animations: true
           script: |
             gradle :baseline-profile:connectedCheck --stacktrace
