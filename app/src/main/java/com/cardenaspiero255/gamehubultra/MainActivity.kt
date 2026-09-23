@@ -103,6 +103,7 @@ import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
+import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -490,8 +491,8 @@ private fun HomeScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
         item {
             GameHubStyleHeader(
@@ -718,7 +719,7 @@ private fun RuntimeDiagnosticsCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(GameHubUiTokens.compactCardPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -1245,44 +1246,6 @@ private fun ActiveProfileCard(state: PerformanceState) {
                         stringResource(R.string.no_extra_thermal)
                     }
             )
-        }
-    }
-}
-
-@Composable
-private fun ProfileCard(
-    profile: PerformanceProfile,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    localizedProfileTitle(profile),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                if (selected) {
-                    Text(
-                        stringResource(R.string.selected),
-                        modifier = Modifier.padding(start = 12.dp)
-                    )
-                }
-            }
-            Text(localizedProfileDescription(profile))
-            Button(
-                onClick = onClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.apply))
-            }
         }
     }
 }
@@ -2076,8 +2039,8 @@ private fun SettingsScreen(modifier: Modifier) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .testTag("settings_scroll")
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(GameHubUiTokens.compactHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
         Text(
             stringResource(R.string.settings_title),
