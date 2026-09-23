@@ -20,7 +20,6 @@ class GameHubUiStateTest {
                 refreshRateTargetHz = 144
             )
         )
-
         assertEquals(PerformanceProfile.X4, state.effectiveProfile)
         assertEquals(ThermalPreference.COOLER, state.effectiveThermalPreference)
         assertEquals(144, state.effectiveRefreshRateTargetHz)
@@ -28,10 +27,7 @@ class GameHubUiStateTest {
 
     @Test
     fun missingGameOverrideUsesGlobalAndSafeDefaults() {
-        val state = GameHubUiState(
-            globalProfile = PerformanceProfile.FRAME_INTERPOLATION
-        )
-
+        val state = GameHubUiState(globalProfile = PerformanceProfile.FRAME_INTERPOLATION)
         assertEquals(PerformanceProfile.FRAME_INTERPOLATION, state.effectiveProfile)
         assertEquals(ThermalPreference.ADAPTIVE, state.effectiveThermalPreference)
         assertNull(state.effectiveRefreshRateTargetHz)
@@ -41,9 +37,12 @@ class GameHubUiStateTest {
     fun accountIdentifiersValidateByPlatform() {
         assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "76561198000000000"))
         assertEquals(true, GameAccountValidation.isSteamId64("76561198000000000"))
+        assertEquals(true, GameAccountValidation.isSteamId64("76561197960265728"))
+        assertEquals(true, GameAccountValidation.isSteamId64("76561202255233023"))
         assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "player_one"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "1234567890"))
-        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "123456789012345678"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "76561197960265727"))
+        assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "76561202255233024"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "99999999999999999999"))
         assertEquals(false, GameAccountValidation.isValidPublicId(GamePlatform.STEAM, "not valid"))
         assertEquals(true, GameAccountValidation.isValidPublicId(GamePlatform.EPIC_GAMES, "player.name"))
