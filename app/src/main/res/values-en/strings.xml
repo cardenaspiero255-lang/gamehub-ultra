@@ -156,4 +156,19 @@
     <string name="qs_gamehub_description">%1$d input devices · %2$s</string>
     <string name="qs_audio_connected">external audio connected</string>
     <string name="qs_audio_not_connected">no external audio</string>
+
+    <string name="accounts_title">Game accounts</string>
+    <string name="accounts_subtitle">Sign in on the official site and register multiple public account entries in Ultra. No passwords, Steam Guard codes, or provider tokens are stored.</string>
+    <string name="accounts_steam_login">Sign in to Steam</string>
+    <string name="accounts_epic_login">Sign in to Epic</string>
+    <string name="accounts_add">Add account</string>
+    <string name="accounts_add_title">Add %1$s account</string>
+    <string name="accounts_display_name">Display name</string>
+    <string name="accounts_public_id">Public ID or identifier</string>
+    <string name="accounts_public_id_invalid">Enter a valid public identifier for the selected platform.</string>
+    <string name="accounts_save">Save</string>
+    <string name="accounts_open">Open profile</string>
+    <string name="accounts_empty">No accounts registered yet.</string>
+    <string name="accounts_browser_failed">The account page or profile could not be opened.</string>
+
 </resources>
