@@ -83,7 +83,7 @@ class GameHubMacrobenchmark {
                 requireNavigationTarget(targetDescription, "⚙")
             },
             measureBlock = {
-                requireNavigationTarget(targetDescription).click()
+                requireNavigationTarget(targetDescription, "⚙").click()
                 device.waitForIdle()
             }
         )
