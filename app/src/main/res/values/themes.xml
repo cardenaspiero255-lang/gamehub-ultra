@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.GameHubUltra" parent="android:style/Theme.Material.Light.NoActionBar" />
+    <style name="Theme.GameHubUltra" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ghu_black</item>
+        <item name="android:colorAccent">@color/ghu_red</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/ghu_black</item>
+        <item name="android:navigationBarColor">@color/ghu_black</item>
+    </style>
 </resources>
