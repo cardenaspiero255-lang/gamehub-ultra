@@ -56,5 +56,12 @@ interface LocalAiModelAdapter : AutoCloseable {
         context: GameHubAiContext
     ): LocalAiActionCandidate?
 
+    /** Optional free-form local conversation. */
+    fun chat(
+        message: String,
+        context: GameHubAiContext,
+        conversation: List<String> = emptyList()
+    ): String? = null
+
     override fun close() = Unit
 }
