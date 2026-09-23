@@ -4,6 +4,7 @@ import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
+import android.os.SystemClock
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -48,19 +49,33 @@ class GameHubMacrobenchmark {
             }
         }
 
-        // Compose semantics are exposed asynchronously on first launch. Keep the
-        // lookup deterministic and allow the hierarchy to settle before failing.
-        repeat(15) {
+        // Compose semantics can be published asynchronously during a cold start.
+        // Use target-specific timed waits instead of polling with immediate
+        // findObject() calls, while keeping one bounded timeout for the whole scan.
+        val timeoutMs = 20_000L
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
+        device.wait(Until.findObject(By.pkg("com.cardenaspiero255.gamehubultra")), 5_000)
+
+        while (SystemClock.uptimeMillis() < deadline) {
             device.waitForIdle()
-            selectors.forEach { selector ->
-                device.findObject(selector)?.let { return it }
+
+            for (selector in selectors) {
+                val remainingMs = deadline - SystemClock.uptimeMillis()
+                if (remainingMs <= 0L) {
+                    break
+                }
+                val waitMs = minOf(1_000L, remainingMs)
+                device.wait(Until.findObject(selector), waitMs)?.let { return it }
             }
-            device.wait(Until.findObject(By.pkg("com.cardenaspiero255.gamehubultra")), 1_000)
-            device.waitForIdle()
+
+            // Give Compose an actual publishing window before the next full scan.
+            if (SystemClock.uptimeMillis() < deadline) {
+                SystemClock.sleep(250L)
+            }
         }
 
         error(
-            "Navigation target not found after 10s: " +
+            "Navigation target not found after ${timeoutMs / 1_000}s: " +
                 description + " / " + visibleTexts.joinToString()
         )
     }
