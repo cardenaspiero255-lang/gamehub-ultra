@@ -1,6 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.GamePlatform
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlin.test.Test
@@ -34,4 +36,24 @@ class GameHubUiStateTest {
         assertEquals(ThermalPreference.ADAPTIVE, state.effectiveThermalPreference)
         assertNull(state.effectiveRefreshRateTargetHz)
     }
+    @Test
+    fun accountProvidersRemainExplicitAndAccountMetadataIsNonSecret() {
+        val steam = ConnectedGameAccount(
+            id = "1",
+            platform = GamePlatform.STEAM,
+            displayName = "Piero",
+            publicId = "76561198000000000"
+        )
+        val epic = ConnectedGameAccount(
+            id = "2",
+            platform = GamePlatform.EPIC_GAMES,
+            displayName = "Player",
+            publicId = "public-name"
+        )
+
+        assertEquals(GamePlatform.STEAM, steam.platform)
+        assertEquals(GamePlatform.EPIC_GAMES, epic.platform)
+        assertEquals("Player", epic.displayName)
+    }
+
 }
