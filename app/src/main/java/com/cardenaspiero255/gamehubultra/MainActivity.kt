@@ -97,6 +97,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+private const val MAX_CHAT_HISTORY = 8
+
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
 
@@ -880,13 +882,16 @@ private fun AiAdvisorCard(
     fun sendChatMessage() {
         val message = chatMessage.trim()
         if (message.isBlank() || chatSending) return
+
+        val previousConversation = chatHistory.takeLast(MAX_CHAT_HISTORY - 1)
         chatMessage = ""
-        chatHistory = chatHistory + ("Tú: " + message)
+        chatHistory = (previousConversation + ("Tú: " + message)).takeLast(MAX_CHAT_HISTORY)
         chatSending = true
+
         scope.launch(Dispatchers.IO) {
-            val answer = advisor.chat(message, context, chatHistory)
+            val answer = advisor.chat(message, context, previousConversation)
             withContext(Dispatchers.Main) {
-                chatHistory = chatHistory + ("Ultra: " + answer)
+                chatHistory = (chatHistory + ("Ultra: " + answer)).takeLast(MAX_CHAT_HISTORY)
                 chatSending = false
             }
         }
