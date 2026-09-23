@@ -1,9 +1,8 @@
 package com.cardenaspiero255.gamehubultra.baselineprofile
 
-import androidx.benchmark.macro.junit4.MacrobenchmarkRule
-import androidx.benchmark.macro.StartupMode
-import androidx.benchmark.macro.junit4.measureRepeated
 import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.StartupMode
+import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -80,7 +79,6 @@ class GameHubMacrobenchmark {
         }
     )
 }
-
 
 private fun targetString(resourceName: String): String {
     val targetContext = InstrumentationRegistry.getInstrumentation().targetContext
