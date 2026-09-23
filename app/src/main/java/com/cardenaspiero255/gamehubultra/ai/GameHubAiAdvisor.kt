@@ -50,39 +50,110 @@ class GameHubAiAdvisor(
 
         val normalized = normalize(message)
         val advice = advise(message, context)
+        val english = isEnglishMessage(message)
+        val profile = profileLabel(advice.suggestedProfile, english)
+
         return when {
+            (normalized.contains("temperatura") || normalized.contains("caliente") ||
+                normalized.contains("temperature") || normalized.contains("hot")) && english ->
+                "I can help with temperature. The current thermal status is " +
+                    (context.thermalStatus?.toString() ?: "not available") +
+                    " and thermal headroom is " +
+                    (context.thermalHeadroom?.let { (it * 100).toInt().toString() + "%" } ?: "not available") +
+                    ". For stability, " + profile + " is the conservative option."
+
             normalized.contains("temperatura") || normalized.contains("caliente") ->
                 "Puedo ayudarte con la temperatura. El estado térmico actual es " +
                     (context.thermalStatus?.toString() ?: "no disponible") +
                     " y el margen térmico es " +
                     (context.thermalHeadroom?.let { (it * 100).toInt().toString() + "%" } ?: "no disponible") +
-                    ". Para priorizar estabilidad, " + profileLabel(advice.suggestedProfile) +
-                    " es la opción conservadora."
-            normalized.contains("bateria") ->
-                "La batería actual es " +
-                    (context.batteryPercent?.let { "$it%" } ?: "no disponible") +
-                    (if (context.charging) " y está cargando" else "") +
-                    ". Si está baja, recomiendo FPS balanceado para reducir el coste sostenido."
-            normalized.contains("fps") || normalized.contains("modo") || normalized.contains("perfil") ->
-                "Con los datos actuales, mi recomendación es " +
-                    profileLabel(advice.suggestedProfile) +
-                    ". Preparación gaming estimada: " + advice.readiness + "/100."
-            normalized.contains("red") || normalized.contains("latencia") || normalized.contains("internet") ->
-                "La red validada es " + (if (context.networkValidated) "sí" else "no") +
-                    " y la latencia es " +
-                    (context.networkLatencyMs?.let { "$it ms" } ?: "no medida") +
-                    ". Puedo analizarla, pero no puedo modificar la conexión de otra aplicación."
-            normalized.contains("hola") || normalized.contains("quien eres") ->
-                "Soy Ultra, el asistente de GameHub Ultra. Puedo conversar sobre gaming, analizar el estado disponible del dispositivo y ayudarte a elegir perfiles."
+                    ". Para priorizar estabilidad, " + profile + " es la opción conservadora."
+
+            normalized.contains("bateria") || normalized.contains("battery") ->
+                if (english) {
+                    "The current battery is " +
+                        (context.batteryPercent?.let { "$it%" } ?: "not available") +
+                        (if (context.charging) " and it is charging" else "") +
+                        ". If it is low, Balanced FPS reduces sustained cost."
+                } else {
+                    "La batería actual es " +
+                        (context.batteryPercent?.let { "$it%" } ?: "no disponible") +
+                        (if (context.charging) " y está cargando" else "") +
+                        ". Si está baja, recomiendo FPS balanceado para reducir el coste sostenido."
+                }
+
+            normalized.contains("fps") || normalized.contains("modo") || normalized.contains("perfil") ||
+                normalized.contains("mode") || normalized.contains("profile") ->
+                if (english) {
+                    "With the current data, I recommend " + profile +
+                        ". Estimated gaming readiness: " + advice.readiness + "/100."
+                } else {
+                    "Con los datos actuales, mi recomendación es " + profile +
+                        ". Preparación gaming estimada: " + advice.readiness + "/100."
+                }
+
+            normalized.contains("red") || normalized.contains("latencia") || normalized.contains("internet") ||
+                normalized.contains("network") || normalized.contains("latency") ->
+                if (english) {
+                    "The network is validated: " + (if (context.networkValidated) "yes" else "no") +
+                        ", with latency " +
+                        (context.networkLatencyMs?.let { "$it ms" } ?: "not measured") +
+                        ". I can analyze it, but I cannot modify another app's connection."
+                } else {
+                    "La red validada es " + (if (context.networkValidated) "sí" else "no") +
+                        " y la latencia es " +
+                        (context.networkLatencyMs?.let { "$it ms" } ?: "no medida") +
+                        ". Puedo analizarla, pero no puedo modificar la conexión de otra aplicación."
+                }
+
+            normalized.contains("hola") || normalized.contains("quien eres") ||
+                normalized.contains("hello") || normalized.contains("who are you") ->
+                if (english) {
+                    "I'm Ultra, the GameHub Ultra assistant. I can discuss gaming, analyze available device state, and help you choose profiles."
+                } else {
+                    "Soy Ultra, el asistente de GameHub Ultra. Puedo conversar sobre gaming, analizar el estado disponible del dispositivo y ayudarte a elegir perfiles."
+                }
+
             else ->
-                "Soy Ultra. Puedo hablar contigo sobre rendimiento, FPS, temperatura, batería, red y perfiles de GameHub Ultra. En este dispositivo el chat local puede estar limitado si no hay un modelo compatible."
+                if (english) {
+                    "I'm Ultra. I can talk with you about performance, FPS, temperature, battery, networking, and GameHub Ultra profiles. Local chat may be limited when a compatible model is unavailable."
+                } else {
+                    "Soy Ultra. Puedo hablar contigo sobre rendimiento, FPS, temperatura, batería, red y perfiles de GameHub Ultra. En este dispositivo el chat local puede estar limitado si no hay un modelo compatible."
+                }
         }
     }
 
-    private fun profileLabel(profile: PerformanceProfile): String = when (profile) {
-        PerformanceProfile.BALANCED -> "FPS balanceado"
-        PerformanceProfile.FRAME_INTERPOLATION -> "Priorizar interpolación"
-        PerformanceProfile.X4 -> "X4"
+    private fun profileLabel(profile: PerformanceProfile, english: Boolean): String =
+        if (english) {
+            when (profile) {
+                PerformanceProfile.BALANCED -> "Balanced FPS"
+                PerformanceProfile.FRAME_INTERPOLATION -> "Prioritize interpolation"
+                PerformanceProfile.X4 -> "X4"
+            }
+        } else {
+            when (profile) {
+                PerformanceProfile.BALANCED -> "FPS balanceado"
+                PerformanceProfile.FRAME_INTERPOLATION -> "Priorizar interpolación"
+                PerformanceProfile.X4 -> "X4"
+            }
+        }
+
+    private fun isEnglishMessage(value: String): Boolean {
+        if (Locale.getDefault().language.equals("en", ignoreCase = true)) return true
+        val normalized = normalize(value)
+        return containsAny(
+            normalized,
+            "hello",
+            "battery",
+            "temperature",
+            "hot",
+            "mode",
+            "profile",
+            "network",
+            "latency",
+            "internet",
+            "who are you"
+        )
     }
 
     fun intentResolver(): NaturalLanguageIntentResolver =
