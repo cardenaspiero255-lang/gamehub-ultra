@@ -388,6 +388,7 @@ private fun GameHubUltraApp(
                         modifier = Modifier
                             .testTag("nav_ajustes")
                             .semantics(mergeDescendants = true) {
+                                testTagsAsResourceId = true
                                 contentDescription = "nav_ajustes"
                             }
                     ) {
@@ -406,6 +407,7 @@ private fun GameHubUltraApp(
                         modifier = Modifier
                             .testTag(tabTestTags[0])
                             .semantics(mergeDescendants = true) {
+                                testTagsAsResourceId = true
                                 contentDescription = "nav_inicio"
                             },
                         text = { Text(tabs[0].uppercase()) }
@@ -416,6 +418,7 @@ private fun GameHubUltraApp(
                         modifier = Modifier
                             .testTag(tabTestTags[1])
                             .semantics(mergeDescendants = true) {
+                                testTagsAsResourceId = true
                                 contentDescription = "nav_biblioteca"
                             },
                         text = { Text(tabs[1].uppercase()) }
