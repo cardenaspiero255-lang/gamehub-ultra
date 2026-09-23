@@ -37,3 +37,14 @@ GameHub Ultra reports and applies only capabilities that Android or a supported 
 ## Detailed plan
 
 See [docs/CAR-6-TECHNICAL-AUDIT.md](docs/CAR-6-TECHNICAL-AUDIT.md) and [docs/CAR-15-GAMEHUB-AI.md](docs/CAR-15-GAMEHUB-AI.md).
+
+## CAR-17 — Steam/Epic account hub
+
+- Official Steam and Epic sign-in entry points.
+- Local multi-account registry containing only public metadata.
+- Steam numeric and vanity profile identifiers are validated before saving.
+- No passwords, Steam Guard codes, or provider tokens are stored.
+- Account settings remain scrollable when many accounts are registered.
+- Profile-opening failures are surfaced instead of silently ignored.
+
+CAR-17 is complete only after JVM tests, debug APK compilation, lint, and review checks are green on the CAR-17 branch.
