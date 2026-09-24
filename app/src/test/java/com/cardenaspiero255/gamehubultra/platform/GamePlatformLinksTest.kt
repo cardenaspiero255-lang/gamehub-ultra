@@ -33,23 +33,21 @@ class GamePlatformLinksTest {
     }
 
     @Test
-    fun rejectsOutOfRangeSteamId64() {
+    fun rejectsMalformedSteamProfileId() {
         assertFalse(
             GamePlatformLinks.isPublicProfileIdSupported(
                 GamePlatform.STEAM,
                 "99999999999999999999"
             )
         )
-        assertFalse(
+    }
+
+    @Test
+    fun acceptsNumbersOnlySteamVanityAndUsesIdRoute() {
+        assertTrue(
             GamePlatformLinks.isPublicProfileIdSupported(
                 GamePlatform.STEAM,
-                "76561197960265727"
-            )
-        )
-        assertFalse(
-            GamePlatformLinks.isPublicProfileIdSupported(
-                GamePlatform.STEAM,
-                "76561202255233024"
+                "1234"
             )
         )
     }
