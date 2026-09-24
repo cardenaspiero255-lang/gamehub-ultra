@@ -29,6 +29,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
@@ -72,6 +74,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -80,6 +83,7 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -640,7 +644,11 @@ private fun GameHubUltraApp(
                     recentGamePackages = recentGamePackages,
                     manualGamePackages = manualGamePackages,
                     storeGames = storeGames,
+                    selectedProfile = uiState.effectiveProfile,
+                    runtimeDiagnostics = runtimeDiagnostics,
+                    sessionHistory = sessionHistory,
                     onGameSelected = ::selectGame,
+                    onProfileSelected = ::selectProfile,
                     onToggleFavorite = viewModel::setFavoriteGame,
                     onGameOpened = { packageName ->
                         endGameSession()
@@ -1738,8 +1746,29 @@ private fun SmartPerformanceCard(
 
 private fun packageVersionName(context: Context, packageName: String): String? =
     runCatching {
-        context.packageManager.getPackageInfo(packageName, 0).versionName
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(0L)
+            ).versionName
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(packageName, 0).versionName
+        }
     }.getOrNull()?.takeIf(String::isNotBlank)
+
+private fun isPackageInstalled(context: Context, packageName: String): Boolean =
+    runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getApplicationInfo(
+                packageName,
+                PackageManager.ApplicationInfoFlags.of(0L)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getApplicationInfo(packageName, 0)
+        }
+    }.isSuccess
 
 @Composable
 private fun BoosterOptions(
@@ -1977,7 +2006,11 @@ private fun LibraryScreen(
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
     storeGames: List<StoreLibraryGame>,
+    selectedProfile: PerformanceProfile,
+    runtimeDiagnostics: RuntimeDiagnostics?,
+    sessionHistory: List<GameSessionRecord>,
     onGameSelected: (String) -> Unit,
+    onProfileSelected: (PerformanceProfile) -> Unit,
     onToggleFavorite: (String, Boolean) -> Unit,
     onGameOpened: (String) -> Unit,
     onToggleManualGame: (String, Boolean) -> Unit
@@ -2137,6 +2170,11 @@ private fun LibraryScreen(
                         SelectedGameCard(
                             game = game,
                             favorite = favoriteGames.contains(game.packageName),
+                            recent = recentGamePackages.contains(game.packageName),
+                            selectedProfile = selectedProfile,
+                            diagnostics = runtimeDiagnostics,
+                            sessions = sessionHistory.filter { it.packageName == game.packageName },
+                            onProfileSelected = onProfileSelected,
                             onToggleFavorite = {
                                 onToggleFavorite(
                                     game.packageName,
@@ -2244,37 +2282,219 @@ private fun LibraryScreen(
 private fun SelectedGameCard(
     game: GameInfo,
     favorite: Boolean,
+    recent: Boolean,
+    selectedProfile: PerformanceProfile,
+    diagnostics: RuntimeDiagnostics?,
+    sessions: List<GameSessionRecord>,
+    onProfileSelected: (PerformanceProfile) -> Unit,
     onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
 ) {
+    val context = LocalContext.current
+    var showProfiles by rememberSaveable(game.packageName) { mutableStateOf(false) }
+    var showDiagnostics by rememberSaveable(game.packageName) { mutableStateOf(false) }
+    var showHistory by rememberSaveable(game.packageName) { mutableStateOf(false) }
+    val installed = remember(game.packageName) {
+        isPackageInstalled(context, game.packageName)
+    }
+    val versionName = remember(game.packageName) {
+        packageVersionName(context, game.packageName)
+    }
+    val iconBitmap = remember(game.packageName) {
+        runCatching {
+            context.packageManager
+                .getApplicationIcon(game.packageName)
+                .toBitmap(width = 96, height = 96)
+                .asImageBitmap()
+        }.getOrNull()
+    }
+    val recentSessions = remember(sessions) {
+        sessions.sortedByDescending { it.startedAtMillis }.take(3)
+    }
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 stringResource(R.string.selected_game),
                 style = MaterialTheme.typography.labelLarge
             )
-            Text(game.label, style = MaterialTheme.typography.titleMedium)
-            Text(game.packageName, style = MaterialTheme.typography.bodySmall)
-            Button(
-                onClick = onToggleFavorite,
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    if (favorite) {
-                        stringResource(R.string.remove_favorite)
-                    } else {
-                        stringResource(R.string.add_favorite)
+                iconBitmap?.let { icon ->
+                    Image(
+                        bitmap = icon,
+                        contentDescription = stringResource(
+                            R.string.game_icon_content_description,
+                            game.label
+                        ),
+                        modifier = Modifier.size(56.dp)
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(game.label, style = MaterialTheme.typography.titleMedium)
+                    Text(game.packageName, style = MaterialTheme.typography.bodySmall)
+                    versionName?.let {
+                        Text(
+                            stringResource(R.string.game_version, it),
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
-                )
+                }
             }
-            Button(
-                onClick = onOpen,
-                modifier = Modifier.fillMaxWidth()
+
+            Text(
+                stringResource(
+                    R.string.game_install_state,
+                    stringResource(
+                        if (installed) R.string.game_installed else R.string.game_not_installed
+                    )
+                )
+            )
+            Text(
+                stringResource(
+                    R.string.game_favorite_state,
+                    stringResource(if (favorite) R.string.yes else R.string.no)
+                )
+            )
+            Text(
+                stringResource(
+                    R.string.game_recent_state,
+                    stringResource(if (recent) R.string.yes else R.string.no)
+                )
+            )
+            Text(
+                stringResource(
+                    R.string.game_profile_state,
+                    localizedProfileTitle(selectedProfile)
+                )
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(stringResource(R.string.open_game))
+                Button(
+                    onClick = onOpen,
+                    enabled = installed,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.open_game))
+                }
+                Button(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        if (favorite) {
+                            stringResource(R.string.remove_favorite)
+                        } else {
+                            stringResource(R.string.add_favorite)
+                        }
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = { showProfiles = !showProfiles },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.game_quick_profile))
+                }
+                TextButton(
+                    onClick = { showDiagnostics = !showDiagnostics },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.game_quick_diagnostics))
+                }
+                TextButton(
+                    onClick = { showHistory = !showHistory },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.game_quick_history))
+                }
+            }
+
+            if (showProfiles) {
+                PerformanceProfile.entries.forEach { profile ->
+                    TextButton(
+                        onClick = {
+                            onProfileSelected(profile)
+                            showProfiles = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            if (profile == selectedProfile) {
+                                stringResource(
+                                    R.string.booster_selected,
+                                    localizedProfileTitle(profile)
+                                )
+                            } else {
+                                localizedProfileTitle(profile)
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (showDiagnostics) {
+                if (diagnostics == null) {
+                    Text(
+                        stringResource(R.string.game_diagnostics_unavailable),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    DeviceRow(
+                        stringResource(R.string.runtime_thermal),
+                        thermalLabel(diagnostics.thermal.status)
+                    )
+                    DeviceRow(
+                        stringResource(R.string.runtime_battery),
+                        diagnostics.battery.percent?.let { value -> value.toString() + "%" }
+                            ?: stringResource(R.string.not_available)
+                    )
+                    DeviceRow(
+                        stringResource(R.string.runtime_refresh),
+                        diagnostics.refresh.currentRefreshRateHz?.let { value ->
+                            value.toInt().toString() + " Hz"
+                        } ?: stringResource(R.string.not_measured)
+                    )
+                    DeviceRow(
+                        stringResource(R.string.runtime_latency),
+                        diagnostics.connectivity.latencyMs?.let { value ->
+                            value.toString() + " ms"
+                        } ?: stringResource(R.string.not_measured)
+                    )
+                }
+            }
+
+            if (showHistory) {
+                if (recentSessions.isEmpty()) {
+                    Text(
+                        stringResource(R.string.game_history_empty),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    recentSessions.forEach { session ->
+                        val duration = session.durationMillis?.let(::formatDuration)
+                            ?: stringResource(R.string.session_active)
+                        DeviceRow(
+                            session.profileName,
+                            duration
+                        )
+                    }
+                }
             }
         }
     }

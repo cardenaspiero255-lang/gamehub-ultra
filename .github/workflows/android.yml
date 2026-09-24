@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -65,7 +65,7 @@ jobs:
           sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;36.0.0" "emulator" "platform-tools" "system-images;android-35;google_apis;x86_64"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.13"
           cache-disabled: true
@@ -147,13 +147,13 @@ jobs:
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --stacktrace
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gamehub-ultra-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload benchmark reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: gamehub-ultra-benchmark-reports
@@ -162,7 +162,7 @@ jobs:
             app/build/reports/**
 
       - name: Upload installable release outputs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gamehub-ultra-release
           path: |
