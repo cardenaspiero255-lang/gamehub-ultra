@@ -54,6 +54,15 @@ object GameLibrary {
         GameDiscoveryResult(emptyList(), failed = true)
     }
 
+    /** Voice commands use every launchable app because some games do not advertise CATEGORY_GAME. */
+    fun discoverForVoice(context: Context): List<GameInfo> = runCatching {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        queryLaunchableApps(context, intent)
+            .map { app -> GameInfo(app.packageName, app.label) }
+            .distinctBy { it.packageName }
+            .sortedBy { it.label.lowercase() }
+    }.getOrDefault(emptyList())
+
     fun discoverNonGameLaunchableApps(context: Context): List<GameInfo> = runCatching {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         queryLaunchableApps(context, intent)
