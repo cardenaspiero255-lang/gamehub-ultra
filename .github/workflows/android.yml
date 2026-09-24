@@ -92,7 +92,12 @@ jobs:
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          EMULATOR_BIN="$SDK_ROOT/emulator/emulator"
           IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
+          if [ ! -x "$EMULATOR_BIN" ]; then
+            echo "Android Emulator binary is missing or not executable: $EMULATOR_BIN"
+            exit 1
+          fi
           test -d "$IMAGE_DIR"
           test -s "$IMAGE_DIR/system.img"
           test -s "$IMAGE_DIR/ramdisk.img"
@@ -168,7 +173,7 @@ jobs:
           grep -Fxq "target=android-35" "$AVD_DIR/config.ini"
           grep -Fxq "abi.type=x86_64" "$AVD_DIR/config.ini"
           AVD_LIST="$RUNNER_TEMP/avd-list.txt"
-          if ! emulator -list-avds | tee "$AVD_LIST" | grep -Fxq "gamehub-api35"; then
+          if ! "$EMULATOR_BIN" -list-avds | tee "$AVD_LIST" | grep -Fxq "gamehub-api35"; then
             echo "The emulator did not discover the API 35 AVD in the default Android home."
             echo "AVD metadata:"
             find "$HOME/.android" -maxdepth 3 -type f -print -exec sed -n '1,120p' {} \; || true
@@ -179,6 +184,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          EMULATOR_BIN="$SDK_ROOT/emulator/emulator"
+          if [ ! -x "$EMULATOR_BIN" ]; then
+            echo "Android Emulator binary is missing or not executable: $EMULATOR_BIN"
+            exit 1
+          fi
           adb start-server >/dev/null
 
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
@@ -194,7 +205,7 @@ jobs:
           }
           trap dump_emulator_log_on_failure EXIT
 
-          nohup emulator -avd gamehub-api35 \
+          nohup "$EMULATOR_BIN" -avd gamehub-api35 \
             -port 5554 \
             -no-window \
             -no-audio \
