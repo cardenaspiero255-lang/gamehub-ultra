@@ -45,6 +45,7 @@ class GameHubMacrobenchmark {
         val selectors = buildList {
             add(By.res("com.cardenaspiero255.gamehubultra:id/$description"))
             add(By.desc(description))
+            add(By.descContains(description))
             visibleTexts.forEach { text ->
                 add(By.text(text))
                 add(By.textContains(text))
