@@ -30,8 +30,10 @@ data class ConnectedGameAccount(
     val lastSyncedAtMillis: Long? = null
 )
 
-class ConnectedGameAccountsStore(context: Context) {
-    private val dataStore = context.applicationContext.connectedAccountsDataStore
+class ConnectedGameAccountsStore(
+    private val dataStore: DataStore<Preferences>
+) {
+    constructor(context: Context) : this(context.applicationContext.connectedAccountsDataStore)
     private val accountsKey = stringPreferencesKey("accounts_v2")
     private val legacyAccountsKey = stringPreferencesKey("accounts_v1")
     private val activeAccountKey = stringPreferencesKey("active_account_id_v1")
