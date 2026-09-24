@@ -43,6 +43,7 @@ class UltraFinalExperienceGateTest {
             listOf("Diagnósticos", "Historial"),
             summary.missingSurfaces
         )
+        assertEquals("Diagnósticos · Historial", summary.missingSummary)
     }
 
     @Test
