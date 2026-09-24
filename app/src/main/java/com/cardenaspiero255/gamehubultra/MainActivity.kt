@@ -1986,7 +1986,13 @@ private fun ConnectedAccountsCard(
             accounts.forEach { account ->
                 ConnectedAccountRow(
                     account = account,
-                    onRemove = { scope.launch { store.remove(account.id) } },
+                    onRemove = {
+                        scope.launch {
+                            store.remove(account.id)
+                            StoreLibraryStore(context).removeForAccount(account.id)
+                            onStoreConnectionChanged()
+                        }
+                    },
                     onOpen = {
                         if (!GamePlatformLinks.openPublicProfile(context, account)) {
                             browserError = true
@@ -2086,7 +2092,8 @@ private fun ConnectedAccountsCard(
 private fun ConnectedAccountRow(
     account: ConnectedGameAccount,
     onRemove: () -> Unit,
-    onOpen: () -> Unit
+    onOpen: () -> Unit,
+    onSync: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -2099,6 +2106,9 @@ private fun ConnectedAccountRow(
                     account.publicId,
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+            TextButton(onClick = onSync) {
+                Text("SYNC")
             }
             if (account.platform == GamePlatform.STEAM) {
                 TextButton(onClick = onOpen) {
