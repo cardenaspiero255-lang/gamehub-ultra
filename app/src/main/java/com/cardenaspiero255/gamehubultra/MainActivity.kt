@@ -703,6 +703,7 @@ private fun HomeScreen(
     manualGamePackages: Set<String>,
     storeGames: List<StoreLibraryGame>
 ) {
+    val timelineContext = LocalContext.current
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -765,7 +766,7 @@ private fun HomeScreen(
                 timeline = performanceTimeline,
                 onShare = {
                     sharePerformanceTimeline(
-                        context = LocalContext.current,
+                        context = timelineContext,
                         gamePackage = aiContext.selectedGamePackage,
                         timeline = performanceTimeline
                     )
