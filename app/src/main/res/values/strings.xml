@@ -81,6 +81,11 @@
     <string name="event_thermal_changed">Cambio térmico</string>
     <string name="event_policy_changed">Cambio de política</string>
     <string name="settings_title">Ajustes</string>
+    <string name="session_center_title">Centro de sesiones</string>
+    <string name="session_center_empty">Todavía no hay sesiones guardadas.</string>
+    <string name="session_active">Activa</string>
+    <string name="session_share">Compartir</string>
+    <string name="session_clear">Limpiar historial</string>
     <string name="about">Acerca de GameHub Ultra</string>
     <string name="about_text">Interfaz de rendimiento construida con APIs públicas de Android.</string>
     <string name="limitations">Limitaciones</string>

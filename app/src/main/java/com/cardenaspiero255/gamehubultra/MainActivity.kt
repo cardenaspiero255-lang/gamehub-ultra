@@ -11,6 +11,8 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
+import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
+import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -198,6 +200,8 @@ private fun GameHubUltraApp(
     var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
+    val sessionStore = remember(context) { GameSessionStore(context) }
+    val sessionHistory by sessionStore.sessionsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
 
     LaunchedEffect(storeRefreshToken) {
         storeGames = withContext(Dispatchers.IO) {
@@ -352,6 +356,15 @@ private fun GameHubUltraApp(
                     detail = packageName
                 )
             )
+            scope.launch(Dispatchers.IO) {
+                sessionStore.finishSession(
+                    sessionId = sessionId,
+                    endedAtMillis = System.currentTimeMillis(),
+                    endBatteryPercent = runtimeDiagnostics?.battery?.percent,
+                    endThermalStatus = runtimeDiagnostics?.thermal?.status,
+                    endRamUsedPercent = runtimeDiagnostics?.memory?.usedPercent
+                )
+            }
         }
         activeSessionId = null
         activeSessionPackage = null
@@ -470,6 +483,9 @@ private fun GameHubUltraApp(
                     onGameSelected = ::selectGame,
                     runtimeDiagnostics = runtimeDiagnostics,
                     telemetryTrend = telemetryTrend,
+                    sessionHistory = sessionHistory,
+                    onClearSessions = { viewModelScopeLaunch(context, sessionStore) { sessionStore.clearSessions() } },
+                    onShareSessions = { shareSessionHistory(context, sessionHistory) },
                     adaptiveDecision = adaptiveDecision,
                     performanceHistory = performanceHistory,
                     onApplyAdaptiveProfile = {
@@ -496,6 +512,15 @@ private fun GameHubUltraApp(
                         val sessionId = UUID.randomUUID().toString()
                         activeSessionPackage = packageName
                         activeSessionId = sessionId
+                        viewModelScopeLaunch(context, sessionStore) {
+                            GameSessionRecord(
+                                id = sessionId,
+                                packageName = packageName,
+                                profileName = uiState.effectiveProfile.name,
+                                startedAtMillis = System.currentTimeMillis(),
+                                startBatteryPercent = runtimeDiagnostics?.battery?.percent
+                            )
+                        }
                         viewModel.recordPerformanceEvent(
                             PerformanceEvent(
                                 timestampMillis = System.currentTimeMillis(),
@@ -523,6 +548,9 @@ private fun HomeScreen(
     onGameSelected: (String) -> Unit,
     runtimeDiagnostics: RuntimeDiagnostics?,
     telemetryTrend: List<RuntimeDiagnostics>,
+    sessionHistory: List<GameSessionRecord>,
+    onClearSessions: () -> Unit,
+    onShareSessions: () -> Unit,
     adaptiveDecision: AdaptiveDecision?,
     performanceHistory: List<PerformanceEvent>,
     onApplyAdaptiveProfile: () -> Unit,
@@ -568,6 +596,14 @@ private fun HomeScreen(
             )
         }
         item { ActiveProfileCard(state) }
+        item {
+            SessionCenterCard(
+                context = LocalContext.current,
+                sessions = sessionHistory,
+                onClear = onClearSessions,
+                onShare = onShareSessions
+            )
+        }
         item {
             TusJuegosShelf(
                 favoriteGames = favoriteGames,
@@ -1063,6 +1099,101 @@ private fun VoiceAssistantCard(
                 Text(stringResource(R.string.voice_transcript, transcript))
             }
             response?.let { Text(it) }
+        }
+    }
+}
+
+
+private fun viewModelScopeLaunch(
+    context: Context,
+    sessionStore: GameSessionStore,
+    block: suspend () -> Unit
+) {
+    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+        runCatching { block() }
+    }
+}
+
+private fun shareSessionHistory(
+    context: Context,
+    sessions: List<GameSessionRecord>
+) {
+    if (sessions.isEmpty()) return
+    val report = buildString {
+        appendLine("GameHub Ultra — historial de sesiones")
+        sessions.forEach { session ->
+            appendLine("Juego: ${session.packageName}")
+            appendLine("Perfil: ${session.profileName}")
+            appendLine("Inicio: ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(session.startedAtMillis))}")
+            appendLine("Duración: ${session.durationMillis?.let { formatDuration(it) } ?: "activa"}")
+            session.startBatteryPercent?.let { appendLine("Batería inicio: ${it}%") }
+            session.endBatteryPercent?.let { appendLine("Batería fin: ${it}%") }
+            session.endRamUsedPercent?.let { appendLine("RAM usada al final: ${it}%") }
+            appendLine()
+        }
+    }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "GameHub Ultra — historial de sesiones")
+        putExtra(Intent.EXTRA_TEXT, report)
+    }
+    context.startActivity(Intent.createChooser(intent, "Compartir historial"))
+}
+
+private fun formatDuration(durationMillis: Long): String {
+    val totalSeconds = durationMillis / 1000L
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return when {
+        hours > 0L -> "${hours}h ${minutes}m"
+        minutes > 0L -> "${minutes}m ${seconds}s"
+        else -> "${seconds}s"
+    }
+}
+
+@Composable
+private fun SessionCenterCard(
+    context: Context,
+    sessions: List<GameSessionRecord>,
+    onClear: () -> Unit,
+    onShare: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(stringResource(R.string.session_center_title), style = MaterialTheme.typography.titleLarge)
+                Text(sessions.size.toString(), color = MaterialTheme.colorScheme.primary)
+            }
+            if (sessions.isEmpty()) {
+                Text(stringResource(R.string.session_center_empty), style = MaterialTheme.typography.bodySmall)
+            } else {
+                sessions.take(5).forEach { session ->
+                    val duration = session.durationMillis?.let(::formatDuration)
+                        ?: stringResource(R.string.session_active)
+                    DeviceRow(
+                        label = session.packageName,
+                        value = session.profileName + " · " + duration
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(onClick = onShare, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.session_share))
+                    }
+                    TextButton(onClick = onClear, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.session_clear))
+                    }
+                }
+            }
         }
     }
 }
