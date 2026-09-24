@@ -119,33 +119,51 @@ internal object GameMatchFinder {
         val normalizedQuery = VoiceCommandParser.normalize(query)
         if (normalizedQuery.isBlank()) return null
 
+        val queryTokens = normalizedQuery.split(" ").filter(String::isNotBlank)
         val scored = games.map { game ->
             val label = VoiceCommandParser.normalize(game.label)
-            val queryTokens = normalizedQuery.split(' ').filter(String::isNotBlank).toSet()
-            val labelTokens = label.split(' ').filter(String::isNotBlank).toSet()
-            val overlap = if (queryTokens.isEmpty()) 0.0
-            else queryTokens.intersect(labelTokens).size.toDouble() / queryTokens.size
+            val labelTokens = label.split(" ").filter(String::isNotBlank)
+            val tokenScore = if (queryTokens.isEmpty() || labelTokens.isEmpty()) 0.0
+            else queryTokens.map { q -> labelTokens.maxOfOrNull { l -> tokenSimilarity(q, l) } ?: 0.0 }.average()
 
             game to when {
-                label == normalizedQuery ||
-                    game.packageName.equals(query.trim(), ignoreCase = true) -> 1.0
-                label.startsWith(normalizedQuery + " ") -> 0.9
-                label.contains(normalizedQuery) -> 0.8
-                normalizedQuery.contains(label) -> 0.78
-                else -> overlap
+                label == normalizedQuery || game.packageName.equals(query.trim(), ignoreCase = true) -> 1.0
+                label.startsWith(normalizedQuery + " ") -> 0.94
+                label.contains(normalizedQuery) -> 0.90
+                normalizedQuery.contains(label) -> 0.86
+                else -> tokenScore
             }
         }.sortedByDescending { it.second }
 
         val best = scored.firstOrNull() ?: return null
         val second = scored.getOrNull(1)
+        return if (best.second >= 0.55 &&
+            (second == null || best.second - second.second >= 0.08 || best.second >= 0.90)) best.first else null
+    }
 
-        return if (
-            best.second >= 0.6 &&
-            (second == null || best.second - second.second >= 0.15)
-        ) {
-            best.first
-        } else {
-            null
+    private fun tokenSimilarity(a: String, b: String): Double {
+        if (a == b) return 1.0
+        if (a.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return 0.9
+        val distance = levenshtein(a, b)
+        val longest = maxOf(a.length, b.length)
+        return if (longest == 0) 1.0 else 1.0 - distance.toDouble() / longest
+    }
+
+    private fun levenshtein(a: String, b: String): Int {
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        var previous = IntArray(b.length + 1) { it }
+        var current = IntArray(b.length + 1)
+        for (i in a.indices) {
+            current[0] = i + 1
+            for (j in b.indices) {
+                val cost = if (a[i] == b[j]) 0 else 1
+                current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
+            }
+            val swap = previous
+            previous = current
+            current = swap
         }
+        return previous[b.length]
     }
 }
