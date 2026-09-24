@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.platform
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.app.ActivityManager
 import android.hardware.input.InputManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -45,6 +46,15 @@ data class ConnectivityTelemetry(
     val latencyMs: Long?
 )
 
+data class MemoryRuntimeTelemetry(
+    val totalRamMb: Long,
+    val availableRamMb: Long,
+    val usedRamMb: Long
+) {
+    val usedPercent: Int
+        get() = if (totalRamMb <= 0L) 0 else ((usedRamMb * 100L) / totalRamMb).toInt().coerceIn(0, 100)
+}
+
 data class StorageTelemetry(
     val freeBytes: Long,
     val totalBytes: Long
@@ -61,6 +71,7 @@ data class RuntimeDiagnostics(
     val refresh: RefreshTelemetry,
     val connectivity: ConnectivityTelemetry,
     val storage: StorageTelemetry,
+    val memory: MemoryRuntimeTelemetry,
     val inputDeviceCount: Int,
     val peripherals: PeripheralDiagnostics
 )
@@ -74,6 +85,7 @@ object RuntimeDiagnosticsProvider {
             refresh = readRefresh(appContext),
             connectivity = readConnectivity(appContext),
             storage = readStorage(),
+            memory = readMemory(appContext),
             inputDeviceCount = readInputDevices(appContext),
             peripherals = PeripheralDiagnosticsProvider.get(appContext)
         )
@@ -176,6 +188,20 @@ object RuntimeDiagnosticsProvider {
                 .linkDownstreamBandwidthKbps
                 .takeIf { it > 0 },
             latencyMs = null
+        )
+    }
+
+    private fun readMemory(context: Context): MemoryRuntimeTelemetry {
+        val manager = context.getSystemService(ActivityManager::class.java)
+            ?: return MemoryRuntimeTelemetry(0L, 0L, 0L)
+        val info = ActivityManager.MemoryInfo()
+        manager.getMemoryInfo(info)
+        val totalBytes = info.totalMem.coerceAtLeast(0L)
+        val availableBytes = info.availMem.coerceIn(0L, totalBytes)
+        return MemoryRuntimeTelemetry(
+            totalRamMb = totalBytes / (1024L * 1024L),
+            availableRamMb = availableBytes / (1024L * 1024L),
+            usedRamMb = (totalBytes - availableBytes) / (1024L * 1024L)
         )
     }
 

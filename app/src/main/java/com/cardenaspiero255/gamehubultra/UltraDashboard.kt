@@ -42,6 +42,7 @@ private val UltraMuted = Color(0xFF9696A2)
 fun UltraDashboard(
     device: DeviceInfo,
     diagnostics: RuntimeDiagnostics?,
+    telemetryTrend: List<RuntimeDiagnostics> = emptyList(),
     profile: PerformanceProfile,
     adaptiveDecision: AdaptiveDecision?,
     gameName: String = "War Robots",
@@ -79,6 +80,7 @@ fun UltraDashboard(
                 }
             }
             LiveStatsRow(device, diagnostics, latency)
+            TelemetryTrendCard(telemetryTrend)
             ThermalHeadroomCard(thermalHeadroom)
             adaptiveDecision?.let {
                 Surface(color = UltraPanel2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
@@ -142,6 +144,47 @@ private fun MetricBlock(label: String, value: String, modifier: Modifier) {
     }
 }
 
+@Composable
+private fun TelemetryTrendCard(samples: List<RuntimeDiagnostics>) {
+    val latest = samples.lastOrNull()
+    val previous = samples.dropLast(1).lastOrNull()
+    Surface(
+        color = UltraPanel,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("TENDENCIAS EN TIEMPO REAL", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            if (latest == null) {
+                Text("Aún no hay muestras de la sesión.", color = UltraMuted, fontSize = 10.sp)
+            } else {
+                TrendMetricRow("BATERÍA", latest.battery.percent, previous?.battery?.percent, "%")
+                TrendMetricRow("RAM USADA", latest.memory.usedPercent, previous?.memory?.usedPercent, "%")
+                TrendMetricRow("MARGEN TÉRMICO",
+                    latest.thermal.headroom?.let { (it.coerceIn(0f, 1f) * 100f).toInt() },
+                    previous?.thermal?.headroom?.let { (it.coerceIn(0f, 1f) * 100f).toInt() },
+                    "%")
+                TrendMetricRow("REFRESCO", latest.refresh.currentRefreshRateHz?.toInt(), previous?.refresh?.currentRefreshRateHz?.toInt(), " Hz")
+                Text(samples.size.toString() + " muestras · actualización cada 10 s", color = UltraMuted, fontSize = 9.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrendMetricRow(label: String, current: Int?, previous: Int?, suffix: String) {
+    val delta = if (current != null && previous != null) current - previous else null
+    val arrow = when {
+        delta == null -> "·"
+        delta > 1 -> "↑"
+        delta < -1 -> "↓"
+        else -> "→"
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(if (current == null) "No disponible" else current.toString() + suffix + " " + arrow, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
+}
 @Composable
 private fun ThermalHeadroomCard(headroom: Float?) {
     val normalized = headroom?.coerceIn(0f, 1f)

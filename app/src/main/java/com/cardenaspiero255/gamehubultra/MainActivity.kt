@@ -195,6 +195,7 @@ private fun GameHubUltraApp(
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
+    var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
 
@@ -218,6 +219,7 @@ private fun GameHubUltraApp(
             val sessionId = activeSessionId
             if (selectedGame == null || sessionId == null) {
                 runtimeDiagnostics = null
+                telemetryTrend = emptyList()
                 latencyMs = null
                 adaptiveDecision = adaptiveEngine.evaluate(
                     AdaptiveRuntimeSnapshot(
@@ -274,6 +276,7 @@ private fun GameHubUltraApp(
                         connectivity = network.copy(latencyMs = latencyMs)
                     )
                     runtimeDiagnostics = enrichedDiagnostics
+                    telemetryTrend = (telemetryTrend + enrichedDiagnostics).takeLast(12)
 
                     if (initializedThermalStatus &&
                         diagnostics.thermal.status != lastThermalStatus
@@ -466,6 +469,7 @@ private fun GameHubUltraApp(
                     onProfileSelected = ::selectProfile,
                     onGameSelected = ::selectGame,
                     runtimeDiagnostics = runtimeDiagnostics,
+                    telemetryTrend = telemetryTrend,
                     adaptiveDecision = adaptiveDecision,
                     performanceHistory = performanceHistory,
                     onApplyAdaptiveProfile = {
@@ -518,6 +522,7 @@ private fun HomeScreen(
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit,
     runtimeDiagnostics: RuntimeDiagnostics?,
+    telemetryTrend: List<RuntimeDiagnostics>,
     adaptiveDecision: AdaptiveDecision?,
     performanceHistory: List<PerformanceEvent>,
     onApplyAdaptiveProfile: () -> Unit,
@@ -555,6 +560,7 @@ private fun HomeScreen(
             UltraDashboard(
                 device = device,
                 diagnostics = runtimeDiagnostics,
+                telemetryTrend = telemetryTrend,
                 profile = state.selectedProfile,
                 adaptiveDecision = adaptiveDecision,
                 gameName = "War Robots",
@@ -791,6 +797,11 @@ private fun RuntimeDiagnosticsCard(
                     diagnostics.thermal.headroom?.let {
                         stringResource(R.string.thermal_headroom_value, (it * 100).roundToInt())
                     } ?: stringResource(R.string.not_available)
+                )
+                DeviceRow(
+                    "RAM usada",
+                    diagnostics.memory.usedPercent.toString() + "% (" +
+                        diagnostics.memory.usedRamMb + " / " + diagnostics.memory.totalRamMb + " MB)"
                 )
                 DeviceRow(
                     stringResource(R.string.runtime_battery),
