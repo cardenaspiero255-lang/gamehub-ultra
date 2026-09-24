@@ -161,6 +161,7 @@ class GameHubPreferencesRepositoryTest {
         )
 
         scope.cancel()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.join()
 
         val restartedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
