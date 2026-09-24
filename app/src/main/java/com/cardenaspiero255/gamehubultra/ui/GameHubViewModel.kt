@@ -10,6 +10,7 @@ import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
@@ -19,6 +20,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class GameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameHubPreferencesRepository(application)
 

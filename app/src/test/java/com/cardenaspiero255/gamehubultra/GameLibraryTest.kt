@@ -39,34 +39,22 @@ class GameLibraryTest {
     @Test
     fun isGameApplication_acceptsDeclaredGameCategory() {
         assertTrue(
-            GameLibrary.isGameApplication(
-                category = ApplicationInfo.CATEGORY_GAME,
-                flags = 0,
-                sdkInt = 35
-            )
+            GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_GAME)
         )
     }
 
     @Test
-    fun isGameApplication_acceptsGameFlagOnAndroidOAndAbove() {
+    fun isGameApplication_rejectsUndefinedCategory() {
         assertTrue(
-            GameLibrary.isGameApplication(
-                category = ApplicationInfo.CATEGORY_UNDEFINED,
-                flags = ApplicationInfo.FLAG_IS_GAME,
-                sdkInt = 35
-            )
+            GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_UNDEFINED)
         )
     }
 
     @Test
-    fun isGameApplication_ignoresGameFlagBelowAndroidO() {
+    fun isGameApplication_reliesOnCategoryOnly() {
         assertEquals(
             false,
-            GameLibrary.isGameApplication(
-                category = ApplicationInfo.CATEGORY_UNDEFINED,
-                flags = ApplicationInfo.FLAG_IS_GAME,
-                sdkInt = 25
-            )
+            GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_UNDEFINED)
         )
     }
 }

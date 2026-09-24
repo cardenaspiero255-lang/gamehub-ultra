@@ -20,44 +20,28 @@ class GameHubUltraSupportTest {
     @Test
     fun gameDiscoveryAcceptsDeclaredGames() {
         assertTrue(
-            GameLibrary.isGameApplication(
-                category = ApplicationInfo.CATEGORY_GAME,
-                flags = 0,
-                sdkInt = 35
-            )
+            GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_GAME)
         )
     }
 
     @Test
-    fun gameDiscoveryAcceptsGameFlag() {
+    fun gameDiscoveryRejectsUndefinedCategory() {
         assertTrue(
-            GameLibrary.isGameApplication(
-                category = ApplicationInfo.CATEGORY_UNDEFINED,
-                flags = ApplicationInfo.FLAG_IS_GAME,
-                sdkInt = 35
-            )
+            GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_UNDEFINED)
         )
     }
 
     @Test
     fun gameDiscoveryRejectsNonGameApplications() {
         assertFalse(
-            GameLibrary.isGameApplication(
-                category = ApplicationInfo.CATEGORY_UNDEFINED,
-                flags = 0,
-                sdkInt = 35
-            )
+            GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_UNDEFINED)
         )
     }
 
     @Test
-    fun gameDiscoveryDoesNotReadGameFlagBeforeApi26() {
+    fun gameDiscoveryUsesCategoryInsteadOfDeprecatedGameFlag() {
         assertFalse(
-            GameLibrary.isGameApplication(
-                category = ApplicationInfo.CATEGORY_UNDEFINED,
-                flags = ApplicationInfo.FLAG_IS_GAME,
-                sdkInt = 25
-            )
+            GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_UNDEFINED)
         )
     }
 

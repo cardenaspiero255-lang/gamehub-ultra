@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.app.ActivityManager
+import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
 import android.net.ConnectivityManager
 import android.net.Network
@@ -13,7 +14,6 @@ import android.os.Build
 import android.os.PowerManager
 import android.os.StatFs
 import android.view.Display
-import android.view.WindowManager
 import com.cardenaspiero255.gamehubultra.BatteryTelemetry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -136,13 +136,8 @@ object RuntimeDiagnosticsProvider {
     }
 
     private fun readRefresh(context: Context): RefreshTelemetry {
-        val displayManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            context.getSystemService(android.hardware.display.DisplayManager::class.java)
-        } else {
-            null
-        }
-        val display = displayManager?.getDisplay(Display.DEFAULT_DISPLAY)
-            ?: context.getSystemService(WindowManager::class.java)?.defaultDisplay
+        val display = context.getSystemService(DisplayManager::class.java)
+            ?.getDisplay(Display.DEFAULT_DISPLAY)
 
         val supported = display?.supportedModes
             ?.map { mode -> mode.refreshRate.roundToHz() }

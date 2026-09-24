@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.os.Build
 
 data class GameInfo(
     val packageName: String,
@@ -34,11 +33,8 @@ object GameLibrary {
         val launchableApps = queryLaunchableApps(context, intent)
         val games = launchableApps
             .filter { app ->
-                isGameApplication(
-                    category = app.applicationInfo.category,
-                    flags = app.applicationInfo.flags,
-                    sdkInt = Build.VERSION.SDK_INT
-                ) || additionalPackages.contains(app.packageName)
+                isGameApplication(app.applicationInfo.category) ||
+                    additionalPackages.contains(app.packageName)
             }
             .map { app ->
                 GameInfo(
@@ -67,11 +63,7 @@ object GameLibrary {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         queryLaunchableApps(context, intent)
             .filter { app ->
-                !isGameApplication(
-                    category = app.applicationInfo.category,
-                    flags = app.applicationInfo.flags,
-                    sdkInt = Build.VERSION.SDK_INT
-                )
+                !isGameApplication(app.applicationInfo.category)
             }
             .map { app -> GameInfo(app.packageName, app.label) }
             .distinctBy { it.packageName }
@@ -96,12 +88,8 @@ object GameLibrary {
             .distinctBy { it.packageName }
             .toList()
 
-    internal fun isGameApplication(category: Int, flags: Int, sdkInt: Int): Boolean {
-        val isDeclaredGame = category == ApplicationInfo.CATEGORY_GAME
-        val isFlaggedGame = sdkInt >= Build.VERSION_CODES.O &&
-            (flags and ApplicationInfo.FLAG_IS_GAME) != 0
-        return isDeclaredGame || isFlaggedGame
-    }
+    internal fun isGameApplication(category: Int): Boolean =
+        category == ApplicationInfo.CATEGORY_GAME
 
     private data class LaunchableApp(
         val packageName: String,

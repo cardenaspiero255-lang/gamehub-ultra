@@ -61,7 +61,6 @@ class StoreConnectionActivity : ComponentActivity() {
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.databaseEnabled = true
             webViewClient = StoreWebViewClient(platform)
         }
         progressBar = ProgressBar(this)
@@ -379,7 +378,7 @@ private object SteamStoreClient {
             }
         }
 
-        SteamSyncResult(steamId!!, displayName, games)
+        SteamSyncResult(steamId, displayName, games)
     }
 
     private fun openGet(url: String, cookies: String): HttpURLConnection =
