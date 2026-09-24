@@ -103,8 +103,12 @@ jobs:
             set -eu
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
-            APK="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)"
-            test -n "$APK"
+            APK="$(find app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+            if [ -z "$APK" ]; then
+              echo "No release APK found under app/build/outputs/apk. Current outputs:"
+              find app/build/outputs -maxdepth 5 -type f -print | sort || true
+              exit 1
+            fi
             test -s "$APK"
             adb install "$APK"
             adb shell pm path com.cardenaspiero255.gamehubultra | grep -q "base.apk"
@@ -180,6 +184,6 @@ jobs:
         with:
           name: gamehub-ultra-release
           path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/bundle/release/*.aab
+            app/build/outputs/apk/**/*.apk
+            app/build/outputs/bundle/**/*.aab
           if-no-files-found: error
