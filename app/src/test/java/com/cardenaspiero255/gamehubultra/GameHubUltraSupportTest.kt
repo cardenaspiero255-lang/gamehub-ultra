@@ -26,7 +26,7 @@ class GameHubUltraSupportTest {
 
     @Test
     fun gameDiscoveryRejectsUndefinedCategory() {
-        assertTrue(
+        assertFalse(
             GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_UNDEFINED)
         )
     }
