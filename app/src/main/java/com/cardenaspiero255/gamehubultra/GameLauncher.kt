@@ -3,12 +3,14 @@ package com.cardenaspiero255.gamehubultra
 import android.content.Context
 
 object GameLauncher {
-    fun launch(context: Context, packageName: String): Boolean =
-        resolveAndLaunch(
+    fun launch(context: Context, packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        return resolveAndLaunch(
             packageName = packageName,
             resolver = { context.packageManager.getLaunchIntentForPackage(it) },
             starter = context::startActivity
         )
+    }
 
     internal fun <T> resolveAndLaunch(
         packageName: String,
