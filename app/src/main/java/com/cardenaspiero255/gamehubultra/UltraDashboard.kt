@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.GameHubOriginalUiContract
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.UltraFinalExperienceGate
 import com.cardenaspiero255.gamehubultra.domain.UltraFinalExperienceSummary
@@ -108,6 +109,7 @@ fun UltraDashboard(
         val compact = maxWidth < 720.dp
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             UltraCoreHeader(profile)
+            GameHubOriginalShellStrip(compact)
             UltraFinalExperienceCard(finalExperience, compact)
             FeaturedGameCard(gameName, battery, refresh, thermalUsagePercent, device.totalRamMb)
             UltraVoiceCard()
@@ -163,8 +165,67 @@ private fun UltraCoreHeader(profile: PerformanceProfile) {
         }
         Surface(color = UltraRed.copy(alpha = .16f), shape = RoundedCornerShape(9.dp), modifier = Modifier.border(1.dp, UltraRed.copy(alpha = .55f), RoundedCornerShape(9.dp))) {
             Column(Modifier.padding(horizontal = 11.dp, vertical = 7.dp), horizontalAlignment = Alignment.End) {
-                Text("ULTRA CORE", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("GAMEHUB ORIGINAL", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Text(profile.title.uppercase(), color = Color.White, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GameHubOriginalShellStrip(compact: Boolean) {
+    val navigationItems = GameHubOriginalUiContract.topNavigation
+    val actionItems = GameHubOriginalUiContract.primaryActions
+    Surface(
+        color = Color(0xFF120205),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, UltraRed.copy(alpha = .48f), RoundedCornerShape(16.dp))
+            .semantics {
+                contentDescription = "CAR-31 interfaz GameHub original con Inicio, Biblioteca, Perfil, importar juegos y rojo neón estilo Canva"
+            }
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("CAR-31 · ORIGINAL SHELL", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text("GameHub original + Canva neon", color = Color.White, fontSize = if (compact) 15.sp else 18.sp, fontWeight = FontWeight.Black)
+                }
+                Surface(color = UltraRed.copy(alpha = .18f), shape = RoundedCornerShape(999.dp)) {
+                    Text("ROJO / NEGRO", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = UltraRedBright, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                items(navigationItems) { title ->
+                    val selected = title == "Inicio"
+                    Surface(
+                        color = if (selected) UltraRed.copy(alpha = .22f) else UltraPanel2,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.border(1.dp, if (selected) UltraRed else UltraLine, RoundedCornerShape(12.dp))
+                    ) {
+                        Text(
+                            title.uppercase(),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            color = if (selected) Color.White else UltraMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                items(actionItems) { action ->
+                    Surface(color = UltraPanel, shape = RoundedCornerShape(10.dp)) {
+                        Text(
+                            action,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            color = UltraRedBright,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
     }
@@ -248,7 +309,7 @@ private fun FeaturedGameCard(gameName: String, battery: Int?, refresh: Float?, t
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("JUEGO SELECCIONADO", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text("PORTADA · JUEGO DESTACADO", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                     Text(gameName, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                     Text("Telemetría disponible de Android", color = UltraRedBright, fontSize = 11.sp)
                 }
