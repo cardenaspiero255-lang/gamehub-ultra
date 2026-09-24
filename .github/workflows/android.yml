@@ -43,6 +43,8 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
           test -n "$CMDLINE_DIR"
+          rm -rf "$SDK_ROOT/cmdline-tools/latest"
+          ln -s "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR" "$SDK_ROOT/cmdline-tools/latest"
           echo "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin" >> "$GITHUB_PATH"
           "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin/sdkmanager" --version
 
@@ -124,7 +126,7 @@ jobs:
             set -eu
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
-            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --no-configuration-cache --stacktrace
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -PbenchmarkEnabledRules=BaselineProfile --no-configuration-cache --stacktrace
 
       - name: Run macrobenchmarks on API 35
         uses: reactivecircus/android-emulator-runner@v2
@@ -146,7 +148,7 @@ jobs:
             # android-emulator-runner waits for the device to finish booting before running this script.
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
-            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --no-configuration-cache --stacktrace
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -PbenchmarkEnabledRules=Macrobenchmark               -PbenchmarkSuppressErrors=EMULATOR               --no-configuration-cache --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
