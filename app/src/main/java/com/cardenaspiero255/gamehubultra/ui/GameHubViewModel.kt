@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.OrientationPreference
+import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
@@ -105,6 +107,31 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
             repository.saveGameProfileConfig(
                 packageName,
                 current.copy(refreshRateTargetHz = targetHz)
+            )
+        }
+    }
+
+    fun setGameResolutionTarget(packageName: String, target: ResolutionTarget?) {
+        viewModelScope.launch {
+            val current = repository.gameProfileConfigFlow(packageName).first()
+                ?: GameProfileConfig()
+            repository.saveGameProfileConfig(
+                packageName,
+                current.copy(resolutionTarget = target)
+            )
+        }
+    }
+
+    fun setGameOrientationPreference(
+        packageName: String,
+        preference: OrientationPreference
+    ) {
+        viewModelScope.launch {
+            val current = repository.gameProfileConfigFlow(packageName).first()
+                ?: GameProfileConfig()
+            repository.saveGameProfileConfig(
+                packageName,
+                current.copy(orientationPreference = preference)
             )
         }
     }
