@@ -49,6 +49,7 @@ class GameSessionStore(
                 .mapNotNull(::decode)
                 .sortedByDescending { it.startedAtMillis }
                 .take(maxSessions.coerceIn(1, 100))
+                .toList()
         }
 
     suspend fun startSession(record: GameSessionRecord) {
