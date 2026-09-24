@@ -101,14 +101,17 @@ jobs:
           : > "$HOME/.emulator_console_auth_token"
 
           AVD_LOG="$RUNNER_TEMP/avd-create.log"
-          # Do not request a named hardware profile. Current API 35 images can omit
-          # devices.xml; avoiding --device prevents avdmanager from consulting it.
-          # A here-string answers the optional custom-profile prompt without a
-          # producer pipe, so pipefail cannot turn a successful create into SIGPIPE.
-          avdmanager create avd --force \
+          # avdmanager is deprecated and recent cmdline-tools can return a
+          # non-zero status after the custom-profile prompt even when the AVD is
+          # materialized. Do not trust that status: validate the actual AVD output.
+          # Keep --device omitted so the missing optional system-image devices.xml
+          # is never consulted.
+          set +o pipefail
+          echo no | avdmanager create avd --force \
             --name gamehub-api35 \
             --package "system-images;android-35;google_apis;x86_64" \
-            <<< "no" 2>&1 | tee "$AVD_LOG"
+            2>&1 | tee "$AVD_LOG"
+          set -o pipefail
 
           if grep -Fq "Could not load devices" "$AVD_LOG"; then
             echo "avdmanager still reported a devices.xml load error."
@@ -116,7 +119,10 @@ jobs:
           fi
 
           AVD_CONFIG="$HOME/.android/avd/gamehub-api35.avd/config.ini"
-          test -f "$AVD_CONFIG"
+          if [ ! -s "$AVD_CONFIG" ]; then
+            echo "AVD config was not created; legacy avdmanager did not materialize gamehub-api35."
+            exit 1
+          fi
           {
             echo "hw.ramSize=4096"
             echo "vm.heapSize=512"
