@@ -29,7 +29,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
-import java.util.Base64
+import android.util.Base64
 
 class StoreConnectionActivity : ComponentActivity() {
     companion object {
@@ -245,8 +245,8 @@ class StoreConnectionActivity : ComponentActivity() {
     private fun unquoteJsonString(value: String?): String? {
         if (value.isNullOrBlank() || value.trim() == "null") return null
         val raw = value.trim()
-        return if (raw.startsWith(""") && raw.endsWith(""")) {
-            raw.drop(1).dropLast(1).replace("\\"", """)
+        return if (raw.startsWith("\"") && raw.endsWith("\"")) {
+            raw.drop(1).dropLast(1).replace("\\\"", "\"")
         } else {
             raw
         }
@@ -301,6 +301,11 @@ private data class EpicLibraryGame(
     val artworkUrl: String
 )
 
+private fun HttpURLConnection.readBody(): String {
+    val stream = if (responseCode in 200..299) inputStream else errorStream
+    return stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+}
+
 private object SteamStoreClient {
     fun readAuthenticatedLibrary(): Result<SteamSyncResult> = runCatching {
         val cookies = CookieManager.getInstance()
@@ -315,7 +320,7 @@ private object SteamStoreClient {
             "https://steamcommunity.com/my/",
             communityCookies
         )
-        val html = profile.readText()
+        val html = profile.readBody()
         val finalUrl = profile.url?.toString().orEmpty()
         val steamId =
             Regex("/profiles/(\\d{17})").find(finalUrl)?.groupValues?.get(1)
@@ -335,7 +340,7 @@ private object SteamStoreClient {
                 "https://store.steampowered.com/dynamicstore/userdata/?t=" +
                     System.currentTimeMillis(),
                 storeCookies
-            ).readText()
+            ).readBody()
         )
         val owned = userData.optJSONArray("rgOwnedApps") ?: JSONArray()
         val appIds = (0 until owned.length())
@@ -350,7 +355,7 @@ private object SteamStoreClient {
                             batch.joinToString(",") +
                             "&cc=CL&l=spanish",
                         ""
-                    ).readText()
+                    ).readBody()
                 )
                 batch.forEach { appId ->
                     val row = details.optJSONObject(appId.toString())
@@ -401,9 +406,10 @@ private object EpicConstants {
 
 private object EpicStoreClient {
     fun exchangeCode(code: String): EpicCredentials {
-        val basic = Base64.getEncoder().encodeToString(
+        val basic = Base64.encodeToString(
             (EpicConstants.CLIENT_ID + ":" + EpicConstants.CLIENT_SECRET)
-                .toByteArray(Charsets.UTF_8)
+                .toByteArray(Charsets.UTF_8),
+            Base64.NO_WRAP
         )
         val json = post(
             "https://" + EpicConstants.OAUTH_HOST + "/account/api/oauth/token",
@@ -418,7 +424,7 @@ private object EpicStoreClient {
                     "Windows/10.0.19041.1.256.64bit"
             )
         )
-        EpicCredentials(
+        return EpicCredentials(
             accessToken = json.getString("access_token"),
             refreshToken = json.getString("refresh_token"),
             accountId = json.getString("account_id"),
@@ -528,7 +534,7 @@ private object EpicStoreClient {
     private fun readJson(connection: HttpURLConnection): JSONObject {
         val code = connection.responseCode
         val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-        val text = stream.bufferedReader().use { it.readText() }
+        val text = stream.bufferedReader().use { it.readBody() }
         if (code !in 200..299) error("HTTP " + code + ": " + text)
         return JSONObject(text)
     }
