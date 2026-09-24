@@ -13,6 +13,7 @@ import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -97,6 +98,12 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
+import com.cardenaspiero255.gamehubultra.domain.OptimizationContextKey
+import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
+import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
+import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceAdvisor
+import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceInput
+import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -205,6 +212,37 @@ private fun GameHubUltraApp(
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
     val sessionStore = remember(context) { GameSessionStore(context) }
     val sessionHistory by sessionStore.sessionsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val optimizationMemoryStore = remember(context) { GameOptimizationMemoryStore(context) }
+    val selectedGameForMemory = uiState.selectedGamePackage
+    val selectedGameVersion = remember(selectedGameForMemory) {
+        selectedGameForMemory?.let { packageVersionName(context, it) }
+    }
+    val currentOptimizationKey = remember(
+        selectedGameForMemory,
+        selectedGameVersion,
+        device
+    ) {
+        val driverFingerprint = listOf(
+            device.gpuVendor.orEmpty(),
+            device.gpuRenderer.orEmpty()
+        ).joinToString("|").takeIf(String::isNotBlank)
+        OptimizationContextKey(
+            deviceFingerprint = OptimizationFingerprint.from(
+                device = device,
+                gamePackage = selectedGameForMemory,
+                gameVersion = selectedGameVersion,
+                emulatorBackend = EmulatorBackendDetector.detect(),
+                driverFingerprint = driverFingerprint
+            ),
+            gamePackage = selectedGameForMemory.orEmpty(),
+            gameVersion = selectedGameVersion,
+            emulatorBackend = EmulatorBackendDetector.detect(),
+            driverFingerprint = driverFingerprint
+        )
+    }
+    val optimizationObservations by optimizationMemoryStore
+        .observationsFlow(currentOptimizationKey)
+        .collectAsStateWithLifecycle(initialValue = emptyList())
 
     LaunchedEffect(storeRefreshToken) {
         storeGames = withContext(Dispatchers.IO) {
@@ -360,12 +398,30 @@ private fun GameHubUltraApp(
                 )
             )
             scope.launch(Dispatchers.IO) {
+                val endedAt = System.currentTimeMillis()
                 sessionStore.finishSession(
                     sessionId = sessionId,
-                    endedAtMillis = System.currentTimeMillis(),
+                    endedAtMillis = endedAt,
                     endBatteryPercent = runtimeDiagnostics?.battery?.percent,
                     endThermalStatus = runtimeDiagnostics?.thermal?.status,
                     endRamUsedPercent = runtimeDiagnostics?.memory?.usedPercent
+                )
+                val thermalStatus = runtimeDiagnostics?.thermal?.status
+                val highTemperature = thermalStatus != null && thermalStatus >= 4
+                optimizationMemoryStore.record(
+                    currentOptimizationKey,
+                    OptimizationObservation(
+                        contextKey = currentOptimizationKey.serialized,
+                        profile = uiState.effectiveProfile,
+                        measuredFps = null,
+                        stable = runtimeDiagnostics?.let { !highTemperature && (it.thermal.status == null || it.thermal.status <= 2) } == true,
+                        failed = highTemperature,
+                        highTemperature = highTemperature,
+                        thermalStatus = thermalStatus,
+                        batteryPercent = runtimeDiagnostics?.battery?.percent,
+                        errorReason = if (highTemperature) "thermal_pressure" else null,
+                        timestampMillis = endedAt
+                    )
                 )
             }
         }
@@ -383,6 +439,18 @@ private fun GameHubUltraApp(
     val favoriteGames = uiState.favoriteGames
     val recentGamePackages = uiState.recentGamePackages
     val manualGamePackages = uiState.manualGamePackages
+    val smartRecommendation = SmartPerformanceAdvisor.recommend(
+        SmartPerformanceInput(
+            device = device,
+            runtime = runtimeDiagnostics,
+            gamePackage = selectedGamePackage,
+            gameVersion = selectedGameVersion,
+            emulatorBackend = EmulatorBackendDetector.detect(),
+            currentProfile = uiState.effectiveProfile,
+            historicalObservations = optimizationObservations
+        )
+    )
+
     val aiContext = GameHubAiContext(
         selectedGamePackage = selectedGamePackage,
         sustainedPerformanceSupported =
@@ -475,7 +543,10 @@ private fun GameHubUltraApp(
             when {
                 settingsOpen -> SettingsScreen(
                     modifier = Modifier.fillMaxSize(),
-                    onStoreConnectionChanged = { storeRefreshToken += 1 }
+                    onStoreConnectionChanged = { storeRefreshToken += 1 },
+                    onClearOptimizationMemory = {
+                        scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
+                    }
                 )
                 selectedTab == 0 -> HomeScreen(
                     modifier = Modifier.fillMaxSize(),
@@ -490,6 +561,12 @@ private fun GameHubUltraApp(
                     onClearSessions = { viewModelScopeLaunch(context, sessionStore) { sessionStore.clearSessions() } },
                     onShareSessions = { shareSessionHistory(context, sessionHistory) },
                     adaptiveDecision = adaptiveDecision,
+                    smartRecommendation = smartRecommendation,
+                    onApplySmartRecommendation = { selectProfile(smartRecommendation.profile) },
+                    optimizationObservations = optimizationObservations,
+                    onClearOptimizationMemory = {
+                        scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearGame(currentOptimizationKey) }
+                    },
                     performanceHistory = performanceHistory,
                     onApplyAdaptiveProfile = {
                         adaptiveDecision?.let { selectProfile(it.profile) }
@@ -555,6 +632,10 @@ private fun HomeScreen(
     onClearSessions: () -> Unit,
     onShareSessions: () -> Unit,
     adaptiveDecision: AdaptiveDecision?,
+    smartRecommendation: com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation,
+    onApplySmartRecommendation: () -> Unit,
+    optimizationObservations: List<OptimizationObservation>,
+    onClearOptimizationMemory: () -> Unit,
     performanceHistory: List<PerformanceEvent>,
     onApplyAdaptiveProfile: () -> Unit,
     aiContext: GameHubAiContext,
@@ -599,6 +680,14 @@ private fun HomeScreen(
             )
         }
         item { ActiveProfileCard(state) }
+        item {
+            SmartPerformanceCard(
+                recommendation = smartRecommendation,
+                observations = optimizationObservations,
+                onApply = onApplySmartRecommendation,
+                onClearMemory = onClearOptimizationMemory
+            )
+        }
         item {
             SessionCenterCard(
                 context = LocalContext.current,
@@ -1487,6 +1576,75 @@ private fun ActiveProfileCard(state: PerformanceState) {
 }
 
 @Composable
+private fun SmartPerformanceCard(
+    recommendation: com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation,
+    observations: List<OptimizationObservation>,
+    onApply: () -> Unit,
+    onClearMemory: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.smart_performance_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(
+                localizedProfileTitle(recommendation.profile) +
+                    " · " + recommendation.score + "/100"
+            )
+            Text(recommendation.reason)
+            if (recommendation.evidence.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.smart_performance_evidence),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                recommendation.evidence.take(5).forEach { evidence ->
+                    Text("• " + evidence, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Text(
+                stringResource(
+                    R.string.smart_performance_driver,
+                    recommendation.gpuFamily.name,
+                    when (recommendation.driverStrategy) {
+                        com.cardenaspiero255.gamehubultra.domain.DriverStrategy.SYSTEM_ONLY ->
+                            stringResource(R.string.driver_system_only)
+                        com.cardenaspiero255.gamehubultra.domain.DriverStrategy.TURNIP_CANDIDATE ->
+                            stringResource(R.string.driver_turnip_candidate)
+                        com.cardenaspiero255.gamehubultra.domain.DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE ->
+                            stringResource(R.string.driver_native_candidate)
+                    }
+                ),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                stringResource(R.string.smart_performance_observation_count, observations.size),
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = onApply, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.smart_performance_apply))
+                }
+                TextButton(onClick = onClearMemory, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.smart_performance_reset))
+                }
+            }
+        }
+    }
+}
+
+private fun packageVersionName(context: Context, packageName: String): String? =
+    runCatching {
+        context.packageManager.getPackageInfo(packageName, 0).versionName
+    }.getOrNull()?.takeIf(String::isNotBlank)
+
+@Composable
 private fun BoosterOptions(
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit
@@ -2095,11 +2253,14 @@ private fun ConnectedAccountsCard(
     val context = LocalContext.current
     val store = remember(context) { ConnectedGameAccountsStore(context) }
     val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val activeAccountId by store.activeAccountIdFlow().collectAsStateWithLifecycle(initialValue = null)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var platformName by rememberSaveable { mutableStateOf(GamePlatform.STEAM.name) }
     var displayName by rememberSaveable { mutableStateOf("") }
     var publicId by rememberSaveable { mutableStateOf("") }
+    var alias by rememberSaveable { mutableStateOf("") }
+    var avatarUrl by rememberSaveable { mutableStateOf("") }
     var browserError by rememberSaveable { mutableStateOf(false) }
     val connectionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -2166,6 +2327,8 @@ private fun ConnectedAccountsCard(
                     platformName = GamePlatform.STEAM.name
                     displayName = ""
                     publicId = ""
+                    alias = ""
+                    avatarUrl = ""
                     showAddDialog = true
                 }
             ) {
@@ -2175,6 +2338,10 @@ private fun ConnectedAccountsCard(
             accounts.forEach { account ->
                 ConnectedAccountRow(
                     account = account,
+                    active = account.id == activeAccountId,
+                    onActivate = {
+                        scope.launch { store.setActiveAccount(account.id) }
+                    },
                     onRemove = {
                         scope.launch {
                             store.remove(account.id)
@@ -2246,6 +2413,20 @@ private fun ConnectedAccountsCard(
                         label = { Text(stringResource(R.string.accounts_display_name)) }
                     )
                     OutlinedTextField(
+                        value = alias,
+                        onValueChange = { alias = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.accounts_alias)) }
+                    )
+                    OutlinedTextField(
+                        value = avatarUrl,
+                        onValueChange = { avatarUrl = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.accounts_avatar_url)) }
+                    )
+                    OutlinedTextField(
                         value = publicId,
                         onValueChange = {
                             publicId = it
@@ -2267,7 +2448,7 @@ private fun ConnectedAccountsCard(
                     enabled = displayName.isNotBlank() && publicId.isNotBlank() && profileIdSupported,
                     onClick = {
                         scope.launch {
-                            store.add(platform, displayName, publicId)
+                            store.add(platform, displayName, publicId, alias, avatarUrl)
                             displayName = ""
                             publicId = ""
                             showAddDialog = false
@@ -2288,6 +2469,8 @@ private fun ConnectedAccountsCard(
 @Composable
 private fun ConnectedAccountRow(
     account: ConnectedGameAccount,
+    active: Boolean,
+    onActivate: () -> Unit,
     onRemove: () -> Unit,
     onOpen: () -> Unit,
     onSync: () -> Unit
@@ -2298,11 +2481,16 @@ private fun ConnectedAccountRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(account.platform.title + " · " + account.displayName)
+                Text((account.alias?.takeIf(String::isNotBlank) ?: account.displayName) +
+                    if (active) " · ACTIVA" else "")
                 Text(
-                    account.publicId,
+                    (account.platform.title + " · " + account.publicId) +
+                        (account.avatarUrl?.let { " · Avatar público configurado" } ?: ""),
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+            TextButton(onClick = onActivate) {
+                Text(if (active) "ACTIVA" else "ACTIVAR")
             }
             TextButton(onClick = onSync) {
                 Text("SYNC")
@@ -2322,7 +2510,8 @@ private fun ConnectedAccountRow(
 @Composable
 private fun SettingsScreen(
     modifier: Modifier,
-    onStoreConnectionChanged: () -> Unit
+    onStoreConnectionChanged: () -> Unit,
+    onClearOptimizationMemory: () -> Unit
 ) {
     Column(
         modifier = modifier
@@ -2337,6 +2526,21 @@ private fun SettingsScreen(
             style = MaterialTheme.typography.headlineSmall
         )
         ConnectedAccountsCard(onStoreConnectionChanged = onStoreConnectionChanged)
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    stringResource(R.string.optimization_memory_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(stringResource(R.string.optimization_memory_description))
+                TextButton(onClick = onClearOptimizationMemory) {
+                    Text(stringResource(R.string.optimization_memory_clear))
+                }
+            }
+        }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),
