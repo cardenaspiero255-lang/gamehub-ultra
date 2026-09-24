@@ -1993,6 +1993,14 @@ private fun ConnectedAccountsCard(
                             onStoreConnectionChanged()
                         }
                     },
+                    onSync = {
+                        connectionLauncher.launch(
+                            StoreConnectionActivity.newIntent(
+                                context,
+                                account.platform
+                            )
+                        )
+                    },
                     onOpen = {
                         if (!GamePlatformLinks.openPublicProfile(context, account)) {
                             browserError = true
