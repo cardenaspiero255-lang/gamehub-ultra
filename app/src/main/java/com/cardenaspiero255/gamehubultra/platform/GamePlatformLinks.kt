@@ -7,15 +7,17 @@ import android.net.Uri
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
+import com.cardenaspiero255.gamehubultra.store.StoreConnectionActivity
 
 object GamePlatformLinks {
 
     fun openOfficialLogin(context: Context, platform: GamePlatform): Boolean {
-        val uri = when (platform) {
-            GamePlatform.STEAM -> Uri.parse("https://store.steampowered.com/login/")
-            GamePlatform.EPIC_GAMES -> Uri.parse("https://www.epicgames.com/id/login")
+        return try {
+            context.startActivity(StoreConnectionActivity.newIntent(context, platform))
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
         }
-        return openUri(context, uri)
     }
 
     fun isPublicProfileIdSupported(account: ConnectedGameAccount): Boolean =
