@@ -18,6 +18,7 @@ object GameAccountValidation {
 
     private fun isSteamPublicId(value: String): Boolean {
         if (steamId64.matches(value)) return isSteamId64(value)
+        if (value.all(Char::isDigit)) return value.length in 2..16
         return steamVanity.matches(value)
     }
 
