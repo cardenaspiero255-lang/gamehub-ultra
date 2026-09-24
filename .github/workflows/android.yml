@@ -180,6 +180,18 @@ jobs:
           adb start-server >/dev/null
 
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
+          dump_emulator_log_on_failure() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ -f "$EMULATOR_LOG" ]; then
+              echo "::group::Android emulator startup log"
+              cat "$EMULATOR_LOG"
+              echo "::endgroup::"
+            fi
+            exit "$rc"
+          }
+          trap dump_emulator_log_on_failure EXIT
+
           nohup emulator -avd gamehub-api35 \
             -port 5554 \
             -no-window \
@@ -308,6 +320,16 @@ jobs:
             echo "Known CAR-29 emulator errors are still present."
             exit 1
           fi
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gamehub-ultra-emulator-diagnostics
+          path: |
+            ${{ runner.temp }}/gamehub-emulator.log
+            ${{ runner.temp }}/avd-list.txt
+          if-no-files-found: ignore
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
