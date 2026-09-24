@@ -17,6 +17,8 @@ object GameLauncher {
         resolver: (String) -> T?,
         starter: (T) -> Unit
     ): Boolean {
+        if (packageName.isBlank()) return false
+
         val value = try {
             resolver(packageName)
         } catch (_: Exception) {
