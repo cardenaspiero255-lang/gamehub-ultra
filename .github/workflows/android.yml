@@ -166,6 +166,6 @@ jobs:
         with:
           name: gamehub-ultra-release
           path: |
-            app/build/outputs/apk/**/*.apk
-            app/build/outputs/bundle/**/*.aab
+            app/build/outputs/apk/release/**/*.apk
+            app/build/outputs/bundle/release/**/*.aab
           if-no-files-found: error
