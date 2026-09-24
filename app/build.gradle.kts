@@ -21,6 +21,9 @@ android {
 
     buildTypes {
         release {
+            // Test-release signing so the generated release APK is directly installable.
+            // Replace with a private release keystore before public production distribution.
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
