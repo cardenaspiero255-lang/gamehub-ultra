@@ -99,6 +99,7 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
+          pre-emulator-launch-script: adb start-server
           script: |
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
@@ -118,11 +119,12 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
+          pre-emulator-launch-script: adb start-server
           script: |
             set -eu
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
-            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --stacktrace
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --no-configuration-cache --stacktrace
 
       - name: Run macrobenchmarks on API 35
         uses: reactivecircus/android-emulator-runner@v2
@@ -144,7 +146,7 @@ jobs:
             # Starting/reconnecting ADB here races with its emulator process.
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
-            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --stacktrace
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --no-configuration-cache --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
