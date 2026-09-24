@@ -87,262 +87,93 @@ jobs:
       - name: Build release AAB
         run: gradle :app:bundleRelease --stacktrace
 
-      - name: Prepare deterministic API 35 AVD
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          EMULATOR_BIN="$SDK_ROOT/emulator/emulator"
-          IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
-          if [ ! -x "$EMULATOR_BIN" ]; then
-            echo "Android Emulator binary is missing or not executable: $EMULATOR_BIN"
-            exit 1
-          fi
-          test -d "$IMAGE_DIR"
-          test -s "$IMAGE_DIR/system.img"
-          test -s "$IMAGE_DIR/ramdisk.img"
-          # API 35 r09+ seeds /data from data/empty_data_disk instead of
-          # shipping the legacy userdata.img used by older system images.
-          test -e "$IMAGE_DIR/data/empty_data_disk"
-
-          AVD_HOME="$HOME/.android/avd"
-          AVD_DIR="$AVD_HOME/gamehub-api35.avd"
-          AVD_INI="$AVD_HOME/gamehub-api35.ini"
-          # Keep the emulator on Android's documented default AVD location.
-          # Overriding ANDROID_AVD_HOME changes how relative AVD paths are resolved
-          # and made the manually-created metadata invisible to -list-avds.
-          unset ANDROID_EMULATOR_HOME ANDROID_AVD_HOME
-          rm -rf "$AVD_DIR" "$AVD_INI"
-          mkdir -p "$AVD_DIR"
-
-          # Build the AVD metadata directly from the installed API 35 image.
-          # This avoids avdmanager's current device-profile parser failure while
-          # preserving the real Android Emulator and all downstream validation.
-          cat > "$AVD_INI" <<EOF
-          avd.ini.encoding=UTF-8
-          path=$AVD_DIR
-          path.rel=avd/gamehub-api35.avd
-          target=android-35
-          EOF
-
-          cat > "$AVD_DIR/config.ini" <<EOF
-          AvdId=gamehub-api35
-          PlayStore.enabled=false
-          abi.type=x86_64
-          avd.ini.displayname=gamehub-api35
-          avd.ini.encoding=UTF-8
-          disk.dataPartition.size=4G
-          hw.accelerometer=yes
-          hw.audioInput=no
-          hw.battery=yes
-          hw.camera.back=none
-          hw.camera.front=none
-          hw.cpu.arch=x86_64
-          hw.cpu.ncore=4
-          hw.device.manufacturer=GameHub
-          hw.device.name=gamehub_ci_phone
-          hw.gps=yes
-          hw.gpu.enabled=yes
-          hw.gpu.mode=auto
-          hw.gyroscope=yes
-          hw.initialOrientation=portrait
-          hw.keyboard=yes
-          hw.lcd.density=420
-          hw.lcd.height=1920
-          hw.lcd.width=1080
-          hw.mainKeys=no
-          hw.ramSize=4096
-          hw.sdCard=no
-          image.sysdir.1=system-images/android-35/google_apis/x86_64/
-          runtime.network.latency=none
-          runtime.network.speed=full
-          showDeviceFrame=no
-          skin.dynamic=yes
-          skin.name=1080x1920
-          tag.display=Google APIs
-          tag.id=google_apis
-          target=android-35
-          vm.heapSize=512
-          EOF
-
-          mkdir -p "$HOME/.android"
-          : > "$HOME/.emulator_console_auth_token"
-
-          test -s "$AVD_INI"
-          test -s "$AVD_DIR/config.ini"
-          grep -Fxq "target=android-35" "$AVD_DIR/config.ini"
-          grep -Fxq "abi.type=x86_64" "$AVD_DIR/config.ini"
-          AVD_LIST="$RUNNER_TEMP/avd-list.txt"
-          if ! "$EMULATOR_BIN" -list-avds | tee "$AVD_LIST" | grep -Fxq "gamehub-api35"; then
-            echo "The emulator did not discover the API 35 AVD in the default Android home."
-            echo "AVD metadata:"
-            find "$HOME/.android" -maxdepth 3 -type f -print -exec sed -n '1,120p' {} \; || true
-            exit 1
-          fi
-
-      - name: Start API 35 emulator cleanly
-        shell: bash
-        run: |
-          set -euo pipefail
-          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          EMULATOR_BIN="$SDK_ROOT/emulator/emulator"
-          if [ ! -x "$EMULATOR_BIN" ]; then
-            echo "Android Emulator binary is missing or not executable: $EMULATOR_BIN"
-            exit 1
-          fi
-          adb start-server >/dev/null
-
-          EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
-          dump_emulator_log_on_failure() {
-            rc=$?
-            trap - EXIT
-            if [ "$rc" -ne 0 ] && [ -f "$EMULATOR_LOG" ]; then
-              echo "::group::Android emulator startup log"
-              cat "$EMULATOR_LOG"
-              echo "::endgroup::"
-            fi
-            exit "$rc"
-          }
-          trap dump_emulator_log_on_failure EXIT
-
-          nohup "$EMULATOR_BIN" -avd gamehub-api35 \
-            -port 5554 \
-            -no-window \
-            -no-audio \
-            -no-boot-anim \
-            -no-snapshot-load \
-            -no-snapshot-save \
-            -no-metrics \
-            -gpu swiftshader_indirect \
-            -camera-back none \
-            -camera-front none \
-            -netdelay none \
-            -netspeed full \
-            >"$EMULATOR_LOG" 2>&1 &
-          EMULATOR_PID=$!
-          echo "EMULATOR_PID=$EMULATOR_PID" >> "$GITHUB_ENV"
-          echo "EMULATOR_LOG=$EMULATOR_LOG" >> "$GITHUB_ENV"
-
-          timeout 300 adb wait-for-device
-          timeout 600 bash -c '
-            while true; do
-              state="$(adb get-state 2>/dev/null || true)"
-              boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" || true)"
-              if [ "$state" = "device" ] && [ "$boot" = "1" ]; then
-                break
-              fi
-              sleep 2
-            done
-          '
-
-          adb shell settings put global window_animation_scale 0
-          adb shell settings put global transition_animation_scale 0
-          adb shell settings put global animator_duration_scale 0
-          adb shell getprop ro.build.version.sdk | grep -Fxq "35"
-          adb devices
-
       - name: Validate release APK install-update-uninstall on API 35
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
-          if [ -z "$APK" ] || [ ! -s "$APK" ]; then
-            echo "No installable release APK found under app/build/outputs/apk/release"
-            find app/build/outputs -maxdepth 5 -type f -print | sort || true
-            exit 1
-          fi
-          echo "Validating release APK: $APK"
-          adb install "$APK"
-          adb shell pm path com.cardenaspiero255.gamehubultra | grep -q "base.apk"
-          adb shell monkey -p com.cardenaspiero255.gamehubultra 1 >/dev/null
-          adb install -r "$APK"
-          adb shell pm path com.cardenaspiero255.gamehubultra | grep -q "base.apk"
-          adb shell dumpsys package com.cardenaspiero255.gamehubultra | grep -q "versionCode"
-          adb uninstall com.cardenaspiero255.gamehubultra
-          if adb shell pm path com.cardenaspiero255.gamehubultra 2>/dev/null | grep -q "base.apk"; then
-            echo "Package remained installed after uninstall."
-            exit 1
-          fi
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
+          force-avd-creation: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            adb wait-for-device
+            adb shell getprop sys.boot_completed | grep -m1 "1"
+            APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
+            if [ -z "$APK" ] || [ ! -s "$APK" ]; then
+              echo "No installable release APK found under app/build/outputs/apk/release"
+              find app/build/outputs -maxdepth 5 -type f -print | sort || true
+              exit 1
+            fi
+            echo "Validating release APK: $APK"
+            adb install "$APK"
+            adb shell pm path com.cardenaspiero255.gamehubultra | grep -q "base.apk"
+            adb shell monkey -p com.cardenaspiero255.gamehubultra 1 >/dev/null
+            adb install -r "$APK"
+            adb shell pm path com.cardenaspiero255.gamehubultra | grep -q "base.apk"
+            adb shell dumpsys package com.cardenaspiero255.gamehubultra | grep -q "versionCode"
+            adb uninstall com.cardenaspiero255.gamehubultra
+            if adb shell pm path com.cardenaspiero255.gamehubultra 2>/dev/null | grep -q "base.apk"; then
+              echo "Package remained installed after uninstall."
+              exit 1
+            fi
 
       - name: Run baseline profile instrumentation on API 35
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -o pipefail
-          LOG="$RUNNER_TEMP/baseline-profile.log"
-          gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -PbenchmarkEnabledRules=BaselineProfile \
-            --no-configuration-cache \
-            --stacktrace 2>&1 | tee "$LOG"
-          if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
-            echo "ddmlib could not connect to the emulator console."
-            exit 1
-          fi
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
+          force-avd-creation: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            set -o pipefail
+            adb wait-for-device
+            adb shell getprop sys.boot_completed | grep -m1 "1"
+            LOG="$RUNNER_TEMP/baseline-profile.log"
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
+              -PbenchmarkEnabledRules=BaselineProfile \
+              --no-configuration-cache \
+              --stacktrace 2>&1 | tee "$LOG"
 
       - name: Run macrobenchmarks on API 35
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -o pipefail
-          LOG="$RUNNER_TEMP/macrobenchmark.log"
-          gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -PbenchmarkEnabledRules=Macrobenchmark \
-            -PbenchmarkSuppressErrors=EMULATOR \
-            --no-configuration-cache \
-            --stacktrace 2>&1 | tee "$LOG"
-          if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
-            echo "ddmlib could not connect to the emulator console."
-            exit 1
-          fi
-
-      - name: Stop API 35 emulator cleanly
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          if adb get-state >/dev/null 2>&1; then
-            adb emu kill
-          fi
-          if [ -n "${EMULATOR_PID:-}" ]; then
-            for _ in $(seq 1 30); do
-              kill -0 "$EMULATOR_PID" 2>/dev/null || break
-              sleep 1
-            done
-            kill -0 "$EMULATOR_PID" 2>/dev/null && kill "$EMULATOR_PID"
-          fi
-
-      - name: Reject known CAR-29 emulator noise
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          bad=0
-          for log in \
-            "$RUNNER_TEMP/avd-create.log" \
-            "$RUNNER_TEMP/baseline-profile.log" \
-            "$RUNNER_TEMP/macrobenchmark.log" \
-            "${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"; do
-            [ -f "$log" ] || continue
-            if grep -En \
-              'Could not load devices|adb.*failed with exit code 1|Failed to start Emulator console|stop: Not implemented' \
-              "$log"; then
-              bad=1
-            fi
-          done
-          if [ "$bad" -ne 0 ]; then
-            echo "Known CAR-29 emulator errors are still present."
-            exit 1
-          fi
-
-      - name: Upload emulator diagnostics
-        if: always()
-        uses: actions/upload-artifact@v6
+        uses: reactivecircus/android-emulator-runner@v2
         with:
-          name: gamehub-ultra-emulator-diagnostics
-          path: |
-            ${{ runner.temp }}/gamehub-emulator.log
-            ${{ runner.temp }}/avd-list.txt
-          if-no-files-found: ignore
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          cores: 4
+          ram-size: 4096M
+          heap-size: 512M
+          force-avd-creation: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            set -o pipefail
+            adb wait-for-device
+            adb shell getprop sys.boot_completed | grep -m1 "1"
+            LOG="$RUNNER_TEMP/macrobenchmark.log"
+            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
+              -PbenchmarkEnabledRules=Macrobenchmark \
+              -PbenchmarkSuppressErrors=EMULATOR \
+              --no-configuration-cache \
+              --stacktrace 2>&1 | tee "$LOG"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
