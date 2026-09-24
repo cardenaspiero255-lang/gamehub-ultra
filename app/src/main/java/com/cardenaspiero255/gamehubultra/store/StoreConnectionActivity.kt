@@ -246,9 +246,9 @@ class StoreConnectionActivity : ComponentActivity() {
         if (value.isNullOrBlank() || value.trim() == "null") return null
         val raw = value.trim()
         return if (raw.length >= 2 && raw.first() == '"' && raw.last() == '"') {
-            raw.substring(1, raw.length - 1)
-                .replace("\\"", """)
-                .replace("\\\\", "\\")
+            runCatching {
+                org.json.JSONTokener(raw).nextValue() as? String
+            }.getOrNull()
         } else {
             raw
         }
