@@ -106,6 +106,9 @@ import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistant
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantInput
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceInput
+import com.cardenaspiero255.gamehubultra.domain.PerformanceTimeline
+import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineBuilder
+import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineReportFormatter
 import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
@@ -211,6 +214,7 @@ private fun GameHubUltraApp(
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
     var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
+    var performanceTimelineSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineSample>>(emptyList()) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
     val sessionStore = remember(context) { GameSessionStore(context) }
@@ -268,6 +272,7 @@ private fun GameHubUltraApp(
             if (selectedGame == null || sessionId == null) {
                 runtimeDiagnostics = null
                 telemetryTrend = emptyList()
+                performanceTimelineSamples = emptyList()
                 latencyMs = null
                 adaptiveDecision = adaptiveEngine.evaluate(
                     AdaptiveRuntimeSnapshot(
@@ -325,6 +330,16 @@ private fun GameHubUltraApp(
                     )
                     runtimeDiagnostics = enrichedDiagnostics
                     telemetryTrend = (telemetryTrend + enrichedDiagnostics).takeLast(12)
+                    performanceTimelineSamples = (
+                        performanceTimelineSamples + PerformanceTimelineBuilder.sample(
+                            timestampMillis = now,
+                            batteryPercent = enrichedDiagnostics.battery.percent,
+                            thermalStatus = enrichedDiagnostics.thermal.status,
+                            thermalHeadroom = enrichedDiagnostics.thermal.headroom,
+                            refreshRateHz = enrichedDiagnostics.refresh.currentRefreshRateHz,
+                            ramUsedPercent = enrichedDiagnostics.memory.usedPercent
+                        )
+                    ).takeLast(24)
 
                     if (initializedThermalStatus &&
                         diagnostics.thermal.status != lastThermalStatus
@@ -383,9 +398,21 @@ private fun GameHubUltraApp(
     }
 
     fun selectProfile(profile: PerformanceProfile) {
+        val previous = uiState.effectiveProfile
         uiState.selectedGamePackage?.let { packageName ->
             viewModel.selectGameProfile(packageName, profile)
         } ?: viewModel.selectGlobalProfile(profile)
+        if (previous != profile) {
+            viewModel.recordPerformanceEvent(
+                PerformanceEvent(
+                    timestampMillis = System.currentTimeMillis(),
+                    type = PerformanceEventType.POLICY_CHANGED,
+                    sessionId = activeSessionId ?: "ui",
+                    profile = profile,
+                    detail = "manual_profile_selection"
+                )
+            )
+        }
     }
 
     fun applySmartGameAssistantSuggestion(suggestion: SmartGameAssistantSuggestion) {
@@ -448,6 +475,12 @@ private fun GameHubUltraApp(
     val favoriteGames = uiState.favoriteGames
     val recentGamePackages = uiState.recentGamePackages
     val manualGamePackages = uiState.manualGamePackages
+    val performanceTimeline = PerformanceTimelineBuilder.build(
+        samples = performanceTimelineSamples,
+        events = performanceHistory,
+        activeSessionId = activeSessionId
+    )
+
     val smartRecommendation = SmartPerformanceAdvisor.recommend(
         SmartPerformanceInput(
             device = device,
@@ -576,6 +609,7 @@ private fun GameHubUltraApp(
                     onGameSelected = ::selectGame,
                     runtimeDiagnostics = runtimeDiagnostics,
                     telemetryTrend = telemetryTrend,
+                    performanceTimeline = performanceTimeline,
                     sessionHistory = sessionHistory,
                     onClearSessions = { viewModelScopeLaunch(context, sessionStore) { sessionStore.clearSessions() } },
                     onShareSessions = { shareSessionHistory(context, sessionHistory) },
@@ -649,6 +683,7 @@ private fun HomeScreen(
     onGameSelected: (String) -> Unit,
     runtimeDiagnostics: RuntimeDiagnostics?,
     telemetryTrend: List<RuntimeDiagnostics>,
+    performanceTimeline: PerformanceTimeline,
     sessionHistory: List<GameSessionRecord>,
     onClearSessions: () -> Unit,
     onShareSessions: () -> Unit,
@@ -723,6 +758,18 @@ private fun HomeScreen(
                 sessions = sessionHistory,
                 onClear = onClearSessions,
                 onShare = onShareSessions
+            )
+        }
+        item {
+            PerformanceTimelineCard(
+                timeline = performanceTimeline,
+                onShare = {
+                    sharePerformanceTimeline(
+                        context = LocalContext.current,
+                        gamePackage = aiContext.selectedGamePackage,
+                        timeline = performanceTimeline
+                    )
+                }
             )
         }
         item {
@@ -1302,6 +1349,26 @@ private fun shareSessionHistory(
         putExtra(Intent.EXTRA_TEXT, report)
     }
     context.startActivity(Intent.createChooser(intent, "Compartir historial"))
+}
+
+private fun sharePerformanceTimeline(
+    context: Context,
+    gamePackage: String?,
+    timeline: PerformanceTimeline
+) {
+    if (timeline.samples.isEmpty() &&
+        timeline.profileEvents.isEmpty() &&
+        timeline.thermalEvents.isEmpty()
+    ) {
+        return
+    }
+    val report = PerformanceTimelineReportFormatter.format(gamePackage, timeline)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "GameHub Ultra — Performance Timeline")
+        putExtra(Intent.EXTRA_TEXT, report)
+    }
+    context.startActivity(Intent.createChooser(intent, "Compartir timeline"))
 }
 
 private fun formatDuration(durationMillis: Long): String {
