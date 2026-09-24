@@ -73,7 +73,9 @@ class GameHubPreferencesRepositoryTest {
             GameProfileConfig(
                 performanceProfile = PerformanceProfile.X4,
                 thermalPreference = ThermalPreference.PERFORMANCE,
-                refreshRateTargetHz = 120
+                refreshRateTargetHz = 120,
+                resolutionTarget = ResolutionTarget(1920, 1080),
+                orientationPreference = OrientationPreference.LANDSCAPE
             ),
             repository.gameProfileConfigFlow("com.example.game").first()
         )
@@ -142,7 +144,7 @@ class GameHubPreferencesRepositoryTest {
         val resolution = ResolutionTarget(1920, 1080)
         val resolutionConfig = GameProfileConfig(resolutionTarget = resolution)
         assertEquals(resolution, resolutionConfig.resolveResolutionTarget(setOf(resolution)))
-        assertNull(resolutionConfig.resolveResolutionTarget(setOf(1280.let { ResolutionTarget(it, 720) })))
+        assertNull(resolutionConfig.resolveResolutionTarget(setOf(ResolutionTarget(1280, 720))))
     }
 
     @Test
