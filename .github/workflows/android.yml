@@ -101,6 +101,10 @@ jobs:
           AVD_HOME="$HOME/.android/avd"
           AVD_DIR="$AVD_HOME/gamehub-api35.avd"
           AVD_INI="$AVD_HOME/gamehub-api35.ini"
+          export ANDROID_EMULATOR_HOME="$HOME/.android"
+          export ANDROID_AVD_HOME="$AVD_HOME"
+          echo "ANDROID_EMULATOR_HOME=$ANDROID_EMULATOR_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
           rm -rf "$AVD_DIR" "$AVD_INI"
           mkdir -p "$AVD_DIR"
 
@@ -128,6 +132,8 @@ jobs:
           hw.camera.front=none
           hw.cpu.arch=x86_64
           hw.cpu.ncore=4
+          hw.device.manufacturer=GameHub
+          hw.device.name=gamehub_ci_phone
           hw.gps=yes
           hw.gpu.enabled=yes
           hw.gpu.mode=auto
@@ -140,7 +146,7 @@ jobs:
           hw.mainKeys=no
           hw.ramSize=4096
           hw.sdCard=no
-          image.sysdir.1=$IMAGE_DIR/
+          image.sysdir.1=system-images/android-35/google_apis/x86_64/
           runtime.network.latency=none
           runtime.network.speed=full
           showDeviceFrame=no
