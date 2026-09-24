@@ -6,6 +6,19 @@ import kotlin.test.assertTrue
 
 class GameLauncherTest {
     @Test
+    fun blankPackageIsRejectedBeforeResolution() {
+        var resolved = false
+        assertFalse(
+            GameLauncher.resolveAndLaunch(
+                packageName = "",
+                resolver = { resolved = true; "resolved-intent" },
+                starter = {}
+            )
+        )
+        assertFalse(resolved)
+    }
+
+    @Test
     fun successfulLaunchReturnsTrue() {
         var started = false
 
