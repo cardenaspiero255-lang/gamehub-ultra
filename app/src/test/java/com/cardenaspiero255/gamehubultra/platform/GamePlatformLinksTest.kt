@@ -33,7 +33,29 @@ class GamePlatformLinksTest {
     }
 
     @Test
-    fun rejectsMalformedSteamProfileId() {
+    fun rejectsOutOfRangeSteamId64Values() {
+        assertFalse(
+            GamePlatformLinks.isPublicProfileIdSupported(
+                GamePlatform.STEAM,
+                "76561197960265727"
+            )
+        )
+        assertFalse(
+            GamePlatformLinks.isPublicProfileIdSupported(
+                GamePlatform.STEAM,
+                "76561202255233024"
+            )
+        )
+        assertFalse(
+            GamePlatformLinks.isPublicProfileIdSupported(
+                GamePlatform.STEAM,
+                "99999999999999999"
+            )
+        )
+    }
+
+    @Test
+    fun rejectsOverflowSteamNumericValue() {
         assertFalse(
             GamePlatformLinks.isPublicProfileIdSupported(
                 GamePlatform.STEAM,
@@ -43,7 +65,7 @@ class GamePlatformLinksTest {
     }
 
     @Test
-    fun acceptsNumbersOnlySteamVanityAndUsesIdRoute() {
+    fun acceptsNumbersOnlySteamVanity() {
         assertTrue(
             GamePlatformLinks.isPublicProfileIdSupported(
                 GamePlatform.STEAM,
