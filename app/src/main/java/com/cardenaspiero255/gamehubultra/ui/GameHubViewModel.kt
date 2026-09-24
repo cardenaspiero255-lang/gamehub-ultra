@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.OrientationPreference
+import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
 import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -132,6 +133,24 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
             repository.saveGameProfileConfig(
                 packageName,
                 current.copy(orientationPreference = preference)
+            )
+        }
+    }
+
+    fun applySmartGameAssistantSuggestion(
+        packageName: String,
+        suggestion: SmartGameAssistantSuggestion
+    ) {
+        viewModelScope.launch {
+            val current = repository.gameProfileConfigFlow(packageName).first()
+                ?: GameProfileConfig()
+            repository.saveGameProfileConfig(
+                packageName,
+                current.copy(
+                    performanceProfile = suggestion.profile,
+                    thermalPreference = suggestion.thermalPreference,
+                    refreshRateTargetHz = suggestion.refreshRateTargetHz
+                )
             )
         }
     }

@@ -102,6 +102,9 @@ import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceAdvisor
+import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistant
+import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantInput
+import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceInput
 import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
@@ -385,6 +388,12 @@ private fun GameHubUltraApp(
         } ?: viewModel.selectGlobalProfile(profile)
     }
 
+    fun applySmartGameAssistantSuggestion(suggestion: SmartGameAssistantSuggestion) {
+        uiState.selectedGamePackage?.let { packageName ->
+            viewModel.applySmartGameAssistantSuggestion(packageName, suggestion)
+        } ?: viewModel.selectGlobalProfile(suggestion.profile)
+    }
+
     fun endGameSession() {
         val sessionId = activeSessionId
         val packageName = activeSessionPackage
@@ -448,6 +457,16 @@ private fun GameHubUltraApp(
             emulatorBackend = EmulatorBackendDetector.detect(),
             currentProfile = uiState.effectiveProfile,
             historicalObservations = optimizationObservations
+        )
+    )
+    val smartGameAssistantSuggestions = SmartGameAssistant.suggestAll(
+        SmartGameAssistantInput(
+            device = device,
+            runtime = runtimeDiagnostics,
+            gamePackage = selectedGamePackage,
+            currentProfile = uiState.effectiveProfile,
+            historicalObservations = optimizationObservations,
+            existingRecommendation = smartRecommendation
         )
     )
 
@@ -563,6 +582,8 @@ private fun GameHubUltraApp(
                     adaptiveDecision = adaptiveDecision,
                     smartRecommendation = smartRecommendation,
                     onApplySmartRecommendation = { selectProfile(smartRecommendation.profile) },
+                    smartGameAssistantSuggestions = smartGameAssistantSuggestions,
+                    onApplySmartGameAssistant = ::applySmartGameAssistantSuggestion,
                     optimizationObservations = optimizationObservations,
                     onClearOptimizationMemory = {
                         scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearGame(currentOptimizationKey) }
@@ -634,6 +655,8 @@ private fun HomeScreen(
     adaptiveDecision: AdaptiveDecision?,
     smartRecommendation: com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation,
     onApplySmartRecommendation: () -> Unit,
+    smartGameAssistantSuggestions: List<SmartGameAssistantSuggestion>,
+    onApplySmartGameAssistant: (SmartGameAssistantSuggestion) -> Unit,
     optimizationObservations: List<OptimizationObservation>,
     onClearOptimizationMemory: () -> Unit,
     performanceHistory: List<PerformanceEvent>,
@@ -686,6 +709,12 @@ private fun HomeScreen(
                 observations = optimizationObservations,
                 onApply = onApplySmartRecommendation,
                 onClearMemory = onClearOptimizationMemory
+            )
+        }
+        item {
+            SmartGameAssistantCard(
+                suggestions = smartGameAssistantSuggestions,
+                onApply = onApplySmartGameAssistant
             )
         }
         item {
