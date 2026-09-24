@@ -10,7 +10,7 @@ object VoiceCommandParser {
         optionalResolver: NaturalLanguageIntentResolver? = null
     ): VoiceCommand {
         val clean = normalize(transcript)
-            .replace(Regex("""^ultra\s+"""), "")
+            .replace(Regex("""\bultra\b"""), " ")
             .trim()
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
 
