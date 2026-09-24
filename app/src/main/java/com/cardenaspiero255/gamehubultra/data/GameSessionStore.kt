@@ -59,7 +59,10 @@ class GameSessionStore(
                 .mapNotNull(::decode)
                 .filterNot { it.id == record.id }
                 .toMutableList()
-            current += record.copy(endedAtMillis = null)
+            current += record.copy(
+                endedAtMillis = null,
+                startBatteryPercent = sanitizePercent(record.startBatteryPercent)
+            )
             preferences[sessionsKey] = current
                 .sortedByDescending { it.startedAtMillis }
                 .take(maxSessions.coerceIn(1, 100))
