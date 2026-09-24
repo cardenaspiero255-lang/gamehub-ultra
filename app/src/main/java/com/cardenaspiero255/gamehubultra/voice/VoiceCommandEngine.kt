@@ -137,8 +137,19 @@ internal object GameMatchFinder {
 
         val best = scored.firstOrNull() ?: return null
         val second = scored.getOrNull(1)
-        return if (best.second >= 0.55 &&
-            (second == null || best.second - second.second >= 0.08 || best.second >= 0.90)) best.first else null
+        val exactLabel = best.second == 1.0 &&
+            VoiceCommandParser.normalize(best.first.label) == normalizedQuery
+        val exactPackage = best.first.packageName.equals(query.trim(), ignoreCase = true)
+        val ambiguousHumanMatch = exactLabel &&
+            !exactPackage &&
+            second != null &&
+            second.second >= 0.86
+
+        return if (
+            best.second >= 0.55 &&
+            !ambiguousHumanMatch &&
+            (second == null || best.second - second.second >= 0.08 || exactPackage)
+        ) best.first else null
     }
 
     private fun tokenSimilarity(a: String, b: String): Double {
