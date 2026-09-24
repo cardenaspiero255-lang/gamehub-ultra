@@ -11,9 +11,14 @@ object GameAccountValidation {
         val id = value.trim()
         if (id.isEmpty()) return false
         return when (platform) {
-            GamePlatform.STEAM -> isSteamId64(id) || steamVanity.matches(id)
+            GamePlatform.STEAM -> isSteamPublicId(id)
             GamePlatform.EPIC_GAMES -> epicPublicId.matches(id)
         }
+    }
+
+    private fun isSteamPublicId(value: String): Boolean {
+        if (steamId64.matches(value)) return isSteamId64(value)
+        return steamVanity.matches(value)
     }
 
     fun isSteamId64(value: String): Boolean {
