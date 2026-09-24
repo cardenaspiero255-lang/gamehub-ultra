@@ -36,10 +36,13 @@ data class OptimizationContextKey(
         ).joinToString("¦")
 }
 
-class GameOptimizationMemoryStore(context: Context) {
-    private val dataStore = context.applicationContext.optimizationMemoryDataStore
+class GameOptimizationMemoryStore(
+    private val dataStore: DataStore<Preferences>,
+    private val maxObservations: Int = 120
+) {
+    constructor(context: Context) : this(context.applicationContext.optimizationMemoryDataStore)
+
     private val observationsKey = stringPreferencesKey("observations_v1")
-    private val maxObservations = 120
 
     fun observationsFlow(contextKey: OptimizationContextKey): Flow<List<OptimizationObservation>> =
         dataStore.data.map { preferences ->
