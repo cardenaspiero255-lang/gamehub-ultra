@@ -12,6 +12,9 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
+import com.cardenaspiero255.gamehubultra.store.StoreConnectionActivity
 import android.os.Build
 import android.os.Bundle
 import android.os.Trace
@@ -191,6 +194,14 @@ private fun GameHubUltraApp(
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
+    var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
+    var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
+
+    LaunchedEffect(storeRefreshToken) {
+        storeGames = withContext(Dispatchers.IO) {
+            StoreLibraryStore(context).getAll()
+        }
+    }
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
@@ -442,7 +453,10 @@ private fun GameHubUltraApp(
             }
 
             when {
-                settingsOpen -> SettingsScreen(Modifier.fillMaxSize())
+                settingsOpen -> SettingsScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onStoreConnectionChanged = { storeRefreshToken += 1 }
+                )
                 selectedTab == 0 -> HomeScreen(
                     modifier = Modifier.fillMaxSize(),
                     state = state,
@@ -460,7 +474,8 @@ private fun GameHubUltraApp(
                     aiAdvisor = aiAdvisor,
                     favoriteGames = favoriteGames,
                     recentGamePackages = recentGamePackages,
-                    manualGamePackages = manualGamePackages
+                    manualGamePackages = manualGamePackages,
+                    storeGames = storeGames
                 )
                 else -> LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
@@ -468,6 +483,7 @@ private fun GameHubUltraApp(
                     favoriteGames = favoriteGames,
                     recentGamePackages = recentGamePackages,
                     manualGamePackages = manualGamePackages,
+                    storeGames = storeGames,
                     onGameSelected = ::selectGame,
                     onToggleFavorite = viewModel::setFavoriteGame,
                     onGameOpened = { packageName ->
@@ -508,7 +524,8 @@ private fun HomeScreen(
     aiAdvisor: GameHubAiAdvisor,
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
-    manualGamePackages: Set<String>
+    manualGamePackages: Set<String>,
+    storeGames: List<StoreLibraryGame>
 ) {
     LazyColumn(
         modifier = modifier
@@ -525,6 +542,12 @@ private fun HomeScreen(
             Text(
                 stringResource(R.string.hero_subtitle),
                 style = MaterialTheme.typography.titleMedium
+            )
+        }
+        item {
+            StoreLibrarySummary(
+                games = storeGames,
+                onOpenLibrary = { /* tab remains available below */ }
             )
         }
         item {
@@ -1509,6 +1532,7 @@ private fun LibraryScreen(
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
+    storeGames: List<StoreLibraryGame>,
     onGameSelected: (String) -> Unit,
     onToggleFavorite: (String, Boolean) -> Unit,
     onGameOpened: (String) -> Unit,
@@ -1567,6 +1591,14 @@ private fun LibraryScreen(
         GameLibrary.filterGames(orderedGames, libraryQuery)
     }
 
+    val visibleStoreGames = remember(storeGames, libraryQuery) {
+        storeGames.filter {
+            libraryQuery.isBlank() ||
+                it.title.contains(libraryQuery, ignoreCase = true) ||
+                it.platformGameId.contains(libraryQuery, ignoreCase = true)
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -1596,6 +1628,8 @@ private fun LibraryScreen(
             singleLine = true,
             label = { Text(stringResource(R.string.library_search)) }
         )
+
+        StoreLibrarySection(games = visibleStoreGames)
 
         if (launchFailed) {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -1866,7 +1900,9 @@ private fun openGame(context: Context, packageName: String): Boolean =
     GameLauncher.launch(context, packageName)
 
 @Composable
-private fun ConnectedAccountsCard() {
+private fun ConnectedAccountsCard(
+    onStoreConnectionChanged: () -> Unit
+) {
     val context = LocalContext.current
     val store = remember(context) { ConnectedGameAccountsStore(context) }
     val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
@@ -1876,6 +1912,14 @@ private fun ConnectedAccountsCard() {
     var displayName by rememberSaveable { mutableStateOf("") }
     var publicId by rememberSaveable { mutableStateOf("") }
     var browserError by rememberSaveable { mutableStateOf(false) }
+    val connectionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            browserError = false
+            onStoreConnectionChanged()
+        }
+    }
 
     val platform = GamePlatform.valueOf(platformName)
     val profileIdSupported = platform != GamePlatform.STEAM ||
@@ -1901,7 +1945,13 @@ private fun ConnectedAccountsCard() {
             ) {
                 Button(
                     onClick = {
-                        browserError = !GamePlatformLinks.openOfficialLogin(context, GamePlatform.STEAM)
+                        browserError = false
+                        connectionLauncher.launch(
+                            StoreConnectionActivity.newIntent(
+                                context,
+                                GamePlatform.STEAM
+                            )
+                        )
                     },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -1909,7 +1959,13 @@ private fun ConnectedAccountsCard() {
                 }
                 Button(
                     onClick = {
-                        browserError = !GamePlatformLinks.openOfficialLogin(context, GamePlatform.EPIC_GAMES)
+                        browserError = false
+                        connectionLauncher.launch(
+                            StoreConnectionActivity.newIntent(
+                                context,
+                                GamePlatform.EPIC_GAMES
+                            )
+                        )
                     },
                     modifier = Modifier.weight(1f)
                 ) {
@@ -2057,7 +2113,10 @@ private fun ConnectedAccountRow(
 }
 
 @Composable
-private fun SettingsScreen(modifier: Modifier) {
+private fun SettingsScreen(
+    modifier: Modifier,
+    onStoreConnectionChanged: () -> Unit
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -2070,7 +2129,7 @@ private fun SettingsScreen(modifier: Modifier) {
             stringResource(R.string.settings_title),
             style = MaterialTheme.typography.headlineSmall
         )
-        ConnectedAccountsCard()
+        ConnectedAccountsCard(onStoreConnectionChanged = onStoreConnectionChanged)
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),
@@ -2098,6 +2157,99 @@ private fun SettingsScreen(modifier: Modifier) {
                     style = MaterialTheme.typography.titleMedium
                 )
                 Text(stringResource(R.string.limitations_text))
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoreLibrarySummary(
+    games: List<StoreLibraryGame>,
+    onOpenLibrary: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "BIBLIOTECA DE TIENDAS",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    games.size.toString(),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+            Text(
+                if (games.isEmpty()) {
+                    "Conecta Steam o Epic para sincronizar tus juegos dentro de Ultra."
+                } else {
+                    "Steam + Epic sincronizados y disponibles en Biblioteca."
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun StoreLibrarySection(
+    games: List<StoreLibraryGame>
+) {
+    if (games.isEmpty()) return
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                "STEAM / EPIC",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            LazyColumn(
+                modifier = Modifier.height(
+                    (minOf(games.size, 8) * 56 + 8).coerceAtMost(456).dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(
+                    games,
+                    key = { it.id }
+                ) { game ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                game.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1
+                            )
+                            Text(
+                                game.platform.title +
+                                    " · ID " +
+                                    game.platformGameId,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                        Text(
+                            "CONECTADO",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
     }
