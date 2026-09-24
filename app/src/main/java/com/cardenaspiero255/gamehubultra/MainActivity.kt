@@ -95,6 +95,7 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
+import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -1922,8 +1923,8 @@ private fun ConnectedAccountsCard(
     }
 
     val platform = GamePlatform.valueOf(platformName)
-    val profileIdSupported = platform != GamePlatform.STEAM ||
-        GamePlatformLinks.isPublicProfileIdSupported(platform, publicId)
+    val profileIdSupported =
+        GameAccountValidation.isValidPublicId(platform, publicId)
 
     Card(
         modifier = Modifier
@@ -2065,7 +2066,7 @@ private fun ConnectedAccountsCard(
                         singleLine = true,
                         label = { Text(stringResource(R.string.accounts_public_id)) }
                     )
-                    if (platform == GamePlatform.STEAM && !profileIdSupported) {
+                    if (!profileIdSupported) {
                         Text(
                             stringResource(R.string.accounts_public_id_invalid),
                             style = MaterialTheme.typography.bodySmall
