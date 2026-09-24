@@ -106,6 +106,8 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
+import com.cardenaspiero255.gamehubultra.platform.PeripheralDiagnostics
+import com.cardenaspiero255.gamehubultra.platform.PeripheralKind
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
