@@ -647,6 +647,9 @@ private fun HomeScreen(
                 onApplyAdaptiveProfile = onApplyAdaptiveProfile
             )
         }
+        item {
+            PeripheralsHubCard(peripherals = runtimeDiagnostics?.peripherals)
+        }
     }
 }
 
@@ -778,6 +781,46 @@ private fun TusJuegosShelf(
     }
 }
 
+
+@Composable
+private fun PeripheralsHubCard(peripherals: PeripheralDiagnostics?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("PERIFÉRICOS", style = MaterialTheme.typography.titleLarge)
+            if (peripherals == null) {
+                Text(stringResource(R.string.peripherals_loading), style = MaterialTheme.typography.bodySmall)
+                return@Column
+            }
+            DeviceRow("Gamepad", "${peripherals.gamepadCount} conectado(s)")
+            DeviceRow("Teclado", "${peripherals.keyboardCount} conectado(s)")
+            DeviceRow("Ratón", "${peripherals.mouseCount} conectado(s)")
+            DeviceRow("Audio externo", "${peripherals.externalAudioCount} conectado(s)")
+            if (peripherals.inputDevices.isEmpty()) {
+                Text(stringResource(R.string.peripherals_none_detected), style = MaterialTheme.typography.bodySmall)
+            } else {
+                peripherals.inputDevices.take(5).forEach { entry ->
+                    val kinds = entry.kinds.joinToString(" · ") { kind ->
+                        when (kind) {
+                            PeripheralKind.GAMEPAD -> "GAMEPAD"
+                            PeripheralKind.KEYBOARD -> "TECLADO"
+                            PeripheralKind.MOUSE -> "RATÓN"
+                        }
+                    }
+                    Text("${entry.name} · $kinds", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (peripherals.externalAudioDevices.isNotEmpty()) {
+                Text(stringResource(R.string.peripherals_audio_label), style = MaterialTheme.typography.labelLarge)
+                peripherals.externalAudioDevices.take(3).forEach { name ->
+                    Text(name, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun RuntimeDiagnosticsCard(

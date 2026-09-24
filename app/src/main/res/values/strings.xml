@@ -185,4 +185,7 @@
     <string name="ai_chat_clear">Limpiar conversación</string>
     <string name="qs_gamehub_label">GameHub Ultra</string>
     <string name="peripherals_summary">Gamepad %1$d · Teclado %2$d · Ratón %3$d · Audio externo %4$d</string>
+    <string name="peripherals_loading">Consultando periféricos conectados…</string>
+    <string name="peripherals_none_detected">No hay periféricos externos de entrada detectados.</string>
+    <string name="peripherals_audio_label">Salidas de audio externas</string>
 </resources>
