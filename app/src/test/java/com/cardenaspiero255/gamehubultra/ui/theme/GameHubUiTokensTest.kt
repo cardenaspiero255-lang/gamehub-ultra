@@ -8,9 +8,9 @@ import kotlin.test.assertEquals
 class GameHubUiTokensTest {
     @Test
     fun compactSpacingRemainsTightForLandscapeDashboard() {
-        assertEquals(9.dp, GameHubUiTokens.compactHorizontalPadding)
-        assertEquals(7.dp, GameHubUiTokens.compactSectionSpacing)
-        assertEquals(9.dp, GameHubUiTokens.compactCardPadding)
+        assertEquals(8.dp, GameHubUiTokens.compactHorizontalPadding)
+        assertEquals(6.dp, GameHubUiTokens.compactSectionSpacing)
+        assertEquals(10.dp, GameHubUiTokens.compactCardPadding)
         assertEquals(6.dp, GameHubUiTokens.compactControlSpacing)
     }
 
