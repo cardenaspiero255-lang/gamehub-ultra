@@ -28,7 +28,7 @@ object PerformanceTimelineBuilder {
         ramUsedPercent: Int?
     ): PerformanceTimelineSample = PerformanceTimelineSample(
         timestampMillis = timestampMillis,
-        batteryPercent = batteryPercent?.takeIf { it in 0..100 },
+        batteryPercent = batteryPercent?.coerceIn(0, 100),
         thermalStatus = thermalStatus,
         thermalHeadroomPercent = thermalHeadroom?.takeIf { !it.isNaN() && it >= 0f }
             ?.coerceIn(0f, 1f)?.let { round(it * 100f).toInt() },
