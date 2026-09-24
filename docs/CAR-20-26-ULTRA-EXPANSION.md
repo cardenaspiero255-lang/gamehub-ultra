@@ -80,4 +80,4 @@ Acceptance gate for each CAR:
 7. Only then mark the CAR complete.
 
 ## Current implementation note
-CAR-20 and CAR-21 are implemented in the main branch. CAR-22..30 are expansion scope and must not be marked complete until their individual acceptance gates pass.
+CAR-20 through CAR-25 are implemented in the main branch. CAR-26 release hardening is documented in `docs/CAR-26-RELEASE-HARDENING.md` and must remain green in the Android validation workflow. CAR-27..30 are expansion scope and must not be marked complete until their individual acceptance gates pass.
