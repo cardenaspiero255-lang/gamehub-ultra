@@ -2,7 +2,8 @@ name: CAR-32 UI reconstruction patch
 
 on:
   push:
-    branches: [codex/car-32-original-ui-reconstruction]
+    branches:
+      - codex/car-32-original-ui-reconstruction
 
 permissions:
   contents: write
@@ -13,13 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           ref: codex/car-32-original-ui-reconstruction
 
       - name: Apply CAR-32 UI reconstruction
-        shell: python
+        shell: bash
         run: |
+          python3 <<'PY'
           from pathlib import Path
 
           path = Path('app/src/main/java/com/cardenaspiero255/gamehubultra/MainActivity.kt')
@@ -39,7 +41,9 @@ jobs:
                   raise SystemExit(f'Missing end marker: {label}')
               return source[:start] + new_block + source[end:]
 
-          topbar_old = '''TopAppBar(
+          text = require_replace(
+              text,
+              '''TopAppBar(
                 title = { Text("GAMEHUB ULTRA") },
                 actions = {
                     TextButton(
@@ -61,8 +65,8 @@ jobs:
                         Text("⚙")
                     }
                 }
-            )'''
-          topbar_new = '''Surface(
+            )''',
+              '''Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.background
             ) {
@@ -95,8 +99,9 @@ jobs:
                         Text(if (settingsOpen) "Cerrar" else "Ajustes")
                     }
                 }
-            }'''
-          text = require_replace(text, topbar_old, topbar_new, 'compact top bar')
+            }''',
+              'compact top bar'
+          )
 
           text = require_replace(
               text,
@@ -303,6 +308,7 @@ private fun GameTile(
           tokens.write_text(token_text, encoding='utf-8')
 
           Path('.github/workflows/car-32-ui-reconstruction-patch.yml').unlink()
+          PY
 
       - name: Commit CAR-32 UI reconstruction
         shell: bash
