@@ -635,7 +635,8 @@ private fun GameHubUltraApp(
                     favoriteGames = favoriteGames,
                     recentGamePackages = recentGamePackages,
                     manualGamePackages = manualGamePackages,
-                    storeGames = storeGames
+                    storeGames = storeGames,
+                    onOpenLibrary = { selectedTab = 1 }
                 )
                 else -> LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
@@ -709,7 +710,8 @@ private fun HomeScreen(
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
-    storeGames: List<StoreLibraryGame>
+    storeGames: List<StoreLibraryGame>,
+    onOpenLibrary: () -> Unit
 ) {
     val timelineContext = LocalContext.current
     LazyColumn(
@@ -720,7 +722,8 @@ private fun HomeScreen(
     ) {
         item {
             GameHubStyleHeader(
-                selectedProfileName = selectedProfileName
+                selectedProfileName = selectedProfileName,
+                onOpenLibrary = onOpenLibrary
             )
         }
         item {
@@ -732,7 +735,7 @@ private fun HomeScreen(
         item {
             StoreLibrarySummary(
                 games = storeGames,
-                onOpenLibrary = { /* tab remains available below */ }
+                onOpenLibrary = onOpenLibrary
             )
         }
         item {
@@ -832,7 +835,8 @@ private fun HomeScreen(
 
 @Composable
 private fun GameHubStyleHeader(
-    selectedProfileName: String
+    selectedProfileName: String,
+    onOpenLibrary: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -865,16 +869,30 @@ private fun GameHubStyleHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenLibrary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Abrir biblioteca y buscar juegos"
+                    },
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceVariant
             ) {
-                Text(
-                    "⌕  Buscar juegos, aplicaciones o comandos…",
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "⌕  Buscar juegos, aplicaciones o comandos…",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "BIBLIOTECA",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
         }
     }
@@ -2079,8 +2097,8 @@ private fun LibraryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2194,10 +2212,10 @@ private fun LibraryScreen(
                 }
 
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 168.dp),
+                    columns = GridCells.Adaptive(minSize = 132.dp),
                     modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(
                         items = visibleGames,
@@ -2908,11 +2926,16 @@ private fun StoreLibrarySummary(
                     "BIBLIOTECA DE TIENDAS",
                     style = MaterialTheme.typography.titleMedium
                 )
-                Text(
-                    games.size.toString(),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelLarge
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        games.size.toString(),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    TextButton(onClick = onOpenLibrary) {
+                        Text("ABRIR")
+                    }
+                }
             }
             Text(
                 if (games.isEmpty()) {
