@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
@@ -55,6 +57,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -76,6 +80,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -130,6 +135,8 @@ import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
+import com.cardenaspiero255.gamehubultra.ui.layout.ResponsiveLayoutPolicy
+import com.cardenaspiero255.gamehubultra.ui.layout.UltraLayoutMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -534,151 +541,299 @@ private fun GameHubUltraApp(
     )
     val tabTestTags = listOf("nav_inicio", "nav_biblioteca")
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("GAMEHUB ULTRA") },
-                actions = {
-                    TextButton(
-                        onClick = {
-                            Trace.beginSection("GameHubUltra.Navigation.Settings")
-                            try {
-                                settingsOpen = !settingsOpen
-                            } finally {
-                                Trace.endSection()
-                            }
-                        },
-                        modifier = Modifier
-                            .testTag("nav_ajustes")
-                            .semantics(mergeDescendants = true) {
-                                testTagsAsResourceId = true
-                                contentDescription = "nav_ajustes"
-                            }
-                    ) {
-                        Text("⚙")
-                    }
+    val configuration = LocalConfiguration.current
+    val layoutMode = remember(configuration.screenWidthDp) {
+        ResponsiveLayoutPolicy.modeForWidthDp(configuration.screenWidthDp)
+    }
+    val wideLayout = layoutMode != UltraLayoutMode.COMPACT
+    val ultraWideLayout = layoutMode == UltraLayoutMode.ULTRA_WIDE
+
+    val screenContent: @Composable (Modifier, Boolean) -> Unit = { contentModifier, showAssistantCards ->
+        when {
+            settingsOpen -> SettingsScreen(
+                modifier = contentModifier,
+                onStoreConnectionChanged = { storeRefreshToken += 1 },
+                onClearOptimizationMemory = {
+                    scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
                 }
             )
+            selectedTab == 0 -> HomeScreen(
+                modifier = contentModifier,
+                state = state,
+                device = device,
+                selectedProfileName = selectedProfileName,
+                onProfileSelected = ::selectProfile,
+                onGameSelected = ::selectGame,
+                runtimeDiagnostics = runtimeDiagnostics,
+                telemetryTrend = telemetryTrend,
+                performanceTimeline = performanceTimeline,
+                sessionHistory = sessionHistory,
+                onClearSessions = {
+                    viewModelScopeLaunch(context, sessionStore) {
+                        sessionStore.clearSessions()
+                    }
+                },
+                onShareSessions = { shareSessionHistory(context, sessionHistory) },
+                adaptiveDecision = adaptiveDecision,
+                smartRecommendation = smartRecommendation,
+                onApplySmartRecommendation = {
+                    selectProfile(smartRecommendation.profile)
+                },
+                smartGameAssistantSuggestions = smartGameAssistantSuggestions,
+                onApplySmartGameAssistant = ::applySmartGameAssistantSuggestion,
+                optimizationObservations = optimizationObservations,
+                onClearOptimizationMemory = {
+                    scope.launch(Dispatchers.IO) {
+                        optimizationMemoryStore.clearGame(currentOptimizationKey)
+                    }
+                },
+                performanceHistory = performanceHistory,
+                onApplyAdaptiveProfile = {
+                    adaptiveDecision?.let { selectProfile(it.profile) }
+                },
+                aiContext = aiContext,
+                aiAdvisor = aiAdvisor,
+                favoriteGames = favoriteGames,
+                recentGamePackages = recentGamePackages,
+                manualGamePackages = manualGamePackages,
+                storeGames = storeGames,
+                onOpenLibrary = {
+                    settingsOpen = false
+                    selectedTab = 1
+                },
+                showAssistantCards = showAssistantCards
+            )
+            else -> LibraryScreen(
+                modifier = contentModifier,
+                selectedGamePackage = selectedGamePackage,
+                favoriteGames = favoriteGames,
+                recentGamePackages = recentGamePackages,
+                manualGamePackages = manualGamePackages,
+                storeGames = storeGames,
+                selectedProfile = uiState.effectiveProfile,
+                runtimeDiagnostics = runtimeDiagnostics,
+                sessionHistory = sessionHistory,
+                onGameSelected = ::selectGame,
+                onProfileSelected = ::selectProfile,
+                onToggleFavorite = viewModel::setFavoriteGame,
+                onGameOpened = { packageName ->
+                    endGameSession()
+                    val sessionId = UUID.randomUUID().toString()
+                    activeSessionPackage = packageName
+                    activeSessionId = sessionId
+                    viewModelScopeLaunch(context, sessionStore) {
+                        GameSessionRecord(
+                            id = sessionId,
+                            packageName = packageName,
+                            profileName = uiState.effectiveProfile.name,
+                            startedAtMillis = System.currentTimeMillis(),
+                            startBatteryPercent = runtimeDiagnostics?.battery?.percent
+                        )
+                    }
+                    viewModel.recordPerformanceEvent(
+                        PerformanceEvent(
+                            timestampMillis = System.currentTimeMillis(),
+                            type = PerformanceEventType.SESSION_STARTED,
+                            sessionId = sessionId,
+                            detail = packageName
+                        )
+                    )
+                    viewModel.recordRecentGame(packageName)
+                },
+                onToggleManualGame = viewModel::setManualGame
+            )
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            if (!wideLayout) {
+                TopAppBar(
+                    title = { Text("GAMEHUB ULTRA") },
+                    actions = {
+                        TextButton(
+                            onClick = {
+                                Trace.beginSection("GameHubUltra.Navigation.Settings")
+                                try {
+                                    settingsOpen = !settingsOpen
+                                } finally {
+                                    Trace.endSection()
+                                }
+                            },
+                            modifier = Modifier
+                                .testTag("nav_ajustes")
+                                .semantics(mergeDescendants = true) {
+                                    testTagsAsResourceId = true
+                                    contentDescription = "nav_ajustes"
+                                }
+                        ) {
+                            Text("⚙")
+                        }
+                    }
+                )
+            }
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            if (!settingsOpen) {
-                TabRow(selectedTabIndex = selectedTab) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        modifier = Modifier
-                            .testTag(tabTestTags[0])
-                            .semantics(mergeDescendants = true) {
-                                testTagsAsResourceId = true
-                                contentDescription = "nav_inicio"
-                            },
-                        text = { Text(tabs[0].uppercase()) }
+        if (wideLayout) {
+            Row(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+            ) {
+                WideNavigationRail(
+                    selectedTab = selectedTab,
+                    settingsOpen = settingsOpen,
+                    onHome = {
+                        settingsOpen = false
+                        selectedTab = 0
+                    },
+                    onLibrary = {
+                        settingsOpen = false
+                        selectedTab = 1
+                    },
+                    onSettings = {
+                        settingsOpen = true
+                    }
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                ) {
+                    screenContent(
+                        Modifier.fillMaxSize(),
+                        !ultraWideLayout
                     )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = {
-                            Trace.beginSection("GameHubUltra.Navigation.Library")
-                            try {
-                                selectedTab = 1
-                            } finally {
-                                Trace.endSection()
-                            }
-                        },
-                        modifier = Modifier
-                            .testTag(tabTestTags[1])
-                            .semantics(mergeDescendants = true) {
-                                testTagsAsResourceId = true
-                                contentDescription = "nav_biblioteca"
-                            },
-                        text = { Text(tabs[1].uppercase()) }
+                }
+
+                if (ultraWideLayout && !settingsOpen && selectedTab == 0) {
+                    UltraAssistantSidePanel(
+                        aiContext = aiContext,
+                        aiAdvisor = aiAdvisor,
+                        selectedProfileName = selectedProfileName,
+                        onProfileSelected = ::selectProfile,
+                        onGameSelected = ::selectGame
                     )
                 }
             }
-
-            when {
-                settingsOpen -> SettingsScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onStoreConnectionChanged = { storeRefreshToken += 1 },
-                    onClearOptimizationMemory = {
-                        scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
-                    }
-                )
-                selectedTab == 0 -> HomeScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    state = state,
-                    device = device,
-                    selectedProfileName = selectedProfileName,
-                    onProfileSelected = ::selectProfile,
-                    onGameSelected = ::selectGame,
-                    runtimeDiagnostics = runtimeDiagnostics,
-                    telemetryTrend = telemetryTrend,
-                    performanceTimeline = performanceTimeline,
-                    sessionHistory = sessionHistory,
-                    onClearSessions = { viewModelScopeLaunch(context, sessionStore) { sessionStore.clearSessions() } },
-                    onShareSessions = { shareSessionHistory(context, sessionHistory) },
-                    adaptiveDecision = adaptiveDecision,
-                    smartRecommendation = smartRecommendation,
-                    onApplySmartRecommendation = { selectProfile(smartRecommendation.profile) },
-                    smartGameAssistantSuggestions = smartGameAssistantSuggestions,
-                    onApplySmartGameAssistant = ::applySmartGameAssistantSuggestion,
-                    optimizationObservations = optimizationObservations,
-                    onClearOptimizationMemory = {
-                        scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearGame(currentOptimizationKey) }
-                    },
-                    performanceHistory = performanceHistory,
-                    onApplyAdaptiveProfile = {
-                        adaptiveDecision?.let { selectProfile(it.profile) }
-                    },
-                    aiContext = aiContext,
-                    aiAdvisor = aiAdvisor,
-                    favoriteGames = favoriteGames,
-                    recentGamePackages = recentGamePackages,
-                    manualGamePackages = manualGamePackages,
-                    storeGames = storeGames,
-                    onOpenLibrary = { selectedTab = 1 }
-                )
-                else -> LibraryScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    selectedGamePackage = selectedGamePackage,
-                    favoriteGames = favoriteGames,
-                    recentGamePackages = recentGamePackages,
-                    manualGamePackages = manualGamePackages,
-                    storeGames = storeGames,
-                    selectedProfile = uiState.effectiveProfile,
-                    runtimeDiagnostics = runtimeDiagnostics,
-                    sessionHistory = sessionHistory,
-                    onGameSelected = ::selectGame,
-                    onProfileSelected = ::selectProfile,
-                    onToggleFavorite = viewModel::setFavoriteGame,
-                    onGameOpened = { packageName ->
-                        endGameSession()
-                        val sessionId = UUID.randomUUID().toString()
-                        activeSessionPackage = packageName
-                        activeSessionId = sessionId
-                        viewModelScopeLaunch(context, sessionStore) {
-                            GameSessionRecord(
-                                id = sessionId,
-                                packageName = packageName,
-                                profileName = uiState.effectiveProfile.name,
-                                startedAtMillis = System.currentTimeMillis(),
-                                startBatteryPercent = runtimeDiagnostics?.battery?.percent
-                            )
-                        }
-                        viewModel.recordPerformanceEvent(
-                            PerformanceEvent(
-                                timestampMillis = System.currentTimeMillis(),
-                                type = PerformanceEventType.SESSION_STARTED,
-                                sessionId = sessionId,
-                                detail = packageName
-                            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+            ) {
+                if (!settingsOpen) {
+                    TabRow(selectedTabIndex = selectedTab) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            modifier = Modifier
+                                .testTag(tabTestTags[0])
+                                .semantics(mergeDescendants = true) {
+                                    testTagsAsResourceId = true
+                                    contentDescription = "nav_inicio"
+                                },
+                            text = { Text(tabs[0].uppercase()) }
                         )
-                        viewModel.recordRecentGame(packageName)
-                    },
-                    onToggleManualGame = viewModel::setManualGame
-                )
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = {
+                                Trace.beginSection("GameHubUltra.Navigation.Library")
+                                try {
+                                    selectedTab = 1
+                                } finally {
+                                    Trace.endSection()
+                                }
+                            },
+                            modifier = Modifier
+                                .testTag(tabTestTags[1])
+                                .semantics(mergeDescendants = true) {
+                                    testTagsAsResourceId = true
+                                    contentDescription = "nav_biblioteca"
+                                },
+                            text = { Text(tabs[1].uppercase()) }
+                        )
+                    }
+                }
+                screenContent(Modifier.fillMaxSize(), true)
             }
         }
+    }
+}
+
+@Composable
+private fun WideNavigationRail(
+    selectedTab: Int,
+    settingsOpen: Boolean,
+    onHome: () -> Unit,
+    onLibrary: () -> Unit,
+    onSettings: () -> Unit
+) {
+    NavigationRail {
+        NavigationRailItem(
+            selected = !settingsOpen && selectedTab == 0,
+            onClick = onHome,
+            icon = { Text("⌂") },
+            label = { Text("Inicio") },
+            modifier = Modifier
+                .testTag("nav_inicio")
+                .semantics { contentDescription = "nav_inicio" }
+        )
+        NavigationRailItem(
+            selected = !settingsOpen && selectedTab == 1,
+            onClick = onLibrary,
+            icon = { Text("▦") },
+            label = { Text("Biblioteca") },
+            modifier = Modifier
+                .testTag("nav_biblioteca")
+                .semantics { contentDescription = "nav_biblioteca" }
+        )
+        NavigationRailItem(
+            selected = settingsOpen,
+            onClick = onSettings,
+            icon = { Text("⚙") },
+            label = { Text("Ajustes") },
+            modifier = Modifier
+                .testTag("nav_ajustes")
+                .semantics { contentDescription = "nav_ajustes" }
+        )
+    }
+}
+
+@Composable
+private fun UltraAssistantSidePanel(
+    aiContext: GameHubAiContext,
+    aiAdvisor: GameHubAiAdvisor,
+    selectedProfileName: String,
+    onProfileSelected: (PerformanceProfile) -> Unit,
+    onGameSelected: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(320.dp)
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(GameHubUiTokens.compactHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
+    ) {
+        Text(
+            "ULTRA ASSISTANT",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        AiAdvisorCard(
+            context = aiContext,
+            advisor = aiAdvisor,
+            onProfileSelected = onProfileSelected
+        )
+        VoiceAssistantCard(
+            selectedProfileName = selectedProfileName,
+            onProfileSelected = onProfileSelected,
+            onGameSelected = onGameSelected,
+            aiContext = aiContext,
+            aiAdvisor = aiAdvisor
+        )
     }
 }
 
@@ -711,7 +866,8 @@ private fun HomeScreen(
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
     storeGames: List<StoreLibraryGame>,
-    onOpenLibrary: () -> Unit
+    onOpenLibrary: () -> Unit,
+    showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
     LazyColumn(
@@ -793,21 +949,23 @@ private fun HomeScreen(
                 onGameSelected = onGameSelected
             )
         }
-        item {
-            AiAdvisorCard(
-                context = aiContext,
-                advisor = aiAdvisor,
-                onProfileSelected = onProfileSelected
-            )
-        }
-        item {
-            VoiceAssistantCard(
-                selectedProfileName = selectedProfileName,
-                onProfileSelected = onProfileSelected,
-                onGameSelected = onGameSelected,
-                aiContext = aiContext,
-                aiAdvisor = aiAdvisor
-            )
+        if (showAssistantCards) {
+            item {
+                AiAdvisorCard(
+                    context = aiContext,
+                    advisor = aiAdvisor,
+                    onProfileSelected = onProfileSelected
+                )
+            }
+            item {
+                VoiceAssistantCard(
+                    selectedProfileName = selectedProfileName,
+                    onProfileSelected = onProfileSelected,
+                    onGameSelected = onGameSelected,
+                    aiContext = aiContext,
+                    aiAdvisor = aiAdvisor
+                )
+            }
         }
         item {
             BoosterOptions(
