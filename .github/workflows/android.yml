@@ -63,8 +63,33 @@ jobs:
           ls -l /dev/kvm
 
       - name: Install Android SDK packages
+        shell: bash
         run: |
-          sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;36.0.0" "emulator" "platform-tools" "system-images;android-35;google_apis;x86_64"
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          packages=(
+            "platforms;android-35"
+            "platforms;android-36"
+            "build-tools;36.0.0"
+            "emulator"
+            "platform-tools"
+            "system-images;android-35;google_apis;x86_64"
+          )
+          for attempt in 1 2 3; do
+            echo "Installing Android SDK packages, attempt ${attempt}/3"
+            if sdkmanager "${packages[@]}"; then
+              exit 0
+            fi
+            echo "sdkmanager failed on attempt ${attempt}; removing partial package state before retry."
+            rm -rf \
+              "$SDK_ROOT/.temp" \
+              "$SDK_ROOT/system-images/android-35/google_apis/x86_64" \
+              "$SDK_ROOT/system-images/android-35/google_apis/.installer" \
+              "$SDK_ROOT/system-images/android-35/.installer"
+            sleep $((attempt * 15))
+          done
+          echo "Android SDK package installation failed after retries."
+          exit 1
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
