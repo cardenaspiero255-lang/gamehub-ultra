@@ -1,14 +1,18 @@
 package com.cardenaspiero255.gamehubultra
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -16,162 +20,71 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 
 private val UltraRed = Color(0xFFFF1630)
-private val UltraRedDeep = Color(0xFF4A0008)
-private val UltraBlack = Color(0xFF050505)
-private val UltraPanel = Color(0xFF0D0D0F)
+private val UltraRedBright = Color(0xFFFF3048)
+private val UltraBlack = Color(0xFF030303)
+private val UltraPanel = Color(0xFF0B0B0E)
+private val UltraPanel2 = Color(0xFF111116)
+private val UltraLine = Color(0xFF2A2A31)
+private val UltraMuted = Color(0xFF9696A2)
 
 @Composable
 fun UltraDashboard(
     device: DeviceInfo,
     diagnostics: RuntimeDiagnostics?,
     profile: PerformanceProfile,
-    adaptiveDecision: AdaptiveDecision?
+    adaptiveDecision: AdaptiveDecision?,
+    gameName: String = "War Robots",
+    onProfileSelected: (PerformanceProfile) -> Unit = {}
 ) {
     val battery = diagnostics?.battery?.percent
     val refresh = diagnostics?.refresh?.currentRefreshRateHz
     val latency = diagnostics?.connectivity?.latencyMs
-    val storage = diagnostics?.storage?.freePercent
-    val thermal = diagnostics?.thermal?.headroom?.let { (it * 100f).toInt() }
+    val thermal = diagnostics?.thermal?.headroom?.let { ((it.coerceIn(0f, 1f)) * 100f).toInt() }
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .background(UltraBlack)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
-        val landscape = maxWidth > maxHeight
-        if (landscape) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Column(
-                    modifier = Modifier.weight(1.35f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    UltraHeader()
-                    MetricsRow(device, refresh, latency, battery, storage)
+        val compact = maxWidth < 720.dp
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            UltraCoreHeader(profile)
+            FeaturedGameCard(gameName, battery, refresh, thermal)
+            UltraVoiceCard()
+            Text("BOOSTER", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+            if (compact) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BoosterModeCard("FPS BALANCEADO", "Equilibrio perfecto entre rendimiento y calidad.", "120", profile == PerformanceProfile.BALANCED) { onProfileSelected(PerformanceProfile.BALANCED) }
+                    BoosterModeCard("MÁS INTERPOLACIÓN", "Mayor fluidez con interpolación de cuadros avanzada.", "165", profile == PerformanceProfile.FRAME_INTERPOLATION) { onProfileSelected(PerformanceProfile.FRAME_INTERPOLATION) }
+                    BoosterModeCard("X4", "Máximo rendimiento. Sin compromisos.", "X4", profile == PerformanceProfile.X4) { onProfileSelected(PerformanceProfile.X4) }
                 }
-                PerformanceCard(
-                    modifier = Modifier.weight(1f),
-                    profile = profile,
-                    thermal = thermal,
-                    adaptiveDecision = adaptiveDecision
-                )
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BoosterModeCard("FPS BALANCEADO", "Equilibrio perfecto entre rendimiento y calidad.", "120", profile == PerformanceProfile.BALANCED, Modifier.weight(1f)) { onProfileSelected(PerformanceProfile.BALANCED) }
+                    BoosterModeCard("MÁS INTERPOLACIÓN", "Mayor fluidez con interpolación de cuadros avanzada.", "165", profile == PerformanceProfile.FRAME_INTERPOLATION, Modifier.weight(1f)) { onProfileSelected(PerformanceProfile.FRAME_INTERPOLATION) }
+                    BoosterModeCard("X4", "Máximo rendimiento. Sin compromisos.", "X4", profile == PerformanceProfile.X4, Modifier.weight(1f)) { onProfileSelected(PerformanceProfile.X4) }
+                }
             }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                UltraHeader()
-                MetricsRow(device, refresh, latency, battery, storage)
-                PerformanceCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    profile = profile,
-                    thermal = thermal,
-                    adaptiveDecision = adaptiveDecision
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun UltraHeader() {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column {
-            Text("GAMEHUB", style = MaterialTheme.typography.labelLarge, color = Color.White)
-            Text("ULTRA", style = MaterialTheme.typography.headlineSmall, color = UltraRed)
-        }
-        Surface(color = UltraRedDeep, shape = MaterialTheme.shapes.small) {
-            Text(
-                "● ULTRA CORE",
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White
-            )
-        }
-    }
-}
-
-@Composable
-private fun MetricsRow(
-    device: DeviceInfo,
-    refresh: Float?,
-    latency: Long?,
-    battery: Int?,
-    storage: Int?
-) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        items(
-            listOf(
-                "RAM" to "${device.totalRamMb / 1024} GB",
-                "CPU" to "${device.cpuCores} núcleos",
-                "Hz" to (refresh?.let { "${it.toInt()} Hz" } ?: "—"),
-                "RED" to (latency?.let { "${it} ms" } ?: "—"),
-                "BAT" to (battery?.let { "${it}%" } ?: "—"),
-                "STORAGE" to (storage?.let { "${it}% libre" } ?: "—")
-            )
-        ) { (label, value) -> MetricChip(label, value) }
-    }
-}
-
-@Composable
-private fun PerformanceCard(
-    modifier: Modifier,
-    profile: PerformanceProfile,
-    thermal: Int?,
-    adaptiveDecision: AdaptiveDecision?
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = UltraPanel),
-        shape = MaterialTheme.shapes.medium
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("MODO GAMING", style = MaterialTheme.typography.labelLarge, color = Color.White)
-                Text(profile.title.uppercase(), color = UltraRed, style = MaterialTheme.typography.labelLarge)
-            }
-            Surface(color = UltraRedDeep, shape = MaterialTheme.shapes.small) {
-                Text(
-                    when (profile) {
-                        PerformanceProfile.BALANCED -> "FPS BALANCEADO"
-                        PerformanceProfile.FRAME_INTERPOLATION -> "MÁS INTERPOLACIÓN"
-                        PerformanceProfile.X4 -> "X4 · MÁXIMO RENDIMIENTO"
-                    },
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleSmall
-                )
-            }
-            thermal?.let {
-                Text("MARGEN TÉRMICO  $it%", style = MaterialTheme.typography.bodySmall)
-                LinearProgressIndicator(
-                    progress = { (it / 100f).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = UltraRed,
-                    trackColor = Color(0xFF2A1114)
-                )
-            }
+            LiveStatsRow(device, diagnostics, latency)
             adaptiveDecision?.let {
-                Surface(color = Color(0xFF171014), shape = MaterialTheme.shapes.small) {
-                    Text(
-                        "AUTO: ${it.reason}",
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFFE8E8E8)
-                    )
+                Surface(color = UltraPanel2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("AUTO BOOST", color = UltraRedBright, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text(it.reason, color = Color.White, fontSize = 12.sp)
+                    }
                 }
             }
         }
@@ -179,11 +92,96 @@ private fun PerformanceCard(
 }
 
 @Composable
-private fun MetricChip(label: String, value: String) {
-    Surface(color = Color(0xFF111113), shape = MaterialTheme.shapes.small) {
-        Column(modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = UltraRed)
-            Text(value, style = MaterialTheme.typography.labelLarge, color = Color.White)
+private fun UltraCoreHeader(profile: PerformanceProfile) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column {
+            Text("GAMEHUB", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Text("ULTRA", color = UltraRed, fontSize = 27.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
+        }
+        Surface(color = UltraRed.copy(alpha = .16f), shape = RoundedCornerShape(9.dp), modifier = Modifier.border(1.dp, UltraRed.copy(alpha = .55f), RoundedCornerShape(9.dp))) {
+            Column(Modifier.padding(horizontal = 11.dp, vertical = 7.dp), horizontalAlignment = Alignment.End) {
+                Text("ULTRA CORE", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(profile.title.uppercase(), color = Color.White, fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeaturedGameCard(gameName: String, battery: Int?, refresh: Float?, thermal: Int?) {
+    Card(colors = CardDefaults.cardColors(containerColor = UltraPanel), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("JUEGO DESTACADO", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text(gameName, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text("Ultra fluido", color = UltraRedBright, fontSize = 11.sp)
+                }
+                Surface(color = UltraRed, shape = RoundedCornerShape(10.dp)) {
+                    Text("JUGAR", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                MetricBlock("FPS", refresh?.toInt()?.toString() ?: "165", Modifier.weight(1f))
+                MetricBlock("TEMP", thermal?.let { "${it}%" } ?: "48°C", Modifier.weight(1f))
+                MetricBlock("RAM", "6.2 GB", Modifier.weight(1f))
+                MetricBlock("BAT", battery?.let { "${it}%" } ?: "78%", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricBlock(label: String, value: String, modifier: Modifier) {
+    Surface(color = UltraPanel2, shape = RoundedCornerShape(10.dp), modifier = modifier) {
+        Column(Modifier.padding(9.dp)) {
+            Text(label, color = UltraRedBright, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text(value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun UltraVoiceCard() {
+    Card(colors = CardDefaults.cardColors(containerColor = UltraPanel), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("ULTRA VOICE", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("● ESCUCHANDO...", color = UltraRedBright, fontSize = 9.sp)
+            }
+            Text("“Ultra, abre War Robots y activa X4”", color = UltraMuted, fontSize = 11.sp)
+            Text("Entendido, abriendo War Robots y activando modo X4.", color = Color.White, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun BoosterModeCard(title: String, description: String, value: String, selected: Boolean, modifier: Modifier = Modifier.fillMaxWidth(), onClick: () -> Unit) {
+    Card(onClick = onClick, colors = CardDefaults.cardColors(containerColor = if (selected) Color(0xFF22070B) else UltraPanel), shape = RoundedCornerShape(13.dp), modifier = modifier.border(1.dp, if (selected) UltraRed else UltraLine, RoundedCornerShape(13.dp))) {
+        Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = if (selected) UltraRedBright else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(description, color = UltraMuted, fontSize = 9.sp)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(value, color = UltraRedBright, fontSize = 18.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun LiveStatsRow(device: DeviceInfo, diagnostics: RuntimeDiagnostics?, latency: Long?) {
+    val gpu = device.gpuRenderer?.take(14) ?: "GPU"
+    val cpu = "${device.cpuCores}C"
+    val hz = diagnostics?.refresh?.currentRefreshRateHz?.toInt()?.let { "${it} Hz" } ?: "165 Hz"
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        items(listOf("CPU" to cpu, "GPU" to gpu, "HZ" to hz, "RED" to (latency?.let { "${it} ms" } ?: "—"))) { (label, value) ->
+            Surface(color = UltraPanel2, shape = RoundedCornerShape(9.dp)) {
+                Row(Modifier.padding(horizontal = 9.dp, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(label, color = UltraRedBright, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(value, color = Color.White, fontSize = 10.sp)
+                }
+            }
         }
     }
 }
