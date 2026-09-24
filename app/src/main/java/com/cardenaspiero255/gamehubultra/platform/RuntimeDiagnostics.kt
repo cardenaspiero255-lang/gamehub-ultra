@@ -80,14 +80,22 @@ object RuntimeDiagnosticsProvider {
     fun get(context: Context): RuntimeDiagnostics {
         val appContext = context.applicationContext
         return RuntimeDiagnostics(
-            thermal = readThermal(appContext),
-            battery = readBattery(appContext),
-            refresh = readRefresh(appContext),
-            connectivity = readConnectivity(appContext),
-            storage = readStorage(),
-            memory = readMemory(appContext),
-            inputDeviceCount = readInputDevices(appContext),
-            peripherals = PeripheralDiagnosticsProvider.get(appContext)
+            thermal = runCatching { readThermal(appContext) }
+                .getOrDefault(ThermalTelemetry(null, null)),
+            battery = runCatching { readBattery(appContext) }
+                .getOrDefault(BatteryRuntimeTelemetry(null, false, false)),
+            refresh = runCatching { readRefresh(appContext) }
+                .getOrDefault(RefreshTelemetry(emptySet(), null)),
+            connectivity = runCatching { readConnectivity(appContext) }
+                .getOrDefault(ConnectivityTelemetry(null, false, false, true, null, null, null)),
+            storage = runCatching { readStorage() }
+                .getOrDefault(StorageTelemetry(0L, 0L)),
+            memory = runCatching { readMemory(appContext) }
+                .getOrDefault(MemoryRuntimeTelemetry(0L, 0L, 0L)),
+            inputDeviceCount = runCatching { readInputDevices(appContext) }
+                .getOrDefault(0),
+            peripherals = runCatching { PeripheralDiagnosticsProvider.get(appContext) }
+                .getOrDefault(PeripheralDiagnostics(0, 0, 0, 0))
         )
     }
 
@@ -224,6 +232,8 @@ object RuntimeDiagnosticsProvider {
 }
 
 object ConnectivityLatencyProbe {
+    private const val MAX_LATENCY_MS = 10_000L
+
     suspend fun measure(
         context: Context,
         expectedNetworkHandle: Long,
@@ -250,13 +260,13 @@ object ConnectivityLatencyProbe {
             connection.instanceFollowRedirects = false
             connection.requestMethod = "HEAD"
             connection.connect()
-            connection.inputStream.close()
+            connection.inputStream.use { }
             val elapsed = android.os.SystemClock.elapsedRealtime() - start
             connection.disconnect()
 
             val currentNetwork = manager.activeNetwork
             elapsed.takeIf {
-                currentNetwork?.networkHandle == expectedNetworkHandle && it in 1..10_000
+                currentNetwork?.networkHandle == expectedNetworkHandle && it in 1..MAX_LATENCY_MS
             }
         }.getOrNull()
     }
