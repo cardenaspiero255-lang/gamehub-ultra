@@ -14,6 +14,12 @@ android {
         minSdk = 26
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        providers.gradleProperty("benchmarkEnabledRules").orNull?.let { enabledRules ->
+            testInstrumentationRunnerArguments["androidx.benchmark.enabledRules"] = enabledRules
+        }
+        providers.gradleProperty("benchmarkSuppressErrors").orNull?.let { suppressErrors ->
+            testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = suppressErrors
+        }
     }
 
     compileOptions {
