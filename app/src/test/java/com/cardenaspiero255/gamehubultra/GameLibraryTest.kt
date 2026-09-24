@@ -45,7 +45,8 @@ class GameLibraryTest {
 
     @Test
     fun isGameApplication_rejectsUndefinedCategory() {
-        assertTrue(
+        assertEquals(
+            false,
             GameLibrary.isGameApplication(ApplicationInfo.CATEGORY_UNDEFINED)
         )
     }
