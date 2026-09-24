@@ -108,7 +108,7 @@ private fun UltraHeader() {
 private fun MetricsRow(
     device: DeviceInfo,
     refresh: Float?,
-    latency: Int?,
+    latency: Long?,
     battery: Int?,
     storage: Int?
 ) {
