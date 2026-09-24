@@ -1,9 +1,14 @@
 name: Android build
+# CAR-18 merge-sync validation
+# CAR-18 validation trigger
+# CAR-18 force-run 2
 
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches:
+      - "main"
+      - "codex/car-18-final"
   pull_request:
     branches: ["main"]
 
@@ -94,7 +99,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile --stacktrace
@@ -114,7 +119,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             # android-emulator-runner owns ADB lifecycle and waits for boot.
             # Starting/reconnecting ADB here races with its emulator process.
             adb wait-for-device

@@ -14,6 +14,7 @@ import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import android.os.Build
 import android.os.Bundle
+import android.os.Trace
 import android.os.PowerManager
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
@@ -103,6 +104,7 @@ import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
+import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -128,6 +130,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -144,7 +147,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             val gameHubViewModel: GameHubViewModel = viewModel()
             GameHubUltraTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics { testTagsAsResourceId = true }
+                ) {
                     GameHubUltraApp(
                         initialState = initialState,
                         device = device,
@@ -373,16 +380,23 @@ private fun GameHubUltraApp(
     val tabTestTags = listOf("nav_inicio", "nav_biblioteca")
 
     Scaffold(
-        modifier = Modifier.semantics { testTagsAsResourceId = true },
         topBar = {
             TopAppBar(
                 title = { Text("GAMEHUB ULTRA") },
                 actions = {
                     TextButton(
-                        onClick = { settingsOpen = !settingsOpen },
+                        onClick = {
+                            Trace.beginSection("GameHubUltra.Navigation.Settings")
+                            try {
+                                settingsOpen = !settingsOpen
+                            } finally {
+                                Trace.endSection()
+                            }
+                        },
                         modifier = Modifier
                             .testTag("nav_ajustes")
-                            .semantics {
+                            .semantics(mergeDescendants = true) {
+                                testTagsAsResourceId = true
                                 contentDescription = "nav_ajustes"
                             }
                     ) {
@@ -400,17 +414,26 @@ private fun GameHubUltraApp(
                         onClick = { selectedTab = 0 },
                         modifier = Modifier
                             .testTag(tabTestTags[0])
-                            .semantics {
+                            .semantics(mergeDescendants = true) {
+                                testTagsAsResourceId = true
                                 contentDescription = "nav_inicio"
                             },
                         text = { Text(tabs[0].uppercase()) }
                     )
                     Tab(
                         selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
+                        onClick = {
+                            Trace.beginSection("GameHubUltra.Navigation.Library")
+                            try {
+                                selectedTab = 1
+                            } finally {
+                                Trace.endSection()
+                            }
+                        },
                         modifier = Modifier
                             .testTag(tabTestTags[1])
-                            .semantics {
+                            .semantics(mergeDescendants = true) {
+                                testTagsAsResourceId = true
                                 contentDescription = "nav_biblioteca"
                             },
                         text = { Text(tabs[1].uppercase()) }
@@ -490,8 +513,8 @@ private fun HomeScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
         item {
             GameHubStyleHeader(
@@ -718,7 +741,7 @@ private fun RuntimeDiagnosticsCard(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.padding(GameHubUiTokens.compactCardPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
@@ -1245,44 +1268,6 @@ private fun ActiveProfileCard(state: PerformanceState) {
                         stringResource(R.string.no_extra_thermal)
                     }
             )
-        }
-    }
-}
-
-@Composable
-private fun ProfileCard(
-    profile: PerformanceProfile,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    localizedProfileTitle(profile),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                if (selected) {
-                    Text(
-                        stringResource(R.string.selected),
-                        modifier = Modifier.padding(start = 12.dp)
-                    )
-                }
-            }
-            Text(localizedProfileDescription(profile))
-            Button(
-                onClick = onClick,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.apply))
-            }
         }
     }
 }
@@ -2076,8 +2061,8 @@ private fun SettingsScreen(modifier: Modifier) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .testTag("settings_scroll")
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(GameHubUiTokens.compactHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
         Text(
             stringResource(R.string.settings_title),

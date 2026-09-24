@@ -6,7 +6,6 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Shapes
 
 // GameHub Ultra: red/black gaming palette.
@@ -31,21 +30,21 @@ private val UltraColors = darkColorScheme(
 private val DefaultTypography = Typography()
 
 private val UltraTypography = Typography(
-    displayLarge = DefaultTypography.displayLarge.copy(fontSize = 34.sp),
-    displayMedium = DefaultTypography.displayMedium.copy(fontSize = 28.sp),
-    displaySmall = DefaultTypography.displaySmall.copy(fontSize = 24.sp),
-    headlineLarge = DefaultTypography.headlineLarge.copy(fontSize = 24.sp),
-    headlineMedium = DefaultTypography.headlineMedium.copy(fontSize = 21.sp),
-    headlineSmall = DefaultTypography.headlineSmall.copy(fontSize = 20.sp),
-    titleLarge = DefaultTypography.titleLarge.copy(fontSize = 18.sp),
-    titleMedium = DefaultTypography.titleMedium.copy(fontSize = 15.sp),
-    titleSmall = DefaultTypography.titleSmall.copy(fontSize = 14.sp),
-    bodyLarge = DefaultTypography.bodyLarge.copy(fontSize = 14.sp),
-    bodyMedium = DefaultTypography.bodyMedium.copy(fontSize = 13.sp),
-    bodySmall = DefaultTypography.bodySmall.copy(fontSize = 12.sp),
-    labelLarge = DefaultTypography.labelLarge.copy(fontSize = 12.sp),
-    labelMedium = DefaultTypography.labelMedium.copy(fontSize = 11.sp),
-    labelSmall = DefaultTypography.labelSmall.copy(fontSize = 10.sp)
+    displayLarge = DefaultTypography.displayLarge.copy(fontSize = GameHubUiTokens.displayLarge),
+    displayMedium = DefaultTypography.displayMedium.copy(fontSize = GameHubUiTokens.displayMedium),
+    displaySmall = DefaultTypography.displaySmall.copy(fontSize = GameHubUiTokens.displaySmall),
+    headlineLarge = DefaultTypography.headlineLarge.copy(fontSize = GameHubUiTokens.headlineLarge),
+    headlineMedium = DefaultTypography.headlineMedium.copy(fontSize = GameHubUiTokens.headlineMedium),
+    headlineSmall = DefaultTypography.headlineSmall.copy(fontSize = GameHubUiTokens.headlineSmall),
+    titleLarge = DefaultTypography.titleLarge.copy(fontSize = GameHubUiTokens.titleLarge),
+    titleMedium = DefaultTypography.titleMedium.copy(fontSize = GameHubUiTokens.titleMedium),
+    titleSmall = DefaultTypography.titleSmall.copy(fontSize = GameHubUiTokens.titleSmall),
+    bodyLarge = DefaultTypography.bodyLarge.copy(fontSize = GameHubUiTokens.bodyLarge),
+    bodyMedium = DefaultTypography.bodyMedium.copy(fontSize = GameHubUiTokens.bodyMedium),
+    bodySmall = DefaultTypography.bodySmall.copy(fontSize = GameHubUiTokens.bodySmall),
+    labelLarge = DefaultTypography.labelLarge.copy(fontSize = GameHubUiTokens.labelLarge),
+    labelMedium = DefaultTypography.labelMedium.copy(fontSize = GameHubUiTokens.labelMedium),
+    labelSmall = DefaultTypography.labelSmall.copy(fontSize = GameHubUiTokens.labelSmall)
 )
 
 private val UltraShapes = Shapes(
