@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ghu_black">#050505</color>
-    <color name="ghu_red">#E50914</color>
+    <color name="ghu_black">#030306</color>
+    <color name="ghu_panel_black">#08080D</color>
+    <color name="ghu_red">#FF1630</color>
+    <color name="ghu_red_bright">#FF3048</color>
+    <color name="ghu_red_dark">#7A0612</color>
+    <color name="ghu_icon_background">#030306</color>
 </resources>
