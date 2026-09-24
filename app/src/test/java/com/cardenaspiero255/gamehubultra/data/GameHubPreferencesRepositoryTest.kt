@@ -8,6 +8,8 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.OrientationPreference
+import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -59,7 +61,9 @@ class GameHubPreferencesRepositoryTest {
             GameProfileConfig(
                 performanceProfile = PerformanceProfile.X4,
                 thermalPreference = ThermalPreference.PERFORMANCE,
-                refreshRateTargetHz = 120
+                refreshRateTargetHz = 120,
+                resolutionTarget = ResolutionTarget(1920, 1080),
+                orientationPreference = OrientationPreference.LANDSCAPE
             )
         )
 
@@ -82,7 +86,9 @@ class GameHubPreferencesRepositoryTest {
             GameProfileConfig(
                 performanceProfile = PerformanceProfile.X4,
                 thermalPreference = ThermalPreference.COOLER,
-                refreshRateTargetHz = 144
+                refreshRateTargetHz = 144,
+                resolutionTarget = ResolutionTarget(2560, 1440),
+                orientationPreference = OrientationPreference.LANDSCAPE
             )
         )
         repository.saveGameProfileConfig(
@@ -126,12 +132,17 @@ class GameHubPreferencesRepositoryTest {
     }
 
     @Test
-    fun unsupportedRefreshTargetFallsBackToAuto() {
+    fun unsupportedResolutionAndRefreshTargetsFallBackToAuto() {
         val config = GameProfileConfig(refreshRateTargetHz = 165)
 
         assertEquals(165, config.resolveRefreshRateTarget(setOf(60, 120, 165)))
         assertNull(config.resolveRefreshRateTarget(setOf(60, 90, 120)))
         assertNull(config.resolveRefreshRateTarget(emptySet()))
+
+        val resolution = ResolutionTarget(1920, 1080)
+        val resolutionConfig = GameProfileConfig(resolutionTarget = resolution)
+        assertEquals(resolution, resolutionConfig.resolveResolutionTarget(setOf(resolution)))
+        assertNull(resolutionConfig.resolveResolutionTarget(setOf(1280.let { ResolutionTarget(it, 720) })))
     }
 
     @Test
