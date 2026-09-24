@@ -102,7 +102,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
             APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
@@ -139,15 +139,13 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -euo pipefail
-            set -o pipefail
+            set -eu
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
-            LOG="$RUNNER_TEMP/baseline-profile.log"
-            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
+            bash -o pipefail -c 'gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
               -PbenchmarkEnabledRules=BaselineProfile \
               --no-configuration-cache \
-              --stacktrace 2>&1 | tee "$LOG"
+              --stacktrace 2>&1 | tee "$RUNNER_TEMP/baseline-profile.log"'
 
       - name: Run macrobenchmarks on API 35
         uses: reactivecircus/android-emulator-runner@v2
@@ -164,16 +162,14 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
           script: |
-            set -euo pipefail
-            set -o pipefail
+            set -eu
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
-            LOG="$RUNNER_TEMP/macrobenchmark.log"
-            gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
+            bash -o pipefail -c 'gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
               -PbenchmarkEnabledRules=Macrobenchmark \
               -PbenchmarkSuppressErrors=EMULATOR \
               --no-configuration-cache \
-              --stacktrace 2>&1 | tee "$LOG"
+              --stacktrace 2>&1 | tee "$RUNNER_TEMP/macrobenchmark.log"'
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v6
