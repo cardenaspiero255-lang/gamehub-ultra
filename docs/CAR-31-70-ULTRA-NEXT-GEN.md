@@ -314,5 +314,30 @@ Every CAR must satisfy all applicable checks before it is marked complete:
 - Verify release artifacts.
 - Only mark Ultra 2.0 complete when all applicable gates are green and there are no known unresolved release-blocking errors.
 
+## CAR-71 — Ultra Conversational AI & Long-Term Memory 3.0
+- Natural multi-turn conversation with follow-up questions, corrections and context carry-over.
+- Unified text + voice conversation surface so Ultra can be spoken to or typed to like a full conversational assistant.
+- Persistent local conversation history with timestamps, titles, search, filters and per-conversation threads.
+- Scrollable history and fast jump to older conversations.
+- Long-term memory layer that can retrieve relevant facts from prior conversations when useful instead of loading every old message into the prompt.
+- Semantic retrieval over past conversations using local embeddings/indexes where device capability permits.
+- Explicit memory controls: remember, forget, pin, archive, delete, export and import.
+- Memory provenance in responses: Ultra should be able to distinguish current-session context from recalled prior-history context.
+- Per-user and per-game memory scopes so game-specific preferences do not pollute unrelated conversations.
+- Conversation summarization/compaction so long histories remain usable without unbounded prompt growth.
+- Offline-first architecture: local model, local conversation database, local retrieval, local speech-to-text and local text-to-speech when supported by the device.
+- Graceful capability tiers for devices that cannot run the full local model; never pretend an unavailable offline capability exists.
+- Optional hybrid online enhancement may be added later, but core history, memory and supported assistant actions must keep working offline.
+- Encrypted-at-rest storage for conversation history and memories containing potentially sensitive user information.
+- Never store credentials, authentication tokens or secrets as conversational memory.
+- User-visible privacy controls for clearing all AI history/memory and for disabling long-term memory entirely.
+- Ground assistant answers in GameHub telemetry, selected game, profiles, diagnostics, session history and the user-approved memory store.
+- Tool/action safety layer: conversational requests that change profiles, launch games or alter settings must validate supported actions before execution.
+- Offline failure handling: if speech/model/retrieval components are unavailable, explain the limitation and fall back to the best supported local interaction instead of fabricating a result.
+- Benchmark the assistant against a fixed task suite covering conversation quality, context retention, memory retrieval, offline task completion, latency, action success and hallucination rate.
+- Treat “better than another assistant” only as a measurable benchmark goal; do not claim a 200–250% improvement without reproducible evidence from the benchmark suite.
+- Add unit/integration/instrumentation coverage for conversation persistence, memory retrieval, deletion, migration, offline mode and action safety.
+- CAR-71 is not complete until all applicable CI gates are green, review threads are resolved, full logs have been checked for hidden actionable errors and release artifacts remain valid.
+
 ## Beyond CAR-70
 CAR numbering is not a technical limit. Future CARs can be added for new Android APIs, new hardware/vendor integrations, new stores, new on-device AI capabilities, new voice models, new accessibility requirements and new device classes. New CARs should only be added when they provide a concrete, testable improvement.
