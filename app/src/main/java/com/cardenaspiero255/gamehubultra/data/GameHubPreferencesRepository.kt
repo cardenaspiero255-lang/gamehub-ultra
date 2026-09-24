@@ -231,7 +231,7 @@ class GameHubPreferencesRepository(
         value?.split('x', limit = 2)?.takeIf { it.size == 2 }?.let { parts ->
             val width = parts[0].toIntOrNull()
             val height = parts[1].toIntOrNull()
-            if (width in 240..7680 && height in 240..7680) {
+            if (width != null && height != null && width in 240..7680 && height in 240..7680) {
                 ResolutionTarget(width, height)
             } else null
         }
