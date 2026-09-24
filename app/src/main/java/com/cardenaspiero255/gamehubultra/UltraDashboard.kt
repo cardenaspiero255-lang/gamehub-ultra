@@ -87,14 +87,15 @@ fun UltraDashboard(
     val latency = diagnostics?.connectivity?.latencyMs
     val thermalHeadroom = diagnostics?.thermal?.headroom
     val thermalUsagePercent = thermalEnvelopeUsagePercent(thermalHeadroom)
+    val hasSelectedGame = gameName != "Ningún juego seleccionado"
     val finalExperience = UltraFinalExperienceGate.evaluate(
         dashboardReady = true,
-        profileReady = true,
-        diagnosticsReady = true,
-        libraryReady = true,
-        sessionHistoryReady = true,
+        profileReady = PerformanceProfile.entries.any { it == profile },
+        diagnosticsReady = diagnostics != null,
+        libraryReady = hasSelectedGame,
+        sessionHistoryReady = telemetryTrend.isNotEmpty(),
         accessibilityReady = true,
-        performanceReady = true,
+        performanceReady = device.cpuCores > 0 && device.totalRamMb > 0L,
         unsupportedClaimsAvoided = true
     )
 
@@ -181,15 +182,23 @@ private fun UltraFinalExperienceCard(summary: UltraFinalExperienceSummary, compa
         "Rendimiento" to "sin recomposición extra",
         "Sin claims falsos" to "solo APIs reales"
     )
+    val summaryText = if (summary.readyForRelease) {
+        "Dashboard, perfiles, diagnósticos, biblioteca e historial quedan unificados en una experiencia final sin prometer capacidades privilegiadas."
+    } else {
+        "Pendiente: ${summary.missingSummary}"
+    }
+    val a11ySummary = if (summary.readyForRelease) {
+        "CAR-30 Ultra Final Experience ${summary.readinessRatio} ${summary.statusLabel}"
+    } else {
+        "CAR-30 Ultra Final Experience ${summary.readinessRatio} ${summary.statusLabel}. Pendiente: ${summary.missingSummary}"
+    }
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF160307)),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
             .border(1.dp, UltraRed.copy(alpha = .65f), RoundedCornerShape(16.dp))
-            .semantics {
-                contentDescription = "CAR-30 Ultra Final Experience ${summary.readinessRatio} ${summary.statusLabel}"
-            }
+            .semantics { contentDescription = a11ySummary }
     ) {
         Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             if (compact) {
@@ -210,16 +219,21 @@ private fun UltraFinalExperienceCard(summary: UltraFinalExperienceSummary, compa
                 }
             }
             Text(
-                "Dashboard, perfiles, diagnósticos, biblioteca e historial quedan unificados en una experiencia final sin prometer capacidades privilegiadas.",
-                color = UltraMuted,
+                summaryText,
+                color = if (summary.readyForRelease) UltraMuted else UltraRedBright,
                 fontSize = 11.sp
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 items(surfaces) { (title, subtitle) ->
-                    Surface(color = UltraPanel2, shape = RoundedCornerShape(10.dp), modifier = Modifier.border(1.dp, UltraLine, RoundedCornerShape(10.dp))) {
+                    val ready = title !in summary.missingSurfaces
+                    Surface(
+                        color = if (ready) UltraPanel2 else Color(0xFF2A070C),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.border(1.dp, if (ready) UltraLine else UltraRed, RoundedCornerShape(10.dp))
+                    ) {
                         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                            Text(title.uppercase(), color = UltraRedBright, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                            Text(subtitle, color = Color.White, fontSize = 9.sp)
+                            Text(title.uppercase(), color = if (ready) UltraRedBright else Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                            Text(if (ready) subtitle else "pendiente", color = if (ready) Color.White else UltraRedBright, fontSize = 9.sp)
                         }
                     }
                 }
