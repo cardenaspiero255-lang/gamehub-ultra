@@ -95,28 +95,20 @@ jobs:
           IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
           test -d "$IMAGE_DIR"
 
-          # Some current API 35 system-image archives omit this optional file,
-          # while avdmanager still tries to parse it. Supply an empty, valid
-          # device-definition document instead of accepting noisy parse errors.
-          if [ ! -f "$IMAGE_DIR/devices.xml" ]; then
-            cat > "$IMAGE_DIR/devices.xml" <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <d:devices xmlns:d="http://schemas.android.com/sdk/devices/8"
-                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-          </d:devices>
-          EOF
-          fi
-
           mkdir -p "$HOME/.android"
           # The emulator console only listens on localhost. An empty token file
           # disables console authentication so ddmlib can connect reliably.
           : > "$HOME/.emulator_console_auth_token"
 
           AVD_LOG="$RUNNER_TEMP/avd-create.log"
+          # Do not request a named hardware profile. Current API 35 images can omit
+          # devices.xml; avoiding --device prevents avdmanager from consulting it.
+          # A here-string answers the optional custom-profile prompt without a
+          # producer pipe, so pipefail cannot turn a successful create into SIGPIPE.
           avdmanager create avd --force \
             --name gamehub-api35 \
             --package "system-images;android-35;google_apis;x86_64" \
-            --device "pixel_2" 2>&1 | tee "$AVD_LOG"
+            <<< "no" 2>&1 | tee "$AVD_LOG"
 
           if grep -Fq "Could not load devices" "$AVD_LOG"; then
             echo "avdmanager still reported a devices.xml load error."
