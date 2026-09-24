@@ -245,8 +245,8 @@ class StoreConnectionActivity : ComponentActivity() {
     private fun unquoteJsonString(value: String?): String? {
         if (value.isNullOrBlank() || value.trim() == "null") return null
         val raw = value.trim()
-        return if (raw.startsWith("\"") && raw.endsWith("\"")) {
-            raw.drop(1).dropLast(1).replace("\\\"", "\"")
+        return if (raw.startsWith(""") && raw.endsWith(""")) {
+            raw.drop(1).dropLast(1).replace("\\"", """)
         } else {
             raw
         }
@@ -534,7 +534,7 @@ private object EpicStoreClient {
     private fun readJson(connection: HttpURLConnection): JSONObject {
         val code = connection.responseCode
         val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-        val text = stream.bufferedReader().use { it.readBody() }
+        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
         if (code !in 200..299) error("HTTP " + code + ": " + text)
         return JSONObject(text)
     }
