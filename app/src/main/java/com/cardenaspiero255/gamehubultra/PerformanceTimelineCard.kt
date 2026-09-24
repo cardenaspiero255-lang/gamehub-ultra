@@ -13,9 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.domain.PerformanceTimeline
+import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineActionPolicy
 
 @Composable
 fun PerformanceTimelineCard(timeline: PerformanceTimeline, onShare: () -> Unit) {
+    val shareEnabled = PerformanceTimelineActionPolicy.canShare(timeline)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -26,9 +28,16 @@ fun PerformanceTimelineCard(timeline: PerformanceTimeline, onShare: () -> Unit) 
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text("PERFORMANCE TIMELINE")
-                TextButton(onClick = onShare, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("Compartir")
+                TextButton(
+                    onClick = onShare,
+                    enabled = shareEnabled,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(PerformanceTimelineActionPolicy.shareLabel(timeline))
                 }
+            }
+            PerformanceTimelineActionPolicy.disabledShareReason(timeline)?.let { reason ->
+                Text(reason)
             }
             Text("Telemetría real de la sesión: batería, temperatura, margen térmico, refresco y RAM.")
             Text("FPS: " + if (timeline.fpsAvailable) "disponible" else "no disponible mediante las APIs expuestas")

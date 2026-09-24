@@ -18,6 +18,23 @@ data class PerformanceTimeline(
     val fpsAvailable: Boolean
 )
 
+object PerformanceTimelineActionPolicy {
+    fun canShare(timeline: PerformanceTimeline): Boolean =
+        timeline.samples.isNotEmpty() ||
+            timeline.profileEvents.isNotEmpty() ||
+            timeline.thermalEvents.isNotEmpty()
+
+    fun shareLabel(timeline: PerformanceTimeline): String =
+        if (canShare(timeline)) "Compartir" else "Sin datos"
+
+    fun disabledShareReason(timeline: PerformanceTimeline): String? =
+        if (canShare(timeline)) {
+            null
+        } else {
+            "El reporte se habilita cuando haya telemetría o eventos reales de una sesión."
+        }
+}
+
 object PerformanceTimelineBuilder {
     fun sample(
         timestampMillis: Long,

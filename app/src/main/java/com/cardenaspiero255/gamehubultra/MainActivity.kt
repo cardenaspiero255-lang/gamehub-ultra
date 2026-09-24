@@ -116,6 +116,7 @@ import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantInput
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceInput
 import com.cardenaspiero255.gamehubultra.domain.PerformanceTimeline
+import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineActionPolicy
 import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineBuilder
 import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineReportFormatter
 import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
@@ -1544,10 +1545,7 @@ private fun sharePerformanceTimeline(
     gamePackage: String?,
     timeline: PerformanceTimeline
 ) {
-    if (timeline.samples.isEmpty() &&
-        timeline.profileEvents.isEmpty() &&
-        timeline.thermalEvents.isEmpty()
-    ) {
+    if (!PerformanceTimelineActionPolicy.canShare(timeline)) {
         return
     }
     val report = PerformanceTimelineReportFormatter.format(gamePackage, timeline)
