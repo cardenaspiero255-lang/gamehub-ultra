@@ -245,8 +245,10 @@ class StoreConnectionActivity : ComponentActivity() {
     private fun unquoteJsonString(value: String?): String? {
         if (value.isNullOrBlank() || value.trim() == "null") return null
         val raw = value.trim()
-        return if (raw.startsWith(""") && raw.endsWith(""")) {
-            raw.drop(1).dropLast(1).replace("\\"", """)
+        return if (raw.length >= 2 && raw.first() == '"' && raw.last() == '"') {
+            raw.substring(1, raw.length - 1)
+                .replace("\\"", """)
+                .replace("\\\\", "\\")
         } else {
             raw
         }
