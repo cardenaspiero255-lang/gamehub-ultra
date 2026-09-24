@@ -113,7 +113,7 @@ jobs:
           : > "$HOME/.emulator_console_auth_token"
 
           AVD_LOG="$RUNNER_TEMP/avd-create.log"
-          printf 'no\n' | avdmanager create avd --force \
+          avdmanager create avd --force \
             --name gamehub-api35 \
             --package "system-images;android-35;google_apis;x86_64" \
             --device "pixel_2" 2>&1 | tee "$AVD_LOG"
