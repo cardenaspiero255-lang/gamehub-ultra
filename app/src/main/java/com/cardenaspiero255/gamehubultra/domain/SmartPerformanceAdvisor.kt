@@ -149,9 +149,13 @@ object SmartPerformanceAdvisor {
         return SmartPerformanceRecommendation(
             profile = best,
             reason = reason,
-            safeFallback = if (knownGood.containsKey(PerformanceProfile.BALANCED)) {
-                PerformanceProfile.BALANCED
-            } else input.currentProfile,
+            safeFallback = knownGood.entries
+                .maxWithOrNull(
+                    compareBy<Map.Entry<PerformanceProfile, Int>> { it.value }
+                        .thenBy { if (it.key == PerformanceProfile.BALANCED) 1 else 0 }
+                )
+                ?.key
+                ?: PerformanceProfile.BALANCED,
             evidence = evidence,
             score = baseScores.getValue(best),
             driverStrategy = when (gpuFamily) {
