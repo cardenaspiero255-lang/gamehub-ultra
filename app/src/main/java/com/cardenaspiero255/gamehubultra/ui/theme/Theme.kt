@@ -8,23 +8,34 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Shapes
 
-// GameHub Ultra: red/black gaming palette.
+internal object GameHubIdentityColors {
+    val Black = Color(0xFF030306)
+    val PanelBlack = Color(0xFF08080D)
+    val Red = Color(0xFFFF1630)
+    val RedBright = Color(0xFFFF3048)
+    val RedDark = Color(0xFF7A0612)
+    val TextPrimary = Color(0xFFF8F8F8)
+    val TextMuted = Color(0xFFBDBDC8)
+    val Outline = Color(0xFF34343A)
+}
+
+// GameHub Ultra CAR-31: Canva red-neon/black gaming palette.
 private val UltraColors = darkColorScheme(
-    primary = Color(0xFFE50914),
+    primary = GameHubIdentityColors.Red,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFF5C0005),
+    primaryContainer = GameHubIdentityColors.RedDark,
     onPrimaryContainer = Color(0xFFFFDAD9),
-    secondary = Color(0xFFFF3B30),
+    secondary = GameHubIdentityColors.RedBright,
     onSecondary = Color.White,
     secondaryContainer = Color(0xFF3A0002),
     onSecondaryContainer = Color(0xFFFFDAD9),
-    background = Color(0xFF050505),
-    surface = Color(0xFF0B0B0B),
-    surfaceVariant = Color(0xFF171717),
-    onBackground = Color(0xFFF5F5F5),
-    onSurface = Color(0xFFF5F5F5),
-    onSurfaceVariant = Color(0xFFBDBDBD),
-    outline = Color(0xFF3A3A3A)
+    background = GameHubIdentityColors.Black,
+    surface = GameHubIdentityColors.PanelBlack,
+    surfaceVariant = Color(0xFF111116),
+    onBackground = GameHubIdentityColors.TextPrimary,
+    onSurface = GameHubIdentityColors.TextPrimary,
+    onSurfaceVariant = GameHubIdentityColors.TextMuted,
+    outline = GameHubIdentityColors.Outline
 )
 
 private val DefaultTypography = Typography()
