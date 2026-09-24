@@ -45,6 +45,8 @@ class UltraWakeService : Service() {
         const val ACTION_STOP = "com.cardenaspiero255.gamehubultra.voice.STOP"
         private const val CHANNEL_ID = "ultra_voice"
         private const val NOTIFICATION_ID = 2301
+        private const val RESTART_DELAY_MS = 180L
+        private const val WAKE_DEBOUNCE_MS = 700L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -52,6 +54,7 @@ class UltraWakeService : Service() {
     private var tts: TextToSpeech? = null
     private var stopped = false
     private var lastTranscriptAt = 0L
+    private var recognitionStarting = false
     private val aiAdvisor by lazy { GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter()) }
 
     override fun onCreate() {
@@ -99,7 +102,7 @@ class UltraWakeService : Service() {
     }
 
     private fun startRecognition() {
-        if (stopped) return
+        if (stopped || recognitionStarting) return
 
         if (
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
@@ -114,6 +117,7 @@ class UltraWakeService : Service() {
             return
         }
 
+        recognitionStarting = true
         recognizer?.cancel()
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { speech ->
@@ -125,20 +129,21 @@ class UltraWakeService : Service() {
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                 )
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(
                     RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    700L
+                    1200L
                 )
                 putExtra(
                     RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    400L
+                    850L
                 )
             }
 
             speech.startListening(intent)
         }
+        recognitionStarting = false
     }
 
     private val listener = object : RecognitionListener {
@@ -151,18 +156,20 @@ class UltraWakeService : Service() {
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onResults(results: Bundle?) {
-            val transcript = results
+            val alternatives = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull { it.isNotBlank() }
+                .orEmpty()
+
+            val transcript = alternatives
+                .firstOrNull(::containsWakeWord)
+                ?: alternatives.firstOrNull { it.isNotBlank() }
                 .orEmpty()
 
             if (transcript.isNotBlank()) {
                 val now = System.currentTimeMillis()
-                if (now - lastTranscriptAt > 900L) {
+                if (now - lastTranscriptAt > WAKE_DEBOUNCE_MS && containsWakeWord(transcript)) {
                     lastTranscriptAt = now
-                    if (VoiceCommandParser.normalize(transcript).contains("ultra")) {
-                        handleCommand(transcript)
-                    }
+                    handleCommand(transcript)
                 }
             }
 
@@ -172,6 +179,31 @@ class UltraWakeService : Service() {
         override fun onError(error: Int) {
             scheduleRestart()
         }
+    }
+
+    private fun containsWakeWord(transcript: String): Boolean {
+        val normalized = VoiceCommandParser.normalize(transcript)
+        return normalized.split(" ").any { token ->
+            token == "ultra" || (token.length >= 4 && levenshtein(token, "ultra") <= 1)
+        }
+    }
+
+    private fun levenshtein(a: String, b: String): Int {
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        var previous = IntArray(b.length + 1) { it }
+        var current = IntArray(b.length + 1)
+        for (i in a.indices) {
+            current[0] = i + 1
+            for (j in b.indices) {
+                val cost = if (a[i] == b[j]) 0 else 1
+                current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
+            }
+            val swap = previous
+            previous = current
+            current = swap
+        }
+        return previous[b.length]
     }
 
     private fun handleCommand(transcript: String) {
@@ -212,7 +244,7 @@ class UltraWakeService : Service() {
 
             val result = VoiceCommandEngine.execute(
                 command = VoiceCommandParser.parse(transcript, aiAdvisor.intentResolver()),
-                gamesProvider = { GameLibrary.discover(context).games },
+                gamesProvider = { GameLibrary.discoverForVoice(context) },
                 launchGame = { packageName ->
                     launchGameFromService(context, packageName)
                 },
@@ -278,7 +310,7 @@ class UltraWakeService : Service() {
     private fun scheduleRestart() {
         mainHandler.removeCallbacksAndMessages(null)
         if (!stopped) {
-            mainHandler.postDelayed({ startRecognition() }, 300L)
+            mainHandler.postDelayed({ startRecognition() }, RESTART_DELAY_MS)
         }
     }
 
