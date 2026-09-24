@@ -19,7 +19,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GameHubUltra"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher">
+        android:roundIcon="@mipmap/ic_launcher_round">
         <meta-data
             android:name="android.app.shortcuts"
             android:resource="@xml/shortcuts" />
