@@ -13,6 +13,7 @@ object VoiceCommandParser {
             .replace(Regex("""\bultra\b"""), " ")
             .trim()
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
+        if (isUnsafeShellLikeCommand(clean)) return VoiceCommand.Unknown(transcript)
 
         optionalResolver?.resolve(clean)?.let { return it }
 
@@ -64,6 +65,17 @@ object VoiceCommandParser {
             .replace(Regex("""[^a-z0-9x4]+"""), " ")
             .trim()
             .replace(Regex("""\s+"""), " ")
+
+    private fun isUnsafeShellLikeCommand(clean: String): Boolean {
+        val unsafePatterns = listOf(
+            Regex("""\badb\b"""),
+            Regex("""\bfastboot\b"""),
+            Regex("""\bsettings\s+(put|delete|read|get|list)\b"""),
+            Regex("""\bam\s+(start|force\s+stop|broadcast|instrument|kill|profile)\b"""),
+            Regex("""\bpm\s+(grant|revoke|install|uninstall|clear|disable|enable|hide|unhide)\b""")
+        )
+        return unsafePatterns.any { it.containsMatchIn(clean) }
+    }
 
     private fun profileFromText(clean: String): PerformanceProfile? =
         when {

@@ -40,7 +40,7 @@ class GameOptimizationMemoryStoreTest {
     @AfterTest
     fun tearDown() {
         scope.cancel()
-        file.delete()
+        deleteDataStoreFiles(file)
     }
 
     @Test
@@ -57,6 +57,48 @@ class GameOptimizationMemoryStoreTest {
         )
         assertEquals(1, store.observationsFlow(key).first().size)
         assertTrue(store.observationsFlow(key.copy(gameVersion = "2")).first().isEmpty())
+    }
+
+    @Test
+    fun persistsResultsAcrossStoreRestart() = runBlocking {
+        store.record(
+            key,
+            OptimizationObservation(
+                contextKey = "",
+                profile = PerformanceProfile.X4,
+                measuredFps = 72f,
+                stable = true,
+                timestampMillis = 42L
+            )
+        )
+
+        scope.cancel()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.join()
+
+        val restartedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val restartedDataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+                scope = restartedScope,
+                produceFile = { file }
+            )
+            val restartedStore = GameOptimizationMemoryStore(restartedDataStore)
+            val restartedObservations = restartedStore.observationsFlow(key).first()
+
+            assertEquals(1, restartedObservations.size)
+            assertEquals(PerformanceProfile.X4, restartedObservations.single().profile)
+            assertEquals(72f, restartedObservations.single().measuredFps)
+        } finally {
+            restartedScope.cancel()
+        }
+    }
+
+    @Test
+    fun clearAllResetsLearningMemoryWithoutCredentials() = runBlocking {
+        store.record(key, OptimizationObservation(contextKey = "", profile = PerformanceProfile.X4, timestampMillis = 1L))
+
+        store.clearAll()
+
+        assertTrue(store.observationsFlow(key).first().isEmpty())
     }
 
     @Test
@@ -82,5 +124,11 @@ class GameOptimizationMemoryStoreTest {
             )
         }
         assertEquals(120, store.observationsFlow(key).first().size)
+    }
+
+    private fun deleteDataStoreFiles(base: File) {
+        base.delete()
+        File(base.absolutePath + ".corrupt").delete()
+        File(base.absolutePath + ".bak").delete()
     }
 }

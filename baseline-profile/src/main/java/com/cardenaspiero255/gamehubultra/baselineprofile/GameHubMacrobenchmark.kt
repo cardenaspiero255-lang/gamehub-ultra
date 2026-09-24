@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.baselineprofile
 
 import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.TraceSectionMetric
@@ -119,7 +120,10 @@ class GameHubMacrobenchmark {
         val targetDescription = "nav_biblioteca"
         benchmarkRule.measureRepeated(
             packageName = "com.cardenaspiero255.gamehubultra",
-            metrics = listOf(TraceSectionMetric("GameHubUltra.Navigation.Library")),
+            metrics = listOf(
+                FrameTimingMetric(),
+                TraceSectionMetric("GameHubUltra.Navigation.Library")
+            ),
             iterations = 5,
             startupMode = StartupMode.COLD,
             compilationMode = CompilationMode.DEFAULT,
@@ -143,7 +147,10 @@ class GameHubMacrobenchmark {
         val targetDescription = "nav_ajustes"
         benchmarkRule.measureRepeated(
             packageName = "com.cardenaspiero255.gamehubultra",
-            metrics = listOf(TraceSectionMetric("GameHubUltra.Navigation.Settings")),
+            metrics = listOf(
+                FrameTimingMetric(),
+                TraceSectionMetric("GameHubUltra.Navigation.Settings")
+            ),
             iterations = 5,
             startupMode = StartupMode.COLD,
             compilationMode = CompilationMode.DEFAULT,
