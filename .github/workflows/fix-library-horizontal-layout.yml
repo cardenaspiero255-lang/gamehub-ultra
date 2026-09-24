@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'app/src/main/java/com/cardenaspiero255/gamehubultra/MainActivity.kt'
+      - '.github/workflows/fix-library-horizontal-layout.yml'
 
 jobs:
   patch-layout:
@@ -25,8 +26,9 @@ jobs:
           old = 'columns = GridCells.Fixed(4),'
           new = 'columns = GridCells.Adaptive(minSize = 180.dp),'
           if old not in text:
-              raise SystemExit('Expected fixed library grid was not found; refusing to modify the file.')
-          path.write_text(text.replace(old, new, 1))
+              print('Adaptive layout may already be applied; no source replacement needed.')
+          else:
+              path.write_text(text.replace(old, new, 1))
           PY
 
       - name: Commit layout patch
