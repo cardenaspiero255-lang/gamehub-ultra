@@ -742,7 +742,7 @@ private fun HomeScreen(
                 telemetryTrend = telemetryTrend,
                 profile = state.selectedProfile,
                 adaptiveDecision = adaptiveDecision,
-                gameName = "War Robots",
+                gameName = selectedGamePackage ?: "Ningún juego seleccionado",
                 onProfileSelected = onProfileSelected
             )
         }

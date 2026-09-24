@@ -38,6 +38,36 @@ private val UltraPanel2 = Color(0xFF111116)
 private val UltraLine = Color(0xFF2A2A31)
 private val UltraMuted = Color(0xFF9696A2)
 
+internal data class BoosterPresentation(
+    val title: String,
+    val description: String,
+    val badge: String
+)
+
+internal fun boosterPresentation(profile: PerformanceProfile): BoosterPresentation =
+    when (profile) {
+        PerformanceProfile.BALANCED -> BoosterPresentation(
+            title = "FPS balanceado",
+            description = "Equilibra consumo, temperatura y fluidez sin prometer una tasa de FPS.",
+            badge = "AUTO"
+        )
+        PerformanceProfile.FRAME_INTERPOLATION -> BoosterPresentation(
+            title = "Priorizar interpolación",
+            description = "Solo prioriza opciones compatibles; GameHub Ultra no genera ni fuerza frames en otros juegos.",
+            badge = "API"
+        )
+        PerformanceProfile.X4 -> BoosterPresentation(
+            title = "X4",
+            description = "Solicita Sustained Performance únicamente cuando Android y el dispositivo lo exponen.",
+            badge = "SPM"
+        )
+    }
+
+internal fun thermalEnvelopeUsagePercent(headroom: Float?): Int? =
+    headroom
+        ?.takeIf { it.isFinite() && it >= 0f }
+        ?.let { (it * 100f).toInt() }
+
 @Composable
 fun UltraDashboard(
     device: DeviceInfo,
@@ -45,14 +75,14 @@ fun UltraDashboard(
     telemetryTrend: List<RuntimeDiagnostics> = emptyList(),
     profile: PerformanceProfile,
     adaptiveDecision: AdaptiveDecision?,
-    gameName: String = "War Robots",
+    gameName: String = "Ningún juego seleccionado",
     onProfileSelected: (PerformanceProfile) -> Unit = {}
 ) {
     val battery = diagnostics?.battery?.percent
     val refresh = diagnostics?.refresh?.currentRefreshRateHz
     val latency = diagnostics?.connectivity?.latencyMs
     val thermalHeadroom = diagnostics?.thermal?.headroom
-    val thermalPercent = thermalHeadroom?.let { (it.coerceIn(0f, 1f) * 100f).toInt() }
+    val thermalUsagePercent = thermalEnvelopeUsagePercent(thermalHeadroom)
 
     BoxWithConstraints(
         modifier = Modifier
@@ -63,20 +93,34 @@ fun UltraDashboard(
         val compact = maxWidth < 720.dp
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             UltraCoreHeader(profile)
-            FeaturedGameCard(gameName, battery, refresh, thermalPercent, device.totalRamMb)
+            FeaturedGameCard(gameName, battery, refresh, thermalUsagePercent, device.totalRamMb)
             UltraVoiceCard()
             Text("BOOSTER", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+            val presentations = PerformanceProfile.entries.associateWith(::boosterPresentation)
             if (compact) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BoosterModeCard("FPS BALANCEADO", "Equilibrio perfecto entre rendimiento y calidad.", "120", profile == PerformanceProfile.BALANCED) { onProfileSelected(PerformanceProfile.BALANCED) }
-                    BoosterModeCard("MÁS INTERPOLACIÓN", "Mayor fluidez con interpolación de cuadros avanzada.", "165", profile == PerformanceProfile.FRAME_INTERPOLATION) { onProfileSelected(PerformanceProfile.FRAME_INTERPOLATION) }
-                    BoosterModeCard("X4", "Máximo rendimiento. Sin compromisos.", "X4", profile == PerformanceProfile.X4) { onProfileSelected(PerformanceProfile.X4) }
+                    PerformanceProfile.entries.forEach { candidate ->
+                        val presentation = presentations.getValue(candidate)
+                        BoosterModeCard(
+                            presentation.title,
+                            presentation.description,
+                            presentation.badge,
+                            profile == candidate
+                        ) { onProfileSelected(candidate) }
+                    }
                 }
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BoosterModeCard("FPS BALANCEADO", "Equilibrio perfecto entre rendimiento y calidad.", "120", profile == PerformanceProfile.BALANCED, Modifier.weight(1f)) { onProfileSelected(PerformanceProfile.BALANCED) }
-                    BoosterModeCard("MÁS INTERPOLACIÓN", "Mayor fluidez con interpolación de cuadros avanzada.", "165", profile == PerformanceProfile.FRAME_INTERPOLATION, Modifier.weight(1f)) { onProfileSelected(PerformanceProfile.FRAME_INTERPOLATION) }
-                    BoosterModeCard("X4", "Máximo rendimiento. Sin compromisos.", "X4", profile == PerformanceProfile.X4, Modifier.weight(1f)) { onProfileSelected(PerformanceProfile.X4) }
+                    PerformanceProfile.entries.forEach { candidate ->
+                        val presentation = presentations.getValue(candidate)
+                        BoosterModeCard(
+                            presentation.title,
+                            presentation.description,
+                            presentation.badge,
+                            profile == candidate,
+                            Modifier.weight(1f)
+                        ) { onProfileSelected(candidate) }
+                    }
                 }
             }
             LiveStatsRow(device, diagnostics, latency)
@@ -85,7 +129,7 @@ fun UltraDashboard(
             adaptiveDecision?.let {
                 Surface(color = UltraPanel2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
-                        Text("AUTO BOOST", color = UltraRedBright, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("ADAPTACIÓN", color = UltraRedBright, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         Text(it.reason, color = Color.White, fontSize = 12.sp)
                     }
                 }
@@ -111,22 +155,20 @@ private fun UltraCoreHeader(profile: PerformanceProfile) {
 }
 
 @Composable
-private fun FeaturedGameCard(gameName: String, battery: Int?, refresh: Float?, thermalPercent: Int?, totalRamMb: Long) {
+private fun FeaturedGameCard(gameName: String, battery: Int?, refresh: Float?, thermalUsagePercent: Int?, totalRamMb: Long) {
     Card(colors = CardDefaults.cardColors(containerColor = UltraPanel), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("JUEGO DESTACADO", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                    Text("JUEGO SELECCIONADO", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                     Text(gameName, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("Panel en tiempo real", color = UltraRedBright, fontSize = 11.sp)
+                    Text("Telemetría disponible de Android", color = UltraRedBright, fontSize = 11.sp)
                 }
-                Surface(color = UltraRed, shape = RoundedCornerShape(10.dp)) {
-                    Text("JUGAR", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
-                }
+                Text("SELECCIÓN ACTUAL", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                MetricBlock("HZ", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible", Modifier.weight(1f))
-                MetricBlock("TÉRMICO", thermalPercent?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
+                MetricBlock("REFRESCO", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible", Modifier.weight(1f))
+                MetricBlock("USO TÉRMICO", thermalUsagePercent?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
                 MetricBlock("RAM", if (totalRamMb > 0L) (totalRamMb / 1024L).toString() + " GB" else "No disponible", Modifier.weight(1f))
                 MetricBlock("BAT", battery?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
             }
@@ -160,7 +202,7 @@ private fun TelemetryTrendCard(samples: List<RuntimeDiagnostics>) {
             } else {
                 TrendMetricRow("BATERÍA", latest.battery.percent, previous?.battery?.percent, "%")
                 TrendMetricRow("RAM USADA", latest.memory.usedPercent, previous?.memory?.usedPercent, "%")
-                TrendMetricRow("MARGEN TÉRMICO",
+                TrendMetricRow("USO TÉRMICO",
                     latest.thermal.headroom?.let { (it.coerceIn(0f, 1f) * 100f).toInt() },
                     previous?.thermal?.headroom?.let { (it.coerceIn(0f, 1f) * 100f).toInt() },
                     "%")
@@ -187,21 +229,23 @@ private fun TrendMetricRow(label: String, current: Int?, previous: Int?, suffix:
 }
 @Composable
 private fun ThermalHeadroomCard(headroom: Float?) {
-    val normalized = headroom?.coerceIn(0f, 1f)
-    val percent = normalized?.let { (it * 100f).toInt() }
+    val usage = headroom?.takeIf { it.isFinite() && it >= 0f }
+    val progress = usage?.coerceIn(0f, 1f)
+    val percent = thermalEnvelopeUsagePercent(usage)
     Surface(color = UltraPanel, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("MARGEN TÉRMICO", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("USO DEL SOBRE TÉRMICO", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text(percent?.let { it.toString() + "%" } ?: "No disponible", color = UltraRedBright, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
-            if (normalized != null) {
-                LinearProgressIndicator(progress = { normalized }, modifier = Modifier.fillMaxWidth())
+            if (usage != null && progress != null) {
+                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                 Text(
                     when {
-                        normalized >= 0.7f -> "Buen margen térmico para la sesión."
-                        normalized >= 0.4f -> "Margen térmico intermedio; vigilar temperatura."
-                        else -> "Margen térmico reducido; el sistema puede limitar rendimiento."
+                        usage <= 0.30f -> "Uso térmico bajo según la señal expuesta por Android."
+                        usage < 0.60f -> "Uso térmico moderado."
+                        usage < 0.80f -> "Uso térmico elevado; conviene vigilar la sesión."
+                        else -> "Uso térmico cerca o por encima del umbral de throttling severo."
                     },
                     color = UltraMuted,
                     fontSize = 10.sp
@@ -219,10 +263,13 @@ private fun UltraVoiceCard() {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("ULTRA VOICE", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Text("● ESCUCHANDO...", color = UltraRedBright, fontSize = 9.sp)
+                Text("ESTADO BAJO DEMANDA", color = UltraRedBright, fontSize = 9.sp)
             }
-            Text("“Ultra, abre War Robots y activa X4”", color = UltraMuted, fontSize = 11.sp)
-            Text("Entendido, abriendo War Robots y activando modo X4.", color = Color.White, fontSize = 11.sp)
+            Text(
+                "Abre el asistente para ver el estado real del micrófono y ejecutar comandos permitidos.",
+                color = UltraMuted,
+                fontSize = 11.sp
+            )
         }
     }
 }

@@ -1,0 +1,28 @@
+package com.cardenaspiero255.gamehubultra
+
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+
+class UltraDashboardSafetyTest {
+    @Test
+    fun thermalHeadroomIsDisplayedAsEnvelopeUsage() {
+        assertEquals(20, thermalEnvelopeUsagePercent(0.20f))
+        assertEquals(85, thermalEnvelopeUsagePercent(0.85f))
+        assertEquals(120, thermalEnvelopeUsagePercent(1.20f))
+        assertNull(thermalEnvelopeUsagePercent(Float.NaN))
+        assertNull(thermalEnvelopeUsagePercent(-0.1f))
+    }
+
+    @Test
+    fun boosterBadgesDoNotPretendToBeMeasuredFps() {
+        val presentations = PerformanceProfile.entries.map(::boosterPresentation)
+        presentations.forEach { presentation ->
+            assertFalse(presentation.badge.matches(Regex("\\d+")))
+        }
+        assertEquals("API", boosterPresentation(PerformanceProfile.FRAME_INTERPOLATION).badge)
+        assertEquals("SPM", boosterPresentation(PerformanceProfile.X4).badge)
+    }
+}
