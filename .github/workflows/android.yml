@@ -101,10 +101,10 @@ jobs:
           AVD_HOME="$HOME/.android/avd"
           AVD_DIR="$AVD_HOME/gamehub-api35.avd"
           AVD_INI="$AVD_HOME/gamehub-api35.ini"
-          export ANDROID_EMULATOR_HOME="$HOME/.android"
-          export ANDROID_AVD_HOME="$AVD_HOME"
-          echo "ANDROID_EMULATOR_HOME=$ANDROID_EMULATOR_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
+          # Keep the emulator on Android's documented default AVD location.
+          # Overriding ANDROID_AVD_HOME changes how relative AVD paths are resolved
+          # and made the manually-created metadata invisible to -list-avds.
+          unset ANDROID_EMULATOR_HOME ANDROID_AVD_HOME
           rm -rf "$AVD_DIR" "$AVD_INI"
           mkdir -p "$AVD_DIR"
 
@@ -165,7 +165,13 @@ jobs:
           test -s "$AVD_DIR/config.ini"
           grep -Fxq "target=android-35" "$AVD_DIR/config.ini"
           grep -Fxq "abi.type=x86_64" "$AVD_DIR/config.ini"
-          emulator -list-avds | grep -Fxq "gamehub-api35"
+          AVD_LIST="$RUNNER_TEMP/avd-list.txt"
+          if ! emulator -list-avds | tee "$AVD_LIST" | grep -Fxq "gamehub-api35"; then
+            echo "The emulator did not discover the API 35 AVD in the default Android home."
+            echo "AVD metadata:"
+            find "$HOME/.android" -maxdepth 3 -type f -print -exec sed -n '1,120p' {} \; || true
+            exit 1
+          fi
 
       - name: Start API 35 emulator cleanly
         shell: bash
