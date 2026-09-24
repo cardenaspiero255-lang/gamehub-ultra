@@ -15,6 +15,8 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventCodec
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
+import com.cardenaspiero255.gamehubultra.domain.OrientationPreference
+import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -58,14 +60,18 @@ class GameHubPreferencesRepository(
             val refresh = preferences[gameRefreshKey(packageName)]
                 ?.toIntOrNull()
                 ?.takeIf { it in 30..360 }
+            val resolution = decodeResolution(preferences[gameResolutionKey(packageName)])
+            val orientation = decodeOrientation(preferences[gameOrientationKey(packageName)])
 
-            if (profile == null && thermal == null && refresh == null) {
+            if (profile == null && thermal == null && refresh == null && resolution == null && orientation == null) {
                 null
             } else {
                 GameProfileConfig(
                     performanceProfile = profile ?: PerformanceProfile.BALANCED,
                     thermalPreference = thermal ?: ThermalPreference.ADAPTIVE,
-                    refreshRateTargetHz = refresh
+                    refreshRateTargetHz = refresh,
+                    resolutionTarget = resolution,
+                    orientationPreference = orientation ?: OrientationPreference.AUTO
                 )
             }
         }
@@ -141,6 +147,11 @@ class GameHubPreferencesRepository(
                 ?.takeIf { it in 30..360 }
                 ?.let { preferences[gameRefreshKey(packageName)] = it.toString() }
                 ?: preferences.remove(gameRefreshKey(packageName))
+            config.resolutionTarget
+                ?.takeIf { it.width in 240..7680 && it.height in 240..7680 }
+                ?.let { preferences[gameResolutionKey(packageName)] = "${it.width}x${it.height}" }
+                ?: preferences.remove(gameResolutionKey(packageName))
+            preferences[gameOrientationKey(packageName)] = config.orientationPreference.name
         }
     }
 
@@ -195,6 +206,12 @@ class GameHubPreferencesRepository(
     private fun gameRefreshKey(packageName: String): Preferences.Key<String> =
         stringPreferencesKey("game_refresh_$packageName")
 
+    private fun gameResolutionKey(packageName: String): Preferences.Key<String> =
+        stringPreferencesKey("game_resolution_${packageName}")
+
+    private fun gameOrientationKey(packageName: String): Preferences.Key<String> =
+        stringPreferencesKey("game_orientation_${packageName}")
+
     private fun decodeProfile(value: String?): PerformanceProfile? =
         value?.let { raw ->
             PerformanceProfile.entries.firstOrNull { it.name == raw }
@@ -203,5 +220,19 @@ class GameHubPreferencesRepository(
     private fun decodeThermalPreference(value: String?): ThermalPreference? =
         value?.let { raw ->
             ThermalPreference.entries.firstOrNull { it.name == raw }
+        }
+
+    private fun decodeOrientation(value: String?): OrientationPreference? =
+        value?.let { raw ->
+            OrientationPreference.entries.firstOrNull { it.name == raw }
+        }
+
+    private fun decodeResolution(value: String?): ResolutionTarget? =
+        value?.split('x', limit = 2)?.takeIf { it.size == 2 }?.let { parts ->
+            val width = parts[0].toIntOrNull()
+            val height = parts[1].toIntOrNull()
+            if (width in 240..7680 && height in 240..7680) {
+                ResolutionTarget(width, height)
+            } else null
         }
 }
