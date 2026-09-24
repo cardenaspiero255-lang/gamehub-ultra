@@ -8,19 +8,19 @@ import kotlin.test.assertEquals
 class GameHubUiTokensTest {
     @Test
     fun compactSpacingRemainsTightForLandscapeDashboard() {
-        assertEquals(12.dp, GameHubUiTokens.compactHorizontalPadding)
-        assertEquals(10.dp, GameHubUiTokens.compactSectionSpacing)
-        assertEquals(14.dp, GameHubUiTokens.compactCardPadding)
-        assertEquals(8.dp, GameHubUiTokens.compactControlSpacing)
+        assertEquals(8.dp, GameHubUiTokens.compactHorizontalPadding)
+        assertEquals(6.dp, GameHubUiTokens.compactSectionSpacing)
+        assertEquals(10.dp, GameHubUiTokens.compactCardPadding)
+        assertEquals(6.dp, GameHubUiTokens.compactControlSpacing)
     }
 
     @Test
     fun compactTypographyKeepsReadableReducedScale() {
-        assertEquals(18.sp, GameHubUiTokens.titleLarge)
-        assertEquals(15.sp, GameHubUiTokens.titleMedium)
-        assertEquals(14.sp, GameHubUiTokens.bodyLarge)
-        assertEquals(13.sp, GameHubUiTokens.bodyMedium)
-        assertEquals(12.sp, GameHubUiTokens.bodySmall)
-        assertEquals(10.sp, GameHubUiTokens.labelSmall)
+        assertEquals(16.sp, GameHubUiTokens.titleLarge)
+        assertEquals(14.sp, GameHubUiTokens.titleMedium)
+        assertEquals(13.sp, GameHubUiTokens.bodyLarge)
+        assertEquals(12.sp, GameHubUiTokens.bodyMedium)
+        assertEquals(11.sp, GameHubUiTokens.bodySmall)
+        assertEquals(9.sp, GameHubUiTokens.labelSmall)
     }
 }
