@@ -532,7 +532,9 @@ private fun HomeScreen(
                 device = device,
                 diagnostics = runtimeDiagnostics,
                 profile = state.selectedProfile,
-                adaptiveDecision = adaptiveDecision
+                adaptiveDecision = adaptiveDecision,
+                gameName = "War Robots",
+                onProfileSelected = onProfileSelected
             )
         }
         item { ActiveProfileCard(state) }
