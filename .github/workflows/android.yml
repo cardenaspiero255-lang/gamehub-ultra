@@ -258,7 +258,7 @@ jobs:
             "${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"; do
             [ -f "$log" ] || continue
             if grep -En \
-              'Could not load devices|adb.*failed with exit code 1|Failed to start Emulator console|ERROR[[:space:]]*\\| stop: Not implemented' \
+              'Could not load devices|adb.*failed with exit code 1|Failed to start Emulator console|stop: Not implemented' \
               "$log"; then
               bad=1
             fi
