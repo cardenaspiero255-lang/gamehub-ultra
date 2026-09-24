@@ -140,10 +140,10 @@ jobs:
           emulator-boot-timeout: 900
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect -camera-back none -camera-front none
           disable-animations: true
+          pre-emulator-launch-script: adb start-server
           script: |
             set -eu
-            # android-emulator-runner owns ADB lifecycle and waits for boot.
-            # Starting/reconnecting ADB here races with its emulator process.
+            # android-emulator-runner waits for the device to finish booting before running this script.
             adb wait-for-device
             adb shell getprop sys.boot_completed | grep -m1 "1"
             gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark               -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR               --no-configuration-cache --stacktrace
