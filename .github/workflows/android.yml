@@ -94,40 +94,71 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
           test -d "$IMAGE_DIR"
+          test -s "$IMAGE_DIR/system.img"
+          test -s "$IMAGE_DIR/ramdisk.img"
+          test -s "$IMAGE_DIR/userdata.img"
+
+          AVD_HOME="$HOME/.android/avd"
+          AVD_DIR="$AVD_HOME/gamehub-api35.avd"
+          AVD_INI="$AVD_HOME/gamehub-api35.ini"
+          rm -rf "$AVD_DIR" "$AVD_INI"
+          mkdir -p "$AVD_DIR"
+
+          # Build the AVD metadata directly from the installed API 35 image.
+          # This avoids avdmanager's current device-profile parser failure while
+          # preserving the real Android Emulator and all downstream validation.
+          cat > "$AVD_INI" <<EOF
+          avd.ini.encoding=UTF-8
+          path=$AVD_DIR
+          path.rel=avd/gamehub-api35.avd
+          target=android-35
+          EOF
+
+          cat > "$AVD_DIR/config.ini" <<EOF
+          AvdId=gamehub-api35
+          PlayStore.enabled=false
+          abi.type=x86_64
+          avd.ini.displayname=gamehub-api35
+          avd.ini.encoding=UTF-8
+          disk.dataPartition.size=4G
+          hw.accelerometer=yes
+          hw.audioInput=no
+          hw.battery=yes
+          hw.camera.back=none
+          hw.camera.front=none
+          hw.cpu.arch=x86_64
+          hw.cpu.ncore=4
+          hw.gps=yes
+          hw.gpu.enabled=yes
+          hw.gpu.mode=auto
+          hw.gyroscope=yes
+          hw.initialOrientation=portrait
+          hw.keyboard=yes
+          hw.lcd.density=420
+          hw.lcd.height=1920
+          hw.lcd.width=1080
+          hw.mainKeys=no
+          hw.ramSize=4096
+          hw.sdCard=no
+          image.sysdir.1=$IMAGE_DIR/
+          runtime.network.latency=none
+          runtime.network.speed=full
+          showDeviceFrame=no
+          skin.dynamic=yes
+          skin.name=1080x1920
+          tag.display=Google APIs
+          tag.id=google_apis
+          target=android-35
+          vm.heapSize=512
+          EOF
 
           mkdir -p "$HOME/.android"
-          # The emulator console only listens on localhost. An empty token file
-          # disables console authentication so ddmlib can connect reliably.
           : > "$HOME/.emulator_console_auth_token"
 
-          AVD_LOG="$RUNNER_TEMP/avd-create.log"
-          # avdmanager is deprecated and recent cmdline-tools can return a
-          # non-zero status after the custom-profile prompt even when the AVD is
-          # materialized. Do not trust that status: validate the actual AVD output.
-          # Keep --device omitted so the missing optional system-image devices.xml
-          # is never consulted.
-          set +o pipefail
-          echo no | avdmanager create avd --force \
-            --name gamehub-api35 \
-            --package "system-images;android-35;google_apis;x86_64" \
-            2>&1 | tee "$AVD_LOG"
-          set -o pipefail
-
-          if grep -Fq "Could not load devices" "$AVD_LOG"; then
-            echo "avdmanager still reported a devices.xml load error."
-            exit 1
-          fi
-
-          AVD_CONFIG="$HOME/.android/avd/gamehub-api35.avd/config.ini"
-          if [ ! -s "$AVD_CONFIG" ]; then
-            echo "AVD config was not created; legacy avdmanager did not materialize gamehub-api35."
-            exit 1
-          fi
-          {
-            echo "hw.ramSize=4096"
-            echo "vm.heapSize=512"
-            echo "hw.keyboard=yes"
-          } >> "$AVD_CONFIG"
+          test -s "$AVD_INI"
+          test -s "$AVD_DIR/config.ini"
+          grep -Fxq "target=android-35" "$AVD_DIR/config.ini"
+          grep -Fxq "abi.type=x86_64" "$AVD_DIR/config.ini"
           emulator -list-avds | grep -Fxq "gamehub-api35"
 
       - name: Start API 35 emulator cleanly
