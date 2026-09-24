@@ -2527,6 +2527,16 @@ private fun GameTile(
     onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
 ) {
+    val context = LocalContext.current
+    val iconBitmap = remember(game.packageName) {
+        runCatching {
+            context.packageManager
+                .getApplicationIcon(game.packageName)
+                .toBitmap(width = 64, height = 64)
+                .asImageBitmap()
+        }.getOrNull()
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -2544,21 +2554,33 @@ private fun GameTile(
                 },
                 onClick = onSelect
             ) {
-                Column(
-                    modifier = Modifier.padding(9.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                Row(
+                    modifier = Modifier.padding(7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
                 ) {
-                    Text(
-                        game.label,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2
-                    )
-                    Text(
-                        if (selected) "SELECCIONADO" else game.packageName,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1
-                    )
+                    iconBitmap?.let { icon ->
+                        Image(
+                            bitmap = icon,
+                            contentDescription = "Icono del juego",
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            game.label,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1
+                        )
+                        Text(
+                            if (selected) "SELECCIONADO" else game.packageName,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
 
