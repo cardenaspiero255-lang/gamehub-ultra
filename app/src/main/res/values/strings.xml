@@ -183,6 +183,8 @@
     <string name="accounts_add">Añadir cuenta</string>
     <string name="accounts_add_title">Añadir cuenta de %1$s</string>
     <string name="accounts_display_name">Nombre visible</string>
+    <string name="accounts_alias">Alias público (opcional)</string>
+    <string name="accounts_avatar_url">URL de avatar público (opcional)</string>
     <string name="accounts_public_id_invalid">Ingresa un ID o nombre público de Steam válido.</string>
     <string name="accounts_public_id">ID público o identificador</string>
     <string name="accounts_save">Guardar</string>

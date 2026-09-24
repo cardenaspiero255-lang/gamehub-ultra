@@ -13,6 +13,7 @@ import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
@@ -98,7 +99,6 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatus
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
-import com.cardenaspiero255.gamehubultra.domain.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceAdvisor

@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.nio.charset.StandardCharsets

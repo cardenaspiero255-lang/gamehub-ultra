@@ -183,6 +183,8 @@
     <string name="accounts_add">Add account</string>
     <string name="accounts_add_title">Add %1$s account</string>
     <string name="accounts_display_name">Display name</string>
+    <string name="accounts_alias">Public alias (optional)</string>
+    <string name="accounts_avatar_url">Public avatar URL (optional)</string>
     <string name="accounts_public_id_invalid">Enter a valid Steam ID or public name.</string>
     <string name="accounts_public_id">Public ID or identifier</string>
     <string name="accounts_save">Save</string>
