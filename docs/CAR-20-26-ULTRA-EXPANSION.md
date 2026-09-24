@@ -81,3 +81,7 @@ Acceptance gate for each CAR:
 
 ## Current implementation note
 CAR-20 through CAR-25 are implemented in the main branch. CAR-26 release hardening is documented in `docs/CAR-26-RELEASE-HARDENING.md` and must remain green in the Android validation workflow. CAR-27..30 are expansion scope and must not be marked complete until their individual acceptance gates pass.
+
+
+## Next generation roadmap
+The next major phase is documented in `docs/CAR-31-70-ULTRA-NEXT-GEN.md`. CAR-31 starts only after CAR-29 and CAR-30 satisfy their full acceptance gates. CAR-31..70 expand the product with the approved red/black visual identity, landscape-first responsive UX, major Ultra Voice and local AI upgrades, deeper performance intelligence, driver/vendor compatibility layers, multi-account/store improvements, diagnostics, peripherals, security, recovery and the GameHub Ultra 2.0 final integration.
