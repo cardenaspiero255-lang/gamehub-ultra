@@ -40,6 +40,45 @@ class ConnectedGameAccountsStore(context: Context) {
                 .toList()
         }
 
+    suspend fun upsert(
+        platform: GamePlatform,
+        displayName: String,
+        publicId: String
+    ): ConnectedGameAccount {
+        val normalizedName = displayName.trim()
+        val normalizedId = publicId.trim()
+        var result: ConnectedGameAccount? = null
+        dataStore.edit { preferences ->
+            val current = preferences[accountsKey]
+                .orEmpty()
+                .lineSequence()
+                .mapNotNull(::decode)
+                .toMutableList()
+            val index = current.indexOfFirst {
+                it.platform == platform &&
+                    it.publicId.equals(normalizedId, ignoreCase = true)
+            }
+            val account = if (index >= 0) {
+                current[index].copy(
+                    displayName = normalizedName,
+                    publicId = normalizedId
+                )
+            } else {
+                ConnectedGameAccount(
+                    id = UUID.randomUUID().toString(),
+                    platform = platform,
+                    displayName = normalizedName,
+                    publicId = normalizedId
+                )
+            }
+            if (index >= 0) current[index] = account else current += account
+            result = account
+            preferences[accountsKey] =
+                current.joinToString("\n", transform = ::encode)
+        }
+        return requireNotNull(result)
+    }
+
     suspend fun add(
         platform: GamePlatform,
         displayName: String,
