@@ -742,7 +742,7 @@ private fun HomeScreen(
                 telemetryTrend = telemetryTrend,
                 profile = state.selectedProfile,
                 adaptiveDecision = adaptiveDecision,
-                gameName = selectedGamePackage ?: "Ningún juego seleccionado",
+                gameName = aiContext.selectedGamePackage ?: "Ningún juego seleccionado",
                 onProfileSelected = onProfileSelected
             )
         }
