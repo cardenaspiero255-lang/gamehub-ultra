@@ -1,4 +1,5 @@
 name: Android build
+# CAR-18 merge-sync validation
 # CAR-18 validation trigger
 # CAR-18 force-run 2
 
