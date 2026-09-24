@@ -840,8 +840,11 @@ private fun GameHubStyleHeader(
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(
+                horizontal = GameHubUiTokens.compactCardPadding,
+                vertical = GameHubUiTokens.compactControlSpacing
+            ),
+            verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactControlSpacing)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -920,8 +923,8 @@ private fun TusJuegosShelf(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(GameHubUiTokens.compactCardPadding),
+            verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactControlSpacing)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2041,6 +2044,7 @@ private fun LibraryScreen(
     var showAddGameDialog by rememberSaveable { mutableStateOf(false) }
     var launchableApps by remember { mutableStateOf<List<GameInfo>>(emptyList()) }
     var libraryQuery by rememberSaveable { mutableStateOf("") }
+    var showSelectedGameDetails by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(context, refreshToken, manualGamePackages) {
         discovery = withContext(Dispatchers.IO) {
             GameLibrary.discover(context, manualGamePackages)
@@ -2097,8 +2101,11 @@ private fun LibraryScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(
+                horizontal = GameHubUiTokens.compactHorizontalPadding,
+                vertical = GameHubUiTokens.compactControlSpacing
+            ),
+        verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2185,19 +2192,16 @@ private fun LibraryScreen(
                     visibleGames.firstOrNull {
                         it.packageName == selected
                     }?.let { game ->
-                        SelectedGameCard(
+                        val favorite = favoriteGames.contains(game.packageName)
+                        SelectedGameCompactBar(
                             game = game,
-                            favorite = favoriteGames.contains(game.packageName),
-                            recent = recentGamePackages.contains(game.packageName),
-                            selectedProfile = selectedProfile,
-                            diagnostics = runtimeDiagnostics,
-                            sessions = sessionHistory.filter { it.packageName == game.packageName },
-                            onProfileSelected = onProfileSelected,
+                            favorite = favorite,
+                            detailsVisible = showSelectedGameDetails,
+                            onToggleDetails = {
+                                showSelectedGameDetails = !showSelectedGameDetails
+                            },
                             onToggleFavorite = {
-                                onToggleFavorite(
-                                    game.packageName,
-                                    !favoriteGames.contains(game.packageName)
-                                )
+                                onToggleFavorite(game.packageName, !favorite)
                             },
                             onOpen = {
                                 if (openGame(context, game.packageName)) {
@@ -2208,6 +2212,28 @@ private fun LibraryScreen(
                                 }
                             }
                         )
+                        if (showSelectedGameDetails) {
+                            SelectedGameCard(
+                                game = game,
+                                favorite = favorite,
+                                recent = recentGamePackages.contains(game.packageName),
+                                selectedProfile = selectedProfile,
+                                diagnostics = runtimeDiagnostics,
+                                sessions = sessionHistory.filter { it.packageName == game.packageName },
+                                onProfileSelected = onProfileSelected,
+                                onToggleFavorite = {
+                                    onToggleFavorite(game.packageName, !favorite)
+                                },
+                                onOpen = {
+                                    if (openGame(context, game.packageName)) {
+                                        launchFailed = false
+                                        onGameOpened(game.packageName)
+                                    } else {
+                                        launchFailed = true
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -2293,6 +2319,67 @@ private fun LibraryScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun SelectedGameCompactBar(
+    game: GameInfo,
+    favorite: Boolean,
+    detailsVisible: Boolean,
+    onToggleDetails: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onOpen: () -> Unit
+) {
+    val context = LocalContext.current
+    val iconBitmap = remember(game.packageName) {
+        runCatching {
+            context.packageManager
+                .getApplicationIcon(game.packageName)
+                .toBitmap(width = 64, height = 64)
+                .asImageBitmap()
+        }.getOrNull()
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(GameHubUiTokens.compactCardPadding),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            iconBitmap?.let { icon ->
+                Image(
+                    bitmap = icon,
+                    contentDescription = stringResource(
+                        R.string.game_icon_content_description,
+                        game.label
+                    ),
+                    modifier = Modifier.size(42.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    game.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1
+                )
+                Text(
+                    "SELECCIONADO",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            TextButton(onClick = onToggleFavorite) {
+                Text(if (favorite) "★" else "☆")
+            }
+            TextButton(onClick = onToggleDetails) {
+                Text(if (detailsVisible) "MENOS" else "DETALLES")
+            }
+            TextButton(onClick = onOpen) {
+                Text("JUGAR")
+            }
+        }
     }
 }
 
@@ -2537,16 +2624,14 @@ private fun GameTile(
         }.getOrNull()
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ) {
+    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            modifier = Modifier.padding(7.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
+                shape = MaterialTheme.shapes.small,
                 color = if (selected) {
                     MaterialTheme.colorScheme.primaryContainer
                 } else {
@@ -2561,8 +2646,11 @@ private fun GameTile(
                     iconBitmap?.let { icon ->
                         Image(
                             bitmap = icon,
-                            contentDescription = "Icono del juego",
-                            modifier = Modifier.size(36.dp)
+                            contentDescription = stringResource(
+                                R.string.game_icon_content_description,
+                                game.label
+                            ),
+                            modifier = Modifier.size(38.dp)
                         )
                     }
                     Column(
@@ -2935,37 +3023,42 @@ private fun StoreLibrarySummary(
     games: List<StoreLibraryGame>,
     onOpenLibrary: () -> Unit
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+    Card(
+        onClick = onOpenLibrary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Abrir Biblioteca de tiendas"
+            }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(GameHubUiTokens.compactCardPadding),
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
                     "BIBLIOTECA DE TIENDAS",
                     style = MaterialTheme.typography.titleMedium
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        games.size.toString(),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    TextButton(onClick = onOpenLibrary) {
-                        Text("ABRIR")
-                    }
-                }
+                Text(
+                    if (games.isEmpty()) {
+                        "Conecta Steam o Epic para sincronizar tus juegos dentro de Ultra."
+                    } else {
+                        "Steam + Epic sincronizados · ${games.size} juego(s)"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
+                )
             }
             Text(
-                if (games.isEmpty()) {
-                    "Conecta Steam o Epic para sincronizar tus juegos dentro de Ultra."
-                } else {
-                    "Steam + Epic sincronizados y disponibles en Biblioteca."
-                },
-                style = MaterialTheme.typography.bodySmall
+                "ABRIR  ›",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelLarge
             )
         }
     }
@@ -2979,48 +3072,48 @@ private fun StoreLibrarySection(
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(GameHubUiTokens.compactCardPadding),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                "STEAM / EPIC",
-                style = MaterialTheme.typography.titleMedium,
+                "STEAM / EPIC · ${games.size}",
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary
             )
-            LazyColumn(
-                modifier = Modifier.height(
-                    (minOf(games.size, 8) * 56 + 8).coerceAtMost(456).dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(
-                    games,
+                    games.take(12),
                     key = { it.id }
                 ) { game ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Surface(
+                        modifier = Modifier.size(width = 170.dp, height = 60.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.padding(7.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
                             Text(
                                 game.title,
                                 style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1
                             )
                             Text(
-                                game.platform.title +
-                                    " · ID " +
-                                    game.platformGameId,
+                                game.platform.title + " · " + game.platformGameId,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
                             )
+                            Text(
+                                "CONECTADO",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
-                        Text(
-                            "CONECTADO",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
                     }
                 }
             }
