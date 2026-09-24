@@ -141,10 +141,10 @@ jobs:
             baseline-profile/build/outputs/**
             app/build/reports/**
 
-      - name: Upload release validation outputs
+      - name: Upload installable release outputs
         uses: actions/upload-artifact@v4
         with:
-          name: gamehub-ultra-release-validation-unsigned
+          name: gamehub-ultra-release
           path: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
