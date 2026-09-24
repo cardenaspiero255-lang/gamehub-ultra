@@ -1,4 +1,5 @@
 package com.cardenaspiero255.gamehubultra.quicksettings
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.drawable.Icon
@@ -22,10 +23,15 @@ class GameHubQuickSettingsTileService : TileService() {
             val pendingIntent = PendingIntent.getActivity(this, 0, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             startActivityAndCollapse(pendingIntent)
         } else {
-            @Suppress("DEPRECATION")
-            startActivityAndCollapse(launchIntent)
+            startActivityAndCollapseLegacy(launchIntent)
         }
     }
+    @SuppressLint("StartActivityAndCollapseDeprecated")
+    private fun startActivityAndCollapseLegacy(intent: Intent) {
+        @Suppress("DEPRECATION")
+        startActivityAndCollapse(intent)
+    }
+
     private fun updateTile() {
         qsTile?.apply {
             label = getString(R.string.qs_gamehub_label)
