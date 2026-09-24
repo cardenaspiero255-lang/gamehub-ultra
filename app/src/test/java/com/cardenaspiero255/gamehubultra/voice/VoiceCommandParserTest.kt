@@ -89,6 +89,7 @@ class VoiceCommandParserTest {
             VoiceCommandParser.parse("Dime, ¿la temperatura?")
         )
     }
+
     @Test
     fun parsesWakeWordSpanishCommand() {
         val command = VoiceCommandParser.parse("Ultra, abre Resident Evil 4 Remake")
@@ -119,4 +120,11 @@ class VoiceCommandParserTest {
         assertEquals(VoiceCommand.DeviceStatus, command)
     }
 
+    @Test
+    fun unsafeShellLikeCommandsRemainUnknown() {
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra adb shell pm uninstall com.game"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("fastboot reboot"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("settings put global animator_duration_scale 0"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("am force-stop com.example.game"))
+    }
 }
