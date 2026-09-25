@@ -187,4 +187,21 @@ class VoiceCommandParserTest {
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("settings put global animator_duration_scale 0"))
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("am force-stop com.example.game"))
     }
+
+    @Test
+    fun profileActivationVerbDoesNotBecomeGameQuery() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra activa X4")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra activa el modo X4")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra activate X4")
+        )
+    }
+
 }
