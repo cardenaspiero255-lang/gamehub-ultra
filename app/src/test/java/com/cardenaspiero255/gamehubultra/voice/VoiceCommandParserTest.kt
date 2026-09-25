@@ -281,4 +281,12 @@ class VoiceCommandParserTest {
         assertEquals(PerformanceProfile.X4, spanish.requestedProfile)
     }
 
+    @Test
+    fun ambiguousActionVerbsWithoutGamingContextStayUnknown() {
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra set a timer"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra switch to dark mode"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra enable notifications"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra use the camera"))
+    }
+
 }
