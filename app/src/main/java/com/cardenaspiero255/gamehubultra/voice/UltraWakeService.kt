@@ -32,6 +32,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
@@ -441,12 +442,13 @@ class UltraWakeService : Service() {
                 is UltraAgentRoute.Chat -> {
                     voiceConversationLedger.bindScope(selectedGamePackage)
                     val conversationBefore = voiceConversationLedger.snapshot()
+                    val memoryCommand = UltraMemoryCommandParser.parse(route.message)
                     val answer = aiAdvisor.chat(
                         message = route.message,
                         context = aiContext,
                         conversation = conversationBefore
                     )
-                    if (UltraMemoryCommandParser.parse(route.message) == null) {
+                    if (memoryCommand == null) {
                         val delta = voiceConversationLedger.record(
                             userMessage = route.message,
                             assistantMessage = answer
@@ -460,6 +462,10 @@ class UltraWakeService : Service() {
                             ),
                             timestampMillis = System.currentTimeMillis()
                         )
+                    } else if (
+                        UltraMemoryTurnPersistencePolicy.resetsConversationContext(memoryCommand)
+                    ) {
+                        voiceConversationLedger.clear()
                     }
                     answer
                 }
