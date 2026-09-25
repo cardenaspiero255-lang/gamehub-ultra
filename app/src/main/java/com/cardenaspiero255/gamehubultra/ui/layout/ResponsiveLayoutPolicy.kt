@@ -10,7 +10,7 @@ object ResponsiveLayoutPolicy {
     fun modeForWidthDp(widthDp: Int): UltraLayoutMode =
         when {
             widthDp >= 1200 -> UltraLayoutMode.ULTRA_WIDE
-            widthDp >= 840 -> UltraLayoutMode.WIDE
+            widthDp >= 600 -> UltraLayoutMode.WIDE
             else -> UltraLayoutMode.COMPACT
         }
 }
