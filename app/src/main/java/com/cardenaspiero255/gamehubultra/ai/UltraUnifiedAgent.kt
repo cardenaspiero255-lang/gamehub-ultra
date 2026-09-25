@@ -46,14 +46,16 @@ object UltraUnifiedAgentRouter {
         telemetry: UltraRuntimeTelemetry? = null,
         clock: Clock = Clock.systemDefaultZone()
     ): UltraAgentRoute {
-        UltraGeneralAssistant.classify(transcript)?.let { intent ->
-            return UltraAgentRoute.Utility(
-                UltraGeneralAssistant.answer(
-                    intent = intent,
-                    clock = clock,
-                    telemetry = telemetry
+        if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
+            UltraGeneralAssistant.classify(transcript)?.let { intent ->
+                return UltraAgentRoute.Utility(
+                    UltraGeneralAssistant.answer(
+                        intent = intent,
+                        clock = clock,
+                        telemetry = telemetry
+                    )
                 )
-            )
+            }
         }
 
         val command = VoiceCommandParser.parse(transcript, optionalResolver)
