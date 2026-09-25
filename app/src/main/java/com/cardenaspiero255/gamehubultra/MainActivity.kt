@@ -1502,18 +1502,17 @@ private fun VoiceAssistantCard(
                         onConversationChanged(withUser)
                     }
 
-                    when (
-                        val voiceStatus = VoiceDeviceStatusProvider.read(context)
-                        val route = UltraUnifiedAgentRouter.route(
-                            transcript = spokenText,
-                            optionalResolver = aiIntentResolver,
-                            telemetry = UltraRuntimeTelemetry(
-                                batteryPercent = voiceStatus.batteryPercent,
-                                thermalLabel = voiceStatus.thermalLabel,
-                                refreshRateHz = latestAiContext.refreshRateHz
-                            )
+                    val voiceStatus = VoiceDeviceStatusProvider.read(context)
+                    val route = UltraUnifiedAgentRouter.route(
+                        transcript = spokenText,
+                        optionalResolver = aiIntentResolver,
+                        telemetry = UltraRuntimeTelemetry(
+                            batteryPercent = voiceStatus.batteryPercent,
+                            thermalLabel = voiceStatus.thermalLabel,
+                            refreshRateHz = latestAiContext.refreshRateHz
                         )
-                    ) {
+                    )
+                    when (route) {
                         is UltraAgentRoute.Utility -> {
                             val answer = route.answer.message
                             val withAnswer = UltraConversationPolicy.append(
