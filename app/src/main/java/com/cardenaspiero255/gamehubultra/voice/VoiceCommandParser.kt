@@ -92,7 +92,9 @@ object VoiceCommandParser {
     private fun hasExplicitProfileInstruction(clean: String): Boolean {
         val profileValue =
             """fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything"""
-        return Regex("""\b(en|con|with|using)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\b""")
+        return Regex("""\b(y|and)\s+($PROFILE_ACTION_VERBS)\b\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\b""")
+            .containsMatchIn(clean) ||
+            Regex("""\b(en|con|with|using)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\b""")
             .containsMatchIn(clean) ||
             Regex("""\b($PROFILE_MARKERS)\s+($profileValue)\b""")
                 .containsMatchIn(clean) ||
@@ -130,6 +132,12 @@ object VoiceCommandParser {
 
     private fun removeProfileSyntax(clean: String): String =
         clean
+            .replace(
+                Regex(
+                    """\b(y|and)\s+($PROFILE_ACTION_VERBS)\b\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\b"""
+                ),
+                " "
+            )
             .replace(Regex("""\b(to|a|al)\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\b"""), " ")
             .replace(Regex("""\b(to|a|al)\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\b"""), " ")
             .replace(Regex("""\b($PROFILE_MARKERS)\s+(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\s+($PROFILE_TARGET_CONNECTORS)\b"""), " ")
