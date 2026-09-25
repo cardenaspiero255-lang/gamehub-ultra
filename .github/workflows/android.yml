@@ -98,19 +98,34 @@ jobs:
           cache-disabled: true
 
       - name: Run unit tests
-        run: gradle :app:testDebugUnitTest --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/unit-tests.log"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/debug-apk.log"
 
       - name: Run lint
-        run: gradle :app:lintDebug --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:lintDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-debug.log"
 
       - name: Build release APK
-        run: gradle :app:assembleRelease --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk.log"
 
       - name: Build release AAB
-        run: gradle :app:bundleRelease --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:bundleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-aab.log"
 
       - name: Prepare deterministic API 35 AVD
         shell: bash
@@ -270,6 +285,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          exec > >(tee "$RUNNER_TEMP/apk-install-validation.log") 2>&1
           APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
           if [ -z "$APK" ] || [ ! -s "$APK" ]; then
             echo "No installable release APK found under app/build/outputs/apk/release"
@@ -357,6 +373,22 @@ jobs:
             echo "Known CAR-29 emulator errors are still present."
             exit 1
           fi
+
+      - name: Record failure-analysis handoff
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Android CI failed. Gemini analysis is intentionally not credentialed in pull_request workflows." 
+          echo "Use a trusted default-branch workflow_run consumer for any secret-backed analysis."
+
+      - name: Upload Gemini failure analysis
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gamehub-ultra-gemini-failure-analysis
+          path: ${{ runner.temp }}/gemini-analysis/**
+          if-no-files-found: ignore
 
       - name: Upload emulator diagnostics
         if: always()

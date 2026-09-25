@@ -31,6 +31,22 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun preservesModeInsideGameTitleWhenProfileWasRequested() {
+        val command = VoiceCommandParser.parse("abre Mode Runner en modo X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("mode runner", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
+    fun preservesProfileInsideGameTitleWhenProfileWasRequested() {
+        val command = VoiceCommandParser.parse("open Player Profile Simulator with X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("player profile simulator", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
     fun parsesEnglishProfiles() {
         assertEquals(
             VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
@@ -118,6 +134,50 @@ class VoiceCommandParserTest {
     fun wakeWordIsRemovedBeforeNaturalLanguageResolution() {
         val command = VoiceCommandParser.parse("Ultra dime la temperatura")
         assertEquals(VoiceCommand.DeviceStatus, command)
+    }
+
+    @Test
+    fun preservesModeAsGameTitleWhenNoProfileWasRequested() {
+        val command = VoiceCommandParser.parse("open Mode")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("mode", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
+    @Test
+    fun preservesProfileInsideGameTitleWhenNoProfileWasRequested() {
+        val command = VoiceCommandParser.parse("open Player Profile Simulator")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("player profile simulator", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
+    @Test
+    fun preservesTitleWordsWhenExplicitModeProfileIsRequested() {
+        val command = VoiceCommandParser.parse("abre Mode Runner en modo X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("mode runner", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
+    fun removesCompleteX4ModeSuffixFromGameQuery() {
+        val mode = assertIs<VoiceCommand.OpenGame>(VoiceCommandParser.parse("open Halo with X4 mode"))
+        assertEquals("halo", mode.query)
+        assertEquals(PerformanceProfile.X4, mode.requestedProfile)
+
+        val profile = assertIs<VoiceCommand.OpenGame>(VoiceCommandParser.parse("open Halo with X4 profile"))
+        assertEquals("halo", profile.query)
+        assertEquals(PerformanceProfile.X4, profile.requestedProfile)
+    }
+
+
+    @Test
+    fun preservesX4WhenItIsPartOfGameTitle() {
+        val command = VoiceCommandParser.parse("open X4 Foundations")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("x4 foundations", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
     }
 
     @Test
