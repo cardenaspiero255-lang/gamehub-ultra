@@ -30,6 +30,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
@@ -62,6 +63,7 @@ class UltraWakeService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val commandCoordinator = UltraWakeCommandCoordinator()
     private val commandQueue = UltraWakeCommandQueue()
+    private val voiceConversationLedger = UltraVoiceConversationLedger(maxEntries = 8)
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
     private val lifecycleGate = UltraWakeLifecycleGate()
@@ -435,11 +437,30 @@ class UltraWakeService : Service() {
 
                 when (route) {
                 is UltraAgentRoute.Utility -> route.answer.message
-                is UltraAgentRoute.Chat ->
-                    aiAdvisor.chat(
+                is UltraAgentRoute.Chat -> {
+                    val conversationBefore = voiceConversationLedger.snapshot()
+                    val answer = aiAdvisor.chat(
                         message = route.message,
-                        context = aiContext
+                        context = aiContext,
+                        conversation = conversationBefore
                     )
+                    if (UltraMemoryCommandParser.parse(route.message) == null) {
+                        val delta = voiceConversationLedger.record(
+                            userMessage = route.message,
+                            assistantMessage = answer
+                        )
+                        ultraMemoryStore.enqueueSyncConversation(
+                            previous = delta.previous,
+                            next = delta.next,
+                            scope = UltraMemoryScope(
+                                userId = "local",
+                                gamePackage = selectedGamePackage
+                            ),
+                            timestampMillis = System.currentTimeMillis()
+                        )
+                    }
+                    answer
+                }
                 is UltraAgentRoute.Command -> {
                     val result = VoiceCommandEngine.execute(
                         command = route.command,
@@ -647,6 +668,7 @@ class UltraWakeService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
         commandExecutor.shutdownNow()
         commandQueue.clear()
+        voiceConversationLedger.clear()
         speechGeneration.clear()
         playbackGuard.clear()
         closePersistentSpeechSource()
