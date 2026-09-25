@@ -40,6 +40,7 @@ class GameSessionLifecycleCoordinator(
     private val queue = SerialMutationQueue(scope, dispatcher)
     private val monitor = Any()
     private var requestedSession: RuntimeGameSession? = null
+    private val finishingSessionIds = mutableSetOf<String>()
 
     private val _runtimeSession = MutableStateFlow<RuntimeGameSession?>(null)
     val runtimeSession: StateFlow<RuntimeGameSession?> = _runtimeSession.asStateFlow()
@@ -81,22 +82,35 @@ class GameSessionLifecycleCoordinator(
     fun finishCurrent(metrics: SessionEndMetrics): SessionFinishHandle? {
         val target = synchronized(monitor) {
             val current = requestedSession ?: _runtimeSession.value
-            if (current != null && requestedSession == current) {
-                requestedSession = null
+            when {
+                current == null -> null
+                current.id in finishingSessionIds -> null
+                else -> {
+                    finishingSessionIds += current.id
+                    if (requestedSession == current) {
+                        requestedSession = null
+                    }
+                    current
+                }
             }
-            current
         } ?: return null
 
         val job = queue.enqueue {
-            store.finishSession(
-                sessionId = target.id,
-                endedAtMillis = metrics.endedAtMillis,
-                endBatteryPercent = metrics.endBatteryPercent,
-                endThermalStatus = metrics.endThermalStatus,
-                endRamUsedPercent = metrics.endRamUsedPercent
-            )
-            if (_runtimeSession.value?.id == target.id) {
-                _runtimeSession.value = null
+            try {
+                store.finishSession(
+                    sessionId = target.id,
+                    endedAtMillis = metrics.endedAtMillis,
+                    endBatteryPercent = metrics.endBatteryPercent,
+                    endThermalStatus = metrics.endThermalStatus,
+                    endRamUsedPercent = metrics.endRamUsedPercent
+                )
+                if (_runtimeSession.value?.id == target.id) {
+                    _runtimeSession.value = null
+                }
+            } finally {
+                synchronized(monitor) {
+                    finishingSessionIds.remove(target.id)
+                }
             }
         }
         return SessionFinishHandle(session = target, job = job)
