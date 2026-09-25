@@ -171,6 +171,15 @@ class VoiceCommandParserTest {
         assertEquals(PerformanceProfile.X4, profile.requestedProfile)
     }
 
+
+    @Test
+    fun preservesX4WhenItIsPartOfGameTitle() {
+        val command = VoiceCommandParser.parse("open X4 Foundations")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("x4 foundations", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
     @Test
     fun unsafeShellLikeCommandsRemainUnknown() {
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra adb shell pm uninstall com.game"))
