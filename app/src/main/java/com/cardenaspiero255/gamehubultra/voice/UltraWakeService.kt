@@ -53,13 +53,14 @@ class UltraWakeService : Service() {
         private const val NOTIFICATION_ID = 2301
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
-        private const val COMMAND_UTTERANCE_ID = "ultra-command"
+        private const val COMMAND_UTTERANCE_PREFIX = "ultra-command"
         private const val COMMAND_SPEECH_TIMEOUT_MS = 10_000L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val commandCoordinator = UltraWakeCommandCoordinator()
     private val commandQueue = UltraWakeCommandQueue()
+    private val speechGeneration = UltraWakeSpeechGeneration()
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val restartRecognition = Runnable { startRecognition() }
@@ -86,21 +87,21 @@ class UltraWakeService : Service() {
                 override fun onStart(utteranceId: String?) = Unit
 
                 override fun onDone(utteranceId: String?) {
-                    if (utteranceId == COMMAND_UTTERANCE_ID) {
-                        mainHandler.post { finishCommandAndResume() }
+                    speechToken(utteranceId)?.let { token ->
+                        mainHandler.post { finishCommandAndResume(token) }
                     }
                 }
 
                 @Deprecated("Android legacy TextToSpeech callback")
                 override fun onError(utteranceId: String?) {
-                    if (utteranceId == COMMAND_UTTERANCE_ID) {
-                        mainHandler.post { finishCommandAndResume() }
+                    speechToken(utteranceId)?.let { token ->
+                        mainHandler.post { finishCommandAndResume(token) }
                     }
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
-                    if (utteranceId == COMMAND_UTTERANCE_ID) {
-                        mainHandler.post { finishCommandAndResume() }
+                    speechToken(utteranceId)?.let { token ->
+                        mainHandler.post { finishCommandAndResume(token) }
                     }
                 }
             }
@@ -303,6 +304,8 @@ class UltraWakeService : Service() {
         results: Bundle?,
         keepRecognitionActive: Boolean
     ) {
+        if (speechGeneration.isActive()) return
+
         val alternatives = results
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             .orEmpty()
@@ -475,25 +478,34 @@ class UltraWakeService : Service() {
     }
 
     private fun speakAndResume(response: String) {
+        val token = speechGeneration.begin()
+        val utteranceId = "$COMMAND_UTTERANCE_PREFIX-$token"
         val result = tts?.speak(
             response,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            COMMAND_UTTERANCE_ID
+            utteranceId
         ) ?: TextToSpeech.ERROR
 
         if (result == TextToSpeech.ERROR) {
-            finishCommandAndResume()
+            finishCommandAndResume(token)
             return
         }
 
         mainHandler.postDelayed(
-            { finishCommandAndResume() },
+            { finishCommandAndResume(token) },
             COMMAND_SPEECH_TIMEOUT_MS
         )
     }
 
-    private fun finishCommandAndResume() {
+    private fun speechToken(utteranceId: String?): Long? =
+        utteranceId
+            ?.takeIf { it.startsWith("$COMMAND_UTTERANCE_PREFIX-") }
+            ?.substringAfterLast('-')
+            ?.toLongOrNull()
+
+    private fun finishCommandAndResume(token: Long) {
+        if (!speechGeneration.complete(token)) return
         if (!commandCoordinator.finishCommand()) return
 
         val queued = commandQueue.poll()
@@ -571,6 +583,7 @@ class UltraWakeService : Service() {
         mainHandler.removeCallbacksAndMessages(null)
         commandExecutor.shutdownNow()
         commandQueue.clear()
+        speechGeneration.clear()
         closePersistentSpeechSource()
         commandCoordinator.onRecognitionFinished()
         commandCoordinator.finishCommand()
