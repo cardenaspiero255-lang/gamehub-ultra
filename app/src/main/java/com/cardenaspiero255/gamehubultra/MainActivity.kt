@@ -12,6 +12,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
@@ -308,9 +309,16 @@ private fun GameHubUltraApp(
         )
     }
     var ultraConversation by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var loadedUltraConversationScopeKey by rememberSaveable {
+        mutableStateOf("__unloaded__")
+    }
 
     LaunchedEffect(ultraMemoryStore, uiState.selectedGamePackage) {
-        if (ultraConversation.isNotEmpty()) return@LaunchedEffect
+        val scopeKey = uiState.selectedGamePackage ?: "__global__"
+        if (loadedUltraConversationScopeKey == scopeKey) return@LaunchedEffect
+
+        loadedUltraConversationScopeKey = scopeKey
+        ultraConversation = emptyList()
         val memoryScope = UltraMemoryScope(
             userId = "local",
             gamePackage = uiState.selectedGamePackage
@@ -322,7 +330,7 @@ private fun GameHubUltraApp(
                 scope = memoryScope
             )
         }
-        if (ultraConversation.isEmpty()) {
+        if (loadedUltraConversationScopeKey == scopeKey) {
             ultraConversation = loaded
         }
     }
@@ -337,7 +345,7 @@ private fun GameHubUltraApp(
         val timestampMillis = System.currentTimeMillis()
         if (next.isEmpty()) {
             ultraMemoryStore.enqueueClearConversationHistory(userId = memoryScope.userId)
-        } else {
+        } else if (UltraMemoryTurnPersistencePolicy.shouldPersist(previous, next)) {
             ultraMemoryStore.enqueueSyncConversation(
                 previous = previous,
                 next = next,
