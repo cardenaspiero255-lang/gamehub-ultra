@@ -31,6 +31,22 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun preservesModeInsideGameTitleWhenProfileWasRequested() {
+        val command = VoiceCommandParser.parse("abre Mode Runner en modo X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("mode runner", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
+    fun preservesProfileInsideGameTitleWhenProfileWasRequested() {
+        val command = VoiceCommandParser.parse("open Player Profile Simulator with X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("player profile simulator", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
     fun parsesEnglishProfiles() {
         assertEquals(
             VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
