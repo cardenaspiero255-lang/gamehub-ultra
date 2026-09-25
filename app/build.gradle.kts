@@ -1,3 +1,5 @@
+import java.io.File
+import javax.imageio.ImageIO
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -47,6 +49,45 @@ android {
     buildFeatures {
         compose = true
     }
+
+    sourceSets {
+        getByName("main").res.srcDir(
+            layout.buildDirectory.dir("generated/res/launcherArtwork")
+        )
+    }
+}
+
+
+val generateLauncherArtwork by tasks.registering {
+    val sourceArtwork = rootProject.layout.projectDirectory.file(
+        "docs/design/ic_launcher_photo.png"
+    )
+    val outputDirectory = layout.buildDirectory.dir(
+        "generated/res/launcherArtwork/drawable-nodpi"
+    )
+
+    inputs.file(sourceArtwork)
+    outputs.dir(outputDirectory)
+
+    doLast {
+        val sourceFile = sourceArtwork.asFile
+        check(sourceFile.isFile) {
+            "Launcher artwork is missing: ${sourceFile.absolutePath}"
+        }
+
+        val image = ImageIO.read(sourceFile)
+            ?: error("Launcher artwork is not a readable PNG image.")
+        val targetDirectory = outputDirectory.get().asFile
+        targetDirectory.mkdirs()
+        val targetFile = File(targetDirectory, "ic_launcher_photo.png")
+        check(ImageIO.write(image, "png", targetFile)) {
+            "No PNG writer is available to sanitize launcher artwork."
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(generateLauncherArtwork)
 }
 
 dependencies {
