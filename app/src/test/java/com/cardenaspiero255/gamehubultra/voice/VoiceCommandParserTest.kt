@@ -47,6 +47,21 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun parsesProfileToGameConnectorsForNewActionVerbs() {
+        val apply = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("apply X4 to Minecraft")
+        )
+        assertEquals("minecraft", apply.query)
+        assertEquals(PerformanceProfile.X4, apply.requestedProfile)
+
+        val set = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("set X4 for Minecraft")
+        )
+        assertEquals("minecraft", set.query)
+        assertEquals(PerformanceProfile.X4, set.requestedProfile)
+    }
+
+    @Test
     fun parsesEnglishProfiles() {
         assertEquals(
             VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
