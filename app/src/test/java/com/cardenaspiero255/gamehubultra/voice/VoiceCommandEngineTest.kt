@@ -158,4 +158,12 @@ class VoiceCommandEngineTest {
         assertEquals("com.supercell.brawlstars", match?.packageName)
     }
 
+
+    @Test
+    fun spokenAcronymMatchesPunctuatedGameLabel() {
+        val games = listOf(GameInfo("com.zeptolab.cats.google", "C.A.T.S."))
+        val match = GameMatchFinder.find("cats", games)
+        assertEquals("com.zeptolab.cats.google", match?.packageName)
+    }
+
 }
