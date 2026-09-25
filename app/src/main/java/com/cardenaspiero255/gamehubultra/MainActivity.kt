@@ -691,6 +691,7 @@ private fun GameHubUltraApp(
                             onClick = {
                                 Trace.beginSection("GameHubUltra.Navigation.Settings")
                                 try {
+                                    profileOpen = false
                                     settingsOpen = !settingsOpen
                                 } finally {
                                     Trace.endSection()
@@ -782,7 +783,11 @@ private fun GameHubUltraApp(
                     TabRow(selectedTabIndex = selectedTab) {
                         Tab(
                             selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
+                            onClick = {
+                                settingsOpen = false
+                                profileOpen = false
+                                selectedTab = 0
+                            },
                             modifier = Modifier
                                 .testTag(tabTestTags[0])
                                 .semantics(mergeDescendants = true) {
@@ -796,6 +801,8 @@ private fun GameHubUltraApp(
                             onClick = {
                                 Trace.beginSection("GameHubUltra.Navigation.Library")
                                 try {
+                                    settingsOpen = false
+                                    profileOpen = false
                                     selectedTab = 1
                                 } finally {
                                     Trace.endSection()
@@ -952,8 +959,14 @@ private fun HomeScreen(
             packageDisplayName(timelineContext, packageName)
         }
     }
-    val localGameCount = remember {
-        GameLibrary.discover(timelineContext).games.size
+    var localGameCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(timelineContext, manualGamePackages) {
+        localGameCount = withContext(Dispatchers.IO) {
+            GameLibrary.discover(
+                context = timelineContext,
+                additionalPackages = manualGamePackages
+            ).games.size
+        }
     }
     LazyColumn(
         modifier = modifier
