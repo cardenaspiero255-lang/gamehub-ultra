@@ -24,8 +24,10 @@ internal class UltraWakeCommandCoordinator {
         }
     }
 
-    fun tryBeginCommand(): Boolean = synchronized(lock) {
-        recognitionActive = false
+    fun tryBeginCommand(keepRecognitionActive: Boolean = false): Boolean = synchronized(lock) {
+        if (!keepRecognitionActive) {
+            recognitionActive = false
+        }
         if (commandRunning) {
             false
         } else {
@@ -45,5 +47,9 @@ internal class UltraWakeCommandCoordinator {
 
     fun isCommandRunning(): Boolean = synchronized(lock) {
         commandRunning
+    }
+
+    fun isRecognitionActive(): Boolean = synchronized(lock) {
+        recognitionActive
     }
 }
