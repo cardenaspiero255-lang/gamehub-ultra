@@ -1,5 +1,18 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
+    .orElse(providers.gradleProperty("EPIC_AUTH_BACKEND_URL"))
+    .orElse("")
+    .get()
+
+val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
+val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("GAMEHUB_RELEASE_KEY_PASSWORD").orNull
+
+fun quotedBuildConfig(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,13 +30,36 @@ android {
         targetSdk = 36
         versionCode = 3
         versionName = "0.3.0"
+        buildConfigField(
+            "String",
+            "EPIC_AUTH_BACKEND_URL",
+            quotedBuildConfig(epicAuthBackendUrl)
+        )
+    }
+
+    signingConfigs {
+        if (!releaseKeystorePath.isNullOrBlank()) {
+            require(!releaseStorePassword.isNullOrBlank()) {
+                "GAMEHUB_RELEASE_STORE_PASSWORD is required"
+            }
+            require(!releaseKeyAlias.isNullOrBlank()) {
+                "GAMEHUB_RELEASE_KEY_ALIAS is required"
+            }
+            require(!releaseKeyPassword.isNullOrBlank()) {
+                "GAMEHUB_RELEASE_KEY_PASSWORD is required"
+            }
+            create("secureRelease") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
-            // Test-release signing so the generated release APK is directly installable.
-            // Replace with a private release keystore before public production distribution.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("secureRelease")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -46,6 +82,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
