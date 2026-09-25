@@ -29,6 +29,13 @@ class UltraDashboardSafetyTest {
     }
 
     @Test
+    fun openingQuickVoiceRequestsImmediateReveal() {
+        assertTrue(shouldRevealQuickVoiceControls(wasOpen = false, isOpen = true))
+        assertFalse(shouldRevealQuickVoiceControls(wasOpen = true, isOpen = false))
+        assertFalse(shouldRevealQuickVoiceControls(wasOpen = true, isOpen = true))
+    }
+
+    @Test
     fun boosterBadgesDoNotPretendToBeMeasuredFps() {
         val presentations = PerformanceProfile.entries.map(::boosterPresentation)
         presentations.forEach { presentation ->
