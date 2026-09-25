@@ -31,11 +31,19 @@ object VoiceCommandParser {
         }
 
         profileFromText(clean)?.let { profile ->
-            val gameQuery = extractGameQuery(clean, stripProfileSyntax = true)
-            return if (gameQuery.isNotBlank()) {
-                VoiceCommand.OpenGame(gameQuery, profile)
-            } else {
-                VoiceCommand.SelectProfile(profile)
+            val rawGameQuery = extractGameQuery(clean, stripProfileSyntax = false)
+            val profileBelongsToGameTitle =
+                hasLaunchIntent(clean) &&
+                    !hasExplicitProfileInstruction(clean) &&
+                    removeProfileSyntax(rawGameQuery).trim().isNotBlank()
+
+            if (!profileBelongsToGameTitle) {
+                val gameQuery = extractGameQuery(clean, stripProfileSyntax = true)
+                return if (gameQuery.isNotBlank()) {
+                    VoiceCommand.OpenGame(gameQuery, profile)
+                } else {
+                    VoiceCommand.SelectProfile(profile)
+                }
             }
         }
 
@@ -65,6 +73,21 @@ object VoiceCommandParser {
             .replace(Regex("""[^a-z0-9x4]+"""), " ")
             .trim()
             .replace(Regex("""\s+"""), " ")
+
+    private fun hasLaunchIntent(clean: String): Boolean =
+        Regex("""^\s*(gamehub\s+ultra\s+|gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|open|opens|open me|launch|start|run|play)\b""")
+            .containsMatchIn(clean)
+
+    private fun hasExplicitProfileInstruction(clean: String): Boolean {
+        val profileValue =
+            """fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything"""
+        return Regex("""\b(en|con|with|using)\s+((modo|perfil|mode|profile)\s+)?($profileValue)(\s+(modo|perfil|mode|profile))?\b""")
+            .containsMatchIn(clean) ||
+            Regex("""\b(modo|perfil|mode|profile)\s+($profileValue)\b""")
+                .containsMatchIn(clean) ||
+            Regex("""\b($profileValue)\s+(modo|perfil|mode|profile)\b""")
+                .containsMatchIn(clean)
+    }
 
     private fun isUnsafeShellLikeCommand(clean: String): Boolean {
         val unsafePatterns = listOf(
