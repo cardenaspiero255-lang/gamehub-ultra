@@ -138,6 +138,34 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
+    fun delayedAnswersMergeAgainstLatestConversationState() {
+        var history = emptyList<String>()
+
+        fun apply(mutation: UltraConversationMutation) {
+            history = UltraConversationPolicy.reduce(
+                history = history,
+                mutation = mutation,
+                maxEntries = 8
+            )
+        }
+
+        apply(UltraConversationMutation.Append("Tú: voz"))
+        apply(UltraConversationMutation.Append("Tú: texto"))
+        apply(UltraConversationMutation.Append("Ultra: respuesta texto"))
+        apply(UltraConversationMutation.Append("Ultra: respuesta voz"))
+
+        assertEquals(
+            listOf(
+                "Tú: voz",
+                "Tú: texto",
+                "Ultra: respuesta texto",
+                "Ultra: respuesta voz"
+            ),
+            history
+        )
+    }
+
+    @Test
     fun blankConversationEntriesAreIgnored() {
         assertEquals(
             listOf("Ultra: listo"),
