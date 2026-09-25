@@ -7,11 +7,11 @@ class LibraryLayoutPolicyTest {
     @Test
     fun portraitPhonesUseCompactStableGameCards() {
         assertEquals(
-            LibraryGridMetrics(minTileWidthDp = 148, tileHeightDp = 132),
+            LibraryGridMetrics(minTileWidthDp = 148, minTileHeightDp = 132),
             LibraryLayoutPolicy.metricsForWidthDp(360)
         )
         assertEquals(
-            LibraryGridMetrics(minTileWidthDp = 148, tileHeightDp = 132),
+            LibraryGridMetrics(minTileWidthDp = 148, minTileHeightDp = 132),
             LibraryLayoutPolicy.metricsForWidthDp(412)
         )
     }
@@ -19,11 +19,11 @@ class LibraryLayoutPolicyTest {
     @Test
     fun widerLayoutsKeepCardsBoundedWithoutStretching() {
         assertEquals(
-            LibraryGridMetrics(minTileWidthDp = 168, tileHeightDp = 132),
+            LibraryGridMetrics(minTileWidthDp = 168, minTileHeightDp = 132),
             LibraryLayoutPolicy.metricsForWidthDp(700)
         )
         assertEquals(
-            LibraryGridMetrics(minTileWidthDp = 180, tileHeightDp = 126),
+            LibraryGridMetrics(minTileWidthDp = 180, minTileHeightDp = 126),
             LibraryLayoutPolicy.metricsForWidthDp(840)
         )
     }
