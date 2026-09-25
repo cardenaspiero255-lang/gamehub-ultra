@@ -2600,42 +2600,58 @@ private fun SelectedGameCompactBar(
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(GameHubUiTokens.compactCardPadding),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactControlSpacing)
         ) {
-            iconBitmap?.let { icon ->
-                Image(
-                    bitmap = icon,
-                    contentDescription = stringResource(
-                        R.string.game_icon_content_description,
-                        game.label
-                    ),
-                    modifier = Modifier.size(42.dp)
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                iconBitmap?.let { icon ->
+                    Image(
+                        bitmap = icon,
+                        contentDescription = stringResource(
+                            R.string.game_icon_content_description,
+                            game.label
+                        ),
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        game.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1
+                    )
+                    Text(
+                        "SELECCIONADO",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                TextButton(onClick = onToggleFavorite) {
+                    Text(if (favorite) "★" else "☆")
+                }
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    game.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1
-                )
-                Text(
-                    "SELECCIONADO",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            TextButton(onClick = onToggleFavorite) {
-                Text(if (favorite) "★" else "☆")
-            }
-            TextButton(onClick = onToggleDetails) {
-                Text(if (detailsVisible) "MENOS" else "DETALLES")
-            }
-            TextButton(onClick = onOpen) {
-                Text("JUGAR")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = onToggleDetails,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (detailsVisible) "MENOS" else "DETALLES")
+                }
+                TextButton(
+                    onClick = onOpen,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("JUGAR")
+                }
             }
         }
     }
