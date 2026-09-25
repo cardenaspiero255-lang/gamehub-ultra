@@ -11,8 +11,8 @@ import java.util.Locale
 
 sealed interface UltraAgentRoute {
     data class Command(val command: VoiceCommand) : UltraAgentRoute
-    data class Utility(val answer: UltraAgentAnswer) : UltraAgentRoute
-    data class Chat(val message: String) : UltraAgentRoute
+    open class Chat(open val message: String) : UltraAgentRoute
+    data class Utility(val answer: UltraAgentAnswer) : Chat(answer.message)
 }
 
 data class UltraAgentAnswer(
