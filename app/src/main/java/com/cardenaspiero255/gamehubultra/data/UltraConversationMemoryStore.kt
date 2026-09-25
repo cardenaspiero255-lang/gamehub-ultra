@@ -101,11 +101,21 @@ class UltraConversationMemoryStore private constructor(
         scope: UltraMemoryScope = UltraMemoryScope()
     ): List<String> = repository().recentConversationLines(limit, scope)
 
-    fun clearConversationHistory(userId: String = "local") {
+    fun clearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
+        repository().clearConversationHistory(scope)
+    }
+
+    fun clearConversationHistory(userId: String) {
         repository().clearConversationHistory(userId)
     }
 
-    fun enqueueClearConversationHistory(userId: String = "local") {
+    fun enqueueClearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
+        executor.execute {
+            clearConversationHistory(scope)
+        }
+    }
+
+    fun enqueueClearConversationHistory(userId: String) {
         executor.execute {
             clearConversationHistory(userId)
         }
