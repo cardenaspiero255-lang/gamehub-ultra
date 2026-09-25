@@ -27,6 +27,10 @@ internal class UltraWakeSpeechGeneration {
         active != null
     }
 
+    fun isActive(token: Long): Boolean = synchronized(lock) {
+        active == token
+    }
+
     fun clear() {
         synchronized(lock) {
             active = null
