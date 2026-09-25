@@ -105,7 +105,6 @@ class UltraUnifiedAgentTest {
         assertEquals(UltraUtilityIntent.CurrentTime, utilityRoute.answer.intent)
         assertTrue(utilityRoute.answer.canRunDuringGame)
         assertTrue(utilityRoute.answer.message.contains("12:34"))
-        assertFalse(utilityRoute is UltraAgentRoute.Chat)
     }
 
     @Test
