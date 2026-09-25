@@ -8,6 +8,21 @@ object UltraMemoryTurnPersistencePolicy {
             ?.substringAfter(':')
             ?.trim()
             .orEmpty()
+        if (latestUserMessage.isBlank()) return false
         return UltraMemoryCommandParser.parse(latestUserMessage) == null
     }
+
+    fun resetsConversationContext(message: String): Boolean =
+        resetsConversationContext(UltraMemoryCommandParser.parse(message))
+
+    fun resetsConversationContext(command: UltraMemoryCommand?): Boolean =
+        when (command) {
+            is UltraMemoryCommand.Forget,
+            is UltraMemoryCommand.Delete,
+            is UltraMemoryCommand.Archive,
+            UltraMemoryCommand.ClearHistory,
+            UltraMemoryCommand.ClearAll -> true
+
+            else -> false
+        }
 }
