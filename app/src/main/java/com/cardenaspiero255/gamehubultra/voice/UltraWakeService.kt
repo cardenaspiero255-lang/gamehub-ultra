@@ -496,7 +496,11 @@ class UltraWakeService : Service() {
                         isProfileAvailable = { _ -> true },
                         statusProvider = { status },
                         deferProfileApplication = true,
-                        aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
+                        aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
+                        gameAliasesProvider = { GameAliasStore.aliases(context) },
+                        saveGameAlias = { alias, packageName ->
+                            GameAliasStore.save(context, alias, packageName)
+                        }
                     )
 
                     when (result) {
@@ -504,6 +508,8 @@ class UltraWakeService : Service() {
                             "Perfil ${result.profile.title} seleccionado."
                         is VoiceActionResult.GameOpened ->
                             "Abriendo ${result.game.label}."
+                        is VoiceActionResult.GameAliasSaved ->
+                            "Alias ${result.alias.uppercase()} guardado para ${result.game.label}."
                         is VoiceActionResult.DeviceStatus ->
                             "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
                         is VoiceActionResult.AiAdvice ->
