@@ -1,0 +1,156 @@
+name: Ultra Agent Gemini Test Matrix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraUnifiedAgent.kt"
+      - "app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceCommandParser.kt"
+      - "app/src/test/java/com/cardenaspiero255/gamehubultra/ai/UltraUnifiedAgentTest.kt"
+      - "app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceCommandParserTest.kt"
+      - ".github/workflows/ultra-agent-test-matrix.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultra-agent-test-matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Collect Ultra Unified Agent sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/ultra-agent-sources.txt"
+          : > "$OUT"
+          for file in \
+            app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraUnifiedAgent.kt \
+            app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceCommandParser.kt \
+            app/src/test/java/com/cardenaspiero255/gamehubultra/ai/UltraUnifiedAgentTest.kt \
+            app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceCommandParserTest.kt; do
+            if [ -f "$file" ]; then
+              {
+                echo "===== FILE: $file ====="
+                sed -n '1,260p' "$file"
+                echo
+              } >> "$OUT"
+            else
+              echo "===== MISSING FILE: $file =====" >> "$OUT"
+            fi
+          done
+          echo "ULTRA_AGENT_SOURCES=$OUT" >> "$GITHUB_ENV"
+
+      - name: Generate Ultra agent unit-test matrix with Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          MATRIX="ultra-agent-test-matrix.md"
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            cat > "$MATRIX" <<'EOF'
+          # Ultra Unified Agent unit-test matrix
+
+          Gemini was not executed because `GEMINI_API_KEY` is not available to this workflow run.
+
+          This workflow is intentionally read-only and never modifies code.
+          EOF
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          source_path = Path(os.environ["ULTRA_AGENT_SOURCES"])
+          sources = source_path.read_text(encoding="utf-8", errors="replace")
+          prompt = f"""
+          Eres un revisor senior Android/Kotlin. Genera una matriz de pruebas unitarias en Markdown para GameHub Ultra.
+
+          Objetivo:
+          - Adelantar una matriz de tests para Ultra Unified Agent sin modificar codigo.
+          - Cubrir enrutamiento de intenciones de voz/texto, apertura de juegos, comandos ambiguos, conversacion general, utilidades y seguridad.
+          - Evitar falsos positivos: nombres de juegos que contengan palabras como mode/profile/modo/perfil deben preservarse cuando no se pidio perfil.
+          - Evitar juegos fantasma: frases generales no deben convertirse en OpenGame.
+          - Incluir casos en espanol e ingles.
+          - Incluir columnas: ID, area, entrada del usuario, resultado esperado, ruta/clase esperada, riesgo cubierto, prioridad, test sugerido.
+          - Senala casos que ya parecen cubiertos y casos que faltarian.
+          - No propongas commits automaticos ni cambios de workflow.
+          - No incluyas secretos ni claves.
+
+          Archivos fuente actuales:
+          ```text
+          {sources[:28000]}
+          ```
+          """
+
+          body = {
+              "contents": [
+                  {
+                      "role": "user",
+                      "parts": [{"text": prompt}],
+                  }
+              ],
+              "generationConfig": {
+                  "temperature": 0.2,
+                  "topP": 0.8,
+                  "maxOutputTokens": 8192,
+              },
+          }
+          data = json.dumps(body).encode("utf-8")
+          request = urllib.request.Request(
+              "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+              data=data,
+              method="POST",
+              headers={
+                  "Content-Type": "application/json",
+                  "X-goog-api-key": os.environ["GEMINI_API_KEY"],
+              },
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=90) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+          except urllib.error.HTTPError as exc:
+              details = exc.read().decode("utf-8", errors="replace")
+              Path("ultra-agent-test-matrix.md").write_text(
+                  "# Ultra Unified Agent unit-test matrix\n\n"
+                  "Gemini request failed. The workflow stayed read-only and did not modify code.\n\n"
+                  f"```text\nHTTP {exc.code}\n{details[:4000]}\n```\n",
+                  encoding="utf-8",
+              )
+              raise
+
+          parts = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+          text = "\n".join(part.get("text", "") for part in parts).strip()
+          if not text:
+              text = "# Ultra Unified Agent unit-test matrix\n\nGemini returned no text."
+          header = (
+              "# Ultra Unified Agent unit-test matrix\n\n"
+              "Generated by Gemini from the current PR sources. This is a read-only planning artifact; "
+              "it does not modify production code, tests, branches, or PR state.\n\n"
+          )
+          if text.startswith("#"):
+              output = header + text + "\n"
+          else:
+              output = header + text + "\n"
+          Path("ultra-agent-test-matrix.md").write_text(output, encoding="utf-8")
+          PY
+
+      - name: Upload Ultra agent test matrix
+        uses: actions/upload-artifact@v6
+        with:
+          name: ultra-agent-test-matrix
+          path: ultra-agent-test-matrix.md
+          if-no-files-found: error
