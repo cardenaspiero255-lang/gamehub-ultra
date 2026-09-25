@@ -6,6 +6,12 @@ plugins {
     id("androidx.baselineprofile")
 }
 
+baselineProfile {
+    // CI uses an emulator for correctness/trace validation. AndroidX Benchmark
+    // otherwise skips Macrobenchmark tests on emulators by default.
+    skipBenchmarksOnEmulator = false
+}
+
 android {
     namespace = "com.cardenaspiero255.gamehubultra.baselineprofile"
     compileSdk = 36
