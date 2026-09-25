@@ -197,7 +197,10 @@ object UltraMemorySafety {
         Regex("""\b(credential|credentials|credencial|credenciales)\b"""),
         Regex("""\bgh[pousr]_[A-Za-z0-9_]{20,}\b"""),
         Regex("""\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b"""),
-        Regex("""\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b""")
+        Regex("""\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"""),
+        Regex("""\bglpat-[A-Za-z0-9_-]{20,}\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bAKIA[0-9A-Z]{16}\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bAIza[0-9A-Za-z_-]{30,}\b""", RegexOption.IGNORE_CASE)
     )
 
     fun canPersist(text: String): Boolean {
