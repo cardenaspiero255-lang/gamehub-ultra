@@ -88,7 +88,7 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
-    fun callInterruptionRequestExplainsSafeAndroidLimitations() {
+    fun callInterruptionRequestExplainsOfficialAndroidRoutes() {
         val route = UltraUnifiedAgentRouter.route(
             transcript = "Ultra responde llamadas en segundo plano para que no interrumpan el juego",
             optionalResolver = null
@@ -97,9 +97,10 @@ class UltraUnifiedAgentTest {
         val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
         assertEquals(UltraUtilityIntent.CallInterruptionShield, utilityRoute.answer.intent)
         assertTrue(utilityRoute.answer.canRunDuringGame)
-        assertTrue(utilityRoute.answer.requiresPrivilegedPermission)
-        assertTrue(utilityRoute.answer.message.contains("No molestar"))
-        assertTrue(utilityRoute.answer.message.contains("no lo finjo"))
+        assertTrue(utilityRoute.answer.requiresPhoneRoleOrPermission)
+        assertTrue(utilityRoute.answer.message.contains("InCallService"))
+        assertTrue(utilityRoute.answer.message.contains("ANSWER_PHONE_CALLS"))
+        assertTrue(utilityRoute.answer.message.contains("Game Booster"))
     }
 
     @Test
@@ -111,7 +112,7 @@ class UltraUnifiedAgentTest {
 
         val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
         assertEquals(UltraUtilityIntent.GeneralCapabilityHelp, utilityRoute.answer.intent)
-        assertFalse(utilityRoute.answer.requiresPrivilegedPermission)
+        assertFalse(utilityRoute.answer.requiresPhoneRoleOrPermission)
         assertTrue(utilityRoute.answer.message.contains("temas generales"))
     }
 
