@@ -127,7 +127,7 @@ object VoiceCommandParser {
         }
 
         return withoutProfile
-            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|open|opens|open me|launch|start|run|play)\s*"""), "")
+            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|open|opens|open me|launch|start|run|play|activate|enable|select|switch|apply|use|set)\s*"""), "")
             .replace(Regex("""\b(la|el|un|una|the|a|an|juego|juegos|game|games)\b"""), " ")
             .replace(Regex("""\b(y|con|en|por favor|and|with|in|please)\b"""), " ")
             .replace(Regex("""\s+"""), " ")
