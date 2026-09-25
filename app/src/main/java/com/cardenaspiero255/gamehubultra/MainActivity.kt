@@ -345,7 +345,7 @@ private fun GameHubUltraApp(
         )
         val timestampMillis = System.currentTimeMillis()
         if (next.isEmpty()) {
-            ultraMemoryStore.enqueueClearConversationHistory(userId = memoryScope.userId)
+            ultraMemoryStore.enqueueClearConversationHistory(scope = memoryScope)
         } else if (UltraMemoryTurnPersistencePolicy.shouldPersist(previous, next)) {
             ultraMemoryStore.enqueueSyncConversation(
                 previous = previous,
@@ -2011,6 +2011,8 @@ private fun AiAdvisorCard(
         val message = chatMessage.trim()
         if (message.isBlank() || chatSending) return
         val originatingGamePackage = context.selectedGamePackage
+        val resetConversationAfterCommand =
+            UltraMemoryTurnPersistencePolicy.resetsConversationContext(message)
         val previousConversation = conversation.takeLast(MAX_CHAT_HISTORY - 1)
         val withUser = UltraConversationPolicy.append(
             history = conversation,
@@ -2030,11 +2032,15 @@ private fun AiAdvisorCard(
                     )
                 ) {
                     latestOnConversationChanged(
-                        UltraConversationPolicy.append(
-                            history = withUser,
-                            entry = "Ultra: " + answer,
-                            maxEntries = MAX_CHAT_HISTORY
-                        )
+                        if (resetConversationAfterCommand) {
+                            listOf("Ultra: " + answer)
+                        } else {
+                            UltraConversationPolicy.append(
+                                history = withUser,
+                                entry = "Ultra: " + answer,
+                                maxEntries = MAX_CHAT_HISTORY
+                            )
+                        }
                     )
                 }
                 chatSending = false
