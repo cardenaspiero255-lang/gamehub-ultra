@@ -15,6 +15,7 @@ import android.widget.ProgressBar
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
+import com.cardenaspiero255.gamehubultra.BuildConfig
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -28,7 +29,6 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
-import android.util.Base64
 
 class StoreConnectionActivity : ComponentActivity() {
     companion object {
@@ -80,6 +80,16 @@ class StoreConnectionActivity : ComponentActivity() {
                 )
             }
             GamePlatform.EPIC_GAMES -> {
+                runCatching {
+                    EpicAuthSecurity.requireSecureBackendUrl(
+                        BuildConfig.EPIC_AUTH_BACKEND_URL
+                    )
+                }.onFailure {
+                    return finishWithError(
+                        "Epic requiere un backend HTTPS seguro para iniciar sesión"
+                    )
+                }
+
                 val stateBytes = ByteArray(32).also {
                     java.security.SecureRandom().nextBytes(it)
                 }
@@ -393,36 +403,28 @@ private object SteamStoreClient {
 
 private object EpicConstants {
     const val CLIENT_ID = "34a02cf8f4414e29b15921876da36f9a"
-    const val CLIENT_SECRET = "daafbccc737745039dffe53d94fc76cf"
+
     const val AUTH_BASE_URL = "https://www.epicgames.com"
-    const val OAUTH_HOST = "account-public-service-prod03.ol.epicgames.com"
+
     const val LIBRARY_HOST = "library-service.live.use1a.on.epicgames.com"
     const val REDIRECT_URI = "https://www.epicgames.com/id/api/redirect"
 }
 
 private object EpicStoreClient {
     fun exchangeCode(code: String): EpicCredentials {
-        val basic = Base64.encodeToString(
-            (EpicConstants.CLIENT_ID + ":" + EpicConstants.CLIENT_SECRET)
-                .toByteArray(Charsets.UTF_8),
-            Base64.NO_WRAP
+        val backendUrl = EpicAuthSecurity.requireSecureBackendUrl(
+            BuildConfig.EPIC_AUTH_BACKEND_URL
         )
-        val json = post(
-            "https://" + EpicConstants.OAUTH_HOST + "/account/api/oauth/token",
-            formBody(
-                "grant_type" to "authorization_code",
-                "code" to code,
-                "token_type" to "eg1"
-            ),
-            mapOf(
-                "Authorization" to "Basic " + basic,
-                "User-Agent" to "UELauncher/11.0.1-14907503+++Portal+Release-Live " +
-                    "Windows/10.0.19041.1.256.64bit"
-            )
+        val json = postJson(
+            backendUrl,
+            JSONObject()
+                .put("code", code)
+                .put("clientId", EpicConstants.CLIENT_ID)
+                .put("redirectUri", EpicConstants.REDIRECT_URI)
         )
         return EpicCredentials(
             accessToken = json.getString("access_token"),
-            refreshToken = json.getString("refresh_token"),
+            refreshToken = json.optString("refresh_token"),
             accountId = json.getString("account_id"),
             displayName = json.optString("displayName"),
             expiresAt = parseExpiresAt(json)
@@ -490,16 +492,9 @@ private object EpicStoreClient {
             json.optLong("expires_in", 7200L) * 1000L
     }
 
-    private fun formBody(vararg entries: Pair<String, String>): String =
-        entries.joinToString("&") {
-            URLEncoder.encode(it.first, "UTF-8") + "=" +
-                URLEncoder.encode(it.second, "UTF-8")
-        }
-
-    private fun post(
+    private fun postJson(
         url: String,
-        body: String,
-        headers: Map<String, String>
+        body: JSONObject
     ): JSONObject {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
@@ -508,10 +503,12 @@ private object EpicStoreClient {
         connection.doOutput = true
         connection.setRequestProperty(
             "Content-Type",
-            "application/x-www-form-urlencoded"
+            "application/json; charset=utf-8"
         )
-        headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
-        connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        connection.setRequestProperty("Accept", "application/json")
+        connection.outputStream.use {
+            it.write(body.toString().toByteArray(Charsets.UTF_8))
+        }
         return readJson(connection)
     }
 
