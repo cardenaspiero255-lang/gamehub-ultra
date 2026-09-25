@@ -35,17 +35,20 @@ object VoiceCommandParser {
             return VoiceCommand.DeviceStatus
         }
 
-        profileFromText(clean)?.let { profile ->
-            stripAppendedProfileAction(clean)?.let { launchOnly ->
-                val combinedGameQuery = extractGameQuery(
-                    launchOnly,
-                    stripProfileSyntax = false
+        stripAppendedProfileAction(clean)?.let { appended ->
+            val combinedGameQuery = extractGameQuery(
+                appended.launchOnly,
+                stripProfileSyntax = false
+            )
+            if (hasLaunchIntent(clean) && combinedGameQuery.isNotBlank()) {
+                return VoiceCommand.OpenGame(
+                    query = combinedGameQuery,
+                    requestedProfile = appended.profile
                 )
-                if (hasLaunchIntent(clean) && combinedGameQuery.isNotBlank()) {
-                    return VoiceCommand.OpenGame(combinedGameQuery, profile)
-                }
             }
+        }
 
+        profileFromText(clean)?.let { profile ->
             val rawGameQuery = extractGameQuery(clean, stripProfileSyntax = false)
             val profileBelongsToGameTitle =
                 hasLaunchIntent(clean) &&
@@ -118,14 +121,23 @@ object VoiceCommandParser {
                 .containsMatchIn(clean)
     }
 
-    private fun stripAppendedProfileAction(clean: String): String? {
+    private data class AppendedProfileAction(
+        val launchOnly: String,
+        val profile: PerformanceProfile
+    )
+
+    private fun stripAppendedProfileAction(clean: String): AppendedProfileAction? {
         val profileValue =
             """fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything"""
         val match = Regex(
             """\b(y|and)\s+($PROFILE_ACTION_VERBS)\b\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\s*$"""
         ).find(clean) ?: return null
+        val appendedProfile = profileFromText(match.groupValues[5]) ?: return null
 
-        return clean.removeRange(match.range).trim()
+        return AppendedProfileAction(
+            launchOnly = clean.removeRange(match.range).trim(),
+            profile = appendedProfile
+        )
     }
 
     private fun isUnsafeShellLikeCommand(clean: String): Boolean {
