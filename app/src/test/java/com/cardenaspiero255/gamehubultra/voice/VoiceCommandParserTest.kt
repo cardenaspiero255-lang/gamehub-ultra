@@ -307,4 +307,12 @@ class VoiceCommandParserTest {
         assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
     }
 
+    @Test
+    fun appendedProfileWinsOverProfileWordInsideGameTitle() {
+        val command = VoiceCommandParser.parse("Ultra, open Balanced Adventure and activate X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("balanced adventure", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
 }
