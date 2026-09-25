@@ -15,8 +15,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
-import com.cardenaspiero255.gamehubultra.data.GameSessionStore
-import com.cardenaspiero255.gamehubultra.data.SerialMutationQueue
+import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
@@ -239,17 +238,7 @@ private fun GameHubUltraApp(
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
-    val sessionStore = remember(context) { GameSessionStore(context) }
-    val sessionMutationQueue = remember(scope) { SerialMutationQueue(scope) }
-    val sessionHistory by sessionStore.sessionsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
-
-    LaunchedEffect(sessionStore, sessionMutationQueue, viewModel) {
-        if (viewModel.currentRuntimeGameSession() == null) {
-            sessionMutationQueue.enqueue {
-                sessionStore.finishActiveSessions(System.currentTimeMillis())
-            }.join()
-        }
-    }
+    val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -466,52 +455,55 @@ private fun GameHubUltraApp(
     }
 
     fun endGameSession() {
-        val runtimeSession = viewModel.currentRuntimeGameSession()
-        val sessionId = runtimeSession?.id
-        val packageName = runtimeSession?.packageName
-        if (sessionId != null && packageName != null) {
-            viewModel.recordPerformanceEvent(
-                PerformanceEvent(
-                    timestampMillis = System.currentTimeMillis(),
-                    type = PerformanceEventType.SESSION_ENDED,
-                    sessionId = sessionId,
-                    detail = packageName
-                )
+        val endedAt = System.currentTimeMillis()
+        val diagnosticsAtEnd = runtimeDiagnostics
+        val profileAtEnd = uiState.effectiveProfile
+        val optimizationKeyAtEnd = currentOptimizationKey
+        val finishHandle = viewModel.finishRuntimeGameSession(
+            SessionEndMetrics(
+                endedAtMillis = endedAt,
+                endBatteryPercent = diagnosticsAtEnd?.battery?.percent,
+                endThermalStatus = diagnosticsAtEnd?.thermal?.status,
+                endRamUsedPercent = diagnosticsAtEnd?.memory?.usedPercent
             )
-            val diagnosticsAtEnd = runtimeDiagnostics
-            val profileAtEnd = uiState.effectiveProfile
-            val optimizationKeyAtEnd = currentOptimizationKey
-            sessionMutationQueue.enqueue {
-                val endedAt = System.currentTimeMillis()
-                sessionStore.finishSession(
-                    sessionId = sessionId,
-                    endedAtMillis = endedAt,
-                    endBatteryPercent = diagnosticsAtEnd?.battery?.percent,
-                    endThermalStatus = diagnosticsAtEnd?.thermal?.status,
-                    endRamUsedPercent = diagnosticsAtEnd?.memory?.usedPercent
-                )
-                val thermalStatus = diagnosticsAtEnd?.thermal?.status
-                val highTemperature = thermalStatus != null && thermalStatus >= 4
-                optimizationMemoryStore.record(
-                    optimizationKeyAtEnd,
-                    OptimizationObservation(
-                        contextKey = optimizationKeyAtEnd.serialized,
-                        profile = profileAtEnd,
-                        measuredFps = null,
-                        stable = diagnosticsAtEnd?.let {
-                            !highTemperature && (it.thermal.status == null || it.thermal.status <= 2)
-                        } == true,
-                        failed = highTemperature,
-                        highTemperature = highTemperature,
-                        thermalStatus = thermalStatus,
-                        batteryPercent = diagnosticsAtEnd?.battery?.percent,
-                        errorReason = if (highTemperature) "thermal_pressure" else null,
-                        timestampMillis = endedAt
+        ) ?: return
+
+        viewModel.recordPerformanceEvent(
+            PerformanceEvent(
+                timestampMillis = endedAt,
+                type = PerformanceEventType.SESSION_ENDED,
+                sessionId = finishHandle.session.id,
+                detail = finishHandle.session.packageName
+            )
+        )
+
+        scope.launch {
+            finishHandle.job.join()
+            if (!finishHandle.job.isCancelled) {
+                withContext(Dispatchers.IO) {
+                    val thermalStatus = diagnosticsAtEnd?.thermal?.status
+                    val highTemperature = thermalStatus != null && thermalStatus >= 4
+                    optimizationMemoryStore.record(
+                        optimizationKeyAtEnd,
+                        OptimizationObservation(
+                            contextKey = optimizationKeyAtEnd.serialized,
+                            profile = profileAtEnd,
+                            measuredFps = null,
+                            stable = diagnosticsAtEnd?.let {
+                                !highTemperature &&
+                                    (it.thermal.status == null || it.thermal.status <= 2)
+                            } == true,
+                            failed = highTemperature,
+                            highTemperature = highTemperature,
+                            thermalStatus = thermalStatus,
+                            batteryPercent = diagnosticsAtEnd?.battery?.percent,
+                            errorReason = if (highTemperature) "thermal_pressure" else null,
+                            timestampMillis = endedAt
+                        )
                     )
-                )
+                }
             }
         }
-        viewModel.clearRuntimeGameSession()
     }
 
     fun selectGame(packageName: String) {
@@ -522,23 +514,18 @@ private fun GameHubUltraApp(
     fun recordGameOpened(packageName: String) {
         endGameSession()
         val sessionId = UUID.randomUUID().toString()
-        val profileName = uiState.effectiveProfile.name
-        val startBatteryPercent = runtimeDiagnostics?.battery?.percent
-        viewModel.beginRuntimeGameSession(id = sessionId, packageName = packageName)
-        sessionMutationQueue.enqueue {
-            sessionStore.startSession(
-                GameSessionRecord(
-                    id = sessionId,
-                    packageName = packageName,
-                    profileName = profileName,
-                    startedAtMillis = System.currentTimeMillis(),
-                    startBatteryPercent = startBatteryPercent
-                )
-            )
-        }
+        val startedAt = System.currentTimeMillis()
+        val record = GameSessionRecord(
+            id = sessionId,
+            packageName = packageName,
+            profileName = uiState.effectiveProfile.name,
+            startedAtMillis = startedAt,
+            startBatteryPercent = runtimeDiagnostics?.battery?.percent
+        )
+        viewModel.beginRuntimeGameSession(record)
         viewModel.recordPerformanceEvent(
             PerformanceEvent(
-                timestampMillis = System.currentTimeMillis(),
+                timestampMillis = startedAt,
                 type = PerformanceEventType.SESSION_STARTED,
                 sessionId = sessionId,
                 detail = packageName
@@ -664,9 +651,7 @@ private fun GameHubUltraApp(
                 performanceTimeline = performanceTimeline,
                 sessionHistory = sessionHistory,
                 onClearSessions = {
-                    sessionMutationQueue.enqueue {
-                        sessionStore.clearSessions()
-                    }
+                    viewModel.clearSessionHistory()
                 },
                 onShareSessions = { shareSessionHistory(context, sessionHistory) },
                 adaptiveDecision = adaptiveDecision,
