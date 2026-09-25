@@ -111,6 +111,7 @@ import com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
+import com.cardenaspiero255.gamehubultra.voice.GameAliasStore
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
@@ -1692,6 +1693,10 @@ private fun VoiceAssistantCard(
                                 statusProvider = { VoiceDeviceStatusProvider.read(context) },
                                 aiAdvisor = { question ->
                                     aiAdvisor.advise(question, latestAiContext)
+                                },
+                                gameAliasesProvider = { GameAliasStore.aliases(context) },
+                                saveGameAlias = { alias, packageName ->
+                                    GameAliasStore.save(context, alias, packageName)
                                 }
                             )
                             val spokenResponse = VoiceResponseFormatter.format(context, result)
@@ -1977,6 +1982,8 @@ private object VoiceResponseFormatter {
                     else -> base
                 }
             }
+            is VoiceActionResult.GameAliasSaved ->
+                "Alias ${result.alias.uppercase()} guardado para ${result.game.label}."
             is VoiceActionResult.DeviceStatus ->
                 context.getString(
                     R.string.voice_result_status,
