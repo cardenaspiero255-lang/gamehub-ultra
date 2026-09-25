@@ -264,7 +264,8 @@ class UltraWakeService : Service() {
 
     private fun handleCommand(transcript: String) {
         commandExecutor.execute {
-            val context = applicationContext
+            val response = UltraWakeFailureGuard.run {
+                val context = applicationContext
             val selectedGamePackage = runCatching {
                 runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
             }.getOrNull()
@@ -312,7 +313,7 @@ class UltraWakeService : Service() {
                 )
             )
 
-            val response = when (route) {
+                when (route) {
                 is UltraAgentRoute.Utility -> route.answer.message
                 is UltraAgentRoute.Chat ->
                     aiAdvisor.chat(
@@ -363,6 +364,8 @@ class UltraWakeService : Service() {
                             "No pude completar el comando. ${result.detail}"
                     }
                 }
+            }
+
             }
 
             mainHandler.post {
