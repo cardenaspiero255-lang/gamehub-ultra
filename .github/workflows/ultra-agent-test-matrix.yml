@@ -6,6 +6,7 @@ on:
     branches: ["main"]
     paths:
       - "app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraUnifiedAgent.kt"
+      - "app/src/main/java/com/cardenaspiero255/gamehubultra/MainActivity.kt"
       - "app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceCommandParser.kt"
       - "app/src/test/java/com/cardenaspiero255/gamehubultra/ai/UltraUnifiedAgentTest.kt"
       - "app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceCommandParserTest.kt"
