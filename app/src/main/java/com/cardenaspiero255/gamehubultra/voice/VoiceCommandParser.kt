@@ -5,8 +5,9 @@ import java.text.Normalizer
 import java.util.Locale
 
 object VoiceCommandParser {
-    private const val LAUNCH_VERBS = "abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|open me|opens|open|launch|start|run|play|activate|enable|select|switch|apply|use|set"
+    private const val GAME_LAUNCH_VERBS = "abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|activa|activar|open me|opens|open|launch|start|run|play|activate"
     private const val PROFILE_ACTION_VERBS = "pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|activate|enable|select|switch|apply|use|set"
+    private const val PROFILE_OR_LAUNCH_VERBS = GAME_LAUNCH_VERBS + "|" + PROFILE_ACTION_VERBS
     private const val PROFILE_MARKERS = "modo|perfil|mode|profile"
     private const val PROFILE_TARGET_CONNECTORS = "to|for|a|al|para|en|with"
     fun parse(
@@ -64,7 +65,7 @@ object VoiceCommandParser {
         }
 
         val gameQuery = extractGameQuery(clean, stripProfileSyntax = false)
-        return if (gameQuery.isNotBlank()) {
+        return if (hasExplicitLaunchIntent(clean) && gameQuery.isNotBlank()) {
             VoiceCommand.OpenGame(gameQuery)
         } else {
             VoiceCommand.Unknown(transcript)
@@ -83,7 +84,7 @@ object VoiceCommandParser {
             .replace(Regex("""\bultra\b"""), " ")
             .replace(Regex("""\bgamehub\b"""), " ")
             .trim()
-        return Regex("""^($LAUNCH_VERBS)\b""").containsMatchIn(clean)
+        return Regex("""^($GAME_LAUNCH_VERBS)\b""").containsMatchIn(clean)
     }
 
     private fun hasLaunchIntent(clean: String): Boolean = hasExplicitLaunchIntent(clean)
@@ -146,9 +147,14 @@ object VoiceCommandParser {
         } else {
             clean
         }
+        val prefixVerbs = if (stripProfileSyntax) {
+            PROFILE_OR_LAUNCH_VERBS
+        } else {
+            GAME_LAUNCH_VERBS
+        }
 
         return withoutProfile
-            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?($LAUNCH_VERBS)\b\s*"""), "")
+            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?($prefixVerbs)\b\s*"""), "")
             .replace(Regex("""\b(la|el|un|una|the|a|an|juego|juegos|game|games)\b"""), " ")
             .replace(Regex("""\b(y|con|en|por favor|and|with|in|please)\b"""), " ")
             .replace(Regex("""\s+"""), " ")
