@@ -154,6 +154,10 @@ import java.util.UUID
 
 private const val MAX_CHAT_HISTORY = 8
 
+internal fun shouldRevealQuickVoiceControls(wasOpen: Boolean, isOpen: Boolean): Boolean =
+    !wasOpen && isOpen
+
+
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
 
@@ -978,6 +982,13 @@ private fun HomeScreen(
     }
     var localGameCount by remember { mutableIntStateOf(0) }
     var quickVoiceOpen by rememberSaveable { mutableStateOf(false) }
+    var quickVoiceRevealRequest by remember { mutableIntStateOf(0) }
+    val homeListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(quickVoiceRevealRequest) {
+        if (quickVoiceRevealRequest > 0) {
+            homeListState.animateScrollToItem(3)
+        }
+    }
     LaunchedEffect(timelineContext, manualGamePackages, gameCatalogRefreshToken) {
         localGameCount = withContext(Dispatchers.IO) {
             GameLibrary.discover(
@@ -987,6 +998,7 @@ private fun HomeScreen(
         }
     }
     LazyColumn(
+        state = homeListState,
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
@@ -1018,8 +1030,27 @@ private fun HomeScreen(
                 sessionCount = sessionHistory.size,
                 onProfileSelected = onProfileSelected,
                 onPlay = onPlaySelectedGame,
-                onVoiceClick = { quickVoiceOpen = !quickVoiceOpen }
+                onVoiceClick = {
+                    val next = !quickVoiceOpen
+                    if (shouldRevealQuickVoiceControls(quickVoiceOpen, next)) {
+                        quickVoiceRevealRequest += 1
+                    }
+                    quickVoiceOpen = next
+                }
             )
+        }
+        if (quickVoiceOpen) {
+            item {
+                VoiceAssistantCard(
+                    selectedProfileName = selectedProfileName,
+                    onProfileSelected = onProfileSelected,
+                    onGameSelected = onGameSelected,
+                    aiContext = aiContext,
+                    aiAdvisor = aiAdvisor,
+                    conversation = conversation,
+                    onConversationChanged = onConversationChanged
+                )
+            }
         }
         item { ActiveProfileCard(state) }
         item {
@@ -1065,7 +1096,7 @@ private fun HomeScreen(
                 onGameSelected = onGameSelected
             )
         }
-        if (showAssistantCards || quickVoiceOpen) {
+        if (showAssistantCards) {
             item {
                 AiAdvisorCard(
                     context = aiContext,
