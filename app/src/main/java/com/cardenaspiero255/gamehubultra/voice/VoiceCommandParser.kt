@@ -20,6 +20,8 @@ object VoiceCommandParser {
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
         if (isUnsafeShellLikeCommand(clean)) return VoiceCommand.Unknown(transcript)
 
+        parseGameAliasDefinition(clean)?.let { return it }
+
         optionalResolver?.resolve(clean)?.let { return it }
 
         if (
@@ -87,6 +89,20 @@ object VoiceCommandParser {
         } else {
             VoiceCommand.Unknown(transcript)
         }
+    }
+
+    private fun parseGameAliasDefinition(clean: String): VoiceCommand.DefineGameAlias? {
+        val spanish = Regex(
+            """^cuando diga ([a-z0-9]{2,20}) (?:quiero que )?(?:abras|abre|abreme|lances|lanza|inicies|inicia|ejecutes|ejecuta) (.+)$"""
+        ).matchEntire(clean)
+        val english = Regex(
+            """^when i say ([a-z0-9]{2,20}) (?:i want you to )?(?:open|launch|start|run) (.+)$"""
+        ).matchEntire(clean)
+        val match = spanish ?: english ?: return null
+        val alias = match.groupValues[1].trim()
+        val gameQuery = match.groupValues[2].trim()
+        if (gameQuery.isBlank()) return null
+        return VoiceCommand.DefineGameAlias(alias = alias, gameQuery = gameQuery)
     }
 
     internal fun normalize(value: String): String =
