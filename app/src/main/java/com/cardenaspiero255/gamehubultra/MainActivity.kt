@@ -947,6 +947,14 @@ private fun HomeScreen(
     showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
+    val recentGameNames = remember(recentGamePackages) {
+        recentGamePackages.map { packageName ->
+            packageDisplayName(timelineContext, packageName)
+        }
+    }
+    val localGameCount = remember {
+        GameLibrary.discover(timelineContext).games.size
+    }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -974,6 +982,9 @@ private fun HomeScreen(
                 adaptiveDecision = adaptiveDecision,
                 gameName = aiContext.selectedGamePackage?.let { packageDisplayName(timelineContext, it) }
                     ?: "Selecciona un juego",
+                recentGames = recentGameNames,
+                gameCount = localGameCount,
+                sessionCount = sessionHistory.size,
                 onProfileSelected = onProfileSelected,
                 onPlay = onPlaySelectedGame
             )
