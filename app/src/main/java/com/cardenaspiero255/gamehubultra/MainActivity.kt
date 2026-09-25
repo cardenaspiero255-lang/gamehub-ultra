@@ -16,6 +16,7 @@ import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.SerialMutationQueue
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
@@ -227,8 +228,9 @@ private fun GameHubUltraApp(
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var profileOpen by rememberSaveable { mutableStateOf(false) }
-    var activeSessionPackage by rememberSaveable { mutableStateOf<String?>(null) }
-    var activeSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    val runtimeGameSession by viewModel.runtimeGameSession.collectAsStateWithLifecycle()
+    val activeSessionPackage = runtimeGameSession?.packageName
+    val activeSessionId = runtimeGameSession?.id
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
@@ -238,13 +240,14 @@ private fun GameHubUltraApp(
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
     val sessionStore = remember(context) { GameSessionStore(context) }
+    val sessionMutationQueue = remember(scope) { SerialMutationQueue(scope) }
     val sessionHistory by sessionStore.sessionsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
 
-    LaunchedEffect(sessionStore) {
-        if (activeSessionId == null) {
-            withContext(Dispatchers.IO) {
+    LaunchedEffect(sessionStore, sessionMutationQueue, viewModel) {
+        if (viewModel.currentRuntimeGameSession() == null) {
+            sessionMutationQueue.enqueue {
                 sessionStore.finishActiveSessions(System.currentTimeMillis())
-            }
+            }.join()
         }
     }
 
@@ -463,8 +466,9 @@ private fun GameHubUltraApp(
     }
 
     fun endGameSession() {
-        val sessionId = activeSessionId
-        val packageName = activeSessionPackage
+        val runtimeSession = viewModel.currentRuntimeGameSession()
+        val sessionId = runtimeSession?.id
+        val packageName = runtimeSession?.packageName
         if (sessionId != null && packageName != null) {
             viewModel.recordPerformanceEvent(
                 PerformanceEvent(
@@ -474,36 +478,40 @@ private fun GameHubUltraApp(
                     detail = packageName
                 )
             )
-            scope.launch(Dispatchers.IO) {
+            val diagnosticsAtEnd = runtimeDiagnostics
+            val profileAtEnd = uiState.effectiveProfile
+            val optimizationKeyAtEnd = currentOptimizationKey
+            sessionMutationQueue.enqueue {
                 val endedAt = System.currentTimeMillis()
                 sessionStore.finishSession(
                     sessionId = sessionId,
                     endedAtMillis = endedAt,
-                    endBatteryPercent = runtimeDiagnostics?.battery?.percent,
-                    endThermalStatus = runtimeDiagnostics?.thermal?.status,
-                    endRamUsedPercent = runtimeDiagnostics?.memory?.usedPercent
+                    endBatteryPercent = diagnosticsAtEnd?.battery?.percent,
+                    endThermalStatus = diagnosticsAtEnd?.thermal?.status,
+                    endRamUsedPercent = diagnosticsAtEnd?.memory?.usedPercent
                 )
-                val thermalStatus = runtimeDiagnostics?.thermal?.status
+                val thermalStatus = diagnosticsAtEnd?.thermal?.status
                 val highTemperature = thermalStatus != null && thermalStatus >= 4
                 optimizationMemoryStore.record(
-                    currentOptimizationKey,
+                    optimizationKeyAtEnd,
                     OptimizationObservation(
-                        contextKey = currentOptimizationKey.serialized,
-                        profile = uiState.effectiveProfile,
+                        contextKey = optimizationKeyAtEnd.serialized,
+                        profile = profileAtEnd,
                         measuredFps = null,
-                        stable = runtimeDiagnostics?.let { !highTemperature && (it.thermal.status == null || it.thermal.status <= 2) } == true,
+                        stable = diagnosticsAtEnd?.let {
+                            !highTemperature && (it.thermal.status == null || it.thermal.status <= 2)
+                        } == true,
                         failed = highTemperature,
                         highTemperature = highTemperature,
                         thermalStatus = thermalStatus,
-                        batteryPercent = runtimeDiagnostics?.battery?.percent,
+                        batteryPercent = diagnosticsAtEnd?.battery?.percent,
                         errorReason = if (highTemperature) "thermal_pressure" else null,
                         timestampMillis = endedAt
                     )
                 )
             }
         }
-        activeSessionId = null
-        activeSessionPackage = null
+        viewModel.clearRuntimeGameSession()
     }
 
     fun selectGame(packageName: String) {
@@ -514,16 +522,17 @@ private fun GameHubUltraApp(
     fun recordGameOpened(packageName: String) {
         endGameSession()
         val sessionId = UUID.randomUUID().toString()
-        activeSessionPackage = packageName
-        activeSessionId = sessionId
-        viewModelScopeLaunch(context, sessionStore) {
+        val profileName = uiState.effectiveProfile.name
+        val startBatteryPercent = runtimeDiagnostics?.battery?.percent
+        viewModel.beginRuntimeGameSession(id = sessionId, packageName = packageName)
+        sessionMutationQueue.enqueue {
             sessionStore.startSession(
                 GameSessionRecord(
                     id = sessionId,
                     packageName = packageName,
-                    profileName = uiState.effectiveProfile.name,
+                    profileName = profileName,
                     startedAtMillis = System.currentTimeMillis(),
-                    startBatteryPercent = runtimeDiagnostics?.battery?.percent
+                    startBatteryPercent = startBatteryPercent
                 )
             )
         }
@@ -655,7 +664,7 @@ private fun GameHubUltraApp(
                 performanceTimeline = performanceTimeline,
                 sessionHistory = sessionHistory,
                 onClearSessions = {
-                    viewModelScopeLaunch(context, sessionStore) {
+                    sessionMutationQueue.enqueue {
                         sessionStore.clearSessions()
                     }
                 },
@@ -1682,16 +1691,6 @@ private fun VoiceAssistantCard(
     }
 }
 
-
-private fun viewModelScopeLaunch(
-    context: Context,
-    sessionStore: GameSessionStore,
-    block: suspend () -> Unit
-) {
-    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-        runCatching { block() }
-    }
-}
 
 private fun shareSessionHistory(
     context: Context,
