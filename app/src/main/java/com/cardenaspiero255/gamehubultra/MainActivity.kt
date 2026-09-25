@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
@@ -19,6 +20,7 @@ import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
+import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -296,8 +298,44 @@ private fun GameHubUltraApp(
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
-    val aiAdvisor = remember { GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter()) }
+    val ultraMemoryStore = remember(context) {
+        UltraConversationMemoryStore(context)
+    }
+    val aiAdvisor = remember(ultraMemoryStore) {
+        GameHubAiAdvisor(
+            modelAdapter = GeminiNanoLocalAiModelAdapter(),
+            memoryGateway = ultraMemoryStore
+        )
+    }
     var ultraConversation by rememberSaveable { mutableStateOf(listOf<String>()) }
+
+    LaunchedEffect(ultraMemoryStore) {
+        ultraConversation = withContext(Dispatchers.IO) {
+            ultraMemoryStore.recentConversationLines(MAX_CHAT_HISTORY)
+        }
+    }
+
+    fun updateUltraConversation(next: List<String>) {
+        val previous = ultraConversation
+        ultraConversation = next
+        val memoryScope = UltraMemoryScope(
+            userId = "local",
+            gamePackage = uiState.selectedGamePackage
+        )
+        val timestampMillis = System.currentTimeMillis()
+        scope.launch(Dispatchers.IO) {
+            if (next.isEmpty()) {
+                ultraMemoryStore.clearConversationHistory(userId = memoryScope.userId)
+            } else {
+                ultraMemoryStore.syncConversation(
+                    previous = previous,
+                    next = next,
+                    scope = memoryScope,
+                    timestampMillis = timestampMillis
+                )
+            }
+        }
+    }
 
     DisposableEffect(aiAdvisor) {
         onDispose { aiAdvisor.close() }
@@ -669,7 +707,7 @@ private fun GameHubUltraApp(
                 aiContext = aiContext,
                 aiAdvisor = aiAdvisor,
                 conversation = ultraConversation,
-                onConversationChanged = { ultraConversation = it },
+                onConversationChanged = ::updateUltraConversation,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
@@ -786,7 +824,7 @@ private fun GameHubUltraApp(
                         aiContext = aiContext,
                         aiAdvisor = aiAdvisor,
                         conversation = ultraConversation,
-                        onConversationChanged = { ultraConversation = it },
+                        onConversationChanged = ::updateUltraConversation,
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
                         onGameSelected = ::selectGame
