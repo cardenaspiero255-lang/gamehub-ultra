@@ -3,6 +3,12 @@ package com.cardenaspiero255.gamehubultra.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
+import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
+import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
+import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
+import com.cardenaspiero255.gamehubultra.data.SessionFinishHandle
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.OrientationPreference
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
@@ -11,10 +17,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -23,28 +26,30 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-data class RuntimeGameSession(
-    val id: String,
-    val packageName: String
-)
-
 @OptIn(ExperimentalCoroutinesApi::class)
 class GameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameHubPreferencesRepository(application)
-    private val _runtimeGameSession = MutableStateFlow<RuntimeGameSession?>(null)
+    private val sessionStore = GameSessionStore(application)
+    private val sessionCoordinator = GameSessionLifecycleCoordinator(
+        store = sessionStore,
+        scope = viewModelScope
+    )
 
-    val runtimeGameSession: StateFlow<RuntimeGameSession?> =
-        _runtimeGameSession.asStateFlow()
+    val runtimeGameSession = sessionCoordinator.runtimeSession
+    val sessionHistory = sessionStore.sessionsFlow()
 
-    fun currentRuntimeGameSession(): RuntimeGameSession? = _runtimeGameSession.value
-
-    fun beginRuntimeGameSession(id: String, packageName: String) {
-        _runtimeGameSession.value = RuntimeGameSession(id = id, packageName = packageName)
+    init {
+        sessionCoordinator.recoverOrphans(System.currentTimeMillis())
     }
 
-    fun clearRuntimeGameSession() {
-        _runtimeGameSession.value = null
-    }
+    fun beginRuntimeGameSession(record: GameSessionRecord) =
+        sessionCoordinator.startSession(record)
+
+    fun finishRuntimeGameSession(metrics: SessionEndMetrics): SessionFinishHandle? =
+        sessionCoordinator.finishCurrent(metrics)
+
+    fun clearSessionHistory() =
+        sessionCoordinator.clearSessions()
 
     private val selectedGameFlow = repository.selectedGameFlow()
     private val selectedGameConfigFlow = selectedGameFlow.flatMapLatest { packageName ->
