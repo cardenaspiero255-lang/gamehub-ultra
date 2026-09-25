@@ -6,6 +6,7 @@ import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.TraceSectionMetric
 import androidx.benchmark.macro.ExperimentalMetricApi
+import android.os.Build
 import android.os.SystemClock
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -21,6 +22,21 @@ import org.junit.runner.RunWith
 @OptIn(ExperimentalMetricApi::class)
 class GameHubMacrobenchmark {
     @get:Rule val benchmarkRule = MacrobenchmarkRule()
+
+    private val runningOnEmulator: Boolean
+        get() {
+            val fingerprint = Build.FINGERPRINT.lowercase()
+            val model = Build.MODEL.lowercase()
+            val product = Build.PRODUCT.lowercase()
+            val hardware = Build.HARDWARE.lowercase()
+            return fingerprint.contains("generic") ||
+                fingerprint.contains("emulator") ||
+                model.contains("emulator") ||
+                product.contains("sdk_gphone") ||
+                hardware.contains("ranchu") ||
+                hardware.contains("goldfish")
+        }
+
     private val device: UiDevice
         get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
 
@@ -120,10 +136,16 @@ class GameHubMacrobenchmark {
         val targetDescription = "nav_biblioteca"
         benchmarkRule.measureRepeated(
             packageName = "com.cardenaspiero255.gamehubultra",
-            metrics = listOf(
-                FrameTimingMetric(),
-                TraceSectionMetric("GameHubUltra.Navigation.Library")
-            ),
+            metrics = if (runningOnEmulator) {
+                listOf(
+                    TraceSectionMetric("GameHubUltra.Navigation.Library")
+                )
+            } else {
+                listOf(
+                    FrameTimingMetric(),
+                    TraceSectionMetric("GameHubUltra.Navigation.Library")
+                )
+            },
             iterations = 5,
             startupMode = StartupMode.COLD,
             compilationMode = CompilationMode.DEFAULT,
@@ -147,10 +169,16 @@ class GameHubMacrobenchmark {
         val targetDescription = "nav_ajustes"
         benchmarkRule.measureRepeated(
             packageName = "com.cardenaspiero255.gamehubultra",
-            metrics = listOf(
-                FrameTimingMetric(),
-                TraceSectionMetric("GameHubUltra.Navigation.Settings")
-            ),
+            metrics = if (runningOnEmulator) {
+                listOf(
+                    TraceSectionMetric("GameHubUltra.Navigation.Settings")
+                )
+            } else {
+                listOf(
+                    FrameTimingMetric(),
+                    TraceSectionMetric("GameHubUltra.Navigation.Settings")
+                )
+            },
             iterations = 5,
             startupMode = StartupMode.COLD,
             compilationMode = CompilationMode.DEFAULT,

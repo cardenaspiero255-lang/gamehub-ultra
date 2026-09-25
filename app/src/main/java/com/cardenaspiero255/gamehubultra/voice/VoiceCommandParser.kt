@@ -5,6 +5,11 @@ import java.text.Normalizer
 import java.util.Locale
 
 object VoiceCommandParser {
+    private const val GAME_LAUNCH_VERBS = "abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|activa|activar|open me|opens|open|launch|start|run|play|activate"
+    private const val PROFILE_ACTION_VERBS = "pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|activate|enable|select|switch|apply|use|set"
+    private const val PROFILE_OR_LAUNCH_VERBS = GAME_LAUNCH_VERBS + "|" + PROFILE_ACTION_VERBS
+    private const val PROFILE_MARKERS = "modo|perfil|mode|profile"
+    private const val PROFILE_TARGET_CONNECTORS = "to|for|a|al|para|en|with"
     fun parse(
         transcript: String,
         optionalResolver: NaturalLanguageIntentResolver? = null
@@ -60,7 +65,7 @@ object VoiceCommandParser {
         }
 
         val gameQuery = extractGameQuery(clean, stripProfileSyntax = false)
-        return if (gameQuery.isNotBlank()) {
+        return if (hasExplicitLaunchIntent(clean) && gameQuery.isNotBlank()) {
             VoiceCommand.OpenGame(gameQuery)
         } else {
             VoiceCommand.Unknown(transcript)
@@ -74,18 +79,30 @@ object VoiceCommandParser {
             .trim()
             .replace(Regex("""\s+"""), " ")
 
-    private fun hasLaunchIntent(clean: String): Boolean =
-        Regex("""^\s*(gamehub\s+ultra\s+|gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|open|opens|open me|launch|start|run|play)\b""")
-            .containsMatchIn(clean)
+    internal fun hasExplicitLaunchIntent(value: String): Boolean {
+        val clean = normalize(value)
+            .replace(Regex("""\bultra\b"""), " ")
+            .replace(Regex("""\bgamehub\b"""), " ")
+            .trim()
+        return Regex("""^($GAME_LAUNCH_VERBS)\b""").containsMatchIn(clean)
+    }
+
+    private fun hasLaunchIntent(clean: String): Boolean = hasExplicitLaunchIntent(clean)
 
     private fun hasExplicitProfileInstruction(clean: String): Boolean {
         val profileValue =
             """fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything"""
-        return Regex("""\b(en|con|with|using)\s+((modo|perfil|mode|profile)\s+)?($profileValue)(\s+(modo|perfil|mode|profile))?\b""")
+        return Regex("""\b(en|con|with|using)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\b""")
             .containsMatchIn(clean) ||
-            Regex("""\b(modo|perfil|mode|profile)\s+($profileValue)\b""")
+            Regex("""\b($PROFILE_MARKERS)\s+($profileValue)\b""")
                 .containsMatchIn(clean) ||
-            Regex("""\b($profileValue)\s+(modo|perfil|mode|profile)\b""")
+            Regex("""\b($profileValue)\s+($PROFILE_MARKERS)\b""")
+                .containsMatchIn(clean) ||
+            Regex("""^($PROFILE_ACTION_VERBS)\b\s+(to|a|al)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?$""")
+                .containsMatchIn(clean) ||
+            Regex("""^($PROFILE_ACTION_VERBS)\b\s+(to|a|al)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\s+\S+""")
+                .containsMatchIn(clean) ||
+            Regex("""^($PROFILE_ACTION_VERBS)\b\s+($profileValue)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\s+\S+""")
                 .containsMatchIn(clean)
     }
 
@@ -113,8 +130,13 @@ object VoiceCommandParser {
 
     private fun removeProfileSyntax(clean: String): String =
         clean
+            .replace(Regex("""\b(to|a|al)\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\b"""), " ")
+            .replace(Regex("""\b(to|a|al)\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\b"""), " ")
+            .replace(Regex("""\b($PROFILE_MARKERS)\s+(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\s+($PROFILE_TARGET_CONNECTORS)\b"""), " ")
+            .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\b"""), " ")
             .replace(Regex("""\b(en|con|with|using)\s+(x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\s+(modo|perfil|mode|profile)\b"""), " ")
             .replace(Regex("""\b(en|con|with|using)?\s*(modo|perfil|mode|profile)\s+(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|maximum performance|high performance|maximo rendimiento|alto rendimiento)\b"""), " ")
+            .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\s+(modo|perfil|mode|profile)\b"""), " ")
             .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
             .replace(Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b"""), " ")
             .replace(Regex("""\b(x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
@@ -125,9 +147,14 @@ object VoiceCommandParser {
         } else {
             clean
         }
+        val prefixVerbs = if (stripProfileSyntax) {
+            PROFILE_OR_LAUNCH_VERBS
+        } else {
+            GAME_LAUNCH_VERBS
+        }
 
         return withoutProfile
-            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|open|opens|open me|launch|start|run|play)\s*"""), "")
+            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?($prefixVerbs)\b\s*"""), "")
             .replace(Regex("""\b(la|el|un|una|the|a|an|juego|juegos|game|games)\b"""), " ")
             .replace(Regex("""\b(y|con|en|por favor|and|with|in|please)\b"""), " ")
             .replace(Regex("""\s+"""), " ")

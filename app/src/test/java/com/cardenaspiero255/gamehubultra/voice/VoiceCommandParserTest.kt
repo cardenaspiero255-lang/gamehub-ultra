@@ -47,6 +47,21 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun parsesProfileToGameConnectorsForNewActionVerbs() {
+        val apply = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("apply X4 to Minecraft")
+        )
+        assertEquals("minecraft", apply.query)
+        assertEquals(PerformanceProfile.X4, apply.requestedProfile)
+
+        val set = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("set X4 for Minecraft")
+        )
+        assertEquals("minecraft", set.query)
+        assertEquals(PerformanceProfile.X4, set.requestedProfile)
+    }
+
+    @Test
     fun parsesEnglishProfiles() {
         assertEquals(
             VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
@@ -59,6 +74,22 @@ class VoiceCommandParserTest {
         assertEquals(
             VoiceCommand.SelectProfile(PerformanceProfile.X4),
             VoiceCommandParser.parse("set X4")
+        )
+    }
+
+    @Test
+    fun selectionVerbsWithProfileSuffixStayProfileCommands() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            VoiceCommandParser.parse("select balanced profile")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("activate X4 profile")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            VoiceCommandParser.parse("selecciona perfil balanceado")
         )
     }
 
@@ -187,4 +218,75 @@ class VoiceCommandParserTest {
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("settings put global animator_duration_scale 0"))
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("am force-stop com.example.game"))
     }
+
+    @Test
+    fun profileActivationVerbDoesNotBecomeGameQuery() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra activa X4")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra activa el modo X4")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra activate X4")
+        )
+    }
+
+
+    @Test
+    fun profileOnlySwitchConnectorsStayProfileCommands() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("switch to X4 mode")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("cambia al modo X4")
+        )
+    }
+
+
+    @Test
+    fun openMeUsesCompleteLaunchVerb() {
+        val command = VoiceCommandParser.parse("open me Minecraft")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("minecraft", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
+    @Test
+    fun profileToGameWithLeadingAndTrailingConnectorsKeepsGameAndProfile() {
+        val command = VoiceCommandParser.parse("switch to X4 for Minecraft")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("minecraft", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+
+    @Test
+    fun markerFirstProfileToGameCommandsConsumeTrailingConnector() {
+        val english = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("apply profile X4 to Minecraft")
+        )
+        assertEquals("minecraft", english.query)
+        assertEquals(PerformanceProfile.X4, english.requestedProfile)
+
+        val spanish = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("activa modo X4 para Minecraft")
+        )
+        assertEquals("minecraft", spanish.query)
+        assertEquals(PerformanceProfile.X4, spanish.requestedProfile)
+    }
+
+    @Test
+    fun ambiguousActionVerbsWithoutGamingContextStayUnknown() {
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra set a timer"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra switch to dark mode"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra enable notifications"))
+        assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra use the camera"))
+    }
+
 }

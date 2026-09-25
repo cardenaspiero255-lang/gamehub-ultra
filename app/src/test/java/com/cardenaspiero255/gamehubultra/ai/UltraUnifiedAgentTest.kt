@@ -49,6 +49,18 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
+    fun activationVerbGameLaunchUsesSafeCommandRoute() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate Minecraft",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("minecraft", command.query)
+    }
+
+    @Test
     fun freeFormSpeechFallsBackToConversationalAi() {
         val route = UltraUnifiedAgentRouter.route(
             transcript = "Ultra, cuentame algo sobre mi juego",
@@ -176,4 +188,34 @@ class UltraUnifiedAgentTest {
             )
         )
     }
+    @Test
+    fun ambiguousActionVerbsStayOnConversationPath() {
+        listOf(
+            "Ultra, set a timer",
+            "Ultra, switch to dark mode",
+            "Ultra, enable notifications",
+            "Ultra, use the camera"
+        ).forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val chat = assertIs<UltraAgentRoute.Chat>(route)
+            assertEquals(transcript, chat.message)
+        }
+    }
+
+    @Test
+    fun profileActionTargetingGameRemainsCommandRoute() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, switch to X4 for Minecraft",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("minecraft", command.query)
+        assertEquals(PerformanceProfile.X4, command.requestedProfile)
+    }
+
 }

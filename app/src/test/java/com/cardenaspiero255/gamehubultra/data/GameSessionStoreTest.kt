@@ -80,6 +80,34 @@ class GameSessionStoreTest {
     }
 
     @Test
+    fun finalizesOnlyOrphanedActiveSessionsOnColdStart() = runBlocking {
+        store.startSession(
+            GameSessionRecord(
+                id = "active",
+                packageName = "com.example.active",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        )
+        store.startSession(
+            GameSessionRecord(
+                id = "finished",
+                packageName = "com.example.finished",
+                profileName = "BALANCED",
+                startedAtMillis = 500L
+            )
+        )
+        store.finishSession("finished", 900L, null, null, null)
+
+        assertEquals(1, store.finishActiveSessions(endedAtMillis = 2_000L))
+
+        val sessions = store.sessionsFlow().first().associateBy { it.id }
+        assertFalse(sessions.getValue("active").isActive)
+        assertEquals(1_000L, sessions.getValue("active").durationMillis)
+        assertEquals(900L, sessions.getValue("finished").endedAtMillis)
+    }
+
+    @Test
     fun invalidPercentagesAndUnknownSessionAreSafe() = runBlocking {
         store.startSession(
             GameSessionRecord(

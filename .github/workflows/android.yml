@@ -16,13 +16,20 @@ concurrency:
   group: android-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -114,6 +121,30 @@ jobs:
         run: |
           set -euo pipefail
           gradle :app:lintDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-debug.log"
+
+      - name: Create ephemeral release signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/gamehub-ultra-ci-release.jks"
+          PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storetype JKS \
+            -storepass "$PASSWORD" \
+            -keypass "$PASSWORD" \
+            -alias gamehub-ci \
+            -keyalg RSA \
+            -keysize 3072 \
+            -validity 1 \
+            -dname "CN=GameHub Ultra CI,O=GameHub Ultra,C=CL" \
+            -noprompt
+          {
+            echo "GAMEHUB_RELEASE_KEYSTORE_PATH=$KEYSTORE"
+            echo "GAMEHUB_RELEASE_STORE_PASSWORD=$PASSWORD"
+            echo "GAMEHUB_RELEASE_KEY_ALIAS=gamehub-ci"
+            echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
+          } >> "$GITHUB_ENV"
 
       - name: Build release APK
         shell: bash
@@ -312,7 +343,7 @@ jobs:
           set -o pipefail
           LOG="$RUNNER_TEMP/baseline-profile.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -PbenchmarkEnabledRules=BaselineProfile \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile \
             --no-configuration-cache \
             --stacktrace 2>&1 | tee "$LOG"
           if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
@@ -325,16 +356,47 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
+          gradle :baseline-profile:clean --no-configuration-cache
           LOG="$RUNNER_TEMP/macrobenchmark.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -PbenchmarkEnabledRules=Macrobenchmark \
-            -PbenchmarkSuppressErrors=EMULATOR \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
             --no-configuration-cache \
             --stacktrace 2>&1 | tee "$LOG"
           if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
             echo "ddmlib could not connect to the emulator console."
             exit 1
           fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          reports = list(Path("baseline-profile/build/outputs/androidTest-results").rglob("TEST-*.xml"))
+          cases = []
+          for report in reports:
+              try:
+                  root = ET.parse(report).getroot()
+              except ET.ParseError:
+                  continue
+              for case in root.iter("testcase"):
+                  if case.attrib.get("classname", "").endswith("GameHubMacrobenchmark"):
+                      cases.append(case)
+
+          if len(cases) < 3:
+              raise SystemExit(f"Expected at least 3 GameHubMacrobenchmark cases, found {len(cases)}")
+
+          skipped = [
+              case.attrib.get("name", "<unknown>")
+              for case in cases
+              if case.find("skipped") is not None
+          ]
+          if skipped:
+              raise SystemExit(f"Macrobenchmarks were skipped: {skipped}")
+
+          print("Executed macrobenchmarks:", [case.attrib.get("name") for case in cases])
+          PY
 
       - name: Stop API 35 emulator without noisy console shutdown
         if: always()

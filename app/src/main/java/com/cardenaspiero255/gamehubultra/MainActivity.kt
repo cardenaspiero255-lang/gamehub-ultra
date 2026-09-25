@@ -15,7 +15,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
-import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
@@ -226,17 +226,31 @@ private fun GameHubUltraApp(
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
-    var activeSessionPackage by rememberSaveable { mutableStateOf<String?>(null) }
-    var activeSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var profileOpen by rememberSaveable { mutableStateOf(false) }
+    val runtimeGameSession by viewModel.runtimeGameSession.collectAsStateWithLifecycle()
+    val activeSessionPackage = runtimeGameSession?.packageName
+    val activeSessionId = runtimeGameSession?.id
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var latencyMs by remember { mutableStateOf<Long?>(null) }
     var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
     var performanceTimelineSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineSample>>(emptyList()) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
+    var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
-    val sessionStore = remember(context) { GameSessionStore(context) }
-    val sessionHistory by sessionStore.sessionsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+    val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                appResumeRefreshToken += 1
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     val optimizationMemoryStore = remember(context) { GameOptimizationMemoryStore(context) }
     val selectedGameForMemory = uiState.selectedGamePackage
     val selectedGameVersion = remember(selectedGameForMemory) {
@@ -441,52 +455,96 @@ private fun GameHubUltraApp(
     }
 
     fun endGameSession() {
-        val sessionId = activeSessionId
-        val packageName = activeSessionPackage
-        if (sessionId != null && packageName != null) {
-            viewModel.recordPerformanceEvent(
-                PerformanceEvent(
-                    timestampMillis = System.currentTimeMillis(),
-                    type = PerformanceEventType.SESSION_ENDED,
-                    sessionId = sessionId,
-                    detail = packageName
-                )
+        val endedAt = System.currentTimeMillis()
+        val diagnosticsAtEnd = runtimeDiagnostics
+        val profileAtEnd = uiState.effectiveProfile
+        val optimizationKeyAtEnd = currentOptimizationKey
+        val finishHandle = viewModel.finishRuntimeGameSession(
+            SessionEndMetrics(
+                endedAtMillis = endedAt,
+                endBatteryPercent = diagnosticsAtEnd?.battery?.percent,
+                endThermalStatus = diagnosticsAtEnd?.thermal?.status,
+                endRamUsedPercent = diagnosticsAtEnd?.memory?.usedPercent
             )
-            scope.launch(Dispatchers.IO) {
-                val endedAt = System.currentTimeMillis()
-                sessionStore.finishSession(
-                    sessionId = sessionId,
-                    endedAtMillis = endedAt,
-                    endBatteryPercent = runtimeDiagnostics?.battery?.percent,
-                    endThermalStatus = runtimeDiagnostics?.thermal?.status,
-                    endRamUsedPercent = runtimeDiagnostics?.memory?.usedPercent
-                )
-                val thermalStatus = runtimeDiagnostics?.thermal?.status
-                val highTemperature = thermalStatus != null && thermalStatus >= 4
-                optimizationMemoryStore.record(
-                    currentOptimizationKey,
-                    OptimizationObservation(
-                        contextKey = currentOptimizationKey.serialized,
-                        profile = uiState.effectiveProfile,
-                        measuredFps = null,
-                        stable = runtimeDiagnostics?.let { !highTemperature && (it.thermal.status == null || it.thermal.status <= 2) } == true,
-                        failed = highTemperature,
-                        highTemperature = highTemperature,
-                        thermalStatus = thermalStatus,
-                        batteryPercent = runtimeDiagnostics?.battery?.percent,
-                        errorReason = if (highTemperature) "thermal_pressure" else null,
-                        timestampMillis = endedAt
+        ) ?: return
+
+        viewModel.recordPerformanceEvent(
+            PerformanceEvent(
+                timestampMillis = endedAt,
+                type = PerformanceEventType.SESSION_ENDED,
+                sessionId = finishHandle.session.id,
+                detail = finishHandle.session.packageName
+            )
+        )
+
+        scope.launch {
+            finishHandle.job.join()
+            if (!finishHandle.job.isCancelled) {
+                withContext(Dispatchers.IO) {
+                    val thermalStatus = diagnosticsAtEnd?.thermal?.status
+                    val highTemperature = thermalStatus != null && thermalStatus >= 4
+                    optimizationMemoryStore.record(
+                        optimizationKeyAtEnd,
+                        OptimizationObservation(
+                            contextKey = optimizationKeyAtEnd.serialized,
+                            profile = profileAtEnd,
+                            measuredFps = null,
+                            stable = diagnosticsAtEnd?.let {
+                                !highTemperature &&
+                                    (it.thermal.status == null || it.thermal.status <= 2)
+                            } == true,
+                            failed = highTemperature,
+                            highTemperature = highTemperature,
+                            thermalStatus = thermalStatus,
+                            batteryPercent = diagnosticsAtEnd?.battery?.percent,
+                            errorReason = if (highTemperature) "thermal_pressure" else null,
+                            timestampMillis = endedAt
+                        )
                     )
-                )
+                }
             }
         }
-        activeSessionId = null
-        activeSessionPackage = null
     }
 
     fun selectGame(packageName: String) {
         endGameSession()
         viewModel.selectGame(packageName)
+    }
+
+    fun recordGameOpened(packageName: String) {
+        endGameSession()
+        val sessionId = UUID.randomUUID().toString()
+        val startedAt = System.currentTimeMillis()
+        val record = GameSessionRecord(
+            id = sessionId,
+            packageName = packageName,
+            profileName = uiState.effectiveProfile.name,
+            startedAtMillis = startedAt,
+            startBatteryPercent = runtimeDiagnostics?.battery?.percent
+        )
+        viewModel.beginRuntimeGameSession(record)
+        viewModel.recordPerformanceEvent(
+            PerformanceEvent(
+                timestampMillis = startedAt,
+                type = PerformanceEventType.SESSION_STARTED,
+                sessionId = sessionId,
+                detail = packageName
+            )
+        )
+        viewModel.recordRecentGame(packageName)
+    }
+
+    fun playSelectedGame() {
+        val packageName = uiState.selectedGamePackage
+        if (packageName.isNullOrBlank()) {
+            settingsOpen = false
+            profileOpen = false
+            selectedTab = 1
+            return
+        }
+        if (openGame(context, packageName)) {
+            recordGameOpened(packageName)
+        }
     }
 
     val selectedProfileName = uiState.effectiveProfile.name
@@ -556,6 +614,12 @@ private fun GameHubUltraApp(
     val wideLayout = layoutMode != UltraLayoutMode.COMPACT
     val ultraWideLayout = layoutMode == UltraLayoutMode.ULTRA_WIDE
 
+    LaunchedEffect(wideLayout) {
+        if (!wideLayout) {
+            profileOpen = false
+        }
+    }
+
     val screenContent: @Composable (Modifier, Boolean) -> Unit = { contentModifier, showAssistantCards ->
         when {
             settingsOpen -> SettingsScreen(
@@ -565,6 +629,15 @@ private fun GameHubUltraApp(
                     scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
                 }
             )
+            wideLayout && profileOpen -> UltraProfileScreen(
+                modifier = contentModifier,
+                playerName = ULTRA_PLAYER_NAME,
+                activeProfile = uiState.effectiveProfile,
+                favoriteCount = favoriteGames.size,
+                recentCount = recentGamePackages.distinct().size,
+                sessionCount = sessionHistory.size,
+                device = device
+            )
             selectedTab == 0 -> HomeScreen(
                 modifier = contentModifier,
                 state = state,
@@ -572,14 +645,13 @@ private fun GameHubUltraApp(
                 selectedProfileName = selectedProfileName,
                 onProfileSelected = ::selectProfile,
                 onGameSelected = ::selectGame,
+                onPlaySelectedGame = ::playSelectedGame,
                 runtimeDiagnostics = runtimeDiagnostics,
                 telemetryTrend = telemetryTrend,
                 performanceTimeline = performanceTimeline,
                 sessionHistory = sessionHistory,
                 onClearSessions = {
-                    viewModelScopeLaunch(context, sessionStore) {
-                        sessionStore.clearSessions()
-                    }
+                    viewModel.clearSessionHistory()
                 },
                 onShareSessions = { shareSessionHistory(context, sessionHistory) },
                 adaptiveDecision = adaptiveDecision,
@@ -607,8 +679,10 @@ private fun GameHubUltraApp(
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
                 storeGames = storeGames,
+                gameCatalogRefreshToken = appResumeRefreshToken,
                 onOpenLibrary = {
                     settingsOpen = false
+                    profileOpen = false
                     selectedTab = 1
                 },
                 showAssistantCards = showAssistantCards
@@ -626,30 +700,7 @@ private fun GameHubUltraApp(
                 onGameSelected = ::selectGame,
                 onProfileSelected = ::selectProfile,
                 onToggleFavorite = viewModel::setFavoriteGame,
-                onGameOpened = { packageName ->
-                    endGameSession()
-                    val sessionId = UUID.randomUUID().toString()
-                    activeSessionPackage = packageName
-                    activeSessionId = sessionId
-                    viewModelScopeLaunch(context, sessionStore) {
-                        GameSessionRecord(
-                            id = sessionId,
-                            packageName = packageName,
-                            profileName = uiState.effectiveProfile.name,
-                            startedAtMillis = System.currentTimeMillis(),
-                            startBatteryPercent = runtimeDiagnostics?.battery?.percent
-                        )
-                    }
-                    viewModel.recordPerformanceEvent(
-                        PerformanceEvent(
-                            timestampMillis = System.currentTimeMillis(),
-                            type = PerformanceEventType.SESSION_STARTED,
-                            sessionId = sessionId,
-                            detail = packageName
-                        )
-                    )
-                    viewModel.recordRecentGame(packageName)
-                },
+                onGameOpened = ::recordGameOpened,
                 onToggleManualGame = viewModel::setManualGame
             )
         }
@@ -665,6 +716,7 @@ private fun GameHubUltraApp(
                             onClick = {
                                 Trace.beginSection("GameHubUltra.Navigation.Settings")
                                 try {
+                                    profileOpen = false
                                     settingsOpen = !settingsOpen
                                 } finally {
                                     Trace.endSection()
@@ -693,31 +745,48 @@ private fun GameHubUltraApp(
                 WideNavigationRail(
                     selectedTab = selectedTab,
                     settingsOpen = settingsOpen,
+                    profileOpen = profileOpen,
                     onHome = {
                         settingsOpen = false
+                        profileOpen = false
                         selectedTab = 0
                     },
                     onLibrary = {
                         settingsOpen = false
+                        profileOpen = false
                         selectedTab = 1
                     },
+                    onProfile = {
+                        settingsOpen = false
+                        profileOpen = true
+                    },
                     onSettings = {
+                        profileOpen = false
                         settingsOpen = true
                     }
                 )
 
-                Box(
+                Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize()
                 ) {
-                    screenContent(
-                        Modifier.fillMaxSize(),
-                        !ultraWideLayout
+                    UltraShellHeader(
+                        playerName = ULTRA_PLAYER_NAME
                     )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        screenContent(
+                            Modifier.fillMaxSize(),
+                            !ultraWideLayout
+                        )
+                    }
                 }
 
-                if (ultraWideLayout && !settingsOpen && selectedTab == 0) {
+                if (ultraWideLayout && !settingsOpen && !profileOpen && selectedTab == 0) {
                     UltraAssistantSidePanel(
                         aiContext = aiContext,
                         aiAdvisor = aiAdvisor,
@@ -739,7 +808,11 @@ private fun GameHubUltraApp(
                     TabRow(selectedTabIndex = selectedTab) {
                         Tab(
                             selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
+                            onClick = {
+                                settingsOpen = false
+                                profileOpen = false
+                                selectedTab = 0
+                            },
                             modifier = Modifier
                                 .testTag(tabTestTags[0])
                                 .semantics(mergeDescendants = true) {
@@ -753,6 +826,8 @@ private fun GameHubUltraApp(
                             onClick = {
                                 Trace.beginSection("GameHubUltra.Navigation.Library")
                                 try {
+                                    settingsOpen = false
+                                    profileOpen = false
                                     selectedTab = 1
                                 } finally {
                                     Trace.endSection()
@@ -778,13 +853,17 @@ private fun GameHubUltraApp(
 private fun WideNavigationRail(
     selectedTab: Int,
     settingsOpen: Boolean,
+    profileOpen: Boolean,
     onHome: () -> Unit,
     onLibrary: () -> Unit,
+    onProfile: () -> Unit,
     onSettings: () -> Unit
 ) {
-    NavigationRail {
+    NavigationRail(
+        containerColor = MaterialTheme.colorScheme.background
+    ) {
         NavigationRailItem(
-            selected = !settingsOpen && selectedTab == 0,
+            selected = !settingsOpen && !profileOpen && selectedTab == 0,
             onClick = onHome,
             icon = { Text("⌂") },
             label = { Text("Inicio") },
@@ -793,13 +872,22 @@ private fun WideNavigationRail(
                 .semantics { contentDescription = "nav_inicio" }
         )
         NavigationRailItem(
-            selected = !settingsOpen && selectedTab == 1,
+            selected = !settingsOpen && !profileOpen && selectedTab == 1,
             onClick = onLibrary,
             icon = { Text("▦") },
             label = { Text("Biblioteca") },
             modifier = Modifier
                 .testTag("nav_biblioteca")
                 .semantics { contentDescription = "nav_biblioteca" }
+        )
+        NavigationRailItem(
+            selected = profileOpen,
+            onClick = onProfile,
+            icon = { Text("◎") },
+            label = { Text("Perfil") },
+            modifier = Modifier
+                .testTag("nav_perfil")
+                .semantics { contentDescription = "nav_perfil" }
         )
         NavigationRailItem(
             selected = settingsOpen,
@@ -863,6 +951,7 @@ private fun HomeScreen(
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit,
+    onPlaySelectedGame: () -> Unit,
     runtimeDiagnostics: RuntimeDiagnostics?,
     telemetryTrend: List<RuntimeDiagnostics>,
     performanceTimeline: PerformanceTimeline,
@@ -886,22 +975,31 @@ private fun HomeScreen(
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
     storeGames: List<StoreLibraryGame>,
+    gameCatalogRefreshToken: Int,
     onOpenLibrary: () -> Unit,
     showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
+    val recentGameNames = remember(recentGamePackages) {
+        recentGamePackages.map { packageName ->
+            packageDisplayName(timelineContext, packageName)
+        }
+    }
+    var localGameCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(timelineContext, manualGamePackages, gameCatalogRefreshToken) {
+        localGameCount = withContext(Dispatchers.IO) {
+            GameLibrary.discover(
+                context = timelineContext,
+                additionalPackages = manualGamePackages
+            ).games.size
+        }
+    }
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
-        item {
-            GameHubStyleHeader(
-                selectedProfileName = selectedProfileName,
-                onOpenLibrary = onOpenLibrary
-            )
-        }
         item {
             Text(
                 stringResource(R.string.hero_subtitle),
@@ -921,8 +1019,13 @@ private fun HomeScreen(
                 telemetryTrend = telemetryTrend,
                 profile = state.selectedProfile,
                 adaptiveDecision = adaptiveDecision,
-                gameName = aiContext.selectedGamePackage ?: "Ningún juego seleccionado",
-                onProfileSelected = onProfileSelected
+                gameName = aiContext.selectedGamePackage?.let { packageDisplayName(timelineContext, it) }
+                    ?: "Selecciona un juego",
+                recentGames = recentGameNames,
+                gameCount = localGameCount,
+                sessionCount = sessionHistory.size,
+                onProfileSelected = onProfileSelected,
+                onPlay = onPlaySelectedGame
             )
         }
         item { ActiveProfileCard(state) }
@@ -1574,16 +1677,6 @@ private fun VoiceAssistantCard(
 }
 
 
-private fun viewModelScopeLaunch(
-    context: Context,
-    sessionStore: GameSessionStore,
-    block: suspend () -> Unit
-) {
-    kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-        runCatching { block() }
-    }
-}
-
 private fun shareSessionHistory(
     context: Context,
     sessions: List<GameSessionRecord>
@@ -2002,6 +2095,20 @@ private fun SmartPerformanceCard(
         }
     }
 }
+
+private fun packageDisplayName(context: Context, packageName: String): String =
+    runCatching {
+        val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getApplicationInfo(
+                packageName,
+                PackageManager.ApplicationInfoFlags.of(0L)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getApplicationInfo(packageName, 0)
+        }
+        context.packageManager.getApplicationLabel(appInfo).toString()
+    }.getOrDefault(packageName)
 
 private fun packageVersionName(context: Context, packageName: String): String? =
     runCatching {

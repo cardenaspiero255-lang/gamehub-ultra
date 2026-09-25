@@ -3,6 +3,12 @@ package com.cardenaspiero255.gamehubultra.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
+import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
+import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
+import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
+import com.cardenaspiero255.gamehubultra.data.SessionFinishHandle
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.OrientationPreference
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
@@ -23,6 +29,27 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 class GameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameHubPreferencesRepository(application)
+    private val sessionStore = GameSessionStore(application)
+    private val sessionCoordinator = GameSessionLifecycleCoordinator(
+        store = sessionStore,
+        scope = viewModelScope
+    )
+
+    val runtimeGameSession = sessionCoordinator.runtimeSession
+    val sessionHistory = sessionStore.sessionsFlow()
+
+    init {
+        sessionCoordinator.recoverOrphans(System.currentTimeMillis())
+    }
+
+    fun beginRuntimeGameSession(record: GameSessionRecord) =
+        sessionCoordinator.startSession(record)
+
+    fun finishRuntimeGameSession(metrics: SessionEndMetrics): SessionFinishHandle? =
+        sessionCoordinator.finishCurrent(metrics)
+
+    fun clearSessionHistory() =
+        sessionCoordinator.clearSessions()
 
     private val selectedGameFlow = repository.selectedGameFlow()
     private val selectedGameConfigFlow = selectedGameFlow.flatMapLatest { packageName ->
