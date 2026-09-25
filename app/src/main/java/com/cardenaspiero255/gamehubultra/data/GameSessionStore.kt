@@ -104,6 +104,30 @@ class GameSessionStore(
         return updated
     }
 
+    suspend fun finishActiveSessions(endedAtMillis: Long): Int {
+        var updatedCount = 0
+        dataStore.edit { preferences ->
+            val current = preferences[sessionsKey]
+                .orEmpty()
+                .lineSequence()
+                .mapNotNull(::decode)
+                .map { session ->
+                    if (session.endedAtMillis == null) {
+                        updatedCount += 1
+                        session.copy(
+                            endedAtMillis = maxOf(endedAtMillis, session.startedAtMillis)
+                        )
+                    } else {
+                        session
+                    }
+                }
+                .sortedByDescending { it.startedAtMillis }
+                .take(maxSessions.coerceIn(1, 100))
+            preferences[sessionsKey] = current.joinToString("\n", transform = ::encode)
+        }
+        return updatedCount
+    }
+
     suspend fun clearSessions() {
         dataStore.edit { preferences -> preferences.remove(sessionsKey) }
     }
