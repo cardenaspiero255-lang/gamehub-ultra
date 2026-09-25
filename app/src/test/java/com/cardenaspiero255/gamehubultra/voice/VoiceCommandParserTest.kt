@@ -308,6 +308,30 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun repeatedProfileOnlyCommandDoesNotBecomeGameLaunch() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("Ultra activa el modo X4 y activa X4")
+        )
+    }
+
+    @Test
+    fun combinedSpanishProfileActionAcceptsArticleBeforeMode() {
+        val command = VoiceCommandParser.parse("Ultra abre Halo y activa el modo X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("halo", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
+    fun combinedEnglishProfileActionAcceptsSwitchToConnector() {
+        val command = VoiceCommandParser.parse("Ultra open Halo and switch to X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("halo", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
     fun appendedProfileWinsOverProfileWordInsideGameTitle() {
         val command = VoiceCommandParser.parse("Ultra, open Balanced Adventure and activate X4")
         val parsed = assertIs<VoiceCommand.OpenGame>(command)
