@@ -74,6 +74,16 @@ internal fun thermalEnvelopeUsagePercent(headroom: Float?): Int? =
         ?.takeIf { it.isFinite() && it >= 0f }
         ?.let { (it * 100f).toInt() }
 
+internal fun dashboardRecentGames(
+    selectedGame: String,
+    recentGames: List<String>
+): List<String> =
+    (listOf(selectedGame) + recentGames)
+        .map(String::trim)
+        .filter { it.isNotBlank() && it != "Selecciona un juego" && it != "Ningún juego seleccionado" }
+        .distinct()
+        .take(3)
+
 @Composable
 fun UltraDashboard(
     device: DeviceInfo,
@@ -82,6 +92,9 @@ fun UltraDashboard(
     profile: PerformanceProfile,
     adaptiveDecision: AdaptiveDecision?,
     gameName: String = "Ningún juego seleccionado",
+    recentGames: List<String> = emptyList(),
+    gameCount: Int = 0,
+    sessionCount: Int = 0,
     onProfileSelected: (PerformanceProfile) -> Unit = {},
     onPlay: () -> Unit = {}
 ) {
@@ -98,16 +111,40 @@ fun UltraDashboard(
     ) {
         val compact = maxWidth < 720.dp
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            FeaturedGameCard(
-                gameName = gameName,
-                profile = profile,
-                battery = battery,
-                refresh = refresh,
-                thermalUsagePercent = thermalUsagePercent,
-                totalRamMb = device.totalRamMb,
-                onPlay = onPlay
-            )
-            UltraVoiceCard()
+            val visibleGames = dashboardRecentGames(gameName, recentGames)
+            if (visibleGames.isNotEmpty()) {
+                RecentGamesStrip(visibleGames, gameName)
+            }
+            if (compact) {
+                FeaturedGameCard(
+                    gameName = gameName,
+                    profile = profile,
+                    battery = battery,
+                    refresh = refresh,
+                    thermalUsagePercent = thermalUsagePercent,
+                    totalRamMb = device.totalRamMb,
+                    wide = false,
+                    modifier = Modifier.fillMaxWidth(),
+                    onPlay = onPlay
+                )
+                UltraVoiceOverviewCard(gameName, profile, Modifier.fillMaxWidth())
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FeaturedGameCard(
+                        gameName = gameName,
+                        profile = profile,
+                        battery = battery,
+                        refresh = refresh,
+                        thermalUsagePercent = thermalUsagePercent,
+                        totalRamMb = device.totalRamMb,
+                        wide = true,
+                        modifier = Modifier.weight(2f),
+                        onPlay = onPlay
+                    )
+                    UltraVoiceOverviewCard(gameName, profile, Modifier.weight(1f))
+                }
+            }
+            DashboardStatusStrip(profile, gameCount, sessionCount)
             Text("BOOSTER", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
             val presentations = PerformanceProfile.entries.associateWith(::boosterPresentation)
             if (compact) {
@@ -299,6 +336,45 @@ private fun UltraFinalExperienceCard(summary: UltraFinalExperienceSummary, compa
 }
 
 @Composable
+private fun RecentGamesStrip(games: List<String>, selectedGame: String) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(games) { title ->
+            val selected = title == selectedGame
+            Surface(
+                color = if (selected) Color(0xFF180207) else UltraPanel,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .width(190.dp)
+                    .border(1.dp, if (selected) UltraRed else UltraLine, RoundedCornerShape(12.dp))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (selected) "SELECCIONADO" else "RECIENTE",
+                            color = if (selected) UltraRedBright else UltraMuted,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            title,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
+                    Text("▶", color = UltraRedBright, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun FeaturedGameCard(
     gameName: String,
     profile: PerformanceProfile,
@@ -306,72 +382,160 @@ private fun FeaturedGameCard(
     refresh: Float?,
     thermalUsagePercent: Int?,
     totalRamMb: Long,
+    wide: Boolean,
+    modifier: Modifier,
     onPlay: () -> Unit
 ) {
     Surface(
         color = Color(0xFF100104),
         shape = RoundedCornerShape(18.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 220.dp)
+        modifier = modifier
+            .heightIn(min = if (wide) 300.dp else 220.dp)
             .border(1.dp, UltraRed.copy(alpha = .72f), RoundedCornerShape(18.dp))
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        if (wide) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "JUEGO SELECCIONADO",
-                        color = UltraRedBright,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.4.sp
-                    )
-                    Text(
-                        gameName.uppercase(),
-                        color = Color.White,
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.5.sp
-                    )
-                    Text(
-                        "PERFIL ${profile.title.uppercase()}",
-                        color = UltraMuted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("JUEGO SELECCIONADO", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                        Text(gameName.uppercase(), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                        Text("PERFIL " + profile.title.uppercase(), color = UltraMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Centro de juego · rendimiento, telemetría y acceso rápido en una sola vista.",
+                            color = UltraMuted,
+                            fontSize = 10.sp
+                        )
+                    }
+                    Surface(
+                        onClick = onPlay,
+                        color = UltraRed,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, UltraRedBright, RoundedCornerShape(12.dp))
+                    ) {
+                        Text(
+                            "JUGAR",
+                            modifier = Modifier.padding(vertical = 15.dp),
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.2.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.width(170.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CompactMetric("REFRESCO", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible")
+                    CompactMetric("USO TÉRMICO", thermalUsagePercent?.let { it.toString() + "%" } ?: "No disponible")
+                    CompactMetric("RAM", if (totalRamMb > 0L) (totalRamMb / 1024L).toString() + " GB" else "No disponible")
+                    CompactMetric("BATERÍA", battery?.let { it.toString() + "%" } ?: "No disponible")
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("JUEGO SELECCIONADO", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                    Text(gameName.uppercase(), color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                    Text("PERFIL " + profile.title.uppercase(), color = UltraMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 Surface(
                     onClick = onPlay,
                     color = UltraRed,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.border(1.dp, UltraRedBright, RoundedCornerShape(12.dp))
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         "JUGAR",
-                        modifier = Modifier.padding(horizontal = 30.dp, vertical = 15.dp),
+                        modifier = Modifier.padding(vertical = 14.dp),
                         color = Color.White,
-                        fontSize = 20.sp,
+                        fontSize = 19.sp,
                         fontWeight = FontWeight.Black,
-                        letterSpacing = 1.2.sp
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                MetricBlock("PERFIL", profile.title, Modifier.weight(1f))
-                MetricBlock("REFRESCO", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible", Modifier.weight(1f))
-                MetricBlock("USO TÉRMICO", thermalUsagePercent?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
-                MetricBlock("RAM", if (totalRamMb > 0L) (totalRamMb / 1024L).toString() + " GB" else "No disponible", Modifier.weight(1f))
-                MetricBlock("BAT", battery?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    MetricBlock("REFRESCO", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible", Modifier.weight(1f))
+                    MetricBlock("TÉRMICA", thermalUsagePercent?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
+                    MetricBlock("BAT", battery?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CompactMetric(label: String, value: String) {
+    Surface(color = UltraPanel2, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Text(label, color = UltraRedBright, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+            Text(value, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun UltraVoiceOverviewCard(
+    gameName: String,
+    profile: PerformanceProfile,
+    modifier: Modifier
+) {
+    Surface(
+        color = Color(0xFF09090C),
+        shape = RoundedCornerShape(18.dp),
+        modifier = modifier
+            .heightIn(min = 300.dp)
+            .border(1.dp, UltraRed.copy(alpha = .55f), RoundedCornerShape(18.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(13.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("ULTRA VOICE", color = UltraRedBright, fontSize = 15.sp, fontWeight = FontWeight.Black, modifier = Modifier.fillMaxWidth())
+            Text("◉", color = UltraRed, fontSize = 60.sp, fontWeight = FontWeight.Black)
+            Text("ASISTENTE DISPONIBLE", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Surface(color = UltraPanel2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "“Ultra, abre " + gameName + " y activa " + profile.title + "”",
+                    modifier = Modifier.padding(12.dp),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                "Usa Ultra para voz, chat y comandos seguros desde GameHub.",
+                color = UltraMuted,
+                fontSize = 9.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardStatusStrip(
+    profile: PerformanceProfile,
+    gameCount: Int,
+    sessionCount: Int
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        MetricBlock("PERFIL", profile.title, Modifier.weight(1f))
+        MetricBlock("JUEGOS", gameCount.toString(), Modifier.weight(1f))
+        MetricBlock("SESIONES", sessionCount.toString(), Modifier.weight(1f))
+        MetricBlock("ULTRA VOICE", "DISPONIBLE", Modifier.weight(1f))
     }
 }
 
