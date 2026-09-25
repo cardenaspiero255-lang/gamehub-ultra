@@ -22,6 +22,11 @@ sealed interface VoiceActionResult {
         val profileDeferred: Boolean
     ) : VoiceActionResult
 
+    data class GameAliasSaved(
+        val alias: String,
+        val game: GameInfo
+    ) : VoiceActionResult
+
     data class DeviceStatus(val status: VoiceDeviceStatus) : VoiceActionResult
     data class AiAdvice(val advice: GameHubAiAdvice) : VoiceActionResult
     data object Help : VoiceActionResult
@@ -41,7 +46,9 @@ object VoiceCommandEngine {
         isProfileAvailable: (PerformanceProfile) -> Boolean,
         statusProvider: () -> VoiceDeviceStatus,
         deferProfileApplication: Boolean = false,
-        aiAdvisor: ((String) -> GameHubAiAdvice)? = null
+        aiAdvisor: ((String) -> GameHubAiAdvice)? = null,
+        gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
+        saveGameAlias: (String, String) -> Unit = { _, _ -> }
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -58,8 +65,32 @@ object VoiceCommandEngine {
                 }
             }
 
+            is VoiceCommand.DefineGameAlias -> {
+                val normalizedAlias = VoiceCommandParser.normalize(command.alias)
+                val target = GameMatchFinder.find(
+                    query = command.gameQuery,
+                    games = gamesProvider(),
+                    userAliases = emptyMap()
+                )
+                if (target == null || normalizedAlias.length !in 2..20) {
+                    VoiceActionResult.NotAvailable(
+                        "No pude asociar el alias ${command.alias} a un único juego instalado."
+                    )
+                } else {
+                    saveGameAlias(normalizedAlias, target.packageName)
+                    VoiceActionResult.GameAliasSaved(
+                        alias = normalizedAlias,
+                        game = target
+                    )
+                }
+            }
+
             is VoiceCommand.OpenGame -> {
-                val match = GameMatchFinder.find(command.query, gamesProvider())
+                val match = GameMatchFinder.find(
+                    query = command.query,
+                    games = gamesProvider(),
+                    userAliases = gameAliasesProvider()
+                )
                 if (match == null) {
                     VoiceActionResult.NotAvailable(
                         "No encontré un juego instalado que coincida con \"" + command.query + "\"."
@@ -113,11 +144,36 @@ object VoiceCommandEngine {
 }
 
 internal object GameMatchFinder {
-    fun find(query: String, games: List<GameInfo>): GameInfo? {
+    private val popularAliases = mapOf(
+        "re8" to listOf("resident evil village"),
+        "cp2077" to listOf("cyberpunk 2077"),
+        "pubg" to listOf("playerunknown s battlegrounds", "pubg")
+    )
+
+    fun find(
+        query: String,
+        games: List<GameInfo>,
+        userAliases: Map<String, String> = emptyMap()
+    ): GameInfo? {
         if (games.isEmpty()) return null
 
         val normalizedQuery = VoiceCommandParser.normalize(query)
         if (normalizedQuery.isBlank()) return null
+
+        userAliases[normalizedQuery]?.let { packageName ->
+            games.firstOrNull { it.packageName == packageName }?.let { return it }
+        }
+
+        popularAliases[normalizedQuery]?.let { targets ->
+            val candidates = games.filter { game ->
+                val label = VoiceCommandParser.normalize(game.label)
+                targets.any { target ->
+                    label == target || label.startsWith("${target} ")
+                }
+            }
+            if (candidates.size == 1) return candidates.single()
+            if (candidates.size > 1) return null
+        }
 
         val queryTokens = normalizedQuery.split(" ").filter(String::isNotBlank)
         val compactQuery = normalizedQuery.replace(" ", "")
