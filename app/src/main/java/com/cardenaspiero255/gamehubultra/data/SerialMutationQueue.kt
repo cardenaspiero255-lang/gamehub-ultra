@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.data
 
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -19,11 +20,12 @@ class SerialMutationQueue(
 ) {
     private val monitor = Any()
     private var tail: Job? = null
+    private val failureHandler = CoroutineExceptionHandler { _, _ -> Unit }
 
     fun enqueue(block: suspend () -> Unit): Job {
         val job = synchronized(monitor) {
             val previous = tail
-            scope.launch(dispatcher, start = CoroutineStart.LAZY) {
+            scope.launch(dispatcher + failureHandler, start = CoroutineStart.LAZY) {
                 previous?.join()
                 block()
             }.also { tail = it }
