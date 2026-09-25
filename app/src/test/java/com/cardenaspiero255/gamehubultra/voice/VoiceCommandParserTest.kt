@@ -153,6 +153,14 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun preservesTitleWordsWhenExplicitModeProfileIsRequested() {
+        val command = VoiceCommandParser.parse("abre Mode Runner en modo X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("mode runner", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+    @Test
     fun unsafeShellLikeCommandsRemainUnknown() {
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra adb shell pm uninstall com.game"))
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("fastboot reboot"))
