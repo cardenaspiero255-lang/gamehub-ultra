@@ -29,8 +29,7 @@ internal const val ULTRA_PLAYER_NAME = "ejecutor3.0"
 
 @Composable
 internal fun UltraShellHeader(
-    playerName: String,
-    activeProfile: PerformanceProfile
+    playerName: String
 ) {
     Surface(
         color = Color(0xFF030306),
@@ -56,23 +55,6 @@ internal fun UltraShellHeader(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    color = Color(0xFF160307),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.border(
-                        width = 1.dp,
-                        color = Color(0xFFFF1630).copy(alpha = .7f),
-                        shape = RoundedCornerShape(10.dp)
-                    )
-                ) {
-                    Text(
-                        activeProfile.title.uppercase(),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        color = Color(0xFFFF3048),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         playerName,
