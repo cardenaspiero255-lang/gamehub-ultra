@@ -118,6 +118,7 @@ object VoiceCommandParser {
             .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
             .replace(Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b"""), " ")
             .replace(Regex("""\b(x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
+            .replace(Regex("""\b(the\s+)?(modo|perfil|mode|profile)\b"""), " ")
 
     private fun extractGameQuery(clean: String, stripProfileSyntax: Boolean): String {
         val withoutProfile = if (stripProfileSyntax) {
