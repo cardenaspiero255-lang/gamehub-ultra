@@ -31,7 +31,7 @@ object VoiceCommandParser {
         }
 
         profileFromText(clean)?.let { profile ->
-            val gameQuery = extractGameQuery(clean)
+            val gameQuery = extractGameQuery(clean, stripProfileSyntax = true)
             return if (gameQuery.isNotBlank()) {
                 VoiceCommand.OpenGame(gameQuery, profile)
             } else {
@@ -51,7 +51,7 @@ object VoiceCommandParser {
             return VoiceCommand.Help
         }
 
-        val gameQuery = extractGameQuery(clean)
+        val gameQuery = extractGameQuery(clean, stripProfileSyntax = false)
         return if (gameQuery.isNotBlank()) {
             VoiceCommand.OpenGame(gameQuery)
         } else {
@@ -88,8 +88,8 @@ object VoiceCommandParser {
             else -> null
         }
 
-    private fun extractGameQuery(clean: String): String {
-        val withoutProfile = clean
+    private fun extractGameQuery(clean: String, stripProfileSyntax: Boolean): String {
+        val withoutProfile = if (stripProfileSyntax) clean
             .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
             .replace(Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b"""), " ")
             .replace(Regex("""\b(x4|modo x4|x4 mode|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
