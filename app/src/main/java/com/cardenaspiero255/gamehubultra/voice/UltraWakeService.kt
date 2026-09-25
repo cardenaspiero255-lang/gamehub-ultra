@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -26,6 +27,9 @@ import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
+import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
+import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
+import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
@@ -242,52 +246,71 @@ class UltraWakeService : Service() {
                 sessionActive = selectedGamePackage != null
             )
 
-            val result = VoiceCommandEngine.execute(
-                command = VoiceCommandParser.parse(transcript, aiAdvisor.intentResolver()),
-                gamesProvider = { GameLibrary.discoverForVoice(context) },
-                launchGame = { packageName ->
-                    launchGameFromService(context, packageName)
-                },
-                saveSelectedGame = { packageName ->
-                    GameSelectionStore.saveSelectedGame(context, packageName)
-                },
-                saveSelectedProfile = { profile ->
-                    ProfileSelectionStore.saveSelectedProfile(context, profile)
-                },
-                saveSelectedGameWithProfile = { packageName, profile ->
-                    GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
-                },
-                isProfileAvailable = { profile ->
-                    profile != PerformanceProfile.X4 ||
-                        DeviceCapabilitiesProvider.get(context).sustainedPerformanceSupported
-                },
-                statusProvider = {
-                    VoiceDeviceStatus(
-                        batteryPercent = diagnostics.battery.percent,
-                        thermalLabel = diagnostics.thermal.status?.toString() ?: "No disponible"
-                    )
-                },
-                deferProfileApplication = true,
-                aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
+            val status = VoiceDeviceStatus(
+                batteryPercent = diagnostics.battery.percent,
+                thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
+            )
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = aiAdvisor.intentResolver(),
+                telemetry = UltraRuntimeTelemetry(
+                    batteryPercent = status.batteryPercent,
+                    thermalLabel = status.thermalLabel,
+                    refreshRateHz = diagnostics.refresh.currentRefreshRateHz
+                )
             )
 
-            val response = when (result) {
-                is VoiceActionResult.ProfileSelected ->
-                    "Perfil ${result.profile.title} seleccionado."
-                is VoiceActionResult.GameOpened ->
-                    "Abriendo ${result.game.label}."
-                is VoiceActionResult.DeviceStatus ->
-                    "Batería ${result.status.batteryPercent ?: "no disponible"} por ciento."
-                is VoiceActionResult.AiAdvice ->
-                    AiAdviceFormatter.fullResponse(context, result.advice)
-                VoiceActionResult.Help ->
-                    "Puedes decir: Ultra, abre un juego. Ultra, pon X4. Ultra, FPS balanceado."
-                is VoiceActionResult.NotAvailable ->
-                    "No disponible. ${result.detail}"
-                VoiceActionResult.RequiresPermission ->
-                    "Necesito permiso de micrófono."
-                is VoiceActionResult.Failed ->
-                    "No pude completar el comando. ${result.detail}"
+            val response = when (route) {
+                is UltraAgentRoute.Utility -> route.answer.message
+                is UltraAgentRoute.Chat ->
+                    aiAdvisor.chat(
+                        message = route.message,
+                        context = aiContext
+                    )
+                is UltraAgentRoute.Command -> {
+                    val result = VoiceCommandEngine.execute(
+                        command = route.command,
+                        gamesProvider = { GameLibrary.discoverForVoice(context) },
+                        launchGame = { packageName ->
+                            launchGameFromService(context, packageName)
+                        },
+                        saveSelectedGame = { packageName ->
+                            GameSelectionStore.saveSelectedGame(context, packageName)
+                        },
+                        saveSelectedProfile = { profile ->
+                            ProfileSelectionStore.saveSelectedProfile(context, profile)
+                        },
+                        saveSelectedGameWithProfile = { packageName, profile ->
+                            GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
+                        },
+                        isProfileAvailable = { profile ->
+                            profile != PerformanceProfile.X4 ||
+                                DeviceCapabilitiesProvider.get(context).sustainedPerformanceSupported
+                        },
+                        statusProvider = { status },
+                        deferProfileApplication = true,
+                        aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
+                    )
+
+                    when (result) {
+                        is VoiceActionResult.ProfileSelected ->
+                            "Perfil ${result.profile.title} seleccionado."
+                        is VoiceActionResult.GameOpened ->
+                            "Abriendo ${result.game.label}."
+                        is VoiceActionResult.DeviceStatus ->
+                            "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
+                        is VoiceActionResult.AiAdvice ->
+                            AiAdviceFormatter.fullResponse(context, result.advice)
+                        VoiceActionResult.Help ->
+                            "Puedes decir: Ultra, dime la hora. Ultra, dime la temperatura. Ultra, dime los Hz. Ultra, abre un juego. Ultra, pon X4."
+                        is VoiceActionResult.NotAvailable ->
+                            "No disponible. ${result.detail}"
+                        VoiceActionResult.RequiresPermission ->
+                            "Necesito permiso de micrófono."
+                        is VoiceActionResult.Failed ->
+                            "No pude completar el comando. ${result.detail}"
+                    }
+                }
             }
 
             mainHandler.post {
@@ -295,6 +318,19 @@ class UltraWakeService : Service() {
             }
         }.start()
     }
+
+    private fun voiceThermalLabel(status: Int?): String =
+        when (status) {
+            PowerManager.THERMAL_STATUS_NONE -> "Normal"
+            PowerManager.THERMAL_STATUS_LIGHT -> "Leve"
+            PowerManager.THERMAL_STATUS_MODERATE -> "Moderado"
+            PowerManager.THERMAL_STATUS_SEVERE -> "Severo"
+            PowerManager.THERMAL_STATUS_CRITICAL -> "Crítico"
+            PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergencia"
+            PowerManager.THERMAL_STATUS_SHUTDOWN -> "Apagado térmico"
+            null -> "No disponible"
+            else -> "Desconocido"
+        }
 
     private fun launchGameFromService(context: Context, packageName: String): Boolean {
         val intent = context.packageManager.getLaunchIntentForPackage(packageName)

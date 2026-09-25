@@ -12,6 +12,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
+import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
@@ -152,6 +153,10 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private const val MAX_CHAT_HISTORY = 8
+
+internal fun shouldRevealQuickVoiceControls(wasOpen: Boolean, isOpen: Boolean): Boolean =
+    !wasOpen && isOpen
+
 
 class MainActivity : ComponentActivity() {
     private lateinit var performanceController: PerformanceController
@@ -302,35 +307,14 @@ private fun GameHubUltraApp(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             val selectedGame = activeSessionPackage
             val sessionId = activeSessionId
-            if (selectedGame == null || sessionId == null) {
-                runtimeDiagnostics = null
-                telemetryTrend = emptyList()
-                performanceTimelineSamples = emptyList()
-                latencyMs = null
-                adaptiveDecision = adaptiveEngine.evaluate(
-                    AdaptiveRuntimeSnapshot(
-                        thermalStatus = null,
-                        thermalHeadroom = null,
-                        batteryPercent = null,
-                        charging = false,
-                        powerSaveMode = false,
-                        sessionActive = false,
-                        sustainedPerformanceSupported =
-                            initialState.capabilities?.sustainedPerformanceSupported == true,
-                        performanceHintsAvailable =
-                            initialState.capabilities?.performanceHintsAvailable == true
-                    )
-                )
-                return@repeatOnLifecycle
-            }
-
+            val telemetryPlan = dashboardTelemetryPlan(sessionId)
             var lastThermalStatus: Int? = null
             var initializedThermalStatus = false
             var lastLatencyCheckAt = 0L
             var lastLatencyNetworkHandle: Long? = null
 
             try {
-                while (isActive) {
+                while (isActive && telemetryPlan.collectDashboardTelemetry) {
                     val diagnostics = withContext(Dispatchers.IO) {
                         RuntimeDiagnosticsProvider.get(context)
                     }
@@ -363,29 +347,36 @@ private fun GameHubUltraApp(
                     )
                     runtimeDiagnostics = enrichedDiagnostics
                     telemetryTrend = (telemetryTrend + enrichedDiagnostics).takeLast(12)
-                    performanceTimelineSamples = (
-                        performanceTimelineSamples + PerformanceTimelineBuilder.sample(
-                            timestampMillis = now,
-                            batteryPercent = enrichedDiagnostics.battery.percent,
-                            thermalStatus = enrichedDiagnostics.thermal.status,
-                            thermalHeadroom = enrichedDiagnostics.thermal.headroom,
-                            refreshRateHz = enrichedDiagnostics.refresh.currentRefreshRateHz,
-                            ramUsedPercent = enrichedDiagnostics.memory.usedPercent
-                        )
-                    ).takeLast(24)
 
-                    if (initializedThermalStatus &&
-                        diagnostics.thermal.status != lastThermalStatus
-                    ) {
-                        viewModel.recordPerformanceEvent(
-                            PerformanceEvent(
+                    if (telemetryPlan.recordSessionEvents && sessionId != null) {
+                        performanceTimelineSamples = (
+                            performanceTimelineSamples + PerformanceTimelineBuilder.sample(
                                 timestampMillis = now,
-                                type = PerformanceEventType.THERMAL_CHANGED,
-                                sessionId = sessionId,
-                                detail = diagnostics.thermal.status?.toString() ?: "unavailable"
+                                batteryPercent = enrichedDiagnostics.battery.percent,
+                                thermalStatus = enrichedDiagnostics.thermal.status,
+                                thermalHeadroom = enrichedDiagnostics.thermal.headroom,
+                                refreshRateHz = enrichedDiagnostics.refresh.currentRefreshRateHz,
+                                ramUsedPercent = enrichedDiagnostics.memory.usedPercent
                             )
-                        )
+                        ).takeLast(24)
+
+                        if (
+                            initializedThermalStatus &&
+                            diagnostics.thermal.status != lastThermalStatus
+                        ) {
+                            viewModel.recordPerformanceEvent(
+                                PerformanceEvent(
+                                    timestampMillis = now,
+                                    type = PerformanceEventType.THERMAL_CHANGED,
+                                    sessionId = sessionId,
+                                    detail = diagnostics.thermal.status?.toString() ?: "unavailable"
+                                )
+                            )
+                        }
+                    } else {
+                        performanceTimelineSamples = emptyList()
                     }
+
                     lastThermalStatus = diagnostics.thermal.status
                     initializedThermalStatus = true
 
@@ -396,7 +387,7 @@ private fun GameHubUltraApp(
                             batteryPercent = diagnostics.battery.percent,
                             charging = diagnostics.battery.charging,
                             powerSaveMode = diagnostics.battery.powerSaveMode,
-                            sessionActive = activeSessionPackage != null,
+                            sessionActive = selectedGame != null,
                             sustainedPerformanceSupported =
                                 initialState.capabilities?.sustainedPerformanceSupported == true,
                             performanceHintsAvailable =
@@ -405,7 +396,11 @@ private fun GameHubUltraApp(
                     )
                     adaptiveDecision = decision
 
-                    if (decision.changed) {
+                    if (
+                        decision.changed &&
+                        telemetryPlan.recordSessionEvents &&
+                        sessionId != null
+                    ) {
                         viewModel.recordPerformanceEvent(
                             PerformanceEvent(
                                 timestampMillis = now,
@@ -421,7 +416,7 @@ private fun GameHubUltraApp(
                     delay(10_000)
                 }
             } finally {
-                // Lifecycle cancellation only pauses telemetry polling; it does not end the game session.
+                // Lifecycle cancellation pauses dashboard telemetry until the app resumes.
             }
         }
     }
@@ -986,6 +981,14 @@ private fun HomeScreen(
         }
     }
     var localGameCount by remember { mutableIntStateOf(0) }
+    var quickVoiceOpen by rememberSaveable { mutableStateOf(false) }
+    var quickVoiceRevealRequest by remember { mutableIntStateOf(0) }
+    val homeListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(quickVoiceRevealRequest) {
+        if (quickVoiceRevealRequest > 0) {
+            homeListState.animateScrollToItem(3)
+        }
+    }
     LaunchedEffect(timelineContext, manualGamePackages, gameCatalogRefreshToken) {
         localGameCount = withContext(Dispatchers.IO) {
             GameLibrary.discover(
@@ -995,6 +998,7 @@ private fun HomeScreen(
         }
     }
     LazyColumn(
+        state = homeListState,
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
@@ -1025,8 +1029,28 @@ private fun HomeScreen(
                 gameCount = localGameCount,
                 sessionCount = sessionHistory.size,
                 onProfileSelected = onProfileSelected,
-                onPlay = onPlaySelectedGame
+                onPlay = onPlaySelectedGame,
+                onVoiceClick = {
+                    val next = !quickVoiceOpen
+                    if (shouldRevealQuickVoiceControls(quickVoiceOpen, next)) {
+                        quickVoiceRevealRequest += 1
+                    }
+                    quickVoiceOpen = next
+                }
             )
+        }
+        if (quickVoiceOpen) {
+            item {
+                VoiceAssistantCard(
+                    selectedProfileName = selectedProfileName,
+                    onProfileSelected = onProfileSelected,
+                    onGameSelected = onGameSelected,
+                    aiContext = aiContext,
+                    aiAdvisor = aiAdvisor,
+                    conversation = conversation,
+                    onConversationChanged = onConversationChanged
+                )
+            }
         }
         item { ActiveProfileCard(state) }
         item {
@@ -1509,12 +1533,31 @@ private fun VoiceAssistantCard(
                         onConversationChanged(withUser)
                     }
 
-                    when (
-                        val route = UltraUnifiedAgentRouter.route(
-                            transcript = spokenText,
-                            optionalResolver = aiIntentResolver
+                    val voiceStatus = VoiceDeviceStatusProvider.read(context)
+                    val route = UltraUnifiedAgentRouter.route(
+                        transcript = spokenText,
+                        optionalResolver = aiIntentResolver,
+                        telemetry = UltraRuntimeTelemetry(
+                            batteryPercent = voiceStatus.batteryPercent,
+                            thermalLabel = voiceStatus.thermalLabel,
+                            refreshRateHz = latestAiContext.refreshRateHz
                         )
-                    ) {
+                    )
+                    when (route) {
+                        is UltraAgentRoute.Utility -> {
+                            val answer = route.answer.message
+                            val withAnswer = UltraConversationPolicy.append(
+                                history = withUser,
+                                entry = "Ultra: " + answer,
+                                maxEntries = MAX_CHAT_HISTORY
+                            )
+                            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                onConversationChanged(withAnswer)
+                                response = answer
+                                controller.speak(answer)
+                            }
+                        }
+
                         is UltraAgentRoute.Chat -> {
                             val answer = aiAdvisor.chat(
                                 message = route.message,

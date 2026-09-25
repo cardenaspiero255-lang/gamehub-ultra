@@ -72,6 +72,28 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
+    fun explicitLaunchNamedLikeMetricStillOpensGame() {
+        listOf(
+            "Ultra, abre Hz" to "hz",
+            "Ultra, open Refresh Rate" to "refresh rate"
+        ).forEach { (transcript, expectedQuery) ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null,
+                telemetry = UltraRuntimeTelemetry(
+                    batteryPercent = 80,
+                    thermalLabel = "Normal",
+                    refreshRateHz = 120f
+                )
+            )
+
+            val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+            val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+            assertEquals(expectedQuery, command.query)
+        }
+    }
+
+    @Test
     fun currentTimeQuestionUsesGeneralUtilityRoute() {
         val route = UltraUnifiedAgentRouter.route(
             transcript = "Ultra, qué hora es?",
@@ -83,6 +105,61 @@ class UltraUnifiedAgentTest {
         assertEquals(UltraUtilityIntent.CurrentTime, utilityRoute.answer.intent)
         assertTrue(utilityRoute.answer.canRunDuringGame)
         assertTrue(utilityRoute.answer.message.contains("12:34"))
+        assertFalse(utilityRoute is UltraAgentRoute.Chat)
+    }
+
+    @Test
+    fun temperatureQuestionReturnsOnlyThermalUtility() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, dime la temperatura",
+            optionalResolver = null,
+            telemetry = UltraRuntimeTelemetry(
+                batteryPercent = 79,
+                thermalLabel = "Normal",
+                refreshRateHz = 120f
+            )
+        )
+
+        val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(UltraUtilityIntent.DeviceTemperature, utilityRoute.answer.intent)
+        assertTrue(utilityRoute.answer.message.contains("Normal"))
+        assertFalse(utilityRoute.answer.message.contains("Batería"))
+        assertFalse(utilityRoute.answer.message.contains("79"))
+    }
+
+    @Test
+    fun batteryQuestionReturnsOnlyBatteryUtility() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, dime la batería",
+            optionalResolver = null,
+            telemetry = UltraRuntimeTelemetry(
+                batteryPercent = 79,
+                thermalLabel = "Normal",
+                refreshRateHz = 120f
+            )
+        )
+
+        val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(UltraUtilityIntent.BatteryStatus, utilityRoute.answer.intent)
+        assertTrue(utilityRoute.answer.message.contains("79"))
+        assertFalse(utilityRoute.answer.message.contains("Normal"))
+    }
+
+    @Test
+    fun refreshRateQuestionReturnsHzUtility() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, dime los hz",
+            optionalResolver = null,
+            telemetry = UltraRuntimeTelemetry(
+                batteryPercent = 79,
+                thermalLabel = "Normal",
+                refreshRateHz = 120f
+            )
+        )
+
+        val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(UltraUtilityIntent.RefreshRate, utilityRoute.answer.intent)
+        assertTrue(utilityRoute.answer.message.contains("120 Hz"))
     }
 
     @Test

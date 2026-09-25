@@ -19,8 +19,8 @@
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.GameHubUltra"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round">
+        android:icon="@drawable/gamehub_ultra_exact"
+        android:roundIcon="@drawable/gamehub_ultra_exact">
         <meta-data
             android:name="android.app.shortcuts"
             android:resource="@xml/shortcuts" />

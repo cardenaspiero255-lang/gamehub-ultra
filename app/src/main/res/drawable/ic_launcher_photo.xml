@@ -4,7 +4,34 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#E10600" android:pathData="M54,21 L87,40 L87,68 L54,87 L21,68 L21,40 Z"/>
-    <path android:fillColor="#0B0B0D" android:pathData="M36,42 L72,42 L80,68 L68,68 L62,58 L46,58 L40,68 L28,68 Z"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M43,48 L49,48 L49,54 L43,54 Z M46,45 L46,57 M40,51 L52,51 M62,48 L68,48 L68,54 L62,54 Z"/>
+
+    <!-- Red neon halo -->
+    <path
+        android:fillColor="#33FF1630"
+        android:pathData="M54,15 L91,36 L91,72 L54,93 L17,72 L17,36 Z" />
+
+    <!-- Controller body: official red/black identity -->
+    <path
+        android:fillColor="#FF1630"
+        android:pathData="M31,37 C24,37 20,42 19,49 L16,67 C15,74 19,78 25,78 C30,78 34,74 38,68 L42,62 L66,62 L70,68 C74,74 78,78 83,78 C89,78 93,74 92,67 L89,49 C88,42 84,37 77,37 Z" />
+
+    <!-- Black face -->
+    <path
+        android:fillColor="#050507"
+        android:pathData="M34,42 C29,42 26,45 25,50 L23,64 C22,69 24,72 27,72 C30,72 33,68 36,63 L40,57 L68,57 L72,63 C75,68 78,72 81,72 C84,72 86,69 85,64 L83,50 C82,45 79,42 74,42 Z" />
+
+    <!-- Red d-pad -->
+    <path
+        android:fillColor="#FF1630"
+        android:pathData="M35,47 L40,47 L40,51 L44,51 L44,56 L40,56 L40,60 L35,60 L35,56 L31,56 L31,51 L35,51 Z" />
+
+    <!-- Red action buttons -->
+    <path
+        android:fillColor="#FF1630"
+        android:pathData="M74,49 A3,3 0,1 1,68 49 A3,3 0,1 1,74 49 M80,55 A3,3 0,1 1,74 55 A3,3 0,1 1,80 55" />
+
+    <!-- Central red lightning -->
+    <path
+        android:fillColor="#FF1630"
+        android:pathData="M57,43 L47,55 L53,55 L49,68 L62,52 L55,52 Z" />
 </vector>

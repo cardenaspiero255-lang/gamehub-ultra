@@ -50,6 +50,17 @@ internal data class BoosterPresentation(
     val badge: String
 )
 
+internal data class DashboardTelemetryPlan(
+    val collectDashboardTelemetry: Boolean,
+    val recordSessionEvents: Boolean
+)
+
+internal fun dashboardTelemetryPlan(sessionId: String?): DashboardTelemetryPlan =
+    DashboardTelemetryPlan(
+        collectDashboardTelemetry = true,
+        recordSessionEvents = sessionId != null
+    )
+
 internal fun boosterPresentation(profile: PerformanceProfile): BoosterPresentation =
     when (profile) {
         PerformanceProfile.BALANCED -> BoosterPresentation(
@@ -74,6 +85,18 @@ internal fun thermalEnvelopeUsagePercent(headroom: Float?): Int? =
         ?.takeIf { it.isFinite() && it >= 0f }
         ?.let { (it * 100f).toInt() }
 
+internal fun dashboardThermalStatusLabel(status: Int): String =
+    when (status) {
+        android.os.PowerManager.THERMAL_STATUS_NONE -> "Normal"
+        android.os.PowerManager.THERMAL_STATUS_LIGHT -> "Leve"
+        android.os.PowerManager.THERMAL_STATUS_MODERATE -> "Moderado"
+        android.os.PowerManager.THERMAL_STATUS_SEVERE -> "Severo"
+        android.os.PowerManager.THERMAL_STATUS_CRITICAL -> "Crítico"
+        android.os.PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergencia"
+        android.os.PowerManager.THERMAL_STATUS_SHUTDOWN -> "Apagado"
+        else -> "Desconocido"
+    }
+
 internal fun dashboardRecentGames(
     selectedGame: String,
     recentGames: List<String>
@@ -96,13 +119,15 @@ fun UltraDashboard(
     gameCount: Int = 0,
     sessionCount: Int = 0,
     onProfileSelected: (PerformanceProfile) -> Unit = {},
-    onPlay: () -> Unit = {}
+    onPlay: () -> Unit = {},
+    onVoiceClick: () -> Unit = {}
 ) {
     val battery = diagnostics?.battery?.percent
     val refresh = diagnostics?.refresh?.currentRefreshRateHz
     val latency = diagnostics?.connectivity?.latencyMs
     val thermalHeadroom = diagnostics?.thermal?.headroom
     val thermalUsagePercent = thermalEnvelopeUsagePercent(thermalHeadroom)
+    val thermalStatusText = diagnostics?.thermal?.status?.let(::dashboardThermalStatusLabel)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -122,12 +147,13 @@ fun UltraDashboard(
                     battery = battery,
                     refresh = refresh,
                     thermalUsagePercent = thermalUsagePercent,
+                    thermalStatusText = thermalStatusText,
                     totalRamMb = device.totalRamMb,
                     wide = false,
                     modifier = Modifier.fillMaxWidth(),
                     onPlay = onPlay
                 )
-                UltraVoiceOverviewCard(gameName, profile, Modifier.fillMaxWidth())
+                UltraVoiceOverviewCard(gameName, profile, Modifier.fillMaxWidth(), onVoiceClick)
             } else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     FeaturedGameCard(
@@ -136,12 +162,13 @@ fun UltraDashboard(
                         battery = battery,
                         refresh = refresh,
                         thermalUsagePercent = thermalUsagePercent,
+                        thermalStatusText = thermalStatusText,
                         totalRamMb = device.totalRamMb,
                         wide = true,
                         modifier = Modifier.weight(2f),
                         onPlay = onPlay
                     )
-                    UltraVoiceOverviewCard(gameName, profile, Modifier.weight(1f))
+                    UltraVoiceOverviewCard(gameName, profile, Modifier.weight(1f), onVoiceClick)
                 }
             }
             DashboardStatusStrip(profile, gameCount, sessionCount)
@@ -381,6 +408,7 @@ private fun FeaturedGameCard(
     battery: Int?,
     refresh: Float?,
     thermalUsagePercent: Int?,
+    thermalStatusText: String?,
     totalRamMb: Long,
     wide: Boolean,
     modifier: Modifier,
@@ -436,7 +464,7 @@ private fun FeaturedGameCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     CompactMetric("REFRESCO", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible")
-                    CompactMetric("USO TÉRMICO", thermalUsagePercent?.let { it.toString() + "%" } ?: "No disponible")
+                    CompactMetric("TÉRMICA", thermalUsagePercent?.let { it.toString() + "%" } ?: thermalStatusText ?: "No disponible")
                     CompactMetric("RAM", if (totalRamMb > 0L) (totalRamMb / 1024L).toString() + " GB" else "No disponible")
                     CompactMetric("BATERÍA", battery?.let { it.toString() + "%" } ?: "No disponible")
                 }
@@ -468,7 +496,7 @@ private fun FeaturedGameCard(
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     MetricBlock("REFRESCO", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible", Modifier.weight(1f))
-                    MetricBlock("TÉRMICA", thermalUsagePercent?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
+                    MetricBlock("TÉRMICA", thermalUsagePercent?.let { it.toString() + "%" } ?: thermalStatusText ?: "No disponible", Modifier.weight(1f))
                     MetricBlock("BAT", battery?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
                 }
             }
@@ -490,9 +518,11 @@ private fun CompactMetric(label: String, value: String) {
 private fun UltraVoiceOverviewCard(
     gameName: String,
     profile: PerformanceProfile,
-    modifier: Modifier
+    modifier: Modifier,
+    onClick: () -> Unit
 ) {
     Surface(
+        onClick = onClick,
         color = Color(0xFF09090C),
         shape = RoundedCornerShape(18.dp),
         modifier = modifier
@@ -506,7 +536,7 @@ private fun UltraVoiceOverviewCard(
         ) {
             Text("ULTRA VOICE", color = UltraRedBright, fontSize = 15.sp, fontWeight = FontWeight.Black, modifier = Modifier.fillMaxWidth())
             Text("◉", color = UltraRed, fontSize = 60.sp, fontWeight = FontWeight.Black)
-            Text("ASISTENTE DISPONIBLE", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("TOCA PARA HABLAR", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Surface(color = UltraPanel2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                 Text(
                     "“Ultra, abre " + gameName + " y activa " + profile.title + "”",
@@ -517,7 +547,7 @@ private fun UltraVoiceOverviewCard(
                 )
             }
             Text(
-                "Usa Ultra para voz, chat y comandos seguros desde GameHub.",
+                "Abre los controles reales de Ultra Voice: micrófono, escucha continua, respuestas y comandos seguros.",
                 color = UltraMuted,
                 fontSize = 9.sp
             )
