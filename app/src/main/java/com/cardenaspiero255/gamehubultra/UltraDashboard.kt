@@ -88,18 +88,6 @@ fun UltraDashboard(
     val latency = diagnostics?.connectivity?.latencyMs
     val thermalHeadroom = diagnostics?.thermal?.headroom
     val thermalUsagePercent = thermalEnvelopeUsagePercent(thermalHeadroom)
-    val hasSelectedGame = gameName != "Ningún juego seleccionado"
-    val finalExperience = UltraFinalExperienceGate.evaluate(
-        dashboardReady = true,
-        profileReady = PerformanceProfile.entries.any { it == profile },
-        diagnosticsReady = diagnostics != null,
-        libraryReady = hasSelectedGame,
-        sessionHistoryReady = telemetryTrend.isNotEmpty(),
-        accessibilityReady = true,
-        performanceReady = device.cpuCores > 0 && device.totalRamMb > 0L,
-        unsupportedClaimsAvoided = true
-    )
-
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -109,8 +97,6 @@ fun UltraDashboard(
         val compact = maxWidth < 720.dp
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             UltraCoreHeader(profile)
-            GameHubOriginalShellStrip(compact)
-            UltraFinalExperienceCard(finalExperience, compact)
             FeaturedGameCard(gameName, battery, refresh, thermalUsagePercent, device.totalRamMb)
             UltraVoiceCard()
             Text("BOOSTER", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
@@ -165,7 +151,7 @@ private fun UltraCoreHeader(profile: PerformanceProfile) {
         }
         Surface(color = UltraRed.copy(alpha = .16f), shape = RoundedCornerShape(9.dp), modifier = Modifier.border(1.dp, UltraRed.copy(alpha = .55f), RoundedCornerShape(9.dp))) {
             Column(Modifier.padding(horizontal = 11.dp, vertical = 7.dp), horizontalAlignment = Alignment.End) {
-                Text("GAMEHUB ORIGINAL", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("PERFIL ACTIVO", color = UltraRedBright, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Text(profile.title.uppercase(), color = Color.White, fontSize = 11.sp)
             }
         }
