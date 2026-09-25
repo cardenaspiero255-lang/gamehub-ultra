@@ -120,14 +120,17 @@ internal object GameMatchFinder {
         if (normalizedQuery.isBlank()) return null
 
         val queryTokens = normalizedQuery.split(" ").filter(String::isNotBlank)
+        val compactQuery = normalizedQuery.replace(" ", "")
         val scored = games.map { game ->
             val label = VoiceCommandParser.normalize(game.label)
             val labelTokens = label.split(" ").filter(String::isNotBlank)
+            val compactLabel = label.replace(" ", "")
             val tokenScore = if (queryTokens.isEmpty() || labelTokens.isEmpty()) 0.0
             else queryTokens.map { q -> labelTokens.maxOfOrNull { l -> tokenSimilarity(q, l) } ?: 0.0 }.average()
 
             game to when {
                 label == normalizedQuery || game.packageName.equals(query.trim(), ignoreCase = true) -> 1.0
+                compactQuery.length >= 3 && compactLabel == compactQuery -> 0.98
                 label.startsWith(normalizedQuery + " ") -> 0.94
                 label.contains(normalizedQuery) -> 0.90
                 normalizedQuery.contains(label) -> 0.86
@@ -154,7 +157,7 @@ internal object GameMatchFinder {
 
     private fun tokenSimilarity(a: String, b: String): Double {
         if (a == b) return 1.0
-        if (a.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return 0.9
+        if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) return 0.9
         val distance = levenshtein(a, b)
         val longest = maxOf(a.length, b.length)
         return if (longest == 0) 1.0 else 1.0 - distance.toDouble() / longest
