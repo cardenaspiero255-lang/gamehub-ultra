@@ -496,12 +496,14 @@ private fun GameHubUltraApp(
         activeSessionPackage = packageName
         activeSessionId = sessionId
         viewModelScopeLaunch(context, sessionStore) {
-            GameSessionRecord(
-                id = sessionId,
-                packageName = packageName,
-                profileName = uiState.effectiveProfile.name,
-                startedAtMillis = System.currentTimeMillis(),
-                startBatteryPercent = runtimeDiagnostics?.battery?.percent
+            sessionStore.startSession(
+                GameSessionRecord(
+                    id = sessionId,
+                    packageName = packageName,
+                    profileName = uiState.effectiveProfile.name,
+                    startedAtMillis = System.currentTimeMillis(),
+                    startBatteryPercent = runtimeDiagnostics?.battery?.percent
+                )
             )
         }
         viewModel.recordPerformanceEvent(
