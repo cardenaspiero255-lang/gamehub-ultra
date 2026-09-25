@@ -479,10 +479,9 @@ class UltraWakeService : Service() {
                         saveSelectedGameWithProfile = { packageName, profile ->
                             GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
                         },
-                        isProfileAvailable = { profile ->
-                            profile != PerformanceProfile.X4 ||
-                                DeviceCapabilitiesProvider.get(context).sustainedPerformanceSupported
-                        },
+                        // X4 remains selectable even when the OEM does not expose Android's
+                        // Sustained Performance Mode; unsupported hardware hooks degrade safely.
+                        isProfileAvailable = { _ -> true },
                         statusProvider = { status },
                         deferProfileApplication = true,
                         aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
