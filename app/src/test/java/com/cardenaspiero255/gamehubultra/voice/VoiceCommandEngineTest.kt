@@ -181,4 +181,28 @@ class VoiceCommandEngineTest {
         assertEquals("com.zeptolab.cats.google", match?.packageName)
     }
 
+
+    @Test
+    fun popularAliasesMatchTitlesThatCannotBeDerivedFromInitials() {
+        val installed = listOf(
+            GameInfo("com.example.re8", "Resident Evil Village"),
+            GameInfo("com.example.cp2077", "Cyberpunk 2077"),
+            GameInfo("com.example.pubg", "PLAYERUNKNOWN'S BATTLEGROUNDS")
+        )
+
+        assertEquals("com.example.re8", GameMatchFinder.find("RE8", installed)?.packageName)
+        assertEquals("com.example.cp2077", GameMatchFinder.find("CP2077", installed)?.packageName)
+        assertEquals("com.example.pubg", GameMatchFinder.find("PUBG", installed)?.packageName)
+    }
+
+    @Test
+    fun ambiguousPopularAliasDoesNotLaunchArbitraryGame() {
+        val installed = listOf(
+            GameInfo("com.example.re8", "Resident Evil Village"),
+            GameInfo("com.example.re8demo", "Resident Evil Village Demo")
+        )
+
+        assertEquals(null, GameMatchFinder.find("RE8", installed))
+    }
+
 }
