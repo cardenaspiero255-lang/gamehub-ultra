@@ -188,4 +188,21 @@ class UltraUnifiedAgentTest {
             )
         )
     }
+    @Test
+    fun ambiguousActionVerbsStayOnConversationPath() {
+        listOf(
+            "Ultra, set a timer",
+            "Ultra, switch to dark mode",
+            "Ultra, enable notifications",
+            "Ultra, use the camera"
+        ).forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val chat = assertIs<UltraAgentRoute.Chat>(route)
+            assertEquals(transcript, chat.message)
+        }
+    }
+
 }
