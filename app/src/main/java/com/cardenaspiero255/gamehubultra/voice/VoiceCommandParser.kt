@@ -36,6 +36,10 @@ object VoiceCommandParser {
         }
 
         stripAppendedProfileAction(clean)?.let { appended ->
+            if (isProfileOnlyInstruction(appended.launchOnly)) {
+                return VoiceCommand.SelectProfile(appended.profile)
+            }
+
             val combinedGameQuery = extractGameQuery(
                 appended.launchOnly,
                 stripProfileSyntax = false
@@ -105,7 +109,7 @@ object VoiceCommandParser {
     private fun hasExplicitProfileInstruction(clean: String): Boolean {
         val profileValue =
             """fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything"""
-        return Regex("""\b(y|and)\s+($PROFILE_ACTION_VERBS)\b\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\b""")
+        return Regex("""\b(y|and)\s+($PROFILE_ACTION_VERBS)\b\s+(?:(el|la|the|to|a|al)\s+)?(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\b""")
             .containsMatchIn(clean) ||
             Regex("""\b(en|con|with|using)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\b""")
             .containsMatchIn(clean) ||
@@ -130,14 +134,22 @@ object VoiceCommandParser {
         val profileValue =
             """fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything"""
         val match = Regex(
-            """\b(y|and)\s+($PROFILE_ACTION_VERBS)\b\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\s*$"""
+            """\b(y|and)\s+($PROFILE_ACTION_VERBS)\b\s+(?:(el|la|the|to|a|al)\s+)?(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\s*$"""
         ).find(clean) ?: return null
-        val appendedProfile = profileFromText(match.groupValues[5]) ?: return null
+        val appendedProfile = profileFromText(match.value) ?: return null
 
         return AppendedProfileAction(
             launchOnly = clean.removeRange(match.range).trim(),
             profile = appendedProfile
         )
+    }
+
+    private fun isProfileOnlyInstruction(clean: String): Boolean {
+        val profileValue =
+            """fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything"""
+        return Regex(
+            """^($PROFILE_ACTION_VERBS)\b\s+(?:(el|la|the|to|a|al)\s+)?(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?$"""
+        ).matches(clean)
     }
 
     private fun isUnsafeShellLikeCommand(clean: String): Boolean {
