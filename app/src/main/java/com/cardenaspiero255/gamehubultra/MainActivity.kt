@@ -298,8 +298,8 @@ private fun GameHubUltraApp(
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
-    val ultraMemoryStore = remember(context) {
-        UltraConversationMemoryStore(context)
+    val ultraMemoryStore = remember {
+        UltraConversationMemoryStore.get(context.applicationContext)
     }
     val aiAdvisor = remember(ultraMemoryStore) {
         GameHubAiAdvisor(
@@ -309,9 +309,21 @@ private fun GameHubUltraApp(
     }
     var ultraConversation by rememberSaveable { mutableStateOf(listOf<String>()) }
 
-    LaunchedEffect(ultraMemoryStore) {
-        ultraConversation = withContext(Dispatchers.IO) {
-            ultraMemoryStore.recentConversationLines(MAX_CHAT_HISTORY)
+    LaunchedEffect(ultraMemoryStore, uiState.selectedGamePackage) {
+        if (ultraConversation.isNotEmpty()) return@LaunchedEffect
+        val memoryScope = UltraMemoryScope(
+            userId = "local",
+            gamePackage = uiState.selectedGamePackage
+        )
+        val loaded = withContext(Dispatchers.IO) {
+            ultraMemoryStore.warmUp()
+            ultraMemoryStore.recentConversationLines(
+                limit = MAX_CHAT_HISTORY,
+                scope = memoryScope
+            )
+        }
+        if (ultraConversation.isEmpty()) {
+            ultraConversation = loaded
         }
     }
 
@@ -323,17 +335,15 @@ private fun GameHubUltraApp(
             gamePackage = uiState.selectedGamePackage
         )
         val timestampMillis = System.currentTimeMillis()
-        scope.launch(Dispatchers.IO) {
-            if (next.isEmpty()) {
-                ultraMemoryStore.clearConversationHistory(userId = memoryScope.userId)
-            } else {
-                ultraMemoryStore.syncConversation(
-                    previous = previous,
-                    next = next,
-                    scope = memoryScope,
-                    timestampMillis = timestampMillis
-                )
-            }
+        if (next.isEmpty()) {
+            ultraMemoryStore.enqueueClearConversationHistory(userId = memoryScope.userId)
+        } else {
+            ultraMemoryStore.enqueueSyncConversation(
+                previous = previous,
+                next = next,
+                scope = memoryScope,
+                timestampMillis = timestampMillis
+            )
         }
     }
 
