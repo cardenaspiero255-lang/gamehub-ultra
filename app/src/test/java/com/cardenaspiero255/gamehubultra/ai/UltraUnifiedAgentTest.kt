@@ -205,4 +205,17 @@ class UltraUnifiedAgentTest {
         }
     }
 
+    @Test
+    fun profileActionTargetingGameRemainsCommandRoute() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, switch to X4 for Minecraft",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("minecraft", command.query)
+        assertEquals(PerformanceProfile.X4, command.requestedProfile)
+    }
+
 }
