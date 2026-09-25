@@ -1678,11 +1678,9 @@ private fun VoiceAssistantCard(
                                         profile
                                     )
                                 },
-                                isProfileAvailable = { profile ->
-                                    profile != PerformanceProfile.X4 ||
-                                        DeviceCapabilitiesProvider.get(context)
-                                            .sustainedPerformanceSupported
-                                },
+                                // X4 is an app profile. Hardware Sustained Performance Mode is
+                                // applied opportunistically by PerformanceController when supported.
+                                isProfileAvailable = { _ -> true },
                                 statusProvider = { VoiceDeviceStatusProvider.read(context) },
                                 aiAdvisor = { question ->
                                     aiAdvisor.advise(question, latestAiContext)
