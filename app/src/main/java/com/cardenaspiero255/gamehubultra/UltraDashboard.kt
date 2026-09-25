@@ -341,7 +341,7 @@ private fun FeaturedGameCard(
                         letterSpacing = 1.5.sp
                     )
                     Text(
-                        "PERFIL \${profile.title.uppercase()}",
+                        "PERFIL ${profile.title.uppercase()}",
                         color = UltraMuted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
