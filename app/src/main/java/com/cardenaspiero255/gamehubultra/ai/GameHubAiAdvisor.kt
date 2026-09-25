@@ -7,7 +7,8 @@ import java.text.Normalizer
 import java.util.Locale
 
 class GameHubAiAdvisor(
-    private val modelAdapter: LocalAiModelAdapter? = null
+    private val modelAdapter: LocalAiModelAdapter? = null,
+    private val memoryGateway: UltraLongTermMemoryGateway? = null
 ) : AutoCloseable {
 
     fun hasLocalModelProvider(): Boolean = modelAdapter != null
@@ -41,16 +42,72 @@ class GameHubAiAdvisor(
         context: GameHubAiContext,
         conversation: List<String> = emptyList()
     ): String {
+        val memoryScope = UltraMemoryScope(
+            userId = "local",
+            gamePackage = context.selectedGamePackage
+        )
+        val memoryCommandResponse = runCatching {
+            memoryGateway?.handleCommand(message, memoryScope)
+        }.getOrNull()
+        if (memoryCommandResponse != null) return memoryCommandResponse
+
+        val visibleTexts = conversation
+            .map { normalize(it.substringAfter(':').trim()) }
+            .filter(String::isNotBlank)
+            .toMutableSet()
+            .apply { add(normalize(message)) }
+
+        val recalled = runCatching {
+            memoryGateway
+                ?.recallContext(message, memoryScope, limit = 6)
+                .orEmpty()
+        }.getOrDefault(emptyList())
+            .filterNot { recall ->
+                recall.record.kind == UltraMemoryKind.CONVERSATION &&
+                    normalize(recall.record.text) in visibleTexts
+            }
+        val recalledConversation = recalled.map { recall ->
+            val source = when (recall.provenance) {
+                UltraMemoryProvenance.REMEMBERED_FACT -> "hecho recordado"
+                UltraMemoryProvenance.PRIOR_CONVERSATION -> "conversación anterior"
+                UltraMemoryProvenance.SUMMARY -> "resumen anterior"
+            }
+            "[Memoria previa · $source] ${recall.record.text}"
+        }
+        val modelConversation = (
+            recalledConversation + conversation.takeLast(12)
+        ).takeLast(18)
+
         val local = runCatching {
-            modelAdapter?.takeIf { it.isAvailable() }?.chat(message, context, conversation)
+            modelAdapter
+                ?.takeIf { it.isAvailable() }
+                ?.chat(message, context, modelConversation)
         }.getOrNull()
             ?.takeIf { it.isNotBlank() }
             ?.let { AiChatSafetyFilter.sanitize(it, message) }
         if (local != null) return local
 
         val normalized = normalize(message)
-        val advice = advise(message, context)
         val english = isEnglishMessage(message)
+        val memoryRecallQuestion = listOf(
+            "que recuerdas",
+            "que sabes de mi",
+            "recuerdas de mi",
+            "what do you remember",
+            "what do you know about me"
+        ).any(normalized::contains)
+        if (memoryRecallQuestion && recalled.isNotEmpty()) {
+            val memoryText = recalled
+                .take(4)
+                .joinToString(" · ") { it.record.text }
+            return if (english) {
+                "I remember: $memoryText"
+            } else {
+                "Recuerdo: $memoryText"
+            }
+        }
+
+        val advice = advise(message, context)
         val profile = profileLabel(advice.suggestedProfile, english)
 
         return when {

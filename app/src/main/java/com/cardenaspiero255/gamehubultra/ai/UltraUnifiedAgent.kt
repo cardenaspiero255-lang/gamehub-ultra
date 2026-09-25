@@ -46,6 +46,13 @@ object UltraUnifiedAgentRouter {
         telemetry: UltraRuntimeTelemetry? = null,
         clock: Clock = Clock.systemDefaultZone()
     ): UltraAgentRoute {
+        // Memory commands must bypass profile/game parsing. Phrases such as
+        // "elimina de tu memoria prefiero X4" contain profile keywords but are
+        // conversational memory operations, not launch/profile commands.
+        if (UltraMemoryCommandParser.parse(transcript) != null) {
+            return UltraAgentRoute.Chat(transcript.trim())
+        }
+
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
             UltraGeneralAssistant.classify(transcript)?.let { intent ->
                 return UltraAgentRoute.Utility(

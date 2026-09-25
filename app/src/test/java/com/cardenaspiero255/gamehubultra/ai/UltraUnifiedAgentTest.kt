@@ -105,7 +105,6 @@ class UltraUnifiedAgentTest {
         assertEquals(UltraUtilityIntent.CurrentTime, utilityRoute.answer.intent)
         assertTrue(utilityRoute.answer.canRunDuringGame)
         assertTrue(utilityRoute.answer.message.contains("12:34"))
-        assertFalse(utilityRoute is UltraAgentRoute.Chat)
     }
 
     @Test
@@ -293,6 +292,22 @@ class UltraUnifiedAgentTest {
         val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
         assertEquals("minecraft", command.query)
         assertEquals(PerformanceProfile.X4, command.requestedProfile)
+    }
+
+    @Test
+    fun memoryCommandsContainingProfileNamesStayOnChatPath() {
+        listOf(
+            "Ultra elimina de tu memoria prefiero X4",
+            "Ultra recuerda que prefiero balanced",
+            "Ultra archiva mi preferencia de interpolación"
+        ).forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val chat = assertIs<UltraAgentRoute.Chat>(route)
+            assertEquals(transcript.trim(), chat.message)
+        }
     }
 
 }

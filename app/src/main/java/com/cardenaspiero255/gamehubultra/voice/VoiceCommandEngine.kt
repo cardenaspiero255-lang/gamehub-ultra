@@ -127,10 +127,13 @@ internal object GameMatchFinder {
             val compactLabel = label.replace(" ", "")
             val tokenScore = if (queryTokens.isEmpty() || labelTokens.isEmpty()) 0.0
             else queryTokens.map { q -> labelTokens.maxOfOrNull { l -> tokenSimilarity(q, l) } ?: 0.0 }.average()
+            val abbreviationMatch = compactQuery.length >= 3 &&
+                compactQuery in abbreviationCandidates(labelTokens)
 
             game to when {
                 label == normalizedQuery || game.packageName.equals(query.trim(), ignoreCase = true) -> 1.0
                 compactQuery.length >= 3 && compactLabel == compactQuery -> 0.98
+                abbreviationMatch -> 0.97
                 label.startsWith(normalizedQuery + " ") -> 0.94
                 label.contains(normalizedQuery) -> 0.90
                 normalizedQuery.contains(label) -> 0.86
@@ -153,6 +156,47 @@ internal object GameMatchFinder {
             !ambiguousHumanMatch &&
             (second == null || best.second - second.second >= 0.08 || exactPackage)
         ) best.first else null
+    }
+
+    private fun abbreviationCandidates(tokens: List<String>): Set<String> {
+        if (tokens.size < 2) return emptySet()
+
+        fun romanToArabic(token: String): String? = when (token) {
+            "i" -> "1"
+            "ii" -> "2"
+            "iii" -> "3"
+            "iv" -> "4"
+            "v" -> "5"
+            "vi" -> "6"
+            "vii" -> "7"
+            "viii" -> "8"
+            "ix" -> "9"
+            "x" -> "10"
+            else -> null
+        }
+
+        fun rawPiece(token: String): String =
+            if (token.all(Char::isDigit)) token else token.first().toString()
+
+        fun numericPiece(token: String): String =
+            romanToArabic(token) ?: rawPiece(token)
+
+        fun addWindows(pieces: List<String>, destination: MutableSet<String>) {
+            for (start in pieces.indices) {
+                val builder = StringBuilder()
+                for (end in start until pieces.size) {
+                    builder.append(pieces[end])
+                    if (end > start && builder.length >= 3) {
+                        destination += builder.toString()
+                    }
+                }
+            }
+        }
+
+        return linkedSetOf<String>().also { candidates ->
+            addWindows(tokens.map(::rawPiece), candidates)
+            addWindows(tokens.map(::numericPiece), candidates)
+        }
     }
 
     private fun tokenSimilarity(a: String, b: String): Double {

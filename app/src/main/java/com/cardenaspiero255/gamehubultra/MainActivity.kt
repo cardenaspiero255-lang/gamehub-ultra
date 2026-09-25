@@ -11,6 +11,9 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
+import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
@@ -19,6 +22,7 @@ import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
+import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -296,8 +300,61 @@ private fun GameHubUltraApp(
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
-    val aiAdvisor = remember { GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter()) }
+    val ultraMemoryStore = remember {
+        UltraConversationMemoryStore.get(context.applicationContext)
+    }
+    val aiAdvisor = remember(ultraMemoryStore) {
+        GameHubAiAdvisor(
+            modelAdapter = GeminiNanoLocalAiModelAdapter(),
+            memoryGateway = ultraMemoryStore
+        )
+    }
     var ultraConversation by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var loadedUltraConversationScopeKey by rememberSaveable {
+        mutableStateOf("__unloaded__")
+    }
+
+    LaunchedEffect(ultraMemoryStore, uiState.selectedGamePackage) {
+        val scopeKey = uiState.selectedGamePackage ?: "__global__"
+        if (loadedUltraConversationScopeKey == scopeKey) return@LaunchedEffect
+
+        loadedUltraConversationScopeKey = scopeKey
+        ultraConversation = emptyList()
+        val memoryScope = UltraMemoryScope(
+            userId = "local",
+            gamePackage = uiState.selectedGamePackage
+        )
+        val loaded = withContext(Dispatchers.IO) {
+            ultraMemoryStore.warmUp()
+            ultraMemoryStore.recentConversationLines(
+                limit = MAX_CHAT_HISTORY,
+                scope = memoryScope
+            )
+        }
+        if (loadedUltraConversationScopeKey == scopeKey) {
+            ultraConversation = loaded
+        }
+    }
+
+    fun updateUltraConversation(next: List<String>) {
+        val previous = ultraConversation
+        ultraConversation = next
+        val memoryScope = UltraMemoryScope(
+            userId = "local",
+            gamePackage = uiState.selectedGamePackage
+        )
+        val timestampMillis = System.currentTimeMillis()
+        if (next.isEmpty()) {
+            ultraMemoryStore.enqueueClearConversationHistory(scope = memoryScope)
+        } else if (UltraMemoryTurnPersistencePolicy.shouldPersist(previous, next)) {
+            ultraMemoryStore.enqueueSyncConversation(
+                previous = previous,
+                next = next,
+                scope = memoryScope,
+                timestampMillis = timestampMillis
+            )
+        }
+    }
 
     DisposableEffect(aiAdvisor) {
         onDispose { aiAdvisor.close() }
@@ -669,7 +726,7 @@ private fun GameHubUltraApp(
                 aiContext = aiContext,
                 aiAdvisor = aiAdvisor,
                 conversation = ultraConversation,
-                onConversationChanged = { ultraConversation = it },
+                onConversationChanged = ::updateUltraConversation,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
@@ -786,7 +843,7 @@ private fun GameHubUltraApp(
                         aiContext = aiContext,
                         aiAdvisor = aiAdvisor,
                         conversation = ultraConversation,
-                        onConversationChanged = { ultraConversation = it },
+                        onConversationChanged = ::updateUltraConversation,
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
                         onGameSelected = ::selectGame
@@ -1486,6 +1543,7 @@ private fun VoiceAssistantCard(
     val aiIntentResolver = remember(aiAdvisor) { aiAdvisor.intentResolver() }
     val latestAiContext by rememberUpdatedState(aiContext)
     val latestConversation by rememberUpdatedState(conversation)
+    val latestOnConversationChanged by rememberUpdatedState(onConversationChanged)
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1522,15 +1580,25 @@ private fun VoiceAssistantCard(
             onTranscript = { spokenText ->
                 transcript = spokenText
                 scope.launch(Dispatchers.IO) {
+                    val turnAiContext = latestAiContext
+                    val originatingGamePackage = turnAiContext.selectedGamePackage
+                    val conversationAtStart = latestConversation
                     val conversationBeforeTurn =
-                        latestConversation.takeLast(MAX_CHAT_HISTORY - 1)
+                        conversationAtStart.takeLast(MAX_CHAT_HISTORY - 1)
                     val withUser = UltraConversationPolicy.append(
-                        history = latestConversation,
+                        history = conversationAtStart,
                         entry = "Tú: " + spokenText,
                         maxEntries = MAX_CHAT_HISTORY
                     )
                     kotlinx.coroutines.withContext(Dispatchers.Main) {
-                        onConversationChanged(withUser)
+                        if (
+                            UltraConversationScopePolicy.isSameGame(
+                                originatingGamePackage,
+                                latestAiContext.selectedGamePackage
+                            )
+                        ) {
+                            latestOnConversationChanged(withUser)
+                        }
                     }
 
                     val voiceStatus = VoiceDeviceStatusProvider.read(context)
@@ -1540,7 +1608,7 @@ private fun VoiceAssistantCard(
                         telemetry = UltraRuntimeTelemetry(
                             batteryPercent = voiceStatus.batteryPercent,
                             thermalLabel = voiceStatus.thermalLabel,
-                            refreshRateHz = latestAiContext.refreshRateHz
+                            refreshRateHz = turnAiContext.refreshRateHz
                         )
                     )
                     when (route) {
@@ -1552,7 +1620,14 @@ private fun VoiceAssistantCard(
                                 maxEntries = MAX_CHAT_HISTORY
                             )
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                onConversationChanged(withAnswer)
+                                if (
+                                    UltraConversationScopePolicy.isSameGame(
+                                        originatingGamePackage,
+                                        latestAiContext.selectedGamePackage
+                                    )
+                                ) {
+                                    latestOnConversationChanged(withAnswer)
+                                }
                                 response = answer
                                 controller.speak(answer)
                             }
@@ -1561,16 +1636,31 @@ private fun VoiceAssistantCard(
                         is UltraAgentRoute.Chat -> {
                             val answer = aiAdvisor.chat(
                                 message = route.message,
-                                context = latestAiContext,
+                                context = turnAiContext,
                                 conversation = conversationBeforeTurn
                             )
-                            val withAnswer = UltraConversationPolicy.append(
-                                history = withUser,
-                                entry = "Ultra: " + answer,
-                                maxEntries = MAX_CHAT_HISTORY
-                            )
+                            val withAnswer =
+                                if (
+                                    UltraMemoryTurnPersistencePolicy
+                                        .resetsConversationContext(route.message)
+                                ) {
+                                    listOf("Ultra: " + answer)
+                                } else {
+                                    UltraConversationPolicy.append(
+                                        history = withUser,
+                                        entry = "Ultra: " + answer,
+                                        maxEntries = MAX_CHAT_HISTORY
+                                    )
+                                }
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                onConversationChanged(withAnswer)
+                                if (
+                                    UltraConversationScopePolicy.isSameGame(
+                                        originatingGamePackage,
+                                        latestAiContext.selectedGamePackage
+                                    )
+                                ) {
+                                    latestOnConversationChanged(withAnswer)
+                                }
                                 response = answer
                                 controller.speak(answer)
                             }
@@ -1596,11 +1686,9 @@ private fun VoiceAssistantCard(
                                         profile
                                     )
                                 },
-                                isProfileAvailable = { profile ->
-                                    profile != PerformanceProfile.X4 ||
-                                        DeviceCapabilitiesProvider.get(context)
-                                            .sustainedPerformanceSupported
-                                },
+                                // X4 is an app profile. Hardware Sustained Performance Mode is
+                                // applied opportunistically by PerformanceController when supported.
+                                isProfileAvailable = { _ -> true },
                                 statusProvider = { VoiceDeviceStatusProvider.read(context) },
                                 aiAdvisor = { question ->
                                     aiAdvisor.advise(question, latestAiContext)
@@ -1624,7 +1712,14 @@ private fun VoiceAssistantCard(
                                     }
                                     else -> Unit
                                 }
-                                onConversationChanged(withAnswer)
+                                if (
+                                    UltraConversationScopePolicy.isSameGame(
+                                        originatingGamePackage,
+                                        latestAiContext.selectedGamePackage
+                                    )
+                                ) {
+                                    latestOnConversationChanged(withAnswer)
+                                }
                                 response = spokenResponse
                                 controller.speak(spokenResponse)
                             }
@@ -1913,6 +2008,8 @@ private fun AiAdvisorCard(
     onProfileSelected: (PerformanceProfile) -> Unit
 ) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val latestSelectedGamePackage by rememberUpdatedState(context.selectedGamePackage)
+    val latestOnConversationChanged by rememberUpdatedState(onConversationChanged)
     var advice by remember { mutableStateOf<GameHubAiAdvice?>(null) }
     var showChat by rememberSaveable { mutableStateOf(false) }
     var chatMessage by rememberSaveable { mutableStateOf("") }
@@ -1921,6 +2018,9 @@ private fun AiAdvisorCard(
     fun sendChatMessage() {
         val message = chatMessage.trim()
         if (message.isBlank() || chatSending) return
+        val originatingGamePackage = context.selectedGamePackage
+        val resetConversationAfterCommand =
+            UltraMemoryTurnPersistencePolicy.resetsConversationContext(message)
         val previousConversation = conversation.takeLast(MAX_CHAT_HISTORY - 1)
         val withUser = UltraConversationPolicy.append(
             history = conversation,
@@ -1928,18 +2028,29 @@ private fun AiAdvisorCard(
             maxEntries = MAX_CHAT_HISTORY
         )
         chatMessage = ""
-        onConversationChanged(withUser)
+        latestOnConversationChanged(withUser)
         chatSending = true
         scope.launch(Dispatchers.IO) {
             val answer = advisor.chat(message, context, previousConversation)
             withContext(Dispatchers.Main) {
-                onConversationChanged(
-                    UltraConversationPolicy.append(
-                        history = withUser,
-                        entry = "Ultra: " + answer,
-                        maxEntries = MAX_CHAT_HISTORY
+                if (
+                    UltraConversationScopePolicy.isSameGame(
+                        originatingGamePackage,
+                        latestSelectedGamePackage
                     )
-                )
+                ) {
+                    latestOnConversationChanged(
+                        if (resetConversationAfterCommand) {
+                            listOf("Ultra: " + answer)
+                        } else {
+                            UltraConversationPolicy.append(
+                                history = withUser,
+                                entry = "Ultra: " + answer,
+                                maxEntries = MAX_CHAT_HISTORY
+                            )
+                        }
+                    )
+                }
                 chatSending = false
             }
         }

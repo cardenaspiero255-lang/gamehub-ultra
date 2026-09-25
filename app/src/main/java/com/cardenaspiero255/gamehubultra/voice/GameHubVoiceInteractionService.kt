@@ -187,10 +187,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
             saveSelectedGameWithProfile = { packageName, profile ->
                 GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
             },
-            isProfileAvailable = { profile ->
-                profile != PerformanceProfile.X4 ||
-                    DeviceCapabilitiesProvider.get(context).sustainedPerformanceSupported
-            },
+            // X4 is selectable as a GameHub Ultra profile. Platform-only performance
+            // hooks are enabled separately when the device reports support.
+            isProfileAvailable = { _ -> true },
             statusProvider = { readStatus() },
             deferProfileApplication = true,
             aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }

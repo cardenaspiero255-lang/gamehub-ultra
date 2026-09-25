@@ -160,6 +160,21 @@ class VoiceCommandEngineTest {
 
 
     @Test
+    fun commonSpokenGameAbbreviationsMatchInstalledTitles() {
+        val installed = listOf(
+            GameInfo("com.example.re4", "Resident Evil 4 Remake"),
+            GameInfo("com.example.re2", "Resident Evil 2"),
+            GameInfo("com.example.gtav", "Grand Theft Auto V"),
+            GameInfo("com.example.bo3", "Call of Duty: Black Ops III")
+        )
+
+        assertEquals("com.example.re4", GameMatchFinder.find("RE4", installed)?.packageName)
+        assertEquals("com.example.re2", GameMatchFinder.find("RE2", installed)?.packageName)
+        assertEquals("com.example.gtav", GameMatchFinder.find("GTA V", installed)?.packageName)
+        assertEquals("com.example.bo3", GameMatchFinder.find("BO3", installed)?.packageName)
+    }
+
+    @Test
     fun spokenAcronymMatchesPunctuatedGameLabel() {
         val games = listOf(GameInfo("com.zeptolab.cats.google", "C.A.T.S."))
         val match = GameMatchFinder.find("cats", games)
