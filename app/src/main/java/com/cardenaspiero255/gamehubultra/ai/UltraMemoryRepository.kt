@@ -67,7 +67,11 @@ class UltraMemoryRepository(
                 }
 
                 is UltraMemoryCommand.Pin -> {
-                    val changed = mutateMatching(command.query, scope) {
+                    val changed = mutateMatching(
+                        query = command.query,
+                        scope = scope,
+                        includeArchived = true
+                    ) {
                         it.copy(pinned = true, archived = false)
                     }
                     if (changed > 0) {
@@ -89,7 +93,7 @@ class UltraMemoryRepository(
                 }
 
                 UltraMemoryCommand.ClearHistory -> {
-                    clearConversationHistoryLocked(scope.userId)
+                    clearConversationHistoryLocked(scope)
                     "Historial de conversación borrado. Los recuerdos que pediste guardar explícitamente se mantienen."
                 }
 
@@ -177,10 +181,14 @@ class UltraMemoryRepository(
             .toList()
     }
 
-    fun clearConversationHistory(userId: String = "local") {
+    fun clearConversationHistory(scope: UltraMemoryScope = UltraMemoryScope()) {
         synchronized(lock) {
-            clearConversationHistoryLocked(userId)
+            clearConversationHistoryLocked(scope)
         }
+    }
+
+    fun clearConversationHistory(userId: String) {
+        clearConversationHistory(UltraMemoryScope(userId = userId))
     }
 
     fun exportSnapshot(): String = synchronized(lock) {
@@ -252,12 +260,14 @@ class UltraMemoryRepository(
         return "Lo recordaré: $clean"
     }
 
-    private fun clearConversationHistoryLocked(userId: String) {
+    private fun clearConversationHistoryLocked(scope: UltraMemoryScope) {
         persist(
             state.copy(
-                records = state.records.filter {
-                    it.scope.userId != userId ||
-                        it.kind == UltraMemoryKind.FACT
+                records = state.records.filter { record ->
+                    val sameScope =
+                        record.scope.userId == scope.userId &&
+                            record.scope.gamePackage == scope.gamePackage
+                    !sameScope || record.kind == UltraMemoryKind.FACT
                 }
             )
         )
@@ -277,9 +287,10 @@ class UltraMemoryRepository(
     private fun mutateMatching(
         query: String,
         scope: UltraMemoryScope,
+        includeArchived: Boolean = false,
         transform: (UltraStoredMemory) -> UltraStoredMemory
     ): Int {
-        val ids = matchingIds(query, scope)
+        val ids = matchingIds(query, scope, includeArchived = includeArchived)
         if (ids.isEmpty()) return 0
         persist(
             state.copy(
