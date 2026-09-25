@@ -59,7 +59,7 @@ object VoiceCommandParser {
         }
     }
 
-    internal fun normalize(value: String): String = 
+    internal fun normalize(value: String): String =
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
             .replace(Regex("""\p{M}+"""), "")
             .replace(Regex("""[^a-z0-9x4]+"""), " ")
@@ -88,13 +88,16 @@ object VoiceCommandParser {
             else -> null
         }
 
+    private fun removeProfileSyntax(clean: String): String =
+        clean
+            .replace(Regex("""\b(en|con|with|using)?\s*(modo|perfil|mode|profile)\s+(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|maximum performance|high performance|maximo rendimiento|alto rendimiento)\b"""), " ")
+            .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
+            .replace(Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b"""), " ")
+            .replace(Regex("""\b(x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
+
     private fun extractGameQuery(clean: String, stripProfileSyntax: Boolean): String {
         val withoutProfile = if (stripProfileSyntax) {
-            clean
-                .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
-                .replace(Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b"""), " ")
-                .replace(Regex("""\b(x4|modo x4|x4 mode|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
-                .replace(Regex("""\b(modo|perfil|mode|profile)\b"""), " ")
+            removeProfileSyntax(clean)
         } else {
             clean
         }
