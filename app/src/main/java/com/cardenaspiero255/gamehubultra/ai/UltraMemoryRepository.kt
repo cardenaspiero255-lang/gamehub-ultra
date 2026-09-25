@@ -295,9 +295,14 @@ class UltraMemoryRepository(
         query: String,
         scope: UltraMemoryScope
     ): Set<String> {
+        val stopWords = setOf(
+            "a", "al", "de", "del", "el", "en", "la", "las", "lo", "los",
+            "me", "mi", "para", "por", "que", "un", "una", "y",
+            "and", "for", "my", "of", "the", "to"
+        )
         val queryTokens = normalize(query)
             .split(' ')
-            .filter { it.length >= 3 }
+            .filter { it.length >= 2 && it !in stopWords }
             .toSet()
         if (queryTokens.isEmpty()) return emptySet()
 
@@ -313,7 +318,7 @@ class UltraMemoryRepository(
         fun matches(record: UltraStoredMemory): Boolean {
             val recordTokens = normalize(record.text)
                 .split(' ')
-                .filter { it.length >= 3 }
+                .filter { it.length >= 2 }
                 .toSet()
             return recordTokens.containsAll(queryTokens)
         }
