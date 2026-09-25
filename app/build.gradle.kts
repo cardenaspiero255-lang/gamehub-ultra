@@ -1,3 +1,4 @@
+import java.util.Base64
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
@@ -18,6 +19,23 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("androidx.baselineprofile")
+}
+
+val exactLauncherIconSource = layout.projectDirectory.file("src/main/icon/gamehub_ultra_exact.webp.b64")
+val exactLauncherIconResDir = layout.buildDirectory.dir("generated/exactLauncherIcon/res")
+
+val generateExactLauncherIcon by tasks.registering {
+    inputs.file(exactLauncherIconSource)
+    outputs.dir(exactLauncherIconResDir)
+
+    doLast {
+        val drawableDir = exactLauncherIconResDir.get().dir("drawable-nodpi").asFile
+        drawableDir.mkdirs()
+        val encoded = exactLauncherIconSource.asFile.readText().trim()
+        drawableDir.resolve("gamehub_ultra_exact.webp").writeBytes(
+            Base64.getDecoder().decode(encoded)
+        )
+    }
 }
 
 android {
@@ -80,10 +98,18 @@ android {
         }
     }
 
+    sourceSets {
+        getByName("main").res.srcDir(exactLauncherIconResDir)
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
     }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(generateExactLauncherIcon)
 }
 
 dependencies {
