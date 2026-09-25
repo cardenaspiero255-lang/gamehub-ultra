@@ -108,4 +108,41 @@ class GameSessionLifecycleCoordinatorTest {
         assertTrue(sessions.getValue("s2").isActive)
         assertEquals("s2", coordinator.runtimeSession.value?.id)
     }
+
+    @Test
+    fun duplicateFinishIsRejectedWhilePersistenceIsPending() = runBlocking {
+        coordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        )
+        coordinator.awaitIdle()
+        assertEquals("s1", coordinator.runtimeSession.value?.id)
+
+        val blockerStarted = CountDownLatch(1)
+        val releaseBlocker = CountDownLatch(1)
+        scope.launch {
+            blockerStarted.countDown()
+            releaseBlocker.await()
+        }
+        blockerStarted.await()
+
+        val first = coordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_000L)
+        )
+        val duplicate = coordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_100L)
+        )
+
+        assertEquals("s1", first?.session?.id)
+        assertNull(duplicate)
+
+        releaseBlocker.countDown()
+        coordinator.awaitIdle()
+        assertNull(coordinator.runtimeSession.value)
+    }
+
 }
