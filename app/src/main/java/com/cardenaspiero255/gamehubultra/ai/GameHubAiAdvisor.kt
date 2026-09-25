@@ -51,11 +51,21 @@ class GameHubAiAdvisor(
         }.getOrNull()
         if (memoryCommandResponse != null) return memoryCommandResponse
 
+        val visibleTexts = conversation
+            .map { normalize(it.substringAfter(':').trim()) }
+            .filter(String::isNotBlank)
+            .toMutableSet()
+            .apply { add(normalize(message)) }
+
         val recalled = runCatching {
             memoryGateway
                 ?.recallContext(message, memoryScope, limit = 6)
                 .orEmpty()
         }.getOrDefault(emptyList())
+            .filterNot { recall ->
+                recall.record.kind == UltraMemoryKind.CONVERSATION &&
+                    normalize(recall.record.text) in visibleTexts
+            }
         val recalledConversation = recalled.map { recall ->
             val source = when (recall.provenance) {
                 UltraMemoryProvenance.REMEMBERED_FACT -> "hecho recordado"
