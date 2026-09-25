@@ -206,6 +206,31 @@ class UltraMemoryRepositoryTest {
         )
     }
 
+
+    @Test
+    fun forgetRemovesMatchingFactAndConversationCopies() {
+        val repository = UltraMemoryRepository(
+            persistence = InMemoryUltraMemoryPersistence(),
+            nowMillis = { 100L },
+            idFactory = sequenceIdFactory()
+        )
+        repository.handleCommand("Ultra recuerda que prefiero X4", scope)
+        repository.syncConversation(
+            previous = emptyList(),
+            next = listOf(
+                "Tú: prefiero X4",
+                "Ultra: recordaré que prefiero X4"
+            ),
+            scope = scope
+        )
+
+        repository.handleCommand("Ultra olvida prefiero X4", scope)
+
+        assertFalse(repository.snapshot().records.any {
+            it.text.contains("prefiero X4", ignoreCase = true)
+        })
+    }
+
     private fun sequenceIdFactory(): () -> String {
         var value = 0
         return {
