@@ -226,6 +226,7 @@ private fun GameHubUltraApp(
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var profileOpen by rememberSaveable { mutableStateOf(false) }
     var activeSessionPackage by rememberSaveable { mutableStateOf<String?>(null) }
     var activeSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
@@ -565,6 +566,15 @@ private fun GameHubUltraApp(
                     scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
                 }
             )
+            profileOpen -> UltraProfileScreen(
+                modifier = contentModifier,
+                playerName = ULTRA_PLAYER_NAME,
+                activeProfile = uiState.effectiveProfile,
+                favoriteCount = favoriteGames.size,
+                recentCount = recentGamePackages.distinct().size,
+                sessionCount = sessionHistory.size,
+                device = device
+            )
             selectedTab == 0 -> HomeScreen(
                 modifier = contentModifier,
                 state = state,
@@ -693,31 +703,49 @@ private fun GameHubUltraApp(
                 WideNavigationRail(
                     selectedTab = selectedTab,
                     settingsOpen = settingsOpen,
+                    profileOpen = profileOpen,
                     onHome = {
                         settingsOpen = false
+                        profileOpen = false
                         selectedTab = 0
                     },
                     onLibrary = {
                         settingsOpen = false
+                        profileOpen = false
                         selectedTab = 1
                     },
+                    onProfile = {
+                        settingsOpen = false
+                        profileOpen = true
+                    },
                     onSettings = {
+                        profileOpen = false
                         settingsOpen = true
                     }
                 )
 
-                Box(
+                Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxSize()
                 ) {
-                    screenContent(
-                        Modifier.fillMaxSize(),
-                        !ultraWideLayout
+                    UltraShellHeader(
+                        playerName = ULTRA_PLAYER_NAME,
+                        activeProfile = uiState.effectiveProfile
                     )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        screenContent(
+                            Modifier.fillMaxSize(),
+                            !ultraWideLayout
+                        )
+                    }
                 }
 
-                if (ultraWideLayout && !settingsOpen && selectedTab == 0) {
+                if (ultraWideLayout && !settingsOpen && !profileOpen && selectedTab == 0) {
                     UltraAssistantSidePanel(
                         aiContext = aiContext,
                         aiAdvisor = aiAdvisor,
@@ -778,13 +806,17 @@ private fun GameHubUltraApp(
 private fun WideNavigationRail(
     selectedTab: Int,
     settingsOpen: Boolean,
+    profileOpen: Boolean,
     onHome: () -> Unit,
     onLibrary: () -> Unit,
+    onProfile: () -> Unit,
     onSettings: () -> Unit
 ) {
-    NavigationRail {
+    NavigationRail(
+        containerColor = MaterialTheme.colorScheme.background
+    ) {
         NavigationRailItem(
-            selected = !settingsOpen && selectedTab == 0,
+            selected = !settingsOpen && !profileOpen && selectedTab == 0,
             onClick = onHome,
             icon = { Text("⌂") },
             label = { Text("Inicio") },
@@ -793,13 +825,22 @@ private fun WideNavigationRail(
                 .semantics { contentDescription = "nav_inicio" }
         )
         NavigationRailItem(
-            selected = !settingsOpen && selectedTab == 1,
+            selected = !settingsOpen && !profileOpen && selectedTab == 1,
             onClick = onLibrary,
             icon = { Text("▦") },
             label = { Text("Biblioteca") },
             modifier = Modifier
                 .testTag("nav_biblioteca")
                 .semantics { contentDescription = "nav_biblioteca" }
+        )
+        NavigationRailItem(
+            selected = profileOpen,
+            onClick = onProfile,
+            icon = { Text("◎") },
+            label = { Text("Perfil") },
+            modifier = Modifier
+                .testTag("nav_perfil")
+                .semantics { contentDescription = "nav_perfil" }
         )
         NavigationRailItem(
             selected = settingsOpen,
@@ -896,12 +937,6 @@ private fun HomeScreen(
             .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
-        item {
-            GameHubStyleHeader(
-                selectedProfileName = selectedProfileName,
-                onOpenLibrary = onOpenLibrary
-            )
-        }
         item {
             Text(
                 stringResource(R.string.hero_subtitle),
