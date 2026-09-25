@@ -5,6 +5,7 @@ import java.text.Normalizer
 import java.util.Locale
 
 object VoiceCommandParser {
+    private const val LAUNCH_VERBS = "abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|open|opens|open me|launch|start|run|play|activate|enable|select|switch|apply|use|set"
     fun parse(
         transcript: String,
         optionalResolver: NaturalLanguageIntentResolver? = null
@@ -74,9 +75,15 @@ object VoiceCommandParser {
             .trim()
             .replace(Regex("""\s+"""), " ")
 
-    private fun hasLaunchIntent(clean: String): Boolean =
-        Regex("""^\s*(gamehub\s+ultra\s+|gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|open|opens|open me|launch|start|run|play)\b""")
-            .containsMatchIn(clean)
+    internal fun hasExplicitLaunchIntent(value: String): Boolean {
+        val clean = normalize(value)
+            .replace(Regex("""\bultra\b"""), " ")
+            .replace(Regex("""\bgamehub\b"""), " ")
+            .trim()
+        return Regex("""^($LAUNCH_VERBS)\b""").containsMatchIn(clean)
+    }
+
+    private fun hasLaunchIntent(clean: String): Boolean = hasExplicitLaunchIntent(clean)
 
     private fun hasExplicitProfileInstruction(clean: String): Boolean {
         val profileValue =
@@ -118,7 +125,6 @@ object VoiceCommandParser {
             .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced)\b"""), " ")
             .replace(Regex("""\b(prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate)\b"""), " ")
             .replace(Regex("""\b(x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\b"""), " ")
-            .replace(Regex("""\b(the\s+)?(modo|perfil|mode|profile)\b"""), " ")
 
     private fun extractGameQuery(clean: String, stripProfileSyntax: Boolean): String {
         val withoutProfile = if (stripProfileSyntax) {
@@ -128,7 +134,7 @@ object VoiceCommandParser {
         }
 
         return withoutProfile
-            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?(abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|open|opens|open me|launch|start|run|play|activate|enable|select|switch|apply|use|set)\s*"""), "")
+            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?($LAUNCH_VERBS)\s*"""), "")
             .replace(Regex("""\b(la|el|un|una|the|a|an|juego|juegos|game|games)\b"""), " ")
             .replace(Regex("""\b(y|con|en|por favor|and|with|in|please)\b"""), " ")
             .replace(Regex("""\s+"""), " ")
