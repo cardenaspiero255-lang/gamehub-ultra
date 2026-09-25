@@ -1639,11 +1639,19 @@ private fun VoiceAssistantCard(
                                 context = turnAiContext,
                                 conversation = conversationBeforeTurn
                             )
-                            val withAnswer = UltraConversationPolicy.append(
-                                history = withUser,
-                                entry = "Ultra: " + answer,
-                                maxEntries = MAX_CHAT_HISTORY
-                            )
+                            val withAnswer =
+                                if (
+                                    UltraMemoryTurnPersistencePolicy
+                                        .resetsConversationContext(route.message)
+                                ) {
+                                    listOf("Ultra: " + answer)
+                                } else {
+                                    UltraConversationPolicy.append(
+                                        history = withUser,
+                                        entry = "Ultra: " + answer,
+                                        maxEntries = MAX_CHAT_HISTORY
+                                    )
+                                }
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
                                 if (
                                     UltraConversationScopePolicy.isSameGame(
