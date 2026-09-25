@@ -78,7 +78,7 @@ object UltraGeneralAssistant {
         Regex("""\b(segundo plano|background|no interrumpan|no molesten|interrumpir|interfieran|interrupt)\b""")
     )
     private val capabilityPatterns = listOf(
-        Regex("""\b(que puedes hacer|conversa conmigo|habla conmigo|no solo gaming|no sea de gaming|preguntas generales|general questions)\b""")
+        Regex("""\b(que puedes hacer|conversa conmigo|habla conmigo|no solo gaming|no sea de gaming|no sean de gaming|cosas que no sean de gaming|preguntas generales|general questions)\b""")
     )
 
     fun classify(transcript: String): UltraUtilityIntent? {
