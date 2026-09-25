@@ -16,6 +16,9 @@ concurrency:
   group: android-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -23,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -325,6 +330,7 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
+          gradle :baseline-profile:clean --no-configuration-cache
           LOG="$RUNNER_TEMP/macrobenchmark.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
             -PbenchmarkEnabledRules=Macrobenchmark \
@@ -335,6 +341,35 @@ jobs:
             echo "ddmlib could not connect to the emulator console."
             exit 1
           fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          reports = list(Path("baseline-profile/build/outputs/androidTest-results").rglob("TEST-*.xml"))
+          cases = []
+          for report in reports:
+              try:
+                  root = ET.parse(report).getroot()
+              except ET.ParseError:
+                  continue
+              for case in root.iter("testcase"):
+                  if case.attrib.get("classname", "").endswith("GameHubMacrobenchmark"):
+                      cases.append(case)
+
+          if len(cases) < 3:
+              raise SystemExit(f"Expected at least 3 GameHubMacrobenchmark cases, found {len(cases)}")
+
+          skipped = [
+              case.attrib.get("name", "<unknown>")
+              for case in cases
+              if case.find("skipped") is not None
+          ]
+          if skipped:
+              raise SystemExit(f"Macrobenchmarks were skipped: {skipped}")
+
+          print("Executed macrobenchmarks:", [case.attrib.get("name") for case in cases])
+          PY
 
       - name: Stop API 35 emulator without noisy console shutdown
         if: always()
