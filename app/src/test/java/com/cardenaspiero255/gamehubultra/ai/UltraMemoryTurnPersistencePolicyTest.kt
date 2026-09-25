@@ -15,6 +15,27 @@ class UltraMemoryTurnPersistencePolicyTest {
     }
 
     @Test
+    fun assistantOnlyResetNoticeIsNotPersisted() {
+        assertFalse(
+            UltraMemoryTurnPersistencePolicy.shouldPersist(
+                listOf("Tú: Ultra olvida todo"),
+                listOf("Ultra: Borré la memoria guardada.")
+            )
+        )
+    }
+
+    @Test
+    fun destructiveAndArchiveCommandsResetActiveConversationContext() {
+        assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra olvida prefiero X4"))
+        assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra elimina de tu memoria prefiero X4"))
+        assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra archiva prefiero X4"))
+        assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra borra mi historial"))
+        assertTrue(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra olvida todo"))
+        assertFalse(UltraMemoryTurnPersistencePolicy.resetsConversationContext("Ultra recuerda que prefiero X4"))
+        assertFalse(UltraMemoryTurnPersistencePolicy.resetsConversationContext("hola Ultra"))
+    }
+
+    @Test
     fun ordinaryConversationIsPersisted() {
         assertTrue(
             UltraMemoryTurnPersistencePolicy.shouldPersist(
