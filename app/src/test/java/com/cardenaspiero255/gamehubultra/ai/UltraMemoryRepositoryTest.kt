@@ -248,6 +248,50 @@ class UltraMemoryRepositoryTest {
         assertTrue(repository.snapshot().records.isEmpty())
     }
 
+    @Test
+    fun clearHistoryOnlyClearsCurrentGameScope() {
+        val repository = UltraMemoryRepository(
+            persistence = InMemoryUltraMemoryPersistence(),
+            nowMillis = { 100L },
+            idFactory = sequenceIdFactory()
+        )
+        val otherScope = scope.copy(gamePackage = "com.example.other")
+
+        repository.syncConversation(
+            previous = emptyList(),
+            next = listOf("Tú: conversación A"),
+            scope = scope
+        )
+        repository.syncConversation(
+            previous = emptyList(),
+            next = listOf("Tú: conversación B"),
+            scope = otherScope
+        )
+
+        repository.handleCommand("Ultra borra mi historial", scope)
+
+        val records = repository.snapshot().records
+        assertFalse(records.any { it.scope == scope && it.kind == UltraMemoryKind.CONVERSATION })
+        assertTrue(records.any { it.scope == otherScope && it.text == "conversación B" })
+    }
+
+    @Test
+    fun pinCanRestoreAnArchivedMemory() {
+        val repository = UltraMemoryRepository(
+            persistence = InMemoryUltraMemoryPersistence(),
+            nowMillis = { 100L },
+            idFactory = sequenceIdFactory()
+        )
+
+        repository.handleCommand("Ultra recuerda que prefiero X4", scope)
+        repository.handleCommand("Ultra archiva prefiero X4", scope)
+        repository.handleCommand("Ultra fija prefiero X4", scope)
+
+        val record = repository.snapshot().records.single()
+        assertTrue(record.pinned)
+        assertFalse(record.archived)
+    }
+
     private fun sequenceIdFactory(): () -> String {
         var value = 0
         return {
