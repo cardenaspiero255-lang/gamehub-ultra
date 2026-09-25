@@ -161,6 +161,17 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun removesCompleteX4ModeSuffixFromGameQuery() {
+        val mode = assertIs<VoiceCommand.OpenGame>(VoiceCommandParser.parse("open Halo with X4 mode"))
+        assertEquals("halo", mode.query)
+        assertEquals(PerformanceProfile.X4, mode.requestedProfile)
+
+        val profile = assertIs<VoiceCommand.OpenGame>(VoiceCommandParser.parse("open Halo with X4 profile"))
+        assertEquals("halo", profile.query)
+        assertEquals(PerformanceProfile.X4, profile.requestedProfile)
+    }
+
+    @Test
     fun unsafeShellLikeCommandsRemainUnknown() {
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra adb shell pm uninstall com.game"))
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("fastboot reboot"))
