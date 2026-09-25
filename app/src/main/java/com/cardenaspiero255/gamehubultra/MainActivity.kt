@@ -235,9 +235,30 @@ private fun GameHubUltraApp(
     var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
     var performanceTimelineSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineSample>>(emptyList()) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
+    var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
     val sessionStore = remember(context) { GameSessionStore(context) }
     val sessionHistory by sessionStore.sessionsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
+
+    LaunchedEffect(sessionStore) {
+        if (activeSessionId == null) {
+            withContext(Dispatchers.IO) {
+                sessionStore.finishActiveSessions(System.currentTimeMillis())
+            }
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                appResumeRefreshToken += 1
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
     val optimizationMemoryStore = remember(context) { GameOptimizationMemoryStore(context) }
     val selectedGameForMemory = uiState.selectedGamePackage
     val selectedGameVersion = remember(selectedGameForMemory) {
@@ -597,6 +618,12 @@ private fun GameHubUltraApp(
     val wideLayout = layoutMode != UltraLayoutMode.COMPACT
     val ultraWideLayout = layoutMode == UltraLayoutMode.ULTRA_WIDE
 
+    LaunchedEffect(wideLayout) {
+        if (!wideLayout) {
+            profileOpen = false
+        }
+    }
+
     val screenContent: @Composable (Modifier, Boolean) -> Unit = { contentModifier, showAssistantCards ->
         when {
             settingsOpen -> SettingsScreen(
@@ -658,8 +685,10 @@ private fun GameHubUltraApp(
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
                 storeGames = storeGames,
+                gameCatalogRefreshToken = appResumeRefreshToken,
                 onOpenLibrary = {
                     settingsOpen = false
+                    profileOpen = false
                     selectedTab = 1
                 },
                 showAssistantCards = showAssistantCards
@@ -952,6 +981,7 @@ private fun HomeScreen(
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
     storeGames: List<StoreLibraryGame>,
+    gameCatalogRefreshToken: Int,
     onOpenLibrary: () -> Unit,
     showAssistantCards: Boolean
 ) {
@@ -962,7 +992,7 @@ private fun HomeScreen(
         }
     }
     var localGameCount by remember { mutableIntStateOf(0) }
-    LaunchedEffect(timelineContext, manualGamePackages) {
+    LaunchedEffect(timelineContext, manualGamePackages, gameCatalogRefreshToken) {
         localGameCount = withContext(Dispatchers.IO) {
             GameLibrary.discover(
                 context = timelineContext,
