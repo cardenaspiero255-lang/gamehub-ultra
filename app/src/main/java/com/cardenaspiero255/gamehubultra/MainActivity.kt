@@ -490,6 +490,44 @@ private fun GameHubUltraApp(
         viewModel.selectGame(packageName)
     }
 
+    fun recordGameOpened(packageName: String) {
+        endGameSession()
+        val sessionId = UUID.randomUUID().toString()
+        activeSessionPackage = packageName
+        activeSessionId = sessionId
+        viewModelScopeLaunch(context, sessionStore) {
+            GameSessionRecord(
+                id = sessionId,
+                packageName = packageName,
+                profileName = uiState.effectiveProfile.name,
+                startedAtMillis = System.currentTimeMillis(),
+                startBatteryPercent = runtimeDiagnostics?.battery?.percent
+            )
+        }
+        viewModel.recordPerformanceEvent(
+            PerformanceEvent(
+                timestampMillis = System.currentTimeMillis(),
+                type = PerformanceEventType.SESSION_STARTED,
+                sessionId = sessionId,
+                detail = packageName
+            )
+        )
+        viewModel.recordRecentGame(packageName)
+    }
+
+    fun playSelectedGame() {
+        val packageName = uiState.selectedGamePackage
+        if (packageName.isNullOrBlank()) {
+            settingsOpen = false
+            profileOpen = false
+            selectedTab = 1
+            return
+        }
+        if (openGame(context, packageName)) {
+            recordGameOpened(packageName)
+        }
+    }
+
     val selectedProfileName = uiState.effectiveProfile.name
     val selectedGamePackage = uiState.selectedGamePackage
     val favoriteGames = uiState.favoriteGames
@@ -582,6 +620,7 @@ private fun GameHubUltraApp(
                 selectedProfileName = selectedProfileName,
                 onProfileSelected = ::selectProfile,
                 onGameSelected = ::selectGame,
+                onPlaySelectedGame = ::playSelectedGame,
                 runtimeDiagnostics = runtimeDiagnostics,
                 telemetryTrend = telemetryTrend,
                 performanceTimeline = performanceTimeline,
@@ -636,30 +675,7 @@ private fun GameHubUltraApp(
                 onGameSelected = ::selectGame,
                 onProfileSelected = ::selectProfile,
                 onToggleFavorite = viewModel::setFavoriteGame,
-                onGameOpened = { packageName ->
-                    endGameSession()
-                    val sessionId = UUID.randomUUID().toString()
-                    activeSessionPackage = packageName
-                    activeSessionId = sessionId
-                    viewModelScopeLaunch(context, sessionStore) {
-                        GameSessionRecord(
-                            id = sessionId,
-                            packageName = packageName,
-                            profileName = uiState.effectiveProfile.name,
-                            startedAtMillis = System.currentTimeMillis(),
-                            startBatteryPercent = runtimeDiagnostics?.battery?.percent
-                        )
-                    }
-                    viewModel.recordPerformanceEvent(
-                        PerformanceEvent(
-                            timestampMillis = System.currentTimeMillis(),
-                            type = PerformanceEventType.SESSION_STARTED,
-                            sessionId = sessionId,
-                            detail = packageName
-                        )
-                    )
-                    viewModel.recordRecentGame(packageName)
-                },
+                onGameOpened = ::recordGameOpened,
                 onToggleManualGame = viewModel::setManualGame
             )
         }
@@ -904,6 +920,7 @@ private fun HomeScreen(
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit,
+    onPlaySelectedGame: () -> Unit,
     runtimeDiagnostics: RuntimeDiagnostics?,
     telemetryTrend: List<RuntimeDiagnostics>,
     performanceTimeline: PerformanceTimeline,
@@ -956,8 +973,10 @@ private fun HomeScreen(
                 telemetryTrend = telemetryTrend,
                 profile = state.selectedProfile,
                 adaptiveDecision = adaptiveDecision,
-                gameName = aiContext.selectedGamePackage ?: "Ningún juego seleccionado",
-                onProfileSelected = onProfileSelected
+                gameName = aiContext.selectedGamePackage?.let { packageDisplayName(timelineContext, it) }
+                    ?: "Selecciona un juego",
+                onProfileSelected = onProfileSelected,
+                onPlay = onPlaySelectedGame
             )
         }
         item { ActiveProfileCard(state) }
@@ -2037,6 +2056,20 @@ private fun SmartPerformanceCard(
         }
     }
 }
+
+private fun packageDisplayName(context: Context, packageName: String): String =
+    runCatching {
+        val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.packageManager.getApplicationInfo(
+                packageName,
+                PackageManager.ApplicationInfoFlags.of(0L)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getApplicationInfo(packageName, 0)
+        }
+        context.packageManager.getApplicationLabel(appInfo).toString()
+    }.getOrDefault(packageName)
 
 private fun packageVersionName(context: Context, packageName: String): String? =
     runCatching {
