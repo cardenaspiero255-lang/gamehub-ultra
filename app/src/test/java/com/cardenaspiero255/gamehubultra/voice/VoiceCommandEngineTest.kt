@@ -144,4 +144,18 @@ class VoiceCommandEngineTest {
         )
         assertIs<VoiceActionResult.NotAvailable>(result)
     }
+
+    @Test
+    fun acronymGameDoesNotMatchUnrelatedWord() {
+        val cats = listOf(GameInfo("com.zeptolab.cats.google", "C.A.T.S."))
+        assertEquals(null, GameMatchFinder.find("activa", cats))
+    }
+
+    @Test
+    fun minorSpeechTypoStillMatchesInstalledGame() {
+        val games = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
+        val match = GameMatchFinder.find("Bral Stars", games)
+        assertEquals("com.supercell.brawlstars", match?.packageName)
+    }
+
 }
