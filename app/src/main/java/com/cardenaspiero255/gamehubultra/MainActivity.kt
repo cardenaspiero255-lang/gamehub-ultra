@@ -746,8 +746,7 @@ private fun GameHubUltraApp(
                         .fillMaxSize()
                 ) {
                     UltraShellHeader(
-                        playerName = ULTRA_PLAYER_NAME,
-                        activeProfile = uiState.effectiveProfile
+                        playerName = ULTRA_PLAYER_NAME
                     )
                     Box(
                         modifier = Modifier
