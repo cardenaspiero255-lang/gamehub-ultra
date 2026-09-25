@@ -276,6 +276,32 @@ class UltraMemoryRepositoryTest {
     }
 
     @Test
+    fun gameScopedHistoryDoesNotIncludeGlobalConversationLines() {
+        val repository = UltraMemoryRepository(
+            persistence = InMemoryUltraMemoryPersistence(),
+            nowMillis = { 100L },
+            idFactory = sequenceIdFactory()
+        )
+        val globalScope = scope.copy(gamePackage = null)
+
+        repository.syncConversation(
+            previous = emptyList(),
+            next = listOf("Tú: conversación global"),
+            scope = globalScope
+        )
+        repository.syncConversation(
+            previous = emptyList(),
+            next = listOf("Tú: conversación del juego"),
+            scope = scope
+        )
+
+        assertEquals(
+            listOf("Tú: conversación del juego"),
+            repository.recentConversationLines(limit = 10, scope = scope)
+        )
+    }
+
+    @Test
     fun pinCanRestoreAnArchivedMemory() {
         val repository = UltraMemoryRepository(
             persistence = InMemoryUltraMemoryPersistence(),
