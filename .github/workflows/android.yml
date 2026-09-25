@@ -22,6 +22,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
     timeout-minutes: 60
     steps:
       - name: Checkout
@@ -119,6 +121,30 @@ jobs:
         run: |
           set -euo pipefail
           gradle :app:lintDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-debug.log"
+
+      - name: Create ephemeral release signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/gamehub-ultra-ci-release.jks"
+          PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storetype JKS \
+            -storepass "$PASSWORD" \
+            -keypass "$PASSWORD" \
+            -alias gamehub-ci \
+            -keyalg RSA \
+            -keysize 3072 \
+            -validity 1 \
+            -dname "CN=GameHub Ultra CI,O=GameHub Ultra,C=CL" \
+            -noprompt
+          {
+            echo "GAMEHUB_RELEASE_KEYSTORE_PATH=$KEYSTORE"
+            echo "GAMEHUB_RELEASE_STORE_PASSWORD=$PASSWORD"
+            echo "GAMEHUB_RELEASE_KEY_ALIAS=gamehub-ci"
+            echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
+          } >> "$GITHUB_ENV"
 
       - name: Build release APK
         shell: bash
