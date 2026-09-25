@@ -148,7 +148,7 @@ internal fun UltraProfileScreen(
                     color = Color(0xFFFF3048),
                     fontWeight = FontWeight.Bold
                 )
-                Text("Perfil activo · \${activeProfile.title}", color = Color(0xFFBDBDC8))
+                Text("Perfil activo · ${activeProfile.title}", color = Color(0xFFBDBDC8))
             }
         }
 
@@ -171,9 +171,9 @@ internal fun UltraProfileScreen(
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text("DISPOSITIVO", color = Color(0xFFFF3048), fontWeight = FontWeight.Bold)
-                Text("\${device.manufacturer} \${device.model}", fontWeight = FontWeight.Bold)
+                Text("${device.manufacturer} ${device.model}", fontWeight = FontWeight.Bold)
                 Text(
-                    "\${device.cpuCores} núcleos · \${device.totalRamMb / 1024L} GB RAM",
+                    "${device.cpuCores} núcleos · ${device.totalRamMb / 1024L} GB RAM",
                     color = Color(0xFFBDBDC8)
                 )
             }
