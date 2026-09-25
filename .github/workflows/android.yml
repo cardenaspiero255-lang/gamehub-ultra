@@ -317,7 +317,7 @@ jobs:
           set -o pipefail
           LOG="$RUNNER_TEMP/baseline-profile.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -PbenchmarkEnabledRules=BaselineProfile \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile \
             --no-configuration-cache \
             --stacktrace 2>&1 | tee "$LOG"
           if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
@@ -333,8 +333,9 @@ jobs:
           gradle :baseline-profile:clean --no-configuration-cache
           LOG="$RUNNER_TEMP/macrobenchmark.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -PbenchmarkEnabledRules=Macrobenchmark \
-            -PbenchmarkSuppressErrors=EMULATOR \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
             --no-configuration-cache \
             --stacktrace 2>&1 | tee "$LOG"
           if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
