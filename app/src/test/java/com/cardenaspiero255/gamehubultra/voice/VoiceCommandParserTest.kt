@@ -265,4 +265,20 @@ class VoiceCommandParserTest {
         assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
     }
 
+
+    @Test
+    fun markerFirstProfileToGameCommandsConsumeTrailingConnector() {
+        val english = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("apply profile X4 to Minecraft")
+        )
+        assertEquals("minecraft", english.query)
+        assertEquals(PerformanceProfile.X4, english.requestedProfile)
+
+        val spanish = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("activa modo X4 para Minecraft")
+        )
+        assertEquals("minecraft", spanish.query)
+        assertEquals(PerformanceProfile.X4, spanish.requestedProfile)
+    }
+
 }
