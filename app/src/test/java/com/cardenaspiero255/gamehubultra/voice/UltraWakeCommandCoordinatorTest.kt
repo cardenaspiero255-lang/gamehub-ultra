@@ -78,6 +78,8 @@ class UltraWakeCommandCoordinatorTest {
         val second = gate.begin()
 
         assertFalse(gate.complete(first))
+        assertFalse(gate.isActive(first))
+        assertTrue(gate.isActive(second))
         assertTrue(gate.isActive())
         assertTrue(gate.complete(second))
         assertFalse(gate.isActive())
