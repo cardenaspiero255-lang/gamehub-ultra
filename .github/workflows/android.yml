@@ -20,6 +20,8 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -98,19 +100,34 @@ jobs:
           cache-disabled: true
 
       - name: Run unit tests
-        run: gradle :app:testDebugUnitTest --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/unit-tests.log"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/debug-apk.log"
 
       - name: Run lint
-        run: gradle :app:lintDebug --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:lintDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-debug.log"
 
       - name: Build release APK
-        run: gradle :app:assembleRelease --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk.log"
 
       - name: Build release AAB
-        run: gradle :app:bundleRelease --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:bundleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-aab.log"
 
       - name: Prepare deterministic API 35 AVD
         shell: bash
@@ -270,6 +287,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          exec > >(tee "$RUNNER_TEMP/apk-install-validation.log") 2>&1
           APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
           if [ -z "$APK" ] || [ ! -s "$APK" ]; then
             echo "No installable release APK found under app/build/outputs/apk/release"
@@ -357,6 +375,110 @@ jobs:
             echo "Known CAR-29 emulator errors are still present."
             exit 1
           fi
+
+      - name: Analyze Android failure with Gemini
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "GEMINI_API_KEY secret is not configured; skipping Gemini failure analysis."
+            exit 0
+          fi
+
+          ANALYSIS_DIR="$RUNNER_TEMP/gemini-analysis"
+          LOG_BUNDLE="$ANALYSIS_DIR/android-failure-logs.txt"
+          mkdir -p "$ANALYSIS_DIR"
+
+          {
+            echo "# GameHub Ultra Android CI failure logs"
+            echo "Workflow: $GITHUB_WORKFLOW"
+            echo "Run id: $GITHUB_RUN_ID"
+            echo "Commit: $GITHUB_SHA"
+            echo
+            for log in \
+              "$RUNNER_TEMP/unit-tests.log" \
+              "$RUNNER_TEMP/debug-apk.log" \
+              "$RUNNER_TEMP/lint-debug.log" \
+              "$RUNNER_TEMP/release-apk.log" \
+              "$RUNNER_TEMP/release-aab.log" \
+              "$RUNNER_TEMP/apk-install-validation.log" \
+              "$RUNNER_TEMP/baseline-profile.log" \
+              "$RUNNER_TEMP/macrobenchmark.log" \
+              "${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"; do
+              [ -f "$log" ] || continue
+              echo
+              echo "## $(basename "$log")"
+              tail -n 280 "$log"
+            done
+
+            if [ -d app/build/test-results/testDebugUnitTest ]; then
+              echo
+              echo "## Unit test XML summaries"
+              find app/build/test-results/testDebugUnitTest -type f -name '*.xml' -print -exec sed -n '1,160p' {} \;
+            fi
+          } > "$LOG_BUNDLE"
+
+          export LOG_BUNDLE
+          python3 <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          import urllib.error
+          import urllib.request
+
+          api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+          log_path = pathlib.Path(os.environ["LOG_BUNDLE"])
+          out_path = log_path.parent / "gemini-analysis.md"
+          logs = log_path.read_text(encoding="utf-8", errors="replace")[-60000:]
+          prompt = f"""
+          Eres un revisor de CI para una app Android/Kotlin llamada GameHub Ultra.
+          Analiza los logs y responde en español, breve y accionable.
+          No inventes archivos ni resultados que no aparezcan en los logs.
+          Devuelve exactamente estas secciones:
+          1. Causa raíz probable
+          2. Archivo o test afectado
+          3. Parche recomendado
+          4. Prueba que debería confirmar el arreglo
+          5. Riesgos o límites
+
+          LOGS:
+          {logs}
+          """.strip()
+          body = {
+              "contents": [{"parts": [{"text": prompt}]}],
+              "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1800},
+          }
+          url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + api_key
+          request = urllib.request.Request(
+              url,
+              data=json.dumps(body).encode("utf-8"),
+              headers={"Content-Type": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=75) as response:
+                  result = json.loads(response.read().decode("utf-8"))
+              parts = result.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+              analysis = "\n".join(part.get("text", "") for part in parts).strip()
+              if not analysis:
+                  analysis = "Gemini no devolvió texto útil. Revisa android-failure-logs.txt."
+          except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, Exception) as exc:
+              analysis = f"Gemini analysis failed: {type(exc).__name__}: {exc}"
+
+          out_path.write_text("# Gemini Android failure analysis\n\n" + analysis + "\n", encoding="utf-8")
+          print("::group::Gemini Android failure analysis")
+          print(analysis[:12000])
+          print("::endgroup::")
+          PY
+
+      - name: Upload Gemini failure analysis
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gamehub-ultra-gemini-failure-analysis
+          path: ${{ runner.temp }}/gemini-analysis/**
+          if-no-files-found: ignore
 
       - name: Upload emulator diagnostics
         if: always()
