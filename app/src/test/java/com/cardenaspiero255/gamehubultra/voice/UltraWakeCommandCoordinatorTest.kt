@@ -42,6 +42,22 @@ class UltraWakeCommandCoordinatorTest {
     }
 
     @Test
+    fun persistentRecognitionStaysActiveWhileCommandRuns() {
+        val coordinator = UltraWakeCommandCoordinator()
+
+        assertTrue(coordinator.tryStartRecognition())
+        assertTrue(coordinator.tryBeginCommand(keepRecognitionActive = true))
+        assertTrue(coordinator.isRecognitionActive())
+        assertFalse(coordinator.tryStartRecognition())
+
+        assertTrue(coordinator.finishCommand())
+        assertTrue(coordinator.isRecognitionActive())
+
+        coordinator.onRecognitionFinished()
+        assertFalse(coordinator.isRecognitionActive())
+    }
+
+    @Test
     fun unexpectedCommandFailureIsConvertedToSafeResponse() {
         val response = UltraWakeFailureGuard.run {
             error("simulated runtime failure")
