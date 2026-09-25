@@ -162,10 +162,14 @@ class UltraMemoryRepository(
 
     fun recentConversationLines(
         limit: Int,
-        userId: String = "local"
+        scope: UltraMemoryScope = UltraMemoryScope()
     ): List<String> = synchronized(lock) {
         state.records.asSequence()
-            .filter { it.scope.userId == userId }
+            .filter { it.scope.userId == scope.userId }
+            .filter {
+                it.scope.gamePackage == null ||
+                    it.scope.gamePackage == scope.gamePackage
+            }
             .filterNot { it.archived }
             .filter { it.kind == UltraMemoryKind.CONVERSATION }
             .takeLastCompat(limit.coerceIn(1, 100))
@@ -291,25 +295,36 @@ class UltraMemoryRepository(
         query: String,
         scope: UltraMemoryScope
     ): Set<String> {
-        val recalls = UltraMemoryRetrieval.relevant(
-            query = query,
-            records = state.records,
-            scope = scope,
-            limit = 50
-        )
-        if (recalls.isNotEmpty()) {
-            return recalls.mapTo(linkedSetOf()) { it.record.id }
-        }
+        val queryTokens = normalize(query)
+            .split(' ')
+            .filter { it.length >= 3 }
+            .toSet()
+        if (queryTokens.isEmpty()) return emptySet()
 
-        val needle = normalize(query)
-        if (needle.isBlank()) return emptySet()
-        return state.records.asSequence()
+        val scoped = state.records.asSequence()
             .filter { it.scope.userId == scope.userId }
             .filter {
                 it.scope.gamePackage == null ||
                     it.scope.gamePackage == scope.gamePackage
             }
-            .filter { normalize(it.text).contains(needle) }
+            .filterNot { it.archived }
+            .toList()
+
+        fun matches(record: UltraStoredMemory): Boolean {
+            val recordTokens = normalize(record.text)
+                .split(' ')
+                .filter { it.length >= 3 }
+                .toSet()
+            return recordTokens.containsAll(queryTokens)
+        }
+
+        val facts = scoped
+            .filter { it.kind == UltraMemoryKind.FACT && matches(it) }
+            .mapTo(linkedSetOf()) { it.id }
+        if (facts.isNotEmpty()) return facts
+
+        return scoped
+            .filter(::matches)
             .mapTo(linkedSetOf()) { it.id }
     }
 
@@ -342,13 +357,15 @@ class UltraMemoryRepository(
     private fun trimRecords(records: List<UltraStoredMemory>): List<UltraStoredMemory> {
         if (records.size <= safeMaxRecords) return records
 
-        val pinned = records.filter { it.pinned }.takeLast(safeMaxRecords)
-        val pinnedIds = pinned.mapTo(hashSetOf()) { it.id }
-        val remainingCapacity = (safeMaxRecords - pinned.size).coerceAtLeast(0)
+        val protected = records
+            .filter { it.pinned || it.kind == UltraMemoryKind.FACT }
+            .takeLast(safeMaxRecords)
+        val protectedIds = protected.mapTo(hashSetOf()) { it.id }
+        val remainingCapacity = (safeMaxRecords - protected.size).coerceAtLeast(0)
         val recent = records
-            .filterNot { it.id in pinnedIds }
+            .filterNot { it.id in protectedIds }
             .takeLast(remainingCapacity)
-        val keepIds = (pinned + recent).mapTo(hashSetOf()) { it.id }
+        val keepIds = (protected + recent).mapTo(hashSetOf()) { it.id }
         return records.filter { it.id in keepIds }
     }
 
