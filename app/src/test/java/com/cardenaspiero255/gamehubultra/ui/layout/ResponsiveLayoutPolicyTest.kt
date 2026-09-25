@@ -5,18 +5,18 @@ import kotlin.test.assertEquals
 
 class ResponsiveLayoutPolicyTest {
     @Test
-    fun compactBelowWideBreakpoint() {
+    fun compactPhonePortraitStaysCompact() {
         assertEquals(
             UltraLayoutMode.COMPACT,
-            ResponsiveLayoutPolicy.modeForWidthDp(839)
+            ResponsiveLayoutPolicy.modeForWidthDp(599)
         )
     }
 
     @Test
-    fun wideAtLandscapeBreakpoint() {
+    fun phoneLandscapeUsesWideNavigationRail() {
         assertEquals(
             UltraLayoutMode.WIDE,
-            ResponsiveLayoutPolicy.modeForWidthDp(840)
+            ResponsiveLayoutPolicy.modeForWidthDp(600)
         )
         assertEquals(
             UltraLayoutMode.WIDE,
