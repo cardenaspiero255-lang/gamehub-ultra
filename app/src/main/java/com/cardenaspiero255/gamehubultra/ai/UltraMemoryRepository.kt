@@ -323,11 +323,6 @@ class UltraMemoryRepository(
             return recordTokens.containsAll(queryTokens)
         }
 
-        val facts = scoped
-            .filter { it.kind == UltraMemoryKind.FACT && matches(it) }
-            .mapTo(linkedSetOf()) { it.id }
-        if (facts.isNotEmpty()) return facts
-
         return scoped
             .filter(::matches)
             .mapTo(linkedSetOf()) { it.id }
