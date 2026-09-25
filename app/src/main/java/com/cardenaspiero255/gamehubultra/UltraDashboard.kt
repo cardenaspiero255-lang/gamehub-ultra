@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -81,7 +82,8 @@ fun UltraDashboard(
     profile: PerformanceProfile,
     adaptiveDecision: AdaptiveDecision?,
     gameName: String = "Ningún juego seleccionado",
-    onProfileSelected: (PerformanceProfile) -> Unit = {}
+    onProfileSelected: (PerformanceProfile) -> Unit = {},
+    onPlay: () -> Unit = {}
 ) {
     val battery = diagnostics?.battery?.percent
     val refresh = diagnostics?.refresh?.currentRefreshRateHz
@@ -96,8 +98,15 @@ fun UltraDashboard(
     ) {
         val compact = maxWidth < 720.dp
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            UltraCoreHeader(profile)
-            FeaturedGameCard(gameName, battery, refresh, thermalUsagePercent, device.totalRamMb)
+            FeaturedGameCard(
+                gameName = gameName,
+                profile = profile,
+                battery = battery,
+                refresh = refresh,
+                thermalUsagePercent = thermalUsagePercent,
+                totalRamMb = device.totalRamMb,
+                onPlay = onPlay
+            )
             UltraVoiceCard()
             Text("BOOSTER", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
             val presentations = PerformanceProfile.entries.associateWith(::boosterPresentation)
@@ -290,18 +299,73 @@ private fun UltraFinalExperienceCard(summary: UltraFinalExperienceSummary, compa
 }
 
 @Composable
-private fun FeaturedGameCard(gameName: String, battery: Int?, refresh: Float?, thermalUsagePercent: Int?, totalRamMb: Long) {
-    Card(colors = CardDefaults.cardColors(containerColor = UltraPanel), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("PORTADA · JUEGO DESTACADO", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    Text(gameName, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    Text("Telemetría disponible de Android", color = UltraRedBright, fontSize = 11.sp)
+private fun FeaturedGameCard(
+    gameName: String,
+    profile: PerformanceProfile,
+    battery: Int?,
+    refresh: Float?,
+    thermalUsagePercent: Int?,
+    totalRamMb: Long,
+    onPlay: () -> Unit
+) {
+    Surface(
+        color = Color(0xFF100104),
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 220.dp)
+            .border(1.dp, UltraRed.copy(alpha = .72f), RoundedCornerShape(18.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "JUEGO SELECCIONADO",
+                        color = UltraRedBright,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.4.sp
+                    )
+                    Text(
+                        gameName.uppercase(),
+                        color = Color.White,
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        "PERFIL \${profile.title.uppercase()}",
+                        color = UltraMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
-                Text("SELECCIÓN ACTUAL", color = UltraMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Surface(
+                    onClick = onPlay,
+                    color = UltraRed,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(1.dp, UltraRedBright, RoundedCornerShape(12.dp))
+                ) {
+                    Text(
+                        "JUGAR",
+                        modifier = Modifier.padding(horizontal = 30.dp, vertical = 15.dp),
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.2.sp
+                    )
+                }
             }
+
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                MetricBlock("PERFIL", profile.title, Modifier.weight(1f))
                 MetricBlock("REFRESCO", refresh?.toInt()?.let { it.toString() + " Hz" } ?: "No disponible", Modifier.weight(1f))
                 MetricBlock("USO TÉRMICO", thermalUsagePercent?.let { it.toString() + "%" } ?: "No disponible", Modifier.weight(1f))
                 MetricBlock("RAM", if (totalRamMb > 0L) (totalRamMb / 1024L).toString() + " GB" else "No disponible", Modifier.weight(1f))
