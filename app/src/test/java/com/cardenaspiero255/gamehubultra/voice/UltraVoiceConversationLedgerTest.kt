@@ -19,4 +19,19 @@ class UltraVoiceConversationLedgerTest {
             second.next
         )
     }
+    @Test
+    fun changingGameScopeClearsConversationLedger() {
+        val ledger = UltraVoiceConversationLedger(maxEntries = 4)
+
+        ledger.bindScope("game.a")
+        ledger.record("hola desde A", "respuesta A")
+        assertEquals(
+            listOf("Tú: hola desde A", "Ultra: respuesta A"),
+            ledger.snapshot()
+        )
+
+        ledger.bindScope("game.b")
+
+        assertEquals(emptyList(), ledger.snapshot())
+    }
 }

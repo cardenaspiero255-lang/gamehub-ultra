@@ -202,7 +202,7 @@ class UltraMemoryRepositoryTest {
 
         assertEquals(
             listOf("Ultra: dos", "Tú: tres"),
-            repository.recentConversationLines(limit = 2)
+            repository.recentConversationLines(limit = 2, scope = scope)
         )
     }
 
@@ -229,6 +229,23 @@ class UltraMemoryRepositoryTest {
         assertFalse(repository.snapshot().records.any {
             it.text.contains("prefiero X4", ignoreCase = true)
         })
+    }
+
+    @Test
+    fun forgetRemovesArchivedMatchingMemory() {
+        val repository = UltraMemoryRepository(
+            persistence = InMemoryUltraMemoryPersistence(),
+            nowMillis = { 100L },
+            idFactory = sequenceIdFactory()
+        )
+        repository.handleCommand("Ultra recuerda que prefiero X4", scope)
+        repository.handleCommand("Ultra archiva prefiero X4", scope)
+
+        assertTrue(repository.snapshot().records.single().archived)
+
+        repository.handleCommand("Ultra olvida prefiero X4", scope)
+
+        assertTrue(repository.snapshot().records.isEmpty())
     }
 
     private fun sequenceIdFactory(): () -> String {
