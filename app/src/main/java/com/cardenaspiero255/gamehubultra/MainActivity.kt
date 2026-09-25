@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -2509,7 +2510,7 @@ private fun LibraryScreen(
                         game = game,
                         selected = selectedGamePackage == game.packageName,
                         favorite = favoriteGames.contains(game.packageName),
-                        tileHeightDp = gridMetrics.tileHeightDp,
+                        minTileHeightDp = gridMetrics.minTileHeightDp,
                         onSelect = {
                             launchFailed = false
                             onGameSelected(game.packageName)
@@ -2884,7 +2885,7 @@ private fun GameTile(
     game: GameInfo,
     selected: Boolean,
     favorite: Boolean,
-    tileHeightDp: Int,
+    minTileHeightDp: Int,
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
@@ -2902,7 +2903,7 @@ private fun GameTile(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(tileHeightDp.dp)
+            .heightIn(min = minTileHeightDp.dp)
     ) {
         Column(
             modifier = Modifier.padding(7.dp),
