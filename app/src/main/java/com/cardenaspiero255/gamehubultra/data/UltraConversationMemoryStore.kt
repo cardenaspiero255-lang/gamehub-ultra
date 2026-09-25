@@ -35,7 +35,11 @@ class UltraConversationMemoryStore private constructor(
     context: Context
 ) : UltraLongTermMemoryGateway {
     private val appContext = context.applicationContext
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val executor: ExecutorService = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "UltraMemoryStore").apply {
+            isDaemon = true
+        }
+    }
     private val repositoryFuture: Future<UltraMemoryRepository> = executor.submit<UltraMemoryRepository> {
         UltraMemoryRepository(
             persistence = EncryptedUltraMemoryPersistence(appContext)
