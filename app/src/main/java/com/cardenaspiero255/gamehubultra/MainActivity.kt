@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,6 +51,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
@@ -139,6 +141,7 @@ import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.platform.GamePlatformLinks
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
+import com.cardenaspiero255.gamehubultra.ui.layout.LibraryLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.layout.ResponsiveLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.layout.UltraLayoutMode
 import kotlinx.coroutines.Dispatchers
@@ -2333,94 +2336,117 @@ private fun LibraryScreen(
         }
     }
 
-    Column(
+    val configuration = LocalConfiguration.current
+    val gridMetrics = remember(configuration.screenWidthDp) {
+        LibraryLayoutPolicy.metricsForWidthDp(configuration.screenWidthDp)
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = gridMetrics.minTileWidthDp.dp),
         modifier = modifier
             .fillMaxSize()
             .padding(
                 horizontal = GameHubUiTokens.compactHorizontalPadding,
                 vertical = GameHubUiTokens.compactControlSpacing
             ),
+        horizontalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing),
         verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                stringResource(R.string.library_title),
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(
-                onClick = { showAddGameDialog = true }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(stringResource(R.string.add_game))
+                Text(
+                    stringResource(R.string.library_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(
+                    onClick = { showAddGameDialog = true }
+                ) {
+                    Text(stringResource(R.string.add_game))
+                }
             }
         }
 
-        OutlinedTextField(
-            value = libraryQuery,
-            onValueChange = { libraryQuery = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text(stringResource(R.string.library_search)) }
-        )
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            OutlinedTextField(
+                value = libraryQuery,
+                onValueChange = { libraryQuery = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text(stringResource(R.string.library_search)) }
+            )
+        }
 
-        StoreLibrarySection(games = visibleStoreGames)
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            StoreLibrarySection(games = visibleStoreGames)
+        }
 
         if (launchFailed) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    stringResource(R.string.library_open_error),
-                    modifier = Modifier.padding(14.dp)
-                )
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        stringResource(R.string.library_open_error),
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
             }
         }
 
         when {
             result == null -> {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        stringResource(R.string.library_loading),
-                        modifier = Modifier.padding(14.dp)
-                    )
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            stringResource(R.string.library_loading),
+                            modifier = Modifier.padding(14.dp)
+                        )
+                    }
                 }
             }
             result.failed -> {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            stringResource(R.string.library_error),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(stringResource(R.string.library_error_hint))
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.library_error),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(stringResource(R.string.library_error_hint))
+                        }
                     }
                 }
             }
             result.games.isEmpty() -> {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            stringResource(R.string.library_empty),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(stringResource(R.string.library_empty_hint))
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                stringResource(R.string.library_empty),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(stringResource(R.string.library_empty_hint))
+                        }
                     }
                 }
             }
             else -> {
-                Text(
-                    stringResource(R.string.library_count, result.games.size)
-                )
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(stringResource(R.string.library_count, result.games.size))
+                }
 
                 if (libraryQuery.isNotBlank() && result.games.isNotEmpty() && visibleGames.isEmpty()) {
-                    Text(stringResource(R.string.library_search_empty))
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(stringResource(R.string.library_search_empty))
+                    }
                 }
 
                 selectedGamePackage?.let { selected ->
@@ -2428,34 +2454,14 @@ private fun LibraryScreen(
                         it.packageName == selected
                     }?.let { game ->
                         val favorite = favoriteGames.contains(game.packageName)
-                        SelectedGameCompactBar(
-                            game = game,
-                            favorite = favorite,
-                            detailsVisible = showSelectedGameDetails,
-                            onToggleDetails = {
-                                showSelectedGameDetails = !showSelectedGameDetails
-                            },
-                            onToggleFavorite = {
-                                onToggleFavorite(game.packageName, !favorite)
-                            },
-                            onOpen = {
-                                if (openGame(context, game.packageName)) {
-                                    launchFailed = false
-                                    onGameOpened(game.packageName)
-                                } else {
-                                    launchFailed = true
-                                }
-                            }
-                        )
-                        if (showSelectedGameDetails) {
-                            SelectedGameCard(
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            SelectedGameCompactBar(
                                 game = game,
                                 favorite = favorite,
-                                recent = recentGamePackages.contains(game.packageName),
-                                selectedProfile = selectedProfile,
-                                diagnostics = runtimeDiagnostics,
-                                sessions = sessionHistory.filter { it.packageName == game.packageName },
-                                onProfileSelected = onProfileSelected,
+                                detailsVisible = showSelectedGameDetails,
+                                onToggleDetails = {
+                                    showSelectedGameDetails = !showSelectedGameDetails
+                                },
                                 onToggleFavorite = {
                                     onToggleFavorite(game.packageName, !favorite)
                                 },
@@ -2469,43 +2475,61 @@ private fun LibraryScreen(
                                 }
                             )
                         }
+                        if (showSelectedGameDetails) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SelectedGameCard(
+                                    game = game,
+                                    favorite = favorite,
+                                    recent = recentGamePackages.contains(game.packageName),
+                                    selectedProfile = selectedProfile,
+                                    diagnostics = runtimeDiagnostics,
+                                    sessions = sessionHistory.filter { it.packageName == game.packageName },
+                                    onProfileSelected = onProfileSelected,
+                                    onToggleFavorite = {
+                                        onToggleFavorite(game.packageName, !favorite)
+                                    },
+                                    onOpen = {
+                                        if (openGame(context, game.packageName)) {
+                                            launchFailed = false
+                                            onGameOpened(game.packageName)
+                                        } else {
+                                            launchFailed = true
+                                        }
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
 
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 132.dp),
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(
-                        items = visibleGames,
-                        key = { it.packageName }
-                    ) { game ->
-                        GameTile(
-                            game = game,
-                            selected = selectedGamePackage == game.packageName,
-                            favorite = favoriteGames.contains(game.packageName),
-                            onSelect = {
+                items(
+                    items = visibleGames,
+                    key = { it.packageName }
+                ) { game ->
+                    GameTile(
+                        game = game,
+                        selected = selectedGamePackage == game.packageName,
+                        favorite = favoriteGames.contains(game.packageName),
+                        minTileHeightDp = gridMetrics.minTileHeightDp,
+                        onSelect = {
+                            launchFailed = false
+                            onGameSelected(game.packageName)
+                        },
+                        onToggleFavorite = {
+                            onToggleFavorite(
+                                game.packageName,
+                                !favoriteGames.contains(game.packageName)
+                            )
+                        },
+                        onOpen = {
+                            if (openGame(context, game.packageName)) {
                                 launchFailed = false
-                                onGameSelected(game.packageName)
-                            },
-                            onToggleFavorite = {
-                                onToggleFavorite(
-                                    game.packageName,
-                                    !favoriteGames.contains(game.packageName)
-                                )
-                            },
-                            onOpen = {
-                                if (openGame(context, game.packageName)) {
-                                    launchFailed = false
-                                    onGameOpened(game.packageName)
-                                } else {
-                                    launchFailed = true
-                                }
+                                onGameOpened(game.packageName)
+                            } else {
+                                launchFailed = true
                             }
-                        )
-                    }
+                        }
+                    )
                 }
             }
         }
@@ -2577,42 +2601,58 @@ private fun SelectedGameCompactBar(
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(GameHubUiTokens.compactCardPadding),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactControlSpacing)
         ) {
-            iconBitmap?.let { icon ->
-                Image(
-                    bitmap = icon,
-                    contentDescription = stringResource(
-                        R.string.game_icon_content_description,
-                        game.label
-                    ),
-                    modifier = Modifier.size(42.dp)
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                iconBitmap?.let { icon ->
+                    Image(
+                        bitmap = icon,
+                        contentDescription = stringResource(
+                            R.string.game_icon_content_description,
+                            game.label
+                        ),
+                        modifier = Modifier.size(42.dp)
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        game.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1
+                    )
+                    Text(
+                        "SELECCIONADO",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                TextButton(onClick = onToggleFavorite) {
+                    Text(if (favorite) "★" else "☆")
+                }
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    game.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1
-                )
-                Text(
-                    "SELECCIONADO",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            TextButton(onClick = onToggleFavorite) {
-                Text(if (favorite) "★" else "☆")
-            }
-            TextButton(onClick = onToggleDetails) {
-                Text(if (detailsVisible) "MENOS" else "DETALLES")
-            }
-            TextButton(onClick = onOpen) {
-                Text("JUGAR")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = onToggleDetails,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (detailsVisible) "MENOS" else "DETALLES")
+                }
+                TextButton(
+                    onClick = onOpen,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("JUGAR")
+                }
             }
         }
     }
@@ -2845,6 +2885,7 @@ private fun GameTile(
     game: GameInfo,
     selected: Boolean,
     favorite: Boolean,
+    minTileHeightDp: Int,
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onOpen: () -> Unit
@@ -2859,7 +2900,11 @@ private fun GameTile(
         }.getOrNull()
     }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = minTileHeightDp.dp)
+    ) {
         Column(
             modifier = Modifier.padding(7.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
