@@ -606,7 +606,7 @@ private fun GameHubUltraApp(
                     scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
                 }
             )
-            profileOpen -> UltraProfileScreen(
+            wideLayout && profileOpen -> UltraProfileScreen(
                 modifier = contentModifier,
                 playerName = ULTRA_PLAYER_NAME,
                 activeProfile = uiState.effectiveProfile,
