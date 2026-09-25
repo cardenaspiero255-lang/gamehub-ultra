@@ -55,12 +55,15 @@ class UltraWakeService : Service() {
         private const val WAKE_DEBOUNCE_MS = 700L
         private const val COMMAND_UTTERANCE_PREFIX = "ultra-command"
         private const val COMMAND_SPEECH_TIMEOUT_MS = 10_000L
+        private const val COMMAND_SPEECH_RECHECK_MS = 5_000L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val commandCoordinator = UltraWakeCommandCoordinator()
     private val commandQueue = UltraWakeCommandQueue()
     private val speechGeneration = UltraWakeSpeechGeneration()
+    private val playbackGuard = UltraWakePlaybackGuard()
+    private val lifecycleGate = UltraWakeLifecycleGate()
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val restartRecognition = Runnable { startRecognition() }
@@ -88,20 +91,20 @@ class UltraWakeService : Service() {
 
                 override fun onDone(utteranceId: String?) {
                     speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token) }
+                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
                     }
                 }
 
                 @Deprecated("Android legacy TextToSpeech callback")
                 override fun onError(utteranceId: String?) {
                     speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token) }
+                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
                     }
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
                     speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token) }
+                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
                     }
                 }
             }
@@ -113,6 +116,7 @@ class UltraWakeService : Service() {
             ACTION_STOP -> stopSelf()
             ACTION_START, null -> {
                 stopped = false
+                lifecycleGate.restart()
                 ensureForeground()
                 mainHandler.post { startRecognition() }
             }
@@ -304,7 +308,9 @@ class UltraWakeService : Service() {
         results: Bundle?,
         keepRecognitionActive: Boolean
     ) {
-        if (speechGeneration.isActive()) return
+        if (!lifecycleGate.canAcceptRecognition()) return
+        val recognitionNow = System.currentTimeMillis()
+        if (playbackGuard.shouldSuppressRecognition(recognitionNow)) return
 
         val alternatives = results
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -362,7 +368,13 @@ class UltraWakeService : Service() {
     }
 
     private fun handleCommand(transcript: String) {
-        commandExecutor.execute {
+        if (!lifecycleGate.canAcceptRecognition()) {
+            commandCoordinator.finishCommand()
+            return
+        }
+
+        val submitted = runCatching {
+            commandExecutor.execute {
             val response = UltraWakeFailureGuard.run {
                 val context = applicationContext
             val selectedGamePackage = runCatching {
@@ -467,18 +479,26 @@ class UltraWakeService : Service() {
 
             }
 
-            mainHandler.post {
-                if (stopped) {
-                    commandCoordinator.finishCommand()
-                } else {
-                    speakAndResume(response)
+                mainHandler.post {
+                    if (stopped || !lifecycleGate.canAcceptRecognition()) {
+                        commandCoordinator.finishCommand()
+                    } else {
+                        speakAndResume(response)
+                    }
                 }
             }
+            true
+        }.getOrDefault(false)
+
+        if (!submitted) {
+            commandCoordinator.finishCommand()
         }
     }
 
     private fun speakAndResume(response: String) {
         val token = speechGeneration.begin()
+        val startedAtMillis = System.currentTimeMillis()
+        playbackGuard.onPlaybackStarted()
         val utteranceId = "$COMMAND_UTTERANCE_PREFIX-$token"
         val result = tts?.speak(
             response,
@@ -488,14 +508,42 @@ class UltraWakeService : Service() {
         ) ?: TextToSpeech.ERROR
 
         if (result == TextToSpeech.ERROR) {
-            finishCommandAndResume(token)
+            finishCommandAndResume(token, playbackEnded = true)
             return
         }
 
+        scheduleSpeechWatchdog(token, startedAtMillis, COMMAND_SPEECH_TIMEOUT_MS)
+    }
+
+    private fun scheduleSpeechWatchdog(
+        token: Long,
+        startedAtMillis: Long,
+        delayMillis: Long
+    ) {
         mainHandler.postDelayed(
-            { finishCommandAndResume(token) },
-            COMMAND_SPEECH_TIMEOUT_MS
+            { checkSpeechWatchdog(token, startedAtMillis) },
+            delayMillis
         )
+    }
+
+    private fun checkSpeechWatchdog(token: Long, startedAtMillis: Long) {
+        if (!speechGeneration.isActive(token)) return
+        val now = System.currentTimeMillis()
+        when (
+            playbackGuard.timeoutAction(
+                isSpeaking = tts?.isSpeaking == true,
+                elapsedMillis = (now - startedAtMillis).coerceAtLeast(0L)
+            )
+        ) {
+            UltraWakeSpeechTimeoutAction.WAIT ->
+                scheduleSpeechWatchdog(token, startedAtMillis, COMMAND_SPEECH_RECHECK_MS)
+            UltraWakeSpeechTimeoutAction.FINISH ->
+                finishCommandAndResume(token, playbackEnded = true)
+            UltraWakeSpeechTimeoutAction.STOP_AND_FINISH -> {
+                tts?.stop()
+                finishCommandAndResume(token, playbackEnded = true)
+            }
+        }
     }
 
     private fun speechToken(utteranceId: String?): Long? =
@@ -504,8 +552,14 @@ class UltraWakeService : Service() {
             ?.substringAfterLast('-')
             ?.toLongOrNull()
 
-    private fun finishCommandAndResume(token: Long) {
+    private fun finishCommandAndResume(
+        token: Long,
+        playbackEnded: Boolean
+    ) {
         if (!speechGeneration.complete(token)) return
+        if (playbackEnded) {
+            playbackGuard.onPlaybackFinished(System.currentTimeMillis())
+        }
         if (!commandCoordinator.finishCommand()) return
 
         val queued = commandQueue.poll()
@@ -580,10 +634,12 @@ class UltraWakeService : Service() {
 
     override fun onDestroy() {
         stopped = true
+        lifecycleGate.stop()
         mainHandler.removeCallbacksAndMessages(null)
         commandExecutor.shutdownNow()
         commandQueue.clear()
         speechGeneration.clear()
+        playbackGuard.clear()
         closePersistentSpeechSource()
         commandCoordinator.onRecognitionFinished()
         commandCoordinator.finishCommand()
