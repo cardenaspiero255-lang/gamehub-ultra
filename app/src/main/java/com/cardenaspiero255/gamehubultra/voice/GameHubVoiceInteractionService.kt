@@ -192,7 +192,11 @@ private class GameHubVoiceInteractionSession(context: Context) :
             isProfileAvailable = { _ -> true },
             statusProvider = { readStatus() },
             deferProfileApplication = true,
-            aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
+            aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
+            gameAliasesProvider = { GameAliasStore.aliases(context) },
+            saveGameAlias = { alias, packageName ->
+                GameAliasStore.save(context, alias, packageName)
+            }
         )
 
         val response = responseText(result)
@@ -270,6 +274,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
                     else -> base
                 }
             }
+
+            is VoiceActionResult.GameAliasSaved ->
+                "Alias " + result.alias.uppercase() + " guardado para " + result.game.label + "."
 
             is VoiceActionResult.DeviceStatus ->
                 "Estado: batería " +
