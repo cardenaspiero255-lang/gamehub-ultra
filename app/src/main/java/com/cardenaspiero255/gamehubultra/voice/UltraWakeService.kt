@@ -18,6 +18,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
@@ -35,6 +36,7 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -51,9 +53,14 @@ class UltraWakeService : Service() {
         private const val NOTIFICATION_ID = 2301
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
+        private const val COMMAND_UTTERANCE_ID = "ultra-command"
+        private const val COMMAND_SPEECH_TIMEOUT_MS = 10_000L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val commandCoordinator = UltraWakeCommandCoordinator()
+    private val commandExecutor = Executors.newSingleThreadExecutor()
+    private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var stopped = false
@@ -70,6 +77,30 @@ class UltraWakeService : Service() {
                 tts?.language = Locale.getDefault()
             }
         }
+        tts?.setOnUtteranceProgressListener(
+            object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = Unit
+
+                override fun onDone(utteranceId: String?) {
+                    if (utteranceId == COMMAND_UTTERANCE_ID) {
+                        mainHandler.post { finishCommandAndResume() }
+                    }
+                }
+
+                @Deprecated("Android legacy TextToSpeech callback")
+                override fun onError(utteranceId: String?) {
+                    if (utteranceId == COMMAND_UTTERANCE_ID) {
+                        mainHandler.post { finishCommandAndResume() }
+                    }
+                }
+
+                override fun onError(utteranceId: String?, errorCode: Int) {
+                    if (utteranceId == COMMAND_UTTERANCE_ID) {
+                        mainHandler.post { finishCommandAndResume() }
+                    }
+                }
+            }
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -107,47 +138,58 @@ class UltraWakeService : Service() {
 
     private fun startRecognition() {
         if (stopped || recognitionStarting) return
+        if (!commandCoordinator.tryStartRecognition()) return
 
         if (
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
                 PackageManager.PERMISSION_GRANTED
         ) {
+            commandCoordinator.onRecognitionFinished()
             stopSelf()
             return
         }
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            commandCoordinator.onRecognitionFinished()
             scheduleRestart()
             return
         }
 
         recognitionStarting = true
-        recognizer?.cancel()
-        recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { speech ->
-            speech.setRecognitionListener(listener)
+        val started = runCatching {
+            recognizer?.cancel()
+            recognizer?.destroy()
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { speech ->
+                speech.setRecognitionListener(listener)
 
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(
-                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    1200L
-                )
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    850L
-                )
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        1200L
+                    )
+                    putExtra(
+                        RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                        850L
+                    )
+                }
+
+                speech.startListening(intent)
             }
-
-            speech.startListening(intent)
-        }
+            true
+        }.getOrDefault(false)
         recognitionStarting = false
+
+        if (!started) {
+            commandCoordinator.onRecognitionFinished()
+            scheduleRestart()
+        }
     }
 
     private val listener = object : RecognitionListener {
@@ -160,6 +202,7 @@ class UltraWakeService : Service() {
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onResults(results: Bundle?) {
+            commandCoordinator.onRecognitionFinished()
             val alternatives = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 .orEmpty()
@@ -169,18 +212,27 @@ class UltraWakeService : Service() {
                 ?: alternatives.firstOrNull { it.isNotBlank() }
                 .orEmpty()
 
+            var commandStarted = false
             if (transcript.isNotBlank()) {
                 val now = System.currentTimeMillis()
-                if (now - lastTranscriptAt > WAKE_DEBOUNCE_MS && containsWakeWord(transcript)) {
+                if (
+                    now - lastTranscriptAt > WAKE_DEBOUNCE_MS &&
+                    containsWakeWord(transcript) &&
+                    commandCoordinator.tryBeginCommand()
+                ) {
                     lastTranscriptAt = now
+                    commandStarted = true
                     handleCommand(transcript)
                 }
             }
 
-            scheduleRestart()
+            if (!commandStarted) {
+                scheduleRestart()
+            }
         }
 
         override fun onError(error: Int) {
+            commandCoordinator.onRecognitionFinished()
             scheduleRestart()
         }
     }
@@ -211,7 +263,7 @@ class UltraWakeService : Service() {
     }
 
     private fun handleCommand(transcript: String) {
-        Thread {
+        commandExecutor.execute {
             val context = applicationContext
             val selectedGamePackage = runCatching {
                 runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
@@ -314,9 +366,37 @@ class UltraWakeService : Service() {
             }
 
             mainHandler.post {
-                tts?.speak(response, TextToSpeech.QUEUE_FLUSH, null, "ultra-command")
+                if (stopped) {
+                    commandCoordinator.finishCommand()
+                } else {
+                    speakAndResume(response)
+                }
             }
-        }.start()
+        }
+    }
+
+    private fun speakAndResume(response: String) {
+        val result = tts?.speak(
+            response,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            COMMAND_UTTERANCE_ID
+        ) ?: TextToSpeech.ERROR
+
+        if (result == TextToSpeech.ERROR) {
+            finishCommandAndResume()
+            return
+        }
+
+        mainHandler.postDelayed(
+            { finishCommandAndResume() },
+            COMMAND_SPEECH_TIMEOUT_MS
+        )
+    }
+
+    private fun finishCommandAndResume() {
+        if (!commandCoordinator.finishCommand()) return
+        scheduleRestart()
     }
 
     private fun voiceThermalLabel(status: Int?): String =
@@ -344,9 +424,9 @@ class UltraWakeService : Service() {
     }
 
     private fun scheduleRestart() {
-        mainHandler.removeCallbacksAndMessages(null)
-        if (!stopped) {
-            mainHandler.postDelayed({ startRecognition() }, RESTART_DELAY_MS)
+        mainHandler.removeCallbacks(restartRecognition)
+        if (!stopped && !commandCoordinator.isCommandRunning()) {
+            mainHandler.postDelayed(restartRecognition, RESTART_DELAY_MS)
         }
     }
 
@@ -370,6 +450,9 @@ class UltraWakeService : Service() {
     override fun onDestroy() {
         stopped = true
         mainHandler.removeCallbacksAndMessages(null)
+        commandExecutor.shutdownNow()
+        commandCoordinator.onRecognitionFinished()
+        commandCoordinator.finishCommand()
         recognizer?.cancel()
         recognizer?.destroy()
         recognizer = null
