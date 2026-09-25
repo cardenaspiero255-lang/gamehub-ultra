@@ -170,10 +170,7 @@ class UltraMemoryRepository(
     ): List<String> = synchronized(lock) {
         state.records.asSequence()
             .filter { it.scope.userId == scope.userId }
-            .filter {
-                it.scope.gamePackage == null ||
-                    it.scope.gamePackage == scope.gamePackage
-            }
+            .filter { it.scope.gamePackage == scope.gamePackage }
             .filterNot { it.archived }
             .filter { it.kind == UltraMemoryKind.CONVERSATION }
             .takeLastCompat(limit.coerceIn(1, 100))
