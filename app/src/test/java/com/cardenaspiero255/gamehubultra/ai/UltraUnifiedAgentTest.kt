@@ -138,21 +138,21 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
-    fun delayedAnswersMergeAgainstLatestConversationState() {
+    fun delayedAnswersAppendAgainstLatestConversationState() {
         var history = emptyList<String>()
 
-        fun apply(mutation: UltraConversationMutation) {
-            history = UltraConversationPolicy.reduce(
+        fun apply(entry: String) {
+            history = UltraConversationPolicy.append(
                 history = history,
-                mutation = mutation,
+                entry = entry,
                 maxEntries = 8
             )
         }
 
-        apply(UltraConversationMutation.Append("Tú: voz"))
-        apply(UltraConversationMutation.Append("Tú: texto"))
-        apply(UltraConversationMutation.Append("Ultra: respuesta texto"))
-        apply(UltraConversationMutation.Append("Ultra: respuesta voz"))
+        apply("Tú: voz")
+        apply("Tú: texto")
+        apply("Ultra: respuesta texto")
+        apply("Ultra: respuesta voz")
 
         assertEquals(
             listOf(
