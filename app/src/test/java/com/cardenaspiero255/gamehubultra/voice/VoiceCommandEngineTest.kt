@@ -205,4 +205,65 @@ class VoiceCommandEngineTest {
         assertEquals(null, GameMatchFinder.find("RE8", installed))
     }
 
+
+    @Test
+    fun savesAndUsesUserDefinedGameAlias() {
+        val installed = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars"),
+            GameInfo("com.example.bs", "Battle Simulator")
+        )
+        val aliases = linkedMapOf<String, String>()
+
+        val saved = VoiceCommandEngine.execute(
+            command = VoiceCommand.DefineGameAlias("bs", "brawl stars"),
+            gamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            gameAliasesProvider = { aliases },
+            saveGameAlias = { alias, packageName -> aliases[alias] = packageName }
+        )
+        val aliasSaved = assertIs<VoiceActionResult.GameAliasSaved>(saved)
+        assertEquals("bs", aliasSaved.alias)
+        assertEquals("com.supercell.brawlstars", aliases["bs"])
+
+        var launched = ""
+        val opened = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("BS"),
+            gamesProvider = { installed },
+            launchGame = { packageName -> launched = packageName; true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            gameAliasesProvider = { aliases },
+            saveGameAlias = { _, _ -> }
+        )
+        assertIs<VoiceActionResult.GameOpened>(opened)
+        assertEquals("com.supercell.brawlstars", launched)
+    }
+
+    @Test
+    fun refusesToSaveAliasWhenTargetGameIsAmbiguous() {
+        val installed = listOf(
+            GameInfo("a", "Resident Evil"),
+            GameInfo("b", "Resident Evil Village")
+        )
+        var writes = 0
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.DefineGameAlias("re", "resident evil"),
+            gamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            saveGameAlias = { _, _ -> writes++ }
+        )
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals(0, writes)
+    }
+
 }
