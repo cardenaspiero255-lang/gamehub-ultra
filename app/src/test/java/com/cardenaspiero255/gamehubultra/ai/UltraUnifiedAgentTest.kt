@@ -72,6 +72,28 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
+    fun explicitLaunchNamedLikeMetricStillOpensGame() {
+        listOf(
+            "Ultra, abre Hz" to "hz",
+            "Ultra, open Refresh Rate" to "refresh rate"
+        ).forEach { (transcript, expectedQuery) ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null,
+                telemetry = UltraRuntimeTelemetry(
+                    batteryPercent = 80,
+                    thermalLabel = "Normal",
+                    refreshRateHz = 120f
+                )
+            )
+
+            val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+            val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+            assertEquals(expectedQuery, command.query)
+        }
+    }
+
+    @Test
     fun currentTimeQuestionUsesGeneralUtilityRoute() {
         val route = UltraUnifiedAgentRouter.route(
             transcript = "Ultra, qué hora es?",
