@@ -260,6 +260,66 @@ class GameHubAiAdvisorTest {
         assertTrue(answer.contains("prefiero respuestas cortas"))
     }
 
+
+    @Test
+    fun visibleConversationIsNotDuplicatedFromLongTermRecall() {
+        var receivedConversation = emptyList<String>()
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+            override fun advise(question: String, context: GameHubAiContext): LocalAiActionCandidate? = null
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String? {
+                receivedConversation = conversation
+                return "ok"
+            }
+        }
+        val gateway = object : UltraLongTermMemoryGateway {
+            override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
+            override fun recallContext(
+                message: String,
+                scope: UltraMemoryScope,
+                limit: Int
+            ): List<UltraMemoryRecall> = listOf(
+                UltraMemoryRecall(
+                    record = UltraStoredMemory(
+                        id = "duplicate",
+                        kind = UltraMemoryKind.CONVERSATION,
+                        role = UltraMemoryRole.USER,
+                        text = "qué recuerdas de mí",
+                        timestampMillis = 1L,
+                        scope = scope
+                    ),
+                    score = 1.0,
+                    provenance = UltraMemoryProvenance.PRIOR_CONVERSATION
+                ),
+                UltraMemoryRecall(
+                    record = UltraStoredMemory(
+                        id = "fact",
+                        kind = UltraMemoryKind.FACT,
+                        role = UltraMemoryRole.SYSTEM,
+                        text = "prefiero X4",
+                        timestampMillis = 2L,
+                        scope = scope
+                    ),
+                    score = 0.9,
+                    provenance = UltraMemoryProvenance.REMEMBERED_FACT
+                )
+            )
+        }
+
+        GameHubAiAdvisor(adapter, gateway).chat(
+            message = "qué recuerdas de mí",
+            context = healthyContext,
+            conversation = listOf("Tú: qué recuerdas de mí")
+        )
+
+        assertFalse(receivedConversation.any { it.contains("Memoria previa") && it.contains("qué recuerdas de mí") })
+        assertTrue(receivedConversation.any { it.contains("prefiero X4") })
+    }
+
     private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =
         object : UltraLongTermMemoryGateway {
             override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
