@@ -158,4 +158,129 @@ class GameHubAiAdvisorTest {
         assertEquals("com.example.game", receivedGame)
         assertTrue(receivedSustained)
     }
+
+    @Test
+    fun memoryCommandIsHandledBeforeModelChat() {
+        var modelChatInvoked = false
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String? {
+                modelChatInvoked = true
+                return "model"
+            }
+        }
+        val gateway = object : UltraLongTermMemoryGateway {
+            override fun handleCommand(message: String, scope: UltraMemoryScope): String? =
+                if (message.contains("recuerda", ignoreCase = true)) {
+                    "Lo recordaré: prefiero X4."
+                } else {
+                    null
+                }
+
+            override fun recallContext(
+                message: String,
+                scope: UltraMemoryScope,
+                limit: Int
+            ): List<UltraMemoryRecall> = emptyList()
+        }
+
+        val answer = GameHubAiAdvisor(
+            modelAdapter = adapter,
+            memoryGateway = gateway
+        ).chat(
+            message = "Ultra, recuerda que prefiero X4",
+            context = healthyContext
+        )
+
+        assertEquals("Lo recordaré: prefiero X4.", answer)
+        assertFalse(modelChatInvoked)
+    }
+
+    @Test
+    fun relevantLongTermMemoryIsAddedToLocalModelContext() {
+        var receivedConversation = emptyList<String>()
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String? {
+                receivedConversation = conversation
+                return "Usaré tu preferencia."
+            }
+        }
+        val gateway = fixedMemoryGateway("prefiero el perfil X4 en este juego")
+
+        val answer = GameHubAiAdvisor(
+            modelAdapter = adapter,
+            memoryGateway = gateway
+        ).chat(
+            message = "qué perfil prefiero",
+            context = healthyContext,
+            conversation = listOf("Tú: hola", "Ultra: hola")
+        )
+
+        assertEquals("Usaré tu preferencia.", answer)
+        assertTrue(
+            receivedConversation.any {
+                it.contains("prefiero el perfil X4 en este juego")
+            }
+        )
+    }
+
+    @Test
+    fun deterministicFallbackCanExplainRecalledMemoryOffline() {
+        val gateway = fixedMemoryGateway("prefiero respuestas cortas")
+
+        val answer = GameHubAiAdvisor(
+            modelAdapter = null,
+            memoryGateway = gateway
+        ).chat(
+            message = "Ultra, ¿qué recuerdas de mí?",
+            context = healthyContext
+        )
+
+        assertTrue(answer.contains("prefiero respuestas cortas"))
+    }
+
+    private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =
+        object : UltraLongTermMemoryGateway {
+            override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
+
+            override fun recallContext(
+                message: String,
+                scope: UltraMemoryScope,
+                limit: Int
+            ): List<UltraMemoryRecall> = listOf(
+                UltraMemoryRecall(
+                    record = UltraStoredMemory(
+                        id = "memory-1",
+                        kind = UltraMemoryKind.FACT,
+                        role = UltraMemoryRole.SYSTEM,
+                        text = text,
+                        timestampMillis = 1L,
+                        scope = scope
+                    ),
+                    score = 1.0,
+                    provenance = UltraMemoryProvenance.REMEMBERED_FACT
+                )
+            )
+        }
 }
