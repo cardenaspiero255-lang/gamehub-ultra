@@ -339,4 +339,17 @@ class VoiceCommandParserTest {
         assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
     }
 
+
+    @Test
+    fun parsesUserDefinedGameAliasInstruction() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("Ultra, cuando diga BS abre Brawl Stars")
+        )
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "re4r", gameQuery = "resident evil 4 remake"),
+            VoiceCommandParser.parse("cuando diga RE4R quiero que abras Resident Evil 4 Remake")
+        )
+    }
+
 }
