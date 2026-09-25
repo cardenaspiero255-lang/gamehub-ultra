@@ -235,4 +235,17 @@ class VoiceCommandParserTest {
         )
     }
 
+
+    @Test
+    fun profileOnlySwitchConnectorsStayProfileCommands() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("switch to X4 mode")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("cambia al modo X4")
+        )
+    }
+
 }
