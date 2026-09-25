@@ -69,4 +69,18 @@ class UltraWakeCommandCoordinatorTest {
         )
     }
 
+
+    @Test
+    fun staleSpeechCompletionCannotFinishNewerCommand() {
+        val gate = UltraWakeSpeechGeneration()
+
+        val first = gate.begin()
+        val second = gate.begin()
+
+        assertFalse(gate.complete(first))
+        assertTrue(gate.isActive())
+        assertTrue(gate.complete(second))
+        assertFalse(gate.isActive())
+    }
+
 }
