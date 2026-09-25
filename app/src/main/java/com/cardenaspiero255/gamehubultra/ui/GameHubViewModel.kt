@@ -11,7 +11,10 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -20,9 +23,28 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+data class RuntimeGameSession(
+    val id: String,
+    val packageName: String
+)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class GameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameHubPreferencesRepository(application)
+    private val _runtimeGameSession = MutableStateFlow<RuntimeGameSession?>(null)
+
+    val runtimeGameSession: StateFlow<RuntimeGameSession?> =
+        _runtimeGameSession.asStateFlow()
+
+    fun currentRuntimeGameSession(): RuntimeGameSession? = _runtimeGameSession.value
+
+    fun beginRuntimeGameSession(id: String, packageName: String) {
+        _runtimeGameSession.value = RuntimeGameSession(id = id, packageName = packageName)
+    }
+
+    fun clearRuntimeGameSession() {
+        _runtimeGameSession.value = null
+    }
 
     private val selectedGameFlow = repository.selectedGameFlow()
     private val selectedGameConfigFlow = selectedGameFlow.flatMapLatest { packageName ->
