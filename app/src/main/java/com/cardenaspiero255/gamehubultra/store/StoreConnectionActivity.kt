@@ -16,7 +16,6 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
-import com.cardenaspiero255.gamehubultra.data.SecureCredentialStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
@@ -224,10 +223,6 @@ class StoreConnectionActivity : ComponentActivity() {
                 }
                 StoreLibraryStore(this@StoreConnectionActivity)
                     .replaceForAccount(account.id, games)
-                SecureCredentialStore(this@StoreConnectionActivity).put(
-                    "epic:" + account.id,
-                    credentials.asJson()
-                )
                 finishSuccess(
                     "Epic Games conectado · " + games.size + " juegos sincronizados"
                 )
@@ -536,7 +531,7 @@ private object EpicStoreClient {
         val code = connection.responseCode
         val stream = if (code in 200..299) connection.inputStream else connection.errorStream
         val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (code !in 200..299) error("HTTP " + code + ": " + text)
+        if (code !in 200..299) error("HTTP " + code)
         return JSONObject(text)
     }
 }
