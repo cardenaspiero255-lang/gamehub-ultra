@@ -289,4 +289,13 @@ class VoiceCommandParserTest {
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra use the camera"))
     }
 
+
+    @Test
+    fun opensGameAndAppliesX4FromSingleSpanishCommand() {
+        val command = VoiceCommandParser.parse("Ultra, abre Brawl Stars y activa X4")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("brawl stars", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
 }
