@@ -121,6 +121,22 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun preservesModeAsGameTitleWhenNoProfileWasRequested() {
+        val command = VoiceCommandParser.parse("open Mode")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("mode", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
+    @Test
+    fun preservesProfileInsideGameTitleWhenNoProfileWasRequested() {
+        val command = VoiceCommandParser.parse("open Player Profile Simulator")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("player profile simulator", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
+    @Test
     fun unsafeShellLikeCommandsRemainUnknown() {
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("Ultra adb shell pm uninstall com.game"))
         assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse("fastboot reboot"))
