@@ -51,7 +51,10 @@ class UltraConversationMemoryStore private constructor(
     override fun handleCommand(
         message: String,
         scope: UltraMemoryScope
-    ): String? = repository().handleCommand(message, scope)
+    ): String? =
+        executor.submit<String?> {
+            repository().handleCommand(message, scope)
+        }.get()
 
     override fun recallContext(
         message: String,
