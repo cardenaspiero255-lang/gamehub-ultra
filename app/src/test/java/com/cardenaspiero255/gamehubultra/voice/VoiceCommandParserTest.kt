@@ -248,4 +248,21 @@ class VoiceCommandParserTest {
         )
     }
 
+
+    @Test
+    fun openMeUsesCompleteLaunchVerb() {
+        val command = VoiceCommandParser.parse("open me Minecraft")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("minecraft", parsed.query)
+        assertEquals(null, parsed.requestedProfile)
+    }
+
+    @Test
+    fun profileToGameWithLeadingAndTrailingConnectorsKeepsGameAndProfile() {
+        val command = VoiceCommandParser.parse("switch to X4 for Minecraft")
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("minecraft", parsed.query)
+        assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
 }
