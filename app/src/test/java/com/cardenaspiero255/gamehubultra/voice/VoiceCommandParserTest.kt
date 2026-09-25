@@ -63,6 +63,22 @@ class VoiceCommandParserTest {
     }
 
     @Test
+    fun selectionVerbsWithProfileSuffixStayProfileCommands() {
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            VoiceCommandParser.parse("select balanced profile")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.X4),
+            VoiceCommandParser.parse("activate X4 profile")
+        )
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            VoiceCommandParser.parse("selecciona perfil balanceado")
+        )
+    }
+
+    @Test
     fun parsesSpanishProfiles() {
         assertEquals(
             VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
