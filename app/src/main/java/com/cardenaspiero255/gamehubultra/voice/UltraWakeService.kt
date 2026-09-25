@@ -388,6 +388,12 @@ class UltraWakeService : Service() {
 
         val submitted = runCatching {
             commandExecutor.execute {
+                UltraWakeCommandTaskGuard.run(
+                    onUnposted = {
+                        commandCoordinator.finishCommand()
+                        scheduleRestart()
+                    }
+                ) {
             val response = UltraWakeFailureGuard.run {
                 val context = applicationContext
             val selectedGamePackage = runCatching {
@@ -522,6 +528,7 @@ class UltraWakeService : Service() {
                     } else {
                         speakAndResume(response)
                     }
+                }
                 }
             }
             true
