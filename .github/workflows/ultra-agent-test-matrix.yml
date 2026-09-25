@@ -125,7 +125,7 @@ jobs:
           payload = None
           non_retryable_http_error = False
           selected_model = None
-          retryable_http_errors = (404, 429, 503)
+          retryable_http_errors = (404, 429, 500, 503)
           for model in models:
               url = (
                   "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -150,6 +150,8 @@ jobs:
                   if exc.code not in retryable_http_errors:
                       non_retryable_http_error = True
                       break
+              except (TimeoutError, urllib.error.URLError) as exc:
+                  errors.append(f"{model}: {type(exc).__name__}: {exc}")
               except Exception as exc:
                   errors.append(f"{model}: {type(exc).__name__}: {exc}")
                   non_retryable_http_error = True
