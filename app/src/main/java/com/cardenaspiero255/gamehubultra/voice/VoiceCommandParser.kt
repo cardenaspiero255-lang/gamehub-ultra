@@ -5,7 +5,7 @@ import java.text.Normalizer
 import java.util.Locale
 
 object VoiceCommandParser {
-    private const val LAUNCH_VERBS = "abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|open|opens|open me|launch|start|run|play|activate|enable|select|switch|apply|use|set"
+    private const val LAUNCH_VERBS = "abre|abrir|abreme|lanzar|lanza|inicia|iniciar|ejecuta|ejecutar|juega|pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|open me|opens|open|launch|start|run|play|activate|enable|select|switch|apply|use|set"
     private const val PROFILE_ACTION_VERBS = "pon|activa|activar|habilita|habilitar|selecciona|seleccionar|cambia|cambiar|aplica|aplicar|usa|usar|activate|enable|select|switch|apply|use|set"
     private const val PROFILE_MARKERS = "modo|perfil|mode|profile"
     private const val PROFILE_TARGET_CONNECTORS = "to|for|a|al|para|en|with"
@@ -99,6 +99,8 @@ object VoiceCommandParser {
                 .containsMatchIn(clean) ||
             Regex("""^($PROFILE_ACTION_VERBS)\b\s+(to|a|al)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?$""")
                 .containsMatchIn(clean) ||
+            Regex("""^($PROFILE_ACTION_VERBS)\b\s+(to|a|al)\s+(($PROFILE_MARKERS)\s+)?($profileValue)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\s+\S+""")
+                .containsMatchIn(clean) ||
             Regex("""^($PROFILE_ACTION_VERBS)\b\s+($profileValue)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\s+\S+""")
                 .containsMatchIn(clean)
     }
@@ -127,7 +129,7 @@ object VoiceCommandParser {
 
     private fun removeProfileSyntax(clean: String): String =
         clean
-            .replace(Regex("""\b(to|a|al)\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\b"""), " ")
+            .replace(Regex("""\b(to|a|al)\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\b"""), " ")\n            .replace(Regex("""\b(to|a|al)\s+(($PROFILE_MARKERS)\s+)?(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\b"""), " ")
             .replace(Regex("""\b(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)(\s+($PROFILE_MARKERS))?\s+($PROFILE_TARGET_CONNECTORS)\b"""), " ")
             .replace(Regex("""\b(en|con|with|using)\s+(x4|set x4|maximo rendimiento|alto rendimiento|maximum performance|high performance|configura todo|configure everything|todo al maximo|max everything)\s+(modo|perfil|mode|profile)\b"""), " ")
             .replace(Regex("""\b(en|con|with|using)?\s*(modo|perfil|mode|profile)\s+(fps balanceado|balanceado|equilibrado|equilibrar|balanced fps|balanced|prioriza interpolacion|priorizar interpolacion|interpolacion|interpolar|frames interpolados|prioritize interpolation|prioritise interpolation|interpolation|interpolate|x4|maximum performance|high performance|maximo rendimiento|alto rendimiento)\b"""), " ")
