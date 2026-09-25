@@ -9,8 +9,18 @@ internal class UltraVoiceConversationLedger(
     private val maxEntries: Int = 8
 ) {
     private val entries = ArrayDeque<String>()
+    private var boundGamePackage: String? = null
+    private var scopeBound: Boolean = false
 
     init { require(maxEntries >= 2) }
+
+    fun bindScope(gamePackage: String?) {
+        if (!scopeBound || boundGamePackage != gamePackage) {
+            entries.clear()
+            boundGamePackage = gamePackage
+            scopeBound = true
+        }
+    }
 
     fun snapshot(): List<String> = entries.toList()
 

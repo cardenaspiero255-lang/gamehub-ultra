@@ -264,7 +264,7 @@ class UltraMemoryRepository(
     }
 
     private fun removeMatching(query: String, scope: UltraMemoryScope): Int {
-        val ids = matchingIds(query, scope)
+        val ids = matchingIds(query, scope, includeArchived = true)
         if (ids.isEmpty()) return 0
         persist(
             state.copy(
@@ -293,7 +293,8 @@ class UltraMemoryRepository(
 
     private fun matchingIds(
         query: String,
-        scope: UltraMemoryScope
+        scope: UltraMemoryScope,
+        includeArchived: Boolean = false
     ): Set<String> {
         val stopWords = setOf(
             "a", "al", "de", "del", "el", "en", "la", "las", "lo", "los",
@@ -312,7 +313,7 @@ class UltraMemoryRepository(
                 it.scope.gamePackage == null ||
                     it.scope.gamePackage == scope.gamePackage
             }
-            .filterNot { it.archived }
+            .filter { includeArchived || !it.archived }
             .toList()
 
         fun matches(record: UltraStoredMemory): Boolean {

@@ -439,6 +439,7 @@ class UltraWakeService : Service() {
                 when (route) {
                 is UltraAgentRoute.Utility -> route.answer.message
                 is UltraAgentRoute.Chat -> {
+                    voiceConversationLedger.bindScope(selectedGamePackage)
                     val conversationBefore = voiceConversationLedger.snapshot()
                     val answer = aiAdvisor.chat(
                         message = route.message,
