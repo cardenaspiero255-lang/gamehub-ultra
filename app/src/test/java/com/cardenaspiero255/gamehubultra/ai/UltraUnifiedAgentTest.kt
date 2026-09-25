@@ -2,9 +2,14 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class UltraUnifiedAgentTest {
     @Test
@@ -28,6 +33,62 @@ class UltraUnifiedAgentTest {
 
         val chatRoute = assertIs<UltraAgentRoute.Chat>(route)
         assertEquals("Ultra, cuentame algo sobre mi juego", chatRoute.message)
+    }
+
+    @Test
+    fun currentTimeQuestionUsesGeneralUtilityRoute() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, qué hora es?",
+            optionalResolver = null,
+            clock = Clock.fixed(Instant.parse("2026-09-25T12:34:00Z"), ZoneOffset.UTC)
+        )
+
+        val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(UltraUtilityIntent.CurrentTime, utilityRoute.answer.intent)
+        assertTrue(utilityRoute.answer.canRunDuringGame)
+        assertTrue(utilityRoute.answer.message.contains("12:34"))
+    }
+
+    @Test
+    fun currentDateQuestionUsesGeneralUtilityRoute() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, qué fecha es hoy?",
+            optionalResolver = null,
+            clock = Clock.fixed(Instant.parse("2026-09-25T12:34:00Z"), ZoneOffset.UTC)
+        )
+
+        val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(UltraUtilityIntent.CurrentDate, utilityRoute.answer.intent)
+        assertTrue(utilityRoute.answer.canRunDuringGame)
+        assertTrue(utilityRoute.answer.message.contains("25/09/2026"))
+    }
+
+    @Test
+    fun callInterruptionRequestExplainsSafeAndroidLimitations() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra responde llamadas en segundo plano para que no interrumpan el juego",
+            optionalResolver = null
+        )
+
+        val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(UltraUtilityIntent.CallInterruptionShield, utilityRoute.answer.intent)
+        assertTrue(utilityRoute.answer.canRunDuringGame)
+        assertTrue(utilityRoute.answer.requiresPrivilegedPermission)
+        assertTrue(utilityRoute.answer.message.contains("No molestar"))
+        assertTrue(utilityRoute.answer.message.contains("no lo finjo"))
+    }
+
+    @Test
+    fun generalCapabilityRequestDoesNotOpenPhantomGame() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra quiero que hables conmigo de cosas que no sean de gaming",
+            optionalResolver = null
+        )
+
+        val utilityRoute = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(UltraUtilityIntent.GeneralCapabilityHelp, utilityRoute.answer.intent)
+        assertFalse(utilityRoute.answer.requiresPrivilegedPermission)
+        assertTrue(utilityRoute.answer.message.contains("temas generales"))
     }
 
     @Test
