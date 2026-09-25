@@ -49,6 +49,18 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
+    fun activationVerbGameLaunchUsesSafeCommandRoute() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate Minecraft",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("minecraft", command.query)
+    }
+
+    @Test
     fun freeFormSpeechFallsBackToConversationalAi() {
         val route = UltraUnifiedAgentRouter.route(
             transcript = "Ultra, cuentame algo sobre mi juego",
