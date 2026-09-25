@@ -32,6 +32,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
@@ -74,7 +75,15 @@ class UltraWakeService : Service() {
     private var stopped = false
     private var lastTranscriptAt = 0L
     private var recognitionStarting = false
-    private val aiAdvisor by lazy { GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter()) }
+    private val ultraMemoryStore by lazy {
+        UltraConversationMemoryStore.get(applicationContext)
+    }
+    private val aiAdvisor by lazy {
+        GameHubAiAdvisor(
+            modelAdapter = GeminiNanoLocalAiModelAdapter(),
+            memoryGateway = ultraMemoryStore
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
