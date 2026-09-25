@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.data
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -9,6 +10,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class SerialMutationQueueTest {
     @Test
@@ -47,4 +49,33 @@ class SerialMutationQueueTest {
             scope.cancel()
         }
     }
+
+    @Test
+    fun failedMutationIsContainedAndJobStillReportsFailure() = runBlocking {
+        val uncaught = CompletableDeferred<Throwable>()
+        val parentHandler = CoroutineExceptionHandler { _, throwable ->
+            uncaught.complete(throwable)
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + parentHandler)
+        val queue = SerialMutationQueue(scope)
+        val nextRan = CompletableDeferred<Unit>()
+
+        try {
+            val failed = queue.enqueue {
+                error("simulated datastore failure")
+            }
+            queue.enqueue {
+                nextRan.complete(Unit)
+            }
+
+            queue.awaitIdle()
+
+            assertTrue(failed.isCancelled)
+            assertTrue(nextRan.isCompleted)
+            assertFalse(uncaught.isCompleted)
+        } finally {
+            scope.cancel()
+        }
+    }
+
 }
