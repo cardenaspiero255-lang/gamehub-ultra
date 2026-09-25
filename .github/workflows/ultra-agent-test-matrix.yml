@@ -124,6 +124,7 @@ jobs:
           payload = None
           non_retryable_http_error = False
           selected_model = None
+          retryable_http_errors = (404, 429, 503)
           for model in models:
               url = (
                   "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -145,7 +146,7 @@ jobs:
               except urllib.error.HTTPError as exc:
                   details = exc.read().decode("utf-8", errors="replace")
                   errors.append(f"{model}: HTTP {exc.code} {details[:1200]}")
-                  if exc.code not in (404, 429):
+                  if exc.code not in retryable_http_errors:
                       non_retryable_http_error = True
                       break
               except Exception as exc:
@@ -156,8 +157,8 @@ jobs:
           if payload is None:
               Path("ultra-agent-test-matrix.md").write_text(
                   "# Ultra Unified Agent unit-test matrix\n\n"
-                  "Gemini could not generate the matrix because none of the configured models were available for this key/project.\n\n"
-                  "The workflow stayed read-only and did not modify code.\n\n"
+                  "Gemini could not generate the matrix because none of the configured models were available for this key/project right now.\n\n"
+                  "The workflow stayed read-only and did not modify code. Retryable model availability errors do not block the PR.\n\n"
                   "## Attempts\n\n"
                   + "\n\n".join(f"```text\n{error}\n```" for error in errors)
                   + "\n",
