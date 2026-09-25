@@ -134,7 +134,7 @@ object VoiceCommandParser {
         }
 
         return withoutProfile
-            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?($LAUNCH_VERBS)\s*"""), "")
+            .replace(Regex("""^\s*(ultra\s+)?(gamehub\s+ultra\s+|gamehub\s+)?($LAUNCH_VERBS)\b\s*"""), "")
             .replace(Regex("""\b(la|el|un|una|the|a|an|juego|juegos|game|games)\b"""), " ")
             .replace(Regex("""\b(y|con|en|por favor|and|with|in|please)\b"""), " ")
             .replace(Regex("""\s+"""), " ")
