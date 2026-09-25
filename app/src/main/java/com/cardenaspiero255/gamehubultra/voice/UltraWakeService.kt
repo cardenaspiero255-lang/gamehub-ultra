@@ -59,9 +59,13 @@ class UltraWakeService : Service() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val commandCoordinator = UltraWakeCommandCoordinator()
+    private val commandQueue = UltraWakeCommandQueue()
+    private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
+    private var persistentSpeechSource: UltraPersistentSpeechSource? = null
+    private var persistentSessionActive = false
     private var tts: TextToSpeech? = null
     private var stopped = false
     private var lastTranscriptAt = 0L
@@ -156,41 +160,93 @@ class UltraWakeService : Service() {
         }
 
         recognitionStarting = true
+        var requestedMode = sessionPolicy.preferredMode()
         val started = runCatching {
-            recognizer?.cancel()
-            recognizer?.destroy()
-            recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { speech ->
-                speech.setRecognitionListener(listener)
+            val speech = recognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also {
+                it.setRecognitionListener(listener)
+                recognizer = it
+            }
 
-                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                    )
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                    putExtra(
-                        RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                        1200L
-                    )
-                    putExtra(
-                        RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                        850L
-                    )
+            val intent = baseRecognitionIntent()
+            if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
+                val source = UltraPersistentSpeechSource.create()
+                if (source == null) {
+                    sessionPolicy.onPersistentSessionFailure()
+                    requestedMode = UltraWakeRecognitionMode.LEGACY_RESTARTING
+                } else {
+                    persistentSpeechSource = source
+                    persistentSessionActive = true
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.putExtra(
+                            RecognizerIntent.EXTRA_AUDIO_SOURCE,
+                            source.readDescriptor
+                        )
+                        intent.putExtra(
+                            RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT,
+                            UltraPersistentSpeechSource.CHANNEL_COUNT
+                        )
+                        intent.putExtra(
+                            RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING,
+                            UltraPersistentSpeechSource.ENCODING
+                        )
+                        intent.putExtra(
+                            RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE,
+                            UltraPersistentSpeechSource.SAMPLE_RATE_HZ
+                        )
+                        intent.putExtra(
+                            RecognizerIntent.EXTRA_SEGMENTED_SESSION,
+                            RecognizerIntent.EXTRA_AUDIO_SOURCE
+                        )
+                        intent.putStringArrayListExtra(
+                            RecognizerIntent.EXTRA_BIASING_STRINGS,
+                            arrayListOf("Ultra", "ultra")
+                        )
+                    }
                 }
+            }
 
-                speech.startListening(intent)
+            speech.startListening(intent)
+            if (
+                requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED &&
+                persistentSpeechSource?.start() != true
+            ) {
+                error("Persistent microphone source could not start")
             }
             true
         }.getOrDefault(false)
         recognitionStarting = false
 
         if (!started) {
+            recognizer?.cancel()
+            if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
+                sessionPolicy.onPersistentSessionFailure()
+            }
+            closePersistentSpeechSource()
             commandCoordinator.onRecognitionFinished()
             scheduleRestart()
         }
     }
+
+    private fun baseRecognitionIntent(): Intent =
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            if (sessionPolicy.preferredMode() == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    1200L
+                )
+                putExtra(
+                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
+                    850L
+                )
+            }
+        }
 
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) = Unit
@@ -201,38 +257,78 @@ class UltraWakeService : Service() {
         override fun onPartialResults(partialResults: Bundle?) = Unit
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
-        override fun onResults(results: Bundle?) {
-            commandCoordinator.onRecognitionFinished()
-            val alternatives = results
-                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                .orEmpty()
-
-            val transcript = alternatives
-                .firstOrNull(::containsWakeWord)
-                ?: alternatives.firstOrNull { it.isNotBlank() }
-                .orEmpty()
-
-            var commandStarted = false
-            if (transcript.isNotBlank()) {
-                val now = System.currentTimeMillis()
-                if (
-                    now - lastTranscriptAt > WAKE_DEBOUNCE_MS &&
-                    containsWakeWord(transcript) &&
-                    commandCoordinator.tryBeginCommand()
-                ) {
-                    lastTranscriptAt = now
-                    commandStarted = true
-                    handleCommand(transcript)
-                }
+        override fun onSegmentResults(segmentResults: Bundle) {
+            if (persistentSessionActive) {
+                handleRecognitionBundle(
+                    results = segmentResults,
+                    keepRecognitionActive = true
+                )
             }
+        }
 
-            if (!commandStarted) {
+        override fun onEndOfSegmentedSession() {
+            if (!persistentSessionActive) return
+            sessionPolicy.onPersistentSessionFailure()
+            closePersistentSpeechSource()
+            commandCoordinator.onRecognitionFinished()
+            if (!stopped && !commandCoordinator.isCommandRunning()) {
                 scheduleRestart()
             }
         }
 
-        override fun onError(error: Int) {
+        override fun onResults(results: Bundle?) {
+            val wasPersistent = persistentSessionActive
+            if (wasPersistent) {
+                sessionPolicy.onPersistentSessionFailure()
+                closePersistentSpeechSource()
+            }
             commandCoordinator.onRecognitionFinished()
+            handleRecognitionBundle(
+                results = results,
+                keepRecognitionActive = false
+            )
+        }
+
+        override fun onError(error: Int) {
+            if (persistentSessionActive) {
+                sessionPolicy.onPersistentSessionFailure()
+                closePersistentSpeechSource()
+            }
+            commandCoordinator.onRecognitionFinished()
+            scheduleRestart()
+        }
+    }
+
+    private fun handleRecognitionBundle(
+        results: Bundle?,
+        keepRecognitionActive: Boolean
+    ) {
+        val alternatives = results
+            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            .orEmpty()
+
+        val transcript = alternatives
+            .firstOrNull(::containsWakeWord)
+            ?: alternatives.firstOrNull { it.isNotBlank() }
+            .orEmpty()
+
+        var commandStarted = false
+        if (transcript.isNotBlank() && containsWakeWord(transcript)) {
+            val now = System.currentTimeMillis()
+            if (now - lastTranscriptAt > WAKE_DEBOUNCE_MS) {
+                lastTranscriptAt = now
+                commandStarted = commandCoordinator.tryBeginCommand(
+                    keepRecognitionActive = keepRecognitionActive
+                )
+                if (commandStarted) {
+                    handleCommand(transcript)
+                } else if (commandCoordinator.isCommandRunning()) {
+                    commandQueue.offer(transcript)
+                }
+            }
+        }
+
+        if (!commandStarted && !keepRecognitionActive) {
             scheduleRestart()
         }
     }
@@ -399,7 +495,27 @@ class UltraWakeService : Service() {
 
     private fun finishCommandAndResume() {
         if (!commandCoordinator.finishCommand()) return
-        scheduleRestart()
+
+        val queued = commandQueue.poll()
+        if (queued != null) {
+            val started = commandCoordinator.tryBeginCommand(
+                keepRecognitionActive = persistentSessionActive
+            )
+            if (started) {
+                handleCommand(queued)
+                return
+            }
+        }
+
+        if (!persistentSessionActive) {
+            scheduleRestart()
+        }
+    }
+
+    private fun closePersistentSpeechSource() {
+        persistentSessionActive = false
+        persistentSpeechSource?.close()
+        persistentSpeechSource = null
     }
 
     private fun voiceThermalLabel(status: Int?): String =
@@ -454,6 +570,8 @@ class UltraWakeService : Service() {
         stopped = true
         mainHandler.removeCallbacksAndMessages(null)
         commandExecutor.shutdownNow()
+        commandQueue.clear()
+        closePersistentSpeechSource()
         commandCoordinator.onRecognitionFinished()
         commandCoordinator.finishCommand()
         recognizer?.cancel()
