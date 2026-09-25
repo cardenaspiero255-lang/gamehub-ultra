@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -39,4 +40,17 @@ class UltraWakeCommandCoordinatorTest {
 
         assertTrue(coordinator.tryStartRecognition())
     }
+
+    @Test
+    fun unexpectedCommandFailureIsConvertedToSafeResponse() {
+        val response = UltraWakeFailureGuard.run {
+            error("simulated runtime failure")
+        }
+
+        assertEquals(
+            "No pude completar el comando de Ultra. Inténtalo de nuevo.",
+            response
+        )
+    }
+
 }
