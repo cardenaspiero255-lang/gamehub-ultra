@@ -26,6 +26,7 @@ class UltraLongTermMemoryTest {
     fun secretLikeContentIsNeverEligibleForPersistentMemory() {
         assertFalse(UltraMemorySafety.canPersist("mi contraseña es hunter2"))
         assertFalse(UltraMemorySafety.canPersist("API token: abc123"))
+        assertFalse(UltraMemorySafety.canPersist("eyJhbGciOiJIUzI1NiJ9.abcdefghijklmno.pqrstuvwxyz12345"))
         assertTrue(UltraMemorySafety.canPersist("prefiero jugar a 120 Hz"))
     }
 
