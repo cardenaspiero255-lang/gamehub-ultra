@@ -8,6 +8,11 @@ sealed interface VoiceCommand {
         val requestedProfile: PerformanceProfile? = null
     ) : VoiceCommand
 
+    data class DefineGameAlias(
+        val alias: String,
+        val gameQuery: String
+    ) : VoiceCommand
+
     data class SelectProfile(val profile: PerformanceProfile) : VoiceCommand
     data object DeviceStatus : VoiceCommand
     data object Help : VoiceCommand
