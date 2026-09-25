@@ -48,7 +48,9 @@ object UltraUnifiedAgentRouter {
         return when {
             command is VoiceCommand.Unknown ->
                 UltraAgentRoute.Chat(transcript.trim())
-            command is VoiceCommand.OpenGame && !VoiceCommandParser.hasExplicitLaunchIntent(transcript) ->
+            command is VoiceCommand.OpenGame &&
+                command.requestedProfile == null &&
+                !VoiceCommandParser.hasExplicitLaunchIntent(transcript) ->
                 UltraAgentRoute.Chat(transcript.trim())
             else ->
                 UltraAgentRoute.Command(command)
