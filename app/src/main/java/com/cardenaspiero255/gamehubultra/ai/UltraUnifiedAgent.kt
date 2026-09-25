@@ -19,7 +19,7 @@ data class UltraAgentAnswer(
     val message: String,
     val intent: UltraUtilityIntent,
     val canRunDuringGame: Boolean,
-    val requiresPrivilegedPermission: Boolean = false
+    val requiresPhoneRoleOrPermission: Boolean = false
 )
 
 sealed interface UltraUtilityIntent {
@@ -125,10 +125,10 @@ object UltraGeneralAssistant {
             }
             UltraUtilityIntent.CallInterruptionShield ->
                 UltraAgentAnswer(
-                    message = "Puedo ayudarte a reducir interrupciones durante el juego: mantener la sesión visible, sugerir modo No molestar y explicar llamadas sin cerrar Ultra. Responder llamadas automáticamente solo es posible si Android entrega permisos de app telefónica predeterminada o permisos del sistema; si no, no lo finjo.",
+                    message = "Android sí permite responder llamadas sin cortar el juego por rutas oficiales: rol de teléfono predeterminado con InCallService, permiso ANSWER_PHONE_CALLS cuando aplica o integración OEM como Game Booster. Ultra puede preparar esa ruta, explicar permisos y sugerir No molestar; no usaré privilegios de sistema sin autorización.",
                     intent = intent,
                     canRunDuringGame = true,
-                    requiresPrivilegedPermission = true
+                    requiresPhoneRoleOrPermission = true
                 )
             UltraUtilityIntent.GeneralCapabilityHelp ->
                 UltraAgentAnswer(
