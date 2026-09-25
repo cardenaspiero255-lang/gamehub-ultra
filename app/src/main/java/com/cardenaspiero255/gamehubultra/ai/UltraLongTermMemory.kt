@@ -194,7 +194,10 @@ object UltraMemorySafety {
         Regex("""\b(password|passwd|passcode|contrasena|clave de acceso)\b"""),
         Regex("""\b(api[ _-]?key|api[ _-]?token|auth[ _-]?token|access[ _-]?token|refresh[ _-]?token)\b"""),
         Regex("""\b(bearer|client[ _-]?secret|private[ _-]?key|secret key|secreto)\b"""),
-        Regex("""\b(credential|credentials|credencial|credenciales)\b""")
+        Regex("""\b(credential|credentials|credencial|credenciales)\b"""),
+        Regex("""\bgh[pousr]_[A-Za-z0-9_]{20,}\b"""),
+        Regex("""\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b"""),
+        Regex("""\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b""")
     )
 
     fun canPersist(text: String): Boolean {
