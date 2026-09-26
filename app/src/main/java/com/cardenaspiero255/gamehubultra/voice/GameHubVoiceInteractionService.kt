@@ -175,7 +175,11 @@ private class GameHubVoiceInteractionSession(context: Context) :
             sessionActive = selectedGamePackage != null
         )
         val result = VoiceCommandEngine.execute(
-            command = VoiceCommandParser.parse(transcript, aiAdvisor.intentResolver()),
+            command = VoiceCommandParser.parse(
+                transcript = transcript,
+                optionalResolver = aiAdvisor.intentResolver(),
+                knownGameAliases = GameAliasStore.aliases(context).keys
+            ),
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
             saveSelectedGame = { packageName ->
