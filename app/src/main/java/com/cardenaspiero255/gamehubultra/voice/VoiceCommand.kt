@@ -5,7 +5,8 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 sealed interface VoiceCommand {
     data class OpenGame(
         val query: String,
-        val requestedProfile: PerformanceProfile? = null
+        val requestedProfile: PerformanceProfile? = null,
+        val originalQuery: String? = null
     ) : VoiceCommand
 
     data class DefineGameAlias(
