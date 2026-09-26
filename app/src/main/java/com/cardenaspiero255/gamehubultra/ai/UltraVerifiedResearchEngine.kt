@@ -213,7 +213,7 @@ class UltraVerifiedResearchEngine(
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
-                sources = dominantClaim.map { it.providerId }.distinct()
+                sources = dominantClaim.mapNotNull { it.evidence?.sourceId }.distinct()
             )
         }
 
@@ -229,14 +229,14 @@ class UltraVerifiedResearchEngine(
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
-                sources = agreeing.map { it.providerId }.distinct()
+                sources = agreeing.mapNotNull { it.evidence?.sourceId }.distinct()
             )
         }
 
         val result = UltraVerifiedResearchResult(
             message = evidence.displayText,
             confidence = confidence,
-            sources = agreeing.map { it.providerId }.distinct(),
+            sources = agreeing.mapNotNull { it.evidence?.sourceId }.distinct(),
             abstained = false,
             timedOut = timedOut,
             fallbackUsed = fallbackUsed
