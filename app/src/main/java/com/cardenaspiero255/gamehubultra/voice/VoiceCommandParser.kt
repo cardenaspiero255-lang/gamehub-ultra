@@ -10,6 +10,17 @@ object VoiceCommandParser {
     private const val PROFILE_OR_LAUNCH_VERBS = GAME_LAUNCH_VERBS + "|" + PROFILE_ACTION_VERBS
     private const val PROFILE_MARKERS = "modo|perfil|mode|profile"
     private const val PROFILE_TARGET_CONNECTORS = "to|for|a|al|para|en|with"
+    private val RESERVED_PROFILE_ALIASES = setOf(
+        "x4",
+        "balanceado",
+        "equilibrado",
+        "equilibrar",
+        "balanced",
+        "interpolacion",
+        "interpolar",
+        "interpolation",
+        "interpolate"
+    )
     fun parse(
         transcript: String,
         optionalResolver: NaturalLanguageIntentResolver? = null
@@ -93,17 +104,33 @@ object VoiceCommandParser {
 
     private fun parseGameAliasDefinition(clean: String): VoiceCommand.DefineGameAlias? {
         val spanish = Regex(
-            """^cuando diga ([a-z0-9]{2,20}) (?:quiero que )?(?:abras|abre|abreme|lances|lanza|inicies|inicia|ejecutes|ejecuta) (.+)$"""
+            """^cuando diga (.+?) (?:quiero que )?(?:abras|abre|abreme|lances|lanza|inicies|inicia|ejecutes|ejecuta) (.+)$"""
         ).matchEntire(clean)
         val english = Regex(
-            """^when i say ([a-z0-9]{2,20}) (?:i want you to )?(?:open|launch|start|run) (.+)$"""
+            """^when i say (.+?) (?:i want you to )?(?:open|launch|start|run) (.+)$"""
         ).matchEntire(clean)
         val match = spanish ?: english ?: return null
-        val alias = match.groupValues[1].trim()
+        val alias = canonicalGameAlias(match.groupValues[1])
         val gameQuery = match.groupValues[2].trim()
-        if (gameQuery.isBlank()) return null
+        if (alias.length !in 2..20 || gameQuery.isBlank()) return null
         return VoiceCommand.DefineGameAlias(alias = alias, gameQuery = gameQuery)
     }
+
+    internal fun canonicalGameAlias(value: String): String {
+        val normalized = normalize(value)
+        val tokens = normalized.split(" ").filter(String::isNotBlank)
+        return if (
+            tokens.size >= 2 &&
+            tokens.all { token -> token.length == 1 || token.all(Char::isDigit) }
+        ) {
+            tokens.joinToString(separator = "")
+        } else {
+            normalized
+        }
+    }
+
+    internal fun isReservedGameAlias(value: String): Boolean =
+        canonicalGameAlias(value) in RESERVED_PROFILE_ALIASES
 
     internal fun normalize(value: String): String =
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
