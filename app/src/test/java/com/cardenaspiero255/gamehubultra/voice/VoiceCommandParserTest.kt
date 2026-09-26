@@ -353,6 +353,16 @@ class VoiceCommandParserTest {
     }
 
 
+
+    @Test
+    fun cleansLaunchFillerFromAliasTarget() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("cuando diga BS abre el juego Brawl Stars por favor")
+        )
+    }
+
+
     @Test
     fun canonicalizesSpacedInitialsWhenDefiningAlias() {
         assertEquals(
