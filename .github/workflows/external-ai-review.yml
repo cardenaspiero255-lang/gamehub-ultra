@@ -1,0 +1,93 @@
+name: DeepSeek and Groq PR Review
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  deepseek:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/deepseek review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: deepseek-review-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    env:
+      AI_PROVIDER: DeepSeek
+      AI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      AI_BASE_URL: https://api.deepseek.com
+      AI_MODEL_PREFERENCES: deepseek-v4-pro,deepseek-flash,deepseek-v4-flash,deepseek-chat
+      COMMENT_MARKER: "<!-- deepseek-review -->"
+      REVIEW_HEADING: DeepSeek review
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.issue.number }}
+      TRIGGER_ACTOR: ${{ github.actor }}
+    steps:
+      - name: Check out trusted reviewer
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+
+      - name: Verify DeepSeek key
+        shell: bash
+        run: |
+          if [ -z "$AI_API_KEY" ]; then
+            echo "::error::Repository secret DEEPSEEK_API_KEY is missing or unavailable."
+            exit 1
+          fi
+
+      - name: Review pull request with DeepSeek
+        run: python3 .github/scripts/compatible_ai_pr_review.py
+
+  groq:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/groq review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: groq-review-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    env:
+      AI_PROVIDER: Groq
+      AI_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      AI_BASE_URL: https://api.groq.com/openai/v1
+      AI_MODEL_PREFERENCES: openai/gpt-oss-120b,qwen/qwen3.8-27b,qwen/qwen3.6-27b,llama-3.3-70b-versatile
+      COMMENT_MARKER: "<!-- groq-review -->"
+      REVIEW_HEADING: Groq review
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.issue.number }}
+      TRIGGER_ACTOR: ${{ github.actor }}
+    steps:
+      - name: Check out trusted reviewer
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+
+      - name: Verify Groq key
+        shell: bash
+        run: |
+          if [ -z "$AI_API_KEY" ]; then
+            echo "::error::Repository secret GROQ_API_KEY is missing or unavailable."
+            exit 1
+          fi
+
+      - name: Review pull request with Groq
+        run: python3 .github/scripts/compatible_ai_pr_review.py

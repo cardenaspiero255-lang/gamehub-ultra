@@ -20,25 +20,115 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  quality:
     runs-on: ubuntu-22.04
     env:
       EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
-    timeout-minutes: 60
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ""
+    timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
+      - name: Verify benchmark fast-path contract
+        shell: bash
+        run: bash .github/scripts/test-benchmark-fast-path.sh
+
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Install build SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "Build SDK packages already present; skipping sdkmanager."
+            exit 0
+          fi
+
+          for attempt in 1 2 3; do
+            echo "Installing build SDK packages, attempt ${attempt}/3"
+            if sdkmanager "${missing[@]}"; then
+              exit 0
+            fi
+            rm -rf "$SDK_ROOT/.temp"
+            sleep $((attempt * 10))
+          done
+          echo "Build SDK package installation failed after retries."
+          exit 1
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: "8.13"
+          cache-disabled: false
+          # device-validation owns cache writes for this commit; quality only
+          # reads shared history so parallel jobs cannot race while saving it.
+          cache-read-only: true
+
+      - name: Run fast quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:lintDebug \
+            --build-cache \
+            --parallel \
+            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
+
+      - name: Upload quality diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-quality-diagnostics
+          path: ${{ runner.temp }}/quality-gates.log
+          if-no-files-found: ignore
+
+  device-validation:
+    runs-on: ubuntu-22.04
+    env:
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      # CI intentionally builds with Sentry disabled so emulator installs,
+      # baseline profiles and macrobenchmarks never pollute production telemetry.
+      SENTRY_DSN: ""
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
           accept-android-sdk-licenses: true
@@ -120,29 +210,11 @@ jobs:
           exit 1
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           gradle-version: "8.13"
           cache-disabled: false
           cache-read-only: false
-
-      - name: Run unit tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:testDebugUnitTest --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/unit-tests.log"
-
-      - name: Build debug APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:assembleDebug --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/debug-apk.log"
-
-      - name: Run lint
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:lintDebug --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-debug.log"
 
       - name: Create ephemeral release signing key
         shell: bash
@@ -168,17 +240,11 @@ jobs:
             echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
           } >> "$GITHUB_ENV"
 
-      - name: Build release APK
+      - name: Build telemetry-disabled release APK and AAB for validation
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:assembleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk.log"
-
-      - name: Build release AAB
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:bundleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-aab.log"
+          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-validation.log"
 
       - name: Prepare deterministic API 35 AVD
         shell: bash
@@ -465,6 +531,46 @@ jobs:
             exit 1
           fi
 
+      - name: Discover Sentry project for trusted release
+        if: success() && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        shell: bash
+        run: python3 .github/scripts/register_sentry_release.py --discover-only
+
+      - name: Build distributable release APK and AAB with Sentry
+        if: success() && github.event_name != 'pull_request'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SENTRY_DSN:-}" ]; then
+            echo "::warning::SENTRY_DSN is unavailable; distributable CI release will keep telemetry disabled."
+          else
+            echo "Rebuilding distributable release outputs with Sentry enabled."
+          fi
+          # Pull-request builds never receive Sentry secrets. On trusted main/manual
+          # runs this rebuild overwrites the validation outputs with telemetry-enabled
+          # artifacts carrying the exact git-backed Sentry release identifier.
+          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --rerun-tasks             --stacktrace 2>&1 | tee "$RUNNER_TEMP/distributable-release.log"
+
+      - name: Register Sentry release and GitHub commit
+        if: success() && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+        shell: bash
+        run: python3 .github/scripts/register_sentry_release.py
+
       - name: Record failure-analysis handoff
         if: failure()
         shell: bash
@@ -475,7 +581,7 @@ jobs:
 
       - name: Upload Gemini failure analysis
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-gemini-failure-analysis
           path: ${{ runner.temp }}/gemini-analysis/**
@@ -483,7 +589,7 @@ jobs:
 
       - name: Upload emulator diagnostics
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-emulator-diagnostics
           path: |
@@ -492,13 +598,13 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload debug APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-debug
           path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload benchmark reports
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: gamehub-ultra-benchmark-reports
@@ -507,10 +613,29 @@ jobs:
             app/build/reports/**
 
       - name: Upload installable release outputs
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-release
           path: |
             app/build/outputs/apk/release/**/*.apk
             app/build/outputs/bundle/release/**/*.aab
           if-no-files-found: error
+
+
+  build:
+    name: build
+    if: always()
+    needs:
+      - quality
+      - device-validation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify all Android CI gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "quality=${{ needs.quality.result }}"
+          echo "device-validation=${{ needs.device-validation.result }}"
+          test "${{ needs.quality.result }}" = "success"
+          test "${{ needs.device-validation.result }}" = "success"

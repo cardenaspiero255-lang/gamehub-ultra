@@ -6,6 +6,30 @@ val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
     .orElse("")
     .get()
 
+val supabaseUrl = providers.environmentVariable("SUPABASE_URL")
+    .orElse(providers.gradleProperty("SUPABASE_URL"))
+    .orElse("")
+    .get()
+
+val supabasePublishableKey = providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY")
+    .orElse(providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY"))
+    .orElse("")
+    .get()
+
+val sentryDsn = providers.environmentVariable("SENTRY_DSN")
+    .orElse(providers.gradleProperty("SENTRY_DSN"))
+    .orElse("")
+    .get()
+
+val sentryRelease = providers.environmentVariable("SENTRY_RELEASE")
+    .orElse(providers.gradleProperty("SENTRY_RELEASE"))
+    .orElse("")
+    .get()
+
+val sentryMappingUploadEnabled = providers.environmentVariable("SENTRY_ENABLE_MAPPING_UPLOAD")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
+
 val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull
@@ -19,6 +43,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("androidx.baselineprofile")
+    id("io.sentry.android.gradle")
 }
 
 val exactLauncherIconSource = layout.projectDirectory.file("src/main/icon/gamehub_ultra_exact.webp.b64")
@@ -53,6 +78,26 @@ android {
             "EPIC_AUTH_BACKEND_URL",
             quotedBuildConfig(epicAuthBackendUrl)
         )
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            quotedBuildConfig(supabaseUrl)
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_PUBLISHABLE_KEY",
+            quotedBuildConfig(supabasePublishableKey)
+        )
+        buildConfigField(
+            "String",
+            "SENTRY_DSN",
+            quotedBuildConfig(sentryDsn)
+        )
+        buildConfigField(
+            "String",
+            "SENTRY_RELEASE",
+            quotedBuildConfig(sentryRelease)
+        )
     }
 
     signingConfigs {
@@ -76,6 +121,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            enableUnitTestCoverage = true
+        }
         release {
             signingConfig = signingConfigs.findByName("secureRelease")
             isMinifyEnabled = true
@@ -112,6 +160,24 @@ tasks.named("preBuild").configure {
     dependsOn(generateExactLauncherIcon)
 }
 
+sentry {
+    includeProguardMapping.set(sentryMappingUploadEnabled)
+    autoUploadProguardMapping.set(sentryMappingUploadEnabled)
+    authToken.set(providers.environmentVariable("SENTRY_AUTH_TOKEN"))
+    org.set(providers.environmentVariable("SENTRY_ORG"))
+    projectName.set(providers.environmentVariable("SENTRY_PROJECT"))
+    telemetry.set(false)
+    includeSourceContext.set(false)
+    includeDependenciesReport.set(false)
+
+    autoInstallation {
+        enabled.set(false)
+    }
+    tracingInstrumentation {
+        enabled.set(false)
+    }
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
@@ -125,6 +191,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    implementation("io.sentry:sentry-android:8.56.0")
     baselineProfile(project(":baseline-profile"))
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.21")

@@ -69,7 +69,7 @@ class GameHubMacrobenchmark {
             }
         }
 
-        val timeoutMs = 8_000L
+        val timeoutMs = if (runningOnEmulator) 2_000L else 8_000L
         val deadline = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < deadline) {
             device.waitForIdle()
