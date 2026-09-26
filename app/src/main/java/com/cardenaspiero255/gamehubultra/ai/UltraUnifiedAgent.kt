@@ -129,6 +129,7 @@ object UltraNetworkGamingIntentParser {
     private val questionPattern = Regex(
         """\b(que es|que significa|como funciona|quiero saber|explicame|dime que es|what is|what does|how does|tell me about|i want to know)\b"""
     )
+    private val clauseSeparator = Regex("""\s+\b(y|and|pero|but|ademas|also)\b\s+""")
     private val competitivePatterns = listOf(
         Regex("""\b(modo competitivo|perfil competitivo|competitive mode|competitive profile)\b"""),
         Regex("""\bcompetitivo\b"""),
@@ -142,11 +143,11 @@ object UltraNetworkGamingIntentParser {
     )
     private val competitiveNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+|perfil\s+)?competitivo\b"""),
-        Regex("""\b(no|dont|do not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:modo\s+|perfil\s+)?(?:competitivo|competitive)\b""")
+        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:modo\s+|perfil\s+)?(?:competitivo|competitive)\b""")
     )
     private val routerNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
-        Regex("""\b(no|dont|do not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
+        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
     )
 
     fun parse(transcript: String): UltraUtilityIntent.NetworkGamingControl? {
@@ -154,17 +155,30 @@ object UltraNetworkGamingIntentParser {
             .replace(Regex("""\b(gamehub ultra|gamehub|ultra)\b"""), " ")
             .trim()
         if (clean.isBlank()) return null
-        if (questionPattern.containsMatchIn(clean)) return null
-        if (!actionPattern.containsMatchIn(clean)) return null
+
+        // Treat question clauses independently so an informational question
+        // does not cancel a genuine activation request elsewhere in the same
+        // utterance. Example:
+        // "activate competitive mode and what is gaming router"
+        val actionableText = clauseSeparator
+            .split(clean)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .filterNot { clause -> questionPattern.containsMatchIn(clause) }
+            .joinToString(" ")
+            .trim()
+
+        if (actionableText.isBlank()) return null
+        if (!actionPattern.containsMatchIn(actionableText)) return null
 
         val competitiveRequested =
-            competitivePatterns.any { it.containsMatchIn(clean) }
+            competitivePatterns.any { it.containsMatchIn(actionableText) }
         val routerRequested =
-            routerGamingPatterns.any { it.containsMatchIn(clean) }
+            routerGamingPatterns.any { it.containsMatchIn(actionableText) }
         val competitiveNegated =
-            competitiveNegationPatterns.any { it.containsMatchIn(clean) }
+            competitiveNegationPatterns.any { it.containsMatchIn(actionableText) }
         val routerNegated =
-            routerNegationPatterns.any { it.containsMatchIn(clean) }
+            routerNegationPatterns.any { it.containsMatchIn(actionableText) }
 
         val competitive = competitiveRequested && !competitiveNegated
         val routerGaming = routerRequested && !routerNegated

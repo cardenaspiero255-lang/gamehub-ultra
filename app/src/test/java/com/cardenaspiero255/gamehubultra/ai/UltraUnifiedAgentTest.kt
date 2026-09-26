@@ -315,6 +315,37 @@ class UltraUnifiedAgentTest {
         assertTrue(routerIntent.routerGaming)
     }
 
+
+    @Test
+    fun networkGamingNegatedDesireDoesNotActivateRejectedMode() {
+        listOf(
+            "Ultra, no quiero gaming router",
+            "Ultra, no quiero modo competitivo",
+            "Ultra, I do not want gaming router",
+            "Ultra, I don't want competitive mode"
+        ).forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val chat = assertIs<UltraAgentRoute.Chat>(route)
+            assertEquals(transcript, chat.message)
+        }
+    }
+
+    @Test
+    fun mixedQuestionKeepsExplicitNetworkActivation() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate competitive mode and what is gaming router",
+            optionalResolver = null
+        )
+
+        val utility = assertIs<UltraAgentRoute.Utility>(route)
+        val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+        assertTrue(intent.competitive)
+        assertFalse(intent.routerGaming)
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()
