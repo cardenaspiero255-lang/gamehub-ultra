@@ -86,6 +86,20 @@ class Car72RuntimeIntegrationTest {
     }
 
     @Test
+    fun competitiveProfileAcceptsRuntimeWifiTransportLabel() {
+        assertEquals(
+            NetworkPriorityAction.LOW_LATENCY_WIFI,
+            NetworkLocalPriorityPolicy.actionFor(
+                profile = NetworkGameProfile.COMPETITIVE,
+                transport = "Wi‑Fi",
+                connected = true,
+                validated = true,
+                sdkInt = 36
+            )
+        )
+    }
+
+    @Test
     fun competitiveProfileFallsBackToHighPerformanceWifiBeforeAndroid10() {
         assertEquals(
             NetworkPriorityAction.HIGH_PERFORMANCE_WIFI,
