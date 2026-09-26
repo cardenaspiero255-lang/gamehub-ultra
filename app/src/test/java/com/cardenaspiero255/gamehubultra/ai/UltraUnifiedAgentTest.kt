@@ -473,6 +473,30 @@ class UltraUnifiedAgentTest {
     }
 
     @Test
+    fun qosGamingInsideGameTitleStillLaunches() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate QoS Gaming Legends",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("qos gaming legends", command.query)
+    }
+
+    @Test
+    fun negatedGenericRouterPriorityRequestStaysConversational() {
+        val transcript = "Ultra, don't prioritize traffic on the router"
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = transcript,
+            optionalResolver = null
+        )
+
+        val chat = assertIs<UltraAgentRoute.Chat>(route)
+        assertEquals(transcript, chat.message)
+    }
+
+    @Test
     fun genericPhonePriorityRequestIsNotRouterGaming() {
         listOf(
             "Ultra, prioritize my phone",
