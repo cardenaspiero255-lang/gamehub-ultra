@@ -1,0 +1,209 @@
+name: SonarQube Cloud Analysis
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY_OVERRIDE: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION_OVERRIDE: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_HOST_URL_OVERRIDE: ${{ vars.SONAR_HOST_URL }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      REPO_OWNER: ${{ github.repository_owner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Sonar token is configured
+        shell: bash
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::Repository secret SONAR_TOKEN is missing or unavailable."
+            exit 1
+          fi
+
+      - name: Discover SonarQube Cloud project
+        id: discover
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["SONAR_TOKEN"]
+          repo_name = os.environ["REPO_NAME"]
+          repo_owner = os.environ["REPO_OWNER"]
+          project_override = os.environ.get("SONAR_PROJECT_KEY_OVERRIDE", "").strip()
+          org_override = os.environ.get("SONAR_ORGANIZATION_OVERRIDE", "").strip()
+          host_override = os.environ.get("SONAR_HOST_URL_OVERRIDE", "").strip().rstrip("/")
+
+          hosts = [host_override] if host_override else [
+              "https://sonarcloud.io",
+              "https://sonarqube.us",
+          ]
+
+          def get_json(url):
+              req = urllib.request.Request(
+                  url,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "User-Agent": "gamehub-ultra-sonar-discovery",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=45) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          selected_host = None
+          for host in hosts:
+              try:
+                  data = get_json(f"{host}/api/authentication/validate")
+                  if data.get("valid") is True:
+                      selected_host = host
+                      break
+              except Exception:
+                  continue
+
+          if not selected_host:
+              raise SystemExit("SONAR_TOKEN was not accepted by sonarcloud.io or sonarqube.us.")
+
+          project_key = project_override
+          organization = org_override
+          found = bool(project_key and organization)
+
+          if not found:
+              organizations = []
+              if org_override:
+                  organizations.append(org_override)
+              else:
+                  try:
+                      org_data = get_json(
+                          f"{selected_host}/api/organizations/search?member=true&ps=100"
+                      )
+                      organizations.extend(
+                          item.get("key", "")
+                          for item in org_data.get("organizations", [])
+                          if item.get("key")
+                      )
+                  except Exception as exc:
+                      print(
+                          "::warning::Sonar organization discovery failed "
+                          f"({type(exc).__name__})."
+                      )
+
+              if repo_owner not in organizations:
+                  organizations.append(repo_owner)
+
+              query = urllib.parse.quote(repo_name)
+              for candidate_org in organizations:
+                  organization_param = urllib.parse.quote(candidate_org)
+                  try:
+                      data = get_json(
+                          f"{selected_host}/api/components/search"
+                          f"?qualifiers=TRK&q={query}&ps=100"
+                          f"&organization={organization_param}"
+                      )
+                  except Exception as exc:
+                      print(
+                          "::warning::Sonar project search failed for organization "
+                          f"{candidate_org!r} ({type(exc).__name__})."
+                      )
+                      continue
+
+                  components = data.get("components", [])
+                  exact = [
+                      component
+                      for component in components
+                      if component.get("name", "").lower() == repo_name.lower()
+                      or component.get("key", "").lower().endswith("_" + repo_name.lower())
+                      or component.get("key", "").lower().endswith(":" + repo_name.lower())
+                  ]
+                  if exact:
+                      component = exact[0]
+                      project_key = component.get("key", "")
+                      organization = (
+                          component.get("organization", "")
+                          or candidate_org
+                      )
+                      found = bool(project_key and organization)
+                      if found:
+                          break
+
+          if not found:
+              raise SystemExit(
+                  "SONAR_TOKEN is valid, but no GameHub Ultra Sonar project was found. "
+                  "Import the repository into SonarQube Cloud or set repository variables "
+                  "SONAR_PROJECT_KEY and SONAR_ORGANIZATION, then rerun this workflow."
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"host={selected_host}\n")
+              out.write(f"found={'true' if found else 'false'}\n")
+              out.write(f"project_key={project_key}\n")
+              out.write(f"organization={organization}\n")
+
+          print(
+              f"Sonar project discovered for {repo_owner}/{repo_name}: "
+              f"{organization}/{project_key}"
+          )
+          PY
+
+      - name: Set up JDK 17
+        if: steps.discover.outputs.found == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        if: steps.discover.outputs.found == 'true'
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        if: steps.discover.outputs.found == 'true'
+        shell: bash
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        if: steps.discover.outputs.found == 'true'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.13"
+
+      - name: Compile app for Kotlin analysis
+        if: steps.discover.outputs.found == 'true'
+        run: gradle :app:compileDebugKotlin --stacktrace
+
+      - name: Run SonarQube Cloud analysis
+        if: steps.discover.outputs.found == 'true'
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.host.url=${{ steps.discover.outputs.host }}
+            -Dsonar.projectKey=${{ steps.discover.outputs.project_key }}
+            -Dsonar.organization=${{ steps.discover.outputs.organization }}
+            -Dsonar.sources=app/src/main
+            -Dsonar.tests=app/src/test
+            -Dsonar.java.binaries=app/build/tmp/kotlin-classes/debug
+            -Dsonar.exclusions=**/build/**,**/*.b64

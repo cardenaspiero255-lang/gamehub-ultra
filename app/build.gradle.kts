@@ -6,6 +6,21 @@ val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
     .orElse("")
     .get()
 
+val supabaseUrl = providers.environmentVariable("SUPABASE_URL")
+    .orElse(providers.gradleProperty("SUPABASE_URL"))
+    .orElse("")
+    .get()
+
+val supabasePublishableKey = providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY")
+    .orElse(providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY"))
+    .orElse("")
+    .get()
+
+val sentryDsn = providers.environmentVariable("SENTRY_DSN")
+    .orElse(providers.gradleProperty("SENTRY_DSN"))
+    .orElse("")
+    .get()
+
 val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull
@@ -53,6 +68,21 @@ android {
             "EPIC_AUTH_BACKEND_URL",
             quotedBuildConfig(epicAuthBackendUrl)
         )
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            quotedBuildConfig(supabaseUrl)
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_PUBLISHABLE_KEY",
+            quotedBuildConfig(supabasePublishableKey)
+        )
+        buildConfigField(
+            "String",
+            "SENTRY_DSN",
+            quotedBuildConfig(sentryDsn)
+        )
     }
 
     signingConfigs {
@@ -76,6 +106,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            enableUnitTestCoverage = true
+        }
         release {
             signingConfig = signingConfigs.findByName("secureRelease")
             isMinifyEnabled = true
@@ -125,6 +158,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    implementation("io.sentry:sentry-android:8.56.0")
     baselineProfile(project(":baseline-profile"))
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.21")
