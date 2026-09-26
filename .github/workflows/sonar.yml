@@ -112,7 +112,8 @@ jobs:
               if repo_owner not in organizations:
                   organizations.append(repo_owner)
 
-              query = urllib.parse.quote(repo_name)
+              search_term = project_override or repo_name
+              query = urllib.parse.quote(search_term)
               for candidate_org in organizations:
                   organization_param = urllib.parse.quote(candidate_org)
                   try:
@@ -129,16 +130,24 @@ jobs:
                       continue
 
                   components = data.get("components", [])
-                  exact = [
-                      component
-                      for component in components
-                      if component.get("name", "").lower() == repo_name.lower()
-                      or component.get("key", "").lower().endswith("_" + repo_name.lower())
-                      or component.get("key", "").lower().endswith(":" + repo_name.lower())
-                  ]
+                  if project_override:
+                      exact = [
+                          component
+                          for component in components
+                          if component.get("key", "") == project_override
+                      ]
+                  else:
+                      exact = [
+                          component
+                          for component in components
+                          if component.get("name", "").lower() == repo_name.lower()
+                          or component.get("key", "").lower().endswith("_" + repo_name.lower())
+                          or component.get("key", "").lower().endswith(":" + repo_name.lower())
+                      ]
                   if exact:
                       component = exact[0]
-                      project_key = component.get("key", "")
+                      if not project_key:
+                          project_key = component.get("key", "")
                       organization = (
                           component.get("organization", "")
                           or candidate_org

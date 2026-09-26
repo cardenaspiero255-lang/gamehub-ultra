@@ -80,9 +80,24 @@ def choose_model():
     for preferred in MODEL_PREFERENCES:
         if preferred in available:
             return preferred
-    if available:
-        return available[0]
-    raise RuntimeError(f"{AI_PROVIDER} returned no available models.")
+
+    # Never fall back to an arbitrary model: provider catalogs may include
+    # speech, transcription, or other non-chat endpoints.
+    blocked_hints = ("whisper", "audio", "speech", "tts", "transcrib")
+    chat_hints = ("gpt", "llama", "qwen", "gemma", "mistral", "mixtral", "deepseek")
+    compatible = [
+        model_id
+        for model_id in available
+        if any(hint in model_id.lower() for hint in chat_hints)
+        and not any(hint in model_id.lower() for hint in blocked_hints)
+    ]
+    if compatible:
+        return compatible[0]
+
+    raise RuntimeError(
+        f"{AI_PROVIDER} has no configured chat-capable model available. "
+        f"Available model IDs: {available[:25]}"
+    )
 
 
 pr = github_request(f"/pulls/{PR_NUMBER}")
@@ -98,6 +113,16 @@ if truncated:
     diff = diff[:MAX_DIFF_CHARS] + "\n\n[DIFF TRUNCATED BY REVIEW WORKFLOW]\n"
 
 model = choose_model()
+
+
+def prompt_value(value):
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
 
 system_prompt = """You are an independent senior Android/Kotlin code reviewer for GameHub Ultra.
 Review only the pull-request metadata and unified diff supplied by this trusted workflow.
@@ -118,19 +143,19 @@ Put uncertain items under "Questions / needs verification".
 If there are no confirmed BLOCKER/HIGH findings, say that explicitly without claiming the PR
 is fully correct."""
 
-user_prompt = f"""Repository: {REPO}
+user_prompt = f"""Repository: {prompt_value(REPO)}
 Pull request: #{PR_NUMBER}
-Title: {pr.get("title", "")}
-Base: {pr.get("base", {}).get("ref", "")}
-Head: {pr.get("head", {}).get("ref", "")}
-Head SHA: {pr.get("head", {}).get("sha", "")}
+Title: <pr_title>{prompt_value(pr.get("title", ""))}</pr_title>
+Base: <pr_base>{prompt_value(pr.get("base", {}).get("ref", ""))}</pr_base>
+Head: <pr_head>{prompt_value(pr.get("head", {}).get("ref", ""))}</pr_head>
+Head SHA: <pr_head_sha>{prompt_value(pr.get("head", {}).get("sha", ""))}</pr_head_sha>
 Draft: {pr.get("draft", False)}
 Description:
-{pr.get("body") or "(none)"}
+<pr_description>{prompt_value(pr.get("body") or "(none)")}</pr_description>
 
 Unified diff:
 --- BEGIN DIFF ---
-{diff}
+<pr_diff>{prompt_value(diff)}</pr_diff>
 --- END DIFF ---
 """
 

@@ -35,6 +35,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: deepseek-review-${{ github.event.issue.number || inputs.pr_number }}
+      cancel-in-progress: true
     env:
       AI_PROVIDER: DeepSeek
       AI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -77,6 +80,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: groq-review-${{ github.event.issue.number || inputs.pr_number }}
+      cancel-in-progress: true
     env:
       AI_PROVIDER: Groq
       AI_API_KEY: ${{ secrets.GROQ_API_KEY }}
