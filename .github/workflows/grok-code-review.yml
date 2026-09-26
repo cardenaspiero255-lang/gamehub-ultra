@@ -140,6 +140,10 @@ jobs:
               return str(value).replace(api_key, "[REDACTED]")
 
           def extract_responses(payload):
+              status = payload.get("status")
+              if status not in (None, "completed"):
+                  details = payload.get("incomplete_details") or {}
+                  raise RuntimeError(f"Responses API status={status}, details={details}")
               texts = []
               for item in payload.get("output", []):
                   for part in item.get("content", []):
