@@ -21,6 +21,8 @@ object UltraMathEngine {
 
         solveTriangle(clean)?.let { return it }
         solveLinearEquation(clean)?.let { return it }
+        solvePercentage(clean)?.let { return it }
+        solveUnitConversion(clean)?.let { return it }
         solveArithmetic(clean)?.let { return it }
         return null
     }
@@ -85,6 +87,68 @@ object UltraMathEngine {
             explanation = "${formatNumber(coefficient)}x $operator ${formatNumber(constant)} = ${formatNumber(right)}; al despejar, x = $formatted."
         )
     }
+
+    private fun solvePercentage(clean: String): UltraMathSolution? {
+        val match = Regex(
+            """(-?\d+(?:[.,]\d+)?)\s*(?:%|por\s+ciento|percent)\s*(?:de|of)\s*(-?\d+(?:[.,]\d+)?)"""
+        ).find(clean) ?: return null
+
+        val percentage = match.groupValues[1].toDecimalOrNull() ?: return null
+        val base = match.groupValues[2].toDecimalOrNull() ?: return null
+        val result = base
+            .multiply(percentage, mathContext)
+            .divide(BigDecimal("100"), mathContext)
+
+        return UltraMathSolution(
+            resultText = formatNumber(result),
+            explanation = "${formatNumber(percentage)}% de ${formatNumber(base)} = ${formatNumber(result)}."
+        )
+    }
+
+    private fun solveUnitConversion(clean: String): UltraMathSolution? {
+        val match = Regex(
+            """(-?\d+(?:[.,]\d+)?)\s*(kilometros?|km|metros?|m|centimetros?|cm|milimetros?|mm|kilogramos?|kg|gramos?|g|litros?|l|mililitros?|ml)\s*(?:a|en|to)\s*(kilometros?|km|metros?|m|centimetros?|cm|milimetros?|mm|kilogramos?|kg|gramos?|g|litros?|l|mililitros?|ml)"""
+        ).find(clean) ?: return null
+
+        val value = match.groupValues[1].toDecimalOrNull() ?: return null
+        val from = canonicalUnit(match.groupValues[2]) ?: return null
+        val to = canonicalUnit(match.groupValues[3]) ?: return null
+        if (from.dimension != to.dimension) return null
+
+        val baseValue = value.multiply(from.toBaseFactor, mathContext)
+        val converted = baseValue.divide(to.toBaseFactor, mathContext)
+        return UltraMathSolution(
+            resultText = "${formatNumber(converted)} ${to.symbol}",
+            explanation = "${formatNumber(value)} ${from.symbol} = ${formatNumber(converted)} ${to.symbol}."
+        )
+    }
+
+    private data class UnitDefinition(
+        val symbol: String,
+        val dimension: String,
+        val toBaseFactor: BigDecimal
+    )
+
+    private fun canonicalUnit(raw: String): UnitDefinition? =
+        when (raw) {
+            "kilometro", "kilometros", "km" ->
+                UnitDefinition("km", "length", BigDecimal("1000"))
+            "metro", "metros", "m" ->
+                UnitDefinition("m", "length", BigDecimal.ONE)
+            "centimetro", "centimetros", "cm" ->
+                UnitDefinition("cm", "length", BigDecimal("0.01"))
+            "milimetro", "milimetros", "mm" ->
+                UnitDefinition("mm", "length", BigDecimal("0.001"))
+            "kilogramo", "kilogramos", "kg" ->
+                UnitDefinition("kg", "mass", BigDecimal("1000"))
+            "gramo", "gramos", "g" ->
+                UnitDefinition("g", "mass", BigDecimal.ONE)
+            "litro", "litros", "l" ->
+                UnitDefinition("l", "volume", BigDecimal("1000"))
+            "mililitro", "mililitros", "ml" ->
+                UnitDefinition("ml", "volume", BigDecimal.ONE)
+            else -> null
+        }
 
     private fun solveArithmetic(clean: String): UltraMathSolution? {
         val patterns = listOf(
