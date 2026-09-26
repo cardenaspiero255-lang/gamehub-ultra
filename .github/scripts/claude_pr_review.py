@@ -113,7 +113,7 @@ anthropic = request(
     "https://api.anthropic.com/v1/messages",
     method="POST",
     headers={
-        "Authorization": f"Bearer {ANTHROPIC_API_KEY}",
+        "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
     },
     data=payload,
