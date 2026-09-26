@@ -1,15 +1,32 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import com.cardenaspiero255.gamehubultra.BuildConfig
+
 /**
  * Single production entry point for general chat queries.
  *
- * Until a trusted online provider is configured, changing/current information
- * safely abstains instead of falling back to potentially stale local-model
- * knowledge. Stable questions continue through the local fast path.
+ * Stable questions stay on the local path. Queries that require current data
+ * use the verified backend when Supabase is configured; otherwise Ultra
+ * abstains instead of presenting stale local knowledge as current.
  */
 object UltraProductionQueryExecutor {
+    private val productionProviders: List<UltraResearchProvider> =
+        if (
+            BuildConfig.SUPABASE_URL.isNotBlank() &&
+            BuildConfig.SUPABASE_PUBLISHABLE_KEY.isNotBlank()
+        ) {
+            listOf(
+                SupabaseUltraResearchProvider(
+                    supabaseUrl = BuildConfig.SUPABASE_URL,
+                    publishableKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
+                )
+            )
+        } else {
+            emptyList()
+        }
+
     private val verifiedResearchEngine = UltraVerifiedResearchEngine(
-        providers = emptyList()
+        providers = productionProviders
     )
     private val coordinator = UltraQueryExecutionCoordinator(
         researchEngine = verifiedResearchEngine
