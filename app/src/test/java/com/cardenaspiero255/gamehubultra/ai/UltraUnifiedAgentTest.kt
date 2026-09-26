@@ -515,6 +515,32 @@ class UltraUnifiedAgentTest {
         }
     }
 
+
+    @Test
+    fun assistantNameInsideGameTitleIsPreserved() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate Ultra Competitive",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("ultra competitive", command.query)
+    }
+
+    @Test
+    fun exclusionWithVerbDoesNotEnableRouterGaming() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate competitive mode without activating gaming router",
+            optionalResolver = null
+        )
+
+        val utility = assertIs<UltraAgentRoute.Utility>(route)
+        val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+        assertTrue(intent.competitive)
+        assertFalse(intent.routerGaming)
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()

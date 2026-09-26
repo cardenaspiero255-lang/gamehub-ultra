@@ -164,7 +164,7 @@ object UltraNetworkGamingIntentParser {
     )
     private val routerNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
-        Regex("""\b(without|except)\s+(?:the\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
+        Regex("""\b(without|except)\s+(?:(?:activating|activate|enabling|enable|using|use|setting|set)\s+)?(?:the\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
         Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|don\s+t\s+want|dont|do\s+not|don\s+t|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+|el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
     )
 
@@ -190,9 +190,7 @@ object UltraNetworkGamingIntentParser {
     }
 
     fun parse(transcript: String): UltraUtilityIntent.NetworkGamingControl? {
-        val clean = VoiceCommandParser.normalize(transcript)
-            .replace(Regex("""\b(gamehub ultra|gamehub|ultra)\b"""), " ")
-            .trim()
+        val clean = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
         if (clean.isBlank()) return null
 
         var competitive = false
