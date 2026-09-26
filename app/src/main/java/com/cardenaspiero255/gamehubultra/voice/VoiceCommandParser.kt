@@ -152,7 +152,7 @@ object VoiceCommandParser {
     private fun canonicalAliasCandidate(value: String): String =
         canonicalGameAlias(
             normalize(value)
-                .replace(Regex("""^gamehub(?: ultra)?\s+"""), "")
+                .replace(Regex("""^(?:gamehub(?: ultra)?|ultra)\s+"""), "")
                 .trim()
         )
 
