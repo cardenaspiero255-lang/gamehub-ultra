@@ -1695,6 +1695,7 @@ private fun VoiceAssistantCard(
                                 aiAdvisor = { question ->
                                     aiAdvisor.advise(question, latestAiContext)
                                 },
+                                aliasIntentResolver = aiIntentResolver,
                                 gameAliasesProvider = { GameAliasStore.aliases(context) },
                                 saveGameAlias = { alias, packageName ->
                                     GameAliasStore.save(context, alias, packageName)
