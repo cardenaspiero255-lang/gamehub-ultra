@@ -179,17 +179,16 @@ internal object GameMatchFinder {
         if (exactPackageMatches.size == 1) return exactPackageMatches.single()
         if (exactPackageMatches.size > 1) return null
 
-        val exactLabelMatches = games.filter {
-            VoiceCommandParser.normalize(it.label) == normalizedQuery
-        }
-        if (exactLabelMatches.size == 1) return exactLabelMatches.single()
-        if (exactLabelMatches.size > 1) return null
-
         userAliases[aliasQuery]?.let { packageName ->
             games.firstOrNull { it.packageName == packageName }?.let { return it }
         }
 
         popularAliases[aliasQuery]?.let { targets ->
+            val exactLabelMatches = games.filter {
+                VoiceCommandParser.normalize(it.label) == normalizedQuery
+            }
+            if (exactLabelMatches.size == 1) return exactLabelMatches.single()
+            if (exactLabelMatches.size > 1) return null
             val candidates = popularAliasGames.filter { game ->
                 val label = VoiceCommandParser.normalize(game.label)
                 targets.any { target ->
