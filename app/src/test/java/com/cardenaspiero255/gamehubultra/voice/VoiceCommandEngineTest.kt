@@ -266,4 +266,34 @@ class VoiceCommandEngineTest {
         assertEquals(0, writes)
     }
 
+
+    @Test
+    fun spacedInitialsResolveExistingLearnedAlias() {
+        val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
+        val match = GameMatchFinder.find(
+            query = "B S",
+            games = installed,
+            userAliases = mapOf("bs" to "com.supercell.brawlstars")
+        )
+        assertEquals("com.supercell.brawlstars", match?.packageName)
+    }
+
+    @Test
+    fun reservedProfileAliasCannotBeSavedAsGameAlias() {
+        val installed = listOf(GameInfo("com.example.x4", "X4 Foundations"))
+        var writes = 0
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.DefineGameAlias("x4", "X4 Foundations"),
+            gamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            saveGameAlias = { _, _ -> writes++ }
+        )
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals(0, writes)
+    }
+
 }
