@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.GameSelectionStore
 import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
@@ -511,7 +512,11 @@ class UltraWakeService : Service() {
                         is VoiceActionResult.GameOpened ->
                             "Abriendo ${result.game.label}."
                         is VoiceActionResult.GameAliasSaved ->
-                            "Alias ${result.alias.uppercase()} guardado para ${result.game.label}."
+                            context.getString(
+                                R.string.voice_result_game_alias_saved,
+                                result.alias.uppercase(),
+                                result.game.label
+                            )
                         is VoiceActionResult.DeviceStatus ->
                             "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
                         is VoiceActionResult.AiAdvice ->
