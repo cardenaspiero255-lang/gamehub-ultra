@@ -81,22 +81,14 @@ def choose_model():
         if preferred in available:
             return preferred
 
-    # Never fall back to an arbitrary model: provider catalogs may include
-    # speech, transcription, or other non-chat endpoints.
-    blocked_hints = ("whisper", "audio", "speech", "tts", "transcrib")
-    chat_hints = ("gpt", "llama", "qwen", "gemma", "mistral", "mixtral", "deepseek")
-    compatible = [
-        model_id
-        for model_id in available
-        if any(hint in model_id.lower() for hint in chat_hints)
-        and not any(hint in model_id.lower() for hint in blocked_hints)
-    ]
-    if compatible:
-        return compatible[0]
-
+    # Never guess from arbitrary catalog entries. Provider model lists can
+    # contain speech, moderation/guard, embedding, or other non-review models.
+    # If every explicitly approved chat model has retired, fail closed so the
+    # workflow can be updated deliberately instead of silently choosing the
+    # wrong endpoint/model.
     raise RuntimeError(
-        f"{AI_PROVIDER} has no configured chat-capable model available. "
-        f"Available model IDs: {available[:25]}"
+        f"{AI_PROVIDER} has none of the configured review models available. "
+        f"Configured: {MODEL_PREFERENCES}. Available model IDs: {available[:25]}"
     )
 
 
