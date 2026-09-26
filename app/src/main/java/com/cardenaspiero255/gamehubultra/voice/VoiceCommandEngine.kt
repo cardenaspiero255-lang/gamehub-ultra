@@ -99,7 +99,8 @@ object VoiceCommandEngine {
                 val match = GameMatchFinder.find(
                     query = command.query,
                     games = launchableGames,
-                    userAliases = safeAliases
+                    userAliases = safeAliases,
+                    popularAliasGames = aliasGamesProvider()
                 )
                 if (match == null) {
                     VoiceActionResult.NotAvailable(
@@ -163,7 +164,8 @@ internal object GameMatchFinder {
     fun find(
         query: String,
         games: List<GameInfo>,
-        userAliases: Map<String, String> = emptyMap()
+        userAliases: Map<String, String> = emptyMap(),
+        popularAliasGames: List<GameInfo> = games
     ): GameInfo? {
         if (games.isEmpty()) return null
 
@@ -171,19 +173,30 @@ internal object GameMatchFinder {
         if (normalizedQuery.isBlank()) return null
         val aliasQuery = VoiceCommandParser.canonicalGameAlias(query)
 
+        val exactPackageMatches = games.filter {
+            it.packageName.equals(query.trim(), ignoreCase = true)
+        }
+        if (exactPackageMatches.size == 1) return exactPackageMatches.single()
+        if (exactPackageMatches.size > 1) return null
+
+        val exactLabelMatches = games.filter {
+            VoiceCommandParser.normalize(it.label) == normalizedQuery
+        }
+        if (exactLabelMatches.size == 1) return exactLabelMatches.single()
+        if (exactLabelMatches.size > 1) return null
+
         userAliases[aliasQuery]?.let { packageName ->
             games.firstOrNull { it.packageName == packageName }?.let { return it }
         }
 
         popularAliases[aliasQuery]?.let { targets ->
-            val candidates = games.filter { game ->
+            val candidates = popularAliasGames.filter { game ->
                 val label = VoiceCommandParser.normalize(game.label)
                 targets.any { target ->
                     label == target || label.startsWith("${target} ")
                 }
             }
-            if (candidates.size == 1) return candidates.single()
-            if (candidates.size > 1) return null
+            return if (candidates.size == 1) candidates.single() else null
         }
 
         val queryTokens = normalizedQuery.split(" ").filter(String::isNotBlank)
