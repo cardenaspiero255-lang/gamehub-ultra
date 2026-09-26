@@ -7,6 +7,40 @@ import kotlin.test.assertIs
 
 class VoiceCommandParserTest {
     @Test
+    fun preservesUltraInsideExplicitGameTitle() {
+        val direct = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("open Ultra Racing")
+        )
+        assertEquals("ultra racing", direct.query)
+
+        val withWakeWord = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("Ultra, open Ultra Racing")
+        )
+        assertEquals("ultra racing", withWakeWord.query)
+    }
+
+    @Test
+    fun preservesUltraInsideAliasTargetTitle() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "ur", gameQuery = "ultra racing"),
+            VoiceCommandParser.parse("Ultra, when I say UR open Ultra Racing")
+        )
+    }
+
+    @Test
+    fun stripsOnlyLeadingAssistantInvocation() {
+        val command = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("GameHub Ultra, open Ultra Racing")
+        )
+        assertEquals("ultra racing", command.query)
+
+        assertEquals(
+            VoiceCommand.DeviceStatus,
+            VoiceCommandParser.parse("Ultra, dime la temperatura")
+        )
+    }
+
+    @Test
     fun parsesSpanishGameOpen() {
         val command = VoiceCommandParser.parse("GameHub, abre Resident Evil 4 Remake")
         val parsed = assertIs<VoiceCommand.OpenGame>(command)
