@@ -156,18 +156,21 @@ object VoiceCommandEngine {
 
             is VoiceCommand.Network -> {
                 val snapshot = networkStatusProvider?.invoke()
-                    ?: return VoiceActionResult.NotAvailable(
+                if (snapshot == null) {
+                    VoiceActionResult.NotAvailable(
                         "No hay métricas de red verificadas disponibles todavía."
                     )
-                val applied =
-                    command.request == NetworkVoiceRequest.OPTIMIZE &&
-                        applyNetworkProfile(snapshot.recommendedProfile)
+                } else {
+                    val applied =
+                        command.request == NetworkVoiceRequest.OPTIMIZE &&
+                            applyNetworkProfile(snapshot.recommendedProfile)
 
-                VoiceActionResult.NetworkReport(
-                    request = command.request,
-                    snapshot = snapshot,
-                    optimizationApplied = applied
-                )
+                    VoiceActionResult.NetworkReport(
+                        request = command.request,
+                        snapshot = snapshot,
+                        optimizationApplied = applied
+                    )
+                }
             }
 
             VoiceCommand.DeviceStatus -> VoiceActionResult.DeviceStatus(statusProvider())
