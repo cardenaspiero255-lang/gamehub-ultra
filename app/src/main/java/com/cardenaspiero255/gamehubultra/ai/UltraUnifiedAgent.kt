@@ -143,11 +143,13 @@ object UltraNetworkGamingIntentParser {
     )
     private val competitiveNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+|perfil\s+)?competitivo\b"""),
-        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:modo\s+|perfil\s+)?(?:competitivo|competitive)\b""")
+        Regex("""\b(without|except)\s+(?:the\s+)?(?:competitive mode|competitive profile|competitive)\b"""),
+        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+)?(?:modo\s+|perfil\s+|competitive\s+)?(?:competitivo|competitive|mode|profile)\b""")
     )
     private val routerNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
-        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
+        Regex("""\b(without|except)\s+(?:the\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
+        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+|el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
     )
 
     fun parse(transcript: String): UltraUtilityIntent.NetworkGamingControl? {

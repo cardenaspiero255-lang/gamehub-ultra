@@ -346,6 +346,26 @@ class UltraUnifiedAgentTest {
         assertFalse(intent.routerGaming)
     }
 
+
+    @Test
+    fun englishNetworkGamingExclusionsAreHonored() {
+        val phrases = listOf(
+            "Ultra, activate competitive mode without gaming router",
+            "Ultra, activate competitive mode but not gaming router"
+        )
+
+        phrases.forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val utility = assertIs<UltraAgentRoute.Utility>(route)
+            val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+            assertTrue(intent.competitive)
+            assertFalse(intent.routerGaming)
+        }
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()
