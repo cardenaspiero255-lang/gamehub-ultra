@@ -372,6 +372,25 @@ class VoiceCommandParserTest {
     }
 
 
+
+    @Test
+    fun resolverOwnedPhrasePreemptsPersistedAlias() {
+        val resolver = object : NaturalLanguageIntentResolver {
+            override fun resolve(transcript: String): VoiceCommand? =
+                if (transcript == "optimize my game") VoiceCommand.AskAi(transcript) else null
+        }
+
+        assertEquals(
+            VoiceCommand.AskAi("optimize my game"),
+            VoiceCommandParser.parse(
+                transcript = "optimize my game",
+                optionalResolver = resolver,
+                knownGameAliases = setOf("optimize my game")
+            )
+        )
+    }
+
+
     @Test
     fun bareLearnedAliasParsesAsGameLaunch() {
         val command = VoiceCommandParser.parse(
