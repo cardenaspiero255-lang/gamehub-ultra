@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.GameSelectionStore
 import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
@@ -280,7 +281,11 @@ private class GameHubVoiceInteractionSession(context: Context) :
             }
 
             is VoiceActionResult.GameAliasSaved ->
-                "Alias " + result.alias.uppercase() + " guardado para " + result.game.label + "."
+                getContext().getString(
+                    R.string.voice_result_game_alias_saved,
+                    result.alias.uppercase(),
+                    result.game.label
+                )
 
             is VoiceActionResult.DeviceStatus ->
                 "Estado: batería " +
