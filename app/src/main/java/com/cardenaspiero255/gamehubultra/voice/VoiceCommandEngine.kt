@@ -68,7 +68,7 @@ object VoiceCommandEngine {
             }
 
             is VoiceCommand.DefineGameAlias -> {
-                val normalizedAlias = VoiceCommandParser.canonicalGameAlias(command.alias)
+                val normalizedAlias = VoiceCommandParser.canonicalGameAliasKey(command.alias)
                 val target = GameMatchFinder.find(
                     query = command.gameQuery,
                     games = aliasGamesProvider(),
@@ -94,15 +94,14 @@ object VoiceCommandEngine {
 
             is VoiceCommand.OpenGame -> {
                 val launchableGames = gamesProvider()
-                val aliasPackages = aliasGamesProvider()
-                    .mapTo(mutableSetOf()) { it.packageName }
-                val safeAliases = gameAliasesProvider()
-                    .filterValues { packageName -> packageName in aliasPackages }
+                val aliasGames = aliasGamesProvider()
+                val aliases = gameAliasesProvider()
                 val match = GameMatchFinder.find(
                     query = command.query,
                     games = launchableGames,
-                    userAliases = safeAliases,
-                    popularAliasGames = aliasGamesProvider()
+                    userAliases = aliases,
+                    userAliasGames = aliasGames,
+                    popularAliasGames = aliasGames
                 )
                 if (match == null) {
                     VoiceActionResult.NotAvailable(
@@ -167,23 +166,33 @@ internal object GameMatchFinder {
         query: String,
         games: List<GameInfo>,
         userAliases: Map<String, String> = emptyMap(),
+        userAliasGames: List<GameInfo> = games,
         popularAliasGames: List<GameInfo> = games
     ): GameInfo? {
         if (games.isEmpty()) return null
 
         val normalizedQuery = VoiceCommandParser.normalize(query)
         if (normalizedQuery.isBlank()) return null
-        val aliasQuery = VoiceCommandParser.canonicalGameAlias(query)
+        val aliasQuery = VoiceCommandParser.canonicalGameAliasKey(query)
+
+        val learnedAliasTargets = userAliases.entries
+            .filter { (alias, _) ->
+                VoiceCommandParser.canonicalGameAliasKey(alias) == aliasQuery
+            }
+            .map { (_, packageName) -> packageName }
+            .distinct()
+
+        if (learnedAliasTargets.isNotEmpty()) {
+            if (learnedAliasTargets.size != 1) return null
+            val packageName = learnedAliasTargets.single()
+            return userAliasGames.singleOrNull { it.packageName == packageName }
+        }
 
         val exactPackageMatches = games.filter {
             it.packageName.equals(query.trim(), ignoreCase = true)
         }
         if (exactPackageMatches.size == 1) return exactPackageMatches.single()
         if (exactPackageMatches.size > 1) return null
-
-        userAliases[aliasQuery]?.let { packageName ->
-            games.firstOrNull { it.packageName == packageName }?.let { return it }
-        }
 
         popularAliases[aliasQuery]?.let { targets ->
             val exactLabelMatches = games.filter {
