@@ -378,6 +378,57 @@ class VoiceCommandEngineTest {
 
 
     @Test
+    fun unsafePersistedAliasDoesNotFallBackToMatchingLaunchableApp() {
+        val launchable = listOf(
+            GameInfo("com.discord", "Discord"),
+            GameInfo("com.supercell.brawlstars", "Brawl Stars")
+        )
+        val gamesOnly = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars")
+        )
+        var launched = ""
+
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("discord"),
+            gamesProvider = { launchable },
+            aliasGamesProvider = { gamesOnly },
+            launchGame = { packageName -> launched = packageName; true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            gameAliasesProvider = {
+                mapOf("discord" to "com.example.uninstalled.game")
+            }
+        )
+
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals("", launched)
+    }
+
+    @Test
+    fun openGameSnapshotsAliasCatalogOnlyOnce() {
+        var aliasCatalogReads = 0
+
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("Minecraft"),
+            gamesProvider = { games },
+            aliasGamesProvider = {
+                aliasCatalogReads++
+                games
+            },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") }
+        )
+
+        assertIs<VoiceActionResult.GameOpened>(result)
+        assertEquals(1, aliasCatalogReads)
+    }
+
+    @Test
     fun aliasesPreemptedByHigherPriorityCommandsCannotBeSaved() {
         val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
         for (alias in listOf("balanced fps", "battery")) {
