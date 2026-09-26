@@ -294,6 +294,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
                     (result.status.batteryPercent?.toString() ?: "no disponible") +
                     " por ciento, térmica " + result.status.thermalLabel + "."
 
+            is VoiceActionResult.NetworkReport ->
+                NetworkVoiceResponseText.format(result)
+
             is VoiceActionResult.AiAdvice ->
                 AiAdviceFormatter.fullResponse(getContext(), result.advice)
 

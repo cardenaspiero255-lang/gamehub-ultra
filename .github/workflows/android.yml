@@ -473,6 +473,83 @@ jobs:
           echo "Android CI failed. Gemini analysis is intentionally not credentialed in pull_request workflows." 
           echo "Use a trusted default-branch workflow_run consumer for any secret-backed analysis."
 
+      - name: Collect Sentry failure context
+        if: failure()
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          set +x
+          REPORT_DIR="$RUNNER_TEMP/sentry-analysis"
+          REPORT="$REPORT_DIR/report.md"
+          mkdir -p "$REPORT_DIR"
+          {
+            echo "# Sentry failure context"
+            echo
+            echo "Workflow: $GITHUB_WORKFLOW"
+            echo "Run: $GITHUB_RUN_ID"
+            echo "Commit: $GITHUB_SHA"
+            echo
+          } > "$REPORT"
+
+          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
+            echo "SENTRY_AUTH_TOKEN is not available to this workflow run." >> "$REPORT"
+            exit 0
+          fi
+
+          api_get() {
+            curl --fail --silent --show-error \
+              --connect-timeout 10 \
+              --max-time 30 \
+              -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+              -H "Content-Type: application/json" \
+              "https://sentry.io/api/0/$1"
+          }
+
+          ORG="${SENTRY_ORG:-}"
+          if [ -z "$ORG" ]; then
+            if ! api_get "organizations/" > "$RUNNER_TEMP/sentry-orgs.json"; then
+              echo "Sentry authentication/API lookup failed while reading organizations." >> "$REPORT"
+              exit 0
+            fi
+            ORG="$(python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ["RUNNER_TEMP"])/"sentry-orgs.json"; data=json.loads(p.read_text()); print(data[0].get("slug","") if isinstance(data,list) and len(data)==1 else "")')"
+            if [ -z "$ORG" ]; then
+              echo "Multiple or zero Sentry organizations are visible. Set repository variable SENTRY_ORG to enable automatic issue lookup." >> "$REPORT"
+              exit 0
+            fi
+          fi
+
+          PROJECT="${SENTRY_PROJECT:-}"
+          if [ -z "$PROJECT" ]; then
+            if ! api_get "organizations/$ORG/projects/" > "$RUNNER_TEMP/sentry-projects.json"; then
+              echo "Could not read Sentry projects for the selected organization." >> "$REPORT"
+              exit 0
+            fi
+            PROJECT="$(python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ["RUNNER_TEMP"])/"sentry-projects.json"; data=json.loads(p.read_text()); print(data[0].get("slug","") if isinstance(data,list) and len(data)==1 else "")')"
+            if [ -z "$PROJECT" ]; then
+              echo "Multiple or zero Sentry projects are visible. Set repository variable SENTRY_PROJECT to enable automatic issue lookup." >> "$REPORT"
+              exit 0
+            fi
+          fi
+
+          if ! api_get "projects/$ORG/$PROJECT/issues/?query=is%3Aunresolved&limit=20" > "$RUNNER_TEMP/sentry-issues.json"; then
+            echo "Could not read unresolved Sentry issues for the selected project." >> "$REPORT"
+            exit 0
+          fi
+
+          python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ["RUNNER_TEMP"])/"sentry-issues.json"; data=json.loads(p.read_text()) if p.exists() else []; print("## Unresolved issues"); print(); [print(f"- [{(i.get("level") or "unknown")}] {str(i.get("title") or "Untitled issue").replace(chr(10)," ")} — count {(i.get("count") or "?")}, last seen {(i.get("lastSeen") or "unknown")}" + (f"\\n  {i.get("permalink")}" if i.get("permalink") else "")) for i in (data[:10] if isinstance(data,list) and data else [])]; print("No unresolved issues returned by Sentry.") if not isinstance(data,list) or not data else None' >> "$REPORT"
+
+      - name: Upload Sentry failure context
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gamehub-ultra-sentry-failure-analysis
+          path: ${{ runner.temp }}/sentry-analysis/**
+          if-no-files-found: ignore
+
       - name: Upload Gemini failure analysis
         if: failure()
         uses: actions/upload-artifact@v6
