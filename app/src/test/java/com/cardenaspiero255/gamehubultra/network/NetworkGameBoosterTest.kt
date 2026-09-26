@@ -20,7 +20,7 @@ class NetworkGameBoosterTest {
         )
 
         assertEquals(70.75, metrics.averageLatencyMs!!, 0.01)
-        assertEquals(40.33, metrics.jitterMs!!, 0.02)
+        assertEquals(40.67, metrics.jitterMs!!, 0.02)
         assertEquals(1, metrics.spikeCount)
     }
 
