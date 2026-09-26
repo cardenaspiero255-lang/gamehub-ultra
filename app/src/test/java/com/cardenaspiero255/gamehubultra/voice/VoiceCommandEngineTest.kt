@@ -306,6 +306,27 @@ class VoiceCommandEngineTest {
 
 
     @Test
+    fun memoryCommandAliasCannotBeSaved() {
+        val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
+        var writes = 0
+
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.DefineGameAlias("remember that pizza", "Brawl Stars"),
+            gamesProvider = { installed },
+            aliasGamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            saveGameAlias = { _, _ -> writes++ }
+        )
+
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals(0, writes)
+    }
+
+    @Test
     fun reservedProfileAliasCannotBeSavedAsGameAlias() {
         val installed = listOf(GameInfo("com.example.x4", "X4 Foundations"))
         var writes = 0
