@@ -24,6 +24,7 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
     timeout-minutes: 60
     steps:
       - name: Checkout
