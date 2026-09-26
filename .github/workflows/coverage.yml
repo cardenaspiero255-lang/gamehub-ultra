@@ -1,4 +1,5 @@
 name: Unit Test Coverage
+# Review hardening: coverage always runs; upload is secret-gated and actions are SHA-pinned.
 
 on:
   workflow_dispatch:
