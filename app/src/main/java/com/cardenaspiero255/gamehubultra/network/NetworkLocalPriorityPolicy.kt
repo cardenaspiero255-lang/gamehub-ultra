@@ -18,7 +18,14 @@ object NetworkLocalPriorityPolicy {
         if (profile != NetworkGameProfile.COMPETITIVE) {
             return NetworkPriorityAction.RELEASE_WIFI_LOCK
         }
-        if (!connected || !validated || transport != "Wi-Fi") {
+        val normalizedTransport = transport
+            ?.trim()
+            ?.lowercase()
+            ?.replace('‑', '-')
+            ?.replace('–', '-')
+            ?.replace('—', '-')
+        val isWifi = normalizedTransport == "wi-fi" || normalizedTransport == "wifi"
+        if (!connected || !validated || !isWifi) {
             return NetworkPriorityAction.UNAVAILABLE
         }
         return if (sdkInt >= 29) {
