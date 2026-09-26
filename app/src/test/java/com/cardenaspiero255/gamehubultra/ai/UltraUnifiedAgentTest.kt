@@ -311,6 +311,21 @@ class UltraUnifiedAgentTest {
     }
 
 
+
+    @Test
+    fun aliasDefinitionTargetingUtilityNamedGameStaysOnCommandPath() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "when I say bb open Battery Boy",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.DefineGameAlias>(commandRoute.command)
+        assertEquals("bb", command.alias)
+        assertEquals("battery boy", command.gameQuery)
+    }
+
+
     @Test
     fun bareLearnedAliasStaysOnCommandPath() {
         val route = UltraUnifiedAgentRouter.route(
