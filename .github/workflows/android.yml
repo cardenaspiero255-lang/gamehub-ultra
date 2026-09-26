@@ -69,6 +69,10 @@ jobs:
           sudo chmod 666 /dev/kvm
           ls -l /dev/kvm
 
+      - name: Test Android SDK retry safety
+        shell: bash
+        run: bash .github/scripts/test-android-sdk-retry-safety.sh
+
       - name: Install Android SDK packages
         shell: bash
         run: |
