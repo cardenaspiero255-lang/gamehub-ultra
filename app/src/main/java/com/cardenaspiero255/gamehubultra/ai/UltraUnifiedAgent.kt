@@ -87,6 +87,21 @@ object UltraUnifiedAgentRouter {
             return UltraAgentRoute.Command(command)
         }
 
+        // The leading assistant invocation has already been stripped by
+        // VoiceCommandParser. If an assistant-name token appears again in the
+        // resulting launch query, it belongs to the game title. This prevents
+        // titles such as "Ultra Competitive" from being reclassified as the
+        // built-in competitive-network command.
+        val assistantNameInsideGameTitle =
+            command is VoiceCommand.OpenGame &&
+                VoiceCommandParser.hasExplicitLaunchIntent(transcript) &&
+                command.query.split(" ").any { token ->
+                    token == "ultra" || token == "gamehub"
+                }
+        if (assistantNameInsideGameTitle) {
+            return UltraAgentRoute.Command(command)
+        }
+
         UltraNetworkGamingIntentParser.parse(transcript)?.let { intent ->
             return UltraAgentRoute.Utility(
                 UltraGeneralAssistant.answer(
