@@ -116,7 +116,10 @@ object VoiceCommandParser {
         ).matchEntire(clean)
         val match = spanish ?: english ?: return null
         val alias = canonicalGameAlias(match.groupValues[1])
-        val gameQuery = match.groupValues[2].trim()
+        val gameQuery = extractGameQuery(
+            clean = match.groupValues[2].trim(),
+            stripProfileSyntax = false
+        )
         if (alias.length !in 2..20 || gameQuery.isBlank()) return null
         return VoiceCommand.DefineGameAlias(alias = alias, gameQuery = gameQuery)
     }
