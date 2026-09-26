@@ -434,9 +434,10 @@ class UltraWakeService : Service() {
                 batteryPercent = diagnostics.battery.percent,
                 thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
             )
+            val intentResolver = aiAdvisor.intentResolver()
             val route = UltraUnifiedAgentRouter.route(
                 transcript = transcript,
-                optionalResolver = aiAdvisor.intentResolver(),
+                optionalResolver = intentResolver,
                 telemetry = UltraRuntimeTelemetry(
                     batteryPercent = status.batteryPercent,
                     thermalLabel = status.thermalLabel,
@@ -500,6 +501,7 @@ class UltraWakeService : Service() {
                         statusProvider = { status },
                         deferProfileApplication = true,
                         aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
+                        aliasIntentResolver = intentResolver,
                         gameAliasesProvider = { GameAliasStore.aliases(context) },
                         saveGameAlias = { alias, packageName ->
                             GameAliasStore.save(context, alias, packageName)
