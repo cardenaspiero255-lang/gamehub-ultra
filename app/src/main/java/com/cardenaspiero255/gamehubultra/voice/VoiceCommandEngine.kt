@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.voice
 
 import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
 data class VoiceDeviceStatus(
@@ -78,7 +79,8 @@ object VoiceCommandEngine {
                     target == null ||
                     normalizedAlias.length !in 2..20 ||
                     VoiceCommandParser.isReservedGameAlias(normalizedAlias) ||
-                    aliasIntentResolver?.resolve(normalizedAlias) != null
+                    aliasIntentResolver?.resolve(normalizedAlias) != null ||
+                    UltraMemoryCommandParser.parse(normalizedAlias) != null
                 ) {
                     VoiceActionResult.NotAvailable(
                         "No pude asociar el alias ${command.alias} a un único juego instalado."
