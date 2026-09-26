@@ -26,6 +26,7 @@ jobs:
       EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
     timeout-minutes: 60
     steps:
       - name: Checkout
