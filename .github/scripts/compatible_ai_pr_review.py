@@ -85,6 +85,16 @@ def github_request(path, *, method="GET", data=None, accept=None, expect_json=Tr
     )
 
 
+def ensure_head_unchanged(expected_sha, stage):
+    current = github_request(f"/pulls/{PR_NUMBER}")
+    current_sha = (current.get("head") or {}).get("sha") or ""
+    if current_sha != expected_sha:
+        raise RuntimeError(
+            f"Pull request head changed during {stage}: "
+            f"expected {expected_sha[:12]}, now {current_sha[:12]}. Rerun the review."
+        )
+
+
 def choose_model():
     models = request(
         f"{AI_BASE_URL}/models",
@@ -111,12 +121,17 @@ def choose_model():
 
 
 pr = github_request(f"/pulls/{PR_NUMBER}")
+reviewed_head = (pr.get("head") or {}).get("sha") or ""
+if not reviewed_head:
+    raise RuntimeError("Pull request head SHA is unavailable.")
+
 diff = github_request(
     f"/pulls/{PR_NUMBER}",
     accept="application/vnd.github.v3.diff",
     expect_json=False,
 )
 
+ensure_head_unchanged(reviewed_head, "diff fetch")
 original_diff_chars = len(diff)
 truncated = original_diff_chars > MAX_DIFF_CHARS
 if truncated:
@@ -230,6 +245,7 @@ def find_existing_review_comment():
     )
 
 
+ensure_head_unchanged(reviewed_head, "review publication")
 existing = find_existing_review_comment()
 
 if existing:

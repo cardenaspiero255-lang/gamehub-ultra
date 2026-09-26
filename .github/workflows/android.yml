@@ -464,9 +464,19 @@ jobs:
             exit 1
           fi
 
+      - name: Discover Sentry project for trusted release
+        if: success() && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        shell: bash
+        run: python3 .github/scripts/register_sentry_release.py --discover-only
+
       - name: Build distributable release APK and AAB with Sentry
         if: success() && github.event_name != 'pull_request'
         env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
         shell: bash

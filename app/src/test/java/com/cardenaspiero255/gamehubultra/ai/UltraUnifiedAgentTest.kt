@@ -487,6 +487,34 @@ class UltraUnifiedAgentTest {
         }
     }
 
+
+    @Test
+    fun competitiveModeGameTitleStillLaunches() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate Competitive Mode Racing",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("competitive mode racing", command.query)
+    }
+
+    @Test
+    fun coordinatedOrNegationDoesNotEnableEitherNetworkTarget() {
+        listOf(
+            "Ultra, don't activate competitive mode or gaming router",
+            "Ultra, no actives modo competitivo ni gaming router"
+        ).forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val chat = assertIs<UltraAgentRoute.Chat>(route)
+            assertEquals(transcript, chat.message)
+        }
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()

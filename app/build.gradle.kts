@@ -26,6 +26,10 @@ val sentryRelease = providers.environmentVariable("SENTRY_RELEASE")
     .orElse("")
     .get()
 
+val sentryMappingUploadEnabled = providers.environmentVariable("SENTRY_ENABLE_MAPPING_UPLOAD")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
+
 val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull
@@ -39,6 +43,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("androidx.baselineprofile")
+    id("io.sentry.android.gradle")
 }
 
 val exactLauncherIconSource = layout.projectDirectory.file("src/main/icon/gamehub_ultra_exact.webp.b64")
@@ -153,6 +158,24 @@ android {
 
 tasks.named("preBuild").configure {
     dependsOn(generateExactLauncherIcon)
+}
+
+sentry {
+    includeProguardMapping.set(sentryMappingUploadEnabled)
+    autoUploadProguardMapping.set(sentryMappingUploadEnabled)
+    authToken.set(providers.environmentVariable("SENTRY_AUTH_TOKEN"))
+    org.set(providers.environmentVariable("SENTRY_ORG"))
+    projectName.set(providers.environmentVariable("SENTRY_PROJECT"))
+    telemetry.set(false)
+    includeSourceContext.set(false)
+    includeDependenciesReport.set(false)
+
+    autoInstallation {
+        enabled.set(false)
+    }
+    tracingInstrumentation {
+        enabled.set(false)
+    }
 }
 
 dependencies {

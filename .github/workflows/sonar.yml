@@ -145,7 +145,7 @@ jobs:
                           f"({type(exc).__name__})."
                       )
 
-              if repo_owner not in organizations:
+              if not org_override and repo_owner not in organizations:
                   organizations.append(repo_owner)
 
               search_term = project_override or repo_name

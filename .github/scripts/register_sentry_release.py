@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Register a trusted GameHub Ultra build as a Sentry release.
+"""Discover Sentry project metadata and register trusted GameHub Ultra releases.
 
-Runs only on trusted non-PR GitHub Actions events. Secrets are never printed.
-The DSN project id is used to discover the matching Sentry project.
+This script runs only on trusted non-PR GitHub Actions events. Secrets are never
+printed. Use --discover-only before the distributable Android build to export
+SENTRY_ORG/SENTRY_PROJECT and enable the official Sentry Gradle mapping upload.
 """
 
 import json
@@ -14,6 +15,7 @@ import urllib.request
 
 API_ROOT = "https://sentry.io/api/0"
 MAX_PAGES = 500
+DISCOVER_ONLY = "--discover-only" in sys.argv
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -88,8 +90,7 @@ def next_page_url(headers):
         end = segment.find(">", start + 1)
         if start < 0 or end < 0:
             continue
-        candidate = segment[start + 1:end]
-        return checked_url(candidate)
+        return checked_url(segment[start + 1:end])
     return None
 
 
@@ -99,12 +100,44 @@ def paginated(path):
         data, headers = api_request(url, include_headers=True)
         if not isinstance(data, list):
             raise RuntimeError("Expected a paginated Sentry list response.")
-        for item in data:
-            yield item
+        yield from data
         url = next_page_url(headers)
         if not url:
             return
     raise RuntimeError(f"Sentry pagination exceeded {MAX_PAGES} pages.")
+
+
+def discover_project(project_id):
+    configured_org = os.environ.get("SENTRY_ORG", "").strip()
+    configured_project = os.environ.get("SENTRY_PROJECT", "").strip()
+    if configured_org and configured_project:
+        return configured_org, configured_project
+
+    matches = []
+    for organization in paginated("/organizations/?per_page=100"):
+        org_slug = organization.get("slug")
+        if not org_slug:
+            continue
+        try:
+            projects_path = (
+                f"/organizations/{urllib.parse.quote(org_slug)}/projects/?per_page=100"
+            )
+            for project in paginated(projects_path):
+                if str(project.get("id", "")) == project_id:
+                    project_slug = project.get("slug", "")
+                    if project_slug:
+                        matches.append((org_slug, project_slug))
+                    break
+        except RuntimeError as exc:
+            warning(f"Could not inspect Sentry organization {org_slug!r}: {exc}")
+
+    matches = list(dict.fromkeys(matches))
+    if len(matches) != 1:
+        raise RuntimeError(
+            "Could not uniquely discover the Sentry project for this DSN; "
+            f"found {len(matches)} matches."
+        )
+    return matches[0]
 
 
 TOKEN = os.environ.get("SENTRY_AUTH_TOKEN", "").strip()
@@ -114,10 +147,8 @@ REPOSITORY = os.environ.get("GH_REPOSITORY", "").strip()
 SHA = os.environ.get("GH_SHA", "").strip()
 
 if not TOKEN or not DSN:
-    warning("Sentry auth token or DSN is unavailable; release registration skipped.")
+    warning("Sentry auth token or DSN is unavailable; Sentry release work skipped.")
     sys.exit(0)
-if not RELEASE or not REPOSITORY or not SHA:
-    raise SystemExit("Missing trusted GitHub/Sentry release metadata.")
 
 parsed_dsn = urllib.parse.urlparse(DSN)
 if parsed_dsn.scheme != "https" or not parsed_dsn.path.strip("/"):
@@ -126,32 +157,24 @@ project_id = parsed_dsn.path.rstrip("/").split("/")[-1]
 if not project_id.isdigit():
     raise SystemExit("Could not derive the numeric Sentry project id from SENTRY_DSN.")
 
-matches = []
-for organization in paginated("/organizations/?per_page=100"):
-    org_slug = organization.get("slug")
-    if not org_slug:
-        continue
-    try:
-        projects_path = (
-            f"/organizations/{urllib.parse.quote(org_slug)}/projects/?per_page=100"
-        )
-        for project in paginated(projects_path):
-            if str(project.get("id", "")) == project_id:
-                project_slug = project.get("slug", "")
-                if project_slug:
-                    matches.append((org_slug, project_slug))
-                break
-    except RuntimeError as exc:
-        warning(f"Could not inspect Sentry organization {org_slug!r}: {exc}")
+org_slug, project_slug = discover_project(project_id)
 
-if len(matches) != 1:
-    warning(
-        "Could not uniquely discover the Sentry project for this DSN; "
-        f"found {len(matches)} matches. Release registration skipped."
+if DISCOVER_ONLY:
+    github_env = os.environ.get("GITHUB_ENV", "").strip()
+    if not github_env:
+        raise SystemExit("GITHUB_ENV is unavailable; cannot export Sentry build metadata.")
+    with open(github_env, "a", encoding="utf-8") as out:
+        out.write(f"SENTRY_ORG={org_slug}\n")
+        out.write(f"SENTRY_PROJECT={project_slug}\n")
+        out.write("SENTRY_ENABLE_MAPPING_UPLOAD=true\n")
+    notice(
+        f"Discovered Sentry project {org_slug}/{project_slug}; "
+        "trusted release mapping upload enabled."
     )
     sys.exit(0)
 
-org_slug, project_slug = matches[0]
+if not RELEASE or not REPOSITORY or not SHA:
+    raise SystemExit("Missing trusted GitHub/Sentry release metadata.")
 
 repo_linked = False
 try:
@@ -160,7 +183,7 @@ try:
         f"{urllib.parse.quote(project_slug)}/repo/"
     )
     repo_linked = isinstance(linked, list) and any(
-        (item.get("name") or item.get("externalSlug") or "") == REPOSITORY
+        item.get("name") == REPOSITORY or item.get("externalSlug") == REPOSITORY
         for item in linked
         if isinstance(item, dict)
     )

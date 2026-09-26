@@ -134,13 +134,15 @@ object UltraNetworkGamingIntentParser {
     private val questionPattern = Regex(
         """\b(que es|que significa|como funciona|quiero saber|explicame|dime que es|como (?:puedo|podria|debo) (?:activar|habilitar|poner|usar|priorizar)|como activo|what is|what does|how does|tell me about|i want to know|how (?:can|do) i (?:activate|enable|set|use|prioritize))\b"""
     )
-    private val clauseSeparator = Regex("""\b(y|and|pero|but|ademas|also)\b""")
+    private val clauseSeparator = Regex("""\b(y|and|pero|but|ademas|also|o|or|ni|nor)\b""")
     private val additiveConnectors = setOf("y", "and", "ademas", "also")
     private val statusPattern = Regex(
         """\b(ya esta activo|ya esta activa|ya esta activado|ya esta activada|esta activo|esta activa|esta activado|esta activada|already active|is already active|is active|already activated|is already activated|is activated|already enabled|is already enabled|is enabled)\b"""
     )
     private val competitivePatterns = listOf(
-        Regex("""\b(modo competitivo|perfil competitivo|competitive mode|competitive profile)\b"""),
+        Regex(
+            """\b(modo competitivo|perfil competitivo|competitive mode|competitive profile)\b(?=\s*(?:$|y\b|and\b|pero\b|but\b|con\b|with\b|sin\b|without\b|excepto\b|except\b|qos\b|router\b|gaming\b|por favor\b|please\b|ahora\b|now\b))"""
+        ),
         Regex(
             """\b(competitivo|competitive)\b(?=\s*(?:$|con\b|with\b|sin\b|without\b|excepto\b|except\b|qos\b|router\b|gaming\b))"""
         )
