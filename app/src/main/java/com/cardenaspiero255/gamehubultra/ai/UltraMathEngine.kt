@@ -22,6 +22,10 @@ object UltraMathEngine {
         solveTriangle(clean)?.let { return it }
         solveLinearEquation(clean)?.let { return it }
         solvePercentage(clean)?.let { return it }
+        solveFractionExpression(clean)?.let { return it }
+        solvePower(clean)?.let { return it }
+        solveSquareRoot(clean)?.let { return it }
+        solveRuleOfThree(clean)?.let { return it }
         solveUnitConversion(clean)?.let { return it }
         solveArithmetic(clean)?.let { return it }
         return null
@@ -102,6 +106,128 @@ object UltraMathEngine {
         return UltraMathSolution(
             resultText = formatNumber(result),
             explanation = "${formatNumber(percentage)}% de ${formatNumber(base)} = ${formatNumber(result)}."
+        )
+    }
+
+    private fun solveFractionExpression(clean: String): UltraMathSolution? {
+        val wordPattern = Regex(
+            """(?:suma\s+)?(un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|\d+)\s+(medio|medios|tercio|tercios|cuarto|cuartos|quinto|quintos|sexto|sextos|septimo|septimos|octavo|octavos|noveno|novenos)\s*(?:\+|mas|y)\s*(un|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|\d+)\s+(medio|medios|tercio|tercios|cuarto|cuartos|quinto|quintos|sexto|sextos|septimo|septimos|octavo|octavos|noveno|novenos)"""
+        )
+        val wordMatch = wordPattern.find(clean)
+        if (wordMatch != null) {
+            val left = fractionFromWords(wordMatch.groupValues[1], wordMatch.groupValues[2])
+                ?: return null
+            val right = fractionFromWords(wordMatch.groupValues[3], wordMatch.groupValues[4])
+                ?: return null
+            val result = left.add(right, mathContext)
+            return UltraMathSolution(
+                resultText = formatNumber(result),
+                explanation = "La suma de las fracciones es ${formatNumber(result)}."
+            )
+        }
+
+        val numericMatch = Regex(
+            """(-?\d+)\s*/\s*(\d+)\s*(?:\+|mas|plus)\s*(-?\d+)\s*/\s*(\d+)"""
+        ).find(clean) ?: return null
+        val leftDenominator = numericMatch.groupValues[2].toDecimalOrNull() ?: return null
+        val rightDenominator = numericMatch.groupValues[4].toDecimalOrNull() ?: return null
+        if (
+            leftDenominator.compareTo(BigDecimal.ZERO) == 0 ||
+            rightDenominator.compareTo(BigDecimal.ZERO) == 0
+        ) return null
+        val left = numericMatch.groupValues[1].toDecimalOrNull()
+            ?.divide(leftDenominator, mathContext) ?: return null
+        val right = numericMatch.groupValues[3].toDecimalOrNull()
+            ?.divide(rightDenominator, mathContext) ?: return null
+        val result = left.add(right, mathContext)
+        return UltraMathSolution(
+            resultText = formatNumber(result),
+            explanation = "La suma de las fracciones es ${formatNumber(result)}."
+        )
+    }
+
+    private fun fractionFromWords(
+        numeratorText: String,
+        denominatorText: String
+    ): BigDecimal? {
+        val numerator = when (numeratorText) {
+            "un", "uno" -> BigDecimal.ONE
+            "dos" -> BigDecimal("2")
+            "tres" -> BigDecimal("3")
+            "cuatro" -> BigDecimal("4")
+            "cinco" -> BigDecimal("5")
+            "seis" -> BigDecimal("6")
+            "siete" -> BigDecimal("7")
+            "ocho" -> BigDecimal("8")
+            "nueve" -> BigDecimal("9")
+            else -> numeratorText.toDecimalOrNull()
+        } ?: return null
+        val denominator = when (denominatorText) {
+            "medio", "medios" -> BigDecimal("2")
+            "tercio", "tercios" -> BigDecimal("3")
+            "cuarto", "cuartos" -> BigDecimal("4")
+            "quinto", "quintos" -> BigDecimal("5")
+            "sexto", "sextos" -> BigDecimal("6")
+            "septimo", "septimos" -> BigDecimal("7")
+            "octavo", "octavos" -> BigDecimal("8")
+            "noveno", "novenos" -> BigDecimal("9")
+            else -> return null
+        }
+        return numerator.divide(denominator, mathContext)
+    }
+
+    private fun solvePower(clean: String): UltraMathSolution? {
+        val match = Regex(
+            """(-?\d+(?:[.,]\d+)?)\s*(?:\^|elevado\s+a|raised\s+to)\s*(-?\d+)"""
+        ).find(clean) ?: return null
+        val base = match.groupValues[1].toDecimalOrNull() ?: return null
+        val exponent = match.groupValues[2].toIntOrNull() ?: return null
+        if (kotlin.math.abs(exponent) > 1000) return null
+
+        val result = if (exponent >= 0) {
+            base.pow(exponent, mathContext)
+        } else {
+            val positive = base.pow(-exponent, mathContext)
+            if (positive.compareTo(BigDecimal.ZERO) == 0) return null
+            BigDecimal.ONE.divide(positive, mathContext)
+        }
+        return UltraMathSolution(
+            resultText = formatNumber(result),
+            explanation = "${formatNumber(base)} elevado a $exponent = ${formatNumber(result)}."
+        )
+    }
+
+    private fun solveSquareRoot(clean: String): UltraMathSolution? {
+        val match = Regex(
+            """(?:raiz\s+cuadrada\s+de|square\s+root\s+of)\s*(-?\d+(?:[.,]\d+)?)"""
+        ).find(clean) ?: return null
+        val value = match.groupValues[1].toDecimalOrNull() ?: return null
+        if (value < BigDecimal.ZERO) return null
+        val root = kotlin.math.sqrt(value.toDouble())
+        if (!root.isFinite()) return null
+        val result = BigDecimal.valueOf(root).round(mathContext)
+        return UltraMathSolution(
+            resultText = formatNumber(result),
+            explanation = "La raíz cuadrada de ${formatNumber(value)} es ${formatNumber(result)}."
+        )
+    }
+
+    private fun solveRuleOfThree(clean: String): UltraMathSolution? {
+        val match = Regex(
+            """si\s+(-?\d+(?:[.,]\d+)?)\s+(?:cuestan|valen|son)\s+(-?\d+(?:[.,]\d+)?)\s+cuanto\s+(?:cuestan|valen|son)\s+(-?\d+(?:[.,]\d+)?)"""
+        ).find(clean) ?: return null
+
+        val knownQuantity = match.groupValues[1].toDecimalOrNull() ?: return null
+        val knownValue = match.groupValues[2].toDecimalOrNull() ?: return null
+        val targetQuantity = match.groupValues[3].toDecimalOrNull() ?: return null
+        if (knownQuantity.compareTo(BigDecimal.ZERO) == 0) return null
+
+        val result = knownValue
+            .multiply(targetQuantity, mathContext)
+            .divide(knownQuantity, mathContext)
+        return UltraMathSolution(
+            resultText = formatNumber(result),
+            explanation = "${formatNumber(knownValue)} × ${formatNumber(targetQuantity)} ÷ ${formatNumber(knownQuantity)} = ${formatNumber(result)}."
         )
     }
 
