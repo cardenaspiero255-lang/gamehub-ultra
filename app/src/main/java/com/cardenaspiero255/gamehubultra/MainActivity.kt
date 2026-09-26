@@ -1610,7 +1610,8 @@ private fun VoiceAssistantCard(
                             batteryPercent = voiceStatus.batteryPercent,
                             thermalLabel = voiceStatus.thermalLabel,
                             refreshRateHz = turnAiContext.refreshRateHz
-                        )
+                        ),
+                        knownGameAliases = GameAliasStore.aliases(context).keys
                     )
                     when (route) {
                         is UltraAgentRoute.Utility -> {
