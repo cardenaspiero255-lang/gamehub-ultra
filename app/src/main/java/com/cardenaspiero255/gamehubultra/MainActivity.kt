@@ -112,6 +112,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.GameAliasStore
+import com.cardenaspiero255.gamehubultra.voice.NetworkVoiceResponseText
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
@@ -1997,6 +1998,8 @@ private object VoiceResponseFormatter {
                         ?: context.getString(R.string.not_available),
                     result.status.thermalLabel
                 )
+            is VoiceActionResult.NetworkReport ->
+                NetworkVoiceResponseText.format(result)
             is VoiceActionResult.AiAdvice ->
                 AiAdviceFormatter.fullResponse(context, result.advice)
             VoiceActionResult.Help ->
