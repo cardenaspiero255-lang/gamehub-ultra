@@ -364,6 +364,18 @@ class VoiceCommandParserTest {
 
 
     @Test
+    fun stripsAssistantPrefixWhenDefiningAlias() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("when I say GameHub BS open Brawl Stars")
+        )
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("cuando diga Ultra B S abre Brawl Stars")
+        )
+    }
+
+    @Test
     fun canonicalizesSpacedInitialsWhenDefiningAlias() {
         assertEquals(
             VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
