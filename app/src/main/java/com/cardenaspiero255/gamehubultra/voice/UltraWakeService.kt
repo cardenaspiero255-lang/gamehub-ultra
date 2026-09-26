@@ -30,6 +30,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
+import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
@@ -453,11 +454,13 @@ class UltraWakeService : Service() {
                 is UltraAgentRoute.Utility -> route.answer.message
                 is UltraAgentRoute.Chat -> {
                     val memoryCommand = UltraMemoryCommandParser.parse(route.message)
-                    val answer = aiAdvisor.chat(
-                        message = route.message,
-                        context = aiContext,
-                        conversation = conversationBefore
-                    )
+                    val answer = UltraProductionQueryExecutor.answer(route) {
+                        aiAdvisor.chat(
+                            message = route.message,
+                            context = aiContext,
+                            conversation = conversationBefore
+                        )
+                    }
                     if (memoryCommand == null) {
                         val delta = voiceConversationLedger.record(
                             userMessage = route.message,
