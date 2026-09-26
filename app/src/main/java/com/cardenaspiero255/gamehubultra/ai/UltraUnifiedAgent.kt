@@ -37,6 +37,10 @@ sealed interface UltraUtilityIntent {
     data object RefreshRate : UltraUtilityIntent
     data object CallInterruptionShield : UltraUtilityIntent
     data object GeneralCapabilityHelp : UltraUtilityIntent
+    data class NetworkGamingControl(
+        val competitive: Boolean,
+        val routerGaming: Boolean
+    ) : UltraUtilityIntent
 }
 
 object UltraUnifiedAgentRouter {
@@ -52,6 +56,16 @@ object UltraUnifiedAgentRouter {
         // conversational memory operations, not launch/profile commands.
         if (UltraMemoryCommandParser.parse(transcript) != null) {
             return UltraAgentRoute.Chat(transcript.trim())
+        }
+
+        UltraNetworkGamingIntentParser.parse(transcript)?.let { intent ->
+            return UltraAgentRoute.Utility(
+                UltraGeneralAssistant.answer(
+                    intent = intent,
+                    clock = clock,
+                    telemetry = telemetry
+                )
+            )
         }
 
         val command = VoiceCommandParser.parse(
@@ -102,6 +116,39 @@ object UltraUnifiedAgentRouter {
             else ->
                 UltraAgentRoute.Command(command)
         }
+    }
+}
+
+object UltraNetworkGamingIntentParser {
+    private val actionPattern = Regex(
+        """\b(activa|activar|pon|poner|ponme|habilita|habilitar|usa|usar|quiero|aplica|aplicar|enable|activate|set|use)\b"""
+    )
+    private val competitivePatterns = listOf(
+        Regex("""\b(modo competitivo|perfil competitivo|competitive mode|competitive profile)\b"""),
+        Regex("""\bcompetitivo\b"""),
+        Regex("""\bcompetitive\b""")
+    )
+    private val routerGamingPatterns = listOf(
+        Regex("""\b(router gaming|gaming router|modo gaming del router|gaming router mode)\b"""),
+        Regex("""\b(qos gaming|gaming qos)\b"""),
+        Regex("""\b(prioridad gaming del router|prioridad del router|router con prioridad)\b"""),
+        Regex("""\b(prioriza|priorizar|prioridad)\b.*\b(router|telefono|dispositivo)\b""")
+    )
+
+    fun parse(transcript: String): UltraUtilityIntent.NetworkGamingControl? {
+        val clean = VoiceCommandParser.normalize(transcript)
+            .replace(Regex("""\b(gamehub ultra|gamehub|ultra)\b"""), " ")
+            .trim()
+        if (clean.isBlank() || !actionPattern.containsMatchIn(clean)) return null
+
+        val competitive = competitivePatterns.any { it.containsMatchIn(clean) }
+        val routerGaming = routerGamingPatterns.any { it.containsMatchIn(clean) }
+        if (!competitive && !routerGaming) return null
+
+        return UltraUtilityIntent.NetworkGamingControl(
+            competitive = competitive,
+            routerGaming = routerGaming
+        )
     }
 }
 
@@ -223,6 +270,21 @@ object UltraGeneralAssistant {
                     intent = intent,
                     canRunDuringGame = true
                 )
+            is UltraUtilityIntent.NetworkGamingControl -> {
+                val requested = when {
+                    intent.competitive && intent.routerGaming ->
+                        "modo competitivo y Gaming Router"
+                    intent.competitive ->
+                        "modo competitivo"
+                    else ->
+                        "Gaming Router"
+                }
+                UltraAgentAnswer(
+                    message = "Entendí la orden para activar $requested. El reconocimiento de voz ya está preparado, pero el motor Network Game Booster de CAR-72 todavía no está conectado a esta versión; no se aplicó ningún cambio de red ni QoS.",
+                    intent = intent,
+                    canRunDuringGame = true
+                )
+            }
         }
 }
 

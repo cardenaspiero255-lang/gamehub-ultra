@@ -204,6 +204,66 @@ class UltraUnifiedAgentTest {
         assertTrue(utilityRoute.answer.message.contains("temas generales"))
     }
 
+
+    @Test
+    fun networkGamingAliasesRecognizeCompetitiveAndRouterInAnyOrder() {
+        val phrases = listOf(
+            "Ultra, activa modo competitivo y router gaming",
+            "Ultra, activa modo competitivo y gaming router",
+            "Ultra, activa gaming router y modo competitivo",
+            "Ultra, ponme competitivo y dame prioridad en el router",
+            "Ultra, activa competitivo con QoS gaming"
+        )
+
+        phrases.forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val utility = assertIs<UltraAgentRoute.Utility>(route)
+            val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+            assertTrue(intent.competitive)
+            assertTrue(intent.routerGaming)
+            assertTrue(utility.answer.message.contains("no se aplicó"))
+        }
+    }
+
+    @Test
+    fun networkGamingSingleIntentDoesNotEnableTheOtherMode() {
+        val competitiveRoute = assertIs<UltraAgentRoute.Utility>(
+            UltraUnifiedAgentRouter.route(
+                transcript = "Ultra, activa modo competitivo",
+                optionalResolver = null
+            )
+        )
+        val competitiveIntent =
+            assertIs<UltraUtilityIntent.NetworkGamingControl>(competitiveRoute.answer.intent)
+        assertTrue(competitiveIntent.competitive)
+        assertFalse(competitiveIntent.routerGaming)
+
+        val routerRoute = assertIs<UltraAgentRoute.Utility>(
+            UltraUnifiedAgentRouter.route(
+                transcript = "Ultra, activa gaming router",
+                optionalResolver = null
+            )
+        )
+        val routerIntent =
+            assertIs<UltraUtilityIntent.NetworkGamingControl>(routerRoute.answer.intent)
+        assertFalse(routerIntent.competitive)
+        assertTrue(routerIntent.routerGaming)
+    }
+
+    @Test
+    fun networkGamingMentionWithoutActionStaysConversational() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, qué es gaming router",
+            optionalResolver = null
+        )
+
+        val chat = assertIs<UltraAgentRoute.Chat>(route)
+        assertEquals("Ultra, qué es gaming router", chat.message)
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()
