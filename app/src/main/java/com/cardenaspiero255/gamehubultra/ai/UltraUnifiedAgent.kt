@@ -44,13 +44,40 @@ object UltraUnifiedAgentRouter {
         transcript: String,
         optionalResolver: NaturalLanguageIntentResolver? = null,
         telemetry: UltraRuntimeTelemetry? = null,
-        clock: Clock = Clock.systemDefaultZone()
+        clock: Clock = Clock.systemDefaultZone(),
+        knownGameAliases: Set<String> = emptySet()
     ): UltraAgentRoute {
         // Memory commands must bypass profile/game parsing. Phrases such as
         // "elimina de tu memoria prefiero X4" contain profile keywords but are
         // conversational memory operations, not launch/profile commands.
         if (UltraMemoryCommandParser.parse(transcript) != null) {
             return UltraAgentRoute.Chat(transcript.trim())
+        }
+
+        val command = VoiceCommandParser.parse(
+            transcript = transcript,
+            optionalResolver = optionalResolver,
+            knownGameAliases = knownGameAliases
+        )
+
+        // Alias-definition commands must win over utility keyword matching.
+        // Example: "when I say bb open Battery Boy" must define an alias,
+        // not be reinterpreted as a battery-status question.
+        if (command is VoiceCommand.DefineGameAlias) {
+            return UltraAgentRoute.Command(command)
+        }
+
+        val learnedAlias = VoiceCommandParser.isKnownGameAlias(
+            transcript,
+            knownGameAliases
+        )
+
+        // A persisted alias that actually parsed as an OpenGame command reflects
+        // an explicit user choice and should beat utility keyword classification.
+        // Resolver-owned phrases are protected because the parser resolves them
+        // before checking persisted aliases.
+        if (command is VoiceCommand.OpenGame && learnedAlias) {
+            return UltraAgentRoute.Command(command)
         }
 
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
@@ -64,14 +91,13 @@ object UltraUnifiedAgentRouter {
                 )
             }
         }
-
-        val command = VoiceCommandParser.parse(transcript, optionalResolver)
         return when {
             command is VoiceCommand.Unknown ->
                 UltraAgentRoute.Chat(transcript.trim())
             command is VoiceCommand.OpenGame &&
                 command.requestedProfile == null &&
-                !VoiceCommandParser.hasExplicitLaunchIntent(transcript) ->
+                !VoiceCommandParser.hasExplicitLaunchIntent(transcript) &&
+                !learnedAlias ->
                 UltraAgentRoute.Chat(transcript.trim())
             else ->
                 UltraAgentRoute.Command(command)

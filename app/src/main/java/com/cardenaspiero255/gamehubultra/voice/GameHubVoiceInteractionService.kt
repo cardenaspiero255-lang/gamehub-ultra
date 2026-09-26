@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.GameSelectionStore
 import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
@@ -174,8 +175,13 @@ private class GameHubVoiceInteractionSession(context: Context) :
             selectedProfile = selectedProfile,
             sessionActive = selectedGamePackage != null
         )
+        val intentResolver = aiAdvisor.intentResolver()
         val result = VoiceCommandEngine.execute(
-            command = VoiceCommandParser.parse(transcript, aiAdvisor.intentResolver()),
+            command = VoiceCommandParser.parse(
+                transcript = transcript,
+                optionalResolver = intentResolver,
+                knownGameAliases = GameAliasStore.aliases(context).keys
+            ),
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
             saveSelectedGame = { packageName ->
@@ -192,7 +198,12 @@ private class GameHubVoiceInteractionSession(context: Context) :
             isProfileAvailable = { _ -> true },
             statusProvider = { readStatus() },
             deferProfileApplication = true,
-            aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
+            aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
+            aliasIntentResolver = intentResolver,
+            gameAliasesProvider = { GameAliasStore.aliases(context) },
+            saveGameAlias = { alias, packageName ->
+                GameAliasStore.save(context, alias, packageName)
+            }
         )
 
         val response = responseText(result)
@@ -270,6 +281,13 @@ private class GameHubVoiceInteractionSession(context: Context) :
                     else -> base
                 }
             }
+
+            is VoiceActionResult.GameAliasSaved ->
+                getContext().getString(
+                    R.string.voice_result_game_alias_saved,
+                    result.alias.uppercase(),
+                    result.game.label
+                )
 
             is VoiceActionResult.DeviceStatus ->
                 "Estado: batería " +

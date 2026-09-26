@@ -69,30 +69,51 @@ jobs:
           sudo chmod 666 /dev/kvm
           ls -l /dev/kvm
 
+      - name: Test Android SDK retry safety
+        shell: bash
+        run: bash .github/scripts/test-android-sdk-retry-safety.sh
+
       - name: Install Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          packages=(
-            "platforms;android-35"
-            "platforms;android-36"
-            "build-tools;36.0.0"
-            "emulator"
-            "platform-tools"
-            "system-images;android-35;google_apis;x86_64"
-          )
+          missing=()
+
+          [ -s "$SDK_ROOT/platforms/android-35/android.jar" ] || missing+=("platforms;android-35")
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          [ -x "$SDK_ROOT/emulator/emulator" ] || missing+=("emulator")
+          [ -x "$SDK_ROOT/platform-tools/adb" ] || missing+=("platform-tools")
+
+          IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
+          system_image_missing=0
+          if [ ! -s "$IMAGE_DIR/system.img" ] || [ ! -s "$IMAGE_DIR/ramdisk.img" ] || [ ! -e "$IMAGE_DIR/data/empty_data_disk" ]; then
+            missing+=("system-images;android-35;google_apis;x86_64")
+            system_image_missing=1
+          fi
+
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "All required Android SDK packages are already present; skipping sdkmanager."
+            exit 0
+          fi
+
+          echo "Missing Android SDK packages:"
+          printf ' - %s\n' "${missing[@]}"
+
           for attempt in 1 2 3; do
-            echo "Installing Android SDK packages, attempt ${attempt}/3"
-            if sdkmanager "${packages[@]}"; then
+            echo "Installing missing Android SDK packages, attempt ${attempt}/3"
+            if sdkmanager "${missing[@]}"; then
               exit 0
             fi
             echo "sdkmanager failed on attempt ${attempt}; removing partial package state before retry."
-            rm -rf \
-              "$SDK_ROOT/.temp" \
-              "$SDK_ROOT/system-images/android-35/google_apis/x86_64" \
-              "$SDK_ROOT/system-images/android-35/google_apis/.installer" \
-              "$SDK_ROOT/system-images/android-35/.installer"
+            rm -rf "$SDK_ROOT/.temp"
+            if [ "$system_image_missing" -eq 1 ]; then
+              rm -rf \
+                "$SDK_ROOT/system-images/android-35/google_apis/x86_64" \
+                "$SDK_ROOT/system-images/android-35/google_apis/.installer" \
+                "$SDK_ROOT/system-images/android-35/.installer"
+            fi
             sleep $((attempt * 15))
           done
           echo "Android SDK package installation failed after retries."
@@ -102,25 +123,26 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.13"
-          cache-disabled: true
+          cache-disabled: false
+          cache-read-only: false
 
       - name: Run unit tests
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:testDebugUnitTest --stacktrace 2>&1 | tee "$RUNNER_TEMP/unit-tests.log"
+          gradle :app:testDebugUnitTest --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/unit-tests.log"
 
       - name: Build debug APK
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:assembleDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/debug-apk.log"
+          gradle :app:assembleDebug --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/debug-apk.log"
 
       - name: Run lint
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:lintDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-debug.log"
+          gradle :app:lintDebug --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/lint-debug.log"
 
       - name: Create ephemeral release signing key
         shell: bash
@@ -150,13 +172,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk.log"
+          gradle :app:assembleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk.log"
 
       - name: Build release AAB
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:bundleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-aab.log"
+          gradle :app:bundleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-aab.log"
 
       - name: Prepare deterministic API 35 AVD
         shell: bash
@@ -344,6 +366,7 @@ jobs:
           LOG="$RUNNER_TEMP/baseline-profile.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile \
+            --build-cache \
             --no-configuration-cache \
             --stacktrace 2>&1 | tee "$LOG"
           if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
@@ -356,12 +379,18 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
-          gradle :baseline-profile:clean --no-configuration-cache
+          # Preserve compiled/intermediate outputs from the baseline-profile run.
+          # Only clear prior instrumentation reports so the result parser below
+          # sees results produced by this macrobenchmark execution.
+          rm -rf \
+            baseline-profile/build/outputs/androidTest-results \
+            baseline-profile/build/reports/androidTests
           LOG="$RUNNER_TEMP/macrobenchmark.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
+            --build-cache \
             --no-configuration-cache \
             --stacktrace 2>&1 | tee "$LOG"
           if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then

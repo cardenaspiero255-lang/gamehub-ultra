@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.voice
 
 import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
+import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
 data class VoiceDeviceStatus(
@@ -22,6 +23,11 @@ sealed interface VoiceActionResult {
         val profileDeferred: Boolean
     ) : VoiceActionResult
 
+    data class GameAliasSaved(
+        val alias: String,
+        val game: GameInfo
+    ) : VoiceActionResult
+
     data class DeviceStatus(val status: VoiceDeviceStatus) : VoiceActionResult
     data class AiAdvice(val advice: GameHubAiAdvice) : VoiceActionResult
     data object Help : VoiceActionResult
@@ -34,6 +40,7 @@ object VoiceCommandEngine {
     fun execute(
         command: VoiceCommand,
         gamesProvider: () -> List<GameInfo>,
+        aliasGamesProvider: (() -> List<GameInfo>)? = null,
         launchGame: (String) -> Boolean,
         saveSelectedGame: (String) -> Unit,
         saveSelectedProfile: (PerformanceProfile) -> Unit,
@@ -41,7 +48,10 @@ object VoiceCommandEngine {
         isProfileAvailable: (PerformanceProfile) -> Boolean,
         statusProvider: () -> VoiceDeviceStatus,
         deferProfileApplication: Boolean = false,
-        aiAdvisor: ((String) -> GameHubAiAdvice)? = null
+        aiAdvisor: ((String) -> GameHubAiAdvice)? = null,
+        aliasIntentResolver: NaturalLanguageIntentResolver? = null,
+        gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
+        saveGameAlias: (String, String) -> Unit = { _, _ -> }
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -58,8 +68,44 @@ object VoiceCommandEngine {
                 }
             }
 
+            is VoiceCommand.DefineGameAlias -> {
+                val normalizedAlias = VoiceCommandParser.canonicalGameAliasKey(command.alias)
+                val target = GameMatchFinder.find(
+                    query = command.gameQuery,
+                    games = aliasGamesProvider?.invoke() ?: gamesProvider(),
+                    userAliases = emptyMap()
+                )
+                if (
+                    target == null ||
+                    normalizedAlias.length !in 2..20 ||
+                    VoiceCommandParser.isReservedGameAlias(normalizedAlias) ||
+                    aliasIntentResolver?.resolve(normalizedAlias) != null ||
+                    UltraMemoryCommandParser.parse(normalizedAlias) != null
+                ) {
+                    VoiceActionResult.NotAvailable(
+                        "No pude asociar el alias ${command.alias} a un único juego instalado."
+                    )
+                } else {
+                    saveGameAlias(normalizedAlias, target.packageName)
+                    VoiceActionResult.GameAliasSaved(
+                        alias = normalizedAlias,
+                        game = target
+                    )
+                }
+            }
+
             is VoiceCommand.OpenGame -> {
-                val match = GameMatchFinder.find(command.query, gamesProvider())
+                val launchableGames = gamesProvider()
+                val aliasGames = aliasGamesProvider?.invoke() ?: launchableGames
+                val aliases = gameAliasesProvider()
+                val match = GameMatchFinder.find(
+                    query = command.query,
+                    originalQuery = command.originalQuery,
+                    games = launchableGames,
+                    userAliases = aliases,
+                    userAliasGames = aliasGames,
+                    popularAliasGames = aliasGames
+                )
                 if (match == null) {
                     VoiceActionResult.NotAvailable(
                         "No encontré un juego instalado que coincida con \"" + command.query + "\"."
@@ -113,14 +159,116 @@ object VoiceCommandEngine {
 }
 
 internal object GameMatchFinder {
-    fun find(query: String, games: List<GameInfo>): GameInfo? {
+    private val popularAliases = mapOf(
+        "re8" to listOf("resident evil village"),
+        "cp2077" to listOf("cyberpunk 2077"),
+        "pubg" to listOf("playerunknown s battlegrounds", "pubg")
+    )
+
+    fun find(
+        query: String,
+        games: List<GameInfo>,
+        originalQuery: String? = null,
+        userAliases: Map<String, String> = emptyMap(),
+        userAliasGames: List<GameInfo> = games,
+        popularAliasGames: List<GameInfo> = games
+    ): GameInfo? {
         if (games.isEmpty()) return null
 
         val normalizedQuery = VoiceCommandParser.normalize(query)
         if (normalizedQuery.isBlank()) return null
 
-        val queryTokens = normalizedQuery.split(" ").filter(String::isNotBlank)
-        val compactQuery = normalizedQuery.replace(" ", "")
+        val normalizedOriginalQuery = originalQuery
+            ?.let(VoiceCommandParser::normalize)
+            ?.takeIf(String::isNotBlank)
+        val titleQuery = normalizedOriginalQuery ?: normalizedQuery
+
+        val directAliasQuery = VoiceCommandParser.canonicalGameAlias(query)
+        val strippedAliasQuery =
+            VoiceCommandParser.canonicalGameAliasKey(originalQuery ?: query)
+        val hasAssistantLikePrefix =
+            titleQuery.startsWith("gamehub ultra ") ||
+                titleQuery.startsWith("gamehub ") ||
+                titleQuery.startsWith("ultra ")
+
+        if (hasAssistantLikePrefix) {
+            val exactTitleMatches = games.filter {
+                VoiceCommandParser.normalize(it.label) == titleQuery
+            }
+            if (exactTitleMatches.size > 1) return null
+            if (exactTitleMatches.size == 1) return exactTitleMatches.single()
+        }
+
+        val hasPrefixedTitleCandidate =
+            hasAssistantLikePrefix &&
+                games.any { game ->
+                    VoiceCommandParser.normalize(game.label).startsWith("$titleQuery ")
+                }
+
+        val aliasQueries = linkedSetOf(directAliasQuery).apply {
+            if (
+                hasAssistantLikePrefix &&
+                !hasPrefixedTitleCandidate &&
+                strippedAliasQuery != directAliasQuery
+            ) {
+                add(strippedAliasQuery)
+            }
+        }
+
+        val learnedAliasTargets =
+            if (hasPrefixedTitleCandidate) {
+                emptyList()
+            } else {
+                userAliases.entries
+                    .filter { (alias, _) ->
+                        VoiceCommandParser.canonicalGameAliasKey(alias) in aliasQueries
+                    }
+                    .map { (_, packageName) -> packageName }
+                    .distinct()
+            }
+
+        if (learnedAliasTargets.isNotEmpty()) {
+            if (learnedAliasTargets.size != 1) return null
+            val packageName = learnedAliasTargets.single()
+            return userAliasGames.singleOrNull { it.packageName == packageName }
+        }
+
+        val exactPackageMatches = games.filter {
+            it.packageName.equals(query.trim(), ignoreCase = true)
+        }
+        if (exactPackageMatches.size == 1) return exactPackageMatches.single()
+        if (exactPackageMatches.size > 1) return null
+
+        val popularAliasTargets =
+            if (hasPrefixedTitleCandidate) {
+                emptyList()
+            } else {
+                aliasQueries
+                    .mapNotNull(popularAliases::get)
+                    .distinct()
+            }
+
+        if (popularAliasTargets.isNotEmpty()) {
+            if (popularAliasTargets.size != 1) return null
+            val targets = popularAliasTargets.single()
+            val exactLabelMatches = games.filter {
+                VoiceCommandParser.normalize(it.label) == normalizedQuery
+            }
+            if (exactLabelMatches.size == 1) return exactLabelMatches.single()
+            if (exactLabelMatches.size > 1) return null
+            val candidates = popularAliasGames.filter { game ->
+                val label = VoiceCommandParser.normalize(game.label)
+                targets.any { target ->
+                    label == target || label.startsWith("${target} ")
+                }
+            }
+            return if (candidates.size == 1) candidates.single() else null
+        }
+
+        val scoringQuery =
+            if (hasPrefixedTitleCandidate) titleQuery else normalizedQuery
+        val queryTokens = scoringQuery.split(" ").filter(String::isNotBlank)
+        val compactQuery = scoringQuery.replace(" ", "")
         val scored = games.map { game ->
             val label = VoiceCommandParser.normalize(game.label)
             val labelTokens = label.split(" ").filter(String::isNotBlank)
@@ -131,12 +279,12 @@ internal object GameMatchFinder {
                 compactQuery in abbreviationCandidates(labelTokens)
 
             game to when {
-                label == normalizedQuery || game.packageName.equals(query.trim(), ignoreCase = true) -> 1.0
+                label == scoringQuery || game.packageName.equals(query.trim(), ignoreCase = true) -> 1.0
                 compactQuery.length >= 3 && compactLabel == compactQuery -> 0.98
                 abbreviationMatch -> 0.97
-                label.startsWith(normalizedQuery + " ") -> 0.94
-                label.contains(normalizedQuery) -> 0.90
-                normalizedQuery.contains(label) -> 0.86
+                label.startsWith(scoringQuery + " ") -> 0.94
+                label.contains(scoringQuery) -> 0.90
+                scoringQuery.contains(label) -> 0.86
                 else -> tokenScore
             }
         }.sortedByDescending { it.second }
@@ -144,7 +292,7 @@ internal object GameMatchFinder {
         val best = scored.firstOrNull() ?: return null
         val second = scored.getOrNull(1)
         val exactLabel = best.second == 1.0 &&
-            VoiceCommandParser.normalize(best.first.label) == normalizedQuery
+            VoiceCommandParser.normalize(best.first.label) == scoringQuery
         val exactPackage = best.first.packageName.equals(query.trim(), ignoreCase = true)
         val ambiguousHumanMatch = exactLabel &&
             !exactPackage &&

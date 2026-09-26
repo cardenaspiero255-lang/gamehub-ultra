@@ -310,4 +310,62 @@ class UltraUnifiedAgentTest {
         }
     }
 
+
+
+    @Test
+    fun aliasDefinitionTargetingUtilityNamedGameStaysOnCommandPath() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "when I say bb open Battery Boy",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.DefineGameAlias>(commandRoute.command)
+        assertEquals("bb", command.alias)
+        assertEquals("battery boy", command.gameQuery)
+    }
+
+
+
+    @Test
+    fun learnedAliasPreemptsUtilityClassification() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "current time",
+            optionalResolver = null,
+            knownGameAliases = setOf("current time")
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("current time", command.query)
+    }
+
+
+    @Test
+    fun wakeWordPrefixedLearnedAliasStaysOnCommandPath() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, BS",
+            optionalResolver = null,
+            knownGameAliases = setOf("bs")
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("bs", command.query)
+    }
+
+
+    @Test
+    fun bareLearnedAliasStaysOnCommandPath() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "BS",
+            optionalResolver = null,
+            knownGameAliases = setOf("bs")
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("bs", command.query)
+    }
+
 }

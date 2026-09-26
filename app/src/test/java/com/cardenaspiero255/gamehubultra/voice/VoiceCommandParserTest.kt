@@ -7,6 +7,40 @@ import kotlin.test.assertIs
 
 class VoiceCommandParserTest {
     @Test
+    fun preservesUltraInsideExplicitGameTitle() {
+        val direct = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("open Ultra Racing")
+        )
+        assertEquals("ultra racing", direct.query)
+
+        val withWakeWord = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("Ultra, open Ultra Racing")
+        )
+        assertEquals("ultra racing", withWakeWord.query)
+    }
+
+    @Test
+    fun preservesUltraInsideAliasTargetTitle() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "ur", gameQuery = "ultra racing"),
+            VoiceCommandParser.parse("Ultra, when I say UR open Ultra Racing")
+        )
+    }
+
+    @Test
+    fun stripsOnlyLeadingAssistantInvocation() {
+        val command = assertIs<VoiceCommand.OpenGame>(
+            VoiceCommandParser.parse("GameHub Ultra, open Ultra Racing")
+        )
+        assertEquals("ultra racing", command.query)
+
+        assertEquals(
+            VoiceCommand.DeviceStatus,
+            VoiceCommandParser.parse("Ultra, dime la temperatura")
+        )
+    }
+
+    @Test
     fun parsesSpanishGameOpen() {
         val command = VoiceCommandParser.parse("GameHub, abre Resident Evil 4 Remake")
         val parsed = assertIs<VoiceCommand.OpenGame>(command)
@@ -337,6 +371,80 @@ class VoiceCommandParserTest {
         val parsed = assertIs<VoiceCommand.OpenGame>(command)
         assertEquals("balanced adventure", parsed.query)
         assertEquals(PerformanceProfile.X4, parsed.requestedProfile)
+    }
+
+
+    @Test
+    fun parsesUserDefinedGameAliasInstruction() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("Ultra, cuando diga BS abre Brawl Stars")
+        )
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "re4r", gameQuery = "resident evil 4 remake"),
+            VoiceCommandParser.parse("cuando diga RE4R quiero que abras Resident Evil 4 Remake")
+        )
+    }
+
+
+
+    @Test
+    fun cleansLaunchFillerFromAliasTarget() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("cuando diga BS abre el juego Brawl Stars por favor")
+        )
+    }
+
+
+    @Test
+    fun stripsAssistantPrefixWhenDefiningAlias() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("when I say GameHub BS open Brawl Stars")
+        )
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("cuando diga Ultra B S abre Brawl Stars")
+        )
+    }
+
+    @Test
+    fun canonicalizesSpacedInitialsWhenDefiningAlias() {
+        assertEquals(
+            VoiceCommand.DefineGameAlias(alias = "bs", gameQuery = "brawl stars"),
+            VoiceCommandParser.parse("Ultra, cuando diga B S abre Brawl Stars")
+        )
+    }
+
+
+
+    @Test
+    fun resolverOwnedPhrasePreemptsPersistedAlias() {
+        val resolver = object : NaturalLanguageIntentResolver {
+            override fun resolve(transcript: String): VoiceCommand? =
+                if (transcript == "optimize my game") VoiceCommand.AskAi(transcript) else null
+        }
+
+        assertEquals(
+            VoiceCommand.AskAi("optimize my game"),
+            VoiceCommandParser.parse(
+                transcript = "optimize my game",
+                optionalResolver = resolver,
+                knownGameAliases = setOf("optimize my game")
+            )
+        )
+    }
+
+
+    @Test
+    fun bareLearnedAliasParsesAsGameLaunch() {
+        val command = VoiceCommandParser.parse(
+            transcript = "BS",
+            knownGameAliases = setOf("bs")
+        )
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("bs", parsed.query)
     }
 
 }

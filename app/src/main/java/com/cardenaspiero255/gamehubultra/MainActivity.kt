@@ -111,6 +111,7 @@ import com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
+import com.cardenaspiero255.gamehubultra.voice.GameAliasStore
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
@@ -1609,7 +1610,8 @@ private fun VoiceAssistantCard(
                             batteryPercent = voiceStatus.batteryPercent,
                             thermalLabel = voiceStatus.thermalLabel,
                             refreshRateHz = turnAiContext.refreshRateHz
-                        )
+                        ),
+                        knownGameAliases = GameAliasStore.aliases(context).keys
                     )
                     when (route) {
                         is UltraAgentRoute.Utility -> {
@@ -1692,6 +1694,11 @@ private fun VoiceAssistantCard(
                                 statusProvider = { VoiceDeviceStatusProvider.read(context) },
                                 aiAdvisor = { question ->
                                     aiAdvisor.advise(question, latestAiContext)
+                                },
+                                aliasIntentResolver = aiIntentResolver,
+                                gameAliasesProvider = { GameAliasStore.aliases(context) },
+                                saveGameAlias = { alias, packageName ->
+                                    GameAliasStore.save(context, alias, packageName)
                                 }
                             )
                             val spokenResponse = VoiceResponseFormatter.format(context, result)
@@ -1977,6 +1984,12 @@ private object VoiceResponseFormatter {
                     else -> base
                 }
             }
+            is VoiceActionResult.GameAliasSaved ->
+                context.getString(
+                    R.string.voice_result_game_alias_saved,
+                    result.alias.uppercase(),
+                    result.game.label
+                )
             is VoiceActionResult.DeviceStatus ->
                 context.getString(
                     R.string.voice_result_status,

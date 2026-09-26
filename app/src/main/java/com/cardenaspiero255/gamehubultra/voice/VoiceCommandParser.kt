@@ -10,17 +10,41 @@ object VoiceCommandParser {
     private const val PROFILE_OR_LAUNCH_VERBS = GAME_LAUNCH_VERBS + "|" + PROFILE_ACTION_VERBS
     private const val PROFILE_MARKERS = "modo|perfil|mode|profile"
     private const val PROFILE_TARGET_CONNECTORS = "to|for|a|al|para|en|with"
+    private val ASSISTANT_INVOCATION_PREFIX =
+        Regex("""^(?:gamehub\s+ultra|gamehub|ultra)\s+""")
+
+    private val RESERVED_PROFILE_ALIASES = setOf(
+        "x4",
+        "balanceado",
+        "equilibrado",
+        "equilibrar",
+        "balanced",
+        "interpolacion",
+        "interpolar",
+        "interpolation",
+        "interpolate"
+    )
     fun parse(
         transcript: String,
-        optionalResolver: NaturalLanguageIntentResolver? = null
+        optionalResolver: NaturalLanguageIntentResolver? = null,
+        knownGameAliases: Set<String> = emptySet()
     ): VoiceCommand {
-        val clean = normalize(transcript)
-            .replace(Regex("""\bultra\b"""), " ")
-            .trim()
+        val clean = stripLeadingAssistantInvocation(transcript)
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
         if (isUnsafeShellLikeCommand(clean)) return VoiceCommand.Unknown(transcript)
 
+        parseGameAliasDefinition(clean)?.let { return it }
+
+        // Resolver-owned phrases must keep their semantic command meaning even
+        // if an older persisted alias happens to use the same spoken phrase.
         optionalResolver?.resolve(clean)?.let { return it }
+
+        if (isKnownGameAlias(clean, knownGameAliases)) {
+            return VoiceCommand.OpenGame(
+                query = canonicalGameAlias(clean),
+                originalQuery = normalize(transcript)
+            )
+        }
 
         if (
             clean.contains("temperatura") ||
@@ -89,6 +113,59 @@ object VoiceCommandParser {
         }
     }
 
+    private fun parseGameAliasDefinition(clean: String): VoiceCommand.DefineGameAlias? {
+        val spanish = Regex(
+            """^cuando diga (.+?) (?:quiero que )?(?:abras|abre|abreme|lances|lanza|inicies|inicia|ejecutes|ejecuta) (.+)$"""
+        ).matchEntire(clean)
+        val english = Regex(
+            """^when i say (.+?) (?:i want you to )?(?:open|launch|start|run) (.+)$"""
+        ).matchEntire(clean)
+        val match = spanish ?: english ?: return null
+        val alias = canonicalGameAliasKey(match.groupValues[1])
+        val gameQuery = extractGameQuery(
+            clean = match.groupValues[2].trim(),
+            stripProfileSyntax = false
+        )
+        if (alias.length !in 2..20 || gameQuery.isBlank()) return null
+        return VoiceCommand.DefineGameAlias(alias = alias, gameQuery = gameQuery)
+    }
+
+    internal fun canonicalGameAlias(value: String): String {
+        val normalized = normalize(value)
+        val tokens = normalized.split(" ").filter(String::isNotBlank)
+        return if (
+            tokens.size >= 2 &&
+            tokens.all { token -> token.length == 1 || token.all(Char::isDigit) }
+        ) {
+            tokens.joinToString(separator = "")
+        } else {
+            normalized
+        }
+    }
+
+    internal fun canonicalGameAliasKey(value: String): String =
+        canonicalGameAlias(stripLeadingAssistantInvocation(value))
+
+    internal fun isKnownGameAlias(
+        value: String,
+        knownGameAliases: Set<String>
+    ): Boolean {
+        if (knownGameAliases.isEmpty()) return false
+        val candidate = canonicalGameAliasKey(value)
+        if (candidate.isBlank() || isReservedGameAlias(candidate)) return false
+        return knownGameAliases.any { canonicalGameAliasKey(it) == candidate }
+    }
+
+    internal fun isReservedGameAlias(value: String): Boolean {
+        val alias = canonicalGameAliasKey(value)
+        if (alias.isBlank() || alias in RESERVED_PROFILE_ALIASES) return true
+
+        val bareCommand = parse(alias)
+        if (bareCommand !is VoiceCommand.Unknown) return true
+
+        return parse("open $alias") !is VoiceCommand.OpenGame
+    }
+
     internal fun normalize(value: String): String =
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
             .replace(Regex("""\p{M}+"""), "")
@@ -96,11 +173,13 @@ object VoiceCommandParser {
             .trim()
             .replace(Regex("""\s+"""), " ")
 
-    internal fun hasExplicitLaunchIntent(value: String): Boolean {
-        val clean = normalize(value)
-            .replace(Regex("""\bultra\b"""), " ")
-            .replace(Regex("""\bgamehub\b"""), " ")
+    internal fun stripLeadingAssistantInvocation(value: String): String =
+        normalize(value)
+            .replace(ASSISTANT_INVOCATION_PREFIX, "")
             .trim()
+
+    internal fun hasExplicitLaunchIntent(value: String): Boolean {
+        val clean = stripLeadingAssistantInvocation(value)
         return Regex("""^($GAME_LAUNCH_VERBS)\b""").containsMatchIn(clean)
     }
 

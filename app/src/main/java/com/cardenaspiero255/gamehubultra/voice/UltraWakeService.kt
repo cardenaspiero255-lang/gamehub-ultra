@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.GameSelectionStore
 import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
@@ -433,14 +434,16 @@ class UltraWakeService : Service() {
                 batteryPercent = diagnostics.battery.percent,
                 thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
             )
+            val intentResolver = aiAdvisor.intentResolver()
             val route = UltraUnifiedAgentRouter.route(
                 transcript = transcript,
-                optionalResolver = aiAdvisor.intentResolver(),
+                optionalResolver = intentResolver,
                 telemetry = UltraRuntimeTelemetry(
                     batteryPercent = status.batteryPercent,
                     thermalLabel = status.thermalLabel,
                     refreshRateHz = diagnostics.refresh.currentRefreshRateHz
-                )
+                ),
+                knownGameAliases = GameAliasStore.aliases(context).keys
             )
 
                 when (route) {
@@ -479,6 +482,7 @@ class UltraWakeService : Service() {
                     val result = VoiceCommandEngine.execute(
                         command = route.command,
                         gamesProvider = { GameLibrary.discoverForVoice(context) },
+                        aliasGamesProvider = { GameLibrary.discover(context).games },
                         launchGame = { packageName ->
                             launchGameFromService(context, packageName)
                         },
@@ -496,7 +500,12 @@ class UltraWakeService : Service() {
                         isProfileAvailable = { _ -> true },
                         statusProvider = { status },
                         deferProfileApplication = true,
-                        aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) }
+                        aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
+                        aliasIntentResolver = intentResolver,
+                        gameAliasesProvider = { GameAliasStore.aliases(context) },
+                        saveGameAlias = { alias, packageName ->
+                            GameAliasStore.save(context, alias, packageName)
+                        }
                     )
 
                     when (result) {
@@ -504,6 +513,12 @@ class UltraWakeService : Service() {
                             "Perfil ${result.profile.title} seleccionado."
                         is VoiceActionResult.GameOpened ->
                             "Abriendo ${result.game.label}."
+                        is VoiceActionResult.GameAliasSaved ->
+                            context.getString(
+                                R.string.voice_result_game_alias_saved,
+                                result.alias.uppercase(),
+                                result.game.label
+                            )
                         is VoiceActionResult.DeviceStatus ->
                             "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
                         is VoiceActionResult.AiAdvice ->

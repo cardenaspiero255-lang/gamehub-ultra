@@ -51,7 +51,6 @@
         <service
             android:name=".voice.GameHubVoiceInteractionSessionService"
             android:exported="false"
-            android:process=":voice"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
         <service

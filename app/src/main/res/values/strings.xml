@@ -153,6 +153,7 @@
     <string name="voice_transcript">Ultra escuchó: %1$s</string>
     <string name="voice_result_profile_applied">Aplicado: perfil %1$s seleccionado.</string>
     <string name="voice_result_game_opened">Aplicado: abrí %1$s.</string>
+    <string name="voice_result_game_alias_saved">Alias %1$s guardado para %2$s.</string>
     <string name="voice_result_profile_applied_short">Perfil %1$s seleccionado en GameHub Ultra.</string>
     <string name="voice_result_profile_deferred">Perfil %1$s guardado; se aplicará al activar GameHub Ultra.</string>
     <string name="voice_result_profile_deferred_short">Perfil %1$s guardado para cuando GameHub Ultra esté activo.</string>
