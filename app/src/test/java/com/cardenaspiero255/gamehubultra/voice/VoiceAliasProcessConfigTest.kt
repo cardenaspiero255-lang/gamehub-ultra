@@ -50,7 +50,7 @@ class VoiceAliasProcessConfigTest {
                 "${file.name} must use the localized alias confirmation resource"
             )
             assertFalse(
-                source.contains("\"Alias ${result.alias.uppercase()} guardado para ${result.game.label}.\""),
+                Regex("""GameAliasSaved\\s*->\\s*"Alias """).containsMatchIn(source),
                 "${file.name} must not hard-code the Spanish alias confirmation"
             )
         }
