@@ -540,29 +540,7 @@ jobs:
             exit 0
           fi
 
-          python3 -c '
-import json, os
-from pathlib import Path
-p=Path(os.environ["RUNNER_TEMP"])/"sentry-issues.json"
-try:
-    data=json.loads(p.read_text())
-except Exception:
-    data=[]
-print("## Unresolved issues")
-print()
-if not isinstance(data,list) or not data:
-    print("No unresolved issues returned by Sentry.")
-else:
-    for issue in data[:10]:
-        title=str(issue.get("title") or "Untitled issue").replace("\n"," ")
-        level=issue.get("level") or "unknown"
-        count=issue.get("count") or "?"
-        last_seen=issue.get("lastSeen") or "unknown"
-        permalink=issue.get("permalink") or ""
-        print(f"- [{level}] {title} — count {count}, last seen {last_seen}")
-        if permalink:
-            print(f"  {permalink}")
-' >> "$REPORT"
+          python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ["RUNNER_TEMP"])/"sentry-issues.json"; data=json.loads(p.read_text()) if p.exists() else []; print("## Unresolved issues"); print(); [print(f"- [{(i.get("level") or "unknown")}] {str(i.get("title") or "Untitled issue").replace(chr(10)," ")} — count {(i.get("count") or "?")}, last seen {(i.get("lastSeen") or "unknown")}" + (f"\\n  {i.get("permalink")}" if i.get("permalink") else "")) for i in (data[:10] if isinstance(data,list) and data else [])]; print("No unresolved issues returned by Sentry.") if not isinstance(data,list) or not data else None' >> "$REPORT"
 
       - name: Upload Sentry failure context
         if: failure()
