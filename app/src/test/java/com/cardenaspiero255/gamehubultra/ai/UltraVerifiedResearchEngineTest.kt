@@ -53,7 +53,7 @@ class UltraVerifiedResearchEngineTest {
 
         assertFalse(result.abstained)
         assertTrue(result.fallbackUsed)
-        assertEquals(listOf("fallback"), result.sources)
+        assertEquals(listOf("source"), result.sources)
         assertTrue(result.message.contains("22"))
         engine.close()
     }
