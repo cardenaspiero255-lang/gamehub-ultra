@@ -91,9 +91,19 @@ jobs:
 
           if not project_key:
               query = urllib.parse.quote(repo_name)
-              data = get_json(
-                  f"{selected_host}/api/components/search?qualifiers=TRK&q={query}&ps=100"
-              )
+              organization_for_search = org_override or repo_owner
+              organization_param = urllib.parse.quote(organization_for_search)
+              try:
+                  data = get_json(
+                      f"{selected_host}/api/components/search"
+                      f"?qualifiers=TRK&q={query}&ps=100&organization={organization_param}"
+                  )
+              except Exception as exc:
+                  print(
+                      "::warning::Sonar project search failed "
+                      f"({type(exc).__name__}); continuing without auto-discovery."
+                  )
+                  data = {}
               components = data.get("components", [])
               exact = [
                   c for c in components
