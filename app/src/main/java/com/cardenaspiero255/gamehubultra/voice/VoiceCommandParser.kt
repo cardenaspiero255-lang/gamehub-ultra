@@ -129,8 +129,16 @@ object VoiceCommandParser {
         }
     }
 
-    internal fun isReservedGameAlias(value: String): Boolean =
-        canonicalGameAlias(value) in RESERVED_PROFILE_ALIASES
+    internal fun isReservedGameAlias(value: String): Boolean {
+        val alias = canonicalGameAlias(value)
+        if (alias.isBlank() || alias in RESERVED_PROFILE_ALIASES) return true
+
+        return when (val parsed = parse("open $alias")) {
+            is VoiceCommand.OpenGame ->
+                canonicalGameAlias(parsed.query) != alias
+            else -> true
+        }
+    }
 
     internal fun normalize(value: String): String =
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
