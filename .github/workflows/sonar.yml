@@ -56,10 +56,15 @@ jobs:
           org_override = os.environ.get("SONAR_ORGANIZATION_OVERRIDE", "").strip()
           host_override = os.environ.get("SONAR_HOST_URL_OVERRIDE", "").strip().rstrip("/")
 
-          hosts = [host_override] if host_override else [
+          allowed_hosts = [
               "https://sonarcloud.io",
               "https://sonarqube.us",
           ]
+          if host_override and host_override not in allowed_hosts:
+              raise SystemExit(
+                  "SONAR_HOST_URL must be https://sonarcloud.io or https://sonarqube.us."
+              )
+          hosts = [host_override] if host_override else allowed_hosts
 
           def get_json(url):
               req = urllib.request.Request(

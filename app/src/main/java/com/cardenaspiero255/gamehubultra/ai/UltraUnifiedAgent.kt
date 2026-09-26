@@ -58,16 +58,6 @@ object UltraUnifiedAgentRouter {
             return UltraAgentRoute.Chat(transcript.trim())
         }
 
-        UltraNetworkGamingIntentParser.parse(transcript)?.let { intent ->
-            return UltraAgentRoute.Utility(
-                UltraGeneralAssistant.answer(
-                    intent = intent,
-                    clock = clock,
-                    telemetry = telemetry
-                )
-            )
-        }
-
         val command = VoiceCommandParser.parse(
             transcript = transcript,
             optionalResolver = optionalResolver,
@@ -81,17 +71,30 @@ object UltraUnifiedAgentRouter {
             return UltraAgentRoute.Command(command)
         }
 
-        val learnedAlias = VoiceCommandParser.isKnownGameAlias(
-            transcript,
-            knownGameAliases
-        )
+        val learnedAlias =
+            VoiceCommandParser.isKnownGameAlias(transcript, knownGameAliases) ||
+                (
+                    command is VoiceCommand.OpenGame &&
+                        VoiceCommandParser.isKnownGameAlias(
+                            command.query,
+                            knownGameAliases
+                        )
+                )
 
-        // A persisted alias that actually parsed as an OpenGame command reflects
-        // an explicit user choice and should beat utility keyword classification.
-        // Resolver-owned phrases are protected because the parser resolves them
-        // before checking persisted aliases.
+        // A persisted alias is an explicit user choice and must beat built-in
+        // network/utility phrases, including aliases such as "gaming router".
         if (command is VoiceCommand.OpenGame && learnedAlias) {
             return UltraAgentRoute.Command(command)
+        }
+
+        UltraNetworkGamingIntentParser.parse(transcript)?.let { intent ->
+            return UltraAgentRoute.Utility(
+                UltraGeneralAssistant.answer(
+                    intent = intent,
+                    clock = clock,
+                    telemetry = telemetry
+                )
+            )
         }
 
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
@@ -121,7 +124,10 @@ object UltraUnifiedAgentRouter {
 
 object UltraNetworkGamingIntentParser {
     private val actionPattern = Regex(
-        """\b(activa|activar|pon|poner|ponme|habilita|habilitar|usa|usar|quiero|aplica|aplicar|enable|activate|set|use)\b"""
+        """\b(activa|activar|pon|poner|ponme|habilita|habilitar|usa|usar|quiero|aplica|aplicar|prioriza|priorizar|enable|activate|set|use|prioritize)\b"""
+    )
+    private val questionPattern = Regex(
+        """\b(que es|que significa|como funciona|quiero saber|explicame|dime que es|what is|what does|how does|tell me about|i want to know)\b"""
     )
     private val competitivePatterns = listOf(
         Regex("""\b(modo competitivo|perfil competitivo|competitive mode|competitive profile)\b"""),
@@ -132,17 +138,36 @@ object UltraNetworkGamingIntentParser {
         Regex("""\b(router gaming|gaming router|modo gaming del router|gaming router mode)\b"""),
         Regex("""\b(qos gaming|gaming qos)\b"""),
         Regex("""\b(prioridad gaming del router|prioridad del router|router con prioridad)\b"""),
-        Regex("""\b(prioriza|priorizar|prioridad)\b.*\b(router|telefono|dispositivo)\b""")
+        Regex("""\b(prioriza|priorizar|prioridad|prioritize)\b.*\b(router|telefono|dispositivo|phone|device)\b""")
+    )
+    private val competitiveNegationPatterns = listOf(
+        Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+|perfil\s+)?competitivo\b"""),
+        Regex("""\b(no|dont|do not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:modo\s+|perfil\s+)?(?:competitivo|competitive)\b""")
+    )
+    private val routerNegationPatterns = listOf(
+        Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
+        Regex("""\b(no|dont|do not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner)?\s*(?:el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
     )
 
     fun parse(transcript: String): UltraUtilityIntent.NetworkGamingControl? {
         val clean = VoiceCommandParser.normalize(transcript)
             .replace(Regex("""\b(gamehub ultra|gamehub|ultra)\b"""), " ")
             .trim()
-        if (clean.isBlank() || !actionPattern.containsMatchIn(clean)) return null
+        if (clean.isBlank()) return null
+        if (questionPattern.containsMatchIn(clean)) return null
+        if (!actionPattern.containsMatchIn(clean)) return null
 
-        val competitive = competitivePatterns.any { it.containsMatchIn(clean) }
-        val routerGaming = routerGamingPatterns.any { it.containsMatchIn(clean) }
+        val competitiveRequested =
+            competitivePatterns.any { it.containsMatchIn(clean) }
+        val routerRequested =
+            routerGamingPatterns.any { it.containsMatchIn(clean) }
+        val competitiveNegated =
+            competitiveNegationPatterns.any { it.containsMatchIn(clean) }
+        val routerNegated =
+            routerNegationPatterns.any { it.containsMatchIn(clean) }
+
+        val competitive = competitiveRequested && !competitiveNegated
+        val routerGaming = routerRequested && !routerNegated
         if (!competitive && !routerGaming) return null
 
         return UltraUtilityIntent.NetworkGamingControl(

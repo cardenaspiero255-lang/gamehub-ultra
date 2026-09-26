@@ -264,6 +264,57 @@ class UltraUnifiedAgentTest {
         assertEquals("Ultra, qué es gaming router", chat.message)
     }
 
+
+    @Test
+    fun learnedGamingRouterAliasBeatsBuiltInNetworkIntent() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate gaming router",
+            optionalResolver = null,
+            knownGameAliases = setOf("gaming router")
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("gaming router", command.query)
+    }
+
+    @Test
+    fun networkGamingQuestionWithWantToKnowStaysConversational() {
+        val transcript = "Ultra, quiero saber qué es gaming router"
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = transcript,
+            optionalResolver = null
+        )
+
+        val chat = assertIs<UltraAgentRoute.Chat>(route)
+        assertEquals(transcript, chat.message)
+    }
+
+    @Test
+    fun networkGamingNegationExcludesOnlyRejectedTarget() {
+        val competitiveOnly = assertIs<UltraAgentRoute.Utility>(
+            UltraUnifiedAgentRouter.route(
+                transcript = "Ultra, activa modo competitivo sin gaming router",
+                optionalResolver = null
+            )
+        )
+        val competitiveIntent =
+            assertIs<UltraUtilityIntent.NetworkGamingControl>(competitiveOnly.answer.intent)
+        assertTrue(competitiveIntent.competitive)
+        assertFalse(competitiveIntent.routerGaming)
+
+        val routerOnly = assertIs<UltraAgentRoute.Utility>(
+            UltraUnifiedAgentRouter.route(
+                transcript = "Ultra, activa gaming router sin modo competitivo",
+                optionalResolver = null
+            )
+        )
+        val routerIntent =
+            assertIs<UltraUtilityIntent.NetworkGamingControl>(routerOnly.answer.intent)
+        assertFalse(routerIntent.competitive)
+        assertTrue(routerIntent.routerGaming)
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()

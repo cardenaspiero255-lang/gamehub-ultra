@@ -4,11 +4,26 @@ import os
 import urllib.error
 import urllib.request
 
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(NoRedirectHandler())
+
 REPO = os.environ["GH_REPOSITORY"]
 PR_NUMBER = os.environ["PR_NUMBER"].strip()
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 AI_API_KEY = os.environ["AI_API_KEY"]
 AI_BASE_URL = os.environ["AI_BASE_URL"].rstrip("/")
+ALLOWED_AI_BASE_URLS = {
+    "https://api.deepseek.com",
+    "https://api.groq.com/openai/v1",
+}
+if AI_BASE_URL not in ALLOWED_AI_BASE_URLS:
+    raise SystemExit(f"Unsupported AI base URL: {AI_BASE_URL!r}")
+
 AI_PROVIDER = os.environ["AI_PROVIDER"]
 MODEL_PREFERENCES = [
     item.strip()
@@ -27,6 +42,9 @@ if not PR_NUMBER.isdigit():
 
 
 def request(url, *, method="GET", headers=None, data=None, expect_json=True):
+    if not url.startswith("https://"):
+        raise ValueError(f"Refusing non-HTTPS URL: {url}")
+
     req_headers = {
         "User-Agent": "gamehub-ultra-external-ai-reviewer",
         "Accept": "application/json",
@@ -41,7 +59,7 @@ def request(url, *, method="GET", headers=None, data=None, expect_json=True):
 
     req = urllib.request.Request(url, data=body, headers=req_headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with NO_REDIRECT_OPENER.open(req, timeout=180) as resp:
             raw = resp.read()
             if not expect_json:
                 return raw.decode("utf-8", errors="replace")
