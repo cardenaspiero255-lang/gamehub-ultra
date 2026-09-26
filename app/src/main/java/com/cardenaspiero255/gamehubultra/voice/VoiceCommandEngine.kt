@@ -40,7 +40,7 @@ object VoiceCommandEngine {
     fun execute(
         command: VoiceCommand,
         gamesProvider: () -> List<GameInfo>,
-        aliasGamesProvider: () -> List<GameInfo> = gamesProvider,
+        aliasGamesProvider: (() -> List<GameInfo>)? = null,
         launchGame: (String) -> Boolean,
         saveSelectedGame: (String) -> Unit,
         saveSelectedProfile: (PerformanceProfile) -> Unit,
@@ -72,7 +72,7 @@ object VoiceCommandEngine {
                 val normalizedAlias = VoiceCommandParser.canonicalGameAliasKey(command.alias)
                 val target = GameMatchFinder.find(
                     query = command.gameQuery,
-                    games = aliasGamesProvider(),
+                    games = aliasGamesProvider?.invoke() ?: gamesProvider(),
                     userAliases = emptyMap()
                 )
                 if (
@@ -96,7 +96,7 @@ object VoiceCommandEngine {
 
             is VoiceCommand.OpenGame -> {
                 val launchableGames = gamesProvider()
-                val aliasGames = aliasGamesProvider()
+                val aliasGames = aliasGamesProvider?.invoke() ?: launchableGames
                 val aliases = gameAliasesProvider()
                 val match = GameMatchFinder.find(
                     query = command.query,
@@ -176,6 +176,17 @@ internal object GameMatchFinder {
         val normalizedQuery = VoiceCommandParser.normalize(query)
         if (normalizedQuery.isBlank()) return null
         val aliasQuery = VoiceCommandParser.canonicalGameAliasKey(query)
+        val hasExplicitAssistantPrefix =
+            normalizedQuery.startsWith("gamehub ultra ") ||
+                normalizedQuery.startsWith("gamehub ") ||
+                normalizedQuery.startsWith("ultra ")
+        if (hasExplicitAssistantPrefix) {
+            val exactTitleMatches = games.filter {
+                VoiceCommandParser.normalize(it.label) == normalizedQuery
+            }
+            if (exactTitleMatches.size > 1) return null
+            if (exactTitleMatches.size == 1) return exactTitleMatches.single()
+        }
 
         val learnedAliasTargets = userAliases.entries
             .filter { (alias, _) ->
