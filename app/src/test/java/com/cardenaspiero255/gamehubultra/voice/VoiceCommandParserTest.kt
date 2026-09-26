@@ -361,4 +361,15 @@ class VoiceCommandParserTest {
         )
     }
 
+
+    @Test
+    fun bareLearnedAliasParsesAsGameLaunch() {
+        val command = VoiceCommandParser.parse(
+            transcript = "BS",
+            knownGameAliases = setOf("bs")
+        )
+        val parsed = assertIs<VoiceCommand.OpenGame>(command)
+        assertEquals("bs", parsed.query)
+    }
+
 }
