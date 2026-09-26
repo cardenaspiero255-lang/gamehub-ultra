@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Register a trusted GameHub Ultra build as a Sentry release.
 
-This runs only on trusted non-PR GitHub Actions events. It never prints the
-Sentry token or DSN. The DSN's numeric project id is used only to discover the
-matching Sentry project, so no SENTRY_ORG/SENTRY_PROJECT repository variables
-are required.
+Runs only on trusted non-PR GitHub Actions events. Secrets are never printed.
+The DSN project id is used to discover the matching Sentry project.
 """
 
 import json
@@ -15,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 API_ROOT = "https://sentry.io/api/0"
+MAX_PAGES = 500
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -33,11 +32,24 @@ def warning(message):
     print(f"::warning::{message}")
 
 
-def api_request(path, *, method="GET", payload=None):
-    url = f"{API_ROOT}{path}"
-    if not url.startswith("https://sentry.io/"):
-        raise RuntimeError("Refusing unexpected Sentry API host.")
+def checked_url(path_or_url):
+    if path_or_url.startswith("https://"):
+        url = path_or_url
+    else:
+        url = f"{API_ROOT}{path_or_url}"
 
+    parsed = urllib.parse.urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "sentry.io"
+        or not parsed.path.startswith("/api/0/")
+    ):
+        raise RuntimeError("Refusing unexpected Sentry API URL.")
+    return url
+
+
+def api_request(path_or_url, *, method="GET", payload=None, include_headers=False):
+    url = checked_url(path_or_url)
     body = None
     headers = {
         "Authorization": f"Bearer {TOKEN}",
@@ -52,12 +64,47 @@ def api_request(path, *, method="GET", payload=None):
     try:
         with OPENER.open(request, timeout=60) as response:
             raw = response.read()
-            return json.loads(raw.decode("utf-8")) if raw else {}
+            data = json.loads(raw.decode("utf-8")) if raw else {}
+            if include_headers:
+                return data, dict(response.headers.items())
+            return data
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(
-            f"Sentry API returned HTTP {exc.code} for {path}: {detail[:1000]}"
+            f"Sentry API returned HTTP {exc.code} for {urllib.parse.urlparse(url).path}: "
+            f"{detail[:1000]}"
         ) from exc
+
+
+def next_page_url(headers):
+    link = headers.get("Link") or headers.get("link") or ""
+    for part in link.split(","):
+        segment = part.strip()
+        if 'rel="next"' not in segment:
+            continue
+        if 'results="false"' in segment:
+            return None
+        start = segment.find("<")
+        end = segment.find(">", start + 1)
+        if start < 0 or end < 0:
+            continue
+        candidate = segment[start + 1:end]
+        return checked_url(candidate)
+    return None
+
+
+def paginated(path):
+    url = checked_url(path)
+    for _ in range(MAX_PAGES):
+        data, headers = api_request(url, include_headers=True)
+        if not isinstance(data, list):
+            raise RuntimeError("Expected a paginated Sentry list response.")
+        for item in data:
+            yield item
+        url = next_page_url(headers)
+        if not url:
+            return
+    raise RuntimeError(f"Sentry pagination exceeded {MAX_PAGES} pages.")
 
 
 TOKEN = os.environ.get("SENTRY_AUTH_TOKEN", "").strip()
@@ -79,25 +126,24 @@ project_id = parsed_dsn.path.rstrip("/").split("/")[-1]
 if not project_id.isdigit():
     raise SystemExit("Could not derive the numeric Sentry project id from SENTRY_DSN.")
 
-organizations = api_request("/organizations/?per_page=100")
 matches = []
-for organization in organizations:
+for organization in paginated("/organizations/?per_page=100"):
     org_slug = organization.get("slug")
     if not org_slug:
         continue
     try:
-        projects = api_request(
+        projects_path = (
             f"/organizations/{urllib.parse.quote(org_slug)}/projects/?per_page=100"
         )
+        for project in paginated(projects_path):
+            if str(project.get("id", "")) == project_id:
+                project_slug = project.get("slug", "")
+                if project_slug:
+                    matches.append((org_slug, project_slug))
+                break
     except RuntimeError as exc:
         warning(f"Could not inspect Sentry organization {org_slug!r}: {exc}")
-        continue
 
-    for project in projects:
-        if str(project.get("id", "")) == project_id:
-            matches.append((org_slug, project.get("slug", "")))
-
-matches = [(org, project) for org, project in matches if project]
 if len(matches) != 1:
     warning(
         "Could not uniquely discover the Sentry project for this DSN; "
@@ -113,7 +159,7 @@ try:
         f"/projects/{urllib.parse.quote(org_slug)}/"
         f"{urllib.parse.quote(project_slug)}/repo/"
     )
-    repo_linked = any(
+    repo_linked = isinstance(linked, list) and any(
         (item.get("name") or item.get("externalSlug") or "") == REPOSITORY
         for item in linked
         if isinstance(item, dict)
@@ -142,7 +188,7 @@ release = api_request(
     payload=payload,
 )
 
-commit_count = release.get("commitCount", 0)
+commit_count = release.get("commitCount", 0) if isinstance(release, dict) else 0
 notice(
     f"Registered Sentry release {RELEASE} for project {project_slug}; "
     f"GitHub commit linking={'enabled' if repo_linked else 'not confirmed'}, "

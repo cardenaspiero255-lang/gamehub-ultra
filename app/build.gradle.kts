@@ -88,6 +88,11 @@ android {
             "SENTRY_DSN",
             quotedBuildConfig(sentryDsn)
         )
+        buildConfigField(
+            "String",
+            "SENTRY_RELEASE",
+            quotedBuildConfig(sentryRelease)
+        )
     }
 
     signingConfigs {

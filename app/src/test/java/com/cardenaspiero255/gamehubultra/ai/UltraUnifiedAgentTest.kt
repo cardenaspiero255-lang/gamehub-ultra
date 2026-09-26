@@ -406,6 +406,47 @@ class UltraUnifiedAgentTest {
         assertTrue(intent.routerGaming)
     }
 
+
+    @Test
+    fun activationHowQuestionsStayConversational() {
+        listOf(
+            "Ultra, how can I activate competitive mode?",
+            "Ultra, cómo puedo activar gaming router?"
+        ).forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val chat = assertIs<UltraAgentRoute.Chat>(route)
+            assertEquals(transcript, chat.message)
+        }
+    }
+
+    @Test
+    fun activatedStatusClauseDoesNotBecomeSecondTarget() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate gaming router and competitive mode is already activated",
+            optionalResolver = null
+        )
+
+        val utility = assertIs<UltraAgentRoute.Utility>(route)
+        val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+        assertFalse(intent.competitive)
+        assertTrue(intent.routerGaming)
+    }
+
+    @Test
+    fun explicitCompetitiveGameTitleStillLaunches() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate Competitive Racing",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("competitive racing", command.query)
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()
