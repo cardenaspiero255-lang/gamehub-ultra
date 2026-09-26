@@ -15,7 +15,7 @@ object GameAliasStore {
             .mapNotNull { entry ->
                 val parts = entry.split('\t', limit = 2)
                 if (parts.size != 2) return@mapNotNull null
-                val alias = VoiceCommandParser.canonicalGameAlias(parts[0])
+                val alias = VoiceCommandParser.canonicalGameAliasKey(parts[0])
                 val packageName = parts[1].trim()
                 if (alias.isBlank() || packageName.isBlank()) null else alias to packageName
             }
@@ -23,7 +23,7 @@ object GameAliasStore {
     }
 
     fun save(context: Context, alias: String, packageName: String) {
-        val normalizedAlias = VoiceCommandParser.canonicalGameAlias(alias)
+        val normalizedAlias = VoiceCommandParser.canonicalGameAliasKey(alias)
         if (
             normalizedAlias.length !in 2..20 ||
             VoiceCommandParser.isReservedGameAlias(normalizedAlias) ||
