@@ -48,6 +48,7 @@ object VoiceCommandEngine {
         statusProvider: () -> VoiceDeviceStatus,
         deferProfileApplication: Boolean = false,
         aiAdvisor: ((String) -> GameHubAiAdvice)? = null,
+        aliasIntentResolver: NaturalLanguageIntentResolver? = null,
         gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
         saveGameAlias: (String, String) -> Unit = { _, _ -> }
     ): VoiceActionResult =
@@ -76,7 +77,8 @@ object VoiceCommandEngine {
                 if (
                     target == null ||
                     normalizedAlias.length !in 2..20 ||
-                    VoiceCommandParser.isReservedGameAlias(normalizedAlias)
+                    VoiceCommandParser.isReservedGameAlias(normalizedAlias) ||
+                    aliasIntentResolver?.resolve(normalizedAlias) != null
                 ) {
                     VoiceActionResult.NotAvailable(
                         "No pude asociar el alias ${command.alias} a un único juego instalado."
