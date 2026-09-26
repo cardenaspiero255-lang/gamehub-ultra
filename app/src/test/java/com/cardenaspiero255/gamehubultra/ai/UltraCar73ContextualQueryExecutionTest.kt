@@ -100,4 +100,22 @@ class UltraCar73ContextualQueryExecutionTest {
         assertEquals(1, localCalls)
         engine.close()
     }
+
+    @Test
+    fun productionFreshQueryNeverFallsBackToUnverifiedLocalChat() {
+        var localCalls = 0
+        val route = UltraAgentRoute.Chat(
+            message = "Ultra, clima de hoy",
+            query = UltraGeneralQueryRouter.classify("Ultra, clima de hoy")
+        )
+
+        val answer = UltraProductionQueryExecutor.answer(route) {
+            localCalls += 1
+            "clima posiblemente desactualizado"
+        }
+
+        assertTrue(answer.contains("no pude verificar", ignoreCase = true))
+        assertEquals(0, localCalls)
+    }
+
 }
