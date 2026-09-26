@@ -138,16 +138,16 @@ object UltraUnifiedAgentRouter {
                 )
             }
         }
-        val contextualTranscript = UltraConversationContextResolver.resolve(
+        val queryRequest = UltraContextualQueryPlanner.plan(
             message = transcript,
-            conversation = conversationHistory
+            conversationHistory = conversationHistory
         )
 
         return when {
             command is VoiceCommand.Unknown ->
                 UltraAgentRoute.Chat(
                     message = transcript.trim(),
-                    query = UltraGeneralQueryRouter.classify(contextualTranscript)
+                    query = queryRequest
                 )
             command is VoiceCommand.OpenGame &&
                 command.requestedProfile == null &&
@@ -155,7 +155,7 @@ object UltraUnifiedAgentRouter {
                 !learnedAlias ->
                 UltraAgentRoute.Chat(
                     message = transcript.trim(),
-                    query = UltraGeneralQueryRouter.classify(contextualTranscript)
+                    query = queryRequest
                 )
             else ->
                 UltraAgentRoute.Command(command)
