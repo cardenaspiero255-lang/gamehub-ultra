@@ -3,12 +3,6 @@ name: Claude PR Review
 on:
   issue_comment:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: Pull request number to review
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -16,25 +10,22 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: claude-review-${{ github.event.issue.number || inputs.pr_number }}
+  group: claude-review-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   review:
     if: >-
-      (github.event_name == 'workflow_dispatch') ||
-      (
-        github.event.issue.pull_request &&
-        github.event.comment.body == '/claude review' &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-      )
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/claude review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.issue.number || inputs.pr_number }}
+      PR_NUMBER: ${{ github.event.issue.number }}
       TRIGGER_ACTOR: ${{ github.actor }}
 
     steps:

@@ -447,6 +447,46 @@ class UltraUnifiedAgentTest {
         assertEquals("competitive racing", command.query)
     }
 
+
+    @Test
+    fun negatedCoordinatedNetworkRequestDoesNotEnableLaterTarget() {
+        val transcript = "Ultra, don't activate gaming router and competitive mode"
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = transcript,
+            optionalResolver = null
+        )
+
+        val chat = assertIs<UltraAgentRoute.Chat>(route)
+        assertEquals(transcript, chat.message)
+    }
+
+    @Test
+    fun gamingRouterGameTitleStillLaunches() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate Gaming Router Simulator",
+            optionalResolver = null
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("gaming router simulator", command.query)
+    }
+
+    @Test
+    fun genericPhonePriorityRequestIsNotRouterGaming() {
+        listOf(
+            "Ultra, prioritize my phone",
+            "Ultra, prioriza el dispositivo"
+        ).forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(
+                transcript = transcript,
+                optionalResolver = null
+            )
+            val chat = assertIs<UltraAgentRoute.Chat>(route)
+            assertEquals(transcript, chat.message)
+        }
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()

@@ -17,7 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_PROJECT_KEY_OVERRIDE: ${{ vars.SONAR_PROJECT_KEY }}
       SONAR_ORGANIZATION_OVERRIDE: ${{ vars.SONAR_ORGANIZATION }}
       SONAR_HOST_URL_OVERRIDE: ${{ vars.SONAR_HOST_URL }}
@@ -32,6 +31,8 @@ jobs:
           persist-credentials: false
 
       - name: Verify Sonar token is configured
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: bash
         run: |
           if [ -z "$SONAR_TOKEN" ]; then
@@ -41,6 +42,8 @@ jobs:
 
       - name: Discover SonarQube Cloud project
         id: discover
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: bash
         run: |
           python3 - <<'PY'
@@ -218,6 +221,11 @@ jobs:
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"host={selected_host}\n")
+              out.write(
+                  "region_arg=-Dsonar.region=us\n"
+                  if selected_host == "https://sonarqube.us"
+                  else "region_arg=\n"
+              )
               out.write(f"found={'true' if found else 'false'}\n")
               out.write(f"project_key={project_key}\n")
               out.write(f"organization={organization}\n")
@@ -262,7 +270,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.host.url=${{ steps.discover.outputs.host }}
+            ${{ steps.discover.outputs.region_arg }}
             -Dsonar.projectKey=${{ steps.discover.outputs.project_key }}
             -Dsonar.organization=${{ steps.discover.outputs.organization }}
             -Dsonar.sources=app/src/main

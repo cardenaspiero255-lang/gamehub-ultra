@@ -146,10 +146,14 @@ object UltraNetworkGamingIntentParser {
         )
     )
     private val routerGamingPatterns = listOf(
-        Regex("""\b(router gaming|gaming router|modo gaming del router|gaming router mode)\b"""),
+        Regex(
+            """\b(router gaming|gaming router|modo gaming del router|gaming router mode)\b(?=\s*(?:$|y\b|and\b|pero\b|but\b|con\b|with\b|sin\b|without\b|excepto\b|except\b|qos\b|por favor\b|please\b|ahora\b|now\b))"""
+        ),
         Regex("""\b(qos gaming|gaming qos)\b"""),
         Regex("""\b(prioridad gaming del router|prioridad del router|router con prioridad)\b"""),
-        Regex("""\b(prioriza|priorizar|prioridad|prioritize)\b.*\b(router|telefono|dispositivo|phone|device)\b""")
+        Regex(
+            """\b(prioriza|priorizar|prioridad|prioritize)\b(?:\s+[a-z0-9]+){0,8}\s+(?:(?:en|del|on|in)\s+)?(?:el\s+|the\s+)?router\b"""
+        )
     )
     private val competitiveNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+|perfil\s+)?competitivo\b"""),
@@ -203,34 +207,34 @@ object UltraNetworkGamingIntentParser {
             val inheritedStatusOnly =
                 !directAction && inheritsAction && statusPattern.containsMatchIn(text)
 
-            if (activationApplies && !inheritedStatusOnly) {
-                val competitiveMentioned =
-                    competitivePatterns.any { it.containsMatchIn(text) }
-                val routerMentioned =
-                    routerGamingPatterns.any { it.containsMatchIn(text) }
-                val competitiveNegated =
-                    competitiveNegationPatterns.any { it.containsMatchIn(text) }
-                val routerNegated =
-                    routerNegationPatterns.any { it.containsMatchIn(text) }
+            val competitiveMentioned =
+                competitivePatterns.any { it.containsMatchIn(text) }
+            val routerMentioned =
+                routerGamingPatterns.any { it.containsMatchIn(text) }
+            val competitiveNegated =
+                competitiveNegationPatterns.any { it.containsMatchIn(text) }
+            val routerNegated =
+                routerNegationPatterns.any { it.containsMatchIn(text) }
 
-                if (competitiveMentioned && !competitiveNegated) {
-                    competitive = true
-                }
-                if (routerMentioned && !routerNegated) {
-                    routerGaming = true
-                }
+            val affirmativeCompetitive =
+                activationApplies && !inheritedStatusOnly &&
+                    competitiveMentioned && !competitiveNegated
+            val affirmativeRouter =
+                activationApplies && !inheritedStatusOnly &&
+                    routerMentioned && !routerNegated
+
+            if (affirmativeCompetitive) {
+                competitive = true
+            }
+            if (affirmativeRouter) {
+                routerGaming = true
             }
 
+            // Only carry an activation verb across an additive connector when
+            // this clause actually requested at least one non-negated target.
+            // This prevents "don't activate A and B" from enabling B.
             previousClauseHadActivation =
-                !isQuestion &&
-                    (
-                        directAction ||
-                            (
-                                clause.connectorBefore in additiveConnectors &&
-                                    previousClauseHadActivation &&
-                                    !statusPattern.containsMatchIn(text)
-                                )
-                        )
+                !isQuestion && (affirmativeCompetitive || affirmativeRouter)
         }
 
         if (!competitive && !routerGaming) return null

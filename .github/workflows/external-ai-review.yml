@@ -3,20 +3,6 @@ name: DeepSeek and Groq PR Review
 on:
   issue_comment:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: Pull request number to review
-        required: true
-        type: string
-      provider:
-        description: AI provider
-        required: true
-        default: deepseek
-        type: choice
-        options:
-          - deepseek
-          - groq
 
 permissions:
   contents: read
@@ -26,17 +12,13 @@ permissions:
 jobs:
   deepseek:
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.provider == 'deepseek') ||
-      (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request &&
-        github.event.comment.body == '/deepseek review' &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-      )
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/deepseek review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
-      group: deepseek-review-${{ github.event.issue.number || inputs.pr_number }}
+      group: deepseek-review-${{ github.event.issue.number }}
       cancel-in-progress: true
     env:
       AI_PROVIDER: DeepSeek
@@ -47,7 +29,7 @@ jobs:
       REVIEW_HEADING: DeepSeek review
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.issue.number || inputs.pr_number }}
+      PR_NUMBER: ${{ github.event.issue.number }}
       TRIGGER_ACTOR: ${{ github.actor }}
     steps:
       - name: Check out trusted reviewer
@@ -71,17 +53,13 @@ jobs:
 
   groq:
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.provider == 'groq') ||
-      (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request &&
-        github.event.comment.body == '/groq review' &&
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-      )
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/groq review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
-      group: groq-review-${{ github.event.issue.number || inputs.pr_number }}
+      group: groq-review-${{ github.event.issue.number }}
       cancel-in-progress: true
     env:
       AI_PROVIDER: Groq
@@ -92,7 +70,7 @@ jobs:
       REVIEW_HEADING: Groq review
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.issue.number || inputs.pr_number }}
+      PR_NUMBER: ${{ github.event.issue.number }}
       TRIGGER_ACTOR: ${{ github.actor }}
     steps:
       - name: Check out trusted reviewer
