@@ -175,10 +175,11 @@ private class GameHubVoiceInteractionSession(context: Context) :
             selectedProfile = selectedProfile,
             sessionActive = selectedGamePackage != null
         )
+        val intentResolver = aiAdvisor.intentResolver()
         val result = VoiceCommandEngine.execute(
             command = VoiceCommandParser.parse(
                 transcript = transcript,
-                optionalResolver = aiAdvisor.intentResolver(),
+                optionalResolver = intentResolver,
                 knownGameAliases = GameAliasStore.aliases(context).keys
             ),
             gamesProvider = { GameLibrary.discover(context).games },
@@ -198,6 +199,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
             statusProvider = { readStatus() },
             deferProfileApplication = true,
             aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
+            aliasIntentResolver = intentResolver,
             gameAliasesProvider = { GameAliasStore.aliases(context) },
             saveGameAlias = { alias, packageName ->
                 GameAliasStore.save(context, alias, packageName)
