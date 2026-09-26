@@ -440,7 +440,8 @@ class UltraWakeService : Service() {
                     batteryPercent = status.batteryPercent,
                     thermalLabel = status.thermalLabel,
                     refreshRateHz = diagnostics.refresh.currentRefreshRateHz
-                )
+                ),
+                knownGameAliases = GameAliasStore.aliases(context).keys
             )
 
                 when (route) {
