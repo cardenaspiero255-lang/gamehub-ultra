@@ -479,6 +479,7 @@ class UltraWakeService : Service() {
                     val result = VoiceCommandEngine.execute(
                         command = route.command,
                         gamesProvider = { GameLibrary.discoverForVoice(context) },
+                        aliasGamesProvider = { GameLibrary.discover(context).games },
                         launchGame = { packageName ->
                             launchGameFromService(context, packageName)
                         },
