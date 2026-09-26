@@ -142,6 +142,8 @@ jobs:
 
               search_term = project_override or repo_name
               query = urllib.parse.quote(search_term)
+              matches = []
+
               for candidate_org in organizations:
                   organization_param = urllib.parse.quote(candidate_org)
                   try:
@@ -173,17 +175,34 @@ jobs:
                           or component.get("key", "").lower().endswith("_" + repo_name.lower())
                           or component.get("key", "").lower().endswith(":" + repo_name.lower())
                       ]
-                  if exact:
-                      component = exact[0]
-                      if not project_key:
-                          project_key = component.get("key", "")
-                      organization = (
+
+                  for component in exact:
+                      component_key = component.get("key", "")
+                      component_org = (
                           component.get("organization", "")
                           or candidate_org
                       )
-                      found = bool(project_key and organization)
-                      if found:
-                          break
+                      if component_key and component_org:
+                          matches.append((component_org, component_key))
+
+              # Deduplicate identical discoveries while preserving order.
+              matches = list(dict.fromkeys(matches))
+
+              if len(matches) == 1:
+                  organization, discovered_key = matches[0]
+                  if not project_key:
+                      project_key = discovered_key
+                  found = bool(project_key and organization)
+              elif len(matches) > 1:
+                  candidates = ", ".join(
+                      f"{org}/{key}" for org, key in matches
+                  )
+                  raise SystemExit(
+                      "Multiple Sonar projects match this repository name. "
+                      "Refusing to guess the target project. Set repository variables "
+                      "SONAR_PROJECT_KEY and SONAR_ORGANIZATION explicitly. "
+                      f"Candidates: {candidates}"
+                  )
 
           if not found:
               raise SystemExit(
