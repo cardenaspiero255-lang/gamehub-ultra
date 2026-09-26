@@ -34,11 +34,13 @@ object VoiceCommandParser {
 
         parseGameAliasDefinition(clean)?.let { return it }
 
+        // Resolver-owned phrases must keep their semantic command meaning even
+        // if an older persisted alias happens to use the same spoken phrase.
+        optionalResolver?.resolve(clean)?.let { return it }
+
         if (isKnownGameAlias(clean, knownGameAliases)) {
             return VoiceCommand.OpenGame(canonicalAliasCandidate(clean))
         }
-
-        optionalResolver?.resolve(clean)?.let { return it }
 
         if (
             clean.contains("temperatura") ||
