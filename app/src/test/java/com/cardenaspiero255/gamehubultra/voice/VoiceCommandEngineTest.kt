@@ -450,6 +450,44 @@ class VoiceCommandEngineTest {
     }
 
     @Test
+    fun defaultAliasCatalogReusesLaunchableSnapshot() {
+        var catalogReads = 0
+        val provider = {
+            catalogReads++
+            games
+        }
+
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("Minecraft"),
+            gamesProvider = provider,
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") }
+        )
+
+        assertIs<VoiceActionResult.GameOpened>(result)
+        assertEquals(1, catalogReads)
+    }
+
+    @Test
+    fun explicitAssistantPrefixedGameTitleBeatsLearnedAlias() {
+        val installed = listOf(
+            GameInfo("com.example.gamehubracing", "GameHub Racing"),
+            GameInfo("com.example.racinglegends", "Racing Legends")
+        )
+
+        val match = GameMatchFinder.find(
+            query = "GameHub Racing",
+            games = installed,
+            userAliases = mapOf("racing" to "com.example.racinglegends")
+        )
+
+        assertEquals("com.example.gamehubracing", match?.packageName)
+    }
+
+    @Test
     fun aliasesPreemptedByHigherPriorityCommandsCannotBeSaved() {
         val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
         for (alias in listOf("balanced fps", "battery")) {
