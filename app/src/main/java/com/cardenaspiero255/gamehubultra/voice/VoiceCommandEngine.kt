@@ -66,13 +66,17 @@ object VoiceCommandEngine {
             }
 
             is VoiceCommand.DefineGameAlias -> {
-                val normalizedAlias = VoiceCommandParser.normalize(command.alias)
+                val normalizedAlias = VoiceCommandParser.canonicalGameAlias(command.alias)
                 val target = GameMatchFinder.find(
                     query = command.gameQuery,
                     games = gamesProvider(),
                     userAliases = emptyMap()
                 )
-                if (target == null || normalizedAlias.length !in 2..20) {
+                if (
+                    target == null ||
+                    normalizedAlias.length !in 2..20 ||
+                    VoiceCommandParser.isReservedGameAlias(normalizedAlias)
+                ) {
                     VoiceActionResult.NotAvailable(
                         "No pude asociar el alias ${command.alias} a un único juego instalado."
                     )
@@ -159,12 +163,13 @@ internal object GameMatchFinder {
 
         val normalizedQuery = VoiceCommandParser.normalize(query)
         if (normalizedQuery.isBlank()) return null
+        val aliasQuery = VoiceCommandParser.canonicalGameAlias(query)
 
-        userAliases[normalizedQuery]?.let { packageName ->
+        userAliases[aliasQuery]?.let { packageName ->
             games.firstOrNull { it.packageName == packageName }?.let { return it }
         }
 
-        popularAliases[normalizedQuery]?.let { targets ->
+        popularAliases[aliasQuery]?.let { targets ->
             val candidates = games.filter { game ->
                 val label = VoiceCommandParser.normalize(game.label)
                 targets.any { target ->
