@@ -72,6 +72,33 @@ jobs:
               with urllib.request.urlopen(req, timeout=45) as resp:
                   return json.loads(resp.read().decode("utf-8"))
 
+          def get_all_pages(base_url, item_key, max_pages=100):
+              items = []
+              for page in range(1, max_pages + 1):
+                  separator = "&" if "?" in base_url else "?"
+                  data = get_json(f"{base_url}{separator}p={page}")
+                  batch = data.get(item_key, [])
+                  if not isinstance(batch, list):
+                      raise RuntimeError(
+                          f"Unexpected Sonar response: {item_key!r} is not a list."
+                      )
+                  items.extend(batch)
+
+                  paging = data.get("paging") or {}
+                  total = int(paging.get("total") or 0)
+                  page_size = int(paging.get("pageSize") or 50)
+                  if not batch:
+                      break
+                  if total and page * page_size >= total:
+                      break
+                  if not total and len(batch) < page_size:
+                      break
+              else:
+                  raise RuntimeError(
+                      f"Sonar pagination exceeded {max_pages} pages for {item_key}."
+                  )
+              return items
+
           selected_host = None
           for host in hosts:
               try:
@@ -95,12 +122,13 @@ jobs:
                   organizations.append(org_override)
               else:
                   try:
-                      org_data = get_json(
-                          f"{selected_host}/api/organizations/search?member=true&ps=50"
+                      org_items = get_all_pages(
+                          f"{selected_host}/api/organizations/search?member=true&ps=50",
+                          "organizations",
                       )
                       organizations.extend(
                           item.get("key", "")
-                          for item in org_data.get("organizations", [])
+                          for item in org_items
                           if item.get("key")
                       )
                   except Exception as exc:
@@ -117,10 +145,11 @@ jobs:
               for candidate_org in organizations:
                   organization_param = urllib.parse.quote(candidate_org)
                   try:
-                      data = get_json(
+                      component_items = get_all_pages(
                           f"{selected_host}/api/components/search"
                           f"?qualifiers=TRK&q={query}&ps=50"
-                          f"&organization={organization_param}"
+                          f"&organization={organization_param}",
+                          "components",
                       )
                   except Exception as exc:
                       print(
@@ -129,7 +158,7 @@ jobs:
                       )
                       continue
 
-                  components = data.get("components", [])
+                  components = component_items
                   if project_override:
                       exact = [
                           component
