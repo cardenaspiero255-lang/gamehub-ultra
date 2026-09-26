@@ -488,6 +488,76 @@ class VoiceCommandEngineTest {
     }
 
     @Test
+    fun ultraPrefixedTitleUsesNormalPrefixScoringInsteadOfPopularAlias() {
+        val installed = listOf(
+            GameInfo("com.example.ultrapubgmobile", "Ultra PUBG Mobile")
+        )
+
+        assertEquals(
+            "com.example.ultrapubgmobile",
+            GameMatchFinder.find(
+                query = "Ultra PUBG",
+                games = installed
+            )?.packageName
+        )
+    }
+
+    @Test
+    fun prefixedExactTitleBeatsLearnedAliasThroughParser() {
+        val installed = listOf(
+            GameInfo("com.example.ultraracing", "Ultra Racing"),
+            GameInfo("com.example.racinglegends", "Racing Legends")
+        )
+        val command = VoiceCommandParser.parse(
+            transcript = "Ultra Racing",
+            knownGameAliases = setOf("racing")
+        )
+
+        val result = VoiceCommandEngine.execute(
+            command = command,
+            gamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            gameAliasesProvider = {
+                mapOf("racing" to "com.example.racinglegends")
+            }
+        )
+
+        val opened = assertIs<VoiceActionResult.GameOpened>(result)
+        assertEquals("com.example.ultraracing", opened.game.packageName)
+    }
+
+    @Test
+    fun wakeWordBareLearnedAliasStillLaunchesAlias() {
+        val installed = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars")
+        )
+        val command = VoiceCommandParser.parse(
+            transcript = "Ultra BS",
+            knownGameAliases = setOf("bs")
+        )
+
+        val result = VoiceCommandEngine.execute(
+            command = command,
+            gamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            gameAliasesProvider = {
+                mapOf("bs" to "com.supercell.brawlstars")
+            }
+        )
+
+        val opened = assertIs<VoiceActionResult.GameOpened>(result)
+        assertEquals("com.supercell.brawlstars", opened.game.packageName)
+    }
+
+    @Test
     fun aliasesPreemptedByHigherPriorityCommandsCannotBeSaved() {
         val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
         for (alias in listOf("balanced fps", "battery")) {
