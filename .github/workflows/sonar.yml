@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sonar-\${{ github.ref }}
+  group: sonar-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -17,16 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SONAR_TOKEN: \${{ secrets.SONAR_TOKEN }}
-      SONAR_PROJECT_KEY_OVERRIDE: \${{ vars.SONAR_PROJECT_KEY }}
-      SONAR_ORGANIZATION_OVERRIDE: \${{ vars.SONAR_ORGANIZATION }}
-      SONAR_HOST_URL_OVERRIDE: \${{ vars.SONAR_HOST_URL }}
-      REPO_NAME: \${{ github.event.repository.name }}
-      REPO_OWNER: \${{ github.repository_owner }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY_OVERRIDE: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION_OVERRIDE: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_HOST_URL_OVERRIDE: ${{ vars.SONAR_HOST_URL }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      REPO_OWNER: ${{ github.repository_owner }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -127,14 +127,14 @@ jobs:
 
       - name: Set up JDK 17
         if: steps.discover.outputs.found == 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Android SDK
         if: steps.discover.outputs.found == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK packages
         if: steps.discover.outputs.found == 'true'
@@ -144,7 +144,7 @@ jobs:
 
       - name: Set up Gradle
         if: steps.discover.outputs.found == 'true'
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.13"
 
@@ -156,12 +156,12 @@ jobs:
         if: steps.discover.outputs.found == 'true'
         uses: SonarSource/sonarqube-scan-action@v6
         env:
-          SONAR_TOKEN: \${{ secrets.SONAR_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.host.url=\${{ steps.discover.outputs.host }}
-            -Dsonar.projectKey=\${{ steps.discover.outputs.project_key }}
-            -Dsonar.organization=\${{ steps.discover.outputs.organization }}
+            -Dsonar.host.url=${{ steps.discover.outputs.host }}
+            -Dsonar.projectKey=${{ steps.discover.outputs.project_key }}
+            -Dsonar.organization=${{ steps.discover.outputs.organization }}
             -Dsonar.sources=app/src/main
             -Dsonar.tests=app/src/test
             -Dsonar.java.binaries=app/build/tmp/kotlin-classes/debug
