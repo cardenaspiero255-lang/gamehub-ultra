@@ -310,4 +310,18 @@ class UltraUnifiedAgentTest {
         }
     }
 
+
+    @Test
+    fun bareLearnedAliasStaysOnCommandPath() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "BS",
+            optionalResolver = null,
+            knownGameAliases = setOf("bs")
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("bs", command.query)
+    }
+
 }
