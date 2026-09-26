@@ -87,8 +87,10 @@ jobs:
           [ -x "$SDK_ROOT/platform-tools/adb" ] || missing+=("platform-tools")
 
           IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
+          system_image_missing=0
           if [ ! -s "$IMAGE_DIR/system.img" ] || [ ! -s "$IMAGE_DIR/ramdisk.img" ] || [ ! -e "$IMAGE_DIR/data/empty_data_disk" ]; then
             missing+=("system-images;android-35;google_apis;x86_64")
+            system_image_missing=1
           fi
 
           if [ "${#missing[@]}" -eq 0 ]; then
@@ -105,11 +107,13 @@ jobs:
               exit 0
             fi
             echo "sdkmanager failed on attempt ${attempt}; removing partial package state before retry."
-            rm -rf \
-              "$SDK_ROOT/.temp" \
-              "$SDK_ROOT/system-images/android-35/google_apis/x86_64" \
-              "$SDK_ROOT/system-images/android-35/google_apis/.installer" \
-              "$SDK_ROOT/system-images/android-35/.installer"
+            rm -rf "$SDK_ROOT/.temp"
+            if [ "$system_image_missing" -eq 1 ]; then
+              rm -rf \
+                "$SDK_ROOT/system-images/android-35/google_apis/x86_64" \
+                "$SDK_ROOT/system-images/android-35/google_apis/.installer" \
+                "$SDK_ROOT/system-images/android-35/.installer"
+            fi
             sleep $((attempt * 15))
           done
           echo "Android SDK package installation failed after retries."
