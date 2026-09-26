@@ -435,6 +435,8 @@ class UltraWakeService : Service() {
                 thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
             )
             val intentResolver = aiAdvisor.intentResolver()
+            voiceConversationLedger.bindScope(selectedGamePackage)
+            val conversationBefore = voiceConversationLedger.snapshot()
             val route = UltraUnifiedAgentRouter.route(
                 transcript = transcript,
                 optionalResolver = intentResolver,
@@ -443,14 +445,13 @@ class UltraWakeService : Service() {
                     thermalLabel = status.thermalLabel,
                     refreshRateHz = diagnostics.refresh.currentRefreshRateHz
                 ),
-                knownGameAliases = GameAliasStore.aliases(context).keys
+                knownGameAliases = GameAliasStore.aliases(context).keys,
+                conversationHistory = conversationBefore
             )
 
                 when (route) {
                 is UltraAgentRoute.Utility -> route.answer.message
                 is UltraAgentRoute.Chat -> {
-                    voiceConversationLedger.bindScope(selectedGamePackage)
-                    val conversationBefore = voiceConversationLedger.snapshot()
                     val memoryCommand = UltraMemoryCommandParser.parse(route.message)
                     val answer = aiAdvisor.chat(
                         message = route.message,
