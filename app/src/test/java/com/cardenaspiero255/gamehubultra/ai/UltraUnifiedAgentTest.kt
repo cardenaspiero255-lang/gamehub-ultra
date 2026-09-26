@@ -326,6 +326,21 @@ class UltraUnifiedAgentTest {
     }
 
 
+
+    @Test
+    fun learnedAliasPreemptsUtilityClassification() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "current time",
+            optionalResolver = null,
+            knownGameAliases = setOf("current time")
+        )
+
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        val command = assertIs<VoiceCommand.OpenGame>(commandRoute.command)
+        assertEquals("current time", command.query)
+    }
+
+
     @Test
     fun bareLearnedAliasStaysOnCommandPath() {
         val route = UltraUnifiedAgentRouter.route(
