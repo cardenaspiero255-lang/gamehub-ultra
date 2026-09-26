@@ -123,13 +123,22 @@ object UltraUnifiedAgentRouter {
 }
 
 object UltraNetworkGamingIntentParser {
+    private data class Clause(
+        val text: String,
+        val connectorBefore: String? = null
+    )
+
     private val actionPattern = Regex(
         """\b(activa|activar|pon|poner|ponme|habilita|habilitar|usa|usar|quiero|aplica|aplicar|prioriza|priorizar|enable|activate|set|use|prioritize)\b"""
     )
     private val questionPattern = Regex(
         """\b(que es|que significa|como funciona|quiero saber|explicame|dime que es|what is|what does|how does|tell me about|i want to know)\b"""
     )
-    private val clauseSeparator = Regex("""\s+\b(y|and|pero|but|ademas|also)\b\s+""")
+    private val clauseSeparator = Regex("""\b(y|and|pero|but|ademas|also)\b""")
+    private val additiveConnectors = setOf("y", "and", "ademas", "also")
+    private val statusPattern = Regex(
+        """\b(ya esta activo|ya esta activa|esta activo|esta activa|already active|is already active|is active|already enabled|is already enabled|is enabled)\b"""
+    )
     private val competitivePatterns = listOf(
         Regex("""\b(modo competitivo|perfil competitivo|competitive mode|competitive profile)\b"""),
         Regex("""\bcompetitivo\b"""),
@@ -144,13 +153,34 @@ object UltraNetworkGamingIntentParser {
     private val competitiveNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+|perfil\s+)?competitivo\b"""),
         Regex("""\b(without|except)\s+(?:the\s+)?(?:competitive mode|competitive profile|competitive)\b"""),
-        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+)?(?:modo\s+|perfil\s+|competitive\s+)?(?:competitivo|competitive|mode|profile)\b""")
+        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|don\s+t\s+want|dont|do\s+not|don\s+t|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+)?(?:modo\s+|perfil\s+)?(?:competitivo|competitive)(?:\s+(?:mode|profile))?\b""")
     )
     private val routerNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
         Regex("""\b(without|except)\s+(?:the\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
-        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|dont|do\s+not|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+|el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
+        Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|don\s+t\s+want|dont|do\s+not|don\s+t|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+|el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
     )
+
+    private fun splitClauses(clean: String): List<Clause> {
+        val clauses = mutableListOf<Clause>()
+        var start = 0
+        var connectorBefore: String? = null
+
+        clauseSeparator.findAll(clean).forEach { match ->
+            val text = clean.substring(start, match.range.first).trim()
+            if (text.isNotBlank()) {
+                clauses += Clause(text = text, connectorBefore = connectorBefore)
+            }
+            connectorBefore = match.value
+            start = match.range.last + 1
+        }
+
+        val tail = clean.substring(start).trim()
+        if (tail.isNotBlank()) {
+            clauses += Clause(text = tail, connectorBefore = connectorBefore)
+        }
+        return clauses
+    }
 
     fun parse(transcript: String): UltraUtilityIntent.NetworkGamingControl? {
         val clean = VoiceCommandParser.normalize(transcript)
@@ -158,34 +188,51 @@ object UltraNetworkGamingIntentParser {
             .trim()
         if (clean.isBlank()) return null
 
-        // Treat question clauses independently so an informational question
-        // does not cancel a genuine activation request elsewhere in the same
-        // utterance. Example:
-        // "activate competitive mode and what is gaming router"
-        val actionableText = clauseSeparator
-            .split(clean)
-            .map(String::trim)
-            .filter(String::isNotBlank)
-            .filterNot { clause -> questionPattern.containsMatchIn(clause) }
-            .joinToString(" ")
-            .trim()
+        var competitive = false
+        var routerGaming = false
+        var previousClauseHadActivation = false
 
-        if (actionableText.isBlank()) return null
-        if (!actionPattern.containsMatchIn(actionableText)) return null
+        splitClauses(clean).forEach { clause ->
+            val text = clause.text
+            val isQuestion = questionPattern.containsMatchIn(text)
+            val directAction = actionPattern.containsMatchIn(text)
+            val inheritsAction =
+                clause.connectorBefore in additiveConnectors && previousClauseHadActivation
+            val activationApplies = !isQuestion && (directAction || inheritsAction)
+            val inheritedStatusOnly =
+                !directAction && inheritsAction && statusPattern.containsMatchIn(text)
 
-        val competitiveRequested =
-            competitivePatterns.any { it.containsMatchIn(actionableText) }
-        val routerRequested =
-            routerGamingPatterns.any { it.containsMatchIn(actionableText) }
-        val competitiveNegated =
-            competitiveNegationPatterns.any { it.containsMatchIn(actionableText) }
-        val routerNegated =
-            routerNegationPatterns.any { it.containsMatchIn(actionableText) }
+            if (activationApplies && !inheritedStatusOnly) {
+                val competitiveMentioned =
+                    competitivePatterns.any { it.containsMatchIn(text) }
+                val routerMentioned =
+                    routerGamingPatterns.any { it.containsMatchIn(text) }
+                val competitiveNegated =
+                    competitiveNegationPatterns.any { it.containsMatchIn(text) }
+                val routerNegated =
+                    routerNegationPatterns.any { it.containsMatchIn(text) }
 
-        val competitive = competitiveRequested && !competitiveNegated
-        val routerGaming = routerRequested && !routerNegated
+                if (competitiveMentioned && !competitiveNegated) {
+                    competitive = true
+                }
+                if (routerMentioned && !routerNegated) {
+                    routerGaming = true
+                }
+            }
+
+            previousClauseHadActivation =
+                !isQuestion &&
+                    (
+                        directAction ||
+                            (
+                                clause.connectorBefore in additiveConnectors &&
+                                    previousClauseHadActivation &&
+                                    !statusPattern.containsMatchIn(text)
+                                )
+                        )
+        }
+
         if (!competitive && !routerGaming) return null
-
         return UltraUtilityIntent.NetworkGamingControl(
             competitive = competitive,
             routerGaming = routerGaming

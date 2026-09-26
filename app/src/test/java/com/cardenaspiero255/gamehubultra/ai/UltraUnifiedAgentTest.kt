@@ -366,6 +366,46 @@ class UltraUnifiedAgentTest {
         }
     }
 
+
+    @Test
+    fun normalizedEnglishContractionExcludesRouterTarget() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activate competitive mode but don't activate gaming router",
+            optionalResolver = null
+        )
+
+        val utility = assertIs<UltraAgentRoute.Utility>(route)
+        val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+        assertTrue(intent.competitive)
+        assertFalse(intent.routerGaming)
+    }
+
+    @Test
+    fun statusStatementDoesNotBecomeSecondActivationTarget() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activa gaming router pero el modo competitivo ya está activo",
+            optionalResolver = null
+        )
+
+        val utility = assertIs<UltraAgentRoute.Utility>(route)
+        val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+        assertFalse(intent.competitive)
+        assertTrue(intent.routerGaming)
+    }
+
+    @Test
+    fun additiveClauseCanInheritActivationForSecondTarget() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, activa gaming router y modo competitivo",
+            optionalResolver = null
+        )
+
+        val utility = assertIs<UltraAgentRoute.Utility>(route)
+        val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
+        assertTrue(intent.competitive)
+        assertTrue(intent.routerGaming)
+    }
+
     @Test
     fun sharedConversationKeepsRecentTurnsAcrossTextAndVoice() {
         var history = emptyList<String>()

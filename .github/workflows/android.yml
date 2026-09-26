@@ -173,17 +173,11 @@ jobs:
             echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
           } >> "$GITHUB_ENV"
 
-      - name: Build release APK
+      - name: Build telemetry-disabled release APK for API 35 validation
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:assembleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk.log"
-
-      - name: Build release AAB
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:bundleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-aab.log"
+          gradle :app:assembleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk-validation.log"
 
       - name: Prepare deterministic API 35 AVD
         shell: bash
@@ -469,6 +463,23 @@ jobs:
             echo "Known CAR-29 emulator errors are still present."
             exit 1
           fi
+
+      - name: Build distributable release APK and AAB with Sentry
+        if: success()
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SENTRY_DSN:-}" ]; then
+            echo "::warning::SENTRY_DSN is unavailable; distributable CI release will keep telemetry disabled."
+          else
+            echo "Rebuilding distributable release outputs with Sentry enabled."
+          fi
+          # The earlier release APK is intentionally telemetry-disabled for emulator
+          # validation. Force the release graph to run again so the uploaded APK/AAB
+          # reflect this step's production SENTRY_DSN value instead.
+          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --rerun-tasks             --stacktrace 2>&1 | tee "$RUNNER_TEMP/distributable-release.log"
 
       - name: Record failure-analysis handoff
         if: failure()
