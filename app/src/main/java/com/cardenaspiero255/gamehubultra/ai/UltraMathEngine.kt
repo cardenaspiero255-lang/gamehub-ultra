@@ -56,10 +56,10 @@ object UltraMathEngine {
         }
 
         if (angles.size < 2) return null
-        val third = BigDecimal("180")
-            .subtract(angles[0], mathContext)
-            .subtract(angles[1], mathContext)
-        if (third <= BigDecimal.ZERO) return null
+        if (angles.any { it <= BigDecimal.ZERO }) return null
+        val angleSum = angles[0].add(angles[1], mathContext)
+        if (angleSum >= BigDecimal("180")) return null
+        val third = BigDecimal("180").subtract(angleSum, mathContext)
 
         val formatted = formatNumber(third)
         return UltraMathSolution(
