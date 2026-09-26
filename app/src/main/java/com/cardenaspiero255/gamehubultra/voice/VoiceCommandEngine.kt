@@ -175,12 +175,15 @@ internal object GameMatchFinder {
 
         val normalizedQuery = VoiceCommandParser.normalize(query)
         if (normalizedQuery.isBlank()) return null
-        val aliasQuery = VoiceCommandParser.canonicalGameAliasKey(query)
-        val hasExplicitAssistantPrefix =
+
+        val directAliasQuery = VoiceCommandParser.canonicalGameAlias(query)
+        val strippedAliasQuery = VoiceCommandParser.canonicalGameAliasKey(query)
+        val hasAssistantLikePrefix =
             normalizedQuery.startsWith("gamehub ultra ") ||
                 normalizedQuery.startsWith("gamehub ") ||
                 normalizedQuery.startsWith("ultra ")
-        if (hasExplicitAssistantPrefix) {
+
+        if (hasAssistantLikePrefix) {
             val exactTitleMatches = games.filter {
                 VoiceCommandParser.normalize(it.label) == normalizedQuery
             }
@@ -188,9 +191,25 @@ internal object GameMatchFinder {
             if (exactTitleMatches.size == 1) return exactTitleMatches.single()
         }
 
+        val hasPrefixedTitleCandidate =
+            hasAssistantLikePrefix &&
+                games.any { game ->
+                    VoiceCommandParser.normalize(game.label).startsWith("$normalizedQuery ")
+                }
+
+        val aliasQueries = linkedSetOf(directAliasQuery).apply {
+            if (
+                hasAssistantLikePrefix &&
+                !hasPrefixedTitleCandidate &&
+                strippedAliasQuery != directAliasQuery
+            ) {
+                add(strippedAliasQuery)
+            }
+        }
+
         val learnedAliasTargets = userAliases.entries
             .filter { (alias, _) ->
-                VoiceCommandParser.canonicalGameAliasKey(alias) == aliasQuery
+                VoiceCommandParser.canonicalGameAliasKey(alias) in aliasQueries
             }
             .map { (_, packageName) -> packageName }
             .distinct()
@@ -207,7 +226,13 @@ internal object GameMatchFinder {
         if (exactPackageMatches.size == 1) return exactPackageMatches.single()
         if (exactPackageMatches.size > 1) return null
 
-        popularAliases[aliasQuery]?.let { targets ->
+        val popularAliasTargets = aliasQueries
+            .mapNotNull(popularAliases::get)
+            .distinct()
+
+        if (popularAliasTargets.isNotEmpty()) {
+            if (popularAliasTargets.size != 1) return null
+            val targets = popularAliasTargets.single()
             val exactLabelMatches = games.filter {
                 VoiceCommandParser.normalize(it.label) == normalizedQuery
             }
