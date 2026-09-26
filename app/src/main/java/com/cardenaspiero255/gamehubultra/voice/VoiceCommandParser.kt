@@ -40,12 +40,10 @@ object VoiceCommandParser {
         optionalResolver?.resolve(clean)?.let { return it }
 
         if (isKnownGameAlias(clean, knownGameAliases)) {
-            // Preserve the original normalized utterance so GameMatchFinder can
-            // still distinguish an assistant-like prefix that is actually part
-            // of a real installed title (for example, "Ultra Racing"). The
-            // matcher owns the final decision about whether that prefix is a
-            // wake phrase or title content.
-            return VoiceCommand.OpenGame(normalize(transcript))
+            return VoiceCommand.OpenGame(
+                query = canonicalGameAlias(clean),
+                originalQuery = normalize(transcript)
+            )
         }
 
         if (
