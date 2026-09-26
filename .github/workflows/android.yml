@@ -26,7 +26,9 @@ jobs:
       EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      # CI intentionally builds with Sentry disabled so emulator installs,
+      # baseline profiles and macrobenchmarks never pollute production telemetry.
+      SENTRY_DSN: ""
     timeout-minutes: 60
     steps:
       - name: Checkout
