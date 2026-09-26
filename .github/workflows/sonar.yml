@@ -87,37 +87,72 @@ jobs:
 
           project_key = project_override
           organization = org_override
-          found = bool(project_key)
+          found = bool(project_key and organization)
 
-          if not project_key:
+          if not found:
+              organizations = []
+              if org_override:
+                  organizations.append(org_override)
+              else:
+                  try:
+                      org_data = get_json(
+                          f"{selected_host}/api/organizations/search?member=true&ps=100"
+                      )
+                      organizations.extend(
+                          item.get("key", "")
+                          for item in org_data.get("organizations", [])
+                          if item.get("key")
+                      )
+                  except Exception as exc:
+                      print(
+                          "::warning::Sonar organization discovery failed "
+                          f"({type(exc).__name__})."
+                      )
+
+              if repo_owner not in organizations:
+                  organizations.append(repo_owner)
+
               query = urllib.parse.quote(repo_name)
-              organization_for_search = org_override or repo_owner
-              organization_param = urllib.parse.quote(organization_for_search)
-              try:
-                  data = get_json(
-                      f"{selected_host}/api/components/search"
-                      f"?qualifiers=TRK&q={query}&ps=100&organization={organization_param}"
-                  )
-              except Exception as exc:
-                  print(
-                      "::warning::Sonar project search failed "
-                      f"({type(exc).__name__}); continuing without auto-discovery."
-                  )
-                  data = {}
-              components = data.get("components", [])
-              exact = [
-                  c for c in components
-                  if c.get("name", "").lower() == repo_name.lower()
-                  or c.get("key", "").lower().endswith("_" + repo_name.lower())
-                  or c.get("key", "").lower().endswith(":" + repo_name.lower())
-              ]
-              if exact:
-                  component = exact[0]
-                  project_key = component.get("key", "")
-                  organization = organization or component.get("organization", "")
-                  found = bool(project_key)
+              for candidate_org in organizations:
+                  organization_param = urllib.parse.quote(candidate_org)
+                  try:
+                      data = get_json(
+                          f"{selected_host}/api/components/search"
+                          f"?qualifiers=TRK&q={query}&ps=100"
+                          f"&organization={organization_param}"
+                      )
+                  except Exception as exc:
+                      print(
+                          "::warning::Sonar project search failed for organization "
+                          f"{candidate_org!r} ({type(exc).__name__})."
+                      )
+                      continue
 
-          organization = organization or repo_owner
+                  components = data.get("components", [])
+                  exact = [
+                      component
+                      for component in components
+                      if component.get("name", "").lower() == repo_name.lower()
+                      or component.get("key", "").lower().endswith("_" + repo_name.lower())
+                      or component.get("key", "").lower().endswith(":" + repo_name.lower())
+                  ]
+                  if exact:
+                      component = exact[0]
+                      project_key = component.get("key", "")
+                      organization = (
+                          component.get("organization", "")
+                          or candidate_org
+                      )
+                      found = bool(project_key and organization)
+                      if found:
+                          break
+
+          if not found:
+              raise SystemExit(
+                  "SONAR_TOKEN is valid, but no GameHub Ultra Sonar project was found. "
+                  "Import the repository into SonarQube Cloud or set repository variables "
+                  "SONAR_PROJECT_KEY and SONAR_ORGANIZATION, then rerun this workflow."
+              )
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"host={selected_host}\n")
@@ -125,14 +160,10 @@ jobs:
               out.write(f"project_key={project_key}\n")
               out.write(f"organization={organization}\n")
 
-          if found:
-              print(f"Sonar project discovered for {repo_owner}/{repo_name}.")
-          else:
-              print(
-                  "::notice::SONAR_TOKEN is valid, but no matching SonarQube Cloud project "
-                  "was found yet. Import gamehub-ultra in SonarQube Cloud or set repository "
-                  "variables SONAR_PROJECT_KEY and SONAR_ORGANIZATION."
-              )
+          print(
+              f"Sonar project discovered for {repo_owner}/{repo_name}: "
+              f"{organization}/{project_key}"
+          )
           PY
 
       - name: Set up JDK 17
