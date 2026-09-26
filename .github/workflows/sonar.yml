@@ -96,7 +96,7 @@ jobs:
               else:
                   try:
                       org_data = get_json(
-                          f"{selected_host}/api/organizations/search?member=true&ps=100"
+                          f"{selected_host}/api/organizations/search?member=true&ps=50"
                       )
                       organizations.extend(
                           item.get("key", "")
@@ -119,7 +119,7 @@ jobs:
                   try:
                       data = get_json(
                           f"{selected_host}/api/components/search"
-                          f"?qualifiers=TRK&q={query}&ps=100"
+                          f"?qualifiers=TRK&q={query}&ps=50"
                           f"&organization={organization_param}"
                       )
                   except Exception as exc:
