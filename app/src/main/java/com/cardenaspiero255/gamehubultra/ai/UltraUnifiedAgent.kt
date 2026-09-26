@@ -12,7 +12,10 @@ import kotlin.math.roundToInt
 
 sealed interface UltraAgentRoute {
     data class Command(val command: VoiceCommand) : UltraAgentRoute
-    data class Chat(val message: String) : UltraAgentRoute
+    data class Chat(
+        val message: String,
+        val query: UltraGeneralQueryRequest? = null
+    ) : UltraAgentRoute
     data class Utility(val answer: UltraAgentAnswer) : UltraAgentRoute
 }
 
@@ -37,6 +40,7 @@ sealed interface UltraUtilityIntent {
     data object RefreshRate : UltraUtilityIntent
     data object CallInterruptionShield : UltraUtilityIntent
     data object GeneralCapabilityHelp : UltraUtilityIntent
+    data class StudyMath(val solution: UltraMathSolution) : UltraUtilityIntent
     data class NetworkGamingControl(
         val competitive: Boolean,
         val routerGaming: Boolean
@@ -113,6 +117,16 @@ object UltraUnifiedAgentRouter {
         }
 
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
+            UltraMathEngine.solve(transcript)?.let { solution ->
+                return UltraAgentRoute.Utility(
+                    UltraGeneralAssistant.answer(
+                        intent = UltraUtilityIntent.StudyMath(solution),
+                        clock = clock,
+                        telemetry = telemetry
+                    )
+                )
+            }
+
             UltraGeneralAssistant.classify(transcript)?.let { intent ->
                 return UltraAgentRoute.Utility(
                     UltraGeneralAssistant.answer(
@@ -125,12 +139,18 @@ object UltraUnifiedAgentRouter {
         }
         return when {
             command is VoiceCommand.Unknown ->
-                UltraAgentRoute.Chat(transcript.trim())
+                UltraAgentRoute.Chat(
+                    message = transcript.trim(),
+                    query = UltraGeneralQueryRouter.classify(transcript)
+                )
             command is VoiceCommand.OpenGame &&
                 command.requestedProfile == null &&
                 !VoiceCommandParser.hasExplicitLaunchIntent(transcript) &&
                 !learnedAlias ->
-                UltraAgentRoute.Chat(transcript.trim())
+                UltraAgentRoute.Chat(
+                    message = transcript.trim(),
+                    query = UltraGeneralQueryRouter.classify(transcript)
+                )
             else ->
                 UltraAgentRoute.Command(command)
         }
@@ -378,6 +398,12 @@ object UltraGeneralAssistant {
             UltraUtilityIntent.GeneralCapabilityHelp ->
                 UltraAgentAnswer(
                     message = "Puedo conversar de temas generales, responder hora y fecha, consultar batería, estado térmico y Hz, ayudarte con ajustes seguros y seguir controlando perfiles, biblioteca y estado del dispositivo.",
+                    intent = intent,
+                    canRunDuringGame = true
+                )
+            is UltraUtilityIntent.StudyMath ->
+                UltraAgentAnswer(
+                    message = "Resultado: ${intent.solution.resultText}. ${intent.solution.explanation}",
                     intent = intent,
                     canRunDuringGame = true
                 )
