@@ -1984,7 +1984,11 @@ private object VoiceResponseFormatter {
                 }
             }
             is VoiceActionResult.GameAliasSaved ->
-                "Alias ${result.alias.uppercase()} guardado para ${result.game.label}."
+                context.getString(
+                    R.string.voice_result_game_alias_saved,
+                    result.alias.uppercase(),
+                    result.game.label
+                )
             is VoiceActionResult.DeviceStatus ->
                 context.getString(
                     R.string.voice_result_status,
