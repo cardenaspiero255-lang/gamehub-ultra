@@ -6,6 +6,11 @@ val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
     .orElse("")
     .get()
 
+val supabaseUrl = providers.environmentVariable("SUPABASE_URL")
+    .orElse(providers.gradleProperty("SUPABASE_URL"))
+    .orElse("")
+    .get()
+
 val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull
@@ -52,6 +57,11 @@ android {
             "String",
             "EPIC_AUTH_BACKEND_URL",
             quotedBuildConfig(epicAuthBackendUrl)
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            quotedBuildConfig(supabaseUrl)
         )
     }
 
