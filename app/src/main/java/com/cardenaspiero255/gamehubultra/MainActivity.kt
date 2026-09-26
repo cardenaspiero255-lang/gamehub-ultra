@@ -10,6 +10,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
+import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
@@ -1636,11 +1637,13 @@ private fun VoiceAssistantCard(
                         }
 
                         is UltraAgentRoute.Chat -> {
-                            val answer = aiAdvisor.chat(
-                                message = route.message,
-                                context = turnAiContext,
-                                conversation = conversationBeforeTurn
-                            )
+                            val answer = UltraProductionQueryExecutor.answer(route) {
+                                aiAdvisor.chat(
+                                    message = route.message,
+                                    context = turnAiContext,
+                                    conversation = conversationBeforeTurn
+                                )
+                            }
                             val withAnswer =
                                 if (
                                     UltraMemoryTurnPersistencePolicy
