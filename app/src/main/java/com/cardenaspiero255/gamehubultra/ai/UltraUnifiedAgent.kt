@@ -166,7 +166,9 @@ object UltraNetworkGamingIntentParser {
         Regex(
             """\b(router gaming|gaming router|modo gaming del router|gaming router mode)\b(?=\s*(?:$|y\b|and\b|pero\b|but\b|con\b|with\b|sin\b|without\b|excepto\b|except\b|qos\b|por favor\b|please\b|ahora\b|now\b))"""
         ),
-        Regex("""\b(qos gaming|gaming qos)\b"""),
+        Regex(
+            """\b(qos gaming|gaming qos)\b(?=\s*(?:$|y\b|and\b|pero\b|but\b|con\b|with\b|sin\b|without\b|excepto\b|except\b|por favor\b|please\b|ahora\b|now\b))"""
+        ),
         Regex("""\b(prioridad gaming del router|prioridad del router|router con prioridad)\b"""),
         Regex(
             """\b(prioriza|priorizar|prioridad|prioritize)\b(?:\s+[a-z0-9]+){0,8}\s+(?:(?:en|del|on|in)\s+)?(?:el\s+|the\s+)?router\b"""
@@ -180,6 +182,7 @@ object UltraNetworkGamingIntentParser {
     private val routerNegationPatterns = listOf(
         Regex("""\b(sin|excepto|menos)\s+(?:el\s+|la\s+)?(?:modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
         Regex("""\b(without|except)\s+(?:(?:activating|activate|enabling|enable|using|use|setting|set)\s+)?(?:the\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b"""),
+        Regex("""\b(no|dont|do\s+not|don\s+t|not)\s+(?:quiero\s+|want\s+to\s+)?(?:prioriza|priorizar|prioritize|prioritise)\b(?:\s+[a-z0-9]+){0,8}\s+(?:(?:en|del|on|in)\s+)?(?:el\s+|the\s+)?router\b"""),
         Regex("""\b(no\s+quiero|no|dont\s+want|do\s+not\s+want|don\s+t\s+want|dont|do\s+not|don\s+t|not)\s+(?:actives|activar|enable|activate|use|usar|pongas|poner|set)?\s*(?:the\s+|el\s+|la\s+|modo\s+)?(?:router gaming|gaming router|qos gaming|gaming qos)\b""")
     )
 
