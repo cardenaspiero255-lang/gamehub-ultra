@@ -1,0 +1,68 @@
+name: Grok Code Review
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+permissions:
+  contents: read
+concurrency:
+  group: grok-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  grok-review:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Collect review context
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/grok-review-context.txt"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --unified=3 "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" > "$OUT"
+          else
+            git show --format=fuller --stat --patch HEAD > "$OUT"
+          fi
+          head -c 120000 "$OUT" > "$RUNNER_TEMP/grok-review-context-trimmed.txt"
+          echo "GROK_CONTEXT=$RUNNER_TEMP/grok-review-context-trimmed.txt" >> "$GITHUB_ENV"
+      - name: Review with Grok
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPORT="grok-code-review.md"
+          if [ -z "${XAI_API_KEY:-}" ]; then
+            printf '# Grok code review\n\nXAI_API_KEY is unavailable to this workflow run.\n' > "$REPORT"
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          from pathlib import Path
+          context=Path(os.environ["GROK_CONTEXT"]).read_text(encoding="utf-8",errors="replace")
+          prompt="""Act as a senior Android/Kotlin reviewer for GameHub Ultra. Review ONLY the supplied diff/context. Find concrete correctness bugs, crashes, regressions, concurrency/lifecycle problems, Android permission/API misuse, security/privacy issues, performance problems, and missing tests. Do not invent findings. Separate confirmed findings from suggestions. For each confirmed finding give severity, affected file/area, evidence, impact, and a minimal fix/test recommendation. Pay special attention to Ultra voice/AI routing, game launching, networking/QoS, battery/thermal telemetry, Steam/Epic integration, and secrets. Never print or request API keys or secrets. Return concise Markdown.\n\nCONTEXT:\n"""+context
+          body=json.dumps({"model":"grok-4.7","input":prompt,"reasoning":{"effort":"high"}}).encode()
+          req=urllib.request.Request("https://api.x.ai/v1/responses",data=body,method="POST",headers={"Authorization":"Bearer "+os.environ["XAI_API_KEY"],"Content-Type":"application/json"})
+          try:
+            with urllib.request.urlopen(req,timeout=120) as r: payload=json.loads(r.read().decode())
+            texts=[]
+            for item in payload.get("output",[]):
+              for part in item.get("content",[]):
+                if part.get("type") in ("output_text","text") and part.get("text"): texts.append(part["text"])
+            report="\n".join(texts).strip() or "Grok returned no readable review text."
+            Path("grok-code-review.md").write_text("# Grok code review\n\n"+report+"\n",encoding="utf-8")
+          except urllib.error.HTTPError as e:
+            details=e.read().decode("utf-8",errors="replace").replace(os.environ["XAI_API_KEY"],"[REDACTED]")
+            Path("grok-code-review.md").write_text(f"# Grok code review\n\nAPI request failed with HTTP {e.code}.\n\n```text\n{details[:2000]}\n```\n",encoding="utf-8")
+            raise
+          PY
+      - name: Upload Grok review
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: grok-code-review
+          path: grok-code-review.md
+          if-no-files-found: ignore
