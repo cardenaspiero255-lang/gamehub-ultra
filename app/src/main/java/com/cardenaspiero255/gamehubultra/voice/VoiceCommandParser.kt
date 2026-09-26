@@ -10,6 +10,9 @@ object VoiceCommandParser {
     private const val PROFILE_OR_LAUNCH_VERBS = GAME_LAUNCH_VERBS + "|" + PROFILE_ACTION_VERBS
     private const val PROFILE_MARKERS = "modo|perfil|mode|profile"
     private const val PROFILE_TARGET_CONNECTORS = "to|for|a|al|para|en|with"
+    private val ASSISTANT_INVOCATION_PREFIX =
+        Regex("""^(?:gamehub\s+ultra|gamehub|ultra)\s+""")
+
     private val RESERVED_PROFILE_ALIASES = setOf(
         "x4",
         "balanceado",
@@ -26,9 +29,7 @@ object VoiceCommandParser {
         optionalResolver: NaturalLanguageIntentResolver? = null,
         knownGameAliases: Set<String> = emptySet()
     ): VoiceCommand {
-        val clean = normalize(transcript)
-            .replace(Regex("""\bultra\b"""), " ")
-            .trim()
+        val clean = stripLeadingAssistantInvocation(transcript)
         if (clean.isBlank()) return VoiceCommand.Unknown(transcript)
         if (isUnsafeShellLikeCommand(clean)) return VoiceCommand.Unknown(transcript)
 
@@ -140,11 +141,7 @@ object VoiceCommandParser {
     }
 
     internal fun canonicalGameAliasKey(value: String): String =
-        canonicalGameAlias(
-            normalize(value)
-                .replace(Regex("""^(?:gamehub(?: ultra)?|ultra)\s+"""), "")
-                .trim()
-        )
+        canonicalGameAlias(stripLeadingAssistantInvocation(value))
 
     internal fun isKnownGameAlias(
         value: String,
@@ -173,11 +170,13 @@ object VoiceCommandParser {
             .trim()
             .replace(Regex("""\s+"""), " ")
 
-    internal fun hasExplicitLaunchIntent(value: String): Boolean {
-        val clean = normalize(value)
-            .replace(Regex("""\bultra\b"""), " ")
-            .replace(Regex("""\bgamehub\b"""), " ")
+    internal fun stripLeadingAssistantInvocation(value: String): String =
+        normalize(value)
+            .replace(ASSISTANT_INVOCATION_PREFIX, "")
             .trim()
+
+    internal fun hasExplicitLaunchIntent(value: String): Boolean {
+        val clean = stripLeadingAssistantInvocation(value)
         return Regex("""^($GAME_LAUNCH_VERBS)\b""").containsMatchIn(clean)
     }
 
