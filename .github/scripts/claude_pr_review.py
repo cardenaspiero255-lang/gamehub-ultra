@@ -140,8 +140,28 @@ if truncated:
 
 comment_body = f"{MARKER}\n## Claude Sonnet 5 review\n\n{review}{notice}"
 
-comments = github_request(f"/issues/{PR_NUMBER}/comments?per_page=100")
-existing = next((c for c in comments if MARKER in (c.get("body") or "")), None)
+def find_existing_review_comment():
+    page = 1
+    while page <= 50:
+        comments = github_request(
+            f"/issues/{PR_NUMBER}/comments?per_page=100&page={page}"
+        )
+        for comment in comments:
+            body = comment.get("body") or ""
+            author = (comment.get("user") or {}).get("login") or ""
+            if author == "github-actions[bot]" and body.startswith(MARKER):
+                return comment
+
+        if len(comments) < 100:
+            return None
+        page += 1
+
+    raise RuntimeError(
+        "Refusing to scan more than 5,000 PR comments while locating the Claude review."
+    )
+
+
+existing = find_existing_review_comment()
 
 if existing:
     github_request(
