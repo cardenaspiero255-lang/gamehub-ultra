@@ -54,6 +54,19 @@ object UltraUnifiedAgentRouter {
             return UltraAgentRoute.Chat(transcript.trim())
         }
 
+        val command = VoiceCommandParser.parse(
+            transcript = transcript,
+            optionalResolver = optionalResolver,
+            knownGameAliases = knownGameAliases
+        )
+
+        // Alias-definition commands must win over utility keyword matching.
+        // Example: "when I say bb open Battery Boy" must define an alias,
+        // not be reinterpreted as a battery-status question.
+        if (command is VoiceCommand.DefineGameAlias) {
+            return UltraAgentRoute.Command(command)
+        }
+
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
             UltraGeneralAssistant.classify(transcript)?.let { intent ->
                 return UltraAgentRoute.Utility(
@@ -65,12 +78,6 @@ object UltraUnifiedAgentRouter {
                 )
             }
         }
-
-        val command = VoiceCommandParser.parse(
-            transcript = transcript,
-            optionalResolver = optionalResolver,
-            knownGameAliases = knownGameAliases
-        )
         val learnedAlias = VoiceCommandParser.isKnownGameAlias(
             transcript,
             knownGameAliases
