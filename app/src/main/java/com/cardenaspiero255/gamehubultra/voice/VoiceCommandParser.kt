@@ -23,7 +23,8 @@ object VoiceCommandParser {
     )
     fun parse(
         transcript: String,
-        optionalResolver: NaturalLanguageIntentResolver? = null
+        optionalResolver: NaturalLanguageIntentResolver? = null,
+        knownGameAliases: Set<String> = emptySet()
     ): VoiceCommand {
         val clean = normalize(transcript)
             .replace(Regex("""\bultra\b"""), " ")
@@ -32,6 +33,10 @@ object VoiceCommandParser {
         if (isUnsafeShellLikeCommand(clean)) return VoiceCommand.Unknown(transcript)
 
         parseGameAliasDefinition(clean)?.let { return it }
+
+        if (isKnownGameAlias(clean, knownGameAliases)) {
+            return VoiceCommand.OpenGame(canonicalAliasCandidate(clean))
+        }
 
         optionalResolver?.resolve(clean)?.let { return it }
 
@@ -129,15 +134,31 @@ object VoiceCommandParser {
         }
     }
 
+    internal fun isKnownGameAlias(
+        value: String,
+        knownGameAliases: Set<String>
+    ): Boolean {
+        if (knownGameAliases.isEmpty()) return false
+        val candidate = canonicalAliasCandidate(value)
+        if (candidate.isBlank() || isReservedGameAlias(candidate)) return false
+        return knownGameAliases.any { canonicalGameAlias(it) == candidate }
+    }
+
+    private fun canonicalAliasCandidate(value: String): String =
+        canonicalGameAlias(
+            normalize(value)
+                .replace(Regex("""^gamehub(?: ultra)?\s+"""), "")
+                .trim()
+        )
+
     internal fun isReservedGameAlias(value: String): Boolean {
         val alias = canonicalGameAlias(value)
         if (alias.isBlank() || alias in RESERVED_PROFILE_ALIASES) return true
 
-        return when (val parsed = parse("open $alias")) {
-            is VoiceCommand.OpenGame ->
-                canonicalGameAlias(parsed.query) != alias
-            else -> true
-        }
+        val bareCommand = parse(alias)
+        if (bareCommand !is VoiceCommand.Unknown) return true
+
+        return parse("open $alias") !is VoiceCommand.OpenGame
     }
 
     internal fun normalize(value: String): String =
