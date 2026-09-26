@@ -296,4 +296,57 @@ class VoiceCommandEngineTest {
         assertEquals(0, writes)
     }
 
+
+    @Test
+    fun learnedAliasCannotTargetLaunchableNonGameApp() {
+        val launchable = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars"),
+            GameInfo("com.example.settings", "Device Settings")
+        )
+        val gamesOnly = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars")
+        )
+        var writes = 0
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.DefineGameAlias("cfg", "Device Settings"),
+            gamesProvider = { launchable },
+            aliasGamesProvider = { gamesOnly },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            saveGameAlias = { _, _ -> writes++ }
+        )
+
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals(0, writes)
+    }
+
+    @Test
+    fun staleAliasToNonGameAppIsIgnored() {
+        val launchable = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars"),
+            GameInfo("com.example.settings", "Device Settings")
+        )
+        val gamesOnly = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars")
+        )
+        var launched = ""
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("CFG"),
+            gamesProvider = { launchable },
+            aliasGamesProvider = { gamesOnly },
+            launchGame = { packageName -> launched = packageName; true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            gameAliasesProvider = { mapOf("cfg" to "com.example.settings") }
+        )
+
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals("", launched)
+    }
+
 }
