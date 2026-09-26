@@ -11,6 +11,11 @@ val supabaseUrl = providers.environmentVariable("SUPABASE_URL")
     .orElse("")
     .get()
 
+val supabasePublishableKey = providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY")
+    .orElse(providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY"))
+    .orElse("")
+    .get()
+
 val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull
@@ -62,6 +67,11 @@ android {
             "String",
             "SUPABASE_URL",
             quotedBuildConfig(supabaseUrl)
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_PUBLISHABLE_KEY",
+            quotedBuildConfig(supabasePublishableKey)
         )
     }
 
