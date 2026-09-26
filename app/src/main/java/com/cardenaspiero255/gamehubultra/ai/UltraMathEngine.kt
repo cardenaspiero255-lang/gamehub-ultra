@@ -30,12 +30,24 @@ object UltraMathEngine {
             return null
         }
 
-        val angles = Regex(
+        val explicitAngles = Regex(
             """(-?\d+(?:[.,]\d+)?)\s*(?:grados?|degrees?|°)"""
         ).findAll(clean)
             .mapNotNull { match -> match.groupValues[1].toDecimalOrNull() }
             .take(2)
             .toList()
+
+        val angles = if (explicitAngles.size >= 2) {
+            explicitAngles
+        } else if (clean.contains("angulo") || clean.contains("angle")) {
+            Regex("""-?\d+(?:[.,]\d+)?""")
+                .findAll(clean)
+                .mapNotNull { match -> match.value.toDecimalOrNull() }
+                .take(2)
+                .toList()
+        } else {
+            explicitAngles
+        }
 
         if (angles.size < 2) return null
         val third = BigDecimal("180")
