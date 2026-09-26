@@ -403,4 +403,25 @@ class VoiceCommandEngineTest {
         )
     }
 
+
+    @Test
+    fun ordinaryMultiwordAliasCanBeSaved() {
+        val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
+        var savedAlias = ""
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.DefineGameAlias("the crew", "Brawl Stars"),
+            gamesProvider = { installed },
+            aliasGamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            saveGameAlias = { alias, _ -> savedAlias = alias }
+        )
+
+        assertIs<VoiceActionResult.GameAliasSaved>(result)
+        assertEquals("the crew", savedAlias)
+    }
+
 }
