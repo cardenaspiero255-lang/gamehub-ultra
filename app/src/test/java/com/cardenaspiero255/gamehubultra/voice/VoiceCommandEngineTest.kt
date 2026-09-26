@@ -279,6 +279,33 @@ class VoiceCommandEngineTest {
     }
 
     @Test
+    fun resolverOwnedAliasCannotBeSaved() {
+        val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
+        var writes = 0
+        val resolver = object : NaturalLanguageIntentResolver {
+            override fun resolve(transcript: String): VoiceCommand? =
+                if (transcript == "optimize my game") VoiceCommand.AskAi(transcript) else null
+        }
+
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.DefineGameAlias("optimize my game", "Brawl Stars"),
+            gamesProvider = { installed },
+            aliasGamesProvider = { installed },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            aliasIntentResolver = resolver,
+            saveGameAlias = { _, _ -> writes++ }
+        )
+
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals(0, writes)
+    }
+
+
+    @Test
     fun reservedProfileAliasCannotBeSavedAsGameAlias() {
         val installed = listOf(GameInfo("com.example.x4", "X4 Foundations"))
         var writes = 0
