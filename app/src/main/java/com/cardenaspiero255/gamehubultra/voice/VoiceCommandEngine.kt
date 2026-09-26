@@ -39,6 +39,7 @@ object VoiceCommandEngine {
     fun execute(
         command: VoiceCommand,
         gamesProvider: () -> List<GameInfo>,
+        aliasGamesProvider: () -> List<GameInfo> = gamesProvider,
         launchGame: (String) -> Boolean,
         saveSelectedGame: (String) -> Unit,
         saveSelectedProfile: (PerformanceProfile) -> Unit,
@@ -69,7 +70,7 @@ object VoiceCommandEngine {
                 val normalizedAlias = VoiceCommandParser.canonicalGameAlias(command.alias)
                 val target = GameMatchFinder.find(
                     query = command.gameQuery,
-                    games = gamesProvider(),
+                    games = aliasGamesProvider(),
                     userAliases = emptyMap()
                 )
                 if (
@@ -90,10 +91,15 @@ object VoiceCommandEngine {
             }
 
             is VoiceCommand.OpenGame -> {
+                val launchableGames = gamesProvider()
+                val aliasPackages = aliasGamesProvider()
+                    .mapTo(mutableSetOf()) { it.packageName }
+                val safeAliases = gameAliasesProvider()
+                    .filterValues { packageName -> packageName in aliasPackages }
                 val match = GameMatchFinder.find(
                     query = command.query,
-                    games = gamesProvider(),
-                    userAliases = gameAliasesProvider()
+                    games = launchableGames,
+                    userAliases = safeAliases
                 )
                 if (match == null) {
                     VoiceActionResult.NotAvailable(
