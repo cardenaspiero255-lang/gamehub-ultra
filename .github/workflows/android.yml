@@ -515,14 +515,7 @@ jobs:
               echo "Sentry authentication/API lookup failed while reading organizations." >> "$REPORT"
               exit 0
             fi
-            ORG="$(python3 - <<'PY'
-import json
-from pathlib import Path
-p=Path(__import__('os').environ['RUNNER_TEMP'])/'sentry-orgs.json'
-data=json.loads(p.read_text())
-print(data[0].get('slug','') if isinstance(data,list) and len(data)==1 else '')
-PY
-)"
+            ORG="$(python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ["RUNNER_TEMP"])/"sentry-orgs.json"; data=json.loads(p.read_text()); print(data[0].get("slug","") if isinstance(data,list) and len(data)==1 else "")')"
             if [ -z "$ORG" ]; then
               echo "Multiple or zero Sentry organizations are visible. Set repository variable SENTRY_ORG to enable automatic issue lookup." >> "$REPORT"
               exit 0
@@ -535,14 +528,7 @@ PY
               echo "Could not read Sentry projects for the selected organization." >> "$REPORT"
               exit 0
             fi
-            PROJECT="$(python3 - <<'PY'
-import json
-from pathlib import Path
-p=Path(__import__('os').environ['RUNNER_TEMP'])/'sentry-projects.json'
-data=json.loads(p.read_text())
-print(data[0].get('slug','') if isinstance(data,list) and len(data)==1 else '')
-PY
-)"
+            PROJECT="$(python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ["RUNNER_TEMP"])/"sentry-projects.json"; data=json.loads(p.read_text()); print(data[0].get("slug","") if isinstance(data,list) and len(data)==1 else "")')"
             if [ -z "$PROJECT" ]; then
               echo "Multiple or zero Sentry projects are visible. Set repository variable SENTRY_PROJECT to enable automatic issue lookup." >> "$REPORT"
               exit 0
@@ -554,10 +540,10 @@ PY
             exit 0
           fi
 
-          python3 - <<'PY' >> "$REPORT"
+          python3 -c '
 import json, os
 from pathlib import Path
-p=Path(os.environ['RUNNER_TEMP'])/'sentry-issues.json'
+p=Path(os.environ["RUNNER_TEMP"])/"sentry-issues.json"
 try:
     data=json.loads(p.read_text())
 except Exception:
@@ -568,15 +554,15 @@ if not isinstance(data,list) or not data:
     print("No unresolved issues returned by Sentry.")
 else:
     for issue in data[:10]:
-        title=str(issue.get('title') or 'Untitled issue').replace('\n',' ')
-        level=issue.get('level') or 'unknown'
-        count=issue.get('count') or '?'
-        last_seen=issue.get('lastSeen') or 'unknown'
-        permalink=issue.get('permalink') or ''
+        title=str(issue.get("title") or "Untitled issue").replace("\n"," ")
+        level=issue.get("level") or "unknown"
+        count=issue.get("count") or "?"
+        last_seen=issue.get("lastSeen") or "unknown"
+        permalink=issue.get("permalink") or ""
         print(f"- [{level}] {title} — count {count}, last seen {last_seen}")
         if permalink:
             print(f"  {permalink}")
-PY
+' >> "$REPORT"
 
       - name: Upload Sentry failure context
         if: failure()
