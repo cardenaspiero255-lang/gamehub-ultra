@@ -67,6 +67,19 @@ object UltraUnifiedAgentRouter {
             return UltraAgentRoute.Command(command)
         }
 
+        val learnedAlias = VoiceCommandParser.isKnownGameAlias(
+            transcript,
+            knownGameAliases
+        )
+
+        // A persisted alias that actually parsed as an OpenGame command reflects
+        // an explicit user choice and should beat utility keyword classification.
+        // Resolver-owned phrases are protected because the parser resolves them
+        // before checking persisted aliases.
+        if (command is VoiceCommand.OpenGame && learnedAlias) {
+            return UltraAgentRoute.Command(command)
+        }
+
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
             UltraGeneralAssistant.classify(transcript)?.let { intent ->
                 return UltraAgentRoute.Utility(
@@ -78,10 +91,6 @@ object UltraUnifiedAgentRouter {
                 )
             }
         }
-        val learnedAlias = VoiceCommandParser.isKnownGameAlias(
-            transcript,
-            knownGameAliases
-        )
         return when {
             command is VoiceCommand.Unknown ->
                 UltraAgentRoute.Chat(transcript.trim())
