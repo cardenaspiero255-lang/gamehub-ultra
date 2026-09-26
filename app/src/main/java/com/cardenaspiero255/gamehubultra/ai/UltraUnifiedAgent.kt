@@ -53,7 +53,8 @@ object UltraUnifiedAgentRouter {
         optionalResolver: NaturalLanguageIntentResolver? = null,
         telemetry: UltraRuntimeTelemetry? = null,
         clock: Clock = Clock.systemDefaultZone(),
-        knownGameAliases: Set<String> = emptySet()
+        knownGameAliases: Set<String> = emptySet(),
+        conversationHistory: List<String> = emptyList()
     ): UltraAgentRoute {
         // Memory commands must bypass profile/game parsing. Phrases such as
         // "elimina de tu memoria prefiero X4" contain profile keywords but are
@@ -137,11 +138,16 @@ object UltraUnifiedAgentRouter {
                 )
             }
         }
+        val contextualTranscript = UltraConversationContextResolver.resolve(
+            message = transcript,
+            conversation = conversationHistory
+        )
+
         return when {
             command is VoiceCommand.Unknown ->
                 UltraAgentRoute.Chat(
                     message = transcript.trim(),
-                    query = UltraGeneralQueryRouter.classify(transcript)
+                    query = UltraGeneralQueryRouter.classify(contextualTranscript)
                 )
             command is VoiceCommand.OpenGame &&
                 command.requestedProfile == null &&
@@ -149,7 +155,7 @@ object UltraUnifiedAgentRouter {
                 !learnedAlias ->
                 UltraAgentRoute.Chat(
                     message = transcript.trim(),
-                    query = UltraGeneralQueryRouter.classify(transcript)
+                    query = UltraGeneralQueryRouter.classify(contextualTranscript)
                 )
             else ->
                 UltraAgentRoute.Command(command)
