@@ -349,4 +349,58 @@ class VoiceCommandEngineTest {
         assertEquals("", launched)
     }
 
+
+    @Test
+    fun aliasesPreemptedByHigherPriorityCommandsCannotBeSaved() {
+        val installed = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
+        for (alias in listOf("balanced fps", "battery")) {
+            var writes = 0
+            val result = VoiceCommandEngine.execute(
+                command = VoiceCommand.DefineGameAlias(alias, "Brawl Stars"),
+                gamesProvider = { installed },
+                aliasGamesProvider = { installed },
+                launchGame = { true },
+                saveSelectedGame = {},
+                saveSelectedProfile = {},
+                isProfileAvailable = { true },
+                statusProvider = { VoiceDeviceStatus(80, "Normal") },
+                saveGameAlias = { _, _ -> writes++ }
+            )
+            assertIs<VoiceActionResult.NotAvailable>(result)
+            assertEquals(0, writes)
+        }
+    }
+
+    @Test
+    fun builtInPopularAliasCannotLaunchNonGameApp() {
+        val launchable = listOf(GameInfo("com.example.pubgguide", "PUBG Guide"))
+        var launched = ""
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.OpenGame("PUBG"),
+            gamesProvider = { launchable },
+            aliasGamesProvider = { emptyList() },
+            launchGame = { packageName -> launched = packageName; true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") }
+        )
+
+        assertIs<VoiceActionResult.NotAvailable>(result)
+        assertEquals("", launched)
+    }
+
+    @Test
+    fun exactInstalledTitleWinsOverBuiltInAlias() {
+        val installed = listOf(
+            GameInfo("com.example.re8", "RE8"),
+            GameInfo("com.capcom.village", "Resident Evil Village")
+        )
+
+        assertEquals(
+            "com.example.re8",
+            GameMatchFinder.find("RE8", installed)?.packageName
+        )
+    }
+
 }
