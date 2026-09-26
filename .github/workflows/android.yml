@@ -173,11 +173,11 @@ jobs:
             echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
           } >> "$GITHUB_ENV"
 
-      - name: Build telemetry-disabled release APK for API 35 validation
+      - name: Build telemetry-disabled release APK and AAB for validation
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:assembleRelease --build-cache --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-apk-validation.log"
+          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-validation.log"
 
       - name: Prepare deterministic API 35 AVD
         shell: bash
@@ -465,9 +465,10 @@ jobs:
           fi
 
       - name: Build distributable release APK and AAB with Sentry
-        if: success()
+        if: success() && github.event_name != 'pull_request'
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -476,10 +477,22 @@ jobs:
           else
             echo "Rebuilding distributable release outputs with Sentry enabled."
           fi
-          # The earlier release APK is intentionally telemetry-disabled for emulator
-          # validation. Force the release graph to run again so the uploaded APK/AAB
-          # reflect this step's production SENTRY_DSN value instead.
+          # Pull-request builds never receive Sentry secrets. On trusted main/manual
+          # runs this rebuild overwrites the validation outputs with telemetry-enabled
+          # artifacts carrying the exact git-backed Sentry release identifier.
           gradle :app:assembleRelease :app:bundleRelease             --build-cache             --rerun-tasks             --stacktrace 2>&1 | tee "$RUNNER_TEMP/distributable-release.log"
+
+      - name: Register Sentry release and GitHub commit
+        if: success() && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+        shell: bash
+        run: python3 .github/scripts/register_sentry_release.py
 
       - name: Record failure-analysis handoff
         if: failure()

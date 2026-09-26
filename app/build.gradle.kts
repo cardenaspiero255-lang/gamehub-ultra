@@ -21,6 +21,11 @@ val sentryDsn = providers.environmentVariable("SENTRY_DSN")
     .orElse("")
     .get()
 
+val sentryRelease = providers.environmentVariable("SENTRY_RELEASE")
+    .orElse(providers.gradleProperty("SENTRY_RELEASE"))
+    .orElse("")
+    .get()
+
 val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull

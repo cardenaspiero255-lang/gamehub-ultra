@@ -12,6 +12,10 @@ class GameHubUltraApplication : Application() {
 
         SentryAndroid.init(this) { options ->
             options.dsn = dsn
+            BuildConfig.SENTRY_RELEASE
+                .trim()
+                .takeIf { it.isNotEmpty() }
+                ?.let { options.release = it }
             options.tracesSampleRate = 0.10
             options.isEnableAutoSessionTracking = true
         }
