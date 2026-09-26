@@ -39,7 +39,7 @@ object VoiceCommandParser {
         optionalResolver?.resolve(clean)?.let { return it }
 
         if (isKnownGameAlias(clean, knownGameAliases)) {
-            return VoiceCommand.OpenGame(canonicalAliasCandidate(clean))
+            return VoiceCommand.OpenGame(canonicalGameAliasKey(clean))
         }
 
         if (
@@ -117,7 +117,7 @@ object VoiceCommandParser {
             """^when i say (.+?) (?:i want you to )?(?:open|launch|start|run) (.+)$"""
         ).matchEntire(clean)
         val match = spanish ?: english ?: return null
-        val alias = canonicalGameAlias(match.groupValues[1])
+        val alias = canonicalGameAliasKey(match.groupValues[1])
         val gameQuery = extractGameQuery(
             clean = match.groupValues[2].trim(),
             stripProfileSyntax = false
@@ -139,25 +139,25 @@ object VoiceCommandParser {
         }
     }
 
-    internal fun isKnownGameAlias(
-        value: String,
-        knownGameAliases: Set<String>
-    ): Boolean {
-        if (knownGameAliases.isEmpty()) return false
-        val candidate = canonicalAliasCandidate(value)
-        if (candidate.isBlank() || isReservedGameAlias(candidate)) return false
-        return knownGameAliases.any { canonicalGameAlias(it) == candidate }
-    }
-
-    private fun canonicalAliasCandidate(value: String): String =
+    internal fun canonicalGameAliasKey(value: String): String =
         canonicalGameAlias(
             normalize(value)
                 .replace(Regex("""^(?:gamehub(?: ultra)?|ultra)\s+"""), "")
                 .trim()
         )
 
+    internal fun isKnownGameAlias(
+        value: String,
+        knownGameAliases: Set<String>
+    ): Boolean {
+        if (knownGameAliases.isEmpty()) return false
+        val candidate = canonicalGameAliasKey(value)
+        if (candidate.isBlank() || isReservedGameAlias(candidate)) return false
+        return knownGameAliases.any { canonicalGameAliasKey(it) == candidate }
+    }
+
     internal fun isReservedGameAlias(value: String): Boolean {
-        val alias = canonicalGameAlias(value)
+        val alias = canonicalGameAliasKey(value)
         if (alias.isBlank() || alias in RESERVED_PROFILE_ALIASES) return true
 
         val bareCommand = parse(alias)
