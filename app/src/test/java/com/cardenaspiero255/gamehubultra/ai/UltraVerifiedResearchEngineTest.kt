@@ -151,6 +151,57 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun freshGeneralKnowledgeDoesNotReuseStableCacheAndUsesFreshTtl() {
+        var now = 1_000L
+        val calls = AtomicInteger(0)
+        val provider = object : UltraResearchProvider {
+            override val id = "freshness-aware"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                val call = calls.incrementAndGet()
+                return evidence(
+                    claimKey = "same-question",
+                    value = "value-$call",
+                    text = "Respuesta $call",
+                    authoritative = true
+                )
+            }
+        }
+        val cache = UltraResearchCache()
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(provider),
+            cache = cache,
+            nowMillis = { now }
+        )
+        val stableRequest = UltraGeneralQueryRequest(
+            originalText = "explica el estado del producto",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = true,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
+        val freshRequest = stableRequest.copy(requiresFreshData = true)
+
+        val stable = engine.answer(stableRequest)
+        val firstFresh = engine.answer(freshRequest)
+        val cachedFresh = engine.answer(freshRequest)
+        now += UltraResearchCache.CURRENT_DATA_TTL_MS + 1
+        val expiredFresh = engine.answer(freshRequest)
+
+        assertEquals("Respuesta 1", stable.message)
+        assertFalse(stable.fromCache)
+        assertEquals("Respuesta 2", firstFresh.message)
+        assertFalse(firstFresh.fromCache)
+        assertEquals("Respuesta 2", cachedFresh.message)
+        assertTrue(cachedFresh.fromCache)
+        assertEquals("Respuesta 3", expiredFresh.message)
+        assertFalse(expiredFresh.fromCache)
+        assertEquals(3, calls.get())
+        engine.close()
+    }
+
+
+    @Test
     fun lowConfidenceGeneralKnowledgeIsReturnedInsteadOfGenericAbstention() {
         val provider = fixedProvider(
             providerId = "general-assistant",
