@@ -40,6 +40,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -64,6 +65,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -90,6 +92,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -162,6 +165,13 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private const val MAX_CHAT_HISTORY = 8
+
+private val UltraHomeRed = Color(0xFFFF1630)
+private val UltraHomeBlack = Color(0xFF030303)
+private val UltraHomePanel = Color(0xFF0B0B0E)
+private val UltraHomePanelAlt = Color(0xFF111116)
+private val UltraHomeMuted = Color(0xFF9696A2)
+private val UltraHomeLine = Color(0xFF2A2A31)
 
 internal fun shouldRevealQuickVoiceControls(wasOpen: Boolean, isOpen: Boolean): Boolean =
     !wasOpen && isOpen
@@ -1052,19 +1062,40 @@ private fun HomeScreen(
             ).games.size
         }
     }
-    LazyColumn(
-        state = homeListState,
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
-        verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
+    val homeTypography = MaterialTheme.typography
+    val homeShapes = MaterialTheme.shapes
+    val homeColorScheme = darkColorScheme(
+        primary = UltraHomeRed,
+        onPrimary = Color.White,
+        background = UltraHomeBlack,
+        onBackground = Color.White,
+        surface = UltraHomePanel,
+        onSurface = Color.White,
+        surfaceVariant = UltraHomePanelAlt,
+        onSurfaceVariant = UltraHomeMuted,
+        outline = UltraHomeLine
+    )
+
+    MaterialTheme(
+        colorScheme = homeColorScheme,
+        typography = homeTypography,
+        shapes = homeShapes
     ) {
-        item {
-            Text(
-                stringResource(R.string.hero_subtitle),
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
+        LazyColumn(
+            state = homeListState,
+            modifier = modifier
+                .fillMaxSize()
+                .background(UltraHomeBlack)
+                .padding(horizontal = GameHubUiTokens.compactHorizontalPadding),
+            verticalArrangement = Arrangement.spacedBy(GameHubUiTokens.compactSectionSpacing)
+        ) {
+            item {
+                Text(
+                    stringResource(R.string.hero_subtitle).uppercase(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         item {
             StoreLibrarySummary(
                 games = storeGames,
@@ -1164,13 +1195,6 @@ private fun HomeScreen(
                 )
             }
         }
-        item {
-            BoosterOptions(
-                selectedProfileName = selectedProfileName,
-                onProfileSelected = onProfileSelected
-            )
-        }
-
         item { DeviceStatusCard(device, state.capabilities) }
         item {
             RuntimeDiagnosticsCard(
@@ -1181,8 +1205,9 @@ private fun HomeScreen(
                 onApplyAdaptiveProfile = onApplyAdaptiveProfile
             )
         }
-        item {
-            PeripheralsHubCard(peripherals = runtimeDiagnostics?.peripherals)
+            item {
+                PeripheralsHubCard(peripherals = runtimeDiagnostics?.peripherals)
+            }
         }
     }
 }
@@ -2271,43 +2296,6 @@ private fun isPackageInstalled(context: Context, packageName: String): Boolean =
         }
     }.isSuccess
 
-@Composable
-private fun BoosterOptions(
-    selectedProfileName: String,
-    onProfileSelected: (PerformanceProfile) -> Unit
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                stringResource(R.string.booster_title),
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(stringResource(R.string.booster_subtitle))
-            PerformanceProfile.entries.forEach { profile ->
-                Button(
-                    onClick = { onProfileSelected(profile) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        if (selectedProfileName == profile.name) {
-                            stringResource(
-                                R.string.booster_selected,
-                                localizedProfileTitle(profile)
-                            )
-                        } else {
-                            localizedProfileTitle(profile)
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@SuppressLint("NewApi")
 @Composable
 private fun DeviceStatusCard(
     device: DeviceInfo,
