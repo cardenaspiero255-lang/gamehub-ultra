@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.data
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryPersistence
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRepository
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -39,6 +40,32 @@ class UltraMemoryRepositoryProviderTest {
             executor.shutdownNow()
         }
     }
+
+
+    @Test
+    fun getCanInitializeWhenCalledFromTheConfiguredSingleThreadExecutor() {
+        val executor = Executors.newSingleThreadExecutor()
+        val persistence = object : UltraMemoryPersistence {
+            override fun read(): String? = null
+            override fun write(serialized: String) = Unit
+            override fun clear() = Unit
+        }
+        val provider = UltraMemoryRepositoryProvider(
+            executor = executor,
+            factory = { UltraMemoryRepository(persistence) }
+        )
+
+        try {
+            val repository = executor
+                .submit<UltraMemoryRepository> { provider.get() }
+                .get(1, TimeUnit.SECONDS)
+
+            assertEquals(repository, provider.get())
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
 
     @Test
     fun successfulInitializationIsReused() {
