@@ -140,6 +140,7 @@ class GameHubAiAdvisor(
             else ->
                 "Soy Ultra. Puedo ayudarte en español con rendimiento, FPS, temperatura, batería, red, perfiles de GameHub Ultra y consultas generales. Si una respuesta necesita datos externos, intentaré usar información verificada."
         }
+    }
 
     private fun profileLabel(profile: PerformanceProfile): String =
         when (profile) {
