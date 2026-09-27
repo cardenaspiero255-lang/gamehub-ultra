@@ -87,15 +87,6 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            currentDataPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
-                    kind = UltraGeneralQueryKind.CURRENT_DATA,
-                    requiresInternet = true,
-                    requiresFreshData = true,
-                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
-                )
-
             currentQualifierPattern.containsMatchIn(clean) &&
                 (
                     generalKnowledgePattern.containsMatchIn(clean) ||
@@ -115,6 +106,15 @@ object UltraGeneralQueryRouter {
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
                     requiresInternet = true,
                     requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            currentDataPattern.containsMatchIn(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.CURRENT_DATA,
+                    requiresInternet = true,
+                    requiresFreshData = true,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
