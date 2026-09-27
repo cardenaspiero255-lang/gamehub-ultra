@@ -1241,8 +1241,7 @@ Deno.test("general knowledge falls back to Tavily when Wikipedia has no result",
 
       throw new Error("unexpected URL " + url);
     },
-    env: (name) =>
-      name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
   };
 
   const result = await routeResearchQuery(
@@ -1298,8 +1297,7 @@ Deno.test("unsupported current query falls back to Tavily web search", async () 
         ],
       });
     },
-    env: (name) =>
-      name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
   };
 
   const result = await routeResearchQuery(
