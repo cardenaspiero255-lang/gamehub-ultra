@@ -401,3 +401,47 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "general knowledge rejects a weak unrelated reference",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          !["es.wikipedia.org", "en.wikipedia.org"].includes(url.hostname) ||
+          url.pathname !== "/w/api.php"
+        ) {
+          throw new Error("unexpected URL " + url.toString());
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "404": {
+                pageid: 404,
+                index: 1,
+                title: "Azul",
+                extract:
+                  "Azul es un álbum de música publicado por un artista ficticio. Este texto es suficientemente largo para superar el umbral anterior, pero no explica la causa física del color del cielo.",
+                fullurl: "https://es.wikipedia.org/wiki/Azul_(album)",
+              },
+            },
+          },
+        });
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿por qué el cielo es azul?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!result.abstained) {
+      throw new Error("weak unrelated references must be rejected");
+    }
+  },
+);
