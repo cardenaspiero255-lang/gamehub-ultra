@@ -1036,7 +1036,7 @@ Deno.test("speaker labels are stripped before assistant invocation in context", 
   }
 });
 
-Deno.test("Gemini synthesizes verified evidence in Spanish when configured", async () => {
+Deno.test("Gemini cannot extend verified evidence with unsupported claims", async () => {
   let geminiApiKey = "";
   let geminiPrompt = "";
   const deps: ResearchDependencies = {
@@ -1096,7 +1096,7 @@ Deno.test("Gemini synthesizes verified evidence in Spanish when configured", asy
     "GENERAL_KNOWLEDGE",
   );
 
-  if (result.abstained) throw new Error("expected synthesized answer");
+  if (result.abstained) throw new Error("expected verified answer");
   if (geminiApiKey !== "gemini-test-key") {
     throw new Error("expected Gemini key in x-goog-api-key header");
   }
@@ -1106,8 +1106,63 @@ Deno.test("Gemini synthesizes verified evidence in Spanish when configured", asy
   if (!geminiPrompt.includes("Vulkan es una API gráfica de bajo nivel.")) {
     throw new Error("expected verified evidence in Gemini prompt");
   }
-  if (!result.displayText?.includes("control más directo")) {
-    throw new Error("expected Gemini synthesis");
+  if (result.displayText !== "Vulkan es una API gráfica de bajo nivel.") {
+    throw new Error("unsupported synthesis must not replace verified evidence");
+  }
+});
+
+Deno.test("Gemini MAX_TOKENS preserves complete verified evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/page/summary/")
+      ) {
+        return jsonResponse({
+          title: "Vulkan",
+          type: "standard",
+          extract: "Vulkan es una API gráfica de bajo nivel.",
+          content_urls: {
+            desktop: { page: "https://es.wikipedia.org/wiki/Vulkan" },
+          },
+        });
+      }
+
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        return jsonResponse({
+          candidates: [{
+            finishReason: "MAX_TOKENS",
+            content: {
+              parts: [{ text: "Vulkan es una API gráfica de" }],
+            },
+          }],
+        });
+      }
+
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, qué es Vulkan",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.displayText !== "Vulkan es una API gráfica de bajo nivel.") {
+    throw new Error("truncated Gemini output must preserve verified evidence");
   }
 });
 
