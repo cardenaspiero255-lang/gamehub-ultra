@@ -181,6 +181,7 @@ internal class UltraAssistantSessionController(
         if (clearConversation) {
             _conversation.value = emptyList()
             conversationRevision += 1
+            onSnapshotChanged(gamePackage, emptyList())
         }
         val revisionAtLoadStart = conversationRevision
         _loadError.value = null
