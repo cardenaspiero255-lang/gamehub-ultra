@@ -176,6 +176,30 @@ class UltraCar73ContextualQueryExecutionTest {
     }
 
     @Test
+    fun unavailableSubstantiveLocalKnowledgePreservesResearchAbstention() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                error("provider unavailable")
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify("Ultra, ¿qué es Vulkan?"),
+            localChat = { null }
+        )
+
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertFalse(answer.fallbackUsed)
+        assertTrue(answer.message.contains("verificar", ignoreCase = true))
+        engine.close()
+    }
+
+    @Test
     fun contradictoryEvidenceDoesNotFallBackToUnverifiedLocalChat() {
         fun provider(id: String, value: String) = object : UltraResearchProvider {
             override val id = id
