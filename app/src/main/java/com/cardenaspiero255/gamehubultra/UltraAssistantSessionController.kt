@@ -143,18 +143,22 @@ internal class UltraAssistantSessionController(
         )
     }
 
-    fun retryLoad(): Job =
-        startLoad(
+    fun retryLoad(): Job {
+        val failedRevision = failedLoadRevision ?: return noOpJob()
+        return startLoad(
             gamePackage = _selectedGamePackage.value,
             clearConversation = false,
-            expectedConversationRevision = failedLoadRevision
+            expectedConversationRevision = failedRevision
         )
+    }
 
     fun updateConversation(next: List<String>) {
         val previous = _conversation.value
         val memoryScope = scopeFor(_selectedGamePackage.value)
         if (previous == next) {
             if (next.isEmpty()) {
+                conversationRevision += 1
+                onSnapshotChanged(_selectedGamePackage.value, next)
                 memory.enqueueClearConversationHistory(memoryScope)
             }
             return
