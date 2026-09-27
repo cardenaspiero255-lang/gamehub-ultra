@@ -605,3 +605,36 @@ Deno.test("English general knowledge uses the English encyclopedia locale", asyn
     throw new Error("expected an English answer");
   }
 });
+
+
+Deno.test("Spanish factual prefixes are removed before encyclopedia search", async () => {
+  const queries: string[] = [];
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        queries.push(url.searchParams.get("srsearch") ?? "");
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Vulkan",
+        type: "standard",
+        extract: "Vulkan es una API gráfica.",
+      });
+    },
+    env: () => undefined,
+  };
+
+  await routeResearchQuery(
+    "Ultra, para qué sirve Vulkan",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (queries[0]?.toLowerCase() !== "vulkan") {
+    throw new Error("expected a clean encyclopedia topic");
+  }
+});
