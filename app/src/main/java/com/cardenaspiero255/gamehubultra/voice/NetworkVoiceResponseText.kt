@@ -40,7 +40,7 @@ object NetworkVoiceResponseText {
             NetworkVoiceRequest.OPTIMIZE -> {
                 val profile = profileLabel(result.snapshot.recommendedProfile)
                 if (result.optimizationApplied) {
-                    "Optimización de red activada. Apliqué el perfil $profile con las capacidades permitidas por Android."
+                    "Optimización de red activada. Perfil de red $profile aplicado con las capacidades permitidas por Android."
                 } else {
                     "No pude aplicar la optimización automáticamente. Recomiendo el perfil $profile; revisa que estés conectado a una red compatible."
                 }
