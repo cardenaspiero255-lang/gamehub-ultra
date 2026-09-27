@@ -1215,7 +1215,8 @@ private fun HomeScreen(
                     queryExecutor = queryExecutor,
                     queryRunner = queryRunner,
                     conversation = conversation,
-                    onConversationChanged = onConversationChanged
+                    onConversationChanged = onConversationChanged,
+                    assistantInputEnabled = assistantInputEnabled
                 )
             }
         }
@@ -1788,11 +1789,23 @@ private fun VoiceAssistantCard(
             context = context,
             onListeningChanged = { listening = it },
             onTranscript = transcript@{ spokenText ->
-                if (!latestAssistantInputEnabled) return@transcript
+                val turnAiContext = latestAiContext
+                val capturedVoiceScope = captureUltraVoiceTurnScope(
+                    assistantInputReady = latestAssistantInputEnabled,
+                    gamePackage = turnAiContext.selectedGamePackage
+                ) ?: return@transcript
+                val originatingGamePackage = capturedVoiceScope.gamePackage
                 transcript = spokenText
                 scope.launch(Dispatchers.IO) {
-                    val turnAiContext = latestAiContext
-                    val originatingGamePackage = turnAiContext.selectedGamePackage
+                    if (
+                        !isUltraVoiceTurnScopeCurrent(
+                            captured = capturedVoiceScope,
+                            assistantInputReady = latestAssistantInputEnabled,
+                            currentGamePackage = latestAiContext.selectedGamePackage
+                        )
+                    ) {
+                        return@launch
+                    }
                     val conversationAtStart = latestConversation
                     val conversationBeforeTurn =
                         conversationAtStart.takeLast(MAX_CHAT_HISTORY - 1)
