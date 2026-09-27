@@ -238,7 +238,10 @@ class UltraVerifiedResearchEngine(
             else -> UltraAnswerConfidence.LOW
         }
 
-        if (confidence == UltraAnswerConfidence.LOW) {
+        if (
+            confidence == UltraAnswerConfidence.LOW &&
+            request.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE
+        ) {
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
