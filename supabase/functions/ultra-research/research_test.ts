@@ -1074,6 +1074,7 @@ Deno.test("Gemini cannot extend verified evidence with unsupported claims", asyn
         geminiPrompt = request.contents?.[0]?.parts?.[0]?.text ?? "";
         return jsonResponse({
           candidates: [{
+            finishReason: "STOP",
             content: {
               parts: [{
                 text:
