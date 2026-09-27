@@ -12,3 +12,13 @@ internal fun GameHubUiState.ultraSessionScopeSelection(): UltraSessionScopeSelec
     } else {
         null
     }
+
+
+internal fun isUltraAssistantInputReady(
+    selection: UltraSessionScopeSelection?,
+    controllerGamePackage: String?,
+    controllerScopeReady: Boolean
+): Boolean =
+    selection != null &&
+        controllerScopeReady &&
+        selection.gamePackage == controllerGamePackage
