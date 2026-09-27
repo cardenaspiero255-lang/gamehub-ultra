@@ -348,3 +348,38 @@ Deno.test("weather follow-up uses current question instead of contaminating it w
     throw new Error("expected current question location, got " + geocodedName);
   }
 });
+
+
+Deno.test("general knowledge returns a sourced answer instead of the gaming fallback", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "es.wikipedia.org" && url.pathname.includes("/page/summary/")) {
+        return jsonResponse({
+          title: "Dispersión de Rayleigh",
+          extract: "La dispersión de Rayleigh explica por qué las longitudes de onda cortas de la luz visible se dispersan más en la atmósfera, haciendo que el cielo se vea azul.",
+          content_urls: {
+            desktop: { page: "https://es.wikipedia.org/wiki/Dispersi%C3%B3n_de_Rayleigh" },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, por qué el cielo es azul",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected sourced general answer");
+  if (!result.displayText?.toLowerCase().includes("cielo")) {
+    throw new Error("expected an actual answer to the question");
+  }
+  if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
+    throw new Error("expected a visible source");
+  }
+});
