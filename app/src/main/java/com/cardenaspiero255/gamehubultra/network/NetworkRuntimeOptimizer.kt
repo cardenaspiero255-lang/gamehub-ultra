@@ -10,6 +10,13 @@ import android.os.Handler
 import android.os.Looper
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 
+enum class NetworkOptimizationOutcome {
+    NOT_REQUESTED,
+    APPLIED,
+    RELEASED_OR_NOT_NEEDED,
+    UNAVAILABLE
+}
+
 object NetworkOptimizationResultPolicy {
     fun reportsApplied(action: NetworkPriorityAction): Boolean =
         action == NetworkPriorityAction.LOW_LATENCY_WIFI ||
@@ -23,6 +30,13 @@ object NetworkLockLifecyclePolicy {
     ): Boolean = !wifiTransport || !validated
 }
 
+object NetworkLeaseGenerationPolicy {
+    fun shouldRelease(
+        callbackGeneration: Long,
+        activeGeneration: Long
+    ): Boolean = callbackGeneration == activeGeneration
+}
+
 object NetworkRuntimeOptimizer {
     private const val LOCK_TAG = "GameHubUltra:NetworkBooster"
     private const val MAX_LOCK_LEASE_MILLIS = 30L * 60L * 1000L
@@ -33,9 +47,10 @@ object NetworkRuntimeOptimizer {
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private val leaseHandler = Handler(Looper.getMainLooper())
-    private val leaseRelease = Runnable { release() }
+    private var leaseGeneration: Long = 0L
+    private var pendingLeaseRelease: Runnable? = null
 
-    fun apply(context: Context, profile: NetworkGameProfile): Boolean {
+    fun apply(context: Context, profile: NetworkGameProfile): NetworkOptimizationOutcome {
         val telemetry = RuntimeDiagnosticsProvider.get(context).connectivity
         val action = NetworkLocalPriorityPolicy.actionFor(
             profile,
@@ -48,9 +63,12 @@ object NetworkRuntimeOptimizer {
         return when (action) {
             NetworkPriorityAction.RELEASE_WIFI_LOCK -> {
                 release()
-                false
+                NetworkOptimizationOutcome.RELEASED_OR_NOT_NEEDED
             }
-            NetworkPriorityAction.UNAVAILABLE -> false
+            NetworkPriorityAction.UNAVAILABLE -> {
+                release()
+                NetworkOptimizationOutcome.UNAVAILABLE
+            }
             NetworkPriorityAction.LOW_LATENCY_WIFI,
             NetworkPriorityAction.HIGH_PERFORMANCE_WIFI -> {
                 val mode = if (action == NetworkPriorityAction.LOW_LATENCY_WIFI) {
@@ -59,8 +77,11 @@ object NetworkRuntimeOptimizer {
                     @Suppress("DEPRECATION")
                     WifiManager.WIFI_MODE_FULL_HIGH_PERF
                 }
-                acquire(context, mode) &&
-                    NetworkOptimizationResultPolicy.reportsApplied(action)
+                if (acquire(context, mode)) {
+                    NetworkOptimizationOutcome.APPLIED
+                } else {
+                    NetworkOptimizationOutcome.UNAVAILABLE
+                }
             }
         }
     }
@@ -86,11 +107,29 @@ object NetworkRuntimeOptimizer {
             if (!lock.isHeld) {
                 lock.acquire()
             }
-            leaseHandler.removeCallbacks(leaseRelease)
-            leaseHandler.postDelayed(leaseRelease, MAX_LOCK_LEASE_MILLIS)
+
+            leaseGeneration += 1L
+            val generation = leaseGeneration
+            pendingLeaseRelease?.let(leaseHandler::removeCallbacks)
+            val releaseTask = Runnable { releaseIfGeneration(generation) }
+            pendingLeaseRelease = releaseTask
+            leaseHandler.postDelayed(releaseTask, MAX_LOCK_LEASE_MILLIS)
+
             ensureConnectivityGuard(appContext)
             lock.isHeld
         }.getOrDefault(false)
+    }
+
+    private fun releaseIfGeneration(callbackGeneration: Long) = synchronized(lockGuard) {
+        if (
+            !NetworkLeaseGenerationPolicy.shouldRelease(
+                callbackGeneration = callbackGeneration,
+                activeGeneration = leaseGeneration
+            )
+        ) {
+            return@synchronized
+        }
+        releaseLocked()
     }
 
     private fun ensureConnectivityGuard(context: Context) {
@@ -128,6 +167,14 @@ object NetworkRuntimeOptimizer {
     }
 
     fun release() = synchronized(lockGuard) {
+        leaseGeneration += 1L
+        releaseLocked()
+    }
+
+    private fun releaseLocked() {
+        pendingLeaseRelease?.let(leaseHandler::removeCallbacks)
+        pendingLeaseRelease = null
+
         runCatching {
             activeLock?.takeIf { it.isHeld }?.release()
         }
