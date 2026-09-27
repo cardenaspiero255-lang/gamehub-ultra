@@ -1581,7 +1581,9 @@ private fun VoiceAssistantCard(
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
-    var recommendedProfile by remember { mutableStateOf<UltraScopedProfileRecommendation?>(null) }
+    var recommendedProfile by remember(aiContext.selectedGamePackage) {
+        mutableStateOf<UltraScopedProfileRecommendation?>(null)
+    }
     var pendingContinuousListening by rememberSaveable { mutableStateOf(false) }
     var showTextChat by rememberSaveable { mutableStateOf(false) }
     var chatMessage by rememberSaveable { mutableStateOf("") }
