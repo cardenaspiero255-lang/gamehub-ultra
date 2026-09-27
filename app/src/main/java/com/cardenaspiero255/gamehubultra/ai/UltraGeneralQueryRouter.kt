@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import java.text.Normalizer
 import java.util.Locale
 
@@ -41,7 +42,7 @@ object UltraGeneralQueryRouter {
     )
 
     fun classify(transcript: String): UltraGeneralQueryRequest {
-        val clean = normalize(transcript)
+        val clean = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
         return when {
             comparisonPattern.containsMatchIn(clean) ->
                 UltraGeneralQueryRequest(
