@@ -33,6 +33,17 @@ class UltraVoiceEndToEndCar73Test {
     }
 
     @Test
+    fun ttsMentioningUltraDoesNotSelfInterrupt() {
+        assertEquals(
+            UltraWakeRecognitionDisposition.SUPPRESS,
+            UltraWakeBargeInPolicy.decide(
+                playbackActive = true,
+                transcript = "No pude completar el comando de Ultra, inténtalo de nuevo"
+            )
+        )
+    }
+
+    @Test
     fun normalWakeCommandIsAcceptedWhenTtsIsIdle() {
         assertEquals(
             UltraWakeRecognitionDisposition.ACCEPT,
