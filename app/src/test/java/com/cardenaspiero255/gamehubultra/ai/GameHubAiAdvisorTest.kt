@@ -160,6 +160,29 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun deterministicChatAlwaysRespondsInSpanishEvenForEnglishInput() {
+        val answer = GameHubAiAdvisor().chat(
+            message = "Ultra, what is my battery?",
+            context = healthyContext
+        )
+
+        assertTrue(answer.contains("batería", ignoreCase = true))
+        assertFalse(answer.contains("The current battery", ignoreCase = true))
+    }
+
+    @Test
+    fun geminiChatPromptForcesSpanishOutput() {
+        val prompt = buildGeminiChatPrompt(
+            message = "Hello, how are you?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertTrue(prompt.contains("Responde siempre en español"))
+        assertFalse(prompt.contains("Answer in the same language as the user"))
+    }
+
+    @Test
     fun memoryCommandIsHandledBeforeModelChat() {
         var modelChatInvoked = false
         val adapter = object : LocalAiModelAdapter {
