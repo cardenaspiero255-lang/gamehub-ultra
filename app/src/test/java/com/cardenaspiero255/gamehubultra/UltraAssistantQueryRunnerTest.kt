@@ -166,4 +166,90 @@ class UltraAssistantQueryRunnerTest {
             ownerScope.cancel()
         }
     }
+    @Test
+    fun acceptedCallbackFailureReleasesRunnerForNextSubmission() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            runCatching {
+                runner.launch(
+                    onAccepted = { error("accept failed") },
+                    onFailure = {}
+                ) {}
+            }
+
+            assertFalse(runner.isRunning.value)
+            val retry = runner.launch(
+                onAccepted = {},
+                onFailure = {}
+            ) {}
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(retry)
+            accepted.job.join()
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun assistantAppendCanResetConversationForCurrentGame() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var conversation = listOf("Tú: vieja", "Ultra: vieja")
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { conversation },
+                publishConversation = { conversation = it }
+            )
+
+            val published = runner.appendAssistantIfCurrentGame(
+                originatingGamePackage = "game.a",
+                assistantEntry = "  Ultra: nueva  ",
+                maxEntries = 8,
+                resetConversation = true
+            )
+
+            assertTrue(published)
+            assertEquals(listOf("Ultra: nueva"), conversation)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun assistantAppendKeepsConversationBounded() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var conversation = listOf("uno", "dos", "tres")
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { conversation },
+                publishConversation = { conversation = it }
+            )
+
+            runner.appendAssistantIfCurrentGame(
+                originatingGamePackage = "game.a",
+                assistantEntry = "cuatro",
+                maxEntries = 3
+            )
+
+            assertEquals(listOf("dos", "tres", "cuatro"), conversation)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
 }
