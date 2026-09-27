@@ -1,7 +1,4 @@
-import {
-  type ResearchDependencies,
-  routeResearchQuery,
-} from "./research.ts";
+import { type ResearchDependencies, routeResearchQuery } from "./research.ts";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
