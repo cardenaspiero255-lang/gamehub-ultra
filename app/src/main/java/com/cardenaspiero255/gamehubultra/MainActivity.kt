@@ -2359,9 +2359,13 @@ private fun DeviceStatusCard(
                 null
             }
 
-        if (thermalListener != null) {
-            powerManager?.addThermalStatusListener(
-                context.mainExecutor,
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            thermalListener != null &&
+            powerManager != null
+        ) {
+            powerManager.addThermalStatusListener(
+                ContextCompat.getMainExecutor(context),
                 thermalListener
             )
         }
