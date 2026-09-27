@@ -194,7 +194,10 @@ class UltraCar73ContextualQueryExecutionTest {
             }
         )
 
-        assertTrue(answer.abstained)
+        assertTrue(
+            answer.abstained,
+            "Expected evidence-backed abstention, got answer=$answer localCalls=$localCalls"
+        )
         assertFalse(answer.verified)
         assertEquals(listOf("weak-source"), answer.sources)
         assertEquals(0, localCalls)
