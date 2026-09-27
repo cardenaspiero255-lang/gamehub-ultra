@@ -93,4 +93,39 @@ class UltraSessionScopeSelectionTest {
         )
     }
 
+
+    @Test
+    fun voiceTurnScopeCapturedBeforeDispatchRejectsGameSwitch() {
+        val captured = captureUltraVoiceTurnScope(
+            assistantInputReady = true,
+            gamePackage = "game.a"
+        )
+
+        assertNotNull(captured)
+        assertTrue(
+            isUltraVoiceTurnScopeCurrent(
+                captured = captured,
+                assistantInputReady = true,
+                currentGamePackage = "game.a"
+            )
+        )
+        assertFalse(
+            isUltraVoiceTurnScopeCurrent(
+                captured = captured,
+                assistantInputReady = true,
+                currentGamePackage = "game.b"
+            )
+        )
+    }
+
+    @Test
+    fun voiceTurnScopeCannotBeCapturedWhileAssistantInputIsBlocked() {
+        assertNull(
+            captureUltraVoiceTurnScope(
+                assistantInputReady = false,
+                gamePackage = "game.a"
+            )
+        )
+    }
+
 }
