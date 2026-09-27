@@ -89,6 +89,11 @@ class SupabaseUltraResearchProvider(
             value = value,
             displayText = displayText,
             sourceId = sourceId,
+            supportingSourceIds = decoded.sourceIds
+                .map(String::trim)
+                .filter { it.isNotBlank() && it != sourceId }
+                .distinct(),
+            independentSourceCount = decoded.independentSourceCount.coerceAtLeast(1),
             authoritative = decoded.authoritative
         )
     }
