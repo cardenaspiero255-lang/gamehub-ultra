@@ -31,6 +31,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
+import com.cardenaspiero255.gamehubultra.ai.UltraQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
@@ -73,6 +74,7 @@ class UltraWakeService : Service() {
     private val lifecycleGate = UltraWakeLifecycleGate()
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
+    private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
     private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
     private var persistentSpeechSource: UltraPersistentSpeechSource? = null
@@ -489,7 +491,7 @@ class UltraWakeService : Service() {
                 }
                 is UltraAgentRoute.Chat -> {
                     val memoryCommand = UltraMemoryCommandParser.parse(route.message)
-                    val answer = UltraProductionQueryExecutor.answer(
+                    val answer = queryExecutor.answer(
                         route = route,
                         stableKnowledgeFallback = {
                             aiAdvisor.generalKnowledgeChatOrNull(
