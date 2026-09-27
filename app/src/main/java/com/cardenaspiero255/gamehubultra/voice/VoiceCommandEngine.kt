@@ -5,6 +5,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
+import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationOutcome
 
 data class VoiceDeviceStatus(
     val batteryPercent: Int?,
@@ -33,8 +34,11 @@ sealed interface VoiceActionResult {
     data class NetworkReport(
         val request: NetworkVoiceRequest,
         val snapshot: VoiceNetworkSnapshot,
+        val optimizationOutcome: NetworkOptimizationOutcome
+    ) : VoiceActionResult {
         val optimizationApplied: Boolean
-    ) : VoiceActionResult
+            get() = optimizationOutcome == NetworkOptimizationOutcome.APPLIED
+    }
     data class AiAdvice(val advice: GameHubAiAdvice) : VoiceActionResult
     data object Help : VoiceActionResult
     data class NotAvailable(val detail: String) : VoiceActionResult
@@ -59,7 +63,7 @@ object VoiceCommandEngine {
         gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
         saveGameAlias: (String, String) -> Unit = { _, _ -> },
         networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
-        applyNetworkProfile: (NetworkGameProfile) -> Boolean = { false }
+        applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = { NetworkOptimizationOutcome.UNAVAILABLE }
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -161,13 +165,16 @@ object VoiceCommandEngine {
                         "No hay una conexión de red verificada disponible todavía."
                     )
                 } else {
-                    val applied =
-                        command.request == NetworkVoiceRequest.OPTIMIZE &&
+                    val outcome =
+                        if (command.request == NetworkVoiceRequest.OPTIMIZE) {
                             applyNetworkProfile(snapshot.recommendedProfile)
+                        } else {
+                            NetworkOptimizationOutcome.NOT_REQUESTED
+                        }
                     VoiceActionResult.NetworkReport(
                         request = command.request,
                         snapshot = snapshot,
-                        optimizationApplied = applied
+                        optimizationOutcome = outcome
                     )
                 }
             }
