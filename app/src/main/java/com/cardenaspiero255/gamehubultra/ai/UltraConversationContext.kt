@@ -74,6 +74,13 @@ object UltraConversationContextResolver {
             comparativeFollowUp.containsMatchIn(clean)
     }
 
+    internal fun referencesPriorEntity(message: String): Boolean {
+        val clean = VoiceCommandParser.stripLeadingAssistantInvocation(message)
+        if (clean.isBlank()) return false
+        return followUpReference.containsMatchIn(clean) ||
+            comparativeFollowUp.containsMatchIn(clean)
+    }
+
     private fun userText(line: String): String? {
         val trimmed = line.trim()
         val prefixes = listOf("Tú:", "Tu:", "You:", "Usuario:", "User:")
