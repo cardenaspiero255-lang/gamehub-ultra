@@ -338,7 +338,8 @@ class UltraWakeService : Service() {
         when (
             UltraWakeBargeInPolicy.decide(
                 playbackActive = playbackGuard.isPlaybackActive(),
-                transcript = transcript
+                transcript = transcript,
+                playbackEcho = playbackGuard.isLikelyPlaybackEcho(transcript)
             )
         ) {
             UltraWakeRecognitionDisposition.SUPPRESS -> return
@@ -570,7 +571,7 @@ class UltraWakeService : Service() {
     private fun speakAndResume(response: String) {
         val token = speechGeneration.begin()
         val startedAtMillis = System.currentTimeMillis()
-        playbackGuard.onPlaybackStarted()
+        playbackGuard.onPlaybackStarted(response)
         val utteranceId = "$COMMAND_UTTERANCE_PREFIX-$token"
         val result = tts?.speak(
             response,
