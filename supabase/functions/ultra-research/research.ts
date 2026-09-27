@@ -92,7 +92,11 @@ function generatedText(payload: JsonObject | null): string | null {
   const first = candidates[0];
   if (!first || typeof first !== "object") return null;
 
-  const content = (first as JsonObject).content;
+  const candidate = first as JsonObject;
+  const finishReason = stringValue(candidate.finishReason);
+  if (finishReason && finishReason.toUpperCase() !== "STOP") return null;
+
+  const content = candidate.content;
   if (!content || typeof content !== "object") return null;
 
   const rawParts = (content as JsonObject).parts;
@@ -107,6 +111,30 @@ function generatedText(payload: JsonObject | null): string | null {
     .trim();
 
   return text || null;
+}
+
+function isSynthesisGroundedInEvidence(
+  synthesized: string,
+  verifiedText: string,
+): boolean {
+  const evidence = normalize(verifiedText)
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!evidence) return false;
+
+  const claims = synthesized
+    .split(/[.!?]+/)
+    .map((claim) =>
+      normalize(claim)
+        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter(Boolean);
+
+  return claims.length > 0 &&
+    claims.every((claim) => evidence.includes(claim));
 }
 
 function isPredominantlyEnglishText(value: string): boolean {
@@ -219,7 +247,8 @@ async function maybeSynthesizeWithGemini(
   if (
     !synthesized ||
     synthesized.length > 6000 ||
-    isPredominantlyEnglishText(synthesized)
+    isPredominantlyEnglishText(synthesized) ||
+    !isSynthesisGroundedInEvidence(synthesized, verifiedText)
   ) {
     return evidence;
   }
