@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.network
 
+import android.app.ActivityManager
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -8,11 +9,13 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 
 enum class NetworkOptimizationOutcome {
     NOT_REQUESTED,
     APPLIED,
+    LEASE_ACQUIRED_PENDING_INTERACTIVE,
     RELEASED_OR_NOT_NEEDED,
     UNAVAILABLE
 }
@@ -21,6 +24,29 @@ object NetworkOptimizationResultPolicy {
     fun reportsApplied(action: NetworkPriorityAction): Boolean =
         action == NetworkPriorityAction.LOW_LATENCY_WIFI ||
             action == NetworkPriorityAction.HIGH_PERFORMANCE_WIFI
+
+    fun outcomeFor(
+        action: NetworkPriorityAction,
+        leaseHeld: Boolean,
+        interactive: Boolean,
+        appForeground: Boolean
+    ): NetworkOptimizationOutcome {
+        if (!leaseHeld) return NetworkOptimizationOutcome.UNAVAILABLE
+        return when (action) {
+            NetworkPriorityAction.LOW_LATENCY_WIFI ->
+                if (interactive && appForeground) {
+                    NetworkOptimizationOutcome.APPLIED
+                } else {
+                    NetworkOptimizationOutcome.LEASE_ACQUIRED_PENDING_INTERACTIVE
+                }
+            NetworkPriorityAction.HIGH_PERFORMANCE_WIFI ->
+                NetworkOptimizationOutcome.APPLIED
+            NetworkPriorityAction.RELEASE_WIFI_LOCK ->
+                NetworkOptimizationOutcome.RELEASED_OR_NOT_NEEDED
+            NetworkPriorityAction.UNAVAILABLE ->
+                NetworkOptimizationOutcome.UNAVAILABLE
+        }
+    }
 }
 
 object NetworkLockLifecyclePolicy {
@@ -77,13 +103,24 @@ object NetworkRuntimeOptimizer {
                     @Suppress("DEPRECATION")
                     WifiManager.WIFI_MODE_FULL_HIGH_PERF
                 }
-                if (acquire(context, mode)) {
-                    NetworkOptimizationOutcome.APPLIED
-                } else {
-                    NetworkOptimizationOutcome.UNAVAILABLE
-                }
+                val leaseHeld = acquire(context, mode)
+                NetworkOptimizationResultPolicy.outcomeFor(
+                    action = action,
+                    leaseHeld = leaseHeld,
+                    interactive = isDeviceInteractive(context),
+                    appForeground = isAppForeground()
+                )
             }
         }
+    }
+
+    private fun isDeviceInteractive(context: Context): Boolean =
+        context.getSystemService(PowerManager::class.java)?.isInteractive == true
+
+    private fun isAppForeground(): Boolean {
+        val state = ActivityManager.RunningAppProcessInfo()
+        ActivityManager.getMyMemoryState(state)
+        return state.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
     }
 
     @Suppress("DEPRECATION")
