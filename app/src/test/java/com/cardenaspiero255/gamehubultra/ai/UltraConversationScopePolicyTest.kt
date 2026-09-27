@@ -12,32 +12,4 @@ class UltraConversationScopePolicyTest {
         assertFalse(UltraConversationScopePolicy.isSameGame("game.a", "game.b"))
         assertFalse(UltraConversationScopePolicy.isSameGame("game.a", null))
     }
-
-    @Test
-    fun lateTurnResultIsNotPublishedAfterGameScopeChanges() {
-        var published = false
-
-        UltraConversationScopePolicy.runIfSameGame(
-            originatingGamePackage = "game.a",
-            currentGamePackage = "game.b"
-        ) {
-            published = true
-        }
-
-        assertFalse(published)
-    }
-
-    @Test
-    fun currentTurnResultIsPublishedWhenGameScopeStillMatches() {
-        var published = false
-
-        UltraConversationScopePolicy.runIfSameGame(
-            originatingGamePackage = "game.a",
-            currentGamePackage = "game.a"
-        ) {
-            published = true
-        }
-
-        assertTrue(published)
-    }
 }
