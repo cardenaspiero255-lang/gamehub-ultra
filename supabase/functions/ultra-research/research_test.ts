@@ -349,22 +349,29 @@ Deno.test("weather follow-up uses current question instead of contaminating it w
   }
 });
 
-
 Deno.test("general knowledge returns a sourced answer instead of the gaming fallback", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
       const url = new URL(String(input));
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         return jsonResponse({
           query: { search: [{ title: "Dispersión de Rayleigh" }] },
         });
       }
-      if (url.hostname === "es.wikipedia.org" && url.pathname.includes("/page/summary/")) {
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/page/summary/")
+      ) {
         return jsonResponse({
           title: "Dispersión de Rayleigh",
-          extract: "La dispersión de Rayleigh explica por qué las longitudes de onda cortas de la luz visible se dispersan más en la atmósfera, haciendo que el cielo se vea azul.",
+          extract:
+            "La dispersión de Rayleigh explica por qué las longitudes de onda cortas de la luz visible se dispersan más en la atmósfera, haciendo que el cielo se vea azul.",
           content_urls: {
-            desktop: { page: "https://es.wikipedia.org/wiki/Dispersi%C3%B3n_de_Rayleigh" },
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Dispersi%C3%B3n_de_Rayleigh",
+            },
           },
         });
       }
