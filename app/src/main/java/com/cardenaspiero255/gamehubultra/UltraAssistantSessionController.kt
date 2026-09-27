@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,14 +86,23 @@ internal class UltraAssistantSessionController(
     private val maxHistory: Int,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val publicationDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
-    private val nowMillis: () -> Long = System::currentTimeMillis
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+    restoredGamePackage: String? = null,
+    restoredConversation: List<String>? = null,
+    private val onSnapshotChanged: (String?, List<String>) -> Unit = { _, _ -> }
 ) {
-    private val _conversation = MutableStateFlow<List<String>>(emptyList())
+    private val _conversation = MutableStateFlow(restoredConversation.orEmpty())
     val conversation: StateFlow<List<String>> = _conversation.asStateFlow()
 
-    private val _selectedGamePackage = MutableStateFlow<String?>(null)
+    private val _selectedGamePackage = MutableStateFlow(
+        if (restoredConversation != null) restoredGamePackage else null
+    )
     val selectedGamePackage: StateFlow<String?> = _selectedGamePackage.asStateFlow()
 
+    private val _loadError = MutableStateFlow<Throwable?>(null)
+    val loadError: StateFlow<Throwable?> = _loadError.asStateFlow()
+
+    private var restoredSnapshotPending = restoredConversation != null
     private var loadGeneration = 0L
     private var conversationRevision = 0L
     private var loadJob: Job? = null
@@ -106,28 +116,72 @@ internal class UltraAssistantSessionController(
     )
 
     fun selectGame(gamePackage: String?): Job {
+        if (restoredSnapshotPending && _selectedGamePackage.value == gamePackage) {
+            restoredSnapshotPending = false
+            _loadError.value = null
+            return ownerScope.launch(publicationDispatcher) {}
+        }
+
+        restoredSnapshotPending = false
+        return startLoad(
+            gamePackage = gamePackage,
+            clearConversation = true
+        )
+    }
+
+    fun retryLoad(): Job =
+        startLoad(
+            gamePackage = _selectedGamePackage.value,
+            clearConversation = false
+        )
+
+    private fun startLoad(
+        gamePackage: String?,
+        clearConversation: Boolean
+    ): Job {
         val generation = ++loadGeneration
         _selectedGamePackage.value = gamePackage
-        _conversation.value = emptyList()
-        val revisionAtLoadStart = ++conversationRevision
+        if (clearConversation) {
+            _conversation.value = emptyList()
+            conversationRevision += 1
+        }
+        val revisionAtLoadStart = conversationRevision
+        val conversationAtLoadStart = _conversation.value
+        _loadError.value = null
 
         loadJob?.cancel()
         val job = ownerScope.launch(ioDispatcher) {
-            val loaded = runCatching {
+            try {
                 memory.warmUp()
-                memory.recentConversationLines(
+                val loaded = memory.recentConversationLines(
                     limit = maxHistory,
                     scope = scopeFor(gamePackage)
                 )
-            }.getOrDefault(emptyList())
 
-            withContext(publicationDispatcher) {
-                if (
-                    generation == loadGeneration &&
-                    conversationRevision == revisionAtLoadStart &&
-                    _selectedGamePackage.value == gamePackage
-                ) {
-                    _conversation.value = loaded
+                withContext(publicationDispatcher) {
+                    if (
+                        generation == loadGeneration &&
+                        conversationRevision == revisionAtLoadStart &&
+                        _selectedGamePackage.value == gamePackage
+                    ) {
+                        if (conversationAtLoadStart.isEmpty()) {
+                            _conversation.value = loaded
+                            conversationRevision += 1
+                            onSnapshotChanged(gamePackage, loaded)
+                        }
+                        _loadError.value = null
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                withContext(publicationDispatcher) {
+                    if (
+                        generation == loadGeneration &&
+                        _selectedGamePackage.value == gamePackage
+                    ) {
+                        _loadError.value = error
+                    }
                 }
             }
         }
@@ -139,6 +193,7 @@ internal class UltraAssistantSessionController(
         val previous = _conversation.value
         _conversation.value = next
         conversationRevision += 1
+        onSnapshotChanged(_selectedGamePackage.value, next)
 
         val scope = scopeFor(_selectedGamePackage.value)
         if (next.isEmpty()) {
