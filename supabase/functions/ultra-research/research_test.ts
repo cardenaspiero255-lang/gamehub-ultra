@@ -304,6 +304,38 @@ Deno.test("marketplace price uses current Mercado Libre listings when configured
   if (!result.sourceIds?.length) throw new Error("expected listing sources");
 });
 
+Deno.test("marketplace price can read OAuth access token from Vault resolver", async () => {
+  let authorization = "";
+  const deps: ResearchDependencies = {
+    fetcher: (_input, init) => {
+      const headers = new Headers(init?.headers);
+      authorization = headers.get("Authorization") ?? "";
+      return jsonResponse({
+        results: [{
+          title: "RedMagic 12 Pro",
+          price: 999990,
+          currency_id: "CLP",
+          permalink: "https://www.mercadolibre.cl/redmagic-12-pro",
+          seller: { id: 7 },
+        }],
+      });
+    },
+    env: () => undefined,
+    secret: async (name) =>
+      name === "mercadolibre_access_token" ? "vault-token" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, precio actual del RedMagic 12 Pro",
+    deps,
+  );
+
+  if (result.abstained) throw new Error("expected Vault-backed price evidence");
+  if (authorization !== "Bearer vault-token") {
+    throw new Error("expected OAuth token from Vault resolver");
+  }
+});
+
 Deno.test("weather follow-up uses current question instead of contaminating it with prior location", async () => {
   let geocodedName = "";
   const deps: ResearchDependencies = {
