@@ -294,6 +294,7 @@ class UltraVerifiedResearchEngine(
 
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
+            (if (request.requiresFreshData) "fresh" else "stable") + ":" +
             request.originalText
                 .lowercase(Locale.ROOT)
                 .replace(Regex("""\s+"""), " ")
