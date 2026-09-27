@@ -150,17 +150,6 @@ class GameHubAiAdvisor(
         }
 
     private fun looksPredominantlyEnglish(value: String): Boolean {
-        val normalized = normalize(value)
-        val padded = " $normalized "
-        val reliableEnglishPhrases = listOf(
-            " hello ",
-            " how are you ",
-            " who are you ",
-            " help you "
-        )
-        if (reliableEnglishPhrases.any(padded::contains)) return true
-
-        val tokens = normalized.split(' ').filter(String::isNotBlank)
         val englishWords = setOf(
             "i", "am", "m", "is", "are", "was", "were", "the", "a", "an",
             "to", "of", "for", "you", "your", "can", "could", "will", "would",
@@ -174,6 +163,35 @@ class GameHubAiAdvisor(
             "y", "o", "pero", "claro", "explicar", "como", "por", "bajo",
             "nivel", "grafica", "graficos", "actual", "hola", "ayudar"
         )
+
+        val originalNormalized = normalize(value)
+        val originalTokens = originalNormalized
+            .split(' ')
+            .filter(String::isNotBlank)
+        val originalSpanishScore = originalTokens.count(spanishWords::contains)
+
+        val valueForScoring = if (originalSpanishScore > 0) {
+            value.replace(
+                Regex(
+                    """\b[A-Z][\p{L}\p{N}'’.-]*(?:\s+(?:(?:of|the|and|to|in|on|for)\s+)?[A-Z][\p{L}\p{N}'’.-]*)+\b"""
+                ),
+                " "
+            )
+        } else {
+            value
+        }
+
+        val normalized = normalize(valueForScoring)
+        val padded = " $normalized "
+        val reliableEnglishPhrases = listOf(
+            " how are you ",
+            " who are you ",
+            " help you "
+        )
+        if (reliableEnglishPhrases.any(padded::contains)) return true
+        if (originalSpanishScore == 0 && padded.contains(" hello ")) return true
+
+        val tokens = normalized.split(' ').filter(String::isNotBlank)
         val englishScore = tokens.count(englishWords::contains)
         val spanishScore = tokens.count(spanishWords::contains)
         return englishScore >= 2 && englishScore > spanishScore
