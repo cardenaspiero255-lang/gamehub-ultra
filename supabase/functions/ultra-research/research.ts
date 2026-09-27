@@ -95,9 +95,8 @@ function generatedText(payload: JsonObject | null): string | null {
   const content = (first as JsonObject).content;
   if (!content || typeof content !== "object") return null;
 
-  const parts = Array.isArray((content as JsonObject).parts)
-    ? (content as JsonObject).parts
-    : [];
+  const rawParts = (content as JsonObject).parts;
+  const parts: unknown[] = Array.isArray(rawParts) ? rawParts : [];
   const text = parts
     .filter((part): part is JsonObject =>
       Boolean(part) && typeof part === "object"
