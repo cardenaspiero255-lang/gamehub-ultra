@@ -175,7 +175,9 @@ class GameHubAiAdvisorTest {
         listOf(
             "I'm Ultra and I can help you with your battery and performance.",
             "Hello, how are you?",
-            "I'm Ultra."
+            "I'm Ultra.",
+            "Vulkan is a low-level graphics API.",
+            "Sure, I can explain that."
         ).forEach { modelReply ->
             val adapter = object : LocalAiModelAdapter {
                 override fun isAvailable() = true
