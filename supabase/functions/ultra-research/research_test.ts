@@ -1040,7 +1040,7 @@ Deno.test("Gemini synthesizes verified evidence in Spanish when configured", asy
   let geminiApiKey = "";
   let geminiPrompt = "";
   const deps: ResearchDependencies = {
-    fetcher: async (input, init) => {
+    fetcher: (input, init) => {
       const url = new URL(String(input));
 
       if (
