@@ -81,6 +81,7 @@ class UltraWakeService : Service() {
     private var stopped = false
     private var lastTranscriptAt = 0L
     private var recognitionStarting = false
+    private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val ultraMemoryStore by lazy {
         UltraConversationMemoryStore.get(applicationContext)
     }
@@ -97,7 +98,7 @@ class UltraWakeService : Service() {
         ensureForeground()
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.getDefault()
+                tts?.let(UltraSpeechLocalePolicy::applyTo)
             }
         }
         tts?.setOnUtteranceProgressListener(
@@ -253,7 +254,7 @@ class UltraWakeService : Service() {
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             if (sessionPolicy.preferredMode() == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
@@ -310,6 +311,13 @@ class UltraWakeService : Service() {
         }
 
         override fun onError(error: Int) {
+            val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
+                error = error,
+                currentTag = recognitionLanguageTag
+            )
+            if (fallback != null) {
+                recognitionLanguageTag = fallback
+            }
             if (persistentSessionActive) {
                 sessionPolicy.onPersistentSessionFailure()
                 closePersistentSpeechSource()
@@ -518,8 +526,12 @@ class UltraWakeService : Service() {
                         aliasIntentResolver = intentResolver,
                         gameAliasesProvider = { GameAliasStore.aliases(context) },
                         saveGameAlias = { alias, packageName ->
-                            GameAliasStore.save(context, alias, packageName)
-                        }
+    GameAliasStore.save(context, alias, packageName)
+},
+networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
+applyNetworkProfile = { profile ->
+    com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(context, profile)
+}
                     )
 
                     when (result) {
@@ -535,6 +547,8 @@ class UltraWakeService : Service() {
                             )
                         is VoiceActionResult.DeviceStatus ->
                             "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
+                        is VoiceActionResult.NetworkReport ->
+                            NetworkVoiceResponseText.format(result)
                         is VoiceActionResult.AiAdvice ->
                             AiAdviceFormatter.fullResponse(context, result.advice)
                         VoiceActionResult.Help ->

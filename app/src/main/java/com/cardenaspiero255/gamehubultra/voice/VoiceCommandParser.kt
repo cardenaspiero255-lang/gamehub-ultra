@@ -46,6 +46,10 @@ object VoiceCommandParser {
             )
         }
 
+        parseNetworkRequest(clean)?.let { request ->
+            return VoiceCommand.Network(request)
+        }
+
         if (
             clean.contains("temperatura") ||
             clean.contains("temperature") ||
@@ -113,6 +117,40 @@ object VoiceCommandParser {
         }
     }
 
+    private fun parseNetworkRequest(clean: String): NetworkVoiceRequest? {
+        if (hasExplicitLaunchIntent(clean)) return null
+        return when {
+            clean.contains("packet loss") ||
+                clean.contains("perdida de paquetes") ||
+                clean.contains("pierdo paquetes") ->
+                NetworkVoiceRequest.PACKET_LOSS
+
+            clean.contains("optimiza mi internet") ||
+                clean.contains("optimizar mi internet") ||
+                clean.contains("optimiza el internet") ||
+                clean.contains("optimizar el internet") ||
+                clean.contains("optimiza la red") ||
+                clean.contains("optimizar la red") ||
+                clean.contains("optimiza mi wifi") ||
+                clean.contains("optimizar mi wifi") ||
+                clean.contains("mejora mi internet") ||
+                clean.contains("acelera mi internet") ||
+                clean.contains("optimize my internet") ||
+                clean.contains("optimize my network") ->
+                NetworkVoiceRequest.OPTIMIZE
+
+            clean.contains("como esta mi conexion") ||
+                clean.contains("estado de mi conexion") ||
+                clean.contains("como esta mi red") ||
+                clean.contains("estado de mi red") ||
+                clean.contains("network status") ||
+                clean.contains("connection status") ->
+                NetworkVoiceRequest.STATUS
+
+            else -> null
+        }
+    }
+
     private fun parseGameAliasDefinition(clean: String): VoiceCommand.DefineGameAlias? {
         val spanish = Regex(
             """^cuando diga (.+?) (?:quiero que )?(?:abras|abre|abreme|lances|lanza|inicies|inicia|ejecutes|ejecuta) (.+)$"""
@@ -152,8 +190,18 @@ object VoiceCommandParser {
     ): Boolean {
         if (knownGameAliases.isEmpty()) return false
         val candidate = canonicalGameAliasKey(value)
-        if (candidate.isBlank() || isReservedGameAlias(candidate)) return false
-        return knownGameAliases.any { canonicalGameAliasKey(it) == candidate }
+        if (candidate.isBlank()) return false
+
+        val persistedMatch =
+            knownGameAliases.any { canonicalGameAliasKey(it) == candidate }
+        if (!persistedMatch) return false
+
+        // Network phrases became built-in commands after aliases could already
+        // have been persisted. Preserve those existing user choices, while
+        // keeping profile aliases such as X4 reserved.
+        if (parseNetworkRequest(candidate) != null) return true
+        if (isReservedGameAlias(candidate)) return false
+        return true
     }
 
     internal fun isReservedGameAlias(value: String): Boolean {

@@ -224,7 +224,8 @@ class UltraUnifiedAgentTest {
             val intent = assertIs<UltraUtilityIntent.NetworkGamingControl>(utility.answer.intent)
             assertTrue(intent.competitive)
             assertTrue(intent.routerGaming)
-            assertTrue(utility.answer.message.contains("no se aplicó"))
+            assertTrue(utility.answer.message.contains("Network Game Booster está disponible"))
+            assertFalse(utility.answer.message.contains("todavía no está conectado"))
         }
     }
 

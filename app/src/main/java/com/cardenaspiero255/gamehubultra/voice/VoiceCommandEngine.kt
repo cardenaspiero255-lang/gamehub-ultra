@@ -4,6 +4,8 @@ import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
+import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationOutcome
 
 data class VoiceDeviceStatus(
     val batteryPercent: Int?,
@@ -29,6 +31,14 @@ sealed interface VoiceActionResult {
     ) : VoiceActionResult
 
     data class DeviceStatus(val status: VoiceDeviceStatus) : VoiceActionResult
+    data class NetworkReport(
+        val request: NetworkVoiceRequest,
+        val snapshot: VoiceNetworkSnapshot,
+        val optimizationOutcome: NetworkOptimizationOutcome
+    ) : VoiceActionResult {
+        val optimizationApplied: Boolean
+            get() = optimizationOutcome == NetworkOptimizationOutcome.APPLIED
+    }
     data class AiAdvice(val advice: GameHubAiAdvice) : VoiceActionResult
     data object Help : VoiceActionResult
     data class NotAvailable(val detail: String) : VoiceActionResult
@@ -51,7 +61,9 @@ object VoiceCommandEngine {
         aiAdvisor: ((String) -> GameHubAiAdvice)? = null,
         aliasIntentResolver: NaturalLanguageIntentResolver? = null,
         gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
-        saveGameAlias: (String, String) -> Unit = { _, _ -> }
+        saveGameAlias: (String, String) -> Unit = { _, _ -> },
+        networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
+        applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = { NetworkOptimizationOutcome.UNAVAILABLE }
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -143,6 +155,27 @@ object VoiceCommandEngine {
                             "Encontré " + match.label + ", pero Android no permitió abrirlo."
                         )
                     }
+                }
+            }
+
+            is VoiceCommand.Network -> {
+                val snapshot = networkStatusProvider?.invoke()
+                if (snapshot == null) {
+                    VoiceActionResult.NotAvailable(
+                        "No hay una conexión de red verificada disponible todavía."
+                    )
+                } else {
+                    val outcome =
+                        if (command.request == NetworkVoiceRequest.OPTIMIZE) {
+                            applyNetworkProfile(snapshot.recommendedProfile)
+                        } else {
+                            NetworkOptimizationOutcome.NOT_REQUESTED
+                        }
+                    VoiceActionResult.NetworkReport(
+                        request = command.request,
+                        snapshot = snapshot,
+                        optimizationOutcome = outcome
+                    )
                 }
             }
 

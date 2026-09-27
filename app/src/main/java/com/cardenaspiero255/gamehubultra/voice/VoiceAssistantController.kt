@@ -10,7 +10,6 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import androidx.core.content.ContextCompat
-import java.util.Locale
 
 class VoiceAssistantController(
     context: Context,
@@ -21,16 +20,22 @@ class VoiceAssistantController(
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
+    private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
 
     init {
         tts = TextToSpeech(appContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.getDefault()
+                tts?.let(UltraSpeechLocalePolicy::applyTo)
             }
         }
     }
 
     fun startListening() {
+        recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
+        startListeningWithCurrentLanguage()
+    }
+
+    private fun startListeningWithCurrentLanguage() {
         val microphoneGranted =
             ContextCompat.checkSelfPermission(
                 appContext,
@@ -58,7 +63,7 @@ class VoiceAssistantController(
                     RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                 )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
             onListeningChanged(true)
@@ -101,6 +106,15 @@ class VoiceAssistantController(
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onError(error: Int) {
+            val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
+                error = error,
+                currentTag = recognitionLanguageTag
+            )
+            if (fallback != null) {
+                recognitionLanguageTag = fallback
+                startListeningWithCurrentLanguage()
+                return
+            }
             onListeningChanged(false)
             onError(error)
         }
