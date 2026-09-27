@@ -11,6 +11,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -87,6 +88,8 @@ internal class UltraAssistantSessionController(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val publicationDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val automaticLoadRetries: Int = 1,
+    private val retryDelayMillis: Long = 250L,
     restoredGamePackage: String? = null,
     restoredConversation: List<String>? = null,
     private val onSnapshotChanged: (String?, List<String>) -> Unit = { _, _ -> }
@@ -202,38 +205,51 @@ internal class UltraAssistantSessionController(
 
         loadJob?.cancel()
         return ownerScope.launch(ioDispatcher) {
-            try {
-                memory.warmUp()
-                val loaded = memory.recentConversationLines(
-                    limit = maxHistory,
-                    scope = scopeFor(gamePackage)
-                )
+            var retriesRemaining = automaticLoadRetries.coerceAtLeast(0)
+            while (true) {
+                try {
+                    memory.warmUp()
+                    val loaded = memory.recentConversationLines(
+                        limit = maxHistory,
+                        scope = scopeFor(gamePackage)
+                    )
 
-                withContext(publicationDispatcher) {
-                    if (
-                        generation == loadGeneration &&
-                        _selectedGamePackage.value == gamePackage
-                    ) {
-                        if (conversationRevision == revisionAtLoadStart) {
-                            _conversation.value = loaded
-                            conversationRevision += 1
-                            onSnapshotChanged(gamePackage, loaded)
+                    withContext(publicationDispatcher) {
+                        if (
+                            generation == loadGeneration &&
+                            _selectedGamePackage.value == gamePackage
+                        ) {
+                            if (conversationRevision == revisionAtLoadStart) {
+                                _conversation.value = loaded
+                                conversationRevision += 1
+                                onSnapshotChanged(gamePackage, loaded)
+                            }
+                            failedLoadRevision = null
+                            _loadError.value = null
                         }
-                        failedLoadRevision = null
-                        _loadError.value = null
                     }
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                withContext(publicationDispatcher) {
-                    if (
-                        generation == loadGeneration &&
-                        _selectedGamePackage.value == gamePackage
-                    ) {
-                        failedLoadRevision = revisionAtLoadStart
-                        _loadError.value = error
+                    break
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    if (retriesRemaining > 0) {
+                        retriesRemaining -= 1
+                        if (retryDelayMillis > 0L) {
+                            delay(retryDelayMillis)
+                        }
+                        continue
                     }
+
+                    withContext(publicationDispatcher) {
+                        if (
+                            generation == loadGeneration &&
+                            _selectedGamePackage.value == gamePackage
+                        ) {
+                            failedLoadRevision = revisionAtLoadStart
+                            _loadError.value = error
+                        }
+                    }
+                    break
                 }
             }
         }.also { loadJob = it }
