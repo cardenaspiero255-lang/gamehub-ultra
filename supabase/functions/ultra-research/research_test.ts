@@ -564,7 +564,6 @@ Deno.test("Wikipedia requests identify the GameHub Ultra operator", async () => 
   }
 });
 
-
 Deno.test("English general knowledge uses the English encyclopedia locale", async () => {
   const hosts: string[] = [];
   const deps: ResearchDependencies = {
@@ -598,7 +597,9 @@ Deno.test("English general knowledge uses the English encyclopedia locale", asyn
 
   if (result.abstained) throw new Error("expected English knowledge answer");
   if (hosts.some((host) => host !== "en.wikipedia.org")) {
-    throw new Error("expected every encyclopedia request to use en.wikipedia.org");
+    throw new Error(
+      "expected every encyclopedia request to use en.wikipedia.org",
+    );
   }
   if (!result.displayText?.includes("Photosynthesis")) {
     throw new Error("expected an English answer");
