@@ -19,6 +19,11 @@ object UltraMathEngine {
         val clean = normalize(transcript)
         if (clean.isBlank()) return null
 
+        solveLinearSystem(clean)?.let { return it }
+        solveGeometry(clean)?.let { return it }
+        solveTrigonometry(clean)?.let { return it }
+        solveFunctionEvaluation(clean)?.let { return it }
+        solveStatistics(clean)?.let { return it }
         solveTriangle(clean)?.let { return it }
         solveLinearEquation(clean)?.let { return it }
         solvePercentage(clean)?.let { return it }
@@ -29,6 +34,255 @@ object UltraMathEngine {
         solveUnitConversion(clean)?.let { return it }
         solveArithmetic(clean)?.let { return it }
         return null
+    }
+
+    private data class LinearEquation2(
+        val xCoefficient: BigDecimal,
+        val yCoefficient: BigDecimal,
+        val result: BigDecimal
+    )
+
+    private fun solveLinearSystem(clean: String): UltraMathSolution? {
+        if (!clean.contains("sistema") && !clean.contains("system")) return null
+
+        val pattern = Regex(
+            """([+-]?\s*(?:\d+(?:[.,]\d+)?)?)\s*x\s*([+-])\s*(?:(\d+(?:[.,]\d+)?)\s*)?y\s*=\s*(-?\d+(?:[.,]\d+)?)"""
+        )
+        val equations = pattern.findAll(clean)
+            .take(2)
+            .mapNotNull { match ->
+                val x = signedCoefficient(match.groupValues[1]) ?: return@mapNotNull null
+                val yMagnitude = match.groupValues[3]
+                    .takeIf(String::isNotBlank)
+                    ?.toDecimalOrNull()
+                    ?: BigDecimal.ONE
+                val y = if (match.groupValues[2] == "-") {
+                    yMagnitude.negate()
+                } else {
+                    yMagnitude
+                }
+                val result = match.groupValues[4].toDecimalOrNull()
+                    ?: return@mapNotNull null
+                LinearEquation2(x, y, result)
+            }
+            .toList()
+
+        if (equations.size != 2) return null
+        val first = equations[0]
+        val second = equations[1]
+        val determinant = first.xCoefficient
+            .multiply(second.yCoefficient, mathContext)
+            .subtract(
+                second.xCoefficient.multiply(first.yCoefficient, mathContext),
+                mathContext
+            )
+        if (determinant.compareTo(BigDecimal.ZERO) == 0) return null
+
+        val xNumerator = first.result
+            .multiply(second.yCoefficient, mathContext)
+            .subtract(
+                second.result.multiply(first.yCoefficient, mathContext),
+                mathContext
+            )
+        val yNumerator = first.xCoefficient
+            .multiply(second.result, mathContext)
+            .subtract(
+                second.xCoefficient.multiply(first.result, mathContext),
+                mathContext
+            )
+        val x = xNumerator.divide(determinant, mathContext)
+        val y = yNumerator.divide(determinant, mathContext)
+
+        return UltraMathSolution(
+            resultText = "x = ${formatNumber(x)}, y = ${formatNumber(y)}",
+            explanation =
+                "Resolví las dos ecuaciones simultáneamente con determinantes y verifiqué ambos valores."
+        )
+    }
+
+    private fun signedCoefficient(raw: String): BigDecimal? {
+        val clean = raw.replace(" ", "")
+        return when (clean) {
+            "", "+" -> BigDecimal.ONE
+            "-" -> BigDecimal.ONE.negate()
+            else -> clean.toDecimalOrNull()
+        }
+    }
+
+    private fun solveGeometry(clean: String): UltraMathSolution? {
+        val numbers = Regex("""-?\d+(?:[.,]\d+)?""")
+            .findAll(clean)
+            .mapNotNull { it.value.toDecimalOrNull() }
+            .toList()
+        val unit = geometryLengthUnit(clean)
+
+        if (
+            (clean.contains("rectangulo") || clean.contains("rectangle")) &&
+            (clean.contains("area") || clean.contains("perimetro") || clean.contains("perimeter"))
+        ) {
+            if (numbers.size < 2 || numbers.take(2).any { it <= BigDecimal.ZERO }) {
+                return null
+            }
+            val width = numbers[0]
+            val height = numbers[1]
+            return if (clean.contains("area")) {
+                val area = width.multiply(height, mathContext)
+                UltraMathSolution(
+                    resultText = "${formatNumber(area)}${unit?.let { " $it²" }.orEmpty()}",
+                    explanation =
+                        "Área del rectángulo = base × altura = ${formatNumber(width)} × ${formatNumber(height)} = ${formatNumber(area)}."
+                )
+            } else {
+                val perimeter = width
+                    .add(height, mathContext)
+                    .multiply(BigDecimal("2"), mathContext)
+                UltraMathSolution(
+                    resultText = "${formatNumber(perimeter)}${unit?.let { " $it" }.orEmpty()}",
+                    explanation =
+                        "Perímetro del rectángulo = 2 × (base + altura) = ${formatNumber(perimeter)}."
+                )
+            }
+        }
+
+        if (
+            clean.contains("volumen") || clean.contains("volume")
+        ) {
+            val rectangularPrism =
+                clean.contains("prisma rectangular") ||
+                    clean.contains("rectangular prism") ||
+                    clean.contains("paralelepipedo")
+            if (!rectangularPrism) return null
+            if (numbers.size < 3 || numbers.take(3).any { it <= BigDecimal.ZERO }) {
+                return null
+            }
+            val volume = numbers[0]
+                .multiply(numbers[1], mathContext)
+                .multiply(numbers[2], mathContext)
+            return UltraMathSolution(
+                resultText = "${formatNumber(volume)}${unit?.let { " $it³" }.orEmpty()}",
+                explanation =
+                    "Volumen = largo × ancho × alto = ${formatNumber(numbers[0])} × ${formatNumber(numbers[1])} × ${formatNumber(numbers[2])} = ${formatNumber(volume)}."
+            )
+        }
+
+        return null
+    }
+
+    private fun geometryLengthUnit(clean: String): String? =
+        when {
+            Regex("""\b(kilometros?|km)\b""").containsMatchIn(clean) -> "km"
+            Regex("""\b(centimetros?|cm)\b""").containsMatchIn(clean) -> "cm"
+            Regex("""\b(milimetros?|mm)\b""").containsMatchIn(clean) -> "mm"
+            Regex("""\b(metros?|m)\b""").containsMatchIn(clean) -> "m"
+            else -> null
+        }
+
+    private fun solveTrigonometry(clean: String): UltraMathSolution? {
+        val operation = when {
+            Regex("""\b(seno|sin)\b""").containsMatchIn(clean) -> "sin"
+            Regex("""\b(coseno|cos)\b""").containsMatchIn(clean) -> "cos"
+            Regex("""\b(tangente|tan)\b""").containsMatchIn(clean) -> "tan"
+            else -> return null
+        }
+        val angle = Regex(
+            """\b(?:seno|sin|coseno|cos|tangente|tan)\s+(?:de\s+)?(-?\d+(?:[.,]\d+)?)"""
+        ).find(clean)
+            ?.groupValues
+            ?.get(1)
+            ?.toDecimalOrNull()
+            ?: return null
+
+        val isRadians = Regex("""\b(radian|radianes|radians?)\b""").containsMatchIn(clean)
+        val isDegrees = Regex("""\b(grado|grados|degrees?)\b""").containsMatchIn(clean)
+        if (!isRadians && !isDegrees) return null
+
+        val angleDouble = angle.toDouble()
+        val radians = if (isRadians) {
+            angleDouble
+        } else {
+            Math.toRadians(angleDouble)
+        }
+        val raw = when (operation) {
+            "sin" -> kotlin.math.sin(radians)
+            "cos" -> kotlin.math.cos(radians)
+            else -> {
+                if (kotlin.math.abs(kotlin.math.cos(radians)) < 1e-12) return null
+                kotlin.math.tan(radians)
+            }
+        }
+        if (!raw.isFinite()) return null
+        val result = BigDecimal.valueOf(raw).round(mathContext)
+        val label = if (isRadians) "radianes" else "grados"
+
+        return UltraMathSolution(
+            resultText = formatNumber(result),
+            explanation =
+                "${operation.uppercase(Locale.ROOT)} de ${formatNumber(angle)} $label = ${formatNumber(result)}."
+        )
+    }
+
+    private fun solveFunctionEvaluation(clean: String): UltraMathSolution? {
+        if (!clean.contains("funcion") && !clean.contains("function")) return null
+        val match = Regex(
+            """(?:funcion|function)\s+f\s+(?:de\s+)?x\s*=\s*(-?\d+(?:[.,]\d+)?)\s*x\s*([+-])\s*(\d+(?:[.,]\d+)?)\s*,?\s*(?:evalua|evaluate|calcula|calculate)\s+(?:en\s+|at\s+)?x\s*=\s*(-?\d+(?:[.,]\d+)?)"""
+        ).find(clean) ?: return null
+
+        val slope = match.groupValues[1].toDecimalOrNull() ?: return null
+        val sign = match.groupValues[2]
+        val interceptMagnitude = match.groupValues[3].toDecimalOrNull() ?: return null
+        val intercept = if (sign == "-") interceptMagnitude.negate() else interceptMagnitude
+        val input = match.groupValues[4].toDecimalOrNull() ?: return null
+        val output = slope.multiply(input, mathContext).add(intercept, mathContext)
+
+        return UltraMathSolution(
+            resultText = "f(${formatNumber(input)}) = ${formatNumber(output)}",
+            explanation =
+                "Sustituí x = ${formatNumber(input)} en la función: ${formatNumber(slope)} × ${formatNumber(input)} ${if (intercept.signum() < 0) "-" else "+"} ${formatNumber(intercept.abs())} = ${formatNumber(output)}."
+        )
+    }
+
+    private fun solveStatistics(clean: String): UltraMathSolution? {
+        val mode = when {
+            Regex("""\b(promedio|media|average|mean)\b""").containsMatchIn(clean) -> "mean"
+            Regex("""\b(mediana|median)\b""").containsMatchIn(clean) -> "median"
+            else -> return null
+        }
+        val marker = if (mode == "mean") {
+            Regex("""\b(?:promedio|media|average|mean)\b""")
+        } else {
+            Regex("""\b(?:mediana|median)\b""")
+        }
+        val markerMatch = marker.find(clean) ?: return null
+        val values = Regex("""-?\d+(?:[.,]\d+)?""")
+            .findAll(clean.substring(markerMatch.range.last + 1))
+            .mapNotNull { it.value.toDecimalOrNull() }
+            .toList()
+        if (values.isEmpty()) return null
+
+        val result = if (mode == "mean") {
+            values.fold(BigDecimal.ZERO) { total, value ->
+                total.add(value, mathContext)
+            }.divide(BigDecimal(values.size), mathContext)
+        } else {
+            val sorted = values.sorted()
+            val middle = sorted.size / 2
+            if (sorted.size % 2 == 1) {
+                sorted[middle]
+            } else {
+                sorted[middle - 1]
+                    .add(sorted[middle], mathContext)
+                    .divide(BigDecimal("2"), mathContext)
+            }
+        }
+
+        return UltraMathSolution(
+            resultText = formatNumber(result),
+            explanation = if (mode == "mean") {
+                "El promedio es la suma de los valores dividida por ${values.size}: ${formatNumber(result)}."
+            } else {
+                "Ordené los valores y calculé el punto central: mediana ${formatNumber(result)}."
+            }
+        )
     }
 
     private fun solveTriangle(clean: String): UltraMathSolution? {
