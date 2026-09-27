@@ -25,7 +25,7 @@ object UltraGeneralQueryRouter {
         """\b(compara|comparar|comparame|vs|versus|cual es mejor|cual tiene mejor|which is better|compare)\b"""
     )
     private val currentDataPattern = Regex(
-        """\b(clima|tiempo de hoy|weather|pronostico|forecast|noticias|news|precio|price|precios|prices|hoy|today|ahora|now|actual|actuales|current|latest|ultimo|ultima|ultimas|ultimos|nuevo|nueva|salio nuevo|released)\b"""
+        """\b(clima|tiempo de hoy|weather|pronostico|forecast|noticias|news|precio|price|precios|prices|salio nuevo|released|fecha de lanzamiento|release date)\b"""
     )
 
     fun classify(transcript: String): UltraGeneralQueryRequest {
