@@ -323,14 +323,27 @@ private fun GameHubUltraApp(
             memoryGateway = ultraMemoryStore
         )
     }
+    var savedUltraConversation by rememberSaveable {
+        mutableStateOf<List<String>?>(null)
+    }
+    var savedUltraConversationGamePackage by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
     val ultraSessionController = remember(scope, ultraMemoryStore) {
         UltraAssistantSessionController(
             ownerScope = scope,
             memory = UltraConversationSessionMemoryAdapter(ultraMemoryStore),
-            maxHistory = MAX_CHAT_HISTORY
+            maxHistory = MAX_CHAT_HISTORY,
+            restoredGamePackage = savedUltraConversationGamePackage,
+            restoredConversation = savedUltraConversation,
+            onSnapshotChanged = { gamePackage, conversation ->
+                savedUltraConversationGamePackage = gamePackage
+                savedUltraConversation = conversation
+            }
         )
     }
     val ultraConversation by ultraSessionController.conversation.collectAsStateWithLifecycle()
+    val ultraHistoryLoadError by ultraSessionController.loadError.collectAsStateWithLifecycle()
     val ultraQueryRunner = ultraSessionController.queryRunner
 
     LaunchedEffect(ultraSessionController, uiState.selectedGamePackage) {
@@ -339,6 +352,10 @@ private fun GameHubUltraApp(
 
     fun updateUltraConversation(next: List<String>) {
         ultraSessionController.updateConversation(next)
+    }
+
+    fun retryUltraHistoryLoad() {
+        ultraSessionController.retryLoad()
     }
 
     DisposableEffect(aiAdvisor) {
@@ -713,6 +730,8 @@ private fun GameHubUltraApp(
                 queryRunner = ultraQueryRunner,
                 conversation = ultraConversation,
                 onConversationChanged = ::updateUltraConversation,
+                historyLoadFailed = ultraHistoryLoadError != null,
+                onRetryHistoryLoad = ::retryUltraHistoryLoad,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
@@ -831,6 +850,8 @@ private fun GameHubUltraApp(
                         queryRunner = ultraQueryRunner,
                         conversation = ultraConversation,
                         onConversationChanged = ::updateUltraConversation,
+                        historyLoadFailed = ultraHistoryLoadError != null,
+                        onRetryHistoryLoad = ::retryUltraHistoryLoad,
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
                         onGameSelected = ::selectGame
@@ -947,6 +968,8 @@ private fun UltraAssistantSidePanel(
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
+    historyLoadFailed: Boolean,
+    onRetryHistoryLoad: () -> Unit,
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit
@@ -972,7 +995,9 @@ private fun UltraAssistantSidePanel(
             aiAdvisor = aiAdvisor,
             queryRunner = queryRunner,
             conversation = conversation,
-            onConversationChanged = onConversationChanged
+            onConversationChanged = onConversationChanged,
+            historyLoadFailed = historyLoadFailed,
+            onRetryHistoryLoad = onRetryHistoryLoad
         )
     }
 }
@@ -1006,6 +1031,8 @@ private fun HomeScreen(
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
+    historyLoadFailed: Boolean,
+    onRetryHistoryLoad: () -> Unit,
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
@@ -1110,7 +1137,9 @@ private fun HomeScreen(
                     aiAdvisor = aiAdvisor,
                     queryRunner = queryRunner,
                     conversation = conversation,
-                    onConversationChanged = onConversationChanged
+                    onConversationChanged = onConversationChanged,
+                    historyLoadFailed = historyLoadFailed,
+                    onRetryHistoryLoad = onRetryHistoryLoad
                 )
             }
         }
@@ -1528,7 +1557,9 @@ private fun VoiceAssistantCard(
     aiAdvisor: GameHubAiAdvisor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
-    onConversationChanged: (List<String>) -> Unit
+    onConversationChanged: (List<String>) -> Unit,
+    historyLoadFailed: Boolean,
+    onRetryHistoryLoad: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -2065,6 +2096,15 @@ applyNetworkProfile = { profile ->
                 Text(stringResource(R.string.voice_transcript, transcript))
             }
             response?.let { Text(it) }
+            if (historyLoadFailed) {
+                Text(
+                    stringResource(R.string.ultra_history_load_failed),
+                    color = MaterialTheme.colorScheme.error
+                )
+                TextButton(onClick = onRetryHistoryLoad) {
+                    Text(stringResource(R.string.ultra_history_retry))
+                }
+            }
             UltraCommandUiEffectPolicy.profileForCurrentGame(
                 recommendation = recommendedProfile,
                 currentGamePackage = aiContext.selectedGamePackage
