@@ -422,7 +422,7 @@ Deno.test(
                 index: 1,
                 title: "Azul",
                 extract:
-                  "Azul es un álbum de música publicado por un artista ficticio. Este texto es suficientemente largo para superar el umbral anterior, pero no explica la causa física del color del cielo.",
+                  "Azul es un álbum de música publicado por un artista ficticio. La obra reúne canciones, producción, recepción crítica y datos sobre su lanzamiento comercial.",
                 fullurl: "https://es.wikipedia.org/wiki/Azul_(album)",
               },
             },
