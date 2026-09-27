@@ -1035,3 +1035,124 @@ Deno.test("speaker labels are stripped before assistant invocation in context", 
     throw new Error("expected clean subject from labeled context");
   }
 });
+
+
+Deno.test("Gemini synthesizes verified evidence in Spanish when configured", async () => {
+  let geminiApiKey = "";
+  let geminiPrompt = "";
+  const deps: ResearchDependencies = {
+    fetcher: async (input, init) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/page/summary/")
+      ) {
+        return jsonResponse({
+          title: "Vulkan",
+          type: "standard",
+          extract: "Vulkan es una API gráfica de bajo nivel.",
+          content_urls: {
+            desktop: { page: "https://es.wikipedia.org/wiki/Vulkan" },
+          },
+        });
+      }
+
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        const headers = new Headers(init?.headers);
+        geminiApiKey = headers.get("x-goog-api-key") ?? "";
+        const request = JSON.parse(String(init?.body)) as {
+          contents?: Array<{ parts?: Array<{ text?: string }> }>;
+        };
+        geminiPrompt = request.contents?.[0]?.parts?.[0]?.text ?? "";
+        return jsonResponse({
+          candidates: [{
+            content: {
+              parts: [{
+                text:
+                  "Vulkan es una API gráfica de bajo nivel que permite un control más directo del hardware gráfico.",
+              }],
+            },
+          }],
+        });
+      }
+
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, qué es Vulkan",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected synthesized answer");
+  if (geminiApiKey !== "gemini-test-key") {
+    throw new Error("expected Gemini key in x-goog-api-key header");
+  }
+  if (!geminiPrompt.includes("Responde únicamente en español")) {
+    throw new Error("expected Spanish-only synthesis instruction");
+  }
+  if (!geminiPrompt.includes("Vulkan es una API gráfica de bajo nivel.")) {
+    throw new Error("expected verified evidence in Gemini prompt");
+  }
+  if (!result.displayText?.includes("control más directo")) {
+    throw new Error("expected Gemini synthesis");
+  }
+});
+
+Deno.test("Gemini failure preserves verified provider answer", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/page/summary/")
+      ) {
+        return jsonResponse({
+          title: "Vulkan",
+          type: "standard",
+          extract: "Vulkan es una API gráfica de bajo nivel.",
+          content_urls: {
+            desktop: { page: "https://es.wikipedia.org/wiki/Vulkan" },
+          },
+        });
+      }
+
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        return new Response("quota", { status: 429 });
+      }
+
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, qué es Vulkan",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected verified fallback");
+  if (result.displayText !== "Vulkan es una API gráfica de bajo nivel.") {
+    throw new Error("expected original verified answer after Gemini failure");
+  }
+});
