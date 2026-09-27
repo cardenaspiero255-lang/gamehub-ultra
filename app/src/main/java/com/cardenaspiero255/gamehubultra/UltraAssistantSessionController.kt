@@ -94,6 +94,7 @@ internal class UltraAssistantSessionController(
     val selectedGamePackage: StateFlow<String?> = _selectedGamePackage.asStateFlow()
 
     private var loadGeneration = 0L
+    private var conversationRevision = 0L
     private var loadJob: Job? = null
 
     val queryRunner = UltraAssistantQueryRunner(
@@ -108,6 +109,7 @@ internal class UltraAssistantSessionController(
         val generation = ++loadGeneration
         _selectedGamePackage.value = gamePackage
         _conversation.value = emptyList()
+        val revisionAtLoadStart = ++conversationRevision
 
         loadJob?.cancel()
         val job = ownerScope.launch(ioDispatcher) {
@@ -122,6 +124,7 @@ internal class UltraAssistantSessionController(
             withContext(publicationDispatcher) {
                 if (
                     generation == loadGeneration &&
+                    conversationRevision == revisionAtLoadStart &&
                     _selectedGamePackage.value == gamePackage
                 ) {
                     _conversation.value = loaded
@@ -135,6 +138,7 @@ internal class UltraAssistantSessionController(
     fun updateConversation(next: List<String>) {
         val previous = _conversation.value
         _conversation.value = next
+        conversationRevision += 1
 
         val scope = scopeFor(_selectedGamePackage.value)
         if (next.isEmpty()) {
