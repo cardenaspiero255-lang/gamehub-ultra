@@ -349,7 +349,6 @@ Deno.test("weather follow-up uses current question instead of contaminating it w
   }
 });
 
-
 Deno.test(
   "general knowledge uses a trusted reference instead of abstaining",
   async () => {
@@ -374,8 +373,7 @@ Deno.test(
                 title: "Dispersión de Rayleigh",
                 extract:
                   "La dispersión de Rayleigh explica por qué la luz azul del Sol se dispersa más en la atmósfera, haciendo que el cielo se vea azul.",
-                fullurl:
-                  "https://es.wikipedia.org/wiki/Dispersión_de_Rayleigh",
+                fullurl: "https://es.wikipedia.org/wiki/Dispersión_de_Rayleigh",
               },
             },
           },
