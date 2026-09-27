@@ -129,4 +129,101 @@ class UltraAssistantSessionControllerTest {
             ownerScope.cancel()
         }
     }
+    @Test
+    fun lateMemoryLoadDoesNotOverwriteConversationUpdatedAfterLoadStarted() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val loadStarted = CompletableDeferred<Unit>()
+        val releaseLoad = CompletableDeferred<Unit>()
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                loadStarted.complete(Unit)
+                releaseLoad.await()
+                return listOf("Ultra: historial antiguo")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 8,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined
+            )
+
+            val load = controller.selectGame("game.a")
+            loadStarted.await()
+            controller.updateConversation(listOf("Tú: mensaje nuevo"))
+
+            releaseLoad.complete(Unit)
+            load.join()
+
+            assertEquals(
+                listOf("Tú: mensaje nuevo"),
+                controller.conversation.value
+            )
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun clearingConversationClearsOnlyCurrentGameMemory() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var clearedScope: UltraMemoryScope? = null
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> = emptyList()
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) {
+                clearedScope = scope
+            }
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 8,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined
+            )
+            controller.selectGame("game.b").join()
+            controller.updateConversation(emptyList())
+
+            assertEquals("game.b", clearedScope?.gamePackage)
+            assertEquals("local", clearedScope?.userId)
+            assertTrue(controller.conversation.value.isEmpty())
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
 }
