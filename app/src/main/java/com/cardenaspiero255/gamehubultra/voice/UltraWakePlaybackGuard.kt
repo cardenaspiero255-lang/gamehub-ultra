@@ -15,10 +15,19 @@ internal enum class UltraWakeRecognitionDisposition {
 internal object UltraWakeWordMatcher {
     fun contains(transcript: String): Boolean {
         val normalized = VoiceCommandParser.normalize(transcript)
-        return normalized.split(" ").any { token ->
-            token == "ultra" || (token.length >= 4 && levenshtein(token, "ultra") <= 1)
-        }
+        return normalized.split(" ").any(::isWakeToken)
     }
+
+    fun isExplicitInvocation(transcript: String): Boolean {
+        val tokens = VoiceCommandParser.normalize(transcript)
+            .split(" ")
+            .filter { it.isNotBlank() }
+        val wakeIndex = tokens.indexOfFirst(::isWakeToken)
+        return wakeIndex in 0..1 && tokens.size > wakeIndex + 1
+    }
+
+    private fun isWakeToken(token: String): Boolean =
+        token == "ultra" || (token.length >= 4 && levenshtein(token, "ultra") <= 1)
 
     private fun levenshtein(a: String, b: String): Int {
         if (a.isEmpty()) return b.length
@@ -50,7 +59,7 @@ internal object UltraWakeBargeInPolicy {
     ): UltraWakeRecognitionDisposition =
         when {
             !playbackActive -> UltraWakeRecognitionDisposition.ACCEPT
-            UltraWakeWordMatcher.contains(transcript) ->
+            UltraWakeWordMatcher.isExplicitInvocation(transcript) ->
                 UltraWakeRecognitionDisposition.INTERRUPT_TTS
             else -> UltraWakeRecognitionDisposition.SUPPRESS
         }
