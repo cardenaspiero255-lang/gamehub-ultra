@@ -53,7 +53,7 @@ object UltraGeneralQueryRouter {
                 UltraGeneralQueryRequest(
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
+                    requiresInternet = true,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
