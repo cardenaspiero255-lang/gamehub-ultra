@@ -20,6 +20,7 @@ import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandExecutionRequest
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -247,22 +248,83 @@ class UltraToolContractTest {
     }
 
     @Test
-    fun memoryRecallRejectsOutOfRangeLimitsBeforeExecution() {
+    fun memoryRecallReturnsTypedInvalidInputForOutOfRangeLimit() {
+        val gateway = object : UltraLongTermMemoryGateway {
+            override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
+
+            override fun recallContext(
+                message: String,
+                scope: UltraMemoryScope,
+                limit: Int
+            ): List<UltraMemoryRecall> = error("must not execute invalid request")
+        }
         val scope = UltraMemoryScope(userId = "local", gamePackage = null)
 
-        assertFailsWith<IllegalArgumentException> {
+        val result = gateway.execute(
             UltraMemoryToolRequest.Recall(
                 message = "historial",
                 scope = scope,
                 limit = 0
             )
-        }
-        assertFailsWith<IllegalArgumentException> {
-            UltraMemoryToolRequest.Recall(
-                message = "historial",
-                scope = scope,
-                limit = 101
+        )
+
+        assertIs<UltraToolResult.Failure>(result)
+        assertEquals(UltraToolFailureCode.INVALID_INPUT, result.failure.code)
+    }
+
+    @Test
+    fun stateChangingCommandRejectsMissingPersistenceCallback() {
+        val result = VoiceCommandEngine.execute(
+            VoiceCommandExecutionRequest(
+                command = VoiceCommand.SelectProfile(
+                    com.cardenaspiero255.gamehubultra.domain.PerformanceProfile.BALANCED
+                ),
+                isProfileAvailable = { true }
             )
+        )
+
+        assertIs<UltraToolResult.Failure>(result)
+        assertEquals(UltraToolFailureCode.INVALID_INPUT, result.failure.code)
+    }
+
+    @Test
+    fun executionProtectionReportsInternalFailureButKeepsPublicFailureSanitized() {
+        val descriptor = UltraToolDescriptor(
+            id = "test.observability",
+            kind = UltraToolKind.COMMAND,
+            sideEffect = UltraToolSideEffect.READ_ONLY
+        )
+        val captured = AtomicReference<Throwable?>()
+
+        val result = UltraToolExecution.protect(
+            descriptor = descriptor,
+            reportFailure = captured::set
+        ) {
+            error("private-stack-detail")
+        }
+
+        assertIs<UltraToolResult.Failure>(result)
+        assertEquals("private-stack-detail", captured.get()?.message)
+        assertTrue("private-stack-detail" !in result.failure.message)
+    }
+
+    @Test
+    fun interruptedExecutionRestoresInterruptAndPropagatesCancellation() {
+        val descriptor = UltraToolDescriptor(
+            id = "test.interrupt",
+            kind = UltraToolKind.RESEARCH,
+            sideEffect = UltraToolSideEffect.READ_ONLY
+        )
+
+        try {
+            assertFailsWith<CancellationException> {
+                UltraToolExecution.protect(descriptor) {
+                    throw InterruptedException("stop")
+                }
+            }
+            assertTrue(Thread.currentThread().isInterrupted)
+        } finally {
+            Thread.interrupted()
         }
     }
 
