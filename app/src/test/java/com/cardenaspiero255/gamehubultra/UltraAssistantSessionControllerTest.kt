@@ -687,4 +687,58 @@ class UltraAssistantSessionControllerTest {
     }
 
 
+
+    @Test
+    fun historyHydrationMarkerIsFalseDuringLoadAndTrueAfterSuccessfulPublish() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val loadStarted = CompletableDeferred<Unit>()
+        val releaseLoad = CompletableDeferred<Unit>()
+        val hydrationStates = mutableListOf<Boolean>()
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                loadStarted.complete(Unit)
+                releaseLoad.await()
+                return listOf("Ultra: historial hidratado")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                onHistoryHydrationChanged = hydrationStates::add
+            )
+
+            val load = controller.selectGame("game.a")
+            loadStarted.await()
+            assertEquals(listOf(false), hydrationStates)
+
+            releaseLoad.complete(Unit)
+            load.join()
+
+            assertEquals(listOf(false, true), hydrationStates)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+
 }
