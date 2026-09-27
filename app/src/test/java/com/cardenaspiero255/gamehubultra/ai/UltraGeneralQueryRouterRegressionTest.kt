@@ -30,6 +30,16 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun standaloneEnglishIdentityQuestionStaysLocal() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, who are you?"
+        )
+
+        assertFalse(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
     fun appContextQuestionStaysOnLocalChatPath() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, cuál es mi juego seleccionado"
