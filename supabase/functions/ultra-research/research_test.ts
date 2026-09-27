@@ -678,7 +678,6 @@ Deno.test("Spanish question language ignores English words inside entity names",
   }
 });
 
-
 Deno.test("a complete new topic ignores previous knowledge context", async () => {
   let searchQuery = "";
   const deps: ResearchDependencies = {
@@ -693,7 +692,8 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
       return jsonResponse({
         title: "Fotosíntesis",
         type: "standard",
-        extract: "La fotosíntesis convierte energía luminosa en energía química.",
+        extract:
+          "La fotosíntesis convierte energía luminosa en energía química.",
         content_urls: {
           desktop: { page: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis" },
         },
@@ -714,7 +714,6 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
     throw new Error("expected current complete topic without previous context");
   }
 });
-
 
 Deno.test("technical troubleshooting falls back to Stack Overflow en español without API keys", async () => {
   const visited: string[] = [];
@@ -769,13 +768,19 @@ Deno.test("technical troubleshooting falls back to Stack Overflow en español wi
   );
 
   if (result.abstained) throw new Error("expected technical answer");
-  if (!result.displayText?.startsWith("Según una respuesta aceptada de Stack Overflow en español:")) {
+  if (
+    !result.displayText?.startsWith(
+      "Según una respuesta aceptada de Stack Overflow en español:",
+    )
+  ) {
     throw new Error("expected attributed Spanish technical answer");
   }
   if (!result.displayText?.includes("Revisa que la versión")) {
     throw new Error("expected accepted answer excerpt");
   }
-  if (!result.sourceIds?.some((source) => source.includes("es.stackoverflow.com"))) {
+  if (
+    !result.sourceIds?.some((source) => source.includes("es.stackoverflow.com"))
+  ) {
     throw new Error("expected visible Stack Overflow source");
   }
   if (!visited.some((url) => url.includes("/2.3/search/advanced"))) {
@@ -816,7 +821,9 @@ Deno.test("news voice response stays in Spanish even when source titles are Engl
   if (result.displayText?.includes("Major game update")) {
     throw new Error("English source titles must not leak into Ultra speech");
   }
-  if (!result.displayText?.startsWith("Encontré información reciente verificada")) {
+  if (
+    !result.displayText?.startsWith("Encontré información reciente verificada")
+  ) {
     throw new Error("expected Spanish-only news summary");
   }
 });
