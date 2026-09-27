@@ -755,6 +755,7 @@ private fun GameHubUltraApp(
                 },
                 aiContext = aiContext,
                 aiAdvisor = aiAdvisor,
+                queryExecutor = queryExecutor,
                 queryRunner = ultraQueryRunner,
                 conversation = ultraConversation,
                 onConversationChanged = ::updateUltraConversation,
@@ -873,6 +874,7 @@ private fun GameHubUltraApp(
                     UltraAssistantSidePanel(
                         aiContext = aiContext,
                         aiAdvisor = aiAdvisor,
+                        queryExecutor = queryExecutor,
                         queryRunner = ultraQueryRunner,
                         conversation = ultraConversation,
                         onConversationChanged = ::updateUltraConversation,
@@ -989,6 +991,7 @@ private fun WideNavigationRail(
 private fun UltraAssistantSidePanel(
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryExecutor: UltraQueryExecutor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
@@ -1015,6 +1018,7 @@ private fun UltraAssistantSidePanel(
             onGameSelected = onGameSelected,
             aiContext = aiContext,
             aiAdvisor = aiAdvisor,
+            queryExecutor = queryExecutor,
             queryRunner = queryRunner,
             conversation = conversation,
             onConversationChanged = onConversationChanged
@@ -1048,6 +1052,7 @@ private fun HomeScreen(
     onApplyAdaptiveProfile: () -> Unit,
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryExecutor: UltraQueryExecutor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
@@ -1153,6 +1158,7 @@ private fun HomeScreen(
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
                     aiAdvisor = aiAdvisor,
+                    queryExecutor = queryExecutor,
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged
@@ -1211,6 +1217,7 @@ private fun HomeScreen(
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
                     aiAdvisor = aiAdvisor,
+                    queryExecutor = queryExecutor,
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged
@@ -1571,6 +1578,7 @@ private fun VoiceAssistantCard(
     onGameSelected: (String) -> Unit,
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryExecutor: UltraQueryExecutor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit
