@@ -88,11 +88,4 @@ class UltraQueryExecutionCoordinator(
             abstained = research.abstained
         )
     }
-    private fun safeLocalAnswer(localChat: () -> String?): String? =
-        try {
-            localChat()?.takeIf(String::isNotBlank)
-        } catch (_: Exception) {
-            null
-        }
-
 }
