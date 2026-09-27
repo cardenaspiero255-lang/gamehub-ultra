@@ -65,6 +65,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         BaseUiState(
             globalProfile = globalProfile,
             selectedGamePackage = selectedGamePackage,
+            selectedGameHydrated = true,
             selectedGameConfig = selectedGameConfig,
             favoriteGames = favoriteGames
         )
@@ -80,6 +81,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         GameHubUiState(
             globalProfile = base.globalProfile,
             selectedGamePackage = base.selectedGamePackage,
+            selectedGameHydrated = base.selectedGameHydrated,
             selectedGameConfig = base.selectedGameConfig,
             favoriteGames = base.favoriteGames,
             recentGamePackages = recentGames,
@@ -203,6 +205,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     private data class BaseUiState(
         val globalProfile: PerformanceProfile,
         val selectedGamePackage: String?,
+        val selectedGameHydrated: Boolean,
         val selectedGameConfig: GameProfileConfig?,
         val favoriteGames: Set<String>
     )
