@@ -20,8 +20,8 @@ class UltraQueryExecutionPolicyHardeningTest {
         try {
             val answer = coordinator.answer(
                 request = UltraGeneralQueryRequest(
-                    originalText = "precio actual",
-                    kind = UltraGeneralQueryKind.CURRENT_DATA,
+                    originalText = "dato estable marcado explícitamente como fresco",
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
                     requiresInternet = false,
                     requiresFreshData = true,
                     timeoutMillis = 5_000L
@@ -141,6 +141,47 @@ class UltraQueryExecutionPolicyHardeningTest {
             engine.close()
         }
     }
+
+    @Test
+    fun blankStableLocalAnswerAbstainsWithoutCallingResearch() {
+        var providerCalls = 0
+        val provider = object : UltraResearchProvider {
+            override val id = "should-not-run"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                providerCalls += 1
+                return UltraResearchEvidence(
+                    claimKey = "general",
+                    value = "online",
+                    displayText = "respuesta online",
+                    sourceId = id,
+                    authoritative = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+
+        try {
+            val answer = coordinator.answer(
+                request = UltraGeneralQueryRequest(
+                    originalText = "pregunta local estable",
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = false,
+                    requiresFreshData = false,
+                    timeoutMillis = 5_000L
+                ),
+                localChat = { "   " }
+            )
+
+            assertTrue(answer.abstained)
+            assertFalse(answer.verified)
+            assertEquals(0, providerCalls)
+        } finally {
+            engine.close()
+        }
+    }
+
 
     private fun fixedProvider(
         text: String,
