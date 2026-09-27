@@ -304,7 +304,6 @@ Deno.test("marketplace price uses current Mercado Libre listings when configured
   if (!result.sourceIds?.length) throw new Error("expected listing sources");
 });
 
-
 Deno.test("weather follow-up uses current question instead of contaminating it with prior location", async () => {
   let geocodedName = "";
   const deps: ResearchDependencies = {
