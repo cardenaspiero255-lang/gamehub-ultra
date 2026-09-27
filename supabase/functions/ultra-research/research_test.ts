@@ -828,7 +828,6 @@ Deno.test("news voice response stays in Spanish even when source titles are Engl
   }
 });
 
-
 Deno.test("dependent knowledge follow-up keeps the previous subject", async () => {
   const queries: string[] = [];
   const deps: ResearchDependencies = {
