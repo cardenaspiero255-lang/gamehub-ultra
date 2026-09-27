@@ -58,7 +58,7 @@ object VoiceCommandEngine {
         aliasIntentResolver: NaturalLanguageIntentResolver? = null,
         gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
         saveGameAlias: (String, String) -> Unit = { _, _ -> },
-        networkStatusProvider: (() -> VoiceNetworkSnapshot)? = null,
+        networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
         applyNetworkProfile: (NetworkGameProfile) -> Boolean = { false }
     ): VoiceActionResult =
         when (command) {
