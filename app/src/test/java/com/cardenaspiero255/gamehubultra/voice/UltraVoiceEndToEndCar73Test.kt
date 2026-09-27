@@ -43,6 +43,23 @@ class UltraVoiceEndToEndCar73Test {
         )
     }
 
+
+    @Test
+    fun ttsEchoStartingWithUltraIsSuppressedInsteadOfBargingIn() {
+        val guard = UltraWakePlaybackGuard()
+        guard.onPlaybackStarted("Ultra, puedo ayudarte con el estado del dispositivo.")
+
+        val echo = "Ultra, puedo ayudarte con el estado del dispositivo"
+        assertEquals(
+            UltraWakeRecognitionDisposition.SUPPRESS,
+            UltraWakeBargeInPolicy.decide(
+                playbackActive = true,
+                transcript = echo,
+                playbackEcho = guard.isLikelyPlaybackEcho(echo)
+            )
+        )
+    }
+
     @Test
     fun normalWakeCommandIsAcceptedWhenTtsIsIdle() {
         assertEquals(
