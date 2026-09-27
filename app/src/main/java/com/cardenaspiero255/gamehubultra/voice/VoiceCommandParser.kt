@@ -190,8 +190,18 @@ object VoiceCommandParser {
     ): Boolean {
         if (knownGameAliases.isEmpty()) return false
         val candidate = canonicalGameAliasKey(value)
-        if (candidate.isBlank() || isReservedGameAlias(candidate)) return false
-        return knownGameAliases.any { canonicalGameAliasKey(it) == candidate }
+        if (candidate.isBlank()) return false
+
+        val persistedMatch =
+            knownGameAliases.any { canonicalGameAliasKey(it) == candidate }
+        if (!persistedMatch) return false
+
+        // Network phrases became built-in commands after aliases could already
+        // have been persisted. Preserve those existing user choices, while
+        // keeping profile aliases such as X4 reserved.
+        if (parseNetworkRequest(candidate) != null) return true
+        if (isReservedGameAlias(candidate)) return false
+        return true
     }
 
     internal fun isReservedGameAlias(value: String): Boolean {
