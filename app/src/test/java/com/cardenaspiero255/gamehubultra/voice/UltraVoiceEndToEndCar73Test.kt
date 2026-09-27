@@ -72,6 +72,37 @@ class UltraVoiceEndToEndCar73Test {
     }
 
     @Test
+    fun localTimeFollowUpDoesNotInheritResearchContext() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, y qué hora es?",
+            conversationHistory = listOf(
+                "Tú: Ultra, compara el RedMagic 11S Pro con el Galaxy S26 Ultra",
+                "Ultra: Estoy comparándolos."
+            )
+        )
+
+        val utility = assertIs<UltraAgentRoute.Utility>(route)
+        assertEquals(
+            com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.CurrentTime,
+            utility.answer.intent
+        )
+    }
+
+    @Test
+    fun possessiveBatteryFollowUpKeepsPriorEntityInsteadOfDeviceBattery() {
+        val route = UltraUnifiedAgentRouter.route(
+            transcript = "Ultra, y su batería?",
+            conversationHistory = listOf(
+                "Tú: Ultra, háblame del Pixel 11 Pro",
+                "Ultra: Te cuento sobre el Pixel 11 Pro."
+            )
+        )
+
+        val chat = assertIs<UltraAgentRoute.Chat>(route)
+        assertTrue(chat.query?.originalText.orEmpty().contains("Pixel 11 Pro"))
+    }
+
+    @Test
     fun voiceFollowUpPreservesComparisonEntitiesForResearch() {
         val route = UltraUnifiedAgentRouter.route(
             transcript = "Ultra, y cuál tiene mejor batería?",
