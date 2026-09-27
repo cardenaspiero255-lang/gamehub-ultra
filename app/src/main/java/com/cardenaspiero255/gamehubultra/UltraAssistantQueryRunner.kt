@@ -49,15 +49,11 @@ internal class UltraAssistantQueryRunner(
         }
         if (!accepted) return UltraAssistantQuerySubmission.Rejected
 
-        try {
-            onAccepted()
-        } catch (error: Throwable) {
-            _isRunning.value = false
-            throw error
-        }
-
         val job = ownerScope.launch(executionDispatcher) {
             try {
+                withContext(publicationDispatcher) {
+                    onAccepted()
+                }
                 block()
             } catch (cancelled: CancellationException) {
                 throw cancelled
