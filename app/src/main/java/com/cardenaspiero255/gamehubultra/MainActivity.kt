@@ -1617,15 +1617,13 @@ private fun VoiceAssistantCard(
                         maxEntries = MAX_CHAT_HISTORY
                     )
                     withContext(Dispatchers.Main) {
-                        if (
-                            UltraConversationScopePolicy.isSameGame(
-                                originatingGamePackage,
-                                latestAiContext.selectedGamePackage
-                            )
+                        UltraConversationScopePolicy.runIfSameGame(
+                            originatingGamePackage = originatingGamePackage,
+                            currentGamePackage = latestAiContext.selectedGamePackage
                         ) {
                             latestOnConversationChanged(withAnswer)
+                            response = answer
                         }
-                        response = answer
                         chatSending = false
                     }
                 }
@@ -1650,15 +1648,13 @@ private fun VoiceAssistantCard(
                         }
 
                     withContext(Dispatchers.Main) {
-                        if (
-                            UltraConversationScopePolicy.isSameGame(
-                                originatingGamePackage,
-                                latestAiContext.selectedGamePackage
-                            )
+                        UltraConversationScopePolicy.runIfSameGame(
+                            originatingGamePackage = originatingGamePackage,
+                            currentGamePackage = latestAiContext.selectedGamePackage
                         ) {
                             latestOnConversationChanged(withAnswer)
+                            response = answer
                         }
-                        response = answer
                         chatSending = false
                     }
                 }
@@ -1720,15 +1716,13 @@ private fun VoiceAssistantCard(
                             }
                             else -> Unit
                         }
-                        if (
-                            UltraConversationScopePolicy.isSameGame(
-                                originatingGamePackage,
-                                latestAiContext.selectedGamePackage
-                            )
+                        UltraConversationScopePolicy.runIfSameGame(
+                            originatingGamePackage = originatingGamePackage,
+                            currentGamePackage = latestAiContext.selectedGamePackage
                         ) {
                             latestOnConversationChanged(withAnswer)
+                            response = answer
                         }
-                        response = answer
                         chatSending = false
                     }
                 }
