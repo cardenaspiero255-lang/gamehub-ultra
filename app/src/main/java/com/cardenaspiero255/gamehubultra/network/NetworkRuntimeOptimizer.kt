@@ -6,6 +6,8 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 
 object NetworkOptimizationResultPolicy {
@@ -30,6 +32,8 @@ object NetworkRuntimeOptimizer {
     private var activeMode: Int? = null
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val leaseHandler = Handler(Looper.getMainLooper())
+    private val leaseRelease = Runnable { release() }
 
     fun apply(context: Context, profile: NetworkGameProfile): Boolean {
         val telemetry = RuntimeDiagnosticsProvider.get(context).connectivity
@@ -80,8 +84,10 @@ object NetworkRuntimeOptimizer {
             }
 
             if (!lock.isHeld) {
-                lock.acquire(MAX_LOCK_LEASE_MILLIS)
+                lock.acquire()
             }
+            leaseHandler.removeCallbacks(leaseRelease)
+            leaseHandler.postDelayed(leaseRelease, MAX_LOCK_LEASE_MILLIS)
             ensureConnectivityGuard(appContext)
             lock.isHeld
         }.getOrDefault(false)
