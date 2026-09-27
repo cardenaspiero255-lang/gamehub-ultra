@@ -16,6 +16,24 @@ class GameHubAiAdvisor(
     fun isLocalModelAvailable(): Boolean =
         runCatching { modelAdapter?.isAvailable() == true }.getOrDefault(false)
 
+    /**
+     * Returns only a substantive local-model answer for stable knowledge.
+     * Unlike chat(), this never substitutes the generic capability boilerplate.
+     */
+    fun generalKnowledgeChatOrNull(
+        message: String,
+        context: GameHubAiContext,
+        conversation: List<String> = emptyList()
+    ): String? =
+        runCatching {
+            modelAdapter
+                ?.takeIf { it.isAvailable() }
+                ?.chat(message, context, conversation.takeLast(18))
+        }.getOrNull()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { AiChatSafetyFilter.sanitize(it, message) }
+            ?.takeUnless(::looksPredominantlyEnglish)
+
     fun advise(
         question: String,
         context: GameHubAiContext
