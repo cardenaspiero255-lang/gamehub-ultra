@@ -384,7 +384,6 @@ function isLikelySpanishText(value: string): boolean {
   ];
   const englishMarkers = [
     " the ",
-    " a ",
     " an ",
     " of ",
     " for ",
@@ -1011,6 +1010,120 @@ async function stackOverflowSpanishEvidence(
   };
 }
 
+async function tavilyEvidence(
+  query: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const apiKey = deps.env("TAVILY_API_KEY")?.trim();
+  if (!apiKey) {
+    return abstain("Tavily no está configurado para la búsqueda web.");
+  }
+
+  const searchText = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!searchText) {
+    return abstain("Necesito una consulta concreta para buscar en la web.");
+  }
+
+  let response: Response;
+  try {
+    response = await deps.fetcher("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + apiKey,
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+      },
+      body: JSON.stringify({
+        query: searchText,
+        search_depth: "basic",
+        max_results: 5,
+        topic: "general",
+        language: "es",
+        filter_by_language: true,
+        include_answer: false,
+        include_raw_content: false,
+        include_images: false,
+      }),
+    });
+  } catch {
+    return abstain("No pude consultar Tavily en este momento.");
+  }
+
+  if (!response.ok) {
+    return abstain("Tavily no devolvió una búsqueda utilizable.");
+  }
+
+  let payload: JsonObject | null = null;
+  try {
+    const parsed = await response.json();
+    payload = parsed && typeof parsed === "object"
+      ? parsed as JsonObject
+      : null;
+  } catch {
+    payload = null;
+  }
+
+  const rawResults = Array.isArray(payload?.results) ? payload.results : [];
+  const selected: Array<{
+    title: string;
+    url: string;
+    content: string;
+    score: number;
+  }> = [];
+  const usedDomains = new Set<string>();
+
+  for (const raw of rawResults) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as JsonObject;
+    const title = stringValue(item.title);
+    const url = stringValue(item.url);
+    const content = stringValue(item.content);
+    const score = numberValue(item.score) ?? 0;
+    if (!title || !url || !content) continue;
+
+    const domain = hostname(url);
+    if (!domain || usedDomains.has(domain)) continue;
+    usedDomains.add(domain);
+    selected.push({
+      title,
+      url,
+      content: conciseExcerpt(content, 700),
+      score,
+    });
+    if (selected.length >= 4) break;
+  }
+
+  const sources = selected.map((item) => item.url);
+  const domainCount = independentDomains(sources);
+  if (selected.length < 2 || domainCount < 2) {
+    return abstain(
+      "Tavily no encontró suficientes fuentes independientes para verificar la consulta.",
+    );
+  }
+
+  const evidenceText = selected
+    .slice(0, 3)
+    .map((item, index) =>
+      "Fuente " + (index + 1) + " (" + item.title + "): " + item.content
+    )
+    .join(" ");
+
+  return {
+    claimKey: "web:" + slug(searchText),
+    value: selected
+      .map((item) => normalize(item.content))
+      .join("||"),
+    displayText: evidenceText,
+    sourceId: sources[0],
+    sourceIds: sources,
+    independentSourceCount: domainCount,
+    authoritative: false,
+  };
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -1052,7 +1165,7 @@ async function generalKnowledgeEvidence(
     ? results[0] as JsonObject
     : null;
   const title = stringValue(first?.title);
-  if (!title) return abstain("No encontré una fuente enciclopédica para esa pregunta.");
+  if (!title) return await tavilyEvidence(query, deps);
 
   const summaryUrl =
     `https://${wikipediaHost}/api/rest_v1/page/summary/` +
@@ -1062,15 +1175,11 @@ async function generalKnowledgeEvidence(
   });
   const summaryType = stringValue(summary?.type)?.toLowerCase();
   if (summaryType === "disambiguation") {
-    return abstain(
-      "La fuente encontrada es ambigua y no identifica un artículo concreto.",
-    );
+    return await tavilyEvidence(query, deps);
   }
   const extract = stringValue(summary?.extract);
   if (!extract) {
-    return abstain(
-      "La fuente encontrada no devolvió una explicación utilizable.",
-    );
+    return await tavilyEvidence(query, deps);
   }
 
   const contentUrls = summary?.content_urls && typeof summary.content_urls === "object"
@@ -1155,6 +1264,11 @@ export async function routeResearchQuery(
       extractSpecProduct(query),
       deps,
     );
+  }
+
+  if (kind === "CURRENT_DATA") {
+    const evidence = await tavilyEvidence(query, deps);
+    return await maybeSynthesizeWithGemini(query, evidence, deps);
   }
 
   return abstain(
