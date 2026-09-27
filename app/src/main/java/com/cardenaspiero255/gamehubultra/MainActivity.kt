@@ -15,7 +15,6 @@ import com.cardenaspiero255.gamehubultra.ai.UltraQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraTypedChatRoutePlanner
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
-import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
@@ -327,63 +326,60 @@ private fun GameHubUltraApp(
             memoryGateway = ultraMemoryStore
         )
     }
-    val ultraConversationState = rememberSaveable {
-        mutableStateOf(listOf<String>())
+    var restorableUltraGamePackage by rememberSaveable {
+        mutableStateOf<String?>(null)
     }
-    var ultraConversation by ultraConversationState
-    var loadedUltraConversationScopeKey by rememberSaveable {
-        mutableStateOf("__unloaded__")
+    var restorableUltraConversation by rememberSaveable {
+        mutableStateOf<List<String>?>(null)
     }
-
-    LaunchedEffect(ultraMemoryStore, uiState.selectedGamePackage) {
-        val scopeKey = uiState.selectedGamePackage ?: "__global__"
-        if (loadedUltraConversationScopeKey == scopeKey) return@LaunchedEffect
-
-        loadedUltraConversationScopeKey = scopeKey
-        ultraConversation = emptyList()
-        val memoryScope = UltraMemoryScope(
-            userId = "local",
-            gamePackage = uiState.selectedGamePackage
-        )
-        val loaded = withContext(Dispatchers.IO) {
-            ultraMemoryStore.warmUp()
-            ultraMemoryStore.recentConversationLines(
-                limit = MAX_CHAT_HISTORY,
-                scope = memoryScope
-            )
-        }
-        if (loadedUltraConversationScopeKey == scopeKey) {
-            ultraConversation = loaded
-        }
+    var restorableUltraHistoryHydrated by rememberSaveable {
+        mutableStateOf<Boolean?>(null)
     }
-
-    fun updateUltraConversation(next: List<String>) {
-        val previous = ultraConversationState.value
-        ultraConversationState.value = next
-        val memoryScope = UltraMemoryScope(
-            userId = "local",
-            gamePackage = viewModel.uiState.value.selectedGamePackage
-        )
-        val timestampMillis = System.currentTimeMillis()
-        if (next.isEmpty()) {
-            ultraMemoryStore.enqueueClearConversationHistory(scope = memoryScope)
-        } else if (UltraMemoryTurnPersistencePolicy.shouldPersist(previous, next)) {
-            ultraMemoryStore.enqueueSyncConversation(
-                previous = previous,
-                next = next,
-                scope = memoryScope,
-                timestampMillis = timestampMillis
-            )
-        }
+    val ultraSessionMemory = remember(ultraMemoryStore) {
+        UltraConversationSessionMemoryAdapter(ultraMemoryStore)
     }
-
-    val ultraQueryRunner = remember(scope, viewModel, ultraConversationState) {
-        UltraAssistantQueryRunner(
+    val ultraSessionController = remember(scope, ultraSessionMemory) {
+        UltraAssistantSessionController(
             ownerScope = scope,
-            currentGamePackage = { viewModel.uiState.value.selectedGamePackage },
-            currentConversation = { ultraConversationState.value },
-            publishConversation = ::updateUltraConversation
+            memory = ultraSessionMemory,
+            maxHistory = MAX_CHAT_HISTORY,
+            restoredGamePackage = restorableUltraGamePackage,
+            restoredConversation = restorableUltraConversation,
+            restoredHistoryHydrated = restorableUltraHistoryHydrated,
+            onSnapshotChanged = { gamePackage, conversation ->
+                restorableUltraGamePackage = gamePackage
+                restorableUltraConversation = conversation
+            },
+            onHistoryHydrationChanged = { hydrated ->
+                restorableUltraHistoryHydrated = hydrated
+            }
         )
+    }
+    val ultraConversation by ultraSessionController.conversation.collectAsStateWithLifecycle()
+    val ultraControllerGamePackage by ultraSessionController.selectedGamePackage.collectAsStateWithLifecycle()
+    val ultraControllerScopeReady by ultraSessionController.scopeReady.collectAsStateWithLifecycle()
+    val ultraQueryRunner = ultraSessionController.queryRunner
+    val ultraHistoryRetryGate = remember(ultraSessionController) {
+        UltraAssistantSessionRetryGate(maxRetriesPerScope = 1)
+    }
+    val ultraSessionScopeSelection = uiState.ultraSessionScopeSelection()
+    val ultraAssistantInputReady = isUltraAssistantInputReady(
+        selection = ultraSessionScopeSelection,
+        controllerGamePackage = ultraControllerGamePackage,
+        controllerScopeReady = ultraControllerScopeReady
+    )
+
+    LaunchedEffect(ultraSessionController, ultraSessionScopeSelection) {
+        val selection = ultraSessionScopeSelection ?: return@LaunchedEffect
+        ultraSessionController.selectGame(selection.gamePackage).join()
+        if (
+            ultraHistoryRetryGate.consumeRetry(
+                gamePackage = selection.gamePackage,
+                hasLoadError = ultraSessionController.loadError.value != null
+            )
+        ) {
+            ultraSessionController.retryLoad().join()
+        }
     }
 
     DisposableEffect(aiAdvisor) {
@@ -758,7 +754,8 @@ private fun GameHubUltraApp(
                 queryExecutor = queryExecutor,
                 queryRunner = ultraQueryRunner,
                 conversation = ultraConversation,
-                onConversationChanged = ::updateUltraConversation,
+                onConversationChanged = ultraSessionController::updateConversation,
+                assistantInputEnabled = ultraAssistantInputReady,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
@@ -877,7 +874,8 @@ private fun GameHubUltraApp(
                         queryExecutor = queryExecutor,
                         queryRunner = ultraQueryRunner,
                         conversation = ultraConversation,
-                        onConversationChanged = ::updateUltraConversation,
+                        onConversationChanged = ultraSessionController::updateConversation,
+                        assistantInputEnabled = ultraAssistantInputReady,
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
                         onGameSelected = ::selectGame
@@ -995,6 +993,7 @@ private fun UltraAssistantSidePanel(
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
+    assistantInputEnabled: Boolean,
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit
@@ -1021,7 +1020,8 @@ private fun UltraAssistantSidePanel(
             queryExecutor = queryExecutor,
             queryRunner = queryRunner,
             conversation = conversation,
-            onConversationChanged = onConversationChanged
+            onConversationChanged = onConversationChanged,
+            assistantInputEnabled = assistantInputEnabled
         )
     }
 }
@@ -1056,6 +1056,7 @@ private fun HomeScreen(
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
+    assistantInputEnabled: Boolean,
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
@@ -1161,7 +1162,8 @@ private fun HomeScreen(
                     queryExecutor = queryExecutor,
                     queryRunner = queryRunner,
                     conversation = conversation,
-                    onConversationChanged = onConversationChanged
+                    onConversationChanged = onConversationChanged,
+                    assistantInputEnabled = assistantInputEnabled
                 )
             }
         }
@@ -1220,7 +1222,8 @@ private fun HomeScreen(
                     queryExecutor = queryExecutor,
                     queryRunner = queryRunner,
                     conversation = conversation,
-                    onConversationChanged = onConversationChanged
+                    onConversationChanged = onConversationChanged,
+                    assistantInputEnabled = assistantInputEnabled
                 )
             }
         }
@@ -1581,7 +1584,8 @@ private fun VoiceAssistantCard(
     queryExecutor: UltraQueryExecutor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
-    onConversationChanged: (List<String>) -> Unit
+    onConversationChanged: (List<String>) -> Unit,
+    assistantInputEnabled: Boolean
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -1589,6 +1593,7 @@ private fun VoiceAssistantCard(
     val latestAiContext by rememberUpdatedState(aiContext)
     val latestConversation by rememberUpdatedState(conversation)
     val latestOnConversationChanged by rememberUpdatedState(onConversationChanged)
+    val latestAssistantInputEnabled by rememberUpdatedState(assistantInputEnabled)
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
@@ -1610,7 +1615,7 @@ private fun VoiceAssistantCard(
 
     fun sendTypedChatMessage() {
         val message = chatMessage.trim()
-        if (message.isBlank() || chatSending) return
+        if (!latestAssistantInputEnabled || message.isBlank() || chatSending) return
 
         val turnAiContext = latestAiContext
         val originatingGamePackage = turnAiContext.selectedGamePackage
@@ -1790,11 +1795,24 @@ private fun VoiceAssistantCard(
         controller = VoiceAssistantController(
             context = context,
             onListeningChanged = { listening = it },
-            onTranscript = { spokenText ->
+            onTranscript = transcript@{ spokenText ->
+                val turnAiContext = latestAiContext
+                val capturedVoiceScope = captureUltraVoiceTurnScope(
+                    assistantInputReady = latestAssistantInputEnabled,
+                    gamePackage = turnAiContext.selectedGamePackage
+                ) ?: return@transcript
+                val originatingGamePackage = capturedVoiceScope.gamePackage
                 transcript = spokenText
                 scope.launch(Dispatchers.IO) {
-                    val turnAiContext = latestAiContext
-                    val originatingGamePackage = turnAiContext.selectedGamePackage
+                    if (
+                        !isUltraVoiceTurnScopeCurrent(
+                            captured = capturedVoiceScope,
+                            assistantInputReady = latestAssistantInputEnabled,
+                            currentGamePackage = latestAiContext.selectedGamePackage
+                        )
+                    ) {
+                        return@launch
+                    }
                     val conversationAtStart = latestConversation
                     val conversationBeforeTurn =
                         conversationAtStart.takeLast(MAX_CHAT_HISTORY - 1)
@@ -2007,7 +2025,7 @@ applyNetworkProfile = { profile ->
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.ai_chat_input_label)) },
                         placeholder = { Text(stringResource(R.string.ai_chat_input_hint)) },
-                        enabled = !chatSending,
+                        enabled = assistantInputEnabled && !chatSending,
                         maxLines = 4
                     )
                 }
@@ -2015,7 +2033,7 @@ applyNetworkProfile = { profile ->
             confirmButton = {
                 Button(
                     onClick = ::sendTypedChatMessage,
-                    enabled = chatMessage.isNotBlank() && !chatSending
+                    enabled = assistantInputEnabled && chatMessage.isNotBlank() && !chatSending
                 ) {
                     Text(
                         if (chatSending) {
@@ -2050,8 +2068,15 @@ applyNetworkProfile = { profile ->
                 style = MaterialTheme.typography.titleLarge
             )
             Text(stringResource(R.string.voice_assistant_subtitle))
+            if (!assistantInputEnabled) {
+                Text(
+                    "Preparando el contexto de Ultra…",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Button(
                 onClick = { showTextChat = true },
+                enabled = assistantInputEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.ai_chat_input_label))
@@ -2069,6 +2094,7 @@ applyNetworkProfile = { profile ->
                 }
                 Switch(
                     checked = continuousListeningEnabled(context),
+                    enabled = assistantInputEnabled,
                     onCheckedChange = { enabled ->
                         if (enabled && !permissionGranted) {
                             pendingContinuousListening = true
@@ -2098,6 +2124,7 @@ applyNetworkProfile = { profile ->
                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                 },
+                enabled = assistantInputEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(

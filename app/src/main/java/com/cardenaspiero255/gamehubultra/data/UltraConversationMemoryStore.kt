@@ -9,7 +9,27 @@ import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemorySnapshot
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.Future
+
+internal class UltraMemoryRepositoryProvider(
+    private val executor: ExecutorService,
+    private val factory: () -> UltraMemoryRepository
+) {
+    @Volatile
+    private var repository: UltraMemoryRepository? = null
+
+    fun get(): UltraMemoryRepository =
+        repository ?: synchronized(this) {
+            repository ?: factory().also {
+                repository = it
+            }
+        }
+
+    fun prewarm() {
+        executor.execute {
+            runCatching { get() }
+        }
+    }
+}
 
 private class EncryptedUltraMemoryPersistence(
     context: Context
@@ -40,13 +60,17 @@ class UltraConversationMemoryStore private constructor(
             isDaemon = true
         }
     }
-    private val repositoryFuture: Future<UltraMemoryRepository> = executor.submit<UltraMemoryRepository> {
+    private val repositoryProvider = UltraMemoryRepositoryProvider(executor) {
         UltraMemoryRepository(
             persistence = EncryptedUltraMemoryPersistence(appContext)
         )
     }
 
-    private fun repository(): UltraMemoryRepository = repositoryFuture.get()
+    init {
+        repositoryProvider.prewarm()
+    }
+
+    private fun repository(): UltraMemoryRepository = repositoryProvider.get()
 
     fun warmUp() {
         repository()
