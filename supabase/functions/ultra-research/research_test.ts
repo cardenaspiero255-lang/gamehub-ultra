@@ -637,3 +637,42 @@ Deno.test("Spanish factual prefixes are removed before encyclopedia search", asy
     throw new Error("expected a clean encyclopedia topic");
   }
 });
+
+
+Deno.test("Spanish question language ignores English words inside entity names", async () => {
+  const hosts: string[] = [];
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      hosts.push(url.hostname);
+      if (url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Doctor Who" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Doctor Who",
+        type: "standard",
+        extract: "Doctor Who es una serie británica de ciencia ficción.",
+        content_urls: {
+          desktop: { page: "https://es.wikipedia.org/wiki/Doctor_Who" },
+        },
+      });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, qué es Doctor Who?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Spanish knowledge answer");
+  if (hosts.some((host) => host !== "es.wikipedia.org")) {
+    throw new Error(
+      "expected Spanish question syntax to select es.wikipedia.org",
+    );
+  }
+});
