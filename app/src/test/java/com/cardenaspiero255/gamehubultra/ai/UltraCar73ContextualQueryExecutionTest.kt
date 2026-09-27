@@ -50,6 +50,16 @@ class UltraCar73ContextualQueryExecutionTest {
         assertFalse(plan.originalText.contains("RedMagic 11S Pro"))
     }
 
+
+    @Test
+    fun priceQuestionBeginningWithDefinitionPhraseStillRequiresFreshData() {
+        val request = UltraGeneralQueryRouter.classify("what is the price of Bitcoin")
+
+        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+        assertTrue(request.requiresInternet)
+        assertTrue(request.requiresFreshData)
+    }
+
     @Test
     fun onlineQueryUsesVerifiedResearchInsteadOfLocalChat() {
         val provider = object : UltraResearchProvider {
