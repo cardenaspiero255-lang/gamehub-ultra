@@ -74,6 +74,30 @@ internal class UltraConversationSessionMemoryAdapter(
     }
 }
 
+internal class UltraAssistantSessionRetryGate(
+    private val maxRetriesPerScope: Int
+) {
+    private var initialized = false
+    private var currentGamePackage: String? = null
+    private var retriesConsumed = 0
+
+    fun consumeRetry(
+        gamePackage: String?,
+        hasLoadError: Boolean
+    ): Boolean {
+        if (!initialized || currentGamePackage != gamePackage) {
+            initialized = true
+            currentGamePackage = gamePackage
+            retriesConsumed = 0
+        }
+        if (!hasLoadError || retriesConsumed >= maxRetriesPerScope) {
+            return false
+        }
+        retriesConsumed += 1
+        return true
+    }
+}
+
 /**
  * Single owner for Ultra's live conversation session.
  *
