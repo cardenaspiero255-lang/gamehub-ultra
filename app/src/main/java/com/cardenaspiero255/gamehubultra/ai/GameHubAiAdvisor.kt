@@ -152,29 +152,34 @@ class GameHubAiAdvisor(
     private fun looksPredominantlyEnglish(value: String): Boolean {
         val normalized = normalize(value)
         val padded = " $normalized "
-        val reliableSinglePhrases = listOf(
+        val reliableEnglishPhrases = listOf(
             " hello ",
             " how are you ",
+            " who are you ",
             " i am ",
             " i m ",
             " i can ",
-            " who are you ",
             " help you "
         )
-        if (reliableSinglePhrases.any(padded::contains)) return true
+        if (reliableEnglishPhrases.any(padded::contains)) return true
 
-        val englishMarkers = listOf(
-            " the ",
-            " and ",
-            " with ",
-            " your ",
-            " battery ",
-            " performance ",
-            " network ",
-            " temperature ",
-            " current "
+        val tokens = normalized.split(' ').filter(String::isNotBlank)
+        val englishWords = setOf(
+            "i", "am", "m", "is", "are", "was", "were", "the", "a", "an",
+            "to", "of", "for", "you", "your", "can", "could", "will", "would",
+            "that", "this", "with", "and", "or", "but", "sure", "explain",
+            "how", "what", "why", "low", "level", "graphics", "current",
+            "hello", "help"
         )
-        return englishMarkers.count(padded::contains) >= 2
+        val spanishWords = setOf(
+            "yo", "soy", "es", "son", "el", "la", "los", "las", "un", "una",
+            "de", "del", "para", "que", "tu", "tus", "puedo", "puede", "con",
+            "y", "o", "pero", "claro", "explicar", "como", "por", "bajo",
+            "nivel", "grafica", "graficos", "actual", "hola", "ayudar"
+        )
+        val englishScore = tokens.count(englishWords::contains)
+        val spanishScore = tokens.count(spanishWords::contains)
+        return englishScore >= 2 && englishScore > spanishScore
     }
 
     fun intentResolver(): NaturalLanguageIntentResolver =
