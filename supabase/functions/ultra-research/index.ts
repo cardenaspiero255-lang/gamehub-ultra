@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import postgres from "npm:postgres@3.4.5";
 
 import { routeResearchQuery } from "./research.ts";
 
@@ -14,6 +15,27 @@ const json = (body: unknown, status = 200) =>
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
+
+let vaultSql: ReturnType<typeof postgres> | null = null;
+
+async function vaultSecret(name: string): Promise<string | undefined> {
+  const dbUrl = Deno.env.get("SUPABASE_DB_URL")?.trim();
+  if (!dbUrl) return undefined;
+
+  vaultSql ??= postgres(dbUrl, {
+    prepare: false,
+    max: 1,
+    idle_timeout: 5,
+  });
+
+  const rows = await vaultSql.unsafe(
+    "select decrypted_secret from vault.decrypted_secrets where name = $1 limit 1",
+    [name],
+  ) as Array<{ decrypted_secret?: string }>;
+
+  const value = rows[0]?.decrypted_secret;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
 
 function validApiKey(req: Request): boolean {
   const supplied = req.headers.get("apikey") ?? "";
@@ -61,6 +83,7 @@ Deno.serve(async (req: Request) => {
         {
           fetcher: fetch,
           env: (name) => Deno.env.get(name),
+          secret: vaultSecret,
         },
         context,
         body.kind ?? "",

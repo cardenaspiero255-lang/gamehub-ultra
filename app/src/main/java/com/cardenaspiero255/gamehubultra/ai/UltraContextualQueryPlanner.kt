@@ -31,8 +31,12 @@ object UltraContextualQueryPlanner {
                 direct.copy(originalText = contextualText)
 
             UltraGeneralQueryKind.GENERAL_KNOWLEDGE ->
-                UltraGeneralQueryRouter.classify(contextualText)
-                    .copy(originalText = contextualText)
+                if (direct.requiresInternet) {
+                    direct.copy(originalText = contextualText)
+                } else {
+                    UltraGeneralQueryRouter.classify(contextualText)
+                        .copy(originalText = contextualText)
+                }
         }
     }
 }

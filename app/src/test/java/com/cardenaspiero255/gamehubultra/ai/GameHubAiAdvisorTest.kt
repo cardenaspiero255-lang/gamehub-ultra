@@ -160,6 +160,118 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun deterministicChatAlwaysRespondsInSpanishEvenForEnglishInput() {
+        val answer = GameHubAiAdvisor().chat(
+            message = "Ultra, what is my battery?",
+            context = healthyContext
+        )
+
+        assertTrue(answer.contains("batería", ignoreCase = true))
+        assertFalse(answer.contains("The current battery", ignoreCase = true))
+    }
+
+    @Test
+    fun englishLocalModelRepliesAreRejectedInFavorOfSpanishFallback() {
+        listOf(
+            "I'm Ultra and I can help you with your battery and performance.",
+            "Hello, how are you?",
+            "I'm Ultra.",
+            "Vulkan is a low-level graphics API.",
+            "Sure, I can explain that."
+        ).forEach { modelReply ->
+            val adapter = object : LocalAiModelAdapter {
+                override fun isAvailable() = true
+
+                override fun advise(
+                    question: String,
+                    context: GameHubAiContext
+                ): LocalAiActionCandidate? = null
+
+                override fun chat(
+                    message: String,
+                    context: GameHubAiContext,
+                    conversation: List<String>
+                ): String = modelReply
+            }
+
+            val answer = GameHubAiAdvisor(adapter).chat(
+                message = "Ultra, hello",
+                context = healthyContext
+            )
+
+            assertTrue(answer.contains("Soy Ultra"))
+            assertFalse(answer.contains(modelReply))
+        }
+    }
+
+    @Test
+    fun SpanishReplyWithEnglishProperNameIsKept() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String = "I Am Alive es un videojuego de acción."
+        }
+
+        val answer = GameHubAiAdvisor(adapter).chat(
+            message = "Ultra, háblame de I Am Alive",
+            context = healthyContext
+        )
+
+        assertEquals("I Am Alive es un videojuego de acción.", answer)
+    }
+
+    @Test
+    fun shortSpanishRepliesWithEnglishProperNamesAreKept() {
+        listOf(
+            "I Am Alive es divertido.",
+            "Hello Games es un estudio de videojuegos."
+        ).forEach { modelReply ->
+            val adapter = object : LocalAiModelAdapter {
+                override fun isAvailable() = true
+
+                override fun advise(
+                    question: String,
+                    context: GameHubAiContext
+                ): LocalAiActionCandidate? = null
+
+                override fun chat(
+                    message: String,
+                    context: GameHubAiContext,
+                    conversation: List<String>
+                ): String = modelReply
+            }
+
+            val answer = GameHubAiAdvisor(adapter).chat(
+                message = "Ultra, háblame de ese juego",
+                context = healthyContext
+            )
+
+            assertEquals(modelReply, answer)
+        }
+    }
+
+    @Test
+    fun geminiChatPromptForcesSpanishOutput() {
+        val prompt = buildGeminiChatPrompt(
+            message = "Hello, how are you?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertTrue(prompt.contains("Responde siempre en español"))
+        assertFalse(prompt.contains("Answer in the same language as the user"))
+    }
+
+    @Test
     fun memoryCommandIsHandledBeforeModelChat() {
         var modelChatInvoked = false
         val adapter = object : LocalAiModelAdapter {
