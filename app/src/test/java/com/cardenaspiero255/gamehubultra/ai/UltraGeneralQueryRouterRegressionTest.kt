@@ -166,6 +166,22 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun definitionQuestionWithCurrentQualifierIsMarkedFresh() {
+        val spanish = UltraGeneralQueryRouter.classify(
+            "Ultra, qué es la versión actual de Android"
+        )
+        val english = UltraGeneralQueryRouter.classify(
+            "Ultra, what is the current Android version?"
+        )
+
+        listOf(spanish, english).forEach { request ->
+            assertTrue(request.requiresInternet)
+            assertTrue(request.requiresFreshData)
+            assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+        }
+    }
+
+    @Test
     fun ordinaryConversationStaysOnLocalChatPath() {
         val greeting = UltraGeneralQueryRouter.classify(
             "Ultra, hola, cómo estás"
