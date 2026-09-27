@@ -106,6 +106,7 @@ internal class UltraAssistantSessionController(
     private var restoredSnapshotPending = restoredConversation != null
     private var loadGeneration = 0L
     private var conversationRevision = 0L
+    private var failedLoadRevision: Long? = null
     private var loadJob: Job? = null
 
     val queryRunner = UltraAssistantQueryRunner(
@@ -145,18 +146,24 @@ internal class UltraAssistantSessionController(
     fun retryLoad(): Job =
         startLoad(
             gamePackage = _selectedGamePackage.value,
-            clearConversation = false
+            clearConversation = false,
+            expectedConversationRevision = failedLoadRevision
         )
 
     fun updateConversation(next: List<String>) {
         val previous = _conversation.value
-        if (previous == next) return
+        val memoryScope = scopeFor(_selectedGamePackage.value)
+        if (previous == next) {
+            if (next.isEmpty()) {
+                memory.enqueueClearConversationHistory(memoryScope)
+            }
+            return
+        }
 
         _conversation.value = next
         conversationRevision += 1
         onSnapshotChanged(_selectedGamePackage.value, next)
 
-        val memoryScope = scopeFor(_selectedGamePackage.value)
         if (next.isEmpty()) {
             memory.enqueueClearConversationHistory(memoryScope)
             return
@@ -174,16 +181,19 @@ internal class UltraAssistantSessionController(
 
     private fun startLoad(
         gamePackage: String?,
-        clearConversation: Boolean
+        clearConversation: Boolean,
+        expectedConversationRevision: Long? = null
     ): Job {
         val generation = ++loadGeneration
         _selectedGamePackage.value = gamePackage
         if (clearConversation) {
             _conversation.value = emptyList()
             conversationRevision += 1
+            failedLoadRevision = null
             onSnapshotChanged(gamePackage, emptyList())
         }
-        val revisionAtLoadStart = conversationRevision
+        val revisionAtLoadStart =
+            expectedConversationRevision ?: conversationRevision
         _loadError.value = null
 
         loadJob?.cancel()
@@ -205,6 +215,7 @@ internal class UltraAssistantSessionController(
                             conversationRevision += 1
                             onSnapshotChanged(gamePackage, loaded)
                         }
+                        failedLoadRevision = null
                         _loadError.value = null
                     }
                 }
@@ -216,6 +227,7 @@ internal class UltraAssistantSessionController(
                         generation == loadGeneration &&
                         _selectedGamePackage.value == gamePackage
                     ) {
+                        failedLoadRevision = revisionAtLoadStart
                         _loadError.value = error
                     }
                 }
