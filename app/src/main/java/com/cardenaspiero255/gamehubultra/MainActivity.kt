@@ -1581,7 +1581,7 @@ private fun VoiceAssistantCard(
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
-    var recommendedProfile by remember { mutableStateOf<PerformanceProfile?>(null) }
+    var recommendedProfile by remember { mutableStateOf<UltraScopedProfileRecommendation?>(null) }
     var pendingContinuousListening by rememberSaveable { mutableStateOf(false) }
     var showTextChat by rememberSaveable { mutableStateOf(false) }
     var chatMessage by rememberSaveable { mutableStateOf("") }
@@ -1742,7 +1742,10 @@ private fun VoiceAssistantCard(
                                 .profileForCurrentGameCallback(result)
                                 ?.let(onProfileSelected)
                             recommendedProfile =
-                                UltraCommandUiEffectPolicy.recommendedProfileForUserApply(result)
+                                UltraCommandUiEffectPolicy.recommendationForUserApply(
+                                    result = result,
+                                    gamePackage = originatingGamePackage
+                                )
                             response = answer
                         }
                     }
@@ -1923,7 +1926,10 @@ applyNetworkProfile = { profile ->
                                     .profileForCurrentGameCallback(result)
                                     ?.let(onProfileSelected)
                                 val recommended =
-                                    UltraCommandUiEffectPolicy.recommendedProfileForUserApply(result)
+                                    UltraCommandUiEffectPolicy.recommendationForUserApply(
+                                        result = result,
+                                        gamePackage = originatingGamePackage
+                                    )
                                 UltraVoiceResultPublisher.publishIfCurrentGame(
                                     originatingGamePackage = originatingGamePackage,
                                     currentGamePackage = latestAiContext.selectedGamePackage
@@ -2083,7 +2089,10 @@ applyNetworkProfile = { profile ->
                 Text(stringResource(R.string.voice_transcript, transcript))
             }
             response?.let { Text(it) }
-            recommendedProfile?.let { profile ->
+            UltraCommandUiEffectPolicy.profileForCurrentGame(
+                recommendation = recommendedProfile,
+                currentGamePackage = aiContext.selectedGamePackage
+            )?.let { profile ->
                 Button(
                     onClick = {
                         onProfileSelected(profile)
