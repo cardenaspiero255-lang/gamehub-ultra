@@ -218,6 +218,53 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun currentDataKindUsesCurrentDataTtlEvenWhenFreshFlagIsFalse() {
+        var now = 30_000L
+        val calls = AtomicInteger(0)
+        val provider = object : UltraResearchProvider {
+            override val id = "current-data"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                val call = calls.incrementAndGet()
+                return evidence(
+                    claimKey = "current",
+                    value = "value-$call",
+                    text = "actual-$call",
+                    authoritative = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(provider),
+            cache = UltraResearchCache(),
+            nowMillis = { now }
+        )
+        val request = UltraGeneralQueryRequest(
+            originalText = "dato actual con flags inconsistentes",
+            kind = UltraGeneralQueryKind.CURRENT_DATA,
+            requiresInternet = true,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
+
+        try {
+            val first = engine.answer(request)
+            val cached = engine.answer(request)
+            now += UltraResearchCache.CURRENT_DATA_TTL_MS + 1
+            val refreshed = engine.answer(request)
+
+            assertFalse(first.fromCache)
+            assertTrue(cached.fromCache)
+            assertFalse(refreshed.fromCache)
+            assertEquals("actual-2", refreshed.message)
+            assertEquals(2, calls.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+
+    @Test
     fun freshGeneralKnowledgeCacheUsesCurrentDataTtl() {
         var now = 20_000L
         val calls = AtomicInteger(0)
