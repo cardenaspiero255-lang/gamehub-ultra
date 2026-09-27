@@ -58,8 +58,8 @@ data class VoiceCommandExecutionRequest(
     val gamesProvider: () -> List<GameInfo> = { emptyList() },
     val aliasGamesProvider: (() -> List<GameInfo>)? = null,
     val launchGame: (String) -> Boolean = { false },
-    val saveSelectedGame: (String) -> Unit = {},
-    val saveSelectedProfile: (PerformanceProfile) -> Unit = {},
+    val saveSelectedGame: ((String) -> Unit)? = null,
+    val saveSelectedProfile: ((PerformanceProfile) -> Unit)? = null,
     val saveSelectedGameWithProfile: ((String, PerformanceProfile) -> Unit)? = null,
     val isProfileAvailable: (PerformanceProfile) -> Boolean = { false },
     val statusProvider: () -> VoiceDeviceStatus = {
@@ -72,7 +72,7 @@ data class VoiceCommandExecutionRequest(
     val aiAdvisor: ((String) -> GameHubAiAdvice)? = null,
     val aliasIntentResolver: NaturalLanguageIntentResolver? = null,
     val gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
-    val saveGameAlias: (String, String) -> Unit = { _, _ -> },
+    val saveGameAlias: ((String, String) -> Unit)? = null,
     val networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
     val applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = {
         NetworkOptimizationOutcome.UNAVAILABLE
@@ -91,15 +91,22 @@ object VoiceCommandEngine :
 
     override fun execute(
         request: VoiceCommandExecutionRequest
-    ): UltraToolResult<VoiceActionResult> =
-        UltraToolExecution.protect(descriptor) {
+    ): UltraToolResult<VoiceActionResult> {
+        validatePersistenceCallbacks(request)?.let { message ->
+            return UltraToolExecution.invalidInput(
+                descriptor = descriptor,
+                message = message
+            )
+        }
+
+        return UltraToolExecution.protect(descriptor) {
             execute(
                 command = request.command,
                 gamesProvider = request.gamesProvider,
                 aliasGamesProvider = request.aliasGamesProvider,
                 launchGame = request.launchGame,
-                saveSelectedGame = request.saveSelectedGame,
-                saveSelectedProfile = request.saveSelectedProfile,
+                saveSelectedGame = request.saveSelectedGame ?: {},
+                saveSelectedProfile = request.saveSelectedProfile ?: {},
                 saveSelectedGameWithProfile = request.saveSelectedGameWithProfile,
                 isProfileAvailable = request.isProfileAvailable,
                 statusProvider = request.statusProvider,
@@ -107,10 +114,45 @@ object VoiceCommandEngine :
                 aiAdvisor = request.aiAdvisor,
                 aliasIntentResolver = request.aliasIntentResolver,
                 gameAliasesProvider = request.gameAliasesProvider,
-                saveGameAlias = request.saveGameAlias,
+                saveGameAlias = request.saveGameAlias ?: { _, _ -> },
                 networkStatusProvider = request.networkStatusProvider,
                 applyNetworkProfile = request.applyNetworkProfile
             )
+        }
+    }
+
+    private fun validatePersistenceCallbacks(
+        request: VoiceCommandExecutionRequest
+    ): String? =
+        when (val command = request.command) {
+            is VoiceCommand.SelectProfile ->
+                if (request.saveSelectedProfile == null) {
+                    "Falta el callback requerido para guardar el perfil seleccionado."
+                } else {
+                    null
+                }
+
+            is VoiceCommand.DefineGameAlias ->
+                if (request.saveGameAlias == null) {
+                    "Falta el callback requerido para guardar el alias del juego."
+                } else {
+                    null
+                }
+
+            is VoiceCommand.OpenGame ->
+                when {
+                    request.saveSelectedGame == null ->
+                        "Falta el callback requerido para guardar el juego seleccionado."
+
+                    command.requestedProfile != null &&
+                        request.saveSelectedGameWithProfile == null &&
+                        request.saveSelectedProfile == null ->
+                        "Falta el callback requerido para guardar el perfil solicitado."
+
+                    else -> null
+                }
+
+            else -> null
         }
 
     fun execute(
