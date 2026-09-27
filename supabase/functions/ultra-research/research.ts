@@ -624,7 +624,7 @@ function stripConversationSpeaker(value: string): string {
 }
 
 function extractGeneralKnowledgeQuery(query: string): string {
-  const clean = stripConversationSpeaker(stripAssistantInvocation(query))
+  const clean = stripAssistantInvocation(stripConversationSpeaker(query))
     .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
 
   return clean
@@ -645,6 +645,38 @@ function contextKnowledgeTopic(context: string): string {
     .reverse()
     .find((line) => /^(?:tú|tu|you|usuario|user)\s*:/i.test(line));
   return extractGeneralKnowledgeQuery(latestUserLine ?? context);
+}
+
+function isExplicitNewKnowledgeTopic(query: string): boolean {
+  const clean = normalize(
+    stripAssistantInvocation(stripConversationSpeaker(query)),
+  );
+  return /^(?:y |and )?(?:que es|que son|quien es|quienes son|define|explicame que es|explica que es|what is|what are|who is|who are|define)\s+\S+/.test(
+    clean,
+  );
+}
+
+function isDependentKnowledgeFollowUp(query: string): boolean {
+  const clean = normalize(
+    stripAssistantInvocation(stripConversationSpeaker(query)),
+  );
+  if (!/^(?:y|and)\b/.test(clean)) return false;
+  if (isExplicitNewKnowledgeTopic(query)) return false;
+  return /\b(?:lo|la|los|las|eso|esto|ese|esa|sirve|funciona|creo|crearon|inventaron|usa|usar)\b/.test(
+    clean,
+  );
+}
+
+function dependentKnowledgeQualifier(query: string): string {
+  return stripAssistantInvocation(stripConversationSpeaker(query))
+    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "")
+    .replace(/^(?:y|and)\s+/i, "")
+    .replace(
+      /^(?:quien lo creo|quién lo creó|quien la creo|quién la creó|para que sirve|para qué sirve|como funciona|cómo funciona|donde se usa|dónde se usa|que hace|qué hace)(?:\s+|$)/i,
+      "",
+    )
+    .replace(/^(?:en|con|sobre|para|de|del)\s+/i, "")
+    .trim();
 }
 
 function isTechnicalTroubleshootingQuery(query: string): boolean {
@@ -784,7 +816,14 @@ async function generalKnowledgeEvidence(
 ): Promise<ResearchResult> {
   const previousTopic = contextKnowledgeTopic(context);
   const currentTopic = extractGeneralKnowledgeQuery(query);
-  const topic = currentTopic || previousTopic;
+  const dependentFollowUp =
+    previousTopic.length > 0 && isDependentKnowledgeFollowUp(query);
+  const qualifier = dependentFollowUp
+    ? dependentKnowledgeQualifier(query)
+    : "";
+  const topic = dependentFollowUp
+    ? [previousTopic, qualifier].filter(Boolean).join(" ").trim()
+    : (currentTopic || previousTopic);
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
   if (isTechnicalTroubleshootingQuery(query)) {
