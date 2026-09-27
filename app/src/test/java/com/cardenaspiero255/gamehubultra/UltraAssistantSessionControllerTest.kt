@@ -219,6 +219,75 @@ class UltraAssistantSessionControllerTest {
         }
     }
 
+
+    @Test
+    fun switchingGamePublishesClearedSnapshotBeforeHistoryLoadCompletes() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val loadStarted = CompletableDeferred<Unit>()
+        val releaseLoad = CompletableDeferred<Unit>()
+        val snapshots = mutableListOf<Pair<String?, List<String>>>()
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                loadStarted.complete(Unit)
+                releaseLoad.await()
+                return listOf("Ultra: historial B")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                restoredGamePackage = "game.a",
+                restoredConversation = listOf("Ultra: historial A"),
+                onSnapshotChanged = { gamePackage, conversation ->
+                    snapshots += gamePackage to conversation
+                }
+            )
+
+            val load = controller.selectGame("game.b")
+            loadStarted.await()
+
+            assertEquals(
+                listOf("game.b" to emptyList<String>()),
+                snapshots
+            )
+            assertEquals("game.b", controller.selectedGamePackage.value)
+            assertTrue(controller.conversation.value.isEmpty())
+
+            releaseLoad.complete(Unit)
+            load.join()
+
+            assertEquals(
+                listOf(
+                    "game.b" to emptyList<String>(),
+                    "game.b" to listOf("Ultra: historial B")
+                ),
+                snapshots
+            )
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
     @Test
     fun updatesAndClearsUseTheControllersCurrentGameScope() = runBlocking {
         val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
