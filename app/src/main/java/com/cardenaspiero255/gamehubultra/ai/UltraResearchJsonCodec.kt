@@ -18,17 +18,50 @@ internal data class UltraResearchBackendResponse(
  * relying on Android's org.json implementation.
  */
 internal object UltraResearchJsonCodec {
-    fun encodeRequest(request: UltraGeneralQueryRequest): String =
-        buildString {
+    private data class RequestText(
+        val question: String,
+        val context: String?
+    )
+
+    fun encodeRequest(request: UltraGeneralQueryRequest): String {
+        val text = splitRequestText(request.originalText)
+        return buildString {
             append('{')
             append("\"query\":\"")
-            append(escape(request.originalText))
-            append("\",\"kind\":\"")
+            append(escape(text.question))
+            append('"')
+            text.context?.takeIf { it.isNotBlank() }?.let { context ->
+                append(",\"context\":\"")
+                append(escape(context))
+                append('"')
+            }
+            append(",\"kind\":\"")
             append(request.kind.name)
             append("\",\"requiresFreshData\":")
             append(request.requiresFreshData)
             append('}')
         }
+    }
+
+    private fun splitRequestText(originalText: String): RequestText {
+        val clean = originalText.trim()
+        val contextPrefix = "Contexto previo:"
+        val questionMarker = "\nPregunta actual:"
+        if (!clean.startsWith(contextPrefix, ignoreCase = true)) {
+            return RequestText(question = clean, context = null)
+        }
+        val markerIndex = clean.indexOf(questionMarker, ignoreCase = true)
+        if (markerIndex < 0) {
+            return RequestText(question = clean, context = null)
+        }
+        val context = clean.substring(contextPrefix.length, markerIndex).trim()
+        val question = clean.substring(markerIndex + questionMarker.length).trim()
+        return if (question.isBlank()) {
+            RequestText(question = clean, context = null)
+        } else {
+            RequestText(question = question, context = context.takeIf { it.isNotBlank() })
+        }
+    }
 
     fun decodeResponse(json: String): UltraResearchBackendResponse =
         UltraResearchBackendResponse(
