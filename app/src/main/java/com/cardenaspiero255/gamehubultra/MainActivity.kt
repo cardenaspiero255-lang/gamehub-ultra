@@ -332,6 +332,9 @@ private fun GameHubUltraApp(
     var restorableUltraConversation by rememberSaveable {
         mutableStateOf<List<String>?>(null)
     }
+    var restorableUltraHistoryHydrated by rememberSaveable {
+        mutableStateOf<Boolean?>(null)
+    }
     val ultraSessionMemory = remember(ultraMemoryStore) {
         UltraConversationSessionMemoryAdapter(ultraMemoryStore)
     }
@@ -342,9 +345,13 @@ private fun GameHubUltraApp(
             maxHistory = MAX_CHAT_HISTORY,
             restoredGamePackage = restorableUltraGamePackage,
             restoredConversation = restorableUltraConversation,
+            restoredHistoryHydrated = restorableUltraHistoryHydrated,
             onSnapshotChanged = { gamePackage, conversation ->
                 restorableUltraGamePackage = gamePackage
                 restorableUltraConversation = conversation
+            },
+            onHistoryHydrationChanged = { hydrated ->
+                restorableUltraHistoryHydrated = hydrated
             }
         )
     }
