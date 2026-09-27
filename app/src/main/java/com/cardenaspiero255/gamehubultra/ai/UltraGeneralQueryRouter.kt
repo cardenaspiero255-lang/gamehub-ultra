@@ -166,6 +166,4 @@ object UltraGeneralQueryRouter {
                 )
         }
     }
-    }
-
 }
