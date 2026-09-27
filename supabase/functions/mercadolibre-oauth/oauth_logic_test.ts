@@ -1,6 +1,4 @@
-import {
-  persistCredentialSetAtomically,
-} from "./credential_store.ts";
+import { persistCredentialSetAtomically } from "./credential_store.ts";
 import {
   buildAuthorizationUrl,
   buildTokenExchangeBody,
