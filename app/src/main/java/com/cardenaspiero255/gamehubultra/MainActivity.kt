@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
+import com.cardenaspiero255.gamehubultra.ai.UltraTypedChatRoutePlanner
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
@@ -2056,7 +2057,13 @@ private fun AiAdvisorCard(
         latestOnConversationChanged(withUser)
         chatSending = true
         scope.launch(Dispatchers.IO) {
-            val answer = advisor.chat(message, context, previousConversation)
+            val route = UltraTypedChatRoutePlanner.route(
+                message = message,
+                conversationHistory = previousConversation
+            )
+            val answer = UltraProductionQueryExecutor.answer(route) {
+                advisor.chat(message, context, previousConversation)
+            }
             withContext(Dispatchers.Main) {
                 if (
                     UltraConversationScopePolicy.isSameGame(
