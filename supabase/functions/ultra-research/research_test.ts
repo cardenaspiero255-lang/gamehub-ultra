@@ -303,3 +303,49 @@ Deno.test("marketplace price uses current Mercado Libre listings when configured
   }
   if (!result.sourceIds?.length) throw new Error("expected listing sources");
 });
+
+
+Deno.test("weather follow-up uses current question instead of contaminating it with prior location", async () => {
+  let geocodedName = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "geocoding-api.open-meteo.com") {
+        geocodedName = url.searchParams.get("name") ?? "";
+        return jsonResponse({
+          results: [{
+            name: "Rancagua",
+            admin1: "O'Higgins",
+            country: "Chile",
+            latitude: -34.17,
+            longitude: -70.74,
+          }],
+        });
+      }
+      if (url.hostname === "api.open-meteo.com") {
+        return jsonResponse({
+          current: {
+            temperature_2m: 20,
+            apparent_temperature: 20,
+            weather_code: 0,
+            time: "2026-09-26T22:00",
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, y clima en Rancagua?",
+    deps,
+    "Ultra, clima de hoy en Santiago",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected verified follow-up weather");
+  if (geocodedName !== "Rancagua") {
+    throw new Error("expected current question location, got " + geocodedName);
+  }
+});
