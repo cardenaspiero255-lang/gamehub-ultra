@@ -30,6 +30,20 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun ordinaryConversationStaysOnLocalChatPath() {
+        val greeting = UltraGeneralQueryRouter.classify(
+            "Ultra, hola, cómo estás"
+        )
+        val casual = UltraGeneralQueryRouter.classify(
+            "Ultra, hoy estoy aburrido"
+        )
+
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, greeting.kind)
+        assertFalse(greeting.requiresInternet)
+        assertFalse(casual.requiresInternet)
+    }
+
+    @Test
     fun domainSpecificFreshQueriesStillRequireOnlineResearch() {
         val weather = UltraGeneralQueryRouter.classify(
             "Ultra, clima de hoy en Santiago"
