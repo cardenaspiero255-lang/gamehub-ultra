@@ -827,3 +827,144 @@ Deno.test("news voice response stays in Spanish even when source titles are Engl
     throw new Error("expected Spanish-only news summary");
   }
 });
+
+
+Deno.test("dependent knowledge follow-up keeps the previous subject", async () => {
+  const queries: string[] = [];
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        queries.push(url.searchParams.get("srsearch") ?? "");
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Vulkan",
+        type: "standard",
+        extract: "Vulkan fue creado por el Grupo Khronos.",
+        content_urls: {
+          desktop: { page: "https://es.wikipedia.org/wiki/Vulkan" },
+        },
+      });
+    },
+    env: () => undefined,
+  };
+
+  await routeResearchQuery(
+    "¿y quién lo creó?",
+    deps,
+    "Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (queries[0]?.toLowerCase() !== "vulkan") {
+    throw new Error("expected previous subject for referential follow-up");
+  }
+});
+
+Deno.test("dependent follow-up may add a qualifier without replacing its subject", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        searchQuery = url.searchParams.get("srsearch") ?? "";
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Vulkan",
+        type: "standard",
+        extract: "Vulkan se usa en Android para gráficos de alto rendimiento.",
+        content_urls: {
+          desktop: { page: "https://es.wikipedia.org/wiki/Vulkan" },
+        },
+      });
+    },
+    env: () => undefined,
+  };
+
+  await routeResearchQuery(
+    "¿y para qué sirve en Android?",
+    deps,
+    "Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (searchQuery.toLowerCase() !== "vulkan android") {
+    throw new Error("expected previous subject plus current qualifier");
+  }
+});
+
+Deno.test("complete new subject in a follow-up does not keep prior context", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        searchQuery = url.searchParams.get("srsearch") ?? "";
+        return jsonResponse({
+          query: { search: [{ title: "Android" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Android",
+        type: "standard",
+        extract: "Android es un sistema operativo móvil.",
+        content_urls: {
+          desktop: { page: "https://es.wikipedia.org/wiki/Android" },
+        },
+      });
+    },
+    env: () => undefined,
+  };
+
+  await routeResearchQuery(
+    "¿y qué es Android?",
+    deps,
+    "Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (searchQuery.toLowerCase() !== "android") {
+    throw new Error("expected the complete new subject only");
+  }
+});
+
+Deno.test("speaker labels are stripped before assistant invocation in context", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        searchQuery = url.searchParams.get("srsearch") ?? "";
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Vulkan",
+        type: "standard",
+        extract: "Vulkan es una API gráfica.",
+        content_urls: {
+          desktop: { page: "https://es.wikipedia.org/wiki/Vulkan" },
+        },
+      });
+    },
+    env: () => undefined,
+  };
+
+  await routeResearchQuery(
+    "¿y para qué sirve?",
+    deps,
+    "Tú: Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (searchQuery.toLowerCase() !== "vulkan") {
+    throw new Error("expected clean subject from labeled context");
+  }
+});
