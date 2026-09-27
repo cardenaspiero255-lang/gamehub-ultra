@@ -8,13 +8,24 @@ import kotlin.test.assertTrue
 class UltraGeneralQueryRouterRegressionTest {
 
     @Test
-    fun genericTodayPhraseDoesNotForceOnlineResearch() {
+    fun generalKnowledgeUsesVerifiedResearchWithoutPretendingItIsFresh() {
         val request = UltraGeneralQueryRouter.classify(
-            "Ultra, qué hacemos hoy"
+            "Ultra, por qué el cielo es azul"
         )
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
-        assertFalse(request.requiresInternet)
+        assertTrue(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
+    fun generalScienceQuestionUsesVerifiedResearchInsteadOfGamingFallback() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, explícame qué es un agujero negro"
+        )
+
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
+        assertTrue(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
 
