@@ -1,0 +1,54 @@
+package com.cardenaspiero255.gamehubultra.ai
+
+import com.cardenaspiero255.gamehubultra.BuildConfig
+
+/**
+ * Supplies the research providers available to Ultra without exposing concrete
+ * backend configuration to query execution.
+ */
+fun interface UltraResearchProviderSource {
+    fun providers(): List<UltraResearchProvider>
+}
+
+/**
+ * Configurable provider source used by production composition and tests.
+ *
+ * Incomplete credentials intentionally expose no external provider so callers
+ * fall back to Ultra's verified abstention/local-policy behavior.
+ */
+class ConfiguredUltraResearchProviderSource(
+    private val supabaseUrl: String,
+    private val publishableKey: String,
+    private val transport: UltraResearchBackendTransport =
+        HttpUrlConnectionUltraResearchTransport
+) : UltraResearchProviderSource {
+
+    override fun providers(): List<UltraResearchProvider> =
+        if (supabaseUrl.isBlank() || publishableKey.isBlank()) {
+            emptyList()
+        } else {
+            listOf(
+                SupabaseUltraResearchProvider(
+                    supabaseUrl = supabaseUrl,
+                    publishableKey = publishableKey,
+                    transport = transport
+                )
+            )
+        }
+}
+
+/**
+ * Android production composition for research providers.
+ *
+ * BuildConfig and concrete backend knowledge stop here.
+ */
+object UltraProductionResearchProviderSource : UltraResearchProviderSource {
+    private val delegate: UltraResearchProviderSource =
+        ConfiguredUltraResearchProviderSource(
+            supabaseUrl = BuildConfig.SUPABASE_URL,
+            publishableKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
+        )
+
+    override fun providers(): List<UltraResearchProvider> =
+        delegate.providers()
+}
