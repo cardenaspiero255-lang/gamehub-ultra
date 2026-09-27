@@ -629,7 +629,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   return clean
     .replace(
-      /^(?:(?:y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -647,15 +647,6 @@ function contextKnowledgeTopic(context: string): string {
   return extractGeneralKnowledgeQuery(latestUserLine ?? context);
 }
 
-function generalKnowledgeLanguage(query: string): "es" | "en" {
-  const clean = normalize(stripAssistantInvocation(query));
-  return /^(?:and )?(?:what|who|why|how|explain|define|where|when)\b/.test(
-      clean,
-    )
-    ? "en"
-    : "es";
-}
-
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -663,14 +654,10 @@ async function generalKnowledgeEvidence(
 ): Promise<ResearchResult> {
   const previousTopic = contextKnowledgeTopic(context);
   const currentTopic = extractGeneralKnowledgeQuery(query);
-  const topic = [previousTopic, currentTopic]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  const topic = currentTopic || previousTopic;
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
-  const language = generalKnowledgeLanguage(query);
-  const wikipediaHost = `${language}.wikipedia.org`;
+  const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
   searchUrl.searchParams.set("action", "query");
   searchUrl.searchParams.set("list", "search");
