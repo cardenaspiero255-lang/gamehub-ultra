@@ -96,6 +96,19 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun gameTitleContainingWhyDoesNotTriggerResearch() {
+        val title = UltraGeneralQueryRouter.classify(
+            "Ultra, háblame de Tell Me Why"
+        )
+        val actualQuestion = UltraGeneralQueryRouter.classify(
+            "Ultra, why is the sky blue?"
+        )
+
+        assertFalse(title.requiresInternet)
+        assertTrue(actualQuestion.requiresInternet)
+    }
+
+    @Test
     fun technicalTroubleshootingUsesVerifiedResearch() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, cómo soluciono un error de Gradle al compilar Android"
