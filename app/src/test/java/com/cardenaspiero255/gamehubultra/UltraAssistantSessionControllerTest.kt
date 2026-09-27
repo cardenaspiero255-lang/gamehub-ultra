@@ -532,4 +532,159 @@ class UltraAssistantSessionControllerTest {
     }
 
 
+
+    @Test
+    fun unhydratedRestoredSnapshotReloadsPersistedHistory() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var readCalls = 0
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                readCalls += 1
+                return listOf("Ultra: historial persistido")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                restoredGamePackage = "game.a",
+                restoredConversation = emptyList(),
+                restoredHistoryHydrated = false
+            )
+
+            controller.selectGame("game.a").join()
+
+            assertEquals(1, readCalls)
+            assertEquals(listOf("Ultra: historial persistido"), controller.conversation.value)
+            assertTrue(controller.scopeReady.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun hydratedEmptyRestoredSnapshotDoesNotResurrectClearedHistory() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var readCalls = 0
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                readCalls += 1
+                return listOf("Ultra: historial que no debe reaparecer")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                restoredGamePackage = "game.a",
+                restoredConversation = emptyList(),
+                restoredHistoryHydrated = true
+            )
+
+            controller.selectGame("game.a").join()
+
+            assertEquals(0, readCalls)
+            assertTrue(controller.conversation.value.isEmpty())
+            assertTrue(controller.scopeReady.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun unhydratedRestoredLiveConversationMergesWithPersistedHistory() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val restored = listOf(
+            "Tú: mensaje nuevo",
+            "Ultra: respuesta nueva"
+        )
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> = listOf(
+                "Tú: mensaje viejo",
+                "Ultra: respuesta vieja"
+            )
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                restoredGamePackage = "game.a",
+                restoredConversation = restored,
+                restoredHistoryHydrated = false
+            )
+
+            controller.selectGame("game.a").join()
+
+            assertEquals(
+                listOf(
+                    "Tú: mensaje viejo",
+                    "Ultra: respuesta vieja",
+                    "Tú: mensaje nuevo",
+                    "Ultra: respuesta nueva"
+                ),
+                controller.conversation.value
+            )
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+
 }
