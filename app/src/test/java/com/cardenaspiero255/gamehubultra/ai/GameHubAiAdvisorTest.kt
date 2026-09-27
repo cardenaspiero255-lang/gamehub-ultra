@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GameHubAiAdvisorTest {
@@ -157,6 +158,43 @@ class GameHubAiAdvisorTest {
 
         assertEquals("com.example.game", receivedGame)
         assertTrue(receivedSustained)
+    }
+
+    @Test
+    fun generalKnowledgeFallbackReturnsNullWithoutSubstantiveLocalModel() {
+        val advisor = GameHubAiAdvisor(modelAdapter = null)
+
+        assertNull(
+            advisor.generalKnowledgeChatOrNull(
+                message = "Ultra, ¿qué es Vulkan?",
+                context = healthyContext
+            )
+        )
+    }
+
+    @Test
+    fun generalKnowledgeFallbackReturnsSubstantiveLocalModelAnswer() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String = "Vulkan es una API gráfica multiplataforma."
+        }
+
+        val answer = GameHubAiAdvisor(adapter).generalKnowledgeChatOrNull(
+            message = "Ultra, ¿qué es Vulkan?",
+            context = healthyContext
+        )
+
+        assertEquals("Vulkan es una API gráfica multiplataforma.", answer)
     }
 
     @Test
