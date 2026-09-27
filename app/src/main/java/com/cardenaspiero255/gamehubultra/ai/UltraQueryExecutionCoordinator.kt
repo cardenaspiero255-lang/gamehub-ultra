@@ -19,6 +19,13 @@ data class UltraQueryExecutionAnswer(
 class UltraQueryExecutionCoordinator(
     private val researchEngine: UltraVerifiedResearchEngine
 ) {
+    private fun safeLocalAnswer(localChat: () -> String?): String? =
+        try {
+            localChat()?.takeIf(String::isNotBlank)
+        } catch (_: Exception) {
+            null
+        }
+
     fun answer(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
