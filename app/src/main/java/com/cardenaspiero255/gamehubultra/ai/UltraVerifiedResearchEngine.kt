@@ -228,7 +228,6 @@ class UltraVerifiedResearchEngine(
             .distinct()
         val corroborationCount = maxOf(
             agreeing.size,
-            sources.size,
             agreeing.maxOfOrNull {
                 it.evidence?.independentSourceCount?.coerceAtLeast(1) ?: 1
             } ?: 1
