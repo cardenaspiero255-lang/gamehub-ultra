@@ -1,5 +1,12 @@
 package com.cardenaspiero255.gamehubultra.domain
 
+import com.cardenaspiero255.gamehubultra.tools.UltraToolContract
+import com.cardenaspiero255.gamehubultra.tools.UltraToolDescriptor
+import com.cardenaspiero255.gamehubultra.tools.UltraToolExecution
+import com.cardenaspiero255.gamehubultra.tools.UltraToolKind
+import com.cardenaspiero255.gamehubultra.tools.UltraToolResult
+import com.cardenaspiero255.gamehubultra.tools.UltraToolSideEffect
+
 /**
  * Pure adaptive policy for GameHub Ultra's own workload/session.
  * It never claims control over another application's renderer or frame generation.
@@ -30,7 +37,14 @@ data class AdaptiveDecision(
 class AdaptivePerformanceEngine(
     private val confirmationsRequired: Int = 2,
     initialProfile: PerformanceProfile = PerformanceProfile.BALANCED
-) {
+) : UltraToolContract<AdaptiveRuntimeSnapshot, AdaptiveDecision> {
+    override val descriptor: UltraToolDescriptor =
+        UltraToolDescriptor(
+            id = "ultra.optimizer",
+            kind = UltraToolKind.OPTIMIZER,
+            sideEffect = UltraToolSideEffect.MUTATES_STATE
+        )
+
     private var currentProfile = initialProfile
     private var candidateProfile: PerformanceProfile? = null
     private var candidateConfirmations = 0
@@ -38,6 +52,13 @@ class AdaptivePerformanceEngine(
     init {
         require(confirmationsRequired >= 1)
     }
+
+    override fun execute(
+        request: AdaptiveRuntimeSnapshot
+    ): UltraToolResult<AdaptiveDecision> =
+        UltraToolExecution.protect(descriptor) {
+            evaluate(request)
+        }
 
     fun currentProfile(): PerformanceProfile = currentProfile
 
