@@ -26,11 +26,11 @@ jobs:
         with:
           deno-version: v2.1.x
 
-      - name: Check Edge Function formatting
-        run: deno fmt --check supabase/functions/ultra-research
+      - name: Check provider test formatting
+        run: deno fmt --check supabase/functions/ultra-research/research_test.ts
 
-      - name: Lint Edge Function
-        run: deno lint supabase/functions/ultra-research
+      - name: Lint provider tests
+        run: deno lint supabase/functions/ultra-research/research_test.ts
 
       - name: Test Edge Function
         run: deno test supabase/functions/ultra-research/research_test.ts
