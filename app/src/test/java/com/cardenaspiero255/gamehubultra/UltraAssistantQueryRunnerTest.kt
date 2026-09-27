@@ -29,6 +29,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { currentGame },
                 currentConversation = { conversation },
@@ -70,6 +71,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { emptyList() },
@@ -106,6 +108,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { emptyList() },
@@ -138,6 +141,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { currentGame },
                 currentConversation = { conversation },
@@ -176,22 +180,26 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { emptyList() },
                 publishConversation = {}
             )
 
-            val failure = runCatching {
-                runner.launch(
-                    onAccepted = { error("accept failed") },
-                    onFailure = {}
-                ) {}
-            }.exceptionOrNull()
+            val failure = CompletableDeferred<Throwable>()
+            val submission = runner.launch(
+                onAccepted = { error("accept failed") },
+                onFailure = { failure.complete(it) }
+            ) {}
+            val failedSubmission = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+            failedSubmission.job.join()
 
-            assertIs<IllegalStateException>(failure)
-            assertEquals("accept failed", failure.message)
+            val acceptanceFailure = failure.await()
+            assertIs<IllegalStateException>(acceptanceFailure)
+            assertEquals("accept failed", acceptanceFailure.message)
             assertFalse(runner.isRunning.value)
+
             val retry = runner.launch(
                 onAccepted = {},
                 onFailure = {}
@@ -211,6 +219,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { conversation },
@@ -239,6 +248,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { conversation },
@@ -292,6 +302,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { emptyList() },
