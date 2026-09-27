@@ -176,28 +176,30 @@ class UltraCar73ContextualQueryExecutionTest {
                     authoritative = false
                 )
         }
+        val request = UltraGeneralQueryRequest(
+            originalText = "Ultra, qué son los sentimientos",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = true,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
         val engine = UltraVerifiedResearchEngine(listOf(weakProvider))
+
+        val directResearch = engine.answer(request)
+        assertTrue(directResearch.abstained)
+        assertEquals(listOf("weak-source"), directResearch.sources)
+
         val coordinator = UltraQueryExecutionCoordinator(engine)
         var localCalls = 0
-
         val answer = coordinator.answer(
-            request = UltraGeneralQueryRequest(
-                originalText = "Ultra, qué son los sentimientos",
-                kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                requiresInternet = true,
-                requiresFreshData = false,
-                timeoutMillis = 5_000L
-            ),
+            request = request,
             localChat = {
                 localCalls += 1
                 "respuesta local no verificada"
             }
         )
 
-        assertTrue(
-            answer.abstained,
-            "Expected evidence-backed abstention, got answer=$answer localCalls=$localCalls"
-        )
+        assertTrue(answer.abstained)
         assertFalse(answer.verified)
         assertEquals(listOf("weak-source"), answer.sources)
         assertEquals(0, localCalls)
