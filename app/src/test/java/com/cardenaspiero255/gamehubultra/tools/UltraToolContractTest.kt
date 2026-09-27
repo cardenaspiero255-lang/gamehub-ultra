@@ -209,6 +209,82 @@ class UltraToolContractTest {
     }
 
     @Test
+    fun researchToolConvertsProviderExceptionsToSafeTypedFailure() {
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                error("provider-secret-detail")
+            }
+        }
+        val request = UltraGeneralQueryRequest(
+            originalText = "dato actual",
+            kind = UltraGeneralQueryKind.CURRENT_DATA,
+            requiresInternet = true,
+            requiresFreshData = true,
+            timeoutMillis = 5_000L
+        )
+
+        val result = gateway.execute(request)
+
+        assertIs<UltraToolResult.Failure>(result)
+        assertEquals(UltraToolFailureCode.EXECUTION_FAILED, result.failure.code)
+        assertEquals("IllegalStateException", result.failure.causeType)
+        assertTrue("provider-secret-detail" !in result.failure.message)
+    }
+
+    @Test
+    fun commandToolConvertsCallbackExceptionsToSafeTypedFailure() {
+        val result = VoiceCommandEngine.execute(
+            VoiceCommandExecutionRequest(
+                command = VoiceCommand.DeviceStatus,
+                statusProvider = { error("runtime-private-detail") }
+            )
+        )
+
+        assertIs<UltraToolResult.Failure>(result)
+        assertEquals(UltraToolFailureCode.EXECUTION_FAILED, result.failure.code)
+        assertEquals("IllegalStateException", result.failure.causeType)
+        assertTrue("runtime-private-detail" !in result.failure.message)
+    }
+
+    @Test
+    fun memoryRecallRejectsOutOfRangeLimitsBeforeExecution() {
+        val scope = UltraMemoryScope(userId = "local", gamePackage = null)
+
+        assertFailsWith<IllegalArgumentException> {
+            UltraMemoryToolRequest.Recall(
+                message = "historial",
+                scope = scope,
+                limit = 0
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            UltraMemoryToolRequest.Recall(
+                message = "historial",
+                scope = scope,
+                limit = 101
+            )
+        }
+    }
+
+    @Test
+    fun descriptorRejectsWhitespaceAndNonCanonicalIds() {
+        assertFailsWith<IllegalArgumentException> {
+            UltraToolDescriptor(
+                id = " ultra.research",
+                kind = UltraToolKind.RESEARCH,
+                sideEffect = UltraToolSideEffect.READ_ONLY
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            UltraToolDescriptor(
+                id = "Ultra Research",
+                kind = UltraToolKind.RESEARCH,
+                sideEffect = UltraToolSideEffect.READ_ONLY
+            )
+        }
+    }
+
+    @Test
     fun descriptorRejectsInvalidIds() {
         assertFailsWith<IllegalArgumentException> {
             UltraToolDescriptor(
