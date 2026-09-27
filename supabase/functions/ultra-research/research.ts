@@ -23,7 +23,8 @@ export type ResearchDependencies = {
 
 type JsonObject = Record<string, unknown>;
 
-const USER_AGENT = "GameHub-Ultra-CAR73/1.0";
+const USER_AGENT =
+  "GameHub-Ultra-CAR73/1.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
 
 function abstain(message: string): ResearchResult {
   return { abstained: true, message };
@@ -627,8 +628,12 @@ function extractGeneralKnowledgeQuery(query: string): string {
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
+  context = "",
 ): Promise<ResearchResult> {
-  const topic = extractGeneralKnowledgeQuery(query);
+  const researchText = context.trim()
+    ? `${context.trim()}\n${query.trim()}`
+    : query;
+  const topic = extractGeneralKnowledgeQuery(researchText);
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
   const searchUrl = new URL("https://es.wikipedia.org/w/api.php");
@@ -657,8 +662,18 @@ async function generalKnowledgeEvidence(
   const summary = await fetchJson(deps, summaryUrl, {
     headers: { "User-Agent": USER_AGENT },
   });
+  const summaryType = stringValue(summary?.type)?.toLowerCase();
+  if (summaryType === "disambiguation") {
+    return abstain(
+      "La fuente encontrada es ambigua y no identifica un artículo concreto.",
+    );
+  }
   const extract = stringValue(summary?.extract);
-  if (!extract) return abstain("La fuente encontrada no devolvió una explicación utilizable.");
+  if (!extract) {
+    return abstain(
+      "La fuente encontrada no devolvió una explicación utilizable.",
+    );
+  }
 
   const contentUrls = summary?.content_urls && typeof summary.content_urls === "object"
     ? summary.content_urls as JsonObject
@@ -696,6 +711,10 @@ export async function routeResearchQuery(
   const comparisonSignal = /\b(compara|compare|versus|vs)\b/;
   const specsSignal =
     /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
+
+  if (kind === "GENERAL_KNOWLEDGE") {
+    return await generalKnowledgeEvidence(query, deps, context);
+  }
 
   if (
     weatherSignal.test(clean) ||
@@ -737,10 +756,6 @@ export async function routeResearchQuery(
       extractSpecProduct(query),
       deps,
     );
-  }
-
-  if (kind === "GENERAL_KNOWLEDGE") {
-    return await generalKnowledgeEvidence(query, deps);
   }
 
   return abstain(
