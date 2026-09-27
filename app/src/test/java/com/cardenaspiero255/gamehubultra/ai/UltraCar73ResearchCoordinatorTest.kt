@@ -32,7 +32,7 @@ class UltraCar73ResearchCoordinatorTest {
     }
 
     @Test
-    fun stableGeneralKnowledgeWithoutInternetFallsBackToLocalChat() {
+    fun stableGeneralKnowledgeWithoutResearchProviderAbstainsSafely() {
         UltraGeneralResearchCoordinator(
             engine = UltraVerifiedResearchEngine(emptyList())
         ).use { coordinator ->
@@ -43,8 +43,8 @@ class UltraCar73ResearchCoordinatorTest {
 
             val result = coordinator.answer(route)
 
-            assertFalse(result.handled)
-            assertEquals(null, result.result)
+            assertTrue(result.handled)
+            assertTrue(result.result!!.abstained)
         }
     }
 
