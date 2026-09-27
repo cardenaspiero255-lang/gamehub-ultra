@@ -168,8 +168,8 @@ internal class UltraAssistantSessionController(
                             _conversation.value = loaded
                             conversationRevision += 1
                             onSnapshotChanged(gamePackage, loaded)
+                            _loadError.value = null
                         }
-                        _loadError.value = null
                     }
                 }
             } catch (cancelled: CancellationException) {
