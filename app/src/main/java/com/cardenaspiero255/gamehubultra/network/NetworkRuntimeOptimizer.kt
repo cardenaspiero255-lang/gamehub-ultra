@@ -1,15 +1,35 @@
 package com.cardenaspiero255.gamehubultra.network
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 
+object NetworkOptimizationResultPolicy {
+    fun reportsApplied(action: NetworkPriorityAction): Boolean =
+        action == NetworkPriorityAction.LOW_LATENCY_WIFI ||
+            action == NetworkPriorityAction.HIGH_PERFORMANCE_WIFI
+}
+
+object NetworkLockLifecyclePolicy {
+    fun shouldRelease(
+        wifiTransport: Boolean,
+        validated: Boolean
+    ): Boolean = !wifiTransport || !validated
+}
+
 object NetworkRuntimeOptimizer {
     private const val LOCK_TAG = "GameHubUltra:NetworkBooster"
+    private const val MAX_LOCK_LEASE_MILLIS = 30L * 60L * 1000L
+
     private val lockGuard = Any()
     private var activeLock: WifiManager.WifiLock? = null
     private var activeMode: Int? = null
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     fun apply(context: Context, profile: NetworkGameProfile): Boolean {
         val telemetry = RuntimeDiagnosticsProvider.get(context).connectivity
@@ -20,41 +40,100 @@ object NetworkRuntimeOptimizer {
             telemetry.validated,
             Build.VERSION.SDK_INT
         )
+
         return when (action) {
             NetworkPriorityAction.RELEASE_WIFI_LOCK -> {
                 release()
-                true
+                false
             }
             NetworkPriorityAction.UNAVAILABLE -> false
-            NetworkPriorityAction.LOW_LATENCY_WIFI ->
-                acquire(context, WifiManager.WIFI_MODE_FULL_LOW_LATENCY)
-            NetworkPriorityAction.HIGH_PERFORMANCE_WIFI ->
-                acquire(context, WifiManager.WIFI_MODE_FULL_HIGH_PERF)
+            NetworkPriorityAction.LOW_LATENCY_WIFI,
+            NetworkPriorityAction.HIGH_PERFORMANCE_WIFI -> {
+                val mode = if (action == NetworkPriorityAction.LOW_LATENCY_WIFI) {
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                }
+                acquire(context, mode) &&
+                    NetworkOptimizationResultPolicy.reportsApplied(action)
+            }
         }
     }
 
     @Suppress("DEPRECATION")
     private fun acquire(context: Context, mode: Int): Boolean = synchronized(lockGuard) {
         runCatching {
-            val manager = context.applicationContext.getSystemService(WifiManager::class.java)
+            val appContext = context.applicationContext
+            val manager = appContext.getSystemService(WifiManager::class.java)
                 ?: return@synchronized false
+
             if (activeMode != mode) {
                 activeLock?.takeIf { it.isHeld }?.release()
                 activeLock = null
             }
+
             val lock = activeLock ?: manager.createWifiLock(mode, LOCK_TAG).also {
                 it.setReferenceCounted(false)
                 activeLock = it
                 activeMode = mode
             }
-            if (!lock.isHeld) lock.acquire()
+
+            if (!lock.isHeld) {
+                lock.acquire(MAX_LOCK_LEASE_MILLIS)
+            }
+            ensureConnectivityGuard(appContext)
             lock.isHeld
         }.getOrDefault(false)
     }
 
+    private fun ensureConnectivityGuard(context: Context) {
+        if (networkCallback != null) return
+
+        val manager = context.getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onLost(network: Network) {
+                release()
+            }
+
+            override fun onCapabilitiesChanged(
+                network: Network,
+                networkCapabilities: NetworkCapabilities
+            ) {
+                val shouldRelease = NetworkLockLifecyclePolicy.shouldRelease(
+                    wifiTransport = networkCapabilities.hasTransport(
+                        NetworkCapabilities.TRANSPORT_WIFI
+                    ),
+                    validated = networkCapabilities.hasCapability(
+                        NetworkCapabilities.NET_CAPABILITY_VALIDATED
+                    )
+                )
+                if (shouldRelease) {
+                    release()
+                }
+            }
+        }
+
+        runCatching {
+            manager.registerDefaultNetworkCallback(callback)
+            connectivityManager = manager
+            networkCallback = callback
+        }
+    }
+
     fun release() = synchronized(lockGuard) {
-        runCatching { activeLock?.takeIf { it.isHeld }?.release() }
+        runCatching {
+            activeLock?.takeIf { it.isHeld }?.release()
+        }
         activeLock = null
         activeMode = null
+
+        val manager = connectivityManager
+        val callback = networkCallback
+        connectivityManager = null
+        networkCallback = null
+        if (manager != null && callback != null) {
+            runCatching { manager.unregisterNetworkCallback(callback) }
+        }
     }
 }
