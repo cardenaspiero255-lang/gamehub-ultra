@@ -23,7 +23,13 @@ class UltraQueryExecutionCoordinator(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
     ): UltraQueryExecutionAnswer {
-        if (!request.requiresInternet) {
+        val requiresVerifiedResearch =
+            request.requiresInternet ||
+                request.requiresFreshData ||
+                request.kind == UltraGeneralQueryKind.CURRENT_DATA ||
+                request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH
+
+        if (!requiresVerifiedResearch) {
             val localAnswer = localChat()?.takeIf(String::isNotBlank)
             return if (localAnswer != null) {
                 UltraQueryExecutionAnswer(
