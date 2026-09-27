@@ -6,7 +6,10 @@ import com.cardenaspiero255.gamehubultra.network.NetworkStability
 import com.cardenaspiero255.gamehubultra.network.NetworkLockLifecyclePolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationResultPolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkPriorityAction
+import com.cardenaspiero255.gamehubultra.network.NetworkLeaseGenerationPolicy
+import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationOutcome
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
+import com.cardenaspiero255.gamehubultra.platform.RouterDiscoveryParser
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import kotlin.test.Test
@@ -48,7 +51,7 @@ class NetworkVoiceSpanishIntegrationTest {
             networkStatusProvider = { snapshot },
             applyNetworkProfile = { profile ->
                 appliedProfile = profile
-                true
+                NetworkOptimizationOutcome.APPLIED
             }
         )
 
@@ -135,6 +138,53 @@ class NetworkVoiceSpanishIntegrationTest {
     }
 
     @Test
+    fun staleLeaseCallbackCannotReleaseNewerWifiLease() {
+        assertFalse(
+            NetworkLeaseGenerationPolicy.shouldRelease(
+                callbackGeneration = 1L,
+                activeGeneration = 2L
+            )
+        )
+        assertTrue(
+            NetworkLeaseGenerationPolicy.shouldRelease(
+                callbackGeneration = 2L,
+                activeGeneration = 2L
+            )
+        )
+    }
+
+    @Test
+    fun ssdpParserRejectsNonSuccessResponses() {
+        val parsed = RouterDiscoveryParser.parseSsdpResponse(
+            "HTTP/1.1 404 Not Found\r\nLOCATION: http://192.0.2.1/device.xml\r\n"
+        )
+        assertEquals(null, parsed)
+    }
+
+    @Test
+    fun releaseOnlyOptimizationIsNotReportedAsFailure() {
+        val result = VoiceActionResult.NetworkReport(
+            request = NetworkVoiceRequest.OPTIMIZE,
+            snapshot = VoiceNetworkSnapshot(
+                metrics = NetworkMetrics(
+                    averageLatencyMs = 120.0,
+                    jitterMs = 20.0,
+                    packetLossPercent = 2.0,
+                    spikeCount = 1,
+                    stability = NetworkStability.FAIR
+                ),
+                recommendedProfile = NetworkGameProfile.BALANCED,
+                metered = false
+            ),
+            optimizationOutcome = NetworkOptimizationOutcome.RELEASED_OR_NOT_NEEDED
+        )
+
+        val text = NetworkVoiceResponseText.format(result).lowercase()
+        assertFalse(text.contains("no pude aplicar"))
+        assertTrue(text.contains("no fue necesario"))
+    }
+
+    @Test
     fun onlyRealPriorityActivationIsReportedAsApplied() {
         assertTrue(
             NetworkOptimizationResultPolicy.reportsApplied(
@@ -195,7 +245,7 @@ class NetworkVoiceSpanishIntegrationTest {
                 recommendedProfile = NetworkGameProfile.COMPETITIVE,
                 metered = false
             ),
-            optimizationApplied = true
+            optimizationOutcome = NetworkOptimizationOutcome.APPLIED
         )
 
         val text = NetworkVoiceResponseText.format(result).lowercase()
