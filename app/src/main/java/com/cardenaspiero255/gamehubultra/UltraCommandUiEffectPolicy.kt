@@ -15,4 +15,9 @@ internal object UltraCommandUiEffectPolicy {
             is VoiceActionResult.ProfileSelected -> result.profile
             else -> null
         }
+
+    fun recommendedProfileForUserApply(
+        result: VoiceActionResult
+    ): PerformanceProfile? =
+        (result as? VoiceActionResult.AiAdvice)?.advice?.suggestedProfile
 }
