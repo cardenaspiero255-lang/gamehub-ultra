@@ -6,6 +6,7 @@ import com.cardenaspiero255.gamehubultra.network.NetworkStability
 import com.cardenaspiero255.gamehubultra.network.NetworkLockLifecyclePolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationResultPolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkPriorityAction
+import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import kotlin.test.Test
@@ -64,6 +65,73 @@ class NetworkVoiceSpanishIntegrationTest {
             VoiceCommand.Network(NetworkVoiceRequest.OPTIMIZE),
             commandRoute.command
         )
+    }
+
+    @Test
+    fun savedGameAliasBeatsBuiltInNetworkPhrase() {
+        val command = VoiceCommandParser.parse(
+            transcript = "Ultra, optimiza mi internet",
+            knownGameAliases = setOf("optimiza mi internet")
+        )
+        assertIs<VoiceCommand.OpenGame>(command)
+    }
+
+    @Test
+    fun explicitGameLaunchBeatsNetworkPhraseInsideTitle() {
+        val command = VoiceCommandParser.parse("Ultra, abre Packet Loss")
+        val launch = assertIs<VoiceCommand.OpenGame>(command)
+        assertTrue(launch.query.contains("packet loss"))
+    }
+
+    @Test
+    fun measuredNetworkSamplesDriveTheRecommendedProfile() {
+        val snapshot = VoiceNetworkSnapshotFactory.from(
+            listOf(
+                ConnectivityTelemetry(
+                    networkHandle = 7L,
+                    connected = true,
+                    validated = true,
+                    metered = false,
+                    transport = "Wi-Fi",
+                    downstreamBandwidthKbps = 500_000,
+                    latencyMs = 35L
+                ),
+                ConnectivityTelemetry(
+                    networkHandle = 7L,
+                    connected = true,
+                    validated = true,
+                    metered = false,
+                    transport = "Wi-Fi",
+                    downstreamBandwidthKbps = 500_000,
+                    latencyMs = 41L
+                )
+            )
+        )
+
+        requireNotNull(snapshot)
+        assertEquals(38.0, snapshot.metrics.averageLatencyMs)
+        assertEquals(NetworkGameProfile.COMPETITIVE, snapshot.recommendedProfile)
+    }
+
+    @Test
+    fun unmeasuredWifiDoesNotPretendToBeCompetitive() {
+        val snapshot = VoiceNetworkSnapshotFactory.from(
+            listOf(
+                ConnectivityTelemetry(
+                    networkHandle = 9L,
+                    connected = true,
+                    validated = true,
+                    metered = false,
+                    transport = "Wi-Fi",
+                    downstreamBandwidthKbps = 500_000,
+                    latencyMs = null
+                )
+            )
+        )
+
+        requireNotNull(snapshot)
+        assertEquals(NetworkStability.UNMEASURED, snapshot.metrics.stability)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
     }
 
     @Test
