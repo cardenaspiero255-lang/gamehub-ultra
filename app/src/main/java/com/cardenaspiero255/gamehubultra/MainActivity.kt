@@ -247,7 +247,6 @@ private fun GameHubUltraApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val ultraQueryRunner = remember(scope) { UltraAssistantQueryRunner(scope) }
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
@@ -370,6 +369,23 @@ private fun GameHubUltraApp(
                 timestampMillis = timestampMillis
             )
         }
+    }
+
+    val latestScreenGameState = rememberUpdatedState(uiState.selectedGamePackage)
+    val latestScreenConversationState = rememberUpdatedState(ultraConversation)
+    val latestConversationPublisherState =
+        rememberUpdatedState<(List<String>) -> Unit> { next ->
+            updateUltraConversation(next)
+        }
+    val ultraQueryRunner = remember(scope) {
+        UltraAssistantQueryRunner(
+            ownerScope = scope,
+            currentGamePackage = { latestScreenGameState.value },
+            currentConversation = { latestScreenConversationState.value },
+            publishConversation = { next ->
+                latestConversationPublisherState.value(next)
+            }
+        )
     }
 
     DisposableEffect(aiAdvisor) {
@@ -1600,10 +1616,25 @@ private fun VoiceAssistantCard(
             maxEntries = MAX_CHAT_HISTORY
         )
 
-        chatMessage = ""
-        latestOnConversationChanged(withUser)
-
-        queryRunner.launch {
+        val failureAnswer = "No pude completar la consulta. Inténtalo de nuevo."
+        val submission = queryRunner.launch(
+            onAccepted = {
+                chatMessage = ""
+                latestOnConversationChanged(withUser)
+            },
+            onFailure = {
+                val published = queryRunner.appendAssistantIfCurrentGame(
+                    originatingGamePackage = originatingGamePackage,
+                    assistantEntry = "Ultra: " + failureAnswer,
+                    maxEntries = MAX_CHAT_HISTORY
+                )
+                if (published) {
+                    withContext(Dispatchers.Main) {
+                        response = failureAnswer
+                    }
+                }
+            }
+        ) {
             val deviceStatus = VoiceDeviceStatusProvider.read(context)
             val route = UltraTypedChatRoutePlanner.route(
                 message = message,
@@ -1620,17 +1651,13 @@ private fun VoiceAssistantCard(
             when (route) {
                 is UltraAgentRoute.Utility -> {
                     val answer = route.answer.message
-                    val withAnswer = UltraConversationPolicy.append(
-                        history = withUser,
-                        entry = "Ultra: " + answer,
+                    val published = queryRunner.appendAssistantIfCurrentGame(
+                        originatingGamePackage = originatingGamePackage,
+                        assistantEntry = "Ultra: " + answer,
                         maxEntries = MAX_CHAT_HISTORY
                     )
-                    withContext(Dispatchers.Main) {
-                        UltraConversationScopePolicy.runIfSameGame(
-                            originatingGamePackage = originatingGamePackage,
-                            currentGamePackage = latestAiContext.selectedGamePackage
-                        ) {
-                            latestOnConversationChanged(withAnswer)
+                    if (published) {
+                        withContext(Dispatchers.Main) {
                             response = answer
                         }
                     }
@@ -1653,23 +1680,14 @@ private fun VoiceAssistantCard(
                             conversation = previousConversation
                         )
                     }
-                    val withAnswer =
-                        if (resetConversationAfterCommand) {
-                            listOf("Ultra: " + answer)
-                        } else {
-                            UltraConversationPolicy.append(
-                                history = withUser,
-                                entry = "Ultra: " + answer,
-                                maxEntries = MAX_CHAT_HISTORY
-                            )
-                        }
-
-                    withContext(Dispatchers.Main) {
-                        UltraConversationScopePolicy.runIfSameGame(
-                            originatingGamePackage = originatingGamePackage,
-                            currentGamePackage = latestAiContext.selectedGamePackage
-                        ) {
-                            latestOnConversationChanged(withAnswer)
+                    val published = queryRunner.appendAssistantIfCurrentGame(
+                        originatingGamePackage = originatingGamePackage,
+                        assistantEntry = "Ultra: " + answer,
+                        maxEntries = MAX_CHAT_HISTORY,
+                        resetConversation = resetConversationAfterCommand
+                    )
+                    if (published) {
+                        withContext(Dispatchers.Main) {
                             response = answer
                         }
                     }
@@ -1714,32 +1732,30 @@ private fun VoiceAssistantCard(
                         }
                     )
                     val answer = VoiceResponseFormatter.format(context, result)
-                    val withAnswer = UltraConversationPolicy.append(
-                        history = withUser,
-                        entry = "Ultra: " + answer,
+                    val published = queryRunner.appendAssistantIfCurrentGame(
+                        originatingGamePackage = originatingGamePackage,
+                        assistantEntry = "Ultra: " + answer,
                         maxEntries = MAX_CHAT_HISTORY
                     )
 
-                    withContext(Dispatchers.Main) {
-                        if (result is VoiceActionResult.GameOpened) {
-                            onGameSelected(result.game.packageName)
-                        }
-                        UltraCommandUiEffectPolicy
-                            .profileForCurrentGameCallback(result)
-                            ?.let(onProfileSelected)
-                        val recommended =
-                            UltraCommandUiEffectPolicy.recommendedProfileForUserApply(result)
-                        UltraConversationScopePolicy.runIfSameGame(
-                            originatingGamePackage = originatingGamePackage,
-                            currentGamePackage = latestAiContext.selectedGamePackage
-                        ) {
-                            recommendedProfile = recommended
-                            latestOnConversationChanged(withAnswer)
+                    if (published) {
+                        withContext(Dispatchers.Main) {
+                            if (result is VoiceActionResult.GameOpened) {
+                                onGameSelected(result.game.packageName)
+                            }
+                            UltraCommandUiEffectPolicy
+                                .profileForCurrentGameCallback(result)
+                                ?.let(onProfileSelected)
+                            recommendedProfile =
+                                UltraCommandUiEffectPolicy.recommendedProfileForUserApply(result)
                             response = answer
                         }
                     }
                 }
             }
+        }
+        if (submission is UltraAssistantQuerySubmission.Rejected) {
+            return
         }
     }
 
