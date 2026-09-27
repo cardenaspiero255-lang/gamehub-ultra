@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
+import com.cardenaspiero255.gamehubultra.ai.UltraQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraTypedChatRoutePlanner
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
@@ -219,6 +220,7 @@ class MainActivity : ComponentActivity() {
                         initialState = initialState,
                         device = device,
                         viewModel = gameHubViewModel,
+                        queryExecutor = UltraProductionQueryExecutor,
                         initialTab = initialTab,
                         onProfileApplied = { profile ->
                             performanceController.apply(profile, window)
@@ -239,6 +241,7 @@ private fun GameHubUltraApp(
     initialState: PerformanceState,
     device: DeviceInfo,
     viewModel: GameHubViewModel,
+    queryExecutor: UltraQueryExecutor,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
@@ -752,6 +755,7 @@ private fun GameHubUltraApp(
                 },
                 aiContext = aiContext,
                 aiAdvisor = aiAdvisor,
+                queryExecutor = queryExecutor,
                 queryRunner = ultraQueryRunner,
                 conversation = ultraConversation,
                 onConversationChanged = ::updateUltraConversation,
@@ -870,6 +874,7 @@ private fun GameHubUltraApp(
                     UltraAssistantSidePanel(
                         aiContext = aiContext,
                         aiAdvisor = aiAdvisor,
+                        queryExecutor = queryExecutor,
                         queryRunner = ultraQueryRunner,
                         conversation = ultraConversation,
                         onConversationChanged = ::updateUltraConversation,
@@ -986,6 +991,7 @@ private fun WideNavigationRail(
 private fun UltraAssistantSidePanel(
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryExecutor: UltraQueryExecutor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
@@ -1012,6 +1018,7 @@ private fun UltraAssistantSidePanel(
             onGameSelected = onGameSelected,
             aiContext = aiContext,
             aiAdvisor = aiAdvisor,
+            queryExecutor = queryExecutor,
             queryRunner = queryRunner,
             conversation = conversation,
             onConversationChanged = onConversationChanged
@@ -1045,6 +1052,7 @@ private fun HomeScreen(
     onApplyAdaptiveProfile: () -> Unit,
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryExecutor: UltraQueryExecutor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
@@ -1150,6 +1158,7 @@ private fun HomeScreen(
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
                     aiAdvisor = aiAdvisor,
+                    queryExecutor = queryExecutor,
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged
@@ -1208,6 +1217,7 @@ private fun HomeScreen(
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
                     aiAdvisor = aiAdvisor,
+                    queryExecutor = queryExecutor,
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged
@@ -1568,6 +1578,7 @@ private fun VoiceAssistantCard(
     onGameSelected: (String) -> Unit,
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryExecutor: UltraQueryExecutor,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit
@@ -1661,7 +1672,7 @@ private fun VoiceAssistantCard(
                 }
 
                 is UltraAgentRoute.Chat -> {
-                    val answer = UltraProductionQueryExecutor.answer(
+                    val answer = queryExecutor.answer(
                         route = route,
                         stableKnowledgeFallback = {
                             aiAdvisor.generalKnowledgeChatOrNull(
@@ -1852,7 +1863,7 @@ private fun VoiceAssistantCard(
                         }
 
                         is UltraAgentRoute.Chat -> {
-                            val answer = UltraProductionQueryExecutor.answer(
+                            val answer = queryExecutor.answer(
                                 route = route,
                                 stableKnowledgeFallback = {
                                     aiAdvisor.generalKnowledgeChatOrNull(

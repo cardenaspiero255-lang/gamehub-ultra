@@ -3,13 +3,13 @@ package com.cardenaspiero255.gamehubultra.ai
 import com.cardenaspiero255.gamehubultra.BuildConfig
 
 /**
- * Single production entry point for general chat queries.
+ * Production composition root for Ultra chat queries.
  *
- * Stable questions stay on the local path. Queries that require current data
- * use the verified backend when Supabase is configured; otherwise Ultra
- * abstains instead of presenting stale local knowledge as current.
+ * Provider construction stays here while query/fallback behavior lives behind
+ * [UltraQueryExecutor], keeping UI and voice consumers independent from the
+ * concrete research stack.
  */
-object UltraProductionQueryExecutor {
+object UltraProductionQueryExecutor : UltraQueryExecutor {
     private val productionProviders: List<UltraResearchProvider> =
         if (
             BuildConfig.SUPABASE_URL.isNotBlank() &&
@@ -25,28 +25,22 @@ object UltraProductionQueryExecutor {
             emptyList()
         }
 
-    private val verifiedResearchEngine = UltraVerifiedResearchEngine(
-        providers = productionProviders
-    )
-    private val coordinator = UltraQueryExecutionCoordinator(
-        researchEngine = verifiedResearchEngine
+    private val delegate: UltraQueryExecutor = DefaultUltraQueryExecutor(
+        coordinator = UltraQueryExecutionCoordinator(
+            researchEngine = UltraVerifiedResearchEngine(
+                providers = productionProviders
+            )
+        )
     )
 
-    fun answer(
+    override fun answer(
         route: UltraAgentRoute.Chat,
-        stableKnowledgeFallback: (() -> String?)? = null,
+        stableKnowledgeFallback: (() -> String?)?,
         localChat: () -> String
-    ): String {
-        val request = route.query ?: return localChat()
-        val fallback =
-            if (request.requiresInternet) {
-                stableKnowledgeFallback ?: { localChat() }
-            } else {
-                { localChat() }
-            }
-        return coordinator.answer(
-            request = request,
-            localChat = fallback
-        ).message
-    }
+    ): String =
+        delegate.answer(
+            route = route,
+            stableKnowledgeFallback = stableKnowledgeFallback,
+            localChat = localChat
+        )
 }
