@@ -224,6 +224,7 @@ class UltraAssistantSessionControllerTest {
     @Test
     fun explicitClearPersistsWhenVisibleConversationIsAlreadyEmptyAfterLoadFailure() = runBlocking {
         val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var attempts = 0
         var clearedScope: UltraMemoryScope? = null
 
         val memory = object : UltraAssistantSessionMemory {
@@ -232,7 +233,11 @@ class UltraAssistantSessionControllerTest {
             override suspend fun recentConversationLines(
                 limit: Int,
                 scope: UltraMemoryScope
-            ): List<String> = error("storage unavailable")
+            ): List<String> {
+                attempts += 1
+                if (attempts == 1) error("storage unavailable")
+                return listOf("Ultra: historial viejo")
+            }
 
             override fun enqueueSyncConversation(
                 previous: List<String>,
@@ -262,6 +267,12 @@ class UltraAssistantSessionControllerTest {
 
             assertEquals("game.a", clearedScope?.gamePackage)
             assertEquals("local", clearedScope?.userId)
+
+            controller.retryLoad().join()
+
+            assertNull(controller.loadError.value)
+            assertTrue(controller.conversation.value.isEmpty())
+            assertEquals(2, attempts)
         } finally {
             ownerScope.cancel()
         }
