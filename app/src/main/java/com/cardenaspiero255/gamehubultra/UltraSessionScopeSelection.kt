@@ -22,3 +22,26 @@ internal fun isUltraAssistantInputReady(
     selection != null &&
         controllerScopeReady &&
         selection.gamePackage == controllerGamePackage
+
+
+internal data class UltraVoiceTurnScope(
+    val gamePackage: String?
+)
+
+internal fun captureUltraVoiceTurnScope(
+    assistantInputReady: Boolean,
+    gamePackage: String?
+): UltraVoiceTurnScope? =
+    if (assistantInputReady) {
+        UltraVoiceTurnScope(gamePackage = gamePackage)
+    } else {
+        null
+    }
+
+internal fun isUltraVoiceTurnScopeCurrent(
+    captured: UltraVoiceTurnScope,
+    assistantInputReady: Boolean,
+    currentGamePackage: String?
+): Boolean =
+    assistantInputReady &&
+        captured.gamePackage == currentGamePackage
