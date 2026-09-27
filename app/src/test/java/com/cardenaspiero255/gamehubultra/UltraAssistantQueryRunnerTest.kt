@@ -404,6 +404,40 @@ class UltraAssistantQueryRunnerTest {
         }
     }
 
+    @Test
+    fun gameChangeBeforeScheduledExecutionDoesNotRecordAcceptedTurn() = runBlocking {
+        val executionDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var currentGame: String? = "game.a"
+        var acceptedTurns = 0
+        var executed = false
+
+        val runner = UltraAssistantQueryRunner(
+            ownerScope = ownerScope,
+            executionDispatcher = executionDispatcher,
+            publicationDispatcher = Dispatchers.Unconfined,
+            currentGamePackage = { currentGame },
+            currentConversation = { emptyList() },
+            publishConversation = {}
+        )
+
+        val submission = runner.launch(
+            onAccepted = { acceptedTurns += 1 },
+            onFailure = {}
+        ) {
+            executed = true
+        }
+        val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+        currentGame = "game.b"
+        executionDispatcher.runAll()
+        accepted.job.join()
+
+        assertEquals(0, acceptedTurns)
+        assertFalse(executed)
+        assertFalse(runner.isRunning.value)
+    }
+
 }
 
 private class QueuedTestDispatcher : CoroutineDispatcher() {
