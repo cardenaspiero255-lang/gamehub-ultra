@@ -16,6 +16,8 @@ data class UltraResearchEvidence(
     val value: String,
     val displayText: String,
     val sourceId: String,
+    val supportingSourceIds: List<String> = emptyList(),
+    val independentSourceCount: Int = 1,
     val authoritative: Boolean = false
 )
 
@@ -213,14 +215,26 @@ class UltraVerifiedResearchEngine(
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
-                sources = dominantClaim.mapNotNull { it.evidence?.sourceId }.distinct()
+                sources = dominantClaim
+                    .flatMap { attempt -> attempt.evidence?.allSourceIds().orEmpty() }
+                    .distinct()
             )
         }
 
         val agreeing = values.values.single()
         val evidence = agreeing.first().evidence!!
+        val sources = agreeing
+            .flatMap { attempt -> attempt.evidence?.allSourceIds().orEmpty() }
+            .distinct()
+        val corroborationCount = maxOf(
+            agreeing.size,
+            sources.size,
+            agreeing.maxOfOrNull {
+                it.evidence?.independentSourceCount?.coerceAtLeast(1) ?: 1
+            } ?: 1
+        )
         val confidence = when {
-            agreeing.size >= 2 -> UltraAnswerConfidence.HIGH
+            corroborationCount >= 2 -> UltraAnswerConfidence.HIGH
             evidence.authoritative -> UltraAnswerConfidence.MEDIUM
             else -> UltraAnswerConfidence.LOW
         }
@@ -229,14 +243,14 @@ class UltraVerifiedResearchEngine(
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
-                sources = agreeing.mapNotNull { it.evidence?.sourceId }.distinct()
+                sources = sources
             )
         }
 
         val result = UltraVerifiedResearchResult(
             message = evidence.displayText,
             confidence = confidence,
-            sources = agreeing.mapNotNull { it.evidence?.sourceId }.distinct(),
+            sources = sources,
             abstained = false,
             timedOut = timedOut,
             fallbackUsed = fallbackUsed
@@ -269,6 +283,12 @@ class UltraVerifiedResearchEngine(
             fallbackUsed = fallbackUsed,
             sensitiveInputBlocked = sensitiveInputBlocked
         )
+
+    private fun UltraResearchEvidence.allSourceIds(): List<String> =
+        (listOf(sourceId) + supportingSourceIds)
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
 
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
