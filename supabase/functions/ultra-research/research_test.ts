@@ -1160,7 +1160,6 @@ Deno.test("Gemini failure preserves verified provider answer", async () => {
   }
 });
 
-
 Deno.test("Spanish news title using preposition a is not rejected as English", async () => {
   const deps: ResearchDependencies = {
     fetcher: () =>
