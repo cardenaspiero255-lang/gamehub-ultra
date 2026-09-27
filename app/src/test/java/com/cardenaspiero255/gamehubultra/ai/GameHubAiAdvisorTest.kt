@@ -230,6 +230,36 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun shortSpanishRepliesWithEnglishProperNamesAreKept() {
+        listOf(
+            "I Am Alive es divertido.",
+            "Hello Games es un estudio de videojuegos."
+        ).forEach { modelReply ->
+            val adapter = object : LocalAiModelAdapter {
+                override fun isAvailable() = true
+
+                override fun advise(
+                    question: String,
+                    context: GameHubAiContext
+                ): LocalAiActionCandidate? = null
+
+                override fun chat(
+                    message: String,
+                    context: GameHubAiContext,
+                    conversation: List<String>
+                ): String = modelReply
+            }
+
+            val answer = GameHubAiAdvisor(adapter).chat(
+                message = "Ultra, háblame de ese juego",
+                context = healthyContext
+            )
+
+            assertEquals(modelReply, answer)
+        }
+    }
+
+    @Test
     fun geminiChatPromptForcesSpanishOutput() {
         val prompt = buildGeminiChatPrompt(
             message = "Hello, how are you?",
