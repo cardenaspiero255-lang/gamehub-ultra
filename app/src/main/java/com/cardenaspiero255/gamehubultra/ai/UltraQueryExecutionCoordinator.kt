@@ -30,7 +30,7 @@ class UltraQueryExecutionCoordinator(
                 request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH
 
         if (!requiresVerifiedResearch) {
-            val localAnswer = localChat()?.takeIf(String::isNotBlank)
+            val localAnswer = safeLocalAnswer(localChat)
             return if (localAnswer != null) {
                 UltraQueryExecutionAnswer(
                     message = localAnswer,
@@ -54,7 +54,7 @@ class UltraQueryExecutionCoordinator(
                 !research.sensitiveInputBlocked
 
         if (canUseLocalStableFallback) {
-            val localAnswer = localChat()?.takeIf(String::isNotBlank)
+            val localAnswer = safeLocalAnswer(localChat)
             if (localAnswer != null) {
                 return UltraQueryExecutionAnswer(
                     message = localAnswer,
@@ -81,4 +81,11 @@ class UltraQueryExecutionCoordinator(
             abstained = research.abstained
         )
     }
+    private fun safeLocalAnswer(localChat: () -> String?): String? =
+        try {
+            localChat()?.takeIf(String::isNotBlank)
+        } catch (_: Exception) {
+            null
+        }
+
 }
