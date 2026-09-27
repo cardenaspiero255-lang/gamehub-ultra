@@ -395,3 +395,170 @@ Deno.test("general knowledge returns a sourced answer instead of the gaming fall
     throw new Error("expected a visible source");
   }
 });
+
+
+Deno.test("explicit general-knowledge kind wins over incidental price words", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        searchQuery = url.searchParams.get("srsearch") ?? "";
+        return jsonResponse({
+          query: { search: [{ title: "Valor esperado" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/page/summary/")
+      ) {
+        return jsonResponse({
+          title: "Valor esperado",
+          type: "standard",
+          extract:
+            "El valor esperado es una medida del resultado medio de una variable aleatoria.",
+          content_urls: {
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Valor_esperado",
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, qué es el valor esperado",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected general knowledge result");
+  if (!searchQuery.toLowerCase().includes("valor esperado")) {
+    throw new Error("expected Wikipedia research, not marketplace price lookup");
+  }
+});
+
+Deno.test("general-knowledge follow-up searches with previous topic context", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        searchQuery = url.searchParams.get("srsearch") ?? "";
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/page/summary/")
+      ) {
+        return jsonResponse({
+          title: "Vulkan",
+          type: "standard",
+          extract: "Vulkan es una API gráfica de bajo nivel.",
+          content_urls: {
+            desktop: { page: "https://es.wikipedia.org/wiki/Vulkan" },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿y para qué sirve?",
+    deps,
+    "Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected contextual answer");
+  if (!searchQuery.toLowerCase().includes("vulkan")) {
+    throw new Error("expected previous topic in the research query");
+  }
+});
+
+Deno.test("Wikipedia disambiguation summaries are not treated as authoritative answers", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({
+          query: { search: [{ title: "Mercurio" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/page/summary/")
+      ) {
+        return jsonResponse({
+          title: "Mercurio",
+          type: "disambiguation",
+          extract: "Mercurio puede referirse a varios conceptos.",
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, qué es Mercurio",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (!result.abstained) {
+    throw new Error("disambiguation text must not be returned as the answer");
+  }
+});
+
+Deno.test("Wikipedia requests identify the GameHub Ultra operator", async () => {
+  const userAgents: string[] = [];
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const headers = new Headers(init?.headers);
+      userAgents.push(headers.get("User-Agent") ?? "");
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Vulkan" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Vulkan",
+        type: "standard",
+        extract: "Vulkan es una API gráfica.",
+      });
+    },
+    env: () => undefined,
+  };
+
+  await routeResearchQuery(
+    "Ultra, qué es Vulkan",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (
+    userAgents.some((value) =>
+      !value.includes("github.com/cardenaspiero255-lang/gamehub-ultra")
+    )
+  ) {
+    throw new Error("expected operator contact in Wikipedia User-Agent");
+  }
+});
