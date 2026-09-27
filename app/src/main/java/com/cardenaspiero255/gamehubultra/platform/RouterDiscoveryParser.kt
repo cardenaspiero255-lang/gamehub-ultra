@@ -14,6 +14,16 @@ data class RouterIdentity(
 
 object RouterDiscoveryParser {
     fun parseSsdpResponse(response: String): RouterSsdpResponse? {
+        val statusLine = response.lineSequence()
+            .map(String::trim)
+            .firstOrNull(String::isNotBlank)
+            ?: return null
+        if (!Regex("""^HTTP/\d(?:\.\d)?\s+200(?:\s|$)""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(statusLine)
+        ) {
+            return null
+        }
+
         val headers = response
             .lineSequence()
             .mapNotNull { line ->
