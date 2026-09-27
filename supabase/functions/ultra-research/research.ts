@@ -619,27 +619,56 @@ async function priceEvidence(
 export async function routeResearchQuery(
   query: string,
   deps: ResearchDependencies,
+  context = "",
+  kind = "",
 ): Promise<ResearchResult> {
   const clean = normalize(query);
+  const cleanContext = normalize(context);
+  const combinedSignals = `${clean} ${cleanContext}`.trim();
 
-  if (/\b(clima|tiempo de hoy|weather|pronostico|forecast)\b/.test(clean)) {
+  const weatherSignal = /\b(clima|tiempo de hoy|weather|pronostico|forecast)\b/;
+  const newsSignal =
+    /\b(noticias|news|salio nuevo|que salio nuevo|latest news|released)\b/;
+  const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;
+  const comparisonSignal = /\b(compara|compare|versus|vs)\b/;
+  const specsSignal =
+    /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
+
+  if (
+    weatherSignal.test(clean) ||
+    (kind === "CURRENT_DATA" && weatherSignal.test(cleanContext))
+  ) {
     return await weatherEvidence(query, deps);
   }
   if (
-    /\b(noticias|news|salio nuevo|que salio nuevo|latest news|released)\b/.test(
-      clean,
-    )
+    newsSignal.test(clean) ||
+    (kind === "CURRENT_DATA" && newsSignal.test(cleanContext))
   ) {
     return await newsEvidence(query, deps);
   }
-  if (/\b(precio|price|cuanto cuesta|valor)\b/.test(clean)) {
+  if (
+    priceSignal.test(clean) ||
+    (kind === "CURRENT_DATA" && priceSignal.test(cleanContext))
+  ) {
     return await priceEvidence(query, deps);
   }
-  if (/\b(compara|compare|versus|vs)\b/.test(clean)) {
-    return await comparisonEvidence(query, deps);
+  if (
+    comparisonSignal.test(clean) ||
+    kind === "COMPARISON_RESEARCH" ||
+    comparisonSignal.test(cleanContext)
+  ) {
+    const comparisonQuery = comparisonSignal.test(clean)
+      ? query
+      : context;
+    return await comparisonEvidence(comparisonQuery, deps);
   }
   if (
-    /\b(especificaciones|specs|specifications|ficha tecnica)\b/.test(clean)
+    specsSignal.test(clean) ||
+    specsSignal.test(cleanContext) ||
+    (
+      kind === "CURRENT_DATA" &&
+      /\b(spec|specs|ficha|modelo|hardware)\b/.test(combinedSignals)
+    )
   ) {
     return await specificationEvidenceForProduct(
       extractSpecProduct(query),
