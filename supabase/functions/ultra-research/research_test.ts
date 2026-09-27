@@ -638,7 +638,6 @@ Deno.test("Spanish factual prefixes are removed before encyclopedia search", asy
   }
 });
 
-
 Deno.test("Spanish question language ignores English words inside entity names", async () => {
   const hosts: string[] = [];
   const deps: ResearchDependencies = {
