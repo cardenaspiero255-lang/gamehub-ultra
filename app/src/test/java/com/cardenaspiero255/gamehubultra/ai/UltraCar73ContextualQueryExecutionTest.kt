@@ -163,19 +163,20 @@ class UltraCar73ContextualQueryExecutionTest {
     }
 
     @Test
-    fun lowConfidenceEvidenceDoesNotFallBackToUnverifiedLocalChat() {
-        val weakProvider = object : UltraResearchProvider {
-            override val id = "weak-source"
+    fun contradictoryEvidenceDoesNotFallBackToUnverifiedLocalChat() {
+        fun provider(id: String, value: String) = object : UltraResearchProvider {
+            override val id = id
 
             override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
                 UltraResearchEvidence(
                     claimKey = "sentimientos",
-                    value = "definicion",
-                    displayText = "Una definición no corroborada.",
-                    sourceId = "weak-source",
+                    value = value,
+                    displayText = "Definición de $id",
+                    sourceId = id,
                     authoritative = false
                 )
         }
+
         val request = UltraGeneralQueryRequest(
             originalText = "Ultra, qué son los sentimientos",
             kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
@@ -183,11 +184,19 @@ class UltraCar73ContextualQueryExecutionTest {
             requiresFreshData = false,
             timeoutMillis = 5_000L
         )
-        val engine = UltraVerifiedResearchEngine(listOf(weakProvider))
+        val engine = UltraVerifiedResearchEngine(
+            listOf(
+                provider("source-one", "definition-a"),
+                provider("source-two", "definition-b")
+            )
+        )
 
         val directResearch = engine.answer(request)
         assertTrue(directResearch.abstained)
-        assertEquals(listOf("weak-source"), directResearch.sources)
+        assertEquals(
+            setOf("source-one", "source-two"),
+            directResearch.sources.toSet()
+        )
 
         val coordinator = UltraQueryExecutionCoordinator(engine)
         var localCalls = 0
@@ -201,7 +210,10 @@ class UltraCar73ContextualQueryExecutionTest {
 
         assertTrue(answer.abstained)
         assertFalse(answer.verified)
-        assertEquals(listOf("weak-source"), answer.sources)
+        assertEquals(
+            setOf("source-one", "source-two"),
+            answer.sources.toSet()
+        )
         assertEquals(0, localCalls)
         engine.close()
     }
