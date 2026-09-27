@@ -129,6 +129,40 @@ class UltraCar73ContextualQueryExecutionTest {
     }
 
     @Test
+    fun stableGeneralKnowledgeFallsBackToLocalChatWhenResearchIsUnavailable() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                error("provider unavailable")
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+        var localCalls = 0
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify(
+                "Ultra, qué son los sentimientos"
+            ),
+            localChat = {
+                localCalls += 1
+                "Los sentimientos son experiencias afectivas que interpretamos a partir de emociones, pensamientos y contexto."
+            }
+        )
+
+        assertEquals(
+            "Los sentimientos son experiencias afectivas que interpretamos a partir de emociones, pensamientos y contexto.",
+            answer.message
+        )
+        assertFalse(answer.verified)
+        assertFalse(answer.abstained)
+        assertTrue(answer.fallbackUsed)
+        assertEquals(1, localCalls)
+        engine.close()
+    }
+
+    @Test
     fun productionFreshQueryNeverFallsBackToUnverifiedLocalChat() {
         var localCalls = 0
         val route = UltraAgentRoute.Chat(
