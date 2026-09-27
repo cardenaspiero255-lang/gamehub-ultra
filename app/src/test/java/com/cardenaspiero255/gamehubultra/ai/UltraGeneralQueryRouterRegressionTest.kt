@@ -120,6 +120,52 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun commonFactualInterrogativesUseVerifiedResearch() {
+        val spanishCount = UltraGeneralQueryRouter.classify(
+            "Ultra, cuántos planetas hay en el sistema solar"
+        )
+        val spanishName = UltraGeneralQueryRouter.classify(
+            "Ultra, cómo se llama la capital de Francia"
+        )
+        val englishCount = UltraGeneralQueryRouter.classify(
+            "Ultra, how many moons does Mars have?"
+        )
+
+        assertTrue(spanishCount.requiresInternet)
+        assertTrue(spanishName.requiresInternet)
+        assertTrue(englishCount.requiresInternet)
+        assertFalse(spanishCount.requiresFreshData)
+        assertFalse(spanishName.requiresFreshData)
+        assertFalse(englishCount.requiresFreshData)
+    }
+
+    @Test
+    fun definitionOfFreshKeywordUsesGeneralKnowledge() {
+        val weatherDefinition = UltraGeneralQueryRouter.classify(
+            "Ultra, qué es el clima"
+        )
+        val priceDefinition = UltraGeneralQueryRouter.classify(
+            "Ultra, what is price?"
+        )
+
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, weatherDefinition.kind)
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, priceDefinition.kind)
+        assertFalse(weatherDefinition.requiresFreshData)
+        assertFalse(priceDefinition.requiresFreshData)
+    }
+
+    @Test
+    fun explicitlyCurrentFactualQuestionIsMarkedFresh() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, cuál es la versión actual de Android"
+        )
+
+        assertTrue(request.requiresInternet)
+        assertTrue(request.requiresFreshData)
+        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+    }
+
+    @Test
     fun ordinaryConversationStaysOnLocalChatPath() {
         val greeting = UltraGeneralQueryRouter.classify(
             "Ultra, hola, cómo estás"
