@@ -81,6 +81,7 @@ class UltraWakeService : Service() {
     private var stopped = false
     private var lastTranscriptAt = 0L
     private var recognitionStarting = false
+    private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val ultraMemoryStore by lazy {
         UltraConversationMemoryStore.get(applicationContext)
     }
@@ -253,7 +254,7 @@ class UltraWakeService : Service() {
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, UltraSpeechLocalePolicy.PREFERRED_TAG)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             if (sessionPolicy.preferredMode() == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
@@ -310,6 +311,13 @@ class UltraWakeService : Service() {
         }
 
         override fun onError(error: Int) {
+            val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
+                error = error,
+                currentTag = recognitionLanguageTag
+            )
+            if (fallback != null) {
+                recognitionLanguageTag = fallback
+            }
             if (persistentSessionActive) {
                 sessionPolicy.onPersistentSessionFailure()
                 closePersistentSpeechSource()
