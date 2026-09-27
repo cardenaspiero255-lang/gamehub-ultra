@@ -439,11 +439,7 @@ sealed interface UltraMemoryToolRequest {
         val message: String,
         val scope: UltraMemoryScope,
         val limit: Int = 6
-    ) : UltraMemoryToolRequest {
-        init {
-            require(limit in 1..100) { "Memory recall limit must be between 1 and 100." }
-        }
-    }
+    ) : UltraMemoryToolRequest
 }
 
 sealed interface UltraMemoryToolResponse {
@@ -482,7 +478,13 @@ interface UltraLongTermMemoryGateway :
                         )
                     )
 
-                is UltraMemoryToolRequest.Recall ->
+                is UltraMemoryToolRequest.Recall -> {
+                    if (request.limit !in 1..100) {
+                        return UltraToolExecution.invalidInput(
+                            descriptor = descriptor,
+                            message = "El límite de recuerdos debe estar entre 1 y 100."
+                        )
+                    }
                     UltraMemoryToolResponse.Recalled(
                         recallContext(
                             message = request.message,
@@ -490,6 +492,7 @@ interface UltraLongTermMemoryGateway :
                             limit = request.limit
                         )
                     )
+                }
             }
         }
 }
