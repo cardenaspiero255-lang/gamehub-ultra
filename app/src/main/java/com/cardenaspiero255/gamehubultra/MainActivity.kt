@@ -1066,7 +1066,7 @@ private fun HomeScreen(
     val homeShapes = MaterialTheme.shapes
     val homeColorScheme = darkColorScheme(
         primary = UltraHomeRed,
-        onPrimary = Color.White,
+        onPrimary = Color.Black,
         background = UltraHomeBlack,
         onBackground = Color.White,
         surface = UltraHomePanel,
@@ -1930,8 +1930,16 @@ applyNetworkProfile = { profile ->
             title = { Text("Ultra") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    latestConversation.takeLast(MAX_CHAT_HISTORY).forEach { entry ->
-                        Text(entry, style = MaterialTheme.typography.bodyMedium)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        latestConversation.takeLast(MAX_CHAT_HISTORY).forEach { entry ->
+                            Text(entry, style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                     OutlinedTextField(
                         value = chatMessage,
