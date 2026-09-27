@@ -218,4 +218,6 @@
     <string name="peripherals_loading">Checking connected peripherals…</string>
     <string name="peripherals_none_detected">No external input peripherals detected.</string>
     <string name="peripherals_audio_label">External audio outputs</string>
+    <string name="ultra_history_load_failed">I couldn’t load Ultra’s history.</string>
+    <string name="ultra_history_retry">Retry history</string>
 </resources>
