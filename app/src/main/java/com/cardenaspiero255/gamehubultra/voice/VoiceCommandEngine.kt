@@ -1,5 +1,12 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import com.cardenaspiero255.gamehubultra.tools.UltraToolContract
+import com.cardenaspiero255.gamehubultra.tools.UltraToolDescriptor
+import com.cardenaspiero255.gamehubultra.tools.UltraToolExecution
+import com.cardenaspiero255.gamehubultra.tools.UltraToolKind
+import com.cardenaspiero255.gamehubultra.tools.UltraToolResult
+import com.cardenaspiero255.gamehubultra.tools.UltraToolSideEffect
+
 import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
@@ -46,7 +53,66 @@ sealed interface VoiceActionResult {
     data class Failed(val detail: String) : VoiceActionResult
 }
 
-object VoiceCommandEngine {
+data class VoiceCommandExecutionRequest(
+    val command: VoiceCommand,
+    val gamesProvider: () -> List<GameInfo> = { emptyList() },
+    val aliasGamesProvider: (() -> List<GameInfo>)? = null,
+    val launchGame: (String) -> Boolean = { false },
+    val saveSelectedGame: (String) -> Unit = {},
+    val saveSelectedProfile: (PerformanceProfile) -> Unit = {},
+    val saveSelectedGameWithProfile: ((String, PerformanceProfile) -> Unit)? = null,
+    val isProfileAvailable: (PerformanceProfile) -> Boolean = { false },
+    val statusProvider: () -> VoiceDeviceStatus = {
+        VoiceDeviceStatus(
+            batteryPercent = null,
+            thermalLabel = "No disponible"
+        )
+    },
+    val deferProfileApplication: Boolean = false,
+    val aiAdvisor: ((String) -> GameHubAiAdvice)? = null,
+    val aliasIntentResolver: NaturalLanguageIntentResolver? = null,
+    val gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
+    val saveGameAlias: (String, String) -> Unit = { _, _ -> },
+    val networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
+    val applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = {
+        NetworkOptimizationOutcome.UNAVAILABLE
+    }
+)
+
+object VoiceCommandEngine :
+    UltraToolContract<VoiceCommandExecutionRequest, VoiceActionResult> {
+
+    override val descriptor: UltraToolDescriptor =
+        UltraToolDescriptor(
+            id = "ultra.command",
+            kind = UltraToolKind.COMMAND,
+            sideEffect = UltraToolSideEffect.MIXED
+        )
+
+    override fun execute(
+        request: VoiceCommandExecutionRequest
+    ): UltraToolResult<VoiceActionResult> =
+        UltraToolExecution.protect(descriptor) {
+            execute(
+                command = request.command,
+                gamesProvider = request.gamesProvider,
+                aliasGamesProvider = request.aliasGamesProvider,
+                launchGame = request.launchGame,
+                saveSelectedGame = request.saveSelectedGame,
+                saveSelectedProfile = request.saveSelectedProfile,
+                saveSelectedGameWithProfile = request.saveSelectedGameWithProfile,
+                isProfileAvailable = request.isProfileAvailable,
+                statusProvider = request.statusProvider,
+                deferProfileApplication = request.deferProfileApplication,
+                aiAdvisor = request.aiAdvisor,
+                aliasIntentResolver = request.aliasIntentResolver,
+                gameAliasesProvider = request.gameAliasesProvider,
+                saveGameAlias = request.saveGameAlias,
+                networkStatusProvider = request.networkStatusProvider,
+                applyNetworkProfile = request.applyNetworkProfile
+            )
+        }
+
     fun execute(
         command: VoiceCommand,
         gamesProvider: () -> List<GameInfo>,
