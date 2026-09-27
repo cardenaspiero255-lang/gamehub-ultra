@@ -29,6 +29,12 @@ object UltraGeneralQueryRouter {
     private val generalKnowledgePattern = Regex(
         """\b(que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|why|what does|how does|explain|define|where is|when was)\b"""
     )
+    private val technicalProblemPattern = Regex(
+        """\b(error|falla|fallo|problema|crash|excepcion|exception|stacktrace|no funciona|no compila|no inicia|como soluciono|solucionar|arreglar|how do i fix|doesn t work|won t compile|fix)\b"""
+    )
+    private val technicalSubjectPattern = Regex(
+        """\b(android|gradle|kotlin|java|python|javascript|typescript|react|sql|api|codigo|programacion|compilar|compilacion|build|sdk|git|github)\b"""
+    )
     private val assistantIdentityOnlyPattern = Regex(
         """^(?:ultra )?(?:quien eres|who are you)(?: por favor| please)?$"""
     )
@@ -57,6 +63,16 @@ object UltraGeneralQueryRouter {
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
                     requiresInternet = true,
                     requiresFreshData = true,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            technicalProblemPattern.containsMatchIn(clean) &&
+                technicalSubjectPattern.containsMatchIn(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = true,
+                    requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
