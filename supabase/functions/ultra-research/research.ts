@@ -267,7 +267,7 @@ async function newsEvidence(
       .map((article) => `${normalize(article.title)}|${article.seen}`)
       .join("||"),
     displayText:
-      `Noticias verificadas sobre ${topic}: ${selected[0].title}. También: ${selected[1].title}.`,
+      `Encontré información reciente verificada sobre ${topic} en ${sourceIds.length} fuentes independientes. Puedes abrir las fuentes para revisar los detalles.`,
     sourceId: sourceIds[0],
     sourceIds,
     independentSourceCount: independentDomains(sourceIds),
@@ -647,6 +647,136 @@ function contextKnowledgeTopic(context: string): string {
   return extractGeneralKnowledgeQuery(latestUserLine ?? context);
 }
 
+function isTechnicalTroubleshootingQuery(query: string): boolean {
+  const clean = normalize(stripAssistantInvocation(query));
+  const problemSignal =
+    /\b(error|falla|fallo|problema|crash|excepcion|exception|stacktrace|no funciona|no compila|no inicia|solucionar|soluciono|arreglar|fix)\b/;
+  const technicalSignal =
+    /\b(android|gradle|kotlin|java|python|javascript|typescript|react|sql|api|codigo|programacion|compilar|compilacion|build|sdk|git|github)\b/;
+  return problemSignal.test(clean) && technicalSignal.test(clean);
+}
+
+function htmlToPlainText(value: string): string {
+  return value
+    .replace(/<pre[\s\S]*?<\/pre>/gi, " ")
+    .replace(/<code>([\s\S]*?)<\/code>/gi, " $1 ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#(\d+);/g, (_, code) =>
+      String.fromCodePoint(Number.parseInt(code, 10))
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function conciseExcerpt(value: string, maxChars = 650): string {
+  if (value.length <= maxChars) return value;
+  const candidate = value.slice(0, maxChars);
+  const sentenceEnd = Math.max(
+    candidate.lastIndexOf(". "),
+    candidate.lastIndexOf("? "),
+    candidate.lastIndexOf("! "),
+  );
+  const clean = sentenceEnd >= Math.floor(maxChars * 0.55)
+    ? candidate.slice(0, sentenceEnd + 1)
+    : candidate.trimEnd();
+  return clean + "…";
+}
+
+async function stackOverflowSpanishEvidence(
+  query: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const searchText = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!searchText) {
+    return abstain("Necesito una consulta técnica concreta.");
+  }
+
+  const searchUrl = new URL(
+    "https://api.stackexchange.com/2.3/search/advanced",
+  );
+  searchUrl.searchParams.set("site", "es.stackoverflow");
+  searchUrl.searchParams.set("q", searchText);
+  searchUrl.searchParams.set("accepted", "true");
+  searchUrl.searchParams.set("answers", "1");
+  searchUrl.searchParams.set("sort", "relevance");
+  searchUrl.searchParams.set("order", "desc");
+  searchUrl.searchParams.set("pagesize", "3");
+
+  const search = await fetchJson(deps, searchUrl, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const questions = Array.isArray(search?.items) ? search.items : [];
+  const question = questions.find((item) =>
+    Boolean(item) && typeof item === "object" &&
+    numberValue((item as JsonObject).accepted_answer_id) != null
+  ) as JsonObject | undefined;
+  const answerId = numberValue(question?.accepted_answer_id);
+  if (answerId == null) {
+    return abstain(
+      "No encontré una respuesta técnica aceptada en Stack Overflow en español.",
+    );
+  }
+
+  const answerUrl = new URL(
+    `https://api.stackexchange.com/2.3/answers/${Math.trunc(answerId)}`,
+  );
+  answerUrl.searchParams.set("site", "es.stackoverflow");
+  answerUrl.searchParams.set("filter", "withbody");
+
+  const answerPayload = await fetchJson(deps, answerUrl, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const answers = Array.isArray(answerPayload?.items)
+    ? answerPayload.items
+    : [];
+  const answer = answers.find((item) =>
+    Boolean(item) && typeof item === "object" &&
+    (item as JsonObject).is_accepted === true
+  ) as JsonObject | undefined;
+  const body = stringValue(answer?.body);
+  if (!body) {
+    return abstain(
+      "La respuesta técnica encontrada no contiene texto utilizable.",
+    );
+  }
+
+  const excerpt = conciseExcerpt(htmlToPlainText(body));
+  if (!excerpt) {
+    return abstain(
+      "La respuesta técnica encontrada no contiene texto utilizable.",
+    );
+  }
+
+  const questionLink = stringValue(question?.link);
+  const answerLink = stringValue(answer?.link) ??
+    `https://es.stackoverflow.com/a/${Math.trunc(answerId)}`;
+  const sources = unique(
+    [questionLink, answerLink].filter((value): value is string =>
+      Boolean(value)
+    ),
+  );
+
+  return {
+    claimKey: `technical:${slug(searchText)}`,
+    value: normalize(excerpt),
+    displayText:
+      `Según una respuesta aceptada de Stack Overflow en español: ${excerpt}`,
+    sourceId: sources[0] ?? answerLink,
+    sourceIds: sources.length ? sources : [answerLink],
+    independentSourceCount: 1,
+    authoritative: true,
+  };
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -656,6 +786,11 @@ async function generalKnowledgeEvidence(
   const currentTopic = extractGeneralKnowledgeQuery(query);
   const topic = currentTopic || previousTopic;
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
+
+  if (isTechnicalTroubleshootingQuery(query)) {
+    const technical = await stackOverflowSpanishEvidence(query, deps);
+    if (!technical.abstained) return technical;
+  }
 
   const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
