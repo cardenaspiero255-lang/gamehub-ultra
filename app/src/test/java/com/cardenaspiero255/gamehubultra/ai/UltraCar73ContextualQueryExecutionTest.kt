@@ -302,7 +302,7 @@ class UltraCar73ContextualQueryExecutionTest {
         val coordinator = UltraQueryExecutionCoordinator(engine)
         val request = UltraGeneralQueryRequest(
             originalText = "hola",
-            kind = UltraGeneralQueryKind.LOCAL_CHAT,
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
             requiresInternet = false,
             requiresFreshData = false,
             timeoutMillis = 5_000L
