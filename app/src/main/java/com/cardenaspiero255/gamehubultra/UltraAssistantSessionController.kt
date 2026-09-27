@@ -217,7 +217,7 @@ internal class UltraAssistantSessionController(
     ): Job {
         val generation = ++loadGeneration
         _selectedGamePackage.value = gamePackage
-        _scopeReady.value = true
+        _scopeReady.value = false
         if (clearConversation) {
             _conversation.value = emptyList()
             conversationRevision += 1
@@ -249,6 +249,7 @@ internal class UltraAssistantSessionController(
                         }
                         failedLoadRevision = null
                         _loadError.value = null
+                        _scopeReady.value = true
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -261,6 +262,7 @@ internal class UltraAssistantSessionController(
                     ) {
                         failedLoadRevision = revisionAtLoadStart
                         _loadError.value = error
+                        _scopeReady.value = true
                     }
                 }
             }
