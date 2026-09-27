@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -78,7 +79,7 @@ class UltraAssistantQueryRunnerTest {
             ) {
                 release.await()
             }
-            assertIs<UltraAssistantQuerySubmission.Accepted>(first)
+            val acceptedFirst = assertIs<UltraAssistantQuerySubmission.Accepted>(first)
 
             val second = runner.launch(
                 onAccepted = { acceptedTurns += 1 },
@@ -89,7 +90,7 @@ class UltraAssistantQueryRunnerTest {
             assertEquals(1, acceptedTurns)
 
             release.complete(Unit)
-            (first as UltraAssistantQuerySubmission.Accepted).job.join()
+            acceptedFirst.job.join()
         } finally {
             ownerScope.cancel()
         }
@@ -277,6 +278,44 @@ class UltraAssistantQueryRunnerTest {
         assertIs<UltraAssistantQuerySubmission.Rejected>(submission)
         assertEquals(0, acceptedTurns)
         assertFalse(runner.isRunning.value)
+    }
+
+
+    @Test
+    fun cancellingAcceptedQueryDoesNotReportFailureAndReleasesRunner() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val started = CompletableDeferred<Unit>()
+        var failures = 0
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            val submission = runner.launch(
+                onAccepted = {},
+                onFailure = { failures += 1 }
+            ) {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+            started.await()
+            assertTrue(runner.isRunning.value)
+
+            accepted.job.cancel()
+            accepted.job.join()
+
+            assertEquals(0, failures)
+            assertFalse(runner.isRunning.value)
+        } finally {
+            ownerScope.cancel()
+        }
     }
 
 
