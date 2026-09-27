@@ -49,7 +49,8 @@ Deno.test("token exchange body carries exact redirect URI and verifier", () => {
       clientId: "123",
       clientSecret: "secret",
       code: "code-1",
-      redirectUri: "https://example.supabase.co/functions/v1/mercadolibre-oauth-callback",
+      redirectUri:
+        "https://example.supabase.co/functions/v1/mercadolibre-oauth-callback",
       codeVerifier: "verifier-1",
     }),
   );
