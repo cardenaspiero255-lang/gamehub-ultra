@@ -321,8 +321,10 @@ Deno.test("marketplace price can read OAuth access token from Vault resolver", a
       });
     },
     env: () => undefined,
-    secret: async (name) =>
-      name === "mercadolibre_access_token" ? "vault-token" : undefined,
+    secret: (name) =>
+      Promise.resolve(
+        name === "mercadolibre_access_token" ? "vault-token" : undefined,
+      ),
   };
 
   const result = await routeResearchQuery(
