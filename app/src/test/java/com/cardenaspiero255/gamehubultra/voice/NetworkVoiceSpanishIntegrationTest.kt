@@ -3,6 +3,9 @@ package com.cardenaspiero255.gamehubultra.voice
 import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
 import com.cardenaspiero255.gamehubultra.network.NetworkMetrics
 import com.cardenaspiero255.gamehubultra.network.NetworkStability
+import com.cardenaspiero255.gamehubultra.network.NetworkLockLifecyclePolicy
+import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationResultPolicy
+import com.cardenaspiero255.gamehubultra.network.NetworkPriorityAction
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import kotlin.test.Test
@@ -60,6 +63,52 @@ class NetworkVoiceSpanishIntegrationTest {
         assertEquals(
             VoiceCommand.Network(NetworkVoiceRequest.OPTIMIZE),
             commandRoute.command
+        )
+    }
+
+    @Test
+    fun onlyRealPriorityActivationIsReportedAsApplied() {
+        assertTrue(
+            NetworkOptimizationResultPolicy.reportsApplied(
+                NetworkPriorityAction.LOW_LATENCY_WIFI
+            )
+        )
+        assertTrue(
+            NetworkOptimizationResultPolicy.reportsApplied(
+                NetworkPriorityAction.HIGH_PERFORMANCE_WIFI
+            )
+        )
+        assertFalse(
+            NetworkOptimizationResultPolicy.reportsApplied(
+                NetworkPriorityAction.RELEASE_WIFI_LOCK
+            )
+        )
+        assertFalse(
+            NetworkOptimizationResultPolicy.reportsApplied(
+                NetworkPriorityAction.UNAVAILABLE
+            )
+        )
+    }
+
+    @Test
+    fun networkLockReleasesWhenWifiIsLostOrUnvalidated() {
+        assertFalse(
+            NetworkLockLifecyclePolicy.shouldRelease(
+                wifiTransport = true,
+                validated = true
+            )
+        )
+        assertTrue(
+            NetworkLockLifecyclePolicy.shouldRelease(
+                wifiTransport = false,
+                validated = true
+            )
+        )
+        assertTrue(
+            NetworkLockLifecyclePolicy.shouldRelease(
+                wifiTransport = true,
+                validated = false
+            )
         )
     }
 
