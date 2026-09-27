@@ -31,6 +31,25 @@ class UltraQueryExecutionCoordinator(
         }
 
         val research = researchEngine.answer(request)
+        val canUseLocalStableFallback =
+            request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
+                !request.requiresFreshData &&
+                research.abstained &&
+                !research.sensitiveInputBlocked
+
+        if (canUseLocalStableFallback) {
+            return UltraQueryExecutionAnswer(
+                message = localChat(),
+                verified = false,
+                confidence = null,
+                sources = research.sources,
+                fromCache = research.fromCache,
+                timedOut = research.timedOut,
+                fallbackUsed = true,
+                abstained = false
+            )
+        }
+
         return UltraQueryExecutionAnswer(
             message = research.message,
             verified = !research.abstained &&
