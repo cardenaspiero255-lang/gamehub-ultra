@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import postgres from "npm:postgres@3.4.5";
 
+import { persistCredentialSetAtomically } from "../mercadolibre-oauth/credential_store.ts";
 import {
   buildTokenExchangeBody,
   callbackStateMatches,
@@ -10,6 +11,7 @@ import {
 } from "../mercadolibre-oauth/oauth_logic.ts";
 
 type JsonObject = Record<string, unknown>;
+type VaultSql = Pick<ReturnType<typeof postgres>, "unsafe">;
 
 function page(title: string, message: string, status = 200): Response {
   const headers = new Headers({
@@ -42,7 +44,7 @@ function stringValue(value: unknown): string | null {
 }
 
 async function saveVaultSecret(
-  sql: ReturnType<typeof postgres>,
+  sql: VaultSql,
   name: string,
   secret: string,
   description: string,
@@ -160,38 +162,34 @@ Deno.serve(async (req: Request) => {
     idle_timeout: 2,
   });
 
+  const expiresAt = expiresIn != null
+    ? new Date(
+      Date.now() + Math.max(0, expiresIn - 60) * 1000,
+    ).toISOString()
+    : null;
+  const userId = payload.user_id != null ? String(payload.user_id) : null;
+
   try {
-    await saveVaultSecret(
-      sql,
-      "mercadolibre_access_token",
-      accessToken,
-      "Access Token OAuth de Mercado Libre para GameHub Ultra",
-    );
-    await saveVaultSecret(
-      sql,
-      "mercadolibre_refresh_token",
-      refreshToken,
-      "Refresh Token OAuth de Mercado Libre para GameHub Ultra",
-    );
-    if (expiresIn != null) {
-      const expiresAt = new Date(
-        Date.now() + Math.max(0, expiresIn - 60) * 1000,
-      ).toISOString();
-      await saveVaultSecret(
-        sql,
-        "mercadolibre_access_expires_at",
+    await persistCredentialSetAtomically(
+      async (action) => {
+        await sql.begin(async (transaction) => {
+          await action((name, secret, description) =>
+            saveVaultSecret(
+              transaction as VaultSql,
+              name,
+              secret,
+              description,
+            )
+          );
+        });
+      },
+      {
+        accessToken,
+        refreshToken,
         expiresAt,
-        "Expiración estimada del Access Token de Mercado Libre",
-      );
-    }
-    if (payload.user_id != null) {
-      await saveVaultSecret(
-        sql,
-        "mercadolibre_user_id",
-        String(payload.user_id),
-        "ID de usuario autorizado de Mercado Libre",
-      );
-    }
+        userId,
+      },
+    );
   } finally {
     await sql.end({ timeout: 2 });
   }
