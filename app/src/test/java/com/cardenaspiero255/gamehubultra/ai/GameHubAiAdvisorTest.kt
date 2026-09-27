@@ -171,6 +171,32 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun englishLocalModelReplyIsRejectedInFavorOfSpanishFallback() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String = "I'm Ultra and I can help you with your battery and performance."
+        }
+
+        val answer = GameHubAiAdvisor(adapter).chat(
+            message = "Ultra, hello",
+            context = healthyContext
+        )
+
+        assertTrue(answer.contains("Soy Ultra"))
+        assertFalse(answer.contains("I'm Ultra"))
+    }
+
+    @Test
     fun geminiChatPromptForcesSpanishOutput() {
         val prompt = buildGeminiChatPrompt(
             message = "Hello, how are you?",
