@@ -518,8 +518,12 @@ class UltraWakeService : Service() {
                         aliasIntentResolver = intentResolver,
                         gameAliasesProvider = { GameAliasStore.aliases(context) },
                         saveGameAlias = { alias, packageName ->
-                            GameAliasStore.save(context, alias, packageName)
-                        }
+    GameAliasStore.save(context, alias, packageName)
+},
+networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
+applyNetworkProfile = { profile ->
+    com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(context, profile)
+}
                     )
 
                     when (result) {
@@ -535,6 +539,8 @@ class UltraWakeService : Service() {
                             )
                         is VoiceActionResult.DeviceStatus ->
                             "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
+                        is VoiceActionResult.NetworkReport ->
+                            NetworkVoiceResponseText.format(result)
                         is VoiceActionResult.AiAdvice ->
                             AiAdviceFormatter.fullResponse(context, result.advice)
                         VoiceActionResult.Help ->
