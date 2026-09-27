@@ -1376,7 +1376,9 @@ Deno.test("general knowledge falls back to Gemini when verified sources are unav
     fetcher: (input) => {
       const url = new URL(String(input));
 
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         return jsonResponse({ query: { search: [] } });
       }
 
