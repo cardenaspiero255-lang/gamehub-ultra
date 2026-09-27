@@ -1,8 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
-import java.text.Normalizer
-import java.util.Locale
 
 enum class UltraGeneralQueryKind {
     GENERAL_KNOWLEDGE,
@@ -34,8 +32,8 @@ object UltraGeneralQueryRouter {
     private val assistantIdentityOnlyPattern = Regex(
         """^(?:ultra )?(?:quien eres|who are you)(?: por favor| please)?$"""
     )
-    private val appContextPattern = Regex(
-        """\b(mi juego seleccionado|juego seleccionado|mi perfil|perfil activo|mi configuracion|mi configuración|estado de gamehub|estado de ultra|my selected game|selected game|my profile|active profile|my settings)\b"""
+    private val appContextOnlyPattern = Regex(
+        """^(?:(?:cual es|dime|muestrame|what is|show me)\s+)?(?:mi juego seleccionado|juego seleccionado|mi perfil|perfil activo|mi configuracion|estado de gamehub|estado de ultra|my selected game|selected game|my profile|active profile|my settings)(?:\s+(?:por favor|please))?$"""
     )
     private val casualConversationPattern = Regex(
         """\b(hola|hello|buenas|buenos dias|buenas tardes|buenas noches|como estas|how are you|que tal|gracias|thanks|estoy aburrido|estoy aburrida|conversa conmigo|habla conmigo)\b"""
@@ -62,7 +60,7 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            appContextPattern.containsMatchIn(clean) ->
+            appContextOnlyPattern.matches(clean) ->
                 UltraGeneralQueryRequest(
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
@@ -109,10 +107,4 @@ object UltraGeneralQueryRouter {
         }
     }
 
-    private fun normalize(value: String): String =
-        Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
-            .replace(Regex("\\p{M}+"), "")
-            .replace(Regex("[^a-z0-9 ]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
 }
