@@ -205,6 +205,31 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun SpanishReplyWithEnglishProperNameIsKept() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String = "I Am Alive es un videojuego de acción."
+        }
+
+        val answer = GameHubAiAdvisor(adapter).chat(
+            message = "Ultra, háblame de I Am Alive",
+            context = healthyContext
+        )
+
+        assertEquals("I Am Alive es un videojuego de acción.", answer)
+    }
+
+    @Test
     fun geminiChatPromptForcesSpanishOutput() {
         val prompt = buildGeminiChatPrompt(
             message = "Hello, how are you?",
