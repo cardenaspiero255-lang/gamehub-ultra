@@ -75,6 +75,9 @@ object UltraUnifiedAgentRouter {
         if (command is VoiceCommand.DefineGameAlias) {
             return UltraAgentRoute.Command(command)
         }
+        if (command is VoiceCommand.Network) {
+            return UltraAgentRoute.Command(command)
+        }
 
         val learnedAlias =
             VoiceCommandParser.isKnownGameAlias(transcript, knownGameAliases) ||
@@ -438,7 +441,7 @@ object UltraGeneralAssistant {
                         "Gaming Router"
                 }
                 UltraAgentAnswer(
-                    message = "Entendí la orden para activar $requested. El reconocimiento de voz ya está preparado, pero el motor Network Game Booster de CAR-72 todavía no está conectado a esta versión; no se aplicó ningún cambio de red ni QoS.",
+                    message = "Entendí la orden para activar $requested. El motor Network Game Booster está disponible para la optimización local de Android. El QoS del router solo puede modificarse cuando exista una integración autorizada y compatible con ese router.",
                     intent = intent,
                     canRunDuringGame = true
                 )
