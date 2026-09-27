@@ -61,6 +61,16 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun factualQuestionWinsOverMixedAppContextPrompt() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, cuál es mi juego seleccionado y qué es Vulkan"
+        )
+
+        assertTrue(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
     fun factualQuestionWinsOverMixedIdentityPrompt() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, quién eres y qué es Vulkan"
