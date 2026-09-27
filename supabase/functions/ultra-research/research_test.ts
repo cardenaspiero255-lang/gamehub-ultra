@@ -1159,3 +1159,41 @@ Deno.test("Gemini failure preserves verified provider answer", async () => {
     throw new Error("expected original verified answer after Gemini failure");
   }
 });
+
+
+Deno.test("Spanish news title using preposition a is not rejected as English", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () =>
+      jsonResponse({
+        articles: [
+          {
+            title: "Llega a Resident Evil la update de rendimiento",
+            url: "https://fuente-uno.example/noticia",
+            domain: "fuente-uno.example",
+            seendate: "20260927T020000Z",
+          },
+          {
+            title: "Resident Evil recibe un nuevo parche en consolas",
+            url: "https://fuente-dos.example/noticia",
+            domain: "fuente-dos.example",
+            seendate: "20260927T021000Z",
+          },
+        ],
+      }),
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, noticias de Resident Evil",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected both Spanish news sources to be accepted");
+  }
+  if (result.independentSourceCount !== 2) {
+    throw new Error("expected two independent Spanish news sources");
+  }
+});
