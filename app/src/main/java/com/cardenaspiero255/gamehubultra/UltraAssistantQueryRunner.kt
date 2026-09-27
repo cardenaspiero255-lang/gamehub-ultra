@@ -39,6 +39,7 @@ internal class UltraAssistantQueryRunner(
         onFailure: suspend (Throwable) -> Unit,
         block: suspend CoroutineScope.() -> Unit
     ): UltraAssistantQuerySubmission {
+        val originatingGamePackage = currentGamePackage()
         val accepted = synchronized(this) {
             if (_isRunning.value || !ownerScope.isActive) {
                 false
@@ -52,6 +53,9 @@ internal class UltraAssistantQueryRunner(
         val job = ownerScope.launch(executionDispatcher) {
             try {
                 withContext(publicationDispatcher) {
+                    if (currentGamePackage() != originatingGamePackage) {
+                        throw CancellationException("Selected game changed before query acceptance")
+                    }
                     onAccepted()
                 }
                 block()
