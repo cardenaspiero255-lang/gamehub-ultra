@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,7 +39,7 @@ internal class UltraAssistantQueryRunner(
         block: suspend CoroutineScope.() -> Unit
     ): UltraAssistantQuerySubmission {
         val accepted = synchronized(this) {
-            if (_isRunning.value) {
+            if (_isRunning.value || !ownerScope.isActive) {
                 false
             } else {
                 _isRunning.value = true
@@ -61,9 +62,11 @@ internal class UltraAssistantQueryRunner(
                 throw cancelled
             } catch (error: Throwable) {
                 onFailure(error)
-            } finally {
-                _isRunning.value = false
             }
+        }
+        // Completion also runs for jobs cancelled before their body starts.
+        job.invokeOnCompletion {
+            _isRunning.value = false
         }
         return UltraAssistantQuerySubmission.Accepted(job)
     }
