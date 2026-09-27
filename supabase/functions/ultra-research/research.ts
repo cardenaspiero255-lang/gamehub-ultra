@@ -19,6 +19,7 @@ export type ResearchFetcher = (
 export type ResearchDependencies = {
   fetcher: ResearchFetcher;
   env: (name: string) => string | undefined;
+  secret?: (name: string) => Promise<string | undefined>;
 };
 
 type JsonObject = Record<string, unknown>;
@@ -602,7 +603,9 @@ async function priceEvidence(
   query: string,
   deps: ResearchDependencies,
 ): Promise<ResearchResult> {
-  const token = deps.env("MERCADOLIBRE_ACCESS_TOKEN")?.trim();
+  const token =
+    deps.env("MERCADOLIBRE_ACCESS_TOKEN")?.trim() ||
+    (await deps.secret?.("mercadolibre_access_token"))?.trim();
   if (!token) {
     return abstain(
       "El proveedor de precio actual necesita una credencial de Mercado Libre configurada.",
