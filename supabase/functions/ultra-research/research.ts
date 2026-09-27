@@ -618,6 +618,52 @@ async function priceEvidence(
 }
 
 
+
+const GENERAL_KNOWLEDGE_STOP_WORDS = new Set([
+  "a", "al", "an", "and", "are", "como", "cual", "cuales", "de", "del",
+  "did", "dime", "do", "does", "el", "en", "es", "explica", "explicame",
+  "explain", "fue", "how", "in", "is", "la", "las", "los", "me", "of",
+  "on", "o", "para", "por", "porque", "que", "quien", "quienes", "son",
+  "tell", "the", "un", "una", "what", "who", "why", "y",
+]);
+
+function generalKnowledgeTokens(value: string): string[] {
+  const clean = normalize(stripAssistantInvocation(value))
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  return unique(
+    clean
+      .split(/\s+/)
+      .filter((token) => token.length >= 2)
+      .filter((token) => !GENERAL_KNOWLEDGE_STOP_WORDS.has(token)),
+  );
+}
+
+function generalKnowledgeRelevance(
+  query: string,
+  title: string,
+  extract: string,
+): number {
+  const tokens = generalKnowledgeTokens(query);
+  if (!tokens.length) return 0;
+
+  const haystack = ` ${normalize(`${title} ${extract}`)
+    .replace(/[^a-z0-9]+/g, " ")} `;
+  return tokens.filter((token) => haystack.includes(` ${token} `)).length;
+}
+
+function generalKnowledgeIsRelevant(
+  query: string,
+  title: string,
+  extract: string,
+): boolean {
+  const tokenCount = generalKnowledgeTokens(query).length;
+  if (!tokenCount) return false;
+  const requiredMatches = tokenCount >= 2 ? 2 : 1;
+  return generalKnowledgeRelevance(query, title, extract) >= requiredMatches;
+}
+
 function generalKnowledgeSearchText(query: string): string {
   const clean = stripAssistantInvocation(query)
     .replace(/[¿?¡!]/g, " ")
@@ -691,19 +737,30 @@ async function wikipediaGeneralKnowledgeEvidence(
       return leftIndex - rightIndex;
     });
 
-  const selected = pages.find((page) => {
-    const extract = stringValue(page.extract);
-    return extract != null && extract.length >= 80;
-  });
+  const selected = pages
+    .map((page) => {
+      const title = stringValue(page.title) ?? "";
+      const extract = stringValue(page.extract) ?? "";
+      return {
+        page,
+        title,
+        extract,
+        relevance: generalKnowledgeRelevance(query, title, extract),
+      };
+    })
+    .filter((candidate) =>
+      candidate.extract.length >= 80 &&
+      generalKnowledgeIsRelevant(query, candidate.title, candidate.extract)
+    )
+    .sort((left, right) => right.relevance - left.relevance)[0];
   if (!selected) {
-    return abstain("No encontré una explicación suficientemente completa.");
+    return abstain(
+      "No encontré una referencia suficientemente relacionada con la pregunta.",
+    );
   }
 
-  const title = stringValue(selected.title) ?? searchText;
-  const extract = stringValue(selected.extract);
-  if (!extract) {
-    return abstain("No encontré una explicación suficientemente completa.");
-  }
+  const title = selected.title || searchText;
+  const extract = selected.extract;
 
   const pageUrl = stringValue(selected.fullurl) ??
     `https://${language}.wikipedia.org/wiki/${
