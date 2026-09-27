@@ -30,6 +30,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
+import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
@@ -324,7 +325,6 @@ class UltraWakeService : Service() {
     ) {
         if (!lifecycleGate.canAcceptRecognition()) return
         val recognitionNow = System.currentTimeMillis()
-        if (playbackGuard.shouldSuppressRecognition(recognitionNow)) return
 
         val alternatives = results
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -334,6 +334,39 @@ class UltraWakeService : Service() {
             .firstOrNull(::containsWakeWord)
             ?: alternatives.firstOrNull { it.isNotBlank() }
             .orEmpty()
+
+        when (
+            UltraWakeBargeInPolicy.decide(
+                playbackActive = playbackGuard.isPlaybackActive(),
+                transcript = transcript,
+                playbackEcho = playbackGuard.isLikelyPlaybackEcho(transcript)
+            )
+        ) {
+            UltraWakeRecognitionDisposition.SUPPRESS -> return
+
+            UltraWakeRecognitionDisposition.INTERRUPT_TTS -> {
+                val now = System.currentTimeMillis()
+                if (
+                    transcript.isBlank() ||
+                    now - lastTranscriptAt <= WAKE_DEBOUNCE_MS
+                ) {
+                    return
+                }
+                lastTranscriptAt = now
+                commandQueue.offer(transcript)
+                tts?.stop()
+                speechGeneration.activeToken()?.let { token ->
+                    finishCommandAndResume(token, playbackEnded = true)
+                }
+                return
+            }
+
+            UltraWakeRecognitionDisposition.ACCEPT -> {
+                // Keep the post-TTS drain window so the tail of Ultra's own
+                // audio cannot immediately trigger another recognition turn.
+                if (playbackGuard.shouldSuppressRecognition(recognitionNow)) return
+            }
+        }
 
         var commandStarted = false
         if (transcript.isNotBlank() && containsWakeWord(transcript)) {
@@ -356,30 +389,8 @@ class UltraWakeService : Service() {
         }
     }
 
-    private fun containsWakeWord(transcript: String): Boolean {
-        val normalized = VoiceCommandParser.normalize(transcript)
-        return normalized.split(" ").any { token ->
-            token == "ultra" || (token.length >= 4 && levenshtein(token, "ultra") <= 1)
-        }
-    }
-
-    private fun levenshtein(a: String, b: String): Int {
-        if (a.isEmpty()) return b.length
-        if (b.isEmpty()) return a.length
-        var previous = IntArray(b.length + 1) { it }
-        var current = IntArray(b.length + 1)
-        for (i in a.indices) {
-            current[0] = i + 1
-            for (j in b.indices) {
-                val cost = if (a[i] == b[j]) 0 else 1
-                current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
-            }
-            val swap = previous
-            previous = current
-            current = swap
-        }
-        return previous[b.length]
-    }
+    private fun containsWakeWord(transcript: String): Boolean =
+        UltraWakeWordMatcher.contains(transcript)
 
     private fun handleCommand(transcript: String) {
         if (!lifecycleGate.canAcceptRecognition()) {
@@ -435,6 +446,8 @@ class UltraWakeService : Service() {
                 thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
             )
             val intentResolver = aiAdvisor.intentResolver()
+            voiceConversationLedger.bindScope(selectedGamePackage)
+            val conversationBefore = voiceConversationLedger.snapshot()
             val route = UltraUnifiedAgentRouter.route(
                 transcript = transcript,
                 optionalResolver = intentResolver,
@@ -443,20 +456,21 @@ class UltraWakeService : Service() {
                     thermalLabel = status.thermalLabel,
                     refreshRateHz = diagnostics.refresh.currentRefreshRateHz
                 ),
-                knownGameAliases = GameAliasStore.aliases(context).keys
+                knownGameAliases = GameAliasStore.aliases(context).keys,
+                conversationHistory = conversationBefore
             )
 
                 when (route) {
                 is UltraAgentRoute.Utility -> route.answer.message
                 is UltraAgentRoute.Chat -> {
-                    voiceConversationLedger.bindScope(selectedGamePackage)
-                    val conversationBefore = voiceConversationLedger.snapshot()
                     val memoryCommand = UltraMemoryCommandParser.parse(route.message)
-                    val answer = aiAdvisor.chat(
-                        message = route.message,
-                        context = aiContext,
-                        conversation = conversationBefore
-                    )
+                    val answer = UltraProductionQueryExecutor.answer(route) {
+                        aiAdvisor.chat(
+                            message = route.message,
+                            context = aiContext,
+                            conversation = conversationBefore
+                        )
+                    }
                     if (memoryCommand == null) {
                         val delta = voiceConversationLedger.record(
                             userMessage = route.message,
@@ -557,7 +571,7 @@ class UltraWakeService : Service() {
     private fun speakAndResume(response: String) {
         val token = speechGeneration.begin()
         val startedAtMillis = System.currentTimeMillis()
-        playbackGuard.onPlaybackStarted()
+        playbackGuard.onPlaybackStarted(response)
         val utteranceId = "$COMMAND_UTTERANCE_PREFIX-$token"
         val result = tts?.speak(
             response,
