@@ -103,7 +103,7 @@ class UltraVerifiedResearchEngine(
     private val executor: ExecutorService = Executors.newFixedThreadPool(
         providers.size.coerceIn(1, 4)
     )
-) : AutoCloseable {
+) : UltraResearchGateway {
 
     private data class ProviderAttempt(
         val index: Int,
@@ -112,7 +112,7 @@ class UltraVerifiedResearchEngine(
         val failed: Boolean
     )
 
-    fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+    override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
         if (UltraSensitiveInputGuard.containsSensitiveMaterial(request.originalText)) {
             return abstention(
                 timedOut = false,
