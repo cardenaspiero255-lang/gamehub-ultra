@@ -489,7 +489,16 @@ class UltraWakeService : Service() {
                 }
                 is UltraAgentRoute.Chat -> {
                     val memoryCommand = UltraMemoryCommandParser.parse(route.message)
-                    val answer = UltraProductionQueryExecutor.answer(route) {
+                    val answer = UltraProductionQueryExecutor.answer(
+                        route = route,
+                        stableKnowledgeFallback = {
+                            aiAdvisor.generalKnowledgeChatOrNull(
+                                message = route.message,
+                                context = aiContext,
+                                conversation = conversationBefore
+                            )
+                        }
+                    ) {
                         aiAdvisor.chat(
                             message = route.message,
                             context = aiContext,

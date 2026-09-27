@@ -143,7 +143,7 @@
     <string name="profile_interpolation_description">Prioriza opciones de interpolación cuando exista una API compatible y acepta un mayor coste térmico. Android no permite forzar interpolación en otros juegos mediante una API pública.</string>
     <string name="profile_x4_description">Preset de alto rendimiento. Solicita Sustained Performance solo cuando Android y el dispositivo lo soportan; no genera frames por sí mismo.</string>
     <string name="voice_assistant_title">Ultra</string>
-    <string name="voice_assistant_subtitle">Habla una vez con Ultra para abrir juegos, seleccionar perfiles o consultar el estado. No hay escucha permanente.</string>
+    <string name="voice_assistant_subtitle">Habla o escribe a Ultra para abrir juegos, seleccionar perfiles, consultar el dispositivo o hacer preguntas generales.</string>
     <string name="voice_start">Hablar con Ultra</string>
     <string name="voice_stop">Detener</string>
     <string name="voice_permission_button">Permitir micrófono</string>
@@ -208,8 +208,8 @@
     <string name="accounts_empty">Todavía no hay cuentas registradas.</string>
     <string name="accounts_browser_failed">No se encontró un navegador para abrir el acceso oficial.</string>
 
-    <string name="ai_chat_input_label">Habla con Ultra</string>
-    <string name="ai_chat_input_hint">Escribe tu pregunta sobre gaming…</string>
+    <string name="ai_chat_input_label">Escribir a Ultra</string>
+    <string name="ai_chat_input_hint">Escribe cualquier pregunta para Ultra…</string>
     <string name="ai_chat_send">Enviar</string>
     <string name="ai_chat_thinking">Ultra está pensando…</string>
     <string name="ai_chat_clear">Limpiar conversación</string>

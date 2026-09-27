@@ -34,12 +34,19 @@ object UltraProductionQueryExecutor {
 
     fun answer(
         route: UltraAgentRoute.Chat,
+        stableKnowledgeFallback: (() -> String?)? = null,
         localChat: () -> String
     ): String {
         val request = route.query ?: return localChat()
+        val fallback =
+            if (request.requiresInternet) {
+                stableKnowledgeFallback ?: { localChat() }
+            } else {
+                { localChat() }
+            }
         return coordinator.answer(
             request = request,
-            localChat = localChat
+            localChat = fallback
         ).message
     }
 }

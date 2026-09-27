@@ -50,6 +50,19 @@ class UltraCar73ContextualQueryExecutionTest {
         assertFalse(plan.originalText.contains("RedMagic 11S Pro"))
     }
 
+
+    @Test
+    fun priceQuestionBeginningWithDefinitionPhraseStillRequiresFreshData() {
+        val direct = UltraGeneralQueryRouter.classify("what is the price of Bitcoin")
+        val possessive = UltraGeneralQueryRouter.classify("what is Bitcoin's price?")
+
+        listOf(direct, possessive).forEach { request ->
+            assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+            assertTrue(request.requiresInternet)
+            assertTrue(request.requiresFreshData)
+        }
+    }
+
     @Test
     fun onlineQueryUsesVerifiedResearchInsteadOfLocalChat() {
         val provider = object : UltraResearchProvider {
@@ -126,6 +139,120 @@ class UltraCar73ContextualQueryExecutionTest {
         assertTrue(plan.requiresInternet)
         assertTrue(plan.originalText.contains("Vulkan"))
         assertTrue(plan.originalText.contains("para qué sirve"))
+    }
+
+    @Test
+    fun stableGeneralKnowledgeFallsBackToLocalChatWhenResearchIsUnavailable() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                error("provider unavailable")
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+        var localCalls = 0
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify(
+                "Ultra, qué son los sentimientos"
+            ),
+            localChat = {
+                localCalls += 1
+                "Los sentimientos son experiencias afectivas que interpretamos a partir de emociones, pensamientos y contexto."
+            }
+        )
+
+        assertEquals(
+            "Los sentimientos son experiencias afectivas que interpretamos a partir de emociones, pensamientos y contexto.",
+            answer.message
+        )
+        assertFalse(answer.verified)
+        assertFalse(answer.abstained)
+        assertTrue(answer.fallbackUsed)
+        assertEquals(1, localCalls)
+        engine.close()
+    }
+
+    @Test
+    fun unavailableSubstantiveLocalKnowledgePreservesResearchAbstention() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                error("provider unavailable")
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify("Ultra, ¿qué es Vulkan?"),
+            localChat = { null }
+        )
+
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertFalse(answer.fallbackUsed)
+        assertTrue(answer.message.contains("verificar", ignoreCase = true))
+        engine.close()
+    }
+
+    @Test
+    fun contradictoryEvidenceDoesNotFallBackToUnverifiedLocalChat() {
+        fun provider(id: String, value: String) = object : UltraResearchProvider {
+            override val id = id
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "sentimientos",
+                    value = value,
+                    displayText = "Definición de $id",
+                    sourceId = id,
+                    authoritative = false
+                )
+        }
+
+        val request = UltraGeneralQueryRequest(
+            originalText = "Ultra, qué son los sentimientos",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = true,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
+        val engine = UltraVerifiedResearchEngine(
+            listOf(
+                provider("source-one", "definition-a"),
+                provider("source-two", "definition-b")
+            )
+        )
+
+        val directResearch = engine.answer(request)
+        assertTrue(directResearch.abstained)
+        assertEquals(
+            setOf("source-one", "source-two"),
+            directResearch.sources.toSet()
+        )
+
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+        var localCalls = 0
+        val answer = coordinator.answer(
+            request = request,
+            localChat = {
+                localCalls += 1
+                "respuesta local no verificada"
+            }
+        )
+
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertEquals(
+            setOf("source-one", "source-two"),
+            answer.sources.toSet()
+        )
+        assertEquals(0, localCalls)
+        engine.close()
     }
 
     @Test
