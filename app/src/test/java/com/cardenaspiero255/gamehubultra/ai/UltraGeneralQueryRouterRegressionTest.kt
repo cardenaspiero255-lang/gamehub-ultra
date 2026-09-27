@@ -30,6 +30,16 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun fullGameHubInvocationIdentityQuestionStaysLocal() {
+        val request = UltraGeneralQueryRouter.classify(
+            "GameHub Ultra, who are you?"
+        )
+
+        assertFalse(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
     fun standaloneEnglishIdentityQuestionStaysLocal() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, who are you?"
