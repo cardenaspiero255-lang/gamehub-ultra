@@ -159,7 +159,7 @@ class UltraVerifiedResearchEngineTest {
         object : UltraResearchProvider {
             override val id = providerId
             override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
-                evidence(claimKey, value, text)
+                evidence(claimKey, value, text).copy(sourceId = providerId)
         }
 
     private fun evidence(
