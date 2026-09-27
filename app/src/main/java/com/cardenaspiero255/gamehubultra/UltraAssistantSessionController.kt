@@ -123,6 +123,9 @@ internal class UltraAssistantSessionController(
     )
     val selectedGamePackage: StateFlow<String?> = _selectedGamePackage.asStateFlow()
 
+    private val _scopeReady = MutableStateFlow(restoredConversation != null)
+    val scopeReady: StateFlow<Boolean> = _scopeReady.asStateFlow()
+
     private val _loadError = MutableStateFlow<Throwable?>(null)
     val loadError: StateFlow<Throwable?> = _loadError.asStateFlow()
 
@@ -214,6 +217,7 @@ internal class UltraAssistantSessionController(
     ): Job {
         val generation = ++loadGeneration
         _selectedGamePackage.value = gamePackage
+        _scopeReady.value = true
         if (clearConversation) {
             _conversation.value = emptyList()
             conversationRevision += 1
