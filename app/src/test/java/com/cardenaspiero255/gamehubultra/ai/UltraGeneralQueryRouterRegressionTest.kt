@@ -30,6 +30,21 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun factualQuestionWinsOverGreetingOrThanks() {
+        val greetingQuestion = UltraGeneralQueryRouter.classify(
+            "Ultra, hola, explícame qué es Vulkan"
+        )
+        val thanksQuestion = UltraGeneralQueryRouter.classify(
+            "Gracias, ¿por qué el cielo es azul?"
+        )
+
+        assertTrue(greetingQuestion.requiresInternet)
+        assertTrue(thanksQuestion.requiresInternet)
+        assertFalse(greetingQuestion.requiresFreshData)
+        assertFalse(thanksQuestion.requiresFreshData)
+    }
+
+    @Test
     fun ordinaryConversationStaysOnLocalChatPath() {
         val greeting = UltraGeneralQueryRouter.classify(
             "Ultra, hola, cómo estás"
