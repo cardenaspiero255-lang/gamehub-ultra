@@ -1595,39 +1595,143 @@ private fun VoiceAssistantCard(
         chatSending = true
 
         scope.launch(Dispatchers.IO) {
+            val deviceStatus = VoiceDeviceStatusProvider.read(context)
             val route = UltraTypedChatRoutePlanner.route(
                 message = message,
-                conversationHistory = previousConversation
+                conversationHistory = previousConversation,
+                optionalResolver = aiIntentResolver,
+                telemetry = UltraRuntimeTelemetry(
+                    batteryPercent = deviceStatus.batteryPercent,
+                    thermalLabel = deviceStatus.thermalLabel,
+                    refreshRateHz = turnAiContext.refreshRateHz
+                ),
+                knownGameAliases = GameAliasStore.aliases(context).keys
             )
-            val answer = UltraProductionQueryExecutor.answer(route) {
-                aiAdvisor.chat(
-                    message = message,
-                    context = turnAiContext,
-                    conversation = previousConversation
-                )
-            }
-            val withAnswer =
-                if (resetConversationAfterCommand) {
-                    listOf("Ultra: " + answer)
-                } else {
-                    UltraConversationPolicy.append(
+
+            when (route) {
+                is UltraAgentRoute.Utility -> {
+                    val answer = route.answer.message
+                    val withAnswer = UltraConversationPolicy.append(
                         history = withUser,
                         entry = "Ultra: " + answer,
                         maxEntries = MAX_CHAT_HISTORY
                     )
+                    withContext(Dispatchers.Main) {
+                        if (
+                            UltraConversationScopePolicy.isSameGame(
+                                originatingGamePackage,
+                                latestAiContext.selectedGamePackage
+                            )
+                        ) {
+                            latestOnConversationChanged(withAnswer)
+                        }
+                        response = answer
+                        chatSending = false
+                    }
                 }
 
-            withContext(Dispatchers.Main) {
-                if (
-                    UltraConversationScopePolicy.isSameGame(
-                        originatingGamePackage,
-                        latestAiContext.selectedGamePackage
-                    )
-                ) {
-                    latestOnConversationChanged(withAnswer)
+                is UltraAgentRoute.Chat -> {
+                    val answer = UltraProductionQueryExecutor.answer(route) {
+                        aiAdvisor.chat(
+                            message = route.message,
+                            context = turnAiContext,
+                            conversation = previousConversation
+                        )
+                    }
+                    val withAnswer =
+                        if (resetConversationAfterCommand) {
+                            listOf("Ultra: " + answer)
+                        } else {
+                            UltraConversationPolicy.append(
+                                history = withUser,
+                                entry = "Ultra: " + answer,
+                                maxEntries = MAX_CHAT_HISTORY
+                            )
+                        }
+
+                    withContext(Dispatchers.Main) {
+                        if (
+                            UltraConversationScopePolicy.isSameGame(
+                                originatingGamePackage,
+                                latestAiContext.selectedGamePackage
+                            )
+                        ) {
+                            latestOnConversationChanged(withAnswer)
+                        }
+                        response = answer
+                        chatSending = false
+                    }
                 }
-                response = answer
-                chatSending = false
+
+                is UltraAgentRoute.Command -> {
+                    val result = VoiceCommandEngine.execute(
+                        command = route.command,
+                        gamesProvider = { GameLibrary.discover(context).games },
+                        launchGame = { packageName ->
+                            GameLauncher.launch(context, packageName)
+                        },
+                        saveSelectedGame = { packageName ->
+                            GameSelectionStore.saveSelectedGame(context, packageName)
+                        },
+                        saveSelectedProfile = { profile ->
+                            ProfileSelectionStore.saveSelectedProfile(context, profile)
+                        },
+                        saveSelectedGameWithProfile = { packageName, profile ->
+                            GameSelectionStore.saveSelectedGameAndProfile(
+                                context,
+                                packageName,
+                                profile
+                            )
+                        },
+                        isProfileAvailable = { _ -> true },
+                        statusProvider = { VoiceDeviceStatusProvider.read(context) },
+                        aiAdvisor = { question ->
+                            aiAdvisor.advise(question, latestAiContext)
+                        },
+                        aliasIntentResolver = aiIntentResolver,
+                        gameAliasesProvider = { GameAliasStore.aliases(context) },
+                        saveGameAlias = { alias, packageName ->
+                            GameAliasStore.save(context, alias, packageName)
+                        },
+                        networkStatusProvider = {
+                            VoiceNetworkSnapshotFactory.current(context)
+                        },
+                        applyNetworkProfile = { profile ->
+                            com.cardenaspiero255.gamehubultra.network
+                                .NetworkRuntimeOptimizer.apply(context, profile)
+                        }
+                    )
+                    val answer = VoiceResponseFormatter.format(context, result)
+                    val withAnswer = UltraConversationPolicy.append(
+                        history = withUser,
+                        entry = "Ultra: " + answer,
+                        maxEntries = MAX_CHAT_HISTORY
+                    )
+
+                    withContext(Dispatchers.Main) {
+                        when (result) {
+                            is VoiceActionResult.ProfileSelected ->
+                                onProfileSelected(result.profile)
+                            is VoiceActionResult.GameOpened -> {
+                                onGameSelected(result.game.packageName)
+                                if (!result.profileDeferred) {
+                                    result.profile?.let(onProfileSelected)
+                                }
+                            }
+                            else -> Unit
+                        }
+                        if (
+                            UltraConversationScopePolicy.isSameGame(
+                                originatingGamePackage,
+                                latestAiContext.selectedGamePackage
+                            )
+                        ) {
+                            latestOnConversationChanged(withAnswer)
+                        }
+                        response = answer
+                        chatSending = false
+                    }
+                }
             }
         }
     }
