@@ -179,13 +179,15 @@ class UltraAssistantQueryRunnerTest {
                 publishConversation = {}
             )
 
-            runCatching {
+            val failure = runCatching {
                 runner.launch(
                     onAccepted = { error("accept failed") },
                     onFailure = {}
                 ) {}
-            }
+            }.exceptionOrNull()
 
+            assertIs<IllegalStateException>(failure)
+            assertEquals("accept failed", failure.message)
             assertFalse(runner.isRunning.value)
             val retry = runner.launch(
                 onAccepted = {},
