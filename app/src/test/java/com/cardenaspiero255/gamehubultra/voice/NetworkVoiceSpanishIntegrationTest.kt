@@ -59,7 +59,8 @@ class NetworkVoiceSpanishIntegrationTest {
             NetworkOptimizationResultPolicy.outcomeFor(
                 action = NetworkPriorityAction.LOW_LATENCY_WIFI,
                 leaseHeld = true,
-                interactive = true
+                interactive = true,
+                appForeground = true
             )
         )
         assertEquals(
@@ -67,7 +68,8 @@ class NetworkVoiceSpanishIntegrationTest {
             NetworkOptimizationResultPolicy.outcomeFor(
                 action = NetworkPriorityAction.LOW_LATENCY_WIFI,
                 leaseHeld = true,
-                interactive = false
+                interactive = false,
+                appForeground = true
             )
         )
         assertEquals(
@@ -75,7 +77,8 @@ class NetworkVoiceSpanishIntegrationTest {
             NetworkOptimizationResultPolicy.outcomeFor(
                 action = NetworkPriorityAction.HIGH_PERFORMANCE_WIFI,
                 leaseHeld = true,
-                interactive = false
+                interactive = false,
+                appForeground = false
             )
         )
     }
