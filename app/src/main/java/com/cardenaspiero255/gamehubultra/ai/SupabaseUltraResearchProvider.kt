@@ -1,6 +1,5 @@
 package com.cardenaspiero255.gamehubultra.ai
 
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -65,27 +64,21 @@ class SupabaseUltraResearchProvider(
         require(publishableKey.isNotBlank()) { "Supabase publishable key unavailable" }
 
         val endpoint = supabaseUrl.trimEnd('/') + "/functions/v1/ultra-research"
-        val body = JSONObject()
-            .put("query", request.originalText)
-            .put("kind", request.kind.name)
-            .put("requiresFreshData", request.requiresFreshData)
-            .toString()
-
         val response = transport.post(
             endpoint = endpoint,
             apiKey = publishableKey,
-            body = body,
+            body = UltraResearchJsonCodec.encodeRequest(request),
             timeoutMillis = request.timeoutMillis
         )
-        val json = JSONObject(response)
-        if (json.optBoolean("abstained", false)) {
-            error(json.optString("message", "Research backend abstained"))
+        val decoded = UltraResearchJsonCodec.decodeResponse(response)
+        if (decoded.abstained) {
+            error(decoded.message ?: "Research backend abstained")
         }
 
-        val claimKey = json.optString("claimKey").trim()
-        val value = json.optString("value").trim()
-        val displayText = json.optString("displayText").trim()
-        val sourceId = json.optString("sourceId").trim()
+        val claimKey = decoded.claimKey.orEmpty().trim()
+        val value = decoded.value.orEmpty().trim()
+        val displayText = decoded.displayText.orEmpty().trim()
+        val sourceId = decoded.sourceId.orEmpty().trim()
         require(claimKey.isNotBlank()) { "Missing claimKey" }
         require(value.isNotBlank()) { "Missing value" }
         require(displayText.isNotBlank()) { "Missing displayText" }
@@ -96,7 +89,7 @@ class SupabaseUltraResearchProvider(
             value = value,
             displayText = displayText,
             sourceId = sourceId,
-            authoritative = json.optBoolean("authoritative", false)
+            authoritative = decoded.authoritative
         )
     }
 }
