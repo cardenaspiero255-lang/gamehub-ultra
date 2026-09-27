@@ -617,15 +617,34 @@ async function priceEvidence(
   };
 }
 
+function stripConversationSpeaker(value: string): string {
+  return value
+    .trim()
+    .replace(/^(?:tú|tu|you|usuario|user)\s*:\s*/i, "");
+}
 
 function extractGeneralKnowledgeQuery(query: string): string {
-  return stripAssistantInvocation(query)
-    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "")
+  const clean = stripConversationSpeaker(stripAssistantInvocation(query))
+    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
+
+  return clean
     .replace(
-      /^(?:explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)\s+/i,
+      /^(?:(?:y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)\s+)+/i,
       "",
     )
     .trim();
+}
+
+function contextKnowledgeTopic(context: string): string {
+  if (!context.trim()) return "";
+  const lines = context
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const latestUserLine = [...lines]
+    .reverse()
+    .find((line) => /^(?:tú|tu|you|usuario|user)\s*:/i.test(line));
+  return extractGeneralKnowledgeQuery(latestUserLine ?? context);
 }
 
 function generalKnowledgeLanguage(query: string): "es" | "en" {
@@ -642,10 +661,12 @@ async function generalKnowledgeEvidence(
   deps: ResearchDependencies,
   context = "",
 ): Promise<ResearchResult> {
-  const researchText = context.trim()
-    ? `${context.trim()}\n${query.trim()}`
-    : query;
-  const topic = extractGeneralKnowledgeQuery(researchText);
+  const previousTopic = contextKnowledgeTopic(context);
+  const currentTopic = extractGeneralKnowledgeQuery(query);
+  const topic = [previousTopic, currentTopic]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
   const language = generalKnowledgeLanguage(query);
