@@ -254,4 +254,30 @@ class UltraAssistantQueryRunnerTest {
         }
     }
 
+    @Test
+    fun cancelledOwnerScopeRejectsSubmissionBeforeRecordingUserTurn() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var acceptedTurns = 0
+
+        ownerScope.cancel()
+
+        val runner = UltraAssistantQueryRunner(
+            ownerScope = ownerScope,
+            publicationDispatcher = Dispatchers.Unconfined,
+            currentGamePackage = { "game.a" },
+            currentConversation = { emptyList() },
+            publishConversation = {}
+        )
+
+        val submission = runner.launch(
+            onAccepted = { acceptedTurns += 1 },
+            onFailure = {}
+        ) {}
+
+        assertIs<UltraAssistantQuerySubmission.Rejected>(submission)
+        assertEquals(0, acceptedTurns)
+        assertFalse(runner.isRunning.value)
+    }
+
+
 }
