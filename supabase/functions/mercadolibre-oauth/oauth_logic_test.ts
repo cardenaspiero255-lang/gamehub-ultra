@@ -85,11 +85,12 @@ Deno.test("OAuth credential set is committed atomically", async () => {
   ) => {
     transactionCalls += 1;
     const staged: string[] = [];
-    const write = async (name: string) => {
+    const write = (name: string) => {
       staged.push(name);
       if (name === "mercadolibre_refresh_token") {
-        throw new Error("simulated write failure");
+        return Promise.reject(new Error("simulated write failure"));
       }
+      return Promise.resolve();
     };
 
     await action(write);
