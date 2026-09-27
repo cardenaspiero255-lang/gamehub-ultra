@@ -1196,3 +1196,123 @@ Deno.test("Spanish news title using preposition a is not rejected as English", a
     throw new Error("expected two independent Spanish news sources");
   }
 });
+
+Deno.test("general knowledge falls back to Tavily when Wikipedia has no result", async () => {
+  let tavilyAuthorization = "";
+  let tavilyRequest: Record<string, unknown> = {};
+
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({ query: { search: [] } });
+      }
+
+      if (url.hostname === "api.tavily.com") {
+        const headers = new Headers(init?.headers);
+        tavilyAuthorization = headers.get("Authorization") ?? "";
+        tavilyRequest = JSON.parse(String(init?.body)) as Record<
+          string,
+          unknown
+        >;
+        return jsonResponse({
+          results: [
+            {
+              title: "Fuente uno",
+              url: "https://fuente-uno.example/vulkan",
+              content:
+                "Vulkan es una API gráfica de bajo nivel para gráficos y cómputo.",
+              score: 0.92,
+            },
+            {
+              title: "Fuente dos",
+              url: "https://fuente-dos.example/vulkan",
+              content:
+                "Vulkan permite un control más directo de la GPU y sus recursos.",
+              score: 0.87,
+            },
+          ],
+        });
+      }
+
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, explícame Vulkan",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Tavily fallback evidence");
+  if (tavilyAuthorization !== "Bearer tvly-test-key") {
+    throw new Error("expected Tavily bearer authentication");
+  }
+  if (tavilyRequest.search_depth !== "basic") {
+    throw new Error("expected credit-efficient Tavily basic search");
+  }
+  if (tavilyRequest.include_answer !== false) {
+    throw new Error("Tavily answer must not replace grounded synthesis");
+  }
+  if (result.independentSourceCount !== 2) {
+    throw new Error("expected two independent Tavily sources");
+  }
+  if (result.sourceIds?.length !== 2) {
+    throw new Error("expected Tavily source URLs");
+  }
+});
+
+Deno.test("unsupported current query falls back to Tavily web search", async () => {
+  let tavilyCalled = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "api.tavily.com") {
+        throw new Error("unexpected URL " + url);
+      }
+      tavilyCalled = true;
+      return jsonResponse({
+        results: [
+          {
+            title: "Android Developers",
+            url: "https://developer.android.com/about/versions",
+            content:
+              "Android Developers publica información de las versiones actuales.",
+            score: 0.95,
+          },
+          {
+            title: "Fuente tecnológica",
+            url: "https://tecnologia.example/android-version",
+            content:
+              "La versión actual de Android se documenta junto con sus cambios.",
+            score: 0.82,
+          },
+        ],
+      });
+    },
+    env: (name) =>
+      name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, cuál es la versión actual de Android",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (!tavilyCalled) throw new Error("expected Tavily current-data fallback");
+  if (result.abstained) throw new Error("expected current web evidence");
+  if (result.sourceIds?.length !== 2) {
+    throw new Error("expected current Tavily sources");
+  }
+});
+
