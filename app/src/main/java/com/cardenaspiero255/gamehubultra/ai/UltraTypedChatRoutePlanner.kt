@@ -9,7 +9,7 @@ object UltraTypedChatRoutePlanner {
     fun route(
         message: String,
         conversationHistory: List<String> = emptyList()
-    ): UltraAgentRoute.Chat {
+    ): UltraAgentRoute {
         val clean = message.trim()
         return UltraAgentRoute.Chat(
             message = clean,
