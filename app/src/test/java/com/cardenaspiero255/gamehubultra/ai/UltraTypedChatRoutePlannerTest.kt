@@ -14,6 +14,8 @@ class UltraTypedChatRoutePlannerTest {
             conversationHistory = listOf("Tú: hola", "Ultra: Hola.")
         )
 
+        assertTrue(route is UltraAgentRoute.Chat)
+        route as UltraAgentRoute.Chat
         assertEquals("¿qué es Vulkan?", route.message)
         assertTrue(route.query?.requiresInternet == true)
         assertFalse(route.query?.requiresFreshData == true)
@@ -26,6 +28,18 @@ class UltraTypedChatRoutePlannerTest {
             conversationHistory = emptyList()
         )
 
+        assertTrue(route is UltraAgentRoute.Chat)
+        route as UltraAgentRoute.Chat
         assertFalse(route.query?.requiresInternet == true)
+    }
+
+    @Test
+    fun typedProfileActionUsesCommandRoute() {
+        val route = UltraTypedChatRoutePlanner.route(
+            message = "pon X4",
+            conversationHistory = emptyList()
+        )
+
+        assertTrue(route is UltraAgentRoute.Command)
     }
 }
