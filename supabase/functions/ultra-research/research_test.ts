@@ -402,7 +402,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "general knowledge rejects a weak unrelated reference",
   async () => {
