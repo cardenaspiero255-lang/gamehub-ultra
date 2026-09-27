@@ -33,6 +33,9 @@ object UltraGeneralQueryRouter {
     private val assistantIdentityPattern = Regex(
         """\b(quien eres|who are you)\b"""
     )
+    private val appContextPattern = Regex(
+        """\b(mi juego seleccionado|juego seleccionado|mi perfil|perfil activo|mi configuracion|mi configuración|estado de gamehub|estado de ultra|my selected game|selected game|my profile|active profile|my settings)\b"""
+    )
     private val casualConversationPattern = Regex(
         """\b(hola|hello|buenas|buenos dias|buenas tardes|buenas noches|como estas|how are you|que tal|gracias|thanks|estoy aburrido|estoy aburrida|conversa conmigo|habla conmigo)\b"""
     )
@@ -58,7 +61,7 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            assistantIdentityPattern.containsMatchIn(clean) ->
+            appContextPattern.containsMatchIn(clean) ->
                 UltraGeneralQueryRequest(
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
@@ -72,6 +75,15 @@ object UltraGeneralQueryRouter {
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
                     requiresInternet = true,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            assistantIdentityPattern.containsMatchIn(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = false,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
