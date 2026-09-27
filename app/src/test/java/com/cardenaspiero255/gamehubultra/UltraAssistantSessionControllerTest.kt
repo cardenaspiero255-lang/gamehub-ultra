@@ -330,4 +330,60 @@ class UltraAssistantSessionControllerTest {
         }
     }
 
+    @Test
+    fun successfulRetryKeepsLoadErrorWhenRecoveredHistoryCannotBeApplied() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var attempts = 0
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                attempts += 1
+                if (attempts == 1) error("storage unavailable")
+                return listOf("Ultra: historial recuperado")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 8,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined
+            )
+
+            controller.selectGame("game.a").join()
+            assertEquals("storage unavailable", controller.loadError.value?.message)
+
+            controller.updateConversation(listOf("Tú: mensaje nuevo"))
+            controller.retryLoad().join()
+
+            assertEquals(
+                listOf("Tú: mensaje nuevo"),
+                controller.conversation.value
+            )
+            assertEquals(
+                "storage unavailable",
+                controller.loadError.value?.message
+            )
+            assertEquals(2, attempts)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
 }
