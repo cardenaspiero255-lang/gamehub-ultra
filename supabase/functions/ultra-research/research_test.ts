@@ -714,3 +714,109 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
     throw new Error("expected current complete topic without previous context");
   }
 });
+
+
+Deno.test("technical troubleshooting falls back to Stack Overflow en español without API keys", async () => {
+  const visited: string[] = [];
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      visited.push(url.toString());
+
+      if (
+        url.hostname === "api.stackexchange.com" &&
+        url.pathname === "/2.3/search/advanced"
+      ) {
+        if (url.searchParams.get("site") !== "es.stackoverflow") {
+          throw new Error("expected Stack Overflow en español");
+        }
+        return jsonResponse({
+          items: [{
+            question_id: 123,
+            accepted_answer_id: 456,
+            link: "https://es.stackoverflow.com/questions/123/ejemplo",
+            title: "Error de Gradle al compilar Android",
+          }],
+        });
+      }
+
+      if (
+        url.hostname === "api.stackexchange.com" &&
+        url.pathname === "/2.3/answers/456"
+      ) {
+        return jsonResponse({
+          items: [{
+            answer_id: 456,
+            score: 8,
+            is_accepted: true,
+            body:
+              "<p>Revisa que la versión del plugin de Android sea compatible con la versión de Gradle y sincroniza el proyecto de nuevo.</p>",
+            link: "https://es.stackoverflow.com/a/456",
+          }],
+        });
+      }
+
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, cómo soluciono un error de Gradle al compilar Android",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected technical answer");
+  if (!result.displayText?.startsWith("Según una respuesta aceptada de Stack Overflow en español:")) {
+    throw new Error("expected attributed Spanish technical answer");
+  }
+  if (!result.displayText?.includes("Revisa que la versión")) {
+    throw new Error("expected accepted answer excerpt");
+  }
+  if (!result.sourceIds?.some((source) => source.includes("es.stackoverflow.com"))) {
+    throw new Error("expected visible Stack Overflow source");
+  }
+  if (!visited.some((url) => url.includes("/2.3/search/advanced"))) {
+    throw new Error("expected Stack Exchange search");
+  }
+});
+
+Deno.test("news voice response stays in Spanish even when source titles are English", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () =>
+      jsonResponse({
+        articles: [
+          {
+            title: "Major game update released today",
+            url: "https://fuente-uno.example/noticia",
+            domain: "fuente-uno.example",
+            seendate: "20260927T010000Z",
+          },
+          {
+            title: "New patch changes performance",
+            url: "https://fuente-dos.example/noticia",
+            domain: "fuente-dos.example",
+            seendate: "20260927T011000Z",
+          },
+        ],
+      }),
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, noticias de Resident Evil",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected verified news");
+  if (result.displayText?.includes("Major game update")) {
+    throw new Error("English source titles must not leak into Ultra speech");
+  }
+  if (!result.displayText?.startsWith("Encontré información reciente verificada")) {
+    throw new Error("expected Spanish-only news summary");
+  }
+});
