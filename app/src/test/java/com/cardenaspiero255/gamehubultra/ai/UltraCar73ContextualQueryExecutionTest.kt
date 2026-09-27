@@ -153,4 +153,37 @@ class UltraCar73ContextualQueryExecutionTest {
         engine.close()
     }
 
+
+    @Test
+    fun failedGeneralKnowledgeResearchDoesNotReturnGamingCapabilityAsSuccess() {
+        val provider = object : UltraResearchProvider {
+            override val id = "weak-reference"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:unrelated",
+                    value = "unrelated",
+                    displayText = "Contenido no suficientemente confiable.",
+                    sourceId = "https://example.test/unrelated",
+                    authoritative = false,
+                    trustedReference = false
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify("Ultra, ¿por qué el cielo es azul?"),
+            localChat = {
+                "Soy Ultra. Puedo hablar contigo sobre rendimiento, FPS, temperatura, batería, red y perfiles de GameHub Ultra. En este dispositivo el chat local puede estar limitado si no hay un modelo compatible."
+            }
+        )
+
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertTrue(answer.fallbackUsed)
+        assertTrue(answer.message.contains("no pude verificar", ignoreCase = true))
+        assertFalse(answer.message.contains("rendimiento, FPS", ignoreCase = true))
+        engine.close()
+    }
+
 }
