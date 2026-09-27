@@ -353,12 +353,14 @@ private fun GameHubUltraApp(
     val ultraHistoryRetryGate = remember(ultraSessionController) {
         UltraAssistantSessionRetryGate(maxRetriesPerScope = 1)
     }
+    val ultraSessionScopeSelection = uiState.ultraSessionScopeSelection()
 
-    LaunchedEffect(ultraSessionController, uiState.selectedGamePackage) {
-        ultraSessionController.selectGame(uiState.selectedGamePackage).join()
+    LaunchedEffect(ultraSessionController, ultraSessionScopeSelection) {
+        val selection = ultraSessionScopeSelection ?: return@LaunchedEffect
+        ultraSessionController.selectGame(selection.gamePackage).join()
         if (
             ultraHistoryRetryGate.consumeRetry(
-                gamePackage = uiState.selectedGamePackage,
+                gamePackage = selection.gamePackage,
                 hasLoadError = ultraSessionController.loadError.value != null
             )
         ) {
