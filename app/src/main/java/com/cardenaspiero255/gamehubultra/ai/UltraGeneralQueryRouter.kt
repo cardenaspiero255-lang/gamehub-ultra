@@ -27,6 +27,12 @@ object UltraGeneralQueryRouter {
     private val currentDataPattern = Regex(
         """\b(clima|tiempo de hoy|weather|pronostico|forecast|noticias|news|precio|price|precios|prices|cuanto cuesta|cuanto cuestan|how much|cost|costs|salio nuevo|released|fecha de lanzamiento|release date)\b"""
     )
+    private val generalKnowledgePattern = Regex(
+        """\b(que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|why|what does|how does|explain|define|where is|when was)\b"""
+    )
+    private val casualConversationPattern = Regex(
+        """\b(hola|hello|buenas|buenos dias|buenas tardes|buenas noches|como estas|how are you|que tal|gracias|thanks|quien eres|who are you|estoy aburrido|estoy aburrida|conversa conmigo|habla conmigo)\b"""
+    )
 
     fun classify(transcript: String): UltraGeneralQueryRequest {
         val clean = normalize(transcript)
@@ -49,11 +55,29 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            else ->
+            casualConversationPattern.containsMatchIn(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = false,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            generalKnowledgePattern.containsMatchIn(clean) ->
                 UltraGeneralQueryRequest(
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
                     requiresInternet = true,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            else ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = false,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
