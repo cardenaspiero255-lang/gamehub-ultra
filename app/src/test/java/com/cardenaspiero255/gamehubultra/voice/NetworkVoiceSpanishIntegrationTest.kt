@@ -21,6 +21,12 @@ import kotlin.test.assertTrue
 class NetworkVoiceSpanishIntegrationTest {
 
     @Test
+    fun ultraVoicePrefersSpanishChileForSpeechAndRecognition() {
+        assertEquals("es-CL", UltraSpeechLocalePolicy.PREFERRED_TAG)
+        assertEquals("es", UltraSpeechLocalePolicy.FALLBACK_TAG)
+    }
+
+    @Test
     fun optimizeInternetRoutesToCar72NetworkEngine() {
         assertEquals(
             VoiceCommand.Network(NetworkVoiceRequest.OPTIMIZE),
