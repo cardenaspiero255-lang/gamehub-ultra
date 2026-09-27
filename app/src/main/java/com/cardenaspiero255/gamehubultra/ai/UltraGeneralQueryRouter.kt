@@ -30,8 +30,8 @@ object UltraGeneralQueryRouter {
     private val generalKnowledgePattern = Regex(
         """\b(que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|why|what does|how does|explain|define|where is|when was)\b"""
     )
-    private val assistantIdentityPattern = Regex(
-        """\b(quien eres|who are you)\b"""
+    private val assistantIdentityOnlyPattern = Regex(
+        """^(?:ultra )?(?:quien eres|who are you)(?: por favor| please)?$"""
     )
     private val appContextPattern = Regex(
         """\b(mi juego seleccionado|juego seleccionado|mi perfil|perfil activo|mi configuracion|mi configuración|estado de gamehub|estado de ultra|my selected game|selected game|my profile|active profile|my settings)\b"""
@@ -70,20 +70,20 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
+            assistantIdentityOnlyPattern.matches(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = false,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
             generalKnowledgePattern.containsMatchIn(clean) ->
                 UltraGeneralQueryRequest(
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
                     requiresInternet = true,
-                    requiresFreshData = false,
-                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
-                )
-
-            assistantIdentityPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
-                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
