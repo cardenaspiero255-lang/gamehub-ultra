@@ -154,7 +154,6 @@ Deno.test("current marketplace price abstains when no price credential exists", 
   }
 });
 
-
 Deno.test("weather remains verified through Open-Meteo after provider refactor", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -202,7 +201,7 @@ Deno.test("comparison combines two verified specification records", async () => 
     fetcher: (input) => {
       const url = String(input);
       if (url.includes("api.github.com/search/code")) {
-        const isRedMagic = decodeURIComponent(url).toLowerCase().includes("redmagic");
+        const isRedMagic = decodeURIComponent(url).toLowerCase().includes(\n          "redmagic",\n        );
         return jsonResponse({
           items: [{
             path: isRedMagic
@@ -287,7 +286,7 @@ Deno.test("marketplace price uses current Mercado Libre listings when configured
         ],
       });
     },
-    env: (name) => name === "MERCADOLIBRE_ACCESS_TOKEN" ? "test-token" : undefined,
+    env: (name) =>\n      name === "MERCADOLIBRE_ACCESS_TOKEN" ? "test-token" : undefined,
   };
 
   const result = await routeResearchQuery(
