@@ -13,11 +13,11 @@ data class UltraQueryExecutionAnswer(
 
 /**
  * Keeps stable/general knowledge on the local path and routes changing data
- * through the verified research engine. Online failures never fall back to an
+ * through the verified research boundary. Online failures never fall back to an
  * unverified local answer that could present stale information as current.
  */
 class UltraQueryExecutionCoordinator(
-    private val researchEngine: UltraVerifiedResearchEngine
+    private val researchGateway: UltraResearchGateway
 ) {
     private fun safeLocalAnswer(localChat: () -> String?): String? =
         try {
@@ -52,7 +52,7 @@ class UltraQueryExecutionCoordinator(
             }
         }
 
-        val research = researchEngine.answer(request)
+        val research = researchGateway.answer(request)
         val canUseLocalStableFallback =
             request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
                 !request.requiresFreshData &&
