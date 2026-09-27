@@ -379,7 +379,9 @@ class UltraAssistantSessionControllerTest {
             loadStarted.await()
 
             assertEquals(
-                listOf("game.b" to emptyList<String>()),
+                listOf<Pair<String?, List<String>>>(
+                    "game.b" to emptyList()
+                ),
                 snapshots
             )
             assertEquals("game.b", controller.selectedGamePackage.value)
@@ -389,8 +391,8 @@ class UltraAssistantSessionControllerTest {
             load.join()
 
             assertEquals(
-                listOf(
-                    "game.b" to emptyList<String>(),
+                listOf<Pair<String?, List<String>>>(
+                    "game.b" to emptyList(),
                     "game.b" to listOf("Ultra: historial B")
                 ),
                 snapshots
