@@ -1,11 +1,14 @@
 package com.cardenaspiero255.gamehubultra
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,6 +29,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { currentGame },
                 currentConversation = { conversation },
@@ -67,6 +71,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { emptyList() },
@@ -78,7 +83,7 @@ class UltraAssistantQueryRunnerTest {
             ) {
                 release.await()
             }
-            assertIs<UltraAssistantQuerySubmission.Accepted>(first)
+            val acceptedFirst = assertIs<UltraAssistantQuerySubmission.Accepted>(first)
 
             val second = runner.launch(
                 onAccepted = { acceptedTurns += 1 },
@@ -89,7 +94,7 @@ class UltraAssistantQueryRunnerTest {
             assertEquals(1, acceptedTurns)
 
             release.complete(Unit)
-            (first as UltraAssistantQuerySubmission.Accepted).job.join()
+            acceptedFirst.job.join()
         } finally {
             ownerScope.cancel()
         }
@@ -103,6 +108,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { "game.a" },
                 currentConversation = { emptyList() },
@@ -135,6 +141,7 @@ class UltraAssistantQueryRunnerTest {
         try {
             val runner = UltraAssistantQueryRunner(
                 ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
                 publicationDispatcher = Dispatchers.Unconfined,
                 currentGamePackage = { currentGame },
                 currentConversation = { conversation },
@@ -165,5 +172,362 @@ class UltraAssistantQueryRunnerTest {
         } finally {
             ownerScope.cancel()
         }
+    }
+    @Test
+    fun acceptedCallbackFailureReleasesRunnerForNextSubmission() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            val failure = CompletableDeferred<Throwable>()
+            val submission = runner.launch(
+                onAccepted = { error("accept failed") },
+                onFailure = { failure.complete(it) }
+            ) {}
+            val failedSubmission = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+            failedSubmission.job.join()
+
+            val acceptanceFailure = failure.await()
+            assertIs<IllegalStateException>(acceptanceFailure)
+            assertEquals("accept failed", acceptanceFailure.message)
+            assertFalse(runner.isRunning.value)
+
+            val retry = runner.launch(
+                onAccepted = {},
+                onFailure = {}
+            ) {}
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(retry)
+            accepted.job.join()
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun assistantAppendCanResetConversationForCurrentGame() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var conversation = listOf("Tú: vieja", "Ultra: vieja")
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { conversation },
+                publishConversation = { conversation = it }
+            )
+
+            val published = runner.appendAssistantIfCurrentGame(
+                originatingGamePackage = "game.a",
+                assistantEntry = "  Ultra: nueva  ",
+                maxEntries = 8,
+                resetConversation = true
+            )
+
+            assertTrue(published)
+            assertEquals(listOf("Ultra: nueva"), conversation)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun assistantAppendKeepsConversationBounded() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var conversation = listOf("uno", "dos", "tres")
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { conversation },
+                publishConversation = { conversation = it }
+            )
+
+            runner.appendAssistantIfCurrentGame(
+                originatingGamePackage = "game.a",
+                assistantEntry = "cuatro",
+                maxEntries = 3
+            )
+
+            assertEquals(listOf("dos", "tres", "cuatro"), conversation)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun cancelledOwnerScopeRejectsSubmissionBeforeRecordingUserTurn() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var acceptedTurns = 0
+
+        ownerScope.cancel()
+
+        val runner = UltraAssistantQueryRunner(
+            ownerScope = ownerScope,
+            publicationDispatcher = Dispatchers.Unconfined,
+            currentGamePackage = { "game.a" },
+            currentConversation = { emptyList() },
+            publishConversation = {}
+        )
+
+        val submission = runner.launch(
+            onAccepted = { acceptedTurns += 1 },
+            onFailure = {}
+        ) {}
+
+        assertIs<UltraAssistantQuerySubmission.Rejected>(submission)
+        assertEquals(0, acceptedTurns)
+        assertFalse(runner.isRunning.value)
+    }
+
+
+    @Test
+    fun cancellingAcceptedQueryDoesNotReportFailureAndReleasesRunner() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val started = CompletableDeferred<Unit>()
+        var failures = 0
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            val submission = runner.launch(
+                onAccepted = {},
+                onFailure = { failures += 1 }
+            ) {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+            started.await()
+            assertTrue(runner.isRunning.value)
+
+            accepted.job.cancel()
+            accepted.job.join()
+
+            assertEquals(0, failures)
+            assertFalse(runner.isRunning.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+
+    @Test
+    fun cancellationBeforeScheduledExecutionDoesNotRecordAcceptedTurn() = runBlocking {
+        val executionDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var acceptedTurns = 0
+        var executed = false
+
+        val runner = UltraAssistantQueryRunner(
+            ownerScope = ownerScope,
+            executionDispatcher = executionDispatcher,
+            publicationDispatcher = Dispatchers.Unconfined,
+            currentGamePackage = { "game.a" },
+            currentConversation = { emptyList() },
+            publishConversation = {}
+        )
+
+        val submission = runner.launch(
+            onAccepted = { acceptedTurns += 1 },
+            onFailure = {}
+        ) {
+            executed = true
+        }
+        val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+        ownerScope.cancel()
+        executionDispatcher.runAll()
+        accepted.job.join()
+
+        assertEquals(0, acceptedTurns)
+        assertFalse(executed)
+        assertFalse(runner.isRunning.value)
+    }
+
+
+    @Test
+    fun gameChangeBeforeDeferredAcceptanceDoesNotRecordTurn() = runBlocking {
+        val publicationDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var currentGame: String? = "game.a"
+        var acceptedTurns = 0
+        var executed = false
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = publicationDispatcher,
+                currentGamePackage = { currentGame },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            val submission = runner.launch(
+                onAccepted = { acceptedTurns += 1 },
+                onFailure = {}
+            ) {
+                executed = true
+            }
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+            currentGame = "game.b"
+            publicationDispatcher.runAll()
+            accepted.job.join()
+
+            assertEquals(0, acceptedTurns)
+            assertFalse(executed)
+            assertFalse(runner.isRunning.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun gameChangeBeforeScheduledExecutionDoesNotRecordAcceptedTurn() = runBlocking {
+        val executionDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var currentGame: String? = "game.a"
+        var acceptedTurns = 0
+        var executed = false
+
+        val runner = UltraAssistantQueryRunner(
+            ownerScope = ownerScope,
+            executionDispatcher = executionDispatcher,
+            publicationDispatcher = Dispatchers.Unconfined,
+            currentGamePackage = { currentGame },
+            currentConversation = { emptyList() },
+            publishConversation = {}
+        )
+
+        val submission = runner.launch(
+            onAccepted = { acceptedTurns += 1 },
+            onFailure = {}
+        ) {
+            executed = true
+        }
+        val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+        currentGame = "game.b"
+        executionDispatcher.runAll()
+        accepted.job.join()
+
+        assertEquals(0, acceptedTurns)
+        assertFalse(executed)
+        assertFalse(runner.isRunning.value)
+    }
+
+    @Test
+    fun deferredAcceptanceForSameGameRecordsTurnAndExecutesQuery() = runBlocking {
+        val publicationDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var acceptedTurns = 0
+        var executed = false
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = publicationDispatcher,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            val submission = runner.launch(
+                onAccepted = { acceptedTurns += 1 },
+                onFailure = {}
+            ) {
+                executed = true
+            }
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+            assertEquals(0, acceptedTurns)
+            assertFalse(executed)
+
+            publicationDispatcher.runAll()
+            accepted.job.join()
+
+            assertEquals(1, acceptedTurns)
+            assertTrue(executed)
+            assertFalse(runner.isRunning.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun scheduledExecutionForSameGameRecordsTurnAndExecutesQuery() = runBlocking {
+        val executionDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var acceptedTurns = 0
+        var executed = false
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = executionDispatcher,
+                publicationDispatcher = Dispatchers.Unconfined,
+                currentGamePackage = { "game.a" },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            val submission = runner.launch(
+                onAccepted = { acceptedTurns += 1 },
+                onFailure = {}
+            ) {
+                executed = true
+            }
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+            assertEquals(0, acceptedTurns)
+            assertFalse(executed)
+
+            executionDispatcher.runAll()
+            accepted.job.join()
+
+            assertEquals(1, acceptedTurns)
+            assertTrue(executed)
+            assertFalse(runner.isRunning.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+}
+
+private class QueuedTestDispatcher : CoroutineDispatcher() {
+    private val tasks = mutableListOf<Runnable>()
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        tasks += block
+    }
+
+    fun runAll() {
+        val queued = tasks.toList()
+        tasks.clear()
+        queued.forEach(Runnable::run)
     }
 }

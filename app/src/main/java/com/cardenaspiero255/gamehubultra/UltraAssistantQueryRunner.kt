@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,7 @@ internal sealed interface UltraAssistantQuerySubmission {
  */
 internal class UltraAssistantQueryRunner(
     private val ownerScope: CoroutineScope,
+    private val executionDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val publicationDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val currentGamePackage: () -> String?,
     private val currentConversation: () -> List<String>,
@@ -37,8 +39,9 @@ internal class UltraAssistantQueryRunner(
         onFailure: suspend (Throwable) -> Unit,
         block: suspend CoroutineScope.() -> Unit
     ): UltraAssistantQuerySubmission {
+        val originatingGamePackage = currentGamePackage()
         val accepted = synchronized(this) {
-            if (_isRunning.value) {
+            if (_isRunning.value || !ownerScope.isActive) {
                 false
             } else {
                 _isRunning.value = true
@@ -47,23 +50,24 @@ internal class UltraAssistantQueryRunner(
         }
         if (!accepted) return UltraAssistantQuerySubmission.Rejected
 
-        try {
-            onAccepted()
-        } catch (error: Throwable) {
-            _isRunning.value = false
-            throw error
-        }
-
-        val job = ownerScope.launch(Dispatchers.IO) {
+        val job = ownerScope.launch(executionDispatcher) {
             try {
+                withContext(publicationDispatcher) {
+                    if (currentGamePackage() != originatingGamePackage) {
+                        throw CancellationException("Selected game changed before query acceptance")
+                    }
+                    onAccepted()
+                }
                 block()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 onFailure(error)
-            } finally {
-                _isRunning.value = false
             }
+        }
+        // Completion also runs for jobs cancelled before their body starts.
+        job.invokeOnCompletion {
+            _isRunning.value = false
         }
         return UltraAssistantQuerySubmission.Accepted(job)
     }
