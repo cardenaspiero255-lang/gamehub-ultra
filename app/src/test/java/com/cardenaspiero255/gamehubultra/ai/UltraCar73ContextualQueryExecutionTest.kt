@@ -181,8 +181,12 @@ class UltraCar73ContextualQueryExecutionTest {
         var localCalls = 0
 
         val answer = coordinator.answer(
-            request = UltraGeneralQueryRouter.classify(
-                "Ultra, qué son los sentimientos"
+            request = UltraGeneralQueryRequest(
+                originalText = "Ultra, qué son los sentimientos",
+                kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                requiresInternet = true,
+                requiresFreshData = false,
+                timeoutMillis = 5_000L
             ),
             localChat = {
                 localCalls += 1
