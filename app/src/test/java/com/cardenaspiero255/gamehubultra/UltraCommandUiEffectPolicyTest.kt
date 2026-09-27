@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra
 
+import com.cardenaspiero255.gamehubultra.ai.AiAdviceReason
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 import kotlin.test.Test
@@ -32,4 +34,23 @@ class UltraCommandUiEffectPolicyTest {
 
         assertNull(UltraCommandUiEffectPolicy.profileForCurrentGameCallback(result))
     }
+
+    @Test
+    fun aiAdviceExposesSuggestedProfileForExplicitUserApply() {
+        val result = VoiceActionResult.AiAdvice(
+            GameHubAiAdvice(
+                readiness = 92,
+                suggestedProfile = PerformanceProfile.X4,
+                reason = AiAdviceReason.X4_READY,
+                localModelUsed = false,
+                fallbackUsed = true
+            )
+        )
+
+        assertEquals(
+            PerformanceProfile.X4,
+            UltraCommandUiEffectPolicy.recommendedProfileForUserApply(result)
+        )
+    }
+
 }
