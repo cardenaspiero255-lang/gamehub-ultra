@@ -199,4 +199,46 @@ class UltraQueryExecutionPolicyHardeningTest {
                     authoritative = authoritative
                 )
         }
+    @Test
+    fun freshGeneralKnowledgeDoesNotReuseStableCacheEntry() {
+        var calls = 0
+        val provider = object : UltraResearchProvider {
+            override val id = "changing-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                calls += 1
+                return UltraResearchEvidence(
+                    claimKey = "claim",
+                    value = "value-$calls",
+                    displayText = "Respuesta $calls",
+                    sourceId = id,
+                    authoritative = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+
+        try {
+            val stable = UltraGeneralQueryRequest(
+                originalText = "mismo tema",
+                kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                requiresInternet = true,
+                requiresFreshData = false,
+                timeoutMillis = 5_000L
+            )
+            val fresh = stable.copy(requiresFreshData = true)
+
+            val first = engine.answer(stable)
+            val second = engine.answer(fresh)
+
+            assertEquals("Respuesta 1", first.message)
+            assertEquals("Respuesta 2", second.message)
+            assertFalse(second.fromCache)
+            assertEquals(2, calls)
+        } finally {
+            engine.close()
+        }
+    }
+
+
 }
