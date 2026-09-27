@@ -1197,7 +1197,9 @@ private fun HomeScreen(
                     aiAdvisor = aiAdvisor,
                     queryRunner = queryRunner,
                     conversation = conversation,
-                    onConversationChanged = onConversationChanged
+                    onConversationChanged = onConversationChanged,
+                    historyLoadFailed = historyLoadFailed,
+                    onRetryHistoryLoad = onRetryHistoryLoad
                 )
             }
         }
