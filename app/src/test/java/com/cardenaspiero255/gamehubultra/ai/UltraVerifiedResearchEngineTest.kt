@@ -173,6 +173,144 @@ class UltraVerifiedResearchEngineTest {
         engine.close()
     }
 
+    @Test
+    fun freshGeneralKnowledgeDoesNotReuseStableCacheEntry() {
+        var now = 10_000L
+        val calls = AtomicInteger(0)
+        val provider = object : UltraResearchProvider {
+            override val id = "general"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                val call = calls.incrementAndGet()
+                return evidence(
+                    claimKey = "topic",
+                    value = "value-$call",
+                    text = "respuesta-$call",
+                    authoritative = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(provider),
+            cache = UltraResearchCache(),
+            nowMillis = { now }
+        )
+        val stable = UltraGeneralQueryRequest(
+            originalText = "mismo tema",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = true,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
+        val fresh = stable.copy(requiresFreshData = true)
+
+        try {
+            val stableAnswer = engine.answer(stable)
+            val freshAnswer = engine.answer(fresh)
+
+            assertEquals("respuesta-1", stableAnswer.message)
+            assertEquals("respuesta-2", freshAnswer.message)
+            assertFalse(freshAnswer.fromCache)
+            assertEquals(2, calls.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun currentDataKindUsesCurrentDataTtlEvenWhenFreshFlagIsFalse() {
+        var now = 30_000L
+        val calls = AtomicInteger(0)
+        val provider = object : UltraResearchProvider {
+            override val id = "current-data"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                val call = calls.incrementAndGet()
+                return evidence(
+                    claimKey = "current",
+                    value = "value-$call",
+                    text = "actual-$call",
+                    authoritative = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(provider),
+            cache = UltraResearchCache(),
+            nowMillis = { now }
+        )
+        val request = UltraGeneralQueryRequest(
+            originalText = "dato actual con flags inconsistentes",
+            kind = UltraGeneralQueryKind.CURRENT_DATA,
+            requiresInternet = true,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
+
+        try {
+            val first = engine.answer(request)
+            val cached = engine.answer(request)
+            now += UltraResearchCache.CURRENT_DATA_TTL_MS + 1
+            val refreshed = engine.answer(request)
+
+            assertFalse(first.fromCache)
+            assertTrue(cached.fromCache)
+            assertFalse(refreshed.fromCache)
+            assertEquals("actual-2", refreshed.message)
+            assertEquals(2, calls.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+
+    @Test
+    fun freshGeneralKnowledgeCacheUsesCurrentDataTtl() {
+        var now = 20_000L
+        val calls = AtomicInteger(0)
+        val provider = object : UltraResearchProvider {
+            override val id = "general"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                val call = calls.incrementAndGet()
+                return evidence(
+                    claimKey = "topic",
+                    value = "fresh-$call",
+                    text = "fresca-$call",
+                    authoritative = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(provider),
+            cache = UltraResearchCache(),
+            nowMillis = { now }
+        )
+        val request = UltraGeneralQueryRequest(
+            originalText = "tema con frescura",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = true,
+            requiresFreshData = true,
+            timeoutMillis = 5_000L
+        )
+
+        try {
+            val first = engine.answer(request)
+            val cached = engine.answer(request)
+            now += UltraResearchCache.CURRENT_DATA_TTL_MS + 1
+            val refreshed = engine.answer(request)
+
+            assertFalse(first.fromCache)
+            assertTrue(cached.fromCache)
+            assertFalse(refreshed.fromCache)
+            assertEquals("fresca-2", refreshed.message)
+            assertEquals(2, calls.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+
     private fun fixedProvider(
         providerId: String,
         claimKey: String,

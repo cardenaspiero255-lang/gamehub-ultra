@@ -272,4 +272,53 @@ class UltraCar73ContextualQueryExecutionTest {
         assertEquals(0, localCalls)
     }
 
+    @Test
+    fun failingStableLocalFallbackPreservesSafeResearchAbstention() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                error("provider unavailable")
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify("Ultra, ¿qué son los sentimientos?"),
+            localChat = { error("local model crashed") }
+        )
+
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertFalse(answer.fallbackUsed)
+        assertTrue(answer.message.contains("verificar", ignoreCase = true))
+        engine.close()
+    }
+
+    @Test
+    fun failingOfflineLocalChatReturnsControlledAbstention() {
+        val engine = UltraVerifiedResearchEngine(emptyList())
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+        val request = UltraGeneralQueryRequest(
+            originalText = "hola",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = false,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
+
+        val answer = coordinator.answer(
+            request = request,
+            localChat = { error("local model crashed") }
+        )
+
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertFalse(answer.fallbackUsed)
+        assertTrue(answer.message.contains("local", ignoreCase = true))
+        engine.close()
+    }
+
+
 }

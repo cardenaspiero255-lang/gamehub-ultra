@@ -261,7 +261,7 @@ class UltraVerifiedResearchEngine(
         cache.put(
             key = key,
             result = result,
-            expiresAtMillis = nowMillis() + ttlMillis(request.kind)
+            expiresAtMillis = nowMillis() + ttlMillis(request)
         )
         return result
     }
@@ -294,19 +294,24 @@ class UltraVerifiedResearchEngine(
 
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
+            (if (request.requiresFreshData) "fresh" else "stable") + ":" +
             request.originalText
                 .lowercase(Locale.ROOT)
                 .replace(Regex("""\s+"""), " ")
                 .trim()
 
-    private fun ttlMillis(kind: UltraGeneralQueryKind): Long =
-        when (kind) {
-            UltraGeneralQueryKind.CURRENT_DATA ->
-                UltraResearchCache.CURRENT_DATA_TTL_MS
-            UltraGeneralQueryKind.COMPARISON_RESEARCH ->
-                UltraResearchCache.COMPARISON_TTL_MS
-            UltraGeneralQueryKind.GENERAL_KNOWLEDGE ->
-                UltraResearchCache.GENERAL_KNOWLEDGE_TTL_MS
+    private fun ttlMillis(request: UltraGeneralQueryRequest): Long =
+        if (request.requiresFreshData) {
+            UltraResearchCache.CURRENT_DATA_TTL_MS
+        } else {
+            when (request.kind) {
+                UltraGeneralQueryKind.CURRENT_DATA ->
+                    UltraResearchCache.CURRENT_DATA_TTL_MS
+                UltraGeneralQueryKind.COMPARISON_RESEARCH ->
+                    UltraResearchCache.COMPARISON_TTL_MS
+                UltraGeneralQueryKind.GENERAL_KNOWLEDGE ->
+                    UltraResearchCache.GENERAL_KNOWLEDGE_TTL_MS
+            }
         }
 
     override fun close() {

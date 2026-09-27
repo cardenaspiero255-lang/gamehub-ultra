@@ -19,12 +19,25 @@ data class UltraQueryExecutionAnswer(
 class UltraQueryExecutionCoordinator(
     private val researchEngine: UltraVerifiedResearchEngine
 ) {
+    private fun safeLocalAnswer(localChat: () -> String?): String? =
+        try {
+            localChat()?.takeIf(String::isNotBlank)
+        } catch (_: Exception) {
+            null
+        }
+
     fun answer(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
     ): UltraQueryExecutionAnswer {
-        if (!request.requiresInternet) {
-            val localAnswer = localChat()?.takeIf(String::isNotBlank)
+        val requiresVerifiedResearch =
+            request.requiresInternet ||
+                request.requiresFreshData ||
+                request.kind == UltraGeneralQueryKind.CURRENT_DATA ||
+                request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH
+
+        if (!requiresVerifiedResearch) {
+            val localAnswer = safeLocalAnswer(localChat)
             return if (localAnswer != null) {
                 UltraQueryExecutionAnswer(
                     message = localAnswer,
@@ -48,7 +61,7 @@ class UltraQueryExecutionCoordinator(
                 !research.sensitiveInputBlocked
 
         if (canUseLocalStableFallback) {
-            val localAnswer = localChat()?.takeIf(String::isNotBlank)
+            val localAnswer = safeLocalAnswer(localChat)
             if (localAnswer != null) {
                 return UltraQueryExecutionAnswer(
                     message = localAnswer,
