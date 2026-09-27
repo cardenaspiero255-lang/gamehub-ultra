@@ -253,11 +253,17 @@ object UltraMathEngine {
             Regex("""\b(?:mediana|median)\b""")
         }
         val markerMatch = marker.find(clean) ?: return null
-        val values = Regex("""-?\d+(?:[.,]\d+)?""")
-            .findAll(clean.substring(markerMatch.range.last + 1))
+        val tail = clean.substring(markerMatch.range.last + 1).trim()
+        val number = """-?\d+(?:[.,]\d+)?"""
+        val listPattern = Regex(
+            """^(?:(?:de|of)\s+)?($number(?:\s*(?:,\s+|\by\b|\band\b)\s*$number)+)\s*$"""
+        )
+        val list = listPattern.matchEntire(tail)?.groupValues?.get(1) ?: return null
+        val values = Regex(number)
+            .findAll(list)
             .mapNotNull { it.value.toDecimalOrNull() }
             .toList()
-        if (values.isEmpty()) return null
+        if (values.size < 2) return null
 
         val result = if (mode == "mean") {
             values.fold(BigDecimal.ZERO) { total, value ->
