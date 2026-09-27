@@ -96,6 +96,17 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun technicalTroubleshootingUsesVerifiedResearch() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, cómo soluciono un error de Gradle al compilar Android"
+        )
+
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
+        assertTrue(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
     fun ordinaryConversationStaysOnLocalChatPath() {
         val greeting = UltraGeneralQueryRouter.classify(
             "Ultra, hola, cómo estás"
