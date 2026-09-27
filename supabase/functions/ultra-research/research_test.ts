@@ -1036,7 +1036,6 @@ Deno.test("speaker labels are stripped before assistant invocation in context", 
   }
 });
 
-
 Deno.test("Gemini synthesizes verified evidence in Spanish when configured", async () => {
   let geminiApiKey = "";
   let geminiPrompt = "";
