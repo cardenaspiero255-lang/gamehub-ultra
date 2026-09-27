@@ -247,6 +247,7 @@ private fun GameHubUltraApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val ultraQueryRunner = remember(scope) { UltraAssistantQueryRunner(scope) }
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
@@ -740,6 +741,7 @@ private fun GameHubUltraApp(
                 },
                 aiContext = aiContext,
                 aiAdvisor = aiAdvisor,
+                queryRunner = ultraQueryRunner,
                 conversation = ultraConversation,
                 onConversationChanged = ::updateUltraConversation,
                 favoriteGames = favoriteGames,
@@ -857,6 +859,7 @@ private fun GameHubUltraApp(
                     UltraAssistantSidePanel(
                         aiContext = aiContext,
                         aiAdvisor = aiAdvisor,
+                        queryRunner = ultraQueryRunner,
                         conversation = ultraConversation,
                         onConversationChanged = ::updateUltraConversation,
                         selectedProfileName = selectedProfileName,
@@ -972,6 +975,7 @@ private fun WideNavigationRail(
 private fun UltraAssistantSidePanel(
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     selectedProfileName: String,
@@ -997,6 +1001,7 @@ private fun UltraAssistantSidePanel(
             onGameSelected = onGameSelected,
             aiContext = aiContext,
             aiAdvisor = aiAdvisor,
+            queryRunner = queryRunner,
             conversation = conversation,
             onConversationChanged = onConversationChanged
         )
@@ -1029,6 +1034,7 @@ private fun HomeScreen(
     onApplyAdaptiveProfile: () -> Unit,
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     favoriteGames: Set<String>,
@@ -1133,6 +1139,7 @@ private fun HomeScreen(
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
                     aiAdvisor = aiAdvisor,
+                    queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged
                 )
@@ -1190,6 +1197,7 @@ private fun HomeScreen(
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
                     aiAdvisor = aiAdvisor,
+                    queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged
                 )
@@ -1549,6 +1557,7 @@ private fun VoiceAssistantCard(
     onGameSelected: (String) -> Unit,
     aiContext: GameHubAiContext,
     aiAdvisor: GameHubAiAdvisor,
+    queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit
 ) {
@@ -1564,7 +1573,7 @@ private fun VoiceAssistantCard(
     var pendingContinuousListening by rememberSaveable { mutableStateOf(false) }
     var showTextChat by rememberSaveable { mutableStateOf(false) }
     var chatMessage by rememberSaveable { mutableStateOf("") }
-    var chatSending by remember { mutableStateOf(false) }
+    val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
     var permissionGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -1592,9 +1601,8 @@ private fun VoiceAssistantCard(
 
         chatMessage = ""
         latestOnConversationChanged(withUser)
-        chatSending = true
 
-        scope.launch(Dispatchers.IO) {
+        queryRunner.launch {
             val deviceStatus = VoiceDeviceStatusProvider.read(context)
             val route = UltraTypedChatRoutePlanner.route(
                 message = message,
@@ -1624,7 +1632,6 @@ private fun VoiceAssistantCard(
                             latestOnConversationChanged(withAnswer)
                             response = answer
                         }
-                        chatSending = false
                     }
                 }
 
@@ -1655,7 +1662,6 @@ private fun VoiceAssistantCard(
                             latestOnConversationChanged(withAnswer)
                             response = answer
                         }
-                        chatSending = false
                     }
                 }
 
@@ -1718,7 +1724,6 @@ private fun VoiceAssistantCard(
                             latestOnConversationChanged(withAnswer)
                             response = answer
                         }
-                        chatSending = false
                     }
                 }
             }
