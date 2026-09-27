@@ -8,9 +8,10 @@ data class UltraGeneralResearchDecision(
 /**
  * Decides whether a chat turn must be handled by verified online research.
  * Stable/offline-safe questions remain available to the local chat path.
+ * The injected research gateway is borrowed; this coordinator never owns or closes it.
  */
 class UltraGeneralResearchCoordinator(
-    private val engine: UltraVerifiedResearchEngine
+    private val researchGateway: UltraResearchGateway
 ) : AutoCloseable {
 
     fun answer(route: UltraAgentRoute.Chat): UltraGeneralResearchDecision {
@@ -26,11 +27,9 @@ class UltraGeneralResearchCoordinator(
 
         return UltraGeneralResearchDecision(
             handled = true,
-            result = engine.answer(request)
+            result = researchGateway.answer(request)
         )
     }
 
-    override fun close() {
-        engine.close()
-    }
+    override fun close() = Unit
 }
