@@ -606,7 +606,6 @@ Deno.test("English general knowledge uses the English encyclopedia locale", asyn
   }
 });
 
-
 Deno.test("Spanish factual prefixes are removed before encyclopedia search", async () => {
   const queries: string[] = [];
   const deps: ResearchDependencies = {
