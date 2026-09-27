@@ -8,6 +8,7 @@ internal data class UltraResearchBackendResponse(
     val sourceIds: List<String>,
     val independentSourceCount: Int,
     val authoritative: Boolean,
+    val trustedReference: Boolean,
     val abstained: Boolean,
     val message: String?
 )
@@ -72,6 +73,7 @@ internal object UltraResearchJsonCodec {
             sourceIds = stringArrayField(json, "sourceIds"),
             independentSourceCount = intField(json, "independentSourceCount") ?: 1,
             authoritative = booleanField(json, "authoritative") ?: false,
+            trustedReference = booleanField(json, "trustedReference") ?: false,
             abstained = booleanField(json, "abstained") ?: false,
             message = stringField(json, "message")
         )

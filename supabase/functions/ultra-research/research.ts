@@ -6,6 +6,7 @@ export type ResearchResult = {
   sourceIds?: string[];
   independentSourceCount?: number;
   authoritative?: boolean;
+  trustedReference?: boolean;
   observedAt?: string | null;
   abstained?: boolean;
   message?: string;
@@ -616,6 +617,178 @@ async function priceEvidence(
   };
 }
 
+
+
+const GENERAL_KNOWLEDGE_STOP_WORDS = new Set([
+  "a", "al", "an", "and", "are", "como", "cual", "cuales", "de", "del",
+  "did", "dime", "do", "does", "el", "en", "es", "explica", "explicame",
+  "explain", "fue", "how", "in", "is", "la", "las", "los", "me", "of",
+  "on", "o", "para", "por", "porque", "que", "quien", "quienes", "son",
+  "tell", "the", "un", "una", "what", "who", "why", "y",
+]);
+
+function generalKnowledgeTokens(value: string): string[] {
+  const clean = normalize(stripAssistantInvocation(value))
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  return unique(
+    clean
+      .split(/\s+/)
+      .filter((token) => token.length >= 2)
+      .filter((token) => !GENERAL_KNOWLEDGE_STOP_WORDS.has(token)),
+  );
+}
+
+function generalKnowledgeRelevance(
+  query: string,
+  title: string,
+  extract: string,
+): number {
+  const tokens = generalKnowledgeTokens(query);
+  if (!tokens.length) return 0;
+
+  const haystack = ` ${normalize(`${title} ${extract}`)
+    .replace(/[^a-z0-9]+/g, " ")} `;
+  return tokens.filter((token) => haystack.includes(` ${token} `)).length;
+}
+
+function generalKnowledgeIsRelevant(
+  query: string,
+  title: string,
+  extract: string,
+): boolean {
+  const tokenCount = generalKnowledgeTokens(query).length;
+  if (!tokenCount) return false;
+  const requiredMatches = tokenCount >= 2 ? 2 : 1;
+  return generalKnowledgeRelevance(query, title, extract) >= requiredMatches;
+}
+
+function generalKnowledgeSearchText(query: string): string {
+  const clean = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return clean
+    .replace(
+      /^(?:explicame|explícame|dime|cuentame|cuéntame|que es|qué es|quien es|quién es|quien fue|quién fue|como funciona|cómo funciona)\s+/i,
+      "",
+    )
+    .trim() || clean;
+}
+
+function conciseReferenceExtract(value: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= 720) return compact;
+
+  const firstSentences = compact.match(/[^.!?]+[.!?]+/g)?.slice(0, 3).join(" ")
+    .trim();
+  if (firstSentences && firstSentences.length >= 120) {
+    return firstSentences.slice(0, 720).trim();
+  }
+  return compact.slice(0, 717).trimEnd() + "...";
+}
+
+async function wikipediaGeneralKnowledgeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  language: "es" | "en" = "es",
+): Promise<ResearchResult> {
+  const searchText = generalKnowledgeSearchText(query);
+  if (!searchText) {
+    return abstain("Necesito una pregunta más específica.");
+  }
+
+  const url = new URL(`https://${language}.wikipedia.org/w/api.php`);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", searchText);
+  url.searchParams.set("gsrlimit", "3");
+  url.searchParams.set("prop", "extracts|info");
+  url.searchParams.set("exintro", "1");
+  url.searchParams.set("explaintext", "1");
+  url.searchParams.set("inprop", "url");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("utf8", "1");
+  url.searchParams.set("origin", "*");
+
+  const payload = await fetchJson(deps, url, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept": "application/json",
+    },
+  });
+  const queryObject = payload?.query;
+  if (!queryObject || typeof queryObject !== "object") {
+    return abstain("No encontré una referencia fiable para esa pregunta.");
+  }
+
+  const pagesObject = (queryObject as JsonObject).pages;
+  if (!pagesObject || typeof pagesObject !== "object") {
+    return abstain("No encontré una referencia fiable para esa pregunta.");
+  }
+
+  const pages = Object.values(pagesObject as JsonObject)
+    .filter((page): page is JsonObject => Boolean(page) && typeof page === "object")
+    .sort((left, right) => {
+      const leftIndex = numberValue(left.index) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = numberValue(right.index) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
+
+  const selected = pages
+    .map((page) => {
+      const title = stringValue(page.title) ?? "";
+      const extract = stringValue(page.extract) ?? "";
+      return {
+        page,
+        title,
+        extract,
+        relevance: generalKnowledgeRelevance(query, title, extract),
+      };
+    })
+    .filter((candidate) =>
+      candidate.extract.length >= 80 &&
+      generalKnowledgeIsRelevant(query, candidate.title, candidate.extract)
+    )
+    .sort((left, right) => right.relevance - left.relevance)[0];
+  if (!selected) {
+    return abstain(
+      "No encontré una referencia suficientemente relacionada con la pregunta.",
+    );
+  }
+
+  const title = selected.title || searchText;
+  const extract = selected.extract;
+
+  const pageUrl = stringValue(selected.page.fullurl) ??
+    `https://${language}.wikipedia.org/wiki/${
+      encodeURIComponent(title.replace(/\s+/g, "_"))
+    }`;
+  const answer = conciseReferenceExtract(extract);
+  const sourceName = language === "es" ? "Wikipedia" : "Wikipedia (inglés)";
+
+  return {
+    claimKey: `general:${slug(title)}`,
+    value: slug(title) || slug(searchText),
+    displayText: `${answer} Fuente: ${sourceName}.`,
+    sourceId: pageUrl,
+    sourceIds: [pageUrl],
+    independentSourceCount: 1,
+    trustedReference: true,
+  };
+}
+
+async function generalKnowledgeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const spanish = await wikipediaGeneralKnowledgeEvidence(query, deps, "es");
+  if (!spanish.abstained) return spanish;
+  return await wikipediaGeneralKnowledgeEvidence(query, deps, "en");
+}
+
 export async function routeResearchQuery(
   query: string,
   deps: ResearchDependencies,
@@ -674,6 +847,10 @@ export async function routeResearchQuery(
       extractSpecProduct(query),
       deps,
     );
+  }
+
+  if (kind === "GENERAL_KNOWLEDGE") {
+    return await generalKnowledgeEvidence(query, deps);
   }
 
   return abstain(

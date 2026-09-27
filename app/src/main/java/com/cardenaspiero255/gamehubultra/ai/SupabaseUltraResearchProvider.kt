@@ -94,7 +94,8 @@ class SupabaseUltraResearchProvider(
                 .filter { it.isNotBlank() && it != sourceId }
                 .distinct(),
             independentSourceCount = decoded.independentSourceCount.coerceAtLeast(1),
-            authoritative = decoded.authoritative
+            authoritative = decoded.authoritative,
+            trustedReference = decoded.trustedReference
         )
     }
 }

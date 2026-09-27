@@ -348,3 +348,99 @@ Deno.test("weather follow-up uses current question instead of contaminating it w
     throw new Error("expected current question location, got " + geocodedName);
   }
 });
+
+Deno.test(
+  "general knowledge uses a trusted reference instead of abstaining",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname !== "es.wikipedia.org" ||
+          url.pathname !== "/w/api.php"
+        ) {
+          throw new Error("unexpected URL " + url.toString());
+        }
+        if (url.searchParams.get("generator") !== "search") {
+          throw new Error("expected Wikipedia generator search");
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "123": {
+                pageid: 123,
+                index: 1,
+                title: "Dispersión de Rayleigh",
+                extract:
+                  "La dispersión de Rayleigh explica por qué la luz azul del Sol se dispersa más en la atmósfera, haciendo que el cielo se vea azul.",
+                fullurl: "https://es.wikipedia.org/wiki/Dispersión_de_Rayleigh",
+              },
+            },
+          },
+        });
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿por qué el cielo es azul?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected general knowledge result");
+    if (!result.trustedReference) {
+      throw new Error("expected trusted reference classification");
+    }
+    if (!result.displayText?.toLowerCase().includes("cielo")) {
+      throw new Error("expected useful general knowledge answer");
+    }
+    if (!result.sourceId?.includes("wikipedia.org")) {
+      throw new Error("expected a cited reference source");
+    }
+  },
+);
+
+Deno.test(
+  "general knowledge rejects a weak unrelated reference",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          !["es.wikipedia.org", "en.wikipedia.org"].includes(url.hostname) ||
+          url.pathname !== "/w/api.php"
+        ) {
+          throw new Error("unexpected URL " + url.toString());
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "404": {
+                pageid: 404,
+                index: 1,
+                title: "Azul",
+                extract:
+                  "Azul es un álbum de música publicado por un artista ficticio. La obra reúne canciones, producción, recepción crítica y datos sobre su lanzamiento comercial.",
+                fullurl: "https://es.wikipedia.org/wiki/Azul_(album)",
+              },
+            },
+          },
+        });
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿por qué el cielo es azul?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!result.abstained) {
+      throw new Error("weak unrelated references must be rejected");
+    }
+  },
+);
