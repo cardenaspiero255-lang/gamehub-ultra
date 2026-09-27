@@ -396,7 +396,6 @@ Deno.test("general knowledge returns a sourced answer instead of the gaming fall
   }
 });
 
-
 Deno.test("explicit general-knowledge kind wins over incidental price words", async () => {
   let searchQuery = "";
   const deps: ResearchDependencies = {
@@ -440,7 +439,9 @@ Deno.test("explicit general-knowledge kind wins over incidental price words", as
 
   if (result.abstained) throw new Error("expected general knowledge result");
   if (!searchQuery.toLowerCase().includes("valor esperado")) {
-    throw new Error("expected Wikipedia research, not marketplace price lookup");
+    throw new Error(
+      "expected Wikipedia research, not marketplace price lookup",
+    );
   }
 });
 
