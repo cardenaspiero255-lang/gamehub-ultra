@@ -76,7 +76,6 @@ Deno.test("callback state must exactly match the browser state", () => {
   }
 });
 
-
 Deno.test("OAuth credential set is committed atomically", async () => {
   const committed: string[] = [];
   let transactionCalls = 0;
