@@ -15,9 +15,10 @@ class UltraCar73ResearchCoordinatorTest {
             text = "Ahora hay 22 °C y está soleado.",
             authoritative = true
         )
-        UltraGeneralResearchCoordinator(
-            engine = UltraVerifiedResearchEngine(listOf(provider))
-        ).use { coordinator ->
+        UltraVerifiedResearchEngine(listOf(provider)).use { engine ->
+            val coordinator = UltraGeneralResearchCoordinator(
+                researchGateway = engine
+            )
             val route = UltraAgentRoute.Chat(
                 message = "Ultra, qué clima hay ahora",
                 query = UltraGeneralQueryRouter.classify("Ultra, qué clima hay ahora")
@@ -33,9 +34,10 @@ class UltraCar73ResearchCoordinatorTest {
 
     @Test
     fun stableGeneralKnowledgeWithoutResearchProviderAbstainsSafely() {
-        UltraGeneralResearchCoordinator(
-            engine = UltraVerifiedResearchEngine(emptyList())
-        ).use { coordinator ->
+        UltraVerifiedResearchEngine(emptyList()).use { engine ->
+            val coordinator = UltraGeneralResearchCoordinator(
+                researchGateway = engine
+            )
             val route = UltraAgentRoute.Chat(
                 message = "Ultra, explícame qué es Vulkan",
                 query = UltraGeneralQueryRouter.classify("Ultra, explícame qué es Vulkan")
@@ -58,9 +60,10 @@ class UltraCar73ResearchCoordinatorTest {
                 return UltraResearchEvidence("x", "x", "x", id)
             }
         }
-        UltraGeneralResearchCoordinator(
-            engine = UltraVerifiedResearchEngine(listOf(provider))
-        ).use { coordinator ->
+        UltraVerifiedResearchEngine(listOf(provider)).use { engine ->
+            val coordinator = UltraGeneralResearchCoordinator(
+                researchGateway = engine
+            )
             val text = "Ultra, busca el precio actual con token=secret-value-123"
             val route = UltraAgentRoute.Chat(
                 message = text,
