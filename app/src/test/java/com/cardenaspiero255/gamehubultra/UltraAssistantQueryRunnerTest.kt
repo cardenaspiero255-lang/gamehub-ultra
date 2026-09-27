@@ -366,6 +366,44 @@ class UltraAssistantQueryRunnerTest {
     }
 
 
+    @Test
+    fun gameChangeBeforeDeferredAcceptanceDoesNotRecordTurn() = runBlocking {
+        val publicationDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var currentGame: String? = "game.a"
+        var acceptedTurns = 0
+        var executed = false
+
+        try {
+            val runner = UltraAssistantQueryRunner(
+                ownerScope = ownerScope,
+                executionDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = publicationDispatcher,
+                currentGamePackage = { currentGame },
+                currentConversation = { emptyList() },
+                publishConversation = {}
+            )
+
+            val submission = runner.launch(
+                onAccepted = { acceptedTurns += 1 },
+                onFailure = {}
+            ) {
+                executed = true
+            }
+            val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+            currentGame = "game.b"
+            publicationDispatcher.runAll()
+            accepted.job.join()
+
+            assertEquals(0, acceptedTurns)
+            assertFalse(executed)
+            assertFalse(runner.isRunning.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
 }
 
 private class QueuedTestDispatcher : CoroutineDispatcher() {
