@@ -762,7 +762,7 @@ async function wikipediaGeneralKnowledgeEvidence(
   const title = selected.title || searchText;
   const extract = selected.extract;
 
-  const pageUrl = stringValue(selected.fullurl) ??
+  const pageUrl = stringValue(selected.page.fullurl) ??
     `https://${language}.wikipedia.org/wiki/${
       encodeURIComponent(title.replace(/\s+/g, "_"))
     }`;
