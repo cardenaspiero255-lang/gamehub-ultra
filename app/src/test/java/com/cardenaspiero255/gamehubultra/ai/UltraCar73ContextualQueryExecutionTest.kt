@@ -118,4 +118,39 @@ class UltraCar73ContextualQueryExecutionTest {
         assertEquals(0, localCalls)
     }
 
+
+    @Test
+    fun stableGeneralKnowledgeUsesVerifiedResearchWhenLocalModelCannotAnswer() {
+        val provider = object : UltraResearchProvider {
+            override val id = "trusted-reference"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:sky-blue",
+                    value = "rayleigh-scattering",
+                    displayText = "El cielo se ve azul principalmente por la dispersión de Rayleigh.",
+                    sourceId = "https://es.wikipedia.org/wiki/Dispersi%C3%B3n_de_Rayleigh",
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+        var localCalls = 0
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify("Ultra, ¿por qué el cielo es azul?"),
+            localChat = {
+                localCalls += 1
+                "Soy Ultra. Puedo hablar contigo sobre rendimiento, FPS, temperatura, batería, red y perfiles de GameHub Ultra. En este dispositivo el chat local puede estar limitado si no hay un modelo compatible."
+            }
+        )
+
+        assertEquals(
+            "El cielo se ve azul principalmente por la dispersión de Rayleigh.",
+            answer.message
+        )
+        assertTrue(answer.verified)
+        assertEquals(1, localCalls)
+        engine.close()
+    }
+
 }
