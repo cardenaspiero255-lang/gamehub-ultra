@@ -630,7 +630,9 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
 function generalKnowledgeLanguage(query: string): "es" | "en" {
   const clean = normalize(stripAssistantInvocation(query));
-  return /\b(what|who|why|how|explain|define|where|when)\b/.test(clean)
+  return /^(?:and )?(?:what|who|why|how|explain|define|where|when)\b/.test(
+      clean,
+    )
     ? "en"
     : "es";
 }
@@ -646,7 +648,7 @@ async function generalKnowledgeEvidence(
   const topic = extractGeneralKnowledgeQuery(researchText);
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
-  const language = generalKnowledgeLanguage(researchText);
+  const language = generalKnowledgeLanguage(query);
   const wikipediaHost = `${language}.wikipedia.org`;
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
   searchUrl.searchParams.set("action", "query");
