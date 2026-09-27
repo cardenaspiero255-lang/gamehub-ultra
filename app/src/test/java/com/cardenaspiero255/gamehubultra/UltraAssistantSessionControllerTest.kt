@@ -9,6 +9,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -476,5 +477,59 @@ class UltraAssistantSessionControllerTest {
             ownerScope.cancel()
         }
     }
+
+
+    @Test
+    fun scopeRemainsNotReadyUntilHistoryLoadSettles() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val loadStarted = CompletableDeferred<Unit>()
+        val releaseLoad = CompletableDeferred<Unit>()
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                loadStarted.complete(Unit)
+                releaseLoad.await()
+                return listOf("Ultra: historial listo")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined
+            )
+
+            val load = controller.selectGame("game.a")
+            loadStarted.await()
+
+            assertFalse(controller.scopeReady.value)
+
+            releaseLoad.complete(Unit)
+            load.join()
+
+            assertTrue(controller.scopeReady.value)
+            assertEquals(listOf("Ultra: historial listo"), controller.conversation.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
 
 }
