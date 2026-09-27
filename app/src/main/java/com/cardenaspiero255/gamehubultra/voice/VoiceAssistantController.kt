@@ -25,7 +25,7 @@ class VoiceAssistantController(
     init {
         tts = TextToSpeech(appContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.getDefault()
+                tts?.let(UltraSpeechLocalePolicy::applyTo)
             }
         }
     }
@@ -58,7 +58,7 @@ class VoiceAssistantController(
                     RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                 )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, UltraSpeechLocalePolicy.PREFERRED_TAG)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
             onListeningChanged(true)
