@@ -4,6 +4,7 @@ import { routeResearchQuery } from "./research.ts";
 
 type ResearchRequest = {
   query?: string;
+  context?: string;
   kind?: string;
   requiresFreshData?: boolean;
 };
@@ -48,16 +49,22 @@ Deno.serve(async (req: Request) => {
   }
 
   const query = (body.query ?? "").trim();
-  if (!query || query.length > 1200) {
+  const context = (body.context ?? "").trim();
+  if (!query || query.length > 1200 || context.length > 1200) {
     return json({ error: "Invalid query" }, 400);
   }
 
   try {
     return json(
-      await routeResearchQuery(query, {
-        fetcher: fetch,
-        env: (name) => Deno.env.get(name),
-      }),
+      await routeResearchQuery(
+        query,
+        {
+          fetcher: fetch,
+          env: (name) => Deno.env.get(name),
+        },
+        context,
+        body.kind ?? "",
+      ),
     );
   } catch {
     return json({
