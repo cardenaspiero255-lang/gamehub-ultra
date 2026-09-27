@@ -469,7 +469,24 @@ class UltraWakeService : Service() {
             )
 
                 when (route) {
-                is UltraAgentRoute.Utility -> route.answer.message
+                is UltraAgentRoute.Utility -> {
+                    if (
+                        route.answer.intent is
+                            com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
+                    ) {
+                        com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController.execute(
+                            intent = route.answer.intent,
+                            applyCompetitive = {
+                                com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(
+                                    context,
+                                    com.cardenaspiero255.gamehubultra.network.NetworkGameProfile.COMPETITIVE
+                                )
+                            }
+                        )
+                    } else {
+                        route.answer.message
+                    }
+                }
                 is UltraAgentRoute.Chat -> {
                     val memoryCommand = UltraMemoryCommandParser.parse(route.message)
                     val answer = UltraProductionQueryExecutor.answer(route) {
