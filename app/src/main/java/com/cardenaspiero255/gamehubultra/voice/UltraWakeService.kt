@@ -325,7 +325,6 @@ class UltraWakeService : Service() {
     ) {
         if (!lifecycleGate.canAcceptRecognition()) return
         val recognitionNow = System.currentTimeMillis()
-        if (playbackGuard.shouldSuppressRecognition(recognitionNow)) return
 
         val alternatives = results
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -335,6 +334,38 @@ class UltraWakeService : Service() {
             .firstOrNull(::containsWakeWord)
             ?: alternatives.firstOrNull { it.isNotBlank() }
             .orEmpty()
+
+        when (
+            UltraWakeBargeInPolicy.decide(
+                playbackActive = playbackGuard.isPlaybackActive(),
+                transcript = transcript
+            )
+        ) {
+            UltraWakeRecognitionDisposition.SUPPRESS -> return
+
+            UltraWakeRecognitionDisposition.INTERRUPT_TTS -> {
+                val now = System.currentTimeMillis()
+                if (
+                    transcript.isBlank() ||
+                    now - lastTranscriptAt <= WAKE_DEBOUNCE_MS
+                ) {
+                    return
+                }
+                lastTranscriptAt = now
+                commandQueue.offer(transcript)
+                tts?.stop()
+                speechGeneration.activeToken()?.let { token ->
+                    finishCommandAndResume(token, playbackEnded = true)
+                }
+                return
+            }
+
+            UltraWakeRecognitionDisposition.ACCEPT -> {
+                // Keep the post-TTS drain window so the tail of Ultra's own
+                // audio cannot immediately trigger another recognition turn.
+                if (playbackGuard.shouldSuppressRecognition(recognitionNow)) return
+            }
+        }
 
         var commandStarted = false
         if (transcript.isNotBlank() && containsWakeWord(transcript)) {
@@ -357,30 +388,8 @@ class UltraWakeService : Service() {
         }
     }
 
-    private fun containsWakeWord(transcript: String): Boolean {
-        val normalized = VoiceCommandParser.normalize(transcript)
-        return normalized.split(" ").any { token ->
-            token == "ultra" || (token.length >= 4 && levenshtein(token, "ultra") <= 1)
-        }
-    }
-
-    private fun levenshtein(a: String, b: String): Int {
-        if (a.isEmpty()) return b.length
-        if (b.isEmpty()) return a.length
-        var previous = IntArray(b.length + 1) { it }
-        var current = IntArray(b.length + 1)
-        for (i in a.indices) {
-            current[0] = i + 1
-            for (j in b.indices) {
-                val cost = if (a[i] == b[j]) 0 else 1
-                current[j + 1] = minOf(current[j] + 1, previous[j + 1] + 1, previous[j] + cost)
-            }
-            val swap = previous
-            previous = current
-            current = swap
-        }
-        return previous[b.length]
-    }
+    private fun containsWakeWord(transcript: String): Boolean =
+        UltraWakeWordMatcher.contains(transcript)
 
     private fun handleCommand(transcript: String) {
         if (!lifecycleGate.canAcceptRecognition()) {
