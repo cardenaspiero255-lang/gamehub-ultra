@@ -113,8 +113,13 @@ internal class UltraAssistantSessionController(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     restoredGamePackage: String? = null,
     restoredConversation: List<String>? = null,
-    private val onSnapshotChanged: (String?, List<String>) -> Unit = { _, _ -> }
+    restoredHistoryHydrated: Boolean? = null,
+    private val onSnapshotChanged: (String?, List<String>) -> Unit = { _, _ -> },
+    private val onHistoryHydrationChanged: (Boolean) -> Unit = {}
 ) {
+    private var historyHydrated =
+        restoredConversation != null && (restoredHistoryHydrated ?: true)
+
     private val _conversation = MutableStateFlow(restoredConversation.orEmpty())
     val conversation: StateFlow<List<String>> = _conversation.asStateFlow()
 
@@ -123,7 +128,9 @@ internal class UltraAssistantSessionController(
     )
     val selectedGamePackage: StateFlow<String?> = _selectedGamePackage.asStateFlow()
 
-    private val _scopeReady = MutableStateFlow(restoredConversation != null)
+    private val _scopeReady = MutableStateFlow(
+        restoredConversation != null && historyHydrated
+    )
     val scopeReady: StateFlow<Boolean> = _scopeReady.asStateFlow()
 
     private val _loadError = MutableStateFlow<Throwable?>(null)
@@ -152,7 +159,15 @@ internal class UltraAssistantSessionController(
             restoredSnapshotPending = false
             scopeInitialized = true
             _loadError.value = null
-            return noOpJob()
+            if (historyHydrated) {
+                _scopeReady.value = true
+                return noOpJob()
+            }
+            return startLoad(
+                gamePackage = gamePackage,
+                clearConversation = false,
+                mergeExistingConversation = true
+            )
         }
 
         restoredSnapshotPending = false
@@ -213,10 +228,13 @@ internal class UltraAssistantSessionController(
     private fun startLoad(
         gamePackage: String?,
         clearConversation: Boolean,
-        expectedConversationRevision: Long? = null
+        expectedConversationRevision: Long? = null,
+        mergeExistingConversation: Boolean = false
     ): Job {
         val generation = ++loadGeneration
         _selectedGamePackage.value = gamePackage
+        historyHydrated = false
+        onHistoryHydrationChanged(false)
         _scopeReady.value = false
         if (clearConversation) {
             _conversation.value = emptyList()
@@ -243,9 +261,20 @@ internal class UltraAssistantSessionController(
                         _selectedGamePackage.value == gamePackage
                     ) {
                         if (conversationRevision == revisionAtLoadStart) {
-                            _conversation.value = loaded
+                            val nextConversation =
+                                if (mergeExistingConversation) {
+                                    mergeConversationHistory(
+                                        persisted = loaded,
+                                        restored = _conversation.value
+                                    )
+                                } else {
+                                    loaded.takeLast(maxHistory)
+                                }
+                            _conversation.value = nextConversation
                             conversationRevision += 1
-                            onSnapshotChanged(gamePackage, loaded)
+                            historyHydrated = true
+                            onSnapshotChanged(gamePackage, nextConversation)
+                            onHistoryHydrationChanged(true)
                         }
                         failedLoadRevision = null
                         _loadError.value = null
@@ -261,12 +290,33 @@ internal class UltraAssistantSessionController(
                         _selectedGamePackage.value == gamePackage
                     ) {
                         failedLoadRevision = revisionAtLoadStart
+                        historyHydrated = false
+                        onHistoryHydrationChanged(false)
                         _loadError.value = error
                         _scopeReady.value = true
                     }
                 }
             }
         }.also { loadJob = it }
+    }
+
+    private fun mergeConversationHistory(
+        persisted: List<String>,
+        restored: List<String>
+    ): List<String> {
+        if (persisted.isEmpty()) {
+            return restored.takeLast(maxHistory)
+        }
+        if (restored.isEmpty()) {
+            return persisted.takeLast(maxHistory)
+        }
+
+        val maxOverlap = minOf(persisted.size, restored.size)
+        val overlap = (maxOverlap downTo 1).firstOrNull { size ->
+            persisted.takeLast(size) == restored.take(size)
+        } ?: 0
+
+        return (persisted + restored.drop(overlap)).takeLast(maxHistory)
     }
 
     private fun noOpJob(): Job =
