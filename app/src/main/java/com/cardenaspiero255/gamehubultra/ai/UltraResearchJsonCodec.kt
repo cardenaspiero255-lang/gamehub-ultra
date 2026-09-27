@@ -5,6 +5,8 @@ internal data class UltraResearchBackendResponse(
     val value: String?,
     val displayText: String?,
     val sourceId: String?,
+    val sourceIds: List<String>,
+    val independentSourceCount: Int,
     val authoritative: Boolean,
     val abstained: Boolean,
     val message: String?
@@ -34,6 +36,8 @@ internal object UltraResearchJsonCodec {
             value = stringField(json, "value"),
             displayText = stringField(json, "displayText"),
             sourceId = stringField(json, "sourceId"),
+            sourceIds = stringArrayField(json, "sourceIds"),
+            independentSourceCount = intField(json, "independentSourceCount") ?: 1,
             authoritative = booleanField(json, "authoritative") ?: false,
             abstained = booleanField(json, "abstained") ?: false,
             message = stringField(json, "message")
@@ -45,6 +49,25 @@ internal object UltraResearchJsonCodec {
                 "\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\""
         )
         return pattern.find(json)?.groupValues?.get(1)?.let(::unescape)
+    }
+
+    private fun stringArrayField(json: String, key: String): List<String> {
+        val pattern = Regex(
+            "\"" + Regex.escape(key) + "\"\\s*:\\s*\\[(.*?)]",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        val body = pattern.find(json)?.groupValues?.get(1) ?: return emptyList()
+        return Regex("\"((?:\\\\.|[^\"\\\\])*)\"")
+            .findAll(body)
+            .map { match -> unescape(match.groupValues[1]) }
+            .toList()
+    }
+
+    private fun intField(json: String, key: String): Int? {
+        val pattern = Regex(
+            "\"" + Regex.escape(key) + "\"\\s*:\\s*(-?\\d+)"
+        )
+        return pattern.find(json)?.groupValues?.get(1)?.toIntOrNull()
     }
 
     private fun booleanField(json: String, key: String): Boolean? {
