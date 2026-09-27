@@ -616,6 +616,69 @@ async function priceEvidence(
   };
 }
 
+
+function extractGeneralKnowledgeQuery(query: string): string {
+  return stripAssistantInvocation(query)
+    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "")
+    .replace(/^(?:explicame|explícame|dime|que es|qué es|por que|por qué|como funciona|cómo funciona)\s+/i, "")
+    .trim();
+}
+
+async function generalKnowledgeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const topic = extractGeneralKnowledgeQuery(query);
+  if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
+
+  const searchUrl = new URL("https://es.wikipedia.org/w/api.php");
+  searchUrl.searchParams.set("action", "query");
+  searchUrl.searchParams.set("list", "search");
+  searchUrl.searchParams.set("srsearch", topic);
+  searchUrl.searchParams.set("srlimit", "1");
+  searchUrl.searchParams.set("format", "json");
+  searchUrl.searchParams.set("origin", "*");
+
+  const search = await fetchJson(deps, searchUrl, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const results = search?.query && typeof search.query === "object"
+    ? (search.query as JsonObject).search
+    : null;
+  const first = Array.isArray(results) && results[0] && typeof results[0] === "object"
+    ? results[0] as JsonObject
+    : null;
+  const title = stringValue(first?.title);
+  if (!title) return abstain("No encontré una fuente enciclopédica para esa pregunta.");
+
+  const summaryUrl =
+    "https://es.wikipedia.org/api/rest_v1/page/summary/" +
+    encodeURIComponent(title.replace(/ /g, "_"));
+  const summary = await fetchJson(deps, summaryUrl, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const extract = stringValue(summary?.extract);
+  if (!extract) return abstain("La fuente encontrada no devolvió una explicación utilizable.");
+
+  const contentUrls = summary?.content_urls && typeof summary.content_urls === "object"
+    ? summary.content_urls as JsonObject
+    : null;
+  const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
+    ? contentUrls.desktop as JsonObject
+    : null;
+  const source = stringValue(desktop?.page) ?? summaryUrl;
+
+  return {
+    claimKey: `general:${slug(title)}`,
+    value: normalize(extract),
+    displayText: extract,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+  };
+}
+
 export async function routeResearchQuery(
   query: string,
   deps: ResearchDependencies,
@@ -674,6 +737,10 @@ export async function routeResearchQuery(
       extractSpecProduct(query),
       deps,
     );
+  }
+
+  if (kind === "GENERAL_KNOWLEDGE") {
+    return await generalKnowledgeEvidence(query, deps);
   }
 
   return abstain(
