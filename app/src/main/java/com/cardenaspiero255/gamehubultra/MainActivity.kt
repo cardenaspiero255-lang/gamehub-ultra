@@ -1570,6 +1570,7 @@ private fun VoiceAssistantCard(
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
+    var recommendedProfile by remember { mutableStateOf<PerformanceProfile?>(null) }
     var pendingContinuousListening by rememberSaveable { mutableStateOf(false) }
     var showTextChat by rememberSaveable { mutableStateOf(false) }
     var chatMessage by rememberSaveable { mutableStateOf("") }
@@ -1636,7 +1637,16 @@ private fun VoiceAssistantCard(
                 }
 
                 is UltraAgentRoute.Chat -> {
-                    val answer = UltraProductionQueryExecutor.answer(route) {
+                    val answer = UltraProductionQueryExecutor.answer(
+                        route = route,
+                        stableKnowledgeFallback = {
+                            aiAdvisor.generalKnowledgeChatOrNull(
+                                message = route.message,
+                                context = turnAiContext,
+                                conversation = previousConversation
+                            )
+                        }
+                    ) {
                         aiAdvisor.chat(
                             message = route.message,
                             context = turnAiContext,
@@ -1717,10 +1727,13 @@ private fun VoiceAssistantCard(
                         UltraCommandUiEffectPolicy
                             .profileForCurrentGameCallback(result)
                             ?.let(onProfileSelected)
+                        val recommended =
+                            UltraCommandUiEffectPolicy.recommendedProfileForUserApply(result)
                         UltraConversationScopePolicy.runIfSameGame(
                             originatingGamePackage = originatingGamePackage,
                             currentGamePackage = latestAiContext.selectedGamePackage
                         ) {
+                            recommendedProfile = recommended
                             latestOnConversationChanged(withAnswer)
                             response = answer
                         }
@@ -1795,21 +1808,28 @@ private fun VoiceAssistantCard(
                                 maxEntries = MAX_CHAT_HISTORY
                             )
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                if (
-                                    UltraConversationScopePolicy.isSameGame(
-                                        originatingGamePackage,
-                                        latestAiContext.selectedGamePackage
-                                    )
+                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                    originatingGamePackage = originatingGamePackage,
+                                    currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
                                     latestOnConversationChanged(withAnswer)
+                                    response = answer
+                                    controller.speak(answer)
                                 }
-                                response = answer
-                                controller.speak(answer)
                             }
                         }
 
                         is UltraAgentRoute.Chat -> {
-                            val answer = UltraProductionQueryExecutor.answer(route) {
+                            val answer = UltraProductionQueryExecutor.answer(
+                                route = route,
+                                stableKnowledgeFallback = {
+                                    aiAdvisor.generalKnowledgeChatOrNull(
+                                        message = route.message,
+                                        context = turnAiContext,
+                                        conversation = conversationBeforeTurn
+                                    )
+                                }
+                            ) {
                                 aiAdvisor.chat(
                                     message = route.message,
                                     context = turnAiContext,
@@ -1830,16 +1850,14 @@ private fun VoiceAssistantCard(
                                     )
                                 }
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                if (
-                                    UltraConversationScopePolicy.isSameGame(
-                                        originatingGamePackage,
-                                        latestAiContext.selectedGamePackage
-                                    )
+                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                    originatingGamePackage = originatingGamePackage,
+                                    currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
                                     latestOnConversationChanged(withAnswer)
+                                    response = answer
+                                    controller.speak(answer)
                                 }
-                                response = answer
-                                controller.speak(answer)
                             }
                         }
 
@@ -1893,16 +1911,17 @@ applyNetworkProfile = { profile ->
                                 UltraCommandUiEffectPolicy
                                     .profileForCurrentGameCallback(result)
                                     ?.let(onProfileSelected)
-                                if (
-                                    UltraConversationScopePolicy.isSameGame(
-                                        originatingGamePackage,
-                                        latestAiContext.selectedGamePackage
-                                    )
+                                val recommended =
+                                    UltraCommandUiEffectPolicy.recommendedProfileForUserApply(result)
+                                UltraVoiceResultPublisher.publishIfCurrentGame(
+                                    originatingGamePackage = originatingGamePackage,
+                                    currentGamePackage = latestAiContext.selectedGamePackage
                                 ) {
+                                    recommendedProfile = recommended
                                     latestOnConversationChanged(withAnswer)
+                                    response = spokenResponse
+                                    controller.speak(spokenResponse)
                                 }
-                                response = spokenResponse
-                                controller.speak(spokenResponse)
                             }
                         }
                     }
@@ -2053,6 +2072,17 @@ applyNetworkProfile = { profile ->
                 Text(stringResource(R.string.voice_transcript, transcript))
             }
             response?.let { Text(it) }
+            recommendedProfile?.let { profile ->
+                Button(
+                    onClick = {
+                        onProfileSelected(profile)
+                        recommendedProfile = null
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Aplicar recomendación: ${profile.title}")
+                }
+            }
         }
     }
 }
