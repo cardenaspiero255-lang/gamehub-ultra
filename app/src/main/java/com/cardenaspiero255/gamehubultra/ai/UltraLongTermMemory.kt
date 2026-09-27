@@ -1,5 +1,12 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import com.cardenaspiero255.gamehubultra.tools.UltraToolContract
+import com.cardenaspiero255.gamehubultra.tools.UltraToolDescriptor
+import com.cardenaspiero255.gamehubultra.tools.UltraToolExecution
+import com.cardenaspiero255.gamehubultra.tools.UltraToolKind
+import com.cardenaspiero255.gamehubultra.tools.UltraToolResult
+import com.cardenaspiero255.gamehubultra.tools.UltraToolSideEffect
+
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
 import java.util.Base64
@@ -422,11 +429,67 @@ object UltraMemoryCodec {
     }
 }
 
-interface UltraLongTermMemoryGateway {
+sealed interface UltraMemoryToolRequest {
+    data class Command(
+        val message: String,
+        val scope: UltraMemoryScope
+    ) : UltraMemoryToolRequest
+
+    data class Recall(
+        val message: String,
+        val scope: UltraMemoryScope,
+        val limit: Int = 6
+    ) : UltraMemoryToolRequest {
+        init {
+            require(limit in 1..100) { "Memory recall limit must be between 1 and 100." }
+        }
+    }
+}
+
+sealed interface UltraMemoryToolResponse {
+    data class CommandHandled(val message: String?) : UltraMemoryToolResponse
+    data class Recalled(val recalls: List<UltraMemoryRecall>) : UltraMemoryToolResponse
+}
+
+interface UltraLongTermMemoryGateway :
+    UltraToolContract<UltraMemoryToolRequest, UltraMemoryToolResponse> {
+
+    override val descriptor: UltraToolDescriptor
+        get() = UltraToolDescriptor(
+            id = "ultra.memory",
+            kind = UltraToolKind.MEMORY,
+            sideEffect = UltraToolSideEffect.MIXED
+        )
+
     fun handleCommand(message: String, scope: UltraMemoryScope): String?
+
     fun recallContext(
         message: String,
         scope: UltraMemoryScope,
         limit: Int = 6
     ): List<UltraMemoryRecall>
+
+    override fun execute(
+        request: UltraMemoryToolRequest
+    ): UltraToolResult<UltraMemoryToolResponse> =
+        UltraToolExecution.protect(descriptor) {
+            when (request) {
+                is UltraMemoryToolRequest.Command ->
+                    UltraMemoryToolResponse.CommandHandled(
+                        handleCommand(
+                            message = request.message,
+                            scope = request.scope
+                        )
+                    )
+
+                is UltraMemoryToolRequest.Recall ->
+                    UltraMemoryToolResponse.Recalled(
+                        recallContext(
+                            message = request.message,
+                            scope = request.scope,
+                            limit = request.limit
+                        )
+                    )
+            }
+        }
 }
