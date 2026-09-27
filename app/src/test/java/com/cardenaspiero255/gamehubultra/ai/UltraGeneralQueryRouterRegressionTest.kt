@@ -30,6 +30,27 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun appContextQuestionStaysOnLocalChatPath() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, cuál es mi juego seleccionado"
+        )
+
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
+        assertFalse(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
+    fun factualQuestionWinsOverMixedIdentityPrompt() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, quién eres y qué es Vulkan"
+        )
+
+        assertTrue(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
     fun factualQuestionWinsOverGreetingOrThanks() {
         val greetingQuestion = UltraGeneralQueryRouter.classify(
             "Ultra, hola, explícame qué es Vulkan"
