@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.voice
 
 import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
 import com.cardenaspiero255.gamehubultra.network.NetworkStability
+import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationOutcome
 
 object NetworkVoiceResponseText {
     fun format(result: VoiceActionResult.NetworkReport): String {
@@ -39,10 +40,15 @@ object NetworkVoiceResponseText {
             }
             NetworkVoiceRequest.OPTIMIZE -> {
                 val profile = profileLabel(result.snapshot.recommendedProfile)
-                if (result.optimizationApplied) {
-                    "Optimización de red activada. Perfil de red $profile aplicado con las capacidades permitidas por Android."
-                } else {
-                    "No pude aplicar la optimización automáticamente. Recomiendo el perfil $profile; revisa que estés conectado a una red compatible."
+                when (result.optimizationOutcome) {
+                    NetworkOptimizationOutcome.APPLIED ->
+                        "Optimización de red activada. Perfil de red $profile aplicado con las capacidades permitidas por Android."
+                    NetworkOptimizationOutcome.RELEASED_OR_NOT_NEEDED ->
+                        "No fue necesario activar prioridad competitiva. Dejé la red en perfil $profile con los ajustes locales disponibles."
+                    NetworkOptimizationOutcome.UNAVAILABLE ->
+                        "No pude aplicar la optimización automáticamente. Recomiendo el perfil $profile; revisa que estés conectado a una red compatible."
+                    NetworkOptimizationOutcome.NOT_REQUESTED ->
+                        "No se solicitó ningún cambio de red."
                 }
             }
         }
