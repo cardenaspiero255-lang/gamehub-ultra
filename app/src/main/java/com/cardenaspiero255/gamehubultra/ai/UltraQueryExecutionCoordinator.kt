@@ -35,6 +35,7 @@ class UltraQueryExecutionCoordinator(
             request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
                 !request.requiresFreshData &&
                 research.abstained &&
+                research.sources.isEmpty() &&
                 !research.sensitiveInputBlocked
 
         if (canUseLocalStableFallback) {
