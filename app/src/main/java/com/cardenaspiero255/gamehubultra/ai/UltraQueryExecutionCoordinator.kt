@@ -63,10 +63,9 @@ class UltraQueryExecutionCoordinator(
                 )
             }
 
-            return UltraQueryExecutionAnswer(
-                message = local,
-                verified = false,
-                fallbackUsed = true
+            return researchAnswer(
+                research = researchFallback,
+                localFallbackUsed = true
             )
         }
 
