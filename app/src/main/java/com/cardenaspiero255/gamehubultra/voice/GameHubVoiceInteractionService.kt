@@ -59,6 +59,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
+    private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val aiAdvisor = GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter())
 
     override fun onCreateContentView(): View =
@@ -70,6 +71,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
         startOneShotRecognition()
     }
 
@@ -106,7 +108,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
                     RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                 )
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, UltraSpeechLocalePolicy.PREFERRED_TAG)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
             speech.startListening(intent)
@@ -139,7 +141,16 @@ private class GameHubVoiceInteractionSession(context: Context) :
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onError(error: Int) {
+            val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
+                error = error,
+                currentTag = recognitionLanguageTag
+            )
             stopRecognizer()
+            if (fallback != null) {
+                recognitionLanguageTag = fallback
+                startOneShotRecognition()
+                return
+            }
             speakAndFinish("No pude reconocer el comando de voz. Inténtalo de nuevo.")
         }
     }
