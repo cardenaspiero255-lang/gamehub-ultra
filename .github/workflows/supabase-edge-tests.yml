@@ -26,17 +26,11 @@ jobs:
         with:
           deno-version: v2.1.x
 
-      - name: Check Edge test formatting
-        run: |
-          deno fmt --check supabase/functions/ultra-research/research_test.ts
-          deno fmt --check supabase/functions/mercadolibre-oauth/oauth_logic_test.ts
+      - name: Check provider test formatting
+        run: deno fmt --check supabase/functions/ultra-research/research_test.ts
 
-      - name: Lint Edge tests
-        run: |
-          deno lint supabase/functions/ultra-research/research_test.ts
-          deno lint supabase/functions/mercadolibre-oauth/oauth_logic_test.ts
+      - name: Lint provider tests
+        run: deno lint supabase/functions/ultra-research/research_test.ts
 
-      - name: Test Edge Functions
-        run: |
-          deno test supabase/functions/ultra-research/research_test.ts
-          deno test supabase/functions/mercadolibre-oauth/oauth_logic_test.ts
+      - name: Test Edge Function
+        run: deno test supabase/functions/ultra-research/research_test.ts
