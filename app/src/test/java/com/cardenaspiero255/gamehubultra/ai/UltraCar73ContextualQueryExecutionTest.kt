@@ -163,6 +163,41 @@ class UltraCar73ContextualQueryExecutionTest {
     }
 
     @Test
+    fun lowConfidenceEvidenceDoesNotFallBackToUnverifiedLocalChat() {
+        val weakProvider = object : UltraResearchProvider {
+            override val id = "weak-source"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "sentimientos",
+                    value = "definicion",
+                    displayText = "Una definición no corroborada.",
+                    sourceId = "weak-source",
+                    authoritative = false
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(weakProvider))
+        val coordinator = UltraQueryExecutionCoordinator(engine)
+        var localCalls = 0
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify(
+                "Ultra, qué son los sentimientos"
+            ),
+            localChat = {
+                localCalls += 1
+                "respuesta local no verificada"
+            }
+        )
+
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertEquals(listOf("weak-source"), answer.sources)
+        assertEquals(0, localCalls)
+        engine.close()
+    }
+
+    @Test
     fun productionFreshQueryNeverFallsBackToUnverifiedLocalChat() {
         var localCalls = 0
         val route = UltraAgentRoute.Chat(
