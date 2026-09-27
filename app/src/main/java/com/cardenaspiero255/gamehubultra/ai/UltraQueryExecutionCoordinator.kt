@@ -21,13 +21,22 @@ class UltraQueryExecutionCoordinator(
 ) {
     fun answer(
         request: UltraGeneralQueryRequest,
-        localChat: () -> String
+        localChat: () -> String?
     ): UltraQueryExecutionAnswer {
         if (!request.requiresInternet) {
-            return UltraQueryExecutionAnswer(
-                message = localChat(),
-                verified = false
-            )
+            val localAnswer = localChat()?.takeIf(String::isNotBlank)
+            return if (localAnswer != null) {
+                UltraQueryExecutionAnswer(
+                    message = localAnswer,
+                    verified = false
+                )
+            } else {
+                UltraQueryExecutionAnswer(
+                    message = "No pude responder eso con una fuente local disponible.",
+                    verified = false,
+                    abstained = true
+                )
+            }
         }
 
         val research = researchEngine.answer(request)
@@ -39,16 +48,19 @@ class UltraQueryExecutionCoordinator(
                 !research.sensitiveInputBlocked
 
         if (canUseLocalStableFallback) {
-            return UltraQueryExecutionAnswer(
-                message = localChat(),
-                verified = false,
-                confidence = null,
-                sources = research.sources,
-                fromCache = research.fromCache,
-                timedOut = research.timedOut,
-                fallbackUsed = true,
-                abstained = false
-            )
+            val localAnswer = localChat()?.takeIf(String::isNotBlank)
+            if (localAnswer != null) {
+                return UltraQueryExecutionAnswer(
+                    message = localAnswer,
+                    verified = false,
+                    confidence = null,
+                    sources = research.sources,
+                    fromCache = research.fromCache,
+                    timedOut = research.timedOut,
+                    fallbackUsed = true,
+                    abstained = false
+                )
+            }
         }
 
         return UltraQueryExecutionAnswer(
