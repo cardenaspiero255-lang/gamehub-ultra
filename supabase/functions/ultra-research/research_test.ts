@@ -17,13 +17,13 @@ Deno.test("news requires two independent current sources before returning", asyn
       return jsonResponse({
         articles: [
           {
-            title: "Resident Evil update one",
+            title: "Resident Evil recibe una actualización importante",
             url: "https://news-one.example/re-update",
             domain: "news-one.example",
             seendate: "20260926T220000Z",
           },
           {
-            title: "Resident Evil update two",
+            title: "Nuevo parche mejora el rendimiento de Resident Evil",
             url: "https://news-two.example/re-update",
             domain: "news-two.example",
             seendate: "20260926T221500Z",
@@ -788,19 +788,19 @@ Deno.test("technical troubleshooting falls back to Stack Overflow en español wi
   }
 });
 
-Deno.test("news voice response stays in Spanish even when source titles are English", async () => {
+Deno.test("news returns actual Spanish details from independent sources", async () => {
   const deps: ResearchDependencies = {
     fetcher: () =>
       jsonResponse({
         articles: [
           {
-            title: "Major game update released today",
+            title: "Resident Evil recibe una actualización importante",
             url: "https://fuente-uno.example/noticia",
             domain: "fuente-uno.example",
             seendate: "20260927T010000Z",
           },
           {
-            title: "New patch changes performance",
+            title: "Nuevo parche mejora el rendimiento de Resident Evil",
             url: "https://fuente-dos.example/noticia",
             domain: "fuente-dos.example",
             seendate: "20260927T011000Z",
@@ -817,14 +817,46 @@ Deno.test("news voice response stays in Spanish even when source titles are Engl
     "CURRENT_DATA",
   );
 
-  if (result.abstained) throw new Error("expected verified news");
-  if (result.displayText?.includes("Major game update")) {
-    throw new Error("English source titles must not leak into Ultra speech");
+  if (result.abstained) throw new Error("expected verified Spanish news");
+  if (!result.displayText?.includes("actualización importante")) {
+    throw new Error("expected first verified news detail");
   }
-  if (
-    !result.displayText?.startsWith("Encontré información reciente verificada")
-  ) {
-    throw new Error("expected Spanish-only news summary");
+  if (!result.displayText?.includes("parche mejora el rendimiento")) {
+    throw new Error("expected second verified news detail");
+  }
+});
+
+Deno.test("news abstains when verified titles cannot be presented in Spanish", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () =>
+      jsonResponse({
+        articles: [
+          {
+            title: "Major game update released today",
+            url: "https://source-one.example/news",
+            domain: "source-one.example",
+            seendate: "20260927T010000Z",
+          },
+          {
+            title: "New patch changes performance",
+            url: "https://source-two.example/news",
+            domain: "source-two.example",
+            seendate: "20260927T011000Z",
+          },
+        ],
+      }),
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, noticias de Resident Evil",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (!result.abstained) {
+    throw new Error("English-only news must not be spoken by Spanish-only Ultra");
   }
 });
 
