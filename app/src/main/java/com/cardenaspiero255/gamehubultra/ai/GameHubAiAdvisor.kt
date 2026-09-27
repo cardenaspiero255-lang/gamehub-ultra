@@ -156,9 +156,6 @@ class GameHubAiAdvisor(
             " hello ",
             " how are you ",
             " who are you ",
-            " i am ",
-            " i m ",
-            " i can ",
             " help you "
         )
         if (reliableEnglishPhrases.any(padded::contains)) return true
