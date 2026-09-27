@@ -150,6 +150,29 @@ class UltraVerifiedResearchEngineTest {
         engine.close()
     }
 
+    @Test
+    fun lowConfidenceGeneralKnowledgeIsReturnedInsteadOfGenericAbstention() {
+        val provider = fixedProvider(
+            providerId = "general-assistant",
+            claimKey = "general:sentimientos",
+            value = "respuesta-general",
+            text = "Los sentimientos son experiencias afectivas conscientes."
+        )
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+
+        val result = engine.answer(
+            UltraGeneralQueryRouter.classify("Ultra, qué son los sentimientos")
+        )
+
+        assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+        assertFalse(result.abstained)
+        assertEquals(
+            "Los sentimientos son experiencias afectivas conscientes.",
+            result.message
+        )
+        engine.close()
+    }
+
     private fun fixedProvider(
         providerId: String,
         claimKey: String,

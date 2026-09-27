@@ -981,13 +981,6 @@ private fun UltraAssistantSidePanel(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary
         )
-        AiAdvisorCard(
-            context = aiContext,
-            advisor = aiAdvisor,
-            conversation = conversation,
-            onConversationChanged = onConversationChanged,
-            onProfileSelected = onProfileSelected
-        )
         VoiceAssistantCard(
             selectedProfileName = selectedProfileName,
             onProfileSelected = onProfileSelected,
@@ -1159,15 +1152,6 @@ private fun HomeScreen(
             )
         }
         if (showAssistantCards) {
-            item {
-                AiAdvisorCard(
-                    context = aiContext,
-                    advisor = aiAdvisor,
-                    conversation = conversation,
-                    onConversationChanged = onConversationChanged,
-                    onProfileSelected = onProfileSelected
-                )
-            }
             item {
                 VoiceAssistantCard(
                     selectedProfileName = selectedProfileName,
@@ -1620,7 +1604,23 @@ private fun VoiceAssistantCard(
                     )
                     when (route) {
                         is UltraAgentRoute.Utility -> {
-                            val answer = route.answer.message
+                            val answer =
+                                if (
+                                    route.answer.intent is
+                                        com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
+                                ) {
+                                    com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController.execute(
+                                        intent = route.answer.intent,
+                                        applyCompetitive = {
+                                            com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(
+                                                context,
+                                                com.cardenaspiero255.gamehubultra.network.NetworkGameProfile.COMPETITIVE
+                                            )
+                                        }
+                                    )
+                                } else {
+                                    route.answer.message
+                                }
                             val withAnswer = UltraConversationPolicy.append(
                                 history = withUser,
                                 entry = "Ultra: " + answer,

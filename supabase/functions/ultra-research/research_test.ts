@@ -1369,3 +1369,52 @@ Deno.test("unsupported current query falls back to Tavily web search", async () 
     throw new Error("expected current Tavily sources");
   }
 });
+
+Deno.test("general knowledge falls back to Gemini when verified sources are unavailable", async () => {
+  let geminiCalled = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({ query: { search: [] } });
+      }
+
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        geminiCalled = true;
+        return jsonResponse({
+          candidates: [{
+            finishReason: "STOP",
+            content: {
+              parts: [{
+                text:
+                  "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones.",
+              }],
+            },
+          }],
+        });
+      }
+
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, qué son los sentimientos",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (!geminiCalled) throw new Error("expected Gemini general fallback");
+  if (result.abstained) throw new Error("expected a general assistant answer");
+  if (result.authoritative !== false) {
+    throw new Error("Gemini fallback must not be marked authoritative");
+  }
+  if (!result.displayText?.includes("experiencias afectivas")) {
+    throw new Error("expected the Gemini fallback answer");
+  }
+});
