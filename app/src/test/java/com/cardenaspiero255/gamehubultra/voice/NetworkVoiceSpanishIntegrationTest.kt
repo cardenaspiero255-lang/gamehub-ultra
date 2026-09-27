@@ -3,6 +3,8 @@ package com.cardenaspiero255.gamehubultra.voice
 import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
 import com.cardenaspiero255.gamehubultra.network.NetworkMetrics
 import com.cardenaspiero255.gamehubultra.network.NetworkStability
+import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
+import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -49,6 +51,16 @@ class NetworkVoiceSpanishIntegrationTest {
         val report = assertIs<VoiceActionResult.NetworkReport>(result)
         assertTrue(report.optimizationApplied)
         assertEquals(NetworkGameProfile.COMPETITIVE, appliedProfile)
+    }
+
+    @Test
+    fun unifiedAgentRoutesInternetOptimizationToCar72Command() {
+        val route = UltraUnifiedAgentRouter.route("Ultra, optimiza mi internet")
+        val commandRoute = assertIs<UltraAgentRoute.Command>(route)
+        assertEquals(
+            VoiceCommand.Network(NetworkVoiceRequest.OPTIMIZE),
+            commandRoute.command
+        )
     }
 
     @Test
