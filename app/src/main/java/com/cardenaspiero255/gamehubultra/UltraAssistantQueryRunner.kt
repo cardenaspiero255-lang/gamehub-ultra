@@ -25,6 +25,7 @@ internal sealed interface UltraAssistantQuerySubmission {
  */
 internal class UltraAssistantQueryRunner(
     private val ownerScope: CoroutineScope,
+    private val executionDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val publicationDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val currentGamePackage: () -> String?,
     private val currentConversation: () -> List<String>,
@@ -55,7 +56,7 @@ internal class UltraAssistantQueryRunner(
             throw error
         }
 
-        val job = ownerScope.launch(Dispatchers.IO) {
+        val job = ownerScope.launch(executionDispatcher) {
             try {
                 block()
             } catch (cancelled: CancellationException) {
