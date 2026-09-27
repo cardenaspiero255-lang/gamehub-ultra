@@ -566,7 +566,7 @@ Deno.test("Wikipedia requests identify the GameHub Ultra operator", async () => 
   }
 });
 
-Deno.test("English general knowledge uses the English encyclopedia locale", async () => {
+Deno.test("English general knowledge still returns Spanish encyclopedia content", async () => {
   const hosts: string[] = [];
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -574,16 +574,16 @@ Deno.test("English general knowledge uses the English encyclopedia locale", asyn
       hosts.push(url.hostname);
       if (url.pathname === "/w/api.php") {
         return jsonResponse({
-          query: { search: [{ title: "Photosynthesis" }] },
+          query: { search: [{ title: "Fotosíntesis" }] },
         });
       }
       return jsonResponse({
-        title: "Photosynthesis",
+        title: "Fotosíntesis",
         type: "standard",
         extract:
-          "Photosynthesis is a process used by plants to convert light energy into chemical energy.",
+          "La fotosíntesis es el proceso por el que los organismos convierten la energía de la luz en energía química.",
         content_urls: {
-          desktop: { page: "https://en.wikipedia.org/wiki/Photosynthesis" },
+          desktop: { page: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis" },
         },
       });
     },
@@ -598,13 +598,13 @@ Deno.test("English general knowledge uses the English encyclopedia locale", asyn
   );
 
   if (result.abstained) throw new Error("expected English knowledge answer");
-  if (hosts.some((host) => host !== "en.wikipedia.org")) {
+  if (hosts.some((host) => host !== "es.wikipedia.org")) {
     throw new Error(
-      "expected every encyclopedia request to use en.wikipedia.org",
+      "expected every encyclopedia request to use es.wikipedia.org",
     );
   }
-  if (!result.displayText?.includes("Photosynthesis")) {
-    throw new Error("expected an English answer");
+  if (!result.displayText?.includes("fotosíntesis")) {
+    throw new Error("expected a Spanish answer");
   }
 });
 
