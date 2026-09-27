@@ -27,11 +27,16 @@ class UltraAssistantQueryRunnerTest {
             }
 
             started.await()
+            assertTrue(runner.isRunning.value)
+
             cardScope.cancel()
+            assertTrue(runner.isRunning.value)
+
             release.complete(Unit)
             job.join()
 
             assertTrue(completed.isCompleted)
+            assertTrue(!runner.isRunning.value)
         } finally {
             cardScope.cancel()
             ownerScope.cancel()
