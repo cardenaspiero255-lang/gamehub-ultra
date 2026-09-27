@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import android.speech.SpeechRecognizer
 import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
 import com.cardenaspiero255.gamehubultra.network.NetworkMetrics
 import com.cardenaspiero255.gamehubultra.network.NetworkStability
@@ -24,6 +25,59 @@ class NetworkVoiceSpanishIntegrationTest {
     fun ultraVoicePrefersSpanishChileForSpeechAndRecognition() {
         assertEquals("es-CL", UltraSpeechLocalePolicy.PREFERRED_TAG)
         assertEquals("es", UltraSpeechLocalePolicy.FALLBACK_TAG)
+    }
+
+    @Test
+    fun recognitionFallsBackToGenericSpanishWhenSpanishChileIsUnsupported() {
+        assertEquals(
+            "es",
+            UltraSpeechLocalePolicy.fallbackRecognitionTag(
+                error = SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
+                currentTag = "es-CL"
+            )
+        )
+        assertEquals(
+            "es",
+            UltraSpeechLocalePolicy.fallbackRecognitionTag(
+                error = SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE,
+                currentTag = "es-CL"
+            )
+        )
+        assertEquals(
+            null,
+            UltraSpeechLocalePolicy.fallbackRecognitionTag(
+                error = SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
+                currentTag = "es"
+            )
+        )
+    }
+
+    @Test
+    fun lowLatencyLockIsOnlyReportedActiveWhileDeviceIsInteractive() {
+        assertEquals(
+            NetworkOptimizationOutcome.APPLIED,
+            NetworkOptimizationResultPolicy.outcomeFor(
+                action = NetworkPriorityAction.LOW_LATENCY_WIFI,
+                leaseHeld = true,
+                interactive = true
+            )
+        )
+        assertEquals(
+            NetworkOptimizationOutcome.LEASE_ACQUIRED_PENDING_INTERACTIVE,
+            NetworkOptimizationResultPolicy.outcomeFor(
+                action = NetworkPriorityAction.LOW_LATENCY_WIFI,
+                leaseHeld = true,
+                interactive = false
+            )
+        )
+        assertEquals(
+            NetworkOptimizationOutcome.APPLIED,
+            NetworkOptimizationResultPolicy.outcomeFor(
+                action = NetworkPriorityAction.HIGH_PERFORMANCE_WIFI,
+                leaseHeld = true,
+                interactive = false
+            )
+        )
     }
 
     @Test
