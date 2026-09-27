@@ -55,10 +55,12 @@ internal object UltraWakeWordMatcher {
 internal object UltraWakeBargeInPolicy {
     fun decide(
         playbackActive: Boolean,
-        transcript: String
+        transcript: String,
+        playbackEcho: Boolean = false
     ): UltraWakeRecognitionDisposition =
         when {
             !playbackActive -> UltraWakeRecognitionDisposition.ACCEPT
+            playbackEcho -> UltraWakeRecognitionDisposition.SUPPRESS
             UltraWakeWordMatcher.isExplicitInvocation(transcript) ->
                 UltraWakeRecognitionDisposition.INTERRUPT_TTS
             else -> UltraWakeRecognitionDisposition.SUPPRESS
@@ -76,21 +78,26 @@ internal class UltraWakePlaybackGuard(
     private val lock = Any()
     private var playbackActive = false
     private var suppressUntilMillis = 0L
+    private var playbackText: String = ""
 
     init {
         require(drainWindowMillis >= 0L)
         require(hardTimeoutMillis > 0L)
     }
 
-    fun onPlaybackStarted() {
+    fun onPlaybackStarted(spokenText: String? = null) {
         synchronized(lock) {
             playbackActive = true
+            playbackText = spokenText
+                ?.let(VoiceCommandParser::normalize)
+                .orEmpty()
         }
     }
 
     fun onPlaybackFinished(nowMillis: Long) {
         synchronized(lock) {
             playbackActive = false
+            playbackText = ""
             suppressUntilMillis = maxOf(
                 suppressUntilMillis,
                 nowMillis + drainWindowMillis
@@ -104,6 +111,21 @@ internal class UltraWakePlaybackGuard(
 
     fun shouldSuppressRecognition(nowMillis: Long): Boolean = synchronized(lock) {
         playbackActive || nowMillis <= suppressUntilMillis
+    }
+
+    fun isLikelyPlaybackEcho(transcript: String): Boolean = synchronized(lock) {
+        if (!playbackActive || playbackText.isBlank()) return@synchronized false
+        val heard = VoiceCommandParser.normalize(transcript)
+        if (heard.isBlank()) return@synchronized false
+        if (heard == playbackText) return@synchronized true
+
+        val minimumComparableLength = 16
+        heard.length >= minimumComparableLength &&
+            (
+                playbackText.startsWith(heard) ||
+                    heard.startsWith(playbackText) ||
+                    playbackText.contains(heard)
+            )
     }
 
     fun timeoutAction(
@@ -120,6 +142,7 @@ internal class UltraWakePlaybackGuard(
     fun clear() {
         synchronized(lock) {
             playbackActive = false
+            playbackText = ""
             suppressUntilMillis = 0L
         }
     }
