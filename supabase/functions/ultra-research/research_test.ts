@@ -677,3 +677,40 @@ Deno.test("Spanish question language ignores English words inside entity names",
     );
   }
 });
+
+
+Deno.test("a complete new topic ignores previous knowledge context", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        searchQuery = url.searchParams.get("srsearch") ?? "";
+        return jsonResponse({
+          query: { search: [{ title: "Fotosíntesis" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Fotosíntesis",
+        type: "standard",
+        extract: "La fotosíntesis convierte energía luminosa en energía química.",
+        content_urls: {
+          desktop: { page: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis" },
+        },
+      });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿y qué es la fotosíntesis?",
+    deps,
+    "Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected new-topic answer");
+  if (searchQuery.toLowerCase() !== "la fotosíntesis") {
+    throw new Error("expected current complete topic without previous context");
+  }
+});
