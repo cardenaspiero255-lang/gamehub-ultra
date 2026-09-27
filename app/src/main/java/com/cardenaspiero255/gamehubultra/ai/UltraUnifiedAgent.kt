@@ -117,6 +117,15 @@ object UltraUnifiedAgentRouter {
             )
         }
 
+        val queryRequest = UltraContextualQueryPlanner.plan(
+            message = transcript,
+            conversationHistory = conversationHistory
+        )
+        val contextualResearchFollowUp =
+            conversationHistory.isNotEmpty() &&
+                UltraConversationContextResolver.looksLikeFollowUp(transcript) &&
+                queryRequest.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE
+
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
             UltraMathEngine.solve(transcript)?.let { solution ->
                 return UltraAgentRoute.Utility(
@@ -125,6 +134,13 @@ object UltraUnifiedAgentRouter {
                         clock = clock,
                         telemetry = telemetry
                     )
+                )
+            }
+
+            if (contextualResearchFollowUp) {
+                return UltraAgentRoute.Chat(
+                    message = transcript.trim(),
+                    query = queryRequest
                 )
             }
 
@@ -138,10 +154,6 @@ object UltraUnifiedAgentRouter {
                 )
             }
         }
-        val queryRequest = UltraContextualQueryPlanner.plan(
-            message = transcript,
-            conversationHistory = conversationHistory
-        )
 
         return when {
             command is VoiceCommand.Unknown ->
