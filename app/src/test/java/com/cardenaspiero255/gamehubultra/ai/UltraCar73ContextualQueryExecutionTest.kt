@@ -53,11 +53,14 @@ class UltraCar73ContextualQueryExecutionTest {
 
     @Test
     fun priceQuestionBeginningWithDefinitionPhraseStillRequiresFreshData() {
-        val request = UltraGeneralQueryRouter.classify("what is the price of Bitcoin")
+        val direct = UltraGeneralQueryRouter.classify("what is the price of Bitcoin")
+        val possessive = UltraGeneralQueryRouter.classify("what is Bitcoin's price?")
 
-        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
-        assertTrue(request.requiresInternet)
-        assertTrue(request.requiresFreshData)
+        listOf(direct, possessive).forEach { request ->
+            assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+            assertTrue(request.requiresInternet)
+            assertTrue(request.requiresFreshData)
+        }
     }
 
     @Test
