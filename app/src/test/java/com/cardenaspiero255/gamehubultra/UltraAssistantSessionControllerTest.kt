@@ -220,6 +220,107 @@ class UltraAssistantSessionControllerTest {
     }
 
 
+
+    @Test
+    fun explicitClearPersistsWhenVisibleConversationIsAlreadyEmptyAfterLoadFailure() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var clearedScope: UltraMemoryScope? = null
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> = error("storage unavailable")
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) {
+                clearedScope = scope
+            }
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined
+            )
+
+            controller.selectGame("game.a").join()
+            assertTrue(controller.conversation.value.isEmpty())
+
+            controller.updateConversation(emptyList())
+
+            assertEquals("game.a", clearedScope?.gamePackage)
+            assertEquals("local", clearedScope?.userId)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+    @Test
+    fun retryAfterFailureCannotOverwriteConversationCreatedBeforeRetry() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var attempts = 0
+        val liveConversation = listOf(
+            "Tú: mensaje nuevo",
+            "Ultra: respuesta nueva"
+        )
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                attempts += 1
+                if (attempts == 1) error("storage unavailable")
+                return listOf("Ultra: historial viejo")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined
+            )
+
+            controller.selectGame("game.a").join()
+            assertEquals("storage unavailable", controller.loadError.value?.message)
+
+            controller.updateConversation(liveConversation)
+            controller.retryLoad().join()
+
+            assertNull(controller.loadError.value)
+            assertEquals(liveConversation, controller.conversation.value)
+            assertEquals(2, attempts)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
     @Test
     fun switchingGamePublishesClearedSnapshotBeforeHistoryLoadCompletes() = runBlocking {
         val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
