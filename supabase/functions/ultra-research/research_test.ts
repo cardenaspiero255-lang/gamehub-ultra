@@ -856,7 +856,9 @@ Deno.test("news abstains when verified titles cannot be presented in Spanish", a
   );
 
   if (!result.abstained) {
-    throw new Error("English-only news must not be spoken by Spanish-only Ultra");
+    throw new Error(
+      "English-only news must not be spoken by Spanish-only Ultra",
+    );
   }
 });
 
