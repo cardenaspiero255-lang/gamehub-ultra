@@ -1043,7 +1043,9 @@ Deno.test("Gemini synthesizes verified evidence in Spanish when configured", asy
     fetcher: async (input, init) => {
       const url = new URL(String(input));
 
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -1114,7 +1116,9 @@ Deno.test("Gemini failure preserves verified provider answer", async () => {
     fetcher: (input) => {
       const url = new URL(String(input));
 
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
