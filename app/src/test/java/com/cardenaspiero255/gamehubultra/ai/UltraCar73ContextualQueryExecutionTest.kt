@@ -129,7 +129,7 @@ class UltraCar73ContextualQueryExecutionTest {
                     value = "rayleigh-scattering",
                     displayText = "El cielo se ve azul principalmente por la dispersión de Rayleigh.",
                     sourceId = "https://es.wikipedia.org/wiki/Dispersi%C3%B3n_de_Rayleigh",
-                    authoritative = true
+                    trustedReference = true
                 )
         }
         val engine = UltraVerifiedResearchEngine(listOf(provider))

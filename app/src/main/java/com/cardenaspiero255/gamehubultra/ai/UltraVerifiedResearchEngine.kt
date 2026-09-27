@@ -18,7 +18,8 @@ data class UltraResearchEvidence(
     val sourceId: String,
     val supportingSourceIds: List<String> = emptyList(),
     val independentSourceCount: Int = 1,
-    val authoritative: Boolean = false
+    val authoritative: Boolean = false,
+    val trustedReference: Boolean = false
 )
 
 enum class UltraAnswerConfidence {
@@ -234,7 +235,7 @@ class UltraVerifiedResearchEngine(
         )
         val confidence = when {
             corroborationCount >= 2 -> UltraAnswerConfidence.HIGH
-            evidence.authoritative -> UltraAnswerConfidence.MEDIUM
+            evidence.authoritative || evidence.trustedReference -> UltraAnswerConfidence.MEDIUM
             else -> UltraAnswerConfidence.LOW
         }
 

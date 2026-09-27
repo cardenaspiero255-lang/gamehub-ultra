@@ -11,10 +11,30 @@ data class UltraQueryExecutionAnswer(
     val abstained: Boolean = false
 )
 
+object UltraLocalChatQualityPolicy {
+    private val capabilityFallbackMarkers = listOf(
+        "chat local puede estar limitado",
+        "local chat may be limited",
+        "puedo hablar contigo sobre rendimiento, fps, temperatura, batería, red",
+        "i can talk with you about performance, fps, temperature, battery, networking"
+    )
+
+    fun shouldUseResearchFallback(answer: String): Boolean {
+        val normalized = answer
+            .lowercase()
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+        return normalized.isBlank() ||
+            capabilityFallbackMarkers.any(normalized::contains)
+    }
+}
+
 /**
- * Keeps stable/general knowledge on the local path and routes changing data
- * through the verified research engine. Online failures never fall back to an
- * unverified local answer that could present stale information as current.
+ * Stable/general knowledge prefers the local model for minimum latency. When
+ * that model is unavailable and returns the capability-only fallback, the same
+ * question is retried through the verified research engine. Changing/current
+ * data always uses verified research first and never falls back to stale local
+ * knowledge.
  */
 class UltraQueryExecutionCoordinator(
     private val researchEngine: UltraVerifiedResearchEngine
@@ -24,14 +44,43 @@ class UltraQueryExecutionCoordinator(
         localChat: () -> String
     ): UltraQueryExecutionAnswer {
         if (!request.requiresInternet) {
+            val local = localChat()
+            if (!UltraLocalChatQualityPolicy.shouldUseResearchFallback(local)) {
+                return UltraQueryExecutionAnswer(
+                    message = local,
+                    verified = false
+                )
+            }
+
+            val researchFallback = researchEngine.answer(request)
+            if (
+                !researchFallback.abstained &&
+                researchFallback.confidence != UltraAnswerConfidence.LOW
+            ) {
+                return researchAnswer(
+                    research = researchFallback,
+                    localFallbackUsed = true
+                )
+            }
+
             return UltraQueryExecutionAnswer(
-                message = localChat(),
-                verified = false
+                message = local,
+                verified = false,
+                fallbackUsed = true
             )
         }
 
-        val research = researchEngine.answer(request)
-        return UltraQueryExecutionAnswer(
+        return researchAnswer(
+            research = researchEngine.answer(request),
+            localFallbackUsed = false
+        )
+    }
+
+    private fun researchAnswer(
+        research: UltraVerifiedResearchResult,
+        localFallbackUsed: Boolean
+    ): UltraQueryExecutionAnswer =
+        UltraQueryExecutionAnswer(
             message = research.message,
             verified = !research.abstained &&
                 research.confidence != UltraAnswerConfidence.LOW,
@@ -39,8 +88,7 @@ class UltraQueryExecutionCoordinator(
             sources = research.sources,
             fromCache = research.fromCache,
             timedOut = research.timedOut,
-            fallbackUsed = research.fallbackUsed,
+            fallbackUsed = localFallbackUsed || research.fallbackUsed,
             abstained = research.abstained
         )
-    }
 }

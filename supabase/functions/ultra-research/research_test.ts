@@ -357,33 +357,29 @@ Deno.test(
       fetcher: (input) => {
         const url = new URL(String(input));
         if (
-          url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+          url.hostname !== "es.wikipedia.org" ||
+          url.pathname !== "/w/api.php"
         ) {
-          return jsonResponse({
-            query: {
-              search: [{
-                title: "Dispersión de Rayleigh",
-                pageid: 123,
-              }],
-            },
-          });
+          throw new Error("unexpected URL " + url.toString());
         }
-        if (
-          url.hostname === "es.wikipedia.org" &&
-          url.pathname.includes("/api/rest_v1/page/summary/")
-        ) {
-          return jsonResponse({
-            title: "Dispersión de Rayleigh",
-            extract:
-              "La dispersión de Rayleigh explica por qué la luz azul del Sol se dispersa más en la atmósfera, haciendo que el cielo se vea azul.",
-            content_urls: {
-              desktop: {
-                page: "https://es.wikipedia.org/wiki/Dispersión_de_Rayleigh",
+        if (url.searchParams.get("generator") !== "search") {
+          throw new Error("expected Wikipedia generator search");
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "123": {
+                pageid: 123,
+                index: 1,
+                title: "Dispersión de Rayleigh",
+                extract:
+                  "La dispersión de Rayleigh explica por qué la luz azul del Sol se dispersa más en la atmósfera, haciendo que el cielo se vea azul.",
+                fullurl:
+                  "https://es.wikipedia.org/wiki/Dispersión_de_Rayleigh",
               },
             },
-          });
-        }
-        throw new Error("unexpected URL " + url.toString());
+          },
+        });
       },
       env: () => undefined,
     };
@@ -396,6 +392,9 @@ Deno.test(
     );
 
     if (result.abstained) throw new Error("expected general knowledge result");
+    if (!result.trustedReference) {
+      throw new Error("expected trusted reference classification");
+    }
     if (!result.displayText?.toLowerCase().includes("cielo")) {
       throw new Error("expected useful general knowledge answer");
     }

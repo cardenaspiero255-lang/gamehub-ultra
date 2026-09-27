@@ -6,6 +6,7 @@ export type ResearchResult = {
   sourceIds?: string[];
   independentSourceCount?: number;
   authoritative?: boolean;
+  trustedReference?: boolean;
   observedAt?: string | null;
   abstained?: boolean;
   message?: string;
@@ -616,6 +617,121 @@ async function priceEvidence(
   };
 }
 
+
+function generalKnowledgeSearchText(query: string): string {
+  const clean = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return clean
+    .replace(
+      /^(?:explicame|explícame|dime|cuentame|cuéntame|que es|qué es|quien es|quién es|quien fue|quién fue|como funciona|cómo funciona)\s+/i,
+      "",
+    )
+    .trim() || clean;
+}
+
+function conciseReferenceExtract(value: string): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= 720) return compact;
+
+  const firstSentences = compact.match(/[^.!?]+[.!?]+/g)?.slice(0, 3).join(" ")
+    .trim();
+  if (firstSentences && firstSentences.length >= 120) {
+    return firstSentences.slice(0, 720).trim();
+  }
+  return compact.slice(0, 717).trimEnd() + "...";
+}
+
+async function wikipediaGeneralKnowledgeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  language: "es" | "en" = "es",
+): Promise<ResearchResult> {
+  const searchText = generalKnowledgeSearchText(query);
+  if (!searchText) {
+    return abstain("Necesito una pregunta más específica.");
+  }
+
+  const url = new URL(`https://${language}.wikipedia.org/w/api.php`);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", searchText);
+  url.searchParams.set("gsrlimit", "3");
+  url.searchParams.set("prop", "extracts|info");
+  url.searchParams.set("exintro", "1");
+  url.searchParams.set("explaintext", "1");
+  url.searchParams.set("inprop", "url");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("utf8", "1");
+  url.searchParams.set("origin", "*");
+
+  const payload = await fetchJson(deps, url, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept": "application/json",
+    },
+  });
+  const queryObject = payload?.query;
+  if (!queryObject || typeof queryObject !== "object") {
+    return abstain("No encontré una referencia fiable para esa pregunta.");
+  }
+
+  const pagesObject = (queryObject as JsonObject).pages;
+  if (!pagesObject || typeof pagesObject !== "object") {
+    return abstain("No encontré una referencia fiable para esa pregunta.");
+  }
+
+  const pages = Object.values(pagesObject as JsonObject)
+    .filter((page): page is JsonObject => Boolean(page) && typeof page === "object")
+    .sort((left, right) => {
+      const leftIndex = numberValue(left.index) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = numberValue(right.index) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex;
+    });
+
+  const selected = pages.find((page) => {
+    const extract = stringValue(page.extract);
+    return extract != null && extract.length >= 80;
+  });
+  if (!selected) {
+    return abstain("No encontré una explicación suficientemente completa.");
+  }
+
+  const title = stringValue(selected.title) ?? searchText;
+  const extract = stringValue(selected.extract);
+  if (!extract) {
+    return abstain("No encontré una explicación suficientemente completa.");
+  }
+
+  const pageUrl = stringValue(selected.fullurl) ??
+    `https://${language}.wikipedia.org/wiki/${
+      encodeURIComponent(title.replace(/\s+/g, "_"))
+    }`;
+  const answer = conciseReferenceExtract(extract);
+  const sourceName = language === "es" ? "Wikipedia" : "Wikipedia (inglés)";
+
+  return {
+    claimKey: `general:${slug(title)}`,
+    value: slug(title) || slug(searchText),
+    displayText: `${answer} Fuente: ${sourceName}.`,
+    sourceId: pageUrl,
+    sourceIds: [pageUrl],
+    independentSourceCount: 1,
+    trustedReference: true,
+  };
+}
+
+async function generalKnowledgeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const spanish = await wikipediaGeneralKnowledgeEvidence(query, deps, "es");
+  if (!spanish.abstained) return spanish;
+  return await wikipediaGeneralKnowledgeEvidence(query, deps, "en");
+}
+
 export async function routeResearchQuery(
   query: string,
   deps: ResearchDependencies,
@@ -674,6 +790,10 @@ export async function routeResearchQuery(
       extractSpecProduct(query),
       deps,
     );
+  }
+
+  if (kind === "GENERAL_KNOWLEDGE") {
+    return await generalKnowledgeEvidence(query, deps);
   }
 
   return abstain(
