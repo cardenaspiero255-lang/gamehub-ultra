@@ -151,12 +151,29 @@ class GameHubAiAdvisor(
 
     private fun looksPredominantlyEnglish(value: String): Boolean {
         val normalized = normalize(value)
-        val englishMarkers = listOf(
-            " i am ", " i'm ", " i can ", " the ", " and ", " with ",
-            " your ", " battery ", " performance ", " network ", " temperature ",
-            " hello ", " help you ", " current "
-        )
         val padded = " $normalized "
+        val reliableSinglePhrases = listOf(
+            " hello ",
+            " how are you ",
+            " i am ",
+            " i m ",
+            " i can ",
+            " who are you ",
+            " help you "
+        )
+        if (reliableSinglePhrases.any(padded::contains)) return true
+
+        val englishMarkers = listOf(
+            " the ",
+            " and ",
+            " with ",
+            " your ",
+            " battery ",
+            " performance ",
+            " network ",
+            " temperature ",
+            " current "
+        )
         return englishMarkers.count(padded::contains) >= 2
     }
 
