@@ -9,7 +9,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 Deno.test("news requires two independent current sources before returning", async () => {
   const deps: ResearchDependencies = {
-    fetcher: async (input) => {
+    fetcher: (input) => {
       const url = String(input);
       if (!url.includes("api.gdeltproject.org/api/v2/doc/doc")) {
         throw new Error("unexpected URL " + url);
@@ -50,7 +50,7 @@ Deno.test("news requires two independent current sources before returning", asyn
 
 Deno.test("verified TechAPI specifications preserve primary source URLs", async () => {
   const deps: ResearchDependencies = {
-    fetcher: async (input) => {
+    fetcher: (input) => {
       const url = String(input);
       if (url.includes("api.github.com/search/code")) {
         return jsonResponse({
@@ -100,7 +100,7 @@ Deno.test("verified TechAPI specifications preserve primary source URLs", async 
 
 Deno.test("unverified specification records abstain instead of inventing", async () => {
   const deps: ResearchDependencies = {
-    fetcher: async (input) => {
+    fetcher: (input) => {
       const url = String(input);
       if (url.includes("api.github.com/search/code")) {
         return jsonResponse({
@@ -137,7 +137,7 @@ Deno.test("unverified specification records abstain instead of inventing", async
 
 Deno.test("current marketplace price abstains when no price credential exists", async () => {
   const deps: ResearchDependencies = {
-    fetcher: async () => {
+    fetcher: () => {
       throw new Error("price fetch should not run without credentials");
     },
     env: () => undefined,
