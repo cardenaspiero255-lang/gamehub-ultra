@@ -622,7 +622,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
   return stripAssistantInvocation(query)
     .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "")
     .replace(
-      /^(?:explicame|explícame|dime|que es|qué es|por que|por qué|como funciona|cómo funciona|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)\s+/i,
+      /^(?:explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)\s+/i,
       "",
     )
     .trim();
