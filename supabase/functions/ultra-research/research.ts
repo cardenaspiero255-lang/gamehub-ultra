@@ -93,8 +93,8 @@ function generatedText(payload: JsonObject | null): string | null {
   if (!first || typeof first !== "object") return null;
 
   const candidate = first as JsonObject;
-  const finishReason = stringValue(candidate.finishReason);
-  if (finishReason && finishReason.toUpperCase() !== "STOP") return null;
+  const finishReason = stringValue(candidate.finishReason)?.toUpperCase();
+  if (finishReason !== "STOP") return null;
 
   const content = candidate.content;
   if (!content || typeof content !== "object") return null;
