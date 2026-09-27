@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.tools
 
+import io.sentry.Sentry
 import java.util.concurrent.CancellationException
 
 enum class UltraToolKind {
@@ -60,15 +61,34 @@ interface UltraToolContract<in I, out O> {
 }
 
 object UltraToolExecution {
-    inline fun <T> protect(
+    fun invalidInput(
         descriptor: UltraToolDescriptor,
+        message: String = "La solicitud de la herramienta no es válida."
+    ): UltraToolResult.Failure =
+        UltraToolResult.Failure(
+            UltraToolFailure(
+                toolId = descriptor.id,
+                code = UltraToolFailureCode.INVALID_INPUT,
+                message = message
+            )
+        )
+
+    fun <T> protect(
+        descriptor: UltraToolDescriptor,
+        reportFailure: (Throwable) -> Unit = ::reportInternalFailure,
         block: () -> T
     ): UltraToolResult<T> =
         try {
             UltraToolResult.Success(block())
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw CancellationException("Tool execution interrupted").apply {
+                initCause(interrupted)
+            }
         } catch (error: Exception) {
+            runCatching { reportFailure(error) }
             UltraToolResult.Failure(
                 UltraToolFailure(
                     toolId = descriptor.id,
@@ -78,4 +98,8 @@ object UltraToolExecution {
                 )
             )
         }
+
+    private fun reportInternalFailure(error: Throwable) {
+        Sentry.captureException(error)
+    }
 }
