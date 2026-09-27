@@ -82,8 +82,19 @@ class UltraCar73ContextualQueryExecutionTest {
     }
 
     @Test
-    fun stableGeneralKnowledgeStaysOnLocalFastPath() {
-        val engine = UltraVerifiedResearchEngine(emptyList())
+    fun stableGeneralKnowledgeUsesVerifiedResearchInsteadOfGamingFallback() {
+        val provider = object : UltraResearchProvider {
+            override val id = "encyclopedia"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "vulkan",
+                    value = "graphics-api",
+                    displayText = "Vulkan es una API gráfica multiplataforma.",
+                    sourceId = "encyclopedia",
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
         val coordinator = UltraQueryExecutionCoordinator(engine)
         var localCalls = 0
 
@@ -91,14 +102,30 @@ class UltraCar73ContextualQueryExecutionTest {
             request = UltraGeneralQueryRouter.classify("Ultra, explícame qué es Vulkan"),
             localChat = {
                 localCalls += 1
-                "Vulkan es una API gráfica."
+                "fallback gaming"
             }
         )
 
-        assertEquals("Vulkan es una API gráfica.", answer.message)
-        assertFalse(answer.verified)
-        assertEquals(1, localCalls)
+        assertEquals("Vulkan es una API gráfica multiplataforma.", answer.message)
+        assertTrue(answer.verified)
+        assertEquals(0, localCalls)
         engine.close()
+    }
+
+    @Test
+    fun generalKnowledgeFollowUpCarriesPreviousTopicIntoResearchPlan() {
+        val plan = UltraContextualQueryPlanner.plan(
+            message = "¿y para qué sirve?",
+            conversationHistory = listOf(
+                "Tú: Ultra, explícame qué es Vulkan",
+                "Ultra: Vulkan es una API gráfica."
+            )
+        )
+
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, plan.kind)
+        assertTrue(plan.requiresInternet)
+        assertTrue(plan.originalText.contains("Vulkan"))
+        assertTrue(plan.originalText.contains("para qué sirve"))
     }
 
     @Test
