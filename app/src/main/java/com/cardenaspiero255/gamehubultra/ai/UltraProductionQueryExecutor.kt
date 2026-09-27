@@ -10,7 +10,7 @@ package com.cardenaspiero255.gamehubultra.ai
 object UltraProductionQueryExecutor : UltraQueryExecutor {
     private val delegate: UltraQueryExecutor = DefaultUltraQueryExecutor(
         coordinator = UltraQueryExecutionCoordinator(
-            researchEngine = UltraVerifiedResearchEngine(
+            researchGateway = UltraVerifiedResearchEngine(
                 providers = UltraProductionResearchProviderSource.providers()
             )
         )
