@@ -36,6 +36,39 @@ class UltraCommandUiEffectPolicyTest {
     }
 
     @Test
+    fun adviceRecommendationCannotApplyToDifferentSelectedGame() {
+        val result = VoiceActionResult.AiAdvice(
+            GameHubAiAdvice(
+                readiness = 92,
+                suggestedProfile = PerformanceProfile.X4,
+                reason = AiAdviceReason.X4_READY,
+                localModelUsed = false,
+                fallbackUsed = true
+            )
+        )
+
+        val recommendation =
+            UltraCommandUiEffectPolicy.recommendationForUserApply(
+                result = result,
+                gamePackage = "game.a"
+            )
+
+        assertEquals(
+            PerformanceProfile.X4,
+            UltraCommandUiEffectPolicy.profileForCurrentGame(
+                recommendation = recommendation,
+                currentGamePackage = "game.a"
+            )
+        )
+        assertNull(
+            UltraCommandUiEffectPolicy.profileForCurrentGame(
+                recommendation = recommendation,
+                currentGamePackage = "game.b"
+            )
+        )
+    }
+
+    @Test
     fun aiAdviceExposesSuggestedProfileForExplicitUserApply() {
         val result = VoiceActionResult.AiAdvice(
             GameHubAiAdvice(
