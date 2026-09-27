@@ -1705,17 +1705,12 @@ private fun VoiceAssistantCard(
                     )
 
                     withContext(Dispatchers.Main) {
-                        when (result) {
-                            is VoiceActionResult.ProfileSelected ->
-                                onProfileSelected(result.profile)
-                            is VoiceActionResult.GameOpened -> {
-                                onGameSelected(result.game.packageName)
-                                if (!result.profileDeferred) {
-                                    result.profile?.let(onProfileSelected)
-                                }
-                            }
-                            else -> Unit
+                        if (result is VoiceActionResult.GameOpened) {
+                            onGameSelected(result.game.packageName)
                         }
+                        UltraCommandUiEffectPolicy
+                            .profileForCurrentGameCallback(result)
+                            ?.let(onProfileSelected)
                         UltraConversationScopePolicy.runIfSameGame(
                             originatingGamePackage = originatingGamePackage,
                             currentGamePackage = latestAiContext.selectedGamePackage
@@ -1887,17 +1882,12 @@ applyNetworkProfile = { profile ->
                                 maxEntries = MAX_CHAT_HISTORY
                             )
                             kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                when (result) {
-                                    is VoiceActionResult.ProfileSelected ->
-                                        onProfileSelected(result.profile)
-                                    is VoiceActionResult.GameOpened -> {
-                                        onGameSelected(result.game.packageName)
-                                        if (!result.profileDeferred) {
-                                            result.profile?.let(onProfileSelected)
-                                        }
-                                    }
-                                    else -> Unit
+                                if (result is VoiceActionResult.GameOpened) {
+                                    onGameSelected(result.game.packageName)
                                 }
+                                UltraCommandUiEffectPolicy
+                                    .profileForCurrentGameCallback(result)
+                                    ?.let(onProfileSelected)
                                 if (
                                     UltraConversationScopePolicy.isSameGame(
                                         originatingGamePackage,
