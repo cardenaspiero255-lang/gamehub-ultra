@@ -26,6 +26,15 @@ object UltraGeneralQueryRouter {
     private val currentDataPattern = Regex(
         """\b(clima|tiempo de hoy|weather|pronostico|forecast|noticias|news|precio|price|precios|prices|cuanto cuesta|cuanto cuestan|how much|cost|costs|salio nuevo|released|fecha de lanzamiento|release date)\b"""
     )
+    private val currentQualifierPattern = Regex(
+        """\b(actual|actualmente|ahora|hoy|current|currently|latest|newest)\b"""
+    )
+    private val definitionPattern = Regex(
+        """\b(que es|que son|what is|what are|define)\b"""
+    )
+    private val broadFactualPattern = Regex(
+        """\b(cuantos|cuantas|como se llama|como se llaman|how many|how old|what year|which country)\b"""
+    )
     private val generalKnowledgePattern = Regex(
         """\b(que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|what does|how does|explain|define|where is|when was)\b"""
     )
@@ -60,7 +69,47 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = RESEARCH_TIMEOUT_MS
                 )
 
+            appContextOnlyPattern.matches(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = false,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            assistantIdentityOnlyPattern.matches(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = false,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            definitionPattern.containsMatchIn(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    requiresInternet = true,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
             currentDataPattern.containsMatchIn(clean) ->
+                UltraGeneralQueryRequest(
+                    originalText = transcript.trim(),
+                    kind = UltraGeneralQueryKind.CURRENT_DATA,
+                    requiresInternet = true,
+                    requiresFreshData = true,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            currentQualifierPattern.containsMatchIn(clean) &&
+                (
+                    generalKnowledgePattern.containsMatchIn(clean) ||
+                        broadFactualPattern.containsMatchIn(clean)
+                    ) ->
                 UltraGeneralQueryRequest(
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
@@ -88,25 +137,8 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            appContextOnlyPattern.matches(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
-                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
-                    requiresFreshData = false,
-                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
-                )
-
-            assistantIdentityOnlyPattern.matches(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
-                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
-                    requiresFreshData = false,
-                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
-                )
-
-            generalKnowledgePattern.containsMatchIn(clean) ->
+            generalKnowledgePattern.containsMatchIn(clean) ||
+                broadFactualPattern.containsMatchIn(clean) ->
                 UltraGeneralQueryRequest(
                     originalText = transcript.trim(),
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
@@ -133,6 +165,7 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
         }
+    }
     }
 
 }
