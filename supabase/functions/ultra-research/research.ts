@@ -209,6 +209,61 @@ function extractNewsTopic(query: string): string {
     .trim();
 }
 
+function isLikelySpanishText(value: string): boolean {
+  const clean = ` ${normalize(value)} `;
+  const spanishMarkers = [
+    " el ",
+    " la ",
+    " los ",
+    " las ",
+    " un ",
+    " una ",
+    " de ",
+    " del ",
+    " en ",
+    " para ",
+    " con ",
+    " por ",
+    " que ",
+    " nuevo ",
+    " nueva ",
+    " actualizacion ",
+    " parche ",
+    " mejora ",
+    " recibe ",
+    " lanza ",
+    " lanzamiento ",
+    " rendimiento ",
+    " juego ",
+    " juegos ",
+  ];
+  const englishMarkers = [
+    " the ",
+    " a ",
+    " an ",
+    " of ",
+    " for ",
+    " with ",
+    " and ",
+    " new ",
+    " update ",
+    " released ",
+    " changes ",
+    " performance ",
+    " today ",
+    " game ",
+  ];
+  let spanish = 0;
+  let english = 0;
+  for (const marker of spanishMarkers) {
+    if (clean.includes(marker)) spanish += 1;
+  }
+  for (const marker of englishMarkers) {
+    if (clean.includes(marker)) english += 1;
+  }
+  return spanish >= 1 && spanish >= english;
+}
+
 async function newsEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -241,7 +296,7 @@ async function newsEvidence(
     const article = raw as JsonObject;
     const title = stringValue(article.title);
     const articleUrl = stringValue(article.url);
-    if (!title || !articleUrl) continue;
+    if (!title || !articleUrl || !isLikelySpanishText(title)) continue;
     const domain = stringValue(article.domain) ?? hostname(articleUrl);
     if (!domain || usedDomains.has(domain.toLowerCase())) continue;
     usedDomains.add(domain.toLowerCase());
@@ -267,7 +322,7 @@ async function newsEvidence(
       .map((article) => `${normalize(article.title)}|${article.seen}`)
       .join("||"),
     displayText:
-      `Encontré información reciente verificada sobre ${topic} en ${sourceIds.length} fuentes independientes. Puedes abrir las fuentes para revisar los detalles.`,
+      `Noticias verificadas sobre ${topic}: ${selected[0].title}. También: ${selected[1].title}.`,
     sourceId: sourceIds[0],
     sourceIds,
     independentSourceCount: independentDomains(sourceIds),
