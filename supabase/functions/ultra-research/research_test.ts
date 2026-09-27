@@ -348,3 +348,54 @@ Deno.test("weather follow-up uses current question instead of contaminating it w
     throw new Error("expected current question location, got " + geocodedName);
   }
 });
+
+
+Deno.test("general knowledge uses a trusted reference instead of abstaining", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: {
+            search: [{
+              title: "Dispersión de Rayleigh",
+              pageid: 123,
+            }],
+          },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          title: "Dispersión de Rayleigh",
+          extract:
+            "La dispersión de Rayleigh explica por qué la luz azul del Sol se dispersa más en la atmósfera, haciendo que el cielo se vea azul.",
+          content_urls: {
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Dispersión_de_Rayleigh",
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url.toString());
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, ¿por qué el cielo es azul?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected general knowledge result");
+  if (!result.displayText?.toLowerCase().includes("cielo")) {
+    throw new Error("expected useful general knowledge answer");
+  }
+  if (!result.sourceId?.includes("wikipedia.org")) {
+    throw new Error("expected a cited reference source");
+  }
+});
