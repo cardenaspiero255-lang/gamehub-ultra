@@ -621,8 +621,18 @@ async function priceEvidence(
 function extractGeneralKnowledgeQuery(query: string): string {
   return stripAssistantInvocation(query)
     .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "")
-    .replace(/^(?:explicame|explícame|dime|que es|qué es|por que|por qué|como funciona|cómo funciona)\s+/i, "")
+    .replace(
+      /^(?:explicame|explícame|dime|que es|qué es|por que|por qué|como funciona|cómo funciona|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)\s+/i,
+      "",
+    )
     .trim();
+}
+
+function generalKnowledgeLanguage(query: string): "es" | "en" {
+  const clean = normalize(stripAssistantInvocation(query));
+  return /\b(what|who|why|how|explain|define|where|when)\b/.test(clean)
+    ? "en"
+    : "es";
 }
 
 async function generalKnowledgeEvidence(
@@ -636,7 +646,9 @@ async function generalKnowledgeEvidence(
   const topic = extractGeneralKnowledgeQuery(researchText);
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
-  const searchUrl = new URL("https://es.wikipedia.org/w/api.php");
+  const language = generalKnowledgeLanguage(researchText);
+  const wikipediaHost = `${language}.wikipedia.org`;
+  const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
   searchUrl.searchParams.set("action", "query");
   searchUrl.searchParams.set("list", "search");
   searchUrl.searchParams.set("srsearch", topic);
@@ -657,7 +669,7 @@ async function generalKnowledgeEvidence(
   if (!title) return abstain("No encontré una fuente enciclopédica para esa pregunta.");
 
   const summaryUrl =
-    "https://es.wikipedia.org/api/rest_v1/page/summary/" +
+    `https://${wikipediaHost}/api/rest_v1/page/summary/` +
     encodeURIComponent(title.replace(/ /g, "_"));
   const summary = await fetchJson(deps, summaryUrl, {
     headers: { "User-Agent": USER_AGENT },
