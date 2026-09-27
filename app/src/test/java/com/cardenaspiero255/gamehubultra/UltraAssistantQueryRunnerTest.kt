@@ -1,12 +1,14 @@
 package com.cardenaspiero255.gamehubultra
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -319,4 +321,52 @@ class UltraAssistantQueryRunnerTest {
     }
 
 
+    @Test
+    fun cancellationBeforeScheduledExecutionDoesNotRecordAcceptedTurn() = runBlocking {
+        val executionDispatcher = QueuedTestDispatcher()
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var acceptedTurns = 0
+        var executed = false
+
+        val runner = UltraAssistantQueryRunner(
+            ownerScope = ownerScope,
+            executionDispatcher = executionDispatcher,
+            publicationDispatcher = Dispatchers.Unconfined,
+            currentGamePackage = { "game.a" },
+            currentConversation = { emptyList() },
+            publishConversation = {}
+        )
+
+        val submission = runner.launch(
+            onAccepted = { acceptedTurns += 1 },
+            onFailure = {}
+        ) {
+            executed = true
+        }
+        val accepted = assertIs<UltraAssistantQuerySubmission.Accepted>(submission)
+
+        ownerScope.cancel()
+        executionDispatcher.runAll()
+        accepted.job.join()
+
+        assertEquals(0, acceptedTurns)
+        assertFalse(executed)
+        assertFalse(runner.isRunning.value)
+    }
+
+
+}
+
+private class QueuedTestDispatcher : CoroutineDispatcher() {
+    private val tasks = mutableListOf<Runnable>()
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        tasks += block
+    }
+
+    fun runAll() {
+        val queued = tasks.toList()
+        tasks.clear()
+        queued.forEach(Runnable::run)
+    }
 }
