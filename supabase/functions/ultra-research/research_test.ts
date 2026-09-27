@@ -484,8 +484,10 @@ Deno.test("general-knowledge follow-up searches with previous topic context", as
   );
 
   if (result.abstained) throw new Error("expected contextual answer");
-  if (!searchQuery.toLowerCase().includes("vulkan")) {
-    throw new Error("expected previous topic in the research query");
+  if (searchQuery.toLowerCase() !== "vulkan") {
+    throw new Error(
+      "expected a clean previous topic for the follow-up research query",
+    );
   }
 });
 
