@@ -354,6 +354,11 @@ Deno.test("general knowledge returns a sourced answer instead of the gaming fall
   const deps: ResearchDependencies = {
     fetcher: (input) => {
       const url = new URL(String(input));
+      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Dispersión de Rayleigh" }] },
+        });
+      }
       if (url.hostname === "es.wikipedia.org" && url.pathname.includes("/page/summary/")) {
         return jsonResponse({
           title: "Dispersión de Rayleigh",
