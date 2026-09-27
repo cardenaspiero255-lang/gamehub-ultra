@@ -35,10 +35,6 @@ object VoiceCommandParser {
 
         parseGameAliasDefinition(clean)?.let { return it }
 
-        parseNetworkRequest(clean)?.let { request ->
-            return VoiceCommand.Network(request)
-        }
-
         // Resolver-owned phrases must keep their semantic command meaning even
         // if an older persisted alias happens to use the same spoken phrase.
         optionalResolver?.resolve(clean)?.let { return it }
@@ -48,6 +44,10 @@ object VoiceCommandParser {
                 query = canonicalGameAlias(clean),
                 originalQuery = normalize(transcript)
             )
+        }
+
+        parseNetworkRequest(clean)?.let { request ->
+            return VoiceCommand.Network(request)
         }
 
         if (
@@ -117,8 +117,9 @@ object VoiceCommandParser {
         }
     }
 
-    private fun parseNetworkRequest(clean: String): NetworkVoiceRequest? =
-        when {
+    private fun parseNetworkRequest(clean: String): NetworkVoiceRequest? {
+        if (hasExplicitLaunchIntent(clean)) return null
+        return when {
             clean.contains("packet loss") ||
                 clean.contains("perdida de paquetes") ||
                 clean.contains("pierdo paquetes") ->
@@ -148,6 +149,7 @@ object VoiceCommandParser {
 
             else -> null
         }
+    }
 
     private fun parseGameAliasDefinition(clean: String): VoiceCommand.DefineGameAlias? {
         val spanish = Regex(
