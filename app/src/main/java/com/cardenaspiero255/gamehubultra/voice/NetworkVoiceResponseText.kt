@@ -43,6 +43,8 @@ object NetworkVoiceResponseText {
                 when (result.optimizationOutcome) {
                     NetworkOptimizationOutcome.APPLIED ->
                         "Optimización de red activada. Perfil de red $profile aplicado con las capacidades permitidas por Android."
+                    NetworkOptimizationOutcome.LEASE_ACQUIRED_PENDING_INTERACTIVE ->
+                        "Preparé el modo de baja latencia, pero Android solo lo hace efectivo con la pantalla activa y GameHub Ultra en primer plano."
                     NetworkOptimizationOutcome.RELEASED_OR_NOT_NEEDED ->
                         "No fue necesario activar prioridad competitiva. Dejé la red en perfil $profile con los ajustes locales disponibles."
                     NetworkOptimizationOutcome.UNAVAILABLE ->
