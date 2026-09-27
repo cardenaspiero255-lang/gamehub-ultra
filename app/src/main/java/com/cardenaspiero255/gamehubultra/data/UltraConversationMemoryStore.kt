@@ -7,47 +7,26 @@ import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRecall
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryRepository
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemorySnapshot
-import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.Future
 
 internal class UltraMemoryRepositoryProvider(
     private val executor: ExecutorService,
     private val factory: () -> UltraMemoryRepository
 ) {
     @Volatile
-    private var repositoryFuture: Future<UltraMemoryRepository>? = null
+    private var repository: UltraMemoryRepository? = null
 
-    fun get(): UltraMemoryRepository {
-        val future = currentFuture()
-        return try {
-            future.get()
-        } catch (error: ExecutionException) {
-            invalidate(future)
-            when (val cause = error.cause) {
-                is RuntimeException -> throw cause
-                is Error -> throw cause
-                else -> throw IllegalStateException(
-                    "Ultra memory repository initialization failed",
-                    cause ?: error
-                )
-            }
-        }
-    }
-
-    private fun currentFuture(): Future<UltraMemoryRepository> =
-        repositoryFuture ?: synchronized(this) {
-            repositoryFuture ?: executor.submit(factory).also {
-                repositoryFuture = it
+    fun get(): UltraMemoryRepository =
+        repository ?: synchronized(this) {
+            repository ?: factory().also {
+                repository = it
             }
         }
 
-    private fun invalidate(future: Future<UltraMemoryRepository>) {
-        synchronized(this) {
-            if (repositoryFuture === future) {
-                repositoryFuture = null
-            }
+    fun prewarm() {
+        executor.execute {
+            runCatching { get() }
         }
     }
 }
@@ -85,6 +64,10 @@ class UltraConversationMemoryStore private constructor(
         UltraMemoryRepository(
             persistence = EncryptedUltraMemoryPersistence(appContext)
         )
+    }
+
+    init {
+        repositoryProvider.prewarm()
     }
 
     private fun repository(): UltraMemoryRepository = repositoryProvider.get()
