@@ -324,7 +324,10 @@ private fun GameHubUltraApp(
             memoryGateway = ultraMemoryStore
         )
     }
-    var ultraConversation by rememberSaveable { mutableStateOf(listOf<String>()) }
+    val ultraConversationState = rememberSaveable {
+        mutableStateOf(listOf<String>())
+    }
+    var ultraConversation by ultraConversationState
     var loadedUltraConversationScopeKey by rememberSaveable {
         mutableStateOf("__unloaded__")
     }
@@ -352,11 +355,11 @@ private fun GameHubUltraApp(
     }
 
     fun updateUltraConversation(next: List<String>) {
-        val previous = ultraConversation
-        ultraConversation = next
+        val previous = ultraConversationState.value
+        ultraConversationState.value = next
         val memoryScope = UltraMemoryScope(
             userId = "local",
-            gamePackage = uiState.selectedGamePackage
+            gamePackage = viewModel.uiState.value.selectedGamePackage
         )
         val timestampMillis = System.currentTimeMillis()
         if (next.isEmpty()) {
@@ -371,20 +374,12 @@ private fun GameHubUltraApp(
         }
     }
 
-    val latestScreenGameState = rememberUpdatedState(uiState.selectedGamePackage)
-    val latestScreenConversationState = rememberUpdatedState(ultraConversation)
-    val latestConversationPublisherState =
-        rememberUpdatedState<(List<String>) -> Unit> { next ->
-            updateUltraConversation(next)
-        }
-    val ultraQueryRunner = remember(scope) {
+    val ultraQueryRunner = remember(scope, viewModel, ultraConversationState) {
         UltraAssistantQueryRunner(
             ownerScope = scope,
-            currentGamePackage = { latestScreenGameState.value },
-            currentConversation = { latestScreenConversationState.value },
-            publishConversation = { next ->
-                latestConversationPublisherState.value(next)
-            }
+            currentGamePackage = { viewModel.uiState.value.selectedGamePackage },
+            currentConversation = { ultraConversationState.value },
+            publishConversation = ::updateUltraConversation
         )
     }
 
