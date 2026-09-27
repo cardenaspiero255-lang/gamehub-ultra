@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
+import com.cardenaspiero255.gamehubultra.ai.UltraQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraTypedChatRoutePlanner
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
@@ -219,6 +220,7 @@ class MainActivity : ComponentActivity() {
                         initialState = initialState,
                         device = device,
                         viewModel = gameHubViewModel,
+                        queryExecutor = UltraProductionQueryExecutor,
                         initialTab = initialTab,
                         onProfileApplied = { profile ->
                             performanceController.apply(profile, window)
@@ -239,6 +241,7 @@ private fun GameHubUltraApp(
     initialState: PerformanceState,
     device: DeviceInfo,
     viewModel: GameHubViewModel,
+    queryExecutor: UltraQueryExecutor,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
@@ -1661,7 +1664,7 @@ private fun VoiceAssistantCard(
                 }
 
                 is UltraAgentRoute.Chat -> {
-                    val answer = UltraProductionQueryExecutor.answer(
+                    val answer = queryExecutor.answer(
                         route = route,
                         stableKnowledgeFallback = {
                             aiAdvisor.generalKnowledgeChatOrNull(
@@ -1852,7 +1855,7 @@ private fun VoiceAssistantCard(
                         }
 
                         is UltraAgentRoute.Chat -> {
-                            val answer = UltraProductionQueryExecutor.answer(
+                            val answer = queryExecutor.answer(
                                 route = route,
                                 stableKnowledgeFallback = {
                                     aiAdvisor.generalKnowledgeChatOrNull(
