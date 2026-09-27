@@ -35,6 +35,10 @@ object VoiceCommandParser {
 
         parseGameAliasDefinition(clean)?.let { return it }
 
+        parseNetworkRequest(clean)?.let { request ->
+            return VoiceCommand.Network(request)
+        }
+
         // Resolver-owned phrases must keep their semantic command meaning even
         // if an older persisted alias happens to use the same spoken phrase.
         optionalResolver?.resolve(clean)?.let { return it }
@@ -112,6 +116,38 @@ object VoiceCommandParser {
             VoiceCommand.Unknown(transcript)
         }
     }
+
+    private fun parseNetworkRequest(clean: String): NetworkVoiceRequest? =
+        when {
+            clean.contains("packet loss") ||
+                clean.contains("perdida de paquetes") ||
+                clean.contains("pierdo paquetes") ->
+                NetworkVoiceRequest.PACKET_LOSS
+
+            clean.contains("optimiza mi internet") ||
+                clean.contains("optimizar mi internet") ||
+                clean.contains("optimiza el internet") ||
+                clean.contains("optimizar el internet") ||
+                clean.contains("optimiza la red") ||
+                clean.contains("optimizar la red") ||
+                clean.contains("optimiza mi wifi") ||
+                clean.contains("optimizar mi wifi") ||
+                clean.contains("mejora mi internet") ||
+                clean.contains("acelera mi internet") ||
+                clean.contains("optimize my internet") ||
+                clean.contains("optimize my network") ->
+                NetworkVoiceRequest.OPTIMIZE
+
+            clean.contains("como esta mi conexion") ||
+                clean.contains("estado de mi conexion") ||
+                clean.contains("como esta mi red") ||
+                clean.contains("estado de mi red") ||
+                clean.contains("network status") ||
+                clean.contains("connection status") ->
+                NetworkVoiceRequest.STATUS
+
+            else -> null
+        }
 
     private fun parseGameAliasDefinition(clean: String): VoiceCommand.DefineGameAlias? {
         val spanish = Regex(
