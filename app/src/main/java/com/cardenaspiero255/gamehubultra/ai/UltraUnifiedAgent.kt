@@ -117,14 +117,17 @@ object UltraUnifiedAgentRouter {
             )
         }
 
+        val directQueryRequest = UltraGeneralQueryRouter.classify(transcript)
         val queryRequest = UltraContextualQueryPlanner.plan(
             message = transcript,
             conversationHistory = conversationHistory
         )
         val contextualResearchFollowUp =
-            conversationHistory.isNotEmpty() &&
-                UltraConversationContextResolver.looksLikeFollowUp(transcript) &&
-                queryRequest.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE
+            queryRequest.originalText != transcript.trim() &&
+                (
+                    directQueryRequest.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE ||
+                        UltraConversationContextResolver.referencesPriorEntity(transcript)
+                )
 
         if (!VoiceCommandParser.hasExplicitLaunchIntent(transcript)) {
             UltraMathEngine.solve(transcript)?.let { solution ->
