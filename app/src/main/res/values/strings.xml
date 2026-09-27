@@ -218,4 +218,6 @@
     <string name="peripherals_loading">Consultando periféricos conectados…</string>
     <string name="peripherals_none_detected">No hay periféricos externos de entrada detectados.</string>
     <string name="peripherals_audio_label">Salidas de audio externas</string>
+    <string name="ultra_history_load_failed">No pude cargar el historial de Ultra.</string>
+    <string name="ultra_history_retry">Reintentar historial</string>
 </resources>
