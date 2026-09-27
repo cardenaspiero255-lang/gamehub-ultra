@@ -15,7 +15,6 @@ import com.cardenaspiero255.gamehubultra.ai.UltraQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraTypedChatRoutePlanner
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
-import com.cardenaspiero255.gamehubultra.ai.UltraMemoryScope
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
@@ -327,63 +326,33 @@ private fun GameHubUltraApp(
             memoryGateway = ultraMemoryStore
         )
     }
-    val ultraConversationState = rememberSaveable {
-        mutableStateOf(listOf<String>())
+    var restorableUltraGamePackage by rememberSaveable {
+        mutableStateOf<String?>(null)
     }
-    var ultraConversation by ultraConversationState
-    var loadedUltraConversationScopeKey by rememberSaveable {
-        mutableStateOf("__unloaded__")
+    var restorableUltraConversation by rememberSaveable {
+        mutableStateOf<List<String>?>(null)
     }
-
-    LaunchedEffect(ultraMemoryStore, uiState.selectedGamePackage) {
-        val scopeKey = uiState.selectedGamePackage ?: "__global__"
-        if (loadedUltraConversationScopeKey == scopeKey) return@LaunchedEffect
-
-        loadedUltraConversationScopeKey = scopeKey
-        ultraConversation = emptyList()
-        val memoryScope = UltraMemoryScope(
-            userId = "local",
-            gamePackage = uiState.selectedGamePackage
-        )
-        val loaded = withContext(Dispatchers.IO) {
-            ultraMemoryStore.warmUp()
-            ultraMemoryStore.recentConversationLines(
-                limit = MAX_CHAT_HISTORY,
-                scope = memoryScope
-            )
-        }
-        if (loadedUltraConversationScopeKey == scopeKey) {
-            ultraConversation = loaded
-        }
+    val ultraSessionMemory = remember(ultraMemoryStore) {
+        UltraConversationSessionMemoryAdapter(ultraMemoryStore)
     }
-
-    fun updateUltraConversation(next: List<String>) {
-        val previous = ultraConversationState.value
-        ultraConversationState.value = next
-        val memoryScope = UltraMemoryScope(
-            userId = "local",
-            gamePackage = viewModel.uiState.value.selectedGamePackage
-        )
-        val timestampMillis = System.currentTimeMillis()
-        if (next.isEmpty()) {
-            ultraMemoryStore.enqueueClearConversationHistory(scope = memoryScope)
-        } else if (UltraMemoryTurnPersistencePolicy.shouldPersist(previous, next)) {
-            ultraMemoryStore.enqueueSyncConversation(
-                previous = previous,
-                next = next,
-                scope = memoryScope,
-                timestampMillis = timestampMillis
-            )
-        }
-    }
-
-    val ultraQueryRunner = remember(scope, viewModel, ultraConversationState) {
-        UltraAssistantQueryRunner(
+    val ultraSessionController = remember(scope, ultraSessionMemory) {
+        UltraAssistantSessionController(
             ownerScope = scope,
-            currentGamePackage = { viewModel.uiState.value.selectedGamePackage },
-            currentConversation = { ultraConversationState.value },
-            publishConversation = ::updateUltraConversation
+            memory = ultraSessionMemory,
+            maxHistory = MAX_CHAT_HISTORY,
+            restoredGamePackage = restorableUltraGamePackage,
+            restoredConversation = restorableUltraConversation,
+            onSnapshotChanged = { gamePackage, conversation ->
+                restorableUltraGamePackage = gamePackage
+                restorableUltraConversation = conversation
+            }
         )
+    }
+    val ultraConversation by ultraSessionController.conversation.collectAsStateWithLifecycle()
+    val ultraQueryRunner = ultraSessionController.queryRunner
+
+    LaunchedEffect(ultraSessionController, uiState.selectedGamePackage) {
+        ultraSessionController.selectGame(uiState.selectedGamePackage).join()
     }
 
     DisposableEffect(aiAdvisor) {
@@ -758,7 +727,7 @@ private fun GameHubUltraApp(
                 queryExecutor = queryExecutor,
                 queryRunner = ultraQueryRunner,
                 conversation = ultraConversation,
-                onConversationChanged = ::updateUltraConversation,
+                onConversationChanged = ultraSessionController::updateConversation,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
@@ -877,7 +846,7 @@ private fun GameHubUltraApp(
                         queryExecutor = queryExecutor,
                         queryRunner = ultraQueryRunner,
                         conversation = ultraConversation,
-                        onConversationChanged = ::updateUltraConversation,
+                        onConversationChanged = ultraSessionController::updateConversation,
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
                         onGameSelected = ::selectGame
