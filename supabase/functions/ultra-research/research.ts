@@ -650,7 +650,7 @@ function contextKnowledgeTopic(context: string): string {
 function isExplicitNewKnowledgeTopic(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
-  );
+  ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
   return /^(?:y |and )?(?:que es|que son|quien es|quienes son|define|explicame que es|explica que es|what is|what are|who is|who are|define)\s+\S+/.test(
     clean,
   );
@@ -659,7 +659,7 @@ function isExplicitNewKnowledgeTopic(query: string): boolean {
 function isDependentKnowledgeFollowUp(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
-  );
+  ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
   if (!/^(?:y|and)\b/.test(clean)) return false;
   if (isExplicitNewKnowledgeTopic(query)) return false;
   return /\b(?:lo|la|los|las|eso|esto|ese|esa|sirve|funciona|creo|crearon|inventaron|usa|usar)\b/.test(
