@@ -1,295 +1,460 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import re
-import sys
+import json
+import shlex
+import subprocess
 from pathlib import Path
+from typing import Any
 
 ANDROID = Path(".github/workflows/android.yml")
 COVERAGE = Path(".github/workflows/coverage.yml")
 
 
 def fail(message: str) -> None:
+    """Fail the contract with a GitHub Actions annotation."""
     print(f"::error::{message}")
     raise SystemExit(1)
 
 
-def leading_spaces(line: str) -> int:
-    return len(line) - len(line.lstrip(" "))
+def load_workflow(path: Path) -> dict[str, Any]:
+    """Parse a workflow with Ruby's real YAML parser (Psych), or fail closed."""
+    if not path.is_file():
+        fail(f"Missing workflow: {path}")
+
+    ruby = r'''
+require "yaml"
+require "json"
+
+begin
+  parsed = YAML.safe_load(
+    File.read(ARGV.fetch(0)),
+    permitted_classes: [],
+    permitted_symbols: [],
+    aliases: true
+  )
+  abort("workflow root is not a mapping") unless parsed.is_a?(Hash)
+  STDOUT.write(JSON.generate(parsed))
+rescue LoadError => e
+  warn("YAML parser unavailable: #{e.message}")
+  exit(70)
+rescue Psych::Exception => e
+  warn("YAML parse failed: #{e.message}")
+  exit(71)
+end
+'''
+    try:
+        result = subprocess.run(
+            ["ruby", "-e", ruby, str(path)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except FileNotFoundError:
+        fail("Real YAML parser unavailable: Ruby/Psych is required")
+
+    if result.returncode != 0:
+        fail(
+            f"Unable to parse {path} with Ruby/Psych "
+            f"(exit {result.returncode}): {result.stderr.strip()}"
+        )
+
+    try:
+        parsed = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        fail(f"YAML parser returned invalid JSON for {path}: {exc}")
+
+    if not isinstance(parsed, dict):
+        fail(f"Workflow root is not a mapping: {path}")
+    return parsed
 
 
-def unquote_scalar(value: str) -> str:
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
-        return value[1:-1]
+def job(workflow: dict[str, Any], job_name: str) -> dict[str, Any]:
+    """Return one required workflow job and reject malformed structures."""
+    jobs = workflow.get("jobs")
+    if not isinstance(jobs, dict):
+        fail("Workflow jobs mapping is missing")
+    value = jobs.get(job_name)
+    if not isinstance(value, dict):
+        fail(f"Missing required job: {job_name}")
+
+    defaults = value.get("defaults")
+    if isinstance(defaults, dict):
+        run_defaults = defaults.get("run")
+        if isinstance(run_defaults, dict) and run_defaults.get("working-directory") not in (None, ""):
+            fail(f"Required job changes working-directory: {job_name}")
     return value
 
 
-def active_lines(path: Path) -> list[str]:
-    if not path.is_file():
-        fail(f"Missing workflow: {path}")
-    return path.read_text(encoding="utf-8").splitlines()
+def step(job_value: dict[str, Any], job_name: str, step_name: str) -> dict[str, Any]:
+    """Locate exactly one named step inside the expected job's real steps list."""
+    steps = job_value.get("steps")
+    if not isinstance(steps, list):
+        fail(f"Job has no steps list: {job_name}")
+
+    matches = [
+        candidate
+        for candidate in steps
+        if isinstance(candidate, dict) and candidate.get("name") == step_name
+    ]
+    if len(matches) != 1:
+        fail(
+            f"Expected exactly one active step {step_name!r} in job {job_name!r}; "
+            f"found {len(matches)}"
+        )
+    return matches[0]
 
 
-def parse_steps(path: Path) -> dict[str, dict[str, object]]:
-    lines = active_lines(path)
-    steps: dict[str, dict[str, object]] = {}
-    i = 0
-    while i < len(lines):
-        raw = lines[i]
-        stripped = raw.lstrip()
-        if stripped.startswith("#"):
-            i += 1
+def normalized_if(value: Any) -> str | None:
+    """Normalize a workflow if-expression for exact contract comparisons."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        fail(f"Workflow if condition must be a string, found {type(value).__name__}")
+    return value.strip()
+
+
+def require_blocking_semantics(step_value: dict[str, Any], label: str) -> None:
+    """Require failures to propagate; expressions are intentionally rejected."""
+    value = step_value.get("continue-on-error")
+    if value not in (None, False):
+        fail(
+            f"Required gate must be blocking with continue-on-error absent/false: "
+            f"{label}: {value!r}"
+        )
+
+
+def require_continue_on_error_true(step_value: dict[str, Any], label: str) -> None:
+    """Require one intentionally best-effort step to remain explicitly true."""
+    value = step_value.get("continue-on-error")
+    if value is not True:
+        fail(f"Expected continue-on-error: true for {label}, found {value!r}")
+
+
+def require_no_working_directory(step_value: dict[str, Any], label: str) -> None:
+    """Prevent required commands from being redirected into another directory."""
+    if step_value.get("working-directory") not in (None, ""):
+        fail(f"Required gate changes working-directory: {label}")
+
+
+def logical_shell_commands(script: str) -> list[str]:
+    """Join backslash continuations into executable shell command lines."""
+    commands: list[str] = []
+    current = ""
+    for raw in script.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
             continue
-        match = re.match(r"^(\s*)- name:\s*(.+?)\s*$", raw)
-        if not match:
-            i += 1
-            continue
-        indent = len(match.group(1))
-        # Workflow steps are direct children of a `steps:` sequence. Ignore
-        # YAML-looking text embedded in run scripts/heredocs.
-        parent_is_steps = False
-        for prev in range(i - 1, -1, -1):
-            prev_raw = lines[prev]
-            prev_stripped = prev_raw.strip()
-            if not prev_stripped or prev_stripped.startswith("#"):
-                continue
-            prev_indent = leading_spaces(prev_raw)
-            if prev_indent < indent:
-                parent_is_steps = prev_stripped == "steps:" and prev_indent == indent - 2
-                break
-        if not parent_is_steps:
-            i += 1
-            continue
-        name = unquote_scalar(match.group(2))
-        block: list[str] = [raw]
-        i += 1
-        while i < len(lines):
-            nxt = lines[i]
-            nxt_stripped = nxt.lstrip()
-            if nxt_stripped and not nxt_stripped.startswith("#"):
-                nxt_indent = leading_spaces(nxt)
-                if nxt_indent <= indent and re.match(r"^\s*-\s+name:", nxt):
-                    break
-                if nxt_indent < indent:
-                    break
-            block.append(nxt)
-            i += 1
 
-        fields: dict[str, str] = {}
-        run_lines: list[str] = []
-        run_indent: int | None = None
-        for idx, line in enumerate(block[1:], start=1):
-            stripped_line = line.lstrip()
-            if not stripped_line or stripped_line.startswith("#"):
-                continue
-            line_indent = leading_spaces(line)
-            if run_indent is not None:
-                if line_indent > run_indent:
-                    run_lines.append(stripped_line)
-                    continue
-                run_indent = None
-            field_match = re.match(r"^\s{2,}([A-Za-z0-9_-]+):\s*(.*?)\s*$", line)
-            if not field_match:
-                continue
-            key, value = field_match.group(1), field_match.group(2)
-            fields[key] = unquote_scalar(value)
-            if key == "run":
-                run_indent = line_indent
-                if value not in ("|", ">", ""):
-                    run_lines.append(value.strip())
+        if current:
+            current += " " + stripped
+        else:
+            current = stripped
 
-        steps[name] = {"fields": fields, "run": "\n".join(run_lines), "block": "\n".join(block)}
-    return steps
+        if current.endswith("\\"):
+            current = current[:-1].rstrip()
+            continue
+
+        commands.append(current)
+        current = ""
+
+    if current:
+        commands.append(current)
+    return commands
+
+
+def gradle_commands(script: str) -> list[list[str]]:
+    """Return tokenized real Gradle invocations, excluding echo/comment mentions."""
+    result: list[list[str]] = []
+    for command in logical_shell_commands(script):
+        try:
+            tokens = shlex.split(command, comments=True, posix=True)
+        except ValueError as exc:
+            fail(f"Unable to parse shell command in required gate: {exc}: {command!r}")
+        if not tokens:
+            continue
+
+        first = tokens[0]
+        if first not in {"gradle", "./gradlew"}:
+            continue
+
+        if "|" in tokens:
+            tokens = tokens[:tokens.index("|")]
+        result.append(tokens)
+    return result
+
+
+def require_gradle_invocation(
+    step_value: dict[str, Any],
+    label: str,
+    *,
+    tasks: tuple[str, ...],
+    args: tuple[str, ...] = (),
+) -> None:
+    """Require all named tasks/arguments on the same executable Gradle command."""
+    script = step_value.get("run")
+    if not isinstance(script, str):
+        fail(f"Required Gradle gate has no run script: {label}")
+
+    for tokens in gradle_commands(script):
+        token_set = set(tokens)
+        if all(task in token_set for task in tasks) and all(arg in token_set for arg in args):
+            return
+
+    fail(
+        f"Required Gradle invocation missing in {label}; "
+        f"tasks={tasks!r}, args={args!r}"
+    )
+
+
+def require_run_fragment(step_value: dict[str, Any], label: str, fragment: str) -> None:
+    """Require an executed run script to contain a critical verification fragment."""
+    script = step_value.get("run")
+    if not isinstance(script, str):
+        fail(f"Required run gate has no script: {label}")
+    if fragment not in script:
+        fail(f"Required gate lost verification fragment {fragment!r}: {label}")
 
 
 def require_step(
-    steps: dict[str, dict[str, object]],
-    name: str,
+    workflow: dict[str, Any],
+    job_name: str,
+    step_name: str,
     *,
-    commands: tuple[str, ...] = (),
-    uses_prefix: str | None = None,
-    allowed_if: str | None = None,
     shell: str | None = None,
-    expected_continue_on_error: bool = False,
-) -> dict[str, object]:
-    step = steps.get(name)
-    if step is None:
-        fail(f"Missing required active step: {name}")
-    fields = step["fields"]
-    assert isinstance(fields, dict)
-    run = step["run"]
-    assert isinstance(run, str)
+    allowed_if: str | None = None,
+    best_effort: bool = False,
+    uses_prefix: str | None = None,
+) -> dict[str, Any]:
+    """Validate one real step's placement and failure semantics."""
+    job_value = job(workflow, job_name)
+    value = step(job_value, job_name, step_name)
 
-    raw_continue = str(fields.get("continue-on-error", "")).strip()
-    if expected_continue_on_error:
-        actual_continue = raw_continue.lower() == "true"
+    require_no_working_directory(value, f"{job_name}/{step_name}")
+    if best_effort:
+        require_continue_on_error_true(value, f"{job_name}/{step_name}")
     else:
-        # Any non-empty value other than literal false can make a required
-        # gate advisory, including expressions such as ${{ true }}.
-        actual_continue = raw_continue.lower() not in ("", "false")
-    if actual_continue != expected_continue_on_error:
-        fail(
-            f"Required gate changed continue-on-error semantics: {name}: "
-            f"{actual_continue}; expected {expected_continue_on_error}"
-        )
+        require_blocking_semantics(value, f"{job_name}/{step_name}")
 
-    actual_if = fields.get("if")
+    actual_if = normalized_if(value.get("if"))
     if allowed_if is None:
         if actual_if not in (None, ""):
-            fail(f"Required gate has unexpected if condition: {name}: {actual_if}")
-    elif actual_if != allowed_if:
-        fail(f"Required gate has unexpected if condition: {name}: {actual_if!r}; expected {allowed_if!r}")
-
-    if shell is not None and fields.get("shell") != shell:
-        fail(f"Required gate changed shell: {name}: {fields.get('shell')!r}; expected {shell!r}")
-
-    uncommented_lines = [
-        line for line in run.splitlines() if not line.lstrip().startswith("#")
-    ]
-    uncommented = "\n".join(uncommented_lines)
-    for command in commands:
-        if command.startswith(":"):
-            task_pattern = re.compile(
-                rf"(^|[\\s\\\\]){re.escape(command)}(?=\\s|\\\\|$)"
+            fail(
+                f"Required gate has unexpected if condition: "
+                f"{job_name}/{step_name}: {actual_if!r}"
             )
-            if not any(
-                task_pattern.search(line)
-                and not re.search(r"\\b(echo|printf)\\b", line[: max(0, line.find(command))])
-                for line in uncommented_lines
-            ):
-                fail(f"Required gate lost executable Gradle task {command!r}: {name}")
-        elif command not in uncommented:
-            fail(f"Required gate lost executable command {command!r}: {name}")
+    elif actual_if != allowed_if:
+        fail(
+            f"Required gate has unexpected if condition: "
+            f"{job_name}/{step_name}: {actual_if!r}; expected {allowed_if!r}"
+        )
+
+    if shell is not None and value.get("shell") != shell:
+        fail(
+            f"Required gate changed shell: {job_name}/{step_name}: "
+            f"{value.get('shell')!r}; expected {shell!r}"
+        )
 
     if uses_prefix is not None:
-        uses = str(fields.get("uses", ""))
-        if not uses.startswith(uses_prefix):
-            fail(f"Required action changed for {name}: {uses!r}")
+        uses = value.get("uses")
+        if not isinstance(uses, str) or not uses.startswith(uses_prefix):
+            fail(
+                f"Required action changed for {job_name}/{step_name}: {uses!r}"
+            )
 
-    return step
+    return value
 
 
-def require_uncommented_line(path: Path, exact_fragment: str, label: str) -> None:
-    for line in active_lines(path):
-        stripped = line.lstrip()
-        if stripped.startswith("#"):
-            continue
-        if exact_fragment in stripped:
-            return
-    fail(f"Workflow contract lost: {label}")
+def require_concurrency(workflow: dict[str, Any], label: str) -> None:
+    """Require stale-run cancellation to remain explicitly enabled."""
+    concurrency = workflow.get("concurrency")
+    if not isinstance(concurrency, dict):
+        fail(f"Missing concurrency mapping: {label}")
+    if concurrency.get("cancel-in-progress") is not True:
+        fail(f"Stale-run cancellation disabled: {label}")
 
 
 def main() -> None:
-    android_steps = parse_steps(ANDROID)
-    coverage_steps = parse_steps(COVERAGE)
+    """Validate that CI optimization preserves every required blocking gate."""
+    android = load_workflow(ANDROID)
+    coverage = load_workflow(COVERAGE)
+
+    quality = require_step(
+        android,
+        "quality",
+        "Run fast quality gates",
+        shell="bash",
+    )
+    require_gradle_invocation(
+        quality,
+        "quality/Run fast quality gates",
+        tasks=(":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"),
+        args=("--build-cache", "--parallel"),
+    )
+
+    release = require_step(
+        android,
+        "device-validation",
+        "Build telemetry-disabled release APK and AAB for validation",
+        shell="bash",
+    )
+    require_gradle_invocation(
+        release,
+        "device-validation/Build telemetry-disabled release APK and AAB for validation",
+        tasks=(
+            ":app:assembleRelease",
+            ":app:bundleRelease",
+            ":app:assembleNonMinifiedRelease",
+            ":baseline-profile:assembleNonMinifiedRelease",
+        ),
+        args=("--build-cache", "--parallel"),
+    )
+
+    readiness = require_step(
+        android,
+        "device-validation",
+        "Wait for API 35 emulator readiness",
+        shell="bash",
+    )
+    for fragment in ("sys.boot_completed", "ro.build.version.sdk", 'grep -Fxq "35"'):
+        require_run_fragment(readiness, "API 35 readiness", fragment)
+
+    install = require_step(
+        android,
+        "device-validation",
+        "Validate release APK install-update-uninstall on API 35",
+        shell="bash",
+    )
+    for fragment in ("adb install", "adb install -r", "adb uninstall"):
+        require_run_fragment(install, "API 35 install/update/uninstall", fragment)
+
+    performance = require_step(
+        android,
+        "device-validation",
+        "Run baseline profile and macrobenchmarks on API 35",
+        shell="bash",
+    )
+    require_gradle_invocation(
+        performance,
+        "device-validation/Run baseline profile and macrobenchmarks on API 35",
+        tasks=(":baseline-profile:connectedNonMinifiedReleaseAndroidTest",),
+    )
+    for fragment in (
+        "enabledRules=BaselineProfile,Macrobenchmark",
+        "BaselineProfileGenerator",
+        "GameHubMacrobenchmark",
+        "Expected at least 3 GameHubMacrobenchmark cases",
+        "Required performance tests were skipped",
+    ):
+        require_run_fragment(performance, "performance report verification", fragment)
+
+    noise = require_step(
+        android,
+        "device-validation",
+        "Reject known CAR-29 emulator noise",
+        shell="bash",
+        allowed_if="always()",
+    )
+    for fragment in ("Failed to start Emulator console", "stop: Not implemented"):
+        require_run_fragment(noise, "CAR-29 emulator-noise gate", fragment)
+
+    sentry_build = require_step(
+        android,
+        "device-validation",
+        "Build distributable release APK and AAB with Sentry",
+        shell="bash",
+        allowed_if="success() && github.event_name != 'pull_request'",
+    )
+    require_gradle_invocation(
+        sentry_build,
+        "trusted Sentry release build",
+        tasks=(":app:assembleRelease", ":app:bundleRelease"),
+        args=("--rerun-tasks",),
+    )
+
+    sentry_register = require_step(
+        android,
+        "device-validation",
+        "Register Sentry release and GitHub commit",
+        shell="bash",
+        allowed_if="success() && github.event_name != 'pull_request'",
+        best_effort=True,
+    )
+    require_run_fragment(
+        sentry_register,
+        "trusted Sentry release registration",
+        "register_sentry_release.py",
+    )
 
     require_step(
-        android_steps,
-        "Run fast quality gates",
-        commands=(":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug", "--build-cache", "--parallel"),
-        shell="bash",
-    )
-    require_step(
-        android_steps,
-        "Build telemetry-disabled release APK and AAB for validation",
-        commands=(":app:assembleRelease", ":app:bundleRelease", "--build-cache"),
-        shell="bash",
-    )
-    require_step(
-        android_steps,
-        "Wait for API 35 emulator readiness",
-        commands=("sys.boot_completed", "ro.build.version.sdk", "grep -Fxq \"35\""),
-        shell="bash",
-    )
-    require_step(
-        android_steps,
-        "Validate release APK install-update-uninstall on API 35",
-        commands=("adb install", "adb install -r", "adb uninstall"),
-        shell="bash",
-    )
-    require_step(
-        android_steps,
-        "Run baseline profile and macrobenchmarks on API 35",
-        commands=(
-            "connectedNonMinifiedReleaseAndroidTest",
-            "enabledRules=BaselineProfile,Macrobenchmark",
-            "BaselineProfileGenerator",
-            "GameHubMacrobenchmark",
-            "Expected at least 3 GameHubMacrobenchmark cases",
-        ),
-        shell="bash",
-    )
-    require_step(
-        android_steps,
-        "Reject known CAR-29 emulator noise",
-        commands=("Failed to start Emulator console", "stop: Not implemented"),
-        allowed_if="always()",
-        shell="bash",
-    )
-    require_step(
-        android_steps,
-        "Build distributable release APK and AAB with Sentry",
-        commands=(":app:assembleRelease", ":app:bundleRelease", "--rerun-tasks"),
-        allowed_if="success() && github.event_name != 'pull_request'",
-        shell="bash",
-    )
-    require_step(
-        android_steps,
-        "Register Sentry release and GitHub commit",
-        commands=("register_sentry_release.py",),
-        allowed_if="success() && github.event_name != 'pull_request'",
-        shell="bash",
-        expected_continue_on_error=True,
-    )
-    require_step(
-        android_steps,
+        android,
+        "device-validation",
         "Upload installable release outputs",
         uses_prefix="actions/upload-artifact@",
     )
 
-    require_step(
-        coverage_steps,
+    coverage_generate = require_step(
+        coverage,
+        "coverage",
         "Generate debug unit-test coverage",
-        commands=(":app:createDebugUnitTestCoverageReport", "--build-cache", "--parallel"),
         shell="bash",
     )
-    require_step(
-        coverage_steps,
+    require_gradle_invocation(
+        coverage_generate,
+        "coverage/Generate debug unit-test coverage",
+        tasks=(":app:createDebugUnitTestCoverageReport",),
+        args=("--build-cache", "--parallel"),
+    )
+
+    coverage_verify = require_step(
+        coverage,
+        "coverage",
         "Verify coverage XML report",
-        commands=("report.xml", "test -s"),
         shell="bash",
     )
+    for fragment in ("report.xml", "test -s"):
+        require_run_fragment(coverage_verify, "coverage XML verification", fragment)
+
     codecov = require_step(
-        coverage_steps,
+        coverage,
+        "coverage",
         "Upload coverage to Codecov",
         uses_prefix="codecov/codecov-action@",
         allowed_if="steps.codecov_token.outputs.available == 'true'",
     )
-    codecov_block = str(codecov["block"])
-    if "fail_ci_if_error: true" not in codecov_block:
-        fail("Codecov upload no longer fails CI on upload errors")
+    with_values = codecov.get("with")
+    if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
+        fail("Codecov upload no longer has fail_ci_if_error: true")
 
-    require_uncommented_line(ANDROID, "cancel-in-progress: true", "Android stale-run cancellation")
-    require_uncommented_line(COVERAGE, "cancel-in-progress: true", "coverage stale-run cancellation")
-    require_uncommented_line(ANDROID, "android-35", "API 35 emulator target")
+    require_concurrency(android, "Android workflow")
+    require_concurrency(coverage, "coverage workflow")
 
-    instrumentation_occurrences = 0
-    for step in android_steps.values():
-        run = str(step["run"])
-        instrumentation_occurrences += sum(
-            1
-            for line in run.splitlines()
-            if "connectedNonMinifiedReleaseAndroidTest" in line
-            and not line.lstrip().startswith("#")
-        )
-    if instrumentation_occurrences != 1:
+    # Exactly one real performance Gradle invocation must remain.
+    perf_invocations = 0
+    for job_name, job_value in android.get("jobs", {}).items():
+        if not isinstance(job_value, dict):
+            continue
+        for candidate in job_value.get("steps", []):
+            if not isinstance(candidate, dict):
+                continue
+            run = candidate.get("run")
+            if not isinstance(run, str):
+                continue
+            for tokens in gradle_commands(run):
+                if ":baseline-profile:connectedNonMinifiedReleaseAndroidTest" in tokens:
+                    perf_invocations += 1
+
+    if perf_invocations != 1:
         fail(
             "Android performance validation must use exactly one executable "
-            f"instrumentation invocation; found {instrumentation_occurrences}"
+            f"instrumentation invocation; found {perf_invocations}"
         )
 
-    print("CI safety contract verified structurally: required gates execute and remain blocking.")
+    print(
+        "CI safety contract verified with real YAML parsing: "
+        "required gates execute and preserve failure semantics."
+    )
 
 
 if __name__ == "__main__":
