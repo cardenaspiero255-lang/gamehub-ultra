@@ -157,7 +157,20 @@ project_id = parsed_dsn.path.rstrip("/").split("/")[-1]
 if not project_id.isdigit():
     raise SystemExit("Could not derive the numeric Sentry project id from SENTRY_DSN.")
 
-org_slug, project_slug = discover_project(project_id)
+try:
+    org_slug, project_slug = discover_project(project_id)
+except RuntimeError as exc:
+    # External observability must never turn a valid Android artifact into a
+    # false-negative build. Invalid/revoked credentials are surfaced as a
+    # notice and Sentry enrichment is disabled for this run.
+    message = str(exc)
+    if "HTTP 401" in message or "Invalid token" in message:
+        notice(
+            "Sentry auth token is invalid or revoked; release registration "
+            "and mapping upload are disabled for this run."
+        )
+        sys.exit(0)
+    raise
 
 if DISCOVER_ONLY:
     github_env = os.environ.get("GITHUB_ENV", "").strip()
