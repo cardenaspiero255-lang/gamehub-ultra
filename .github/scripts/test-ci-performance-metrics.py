@@ -317,6 +317,21 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         )
         self.assertEqual(result["current"]["job.build.seconds"], 3.0)
 
+    def test_non_json_http_error_detail_is_single_line(self):
+        error = urllib.error.HTTPError(
+            "https://api.github.com/repos/owner/repo/actions/runs/1",
+            502,
+            "Bad Gateway",
+            {},
+            BytesIO(b"<html>\n  <body> upstream failed </body>\n</html>"),
+        )
+        detail = metrics._safe_http_error_detail(error)
+        self.assertEqual(
+            detail,
+            "<html> <body> upstream failed </body> </html>",
+        )
+        self.assertNotIn("\n", detail)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
