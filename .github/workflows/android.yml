@@ -244,12 +244,6 @@ jobs:
             echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
           } >> "$GITHUB_ENV"
 
-      - name: Build telemetry-disabled release APK and AAB for validation
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-validation.log"
-
       - name: Prepare deterministic API 35 AVD
         shell: bash
         run: |
@@ -343,7 +337,7 @@ jobs:
             exit 1
           fi
 
-      - name: Start API 35 emulator cleanly
+      - name: Launch API 35 emulator while release builds
         shell: bash
         run: |
           set -euo pipefail
@@ -356,18 +350,6 @@ jobs:
           adb start-server >/dev/null
 
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
-          dump_emulator_log_on_failure() {
-            rc=$?
-            trap - EXIT
-            if [ "$rc" -ne 0 ] && [ -f "$EMULATOR_LOG" ]; then
-              echo "::group::Android emulator startup log"
-              cat "$EMULATOR_LOG"
-              echo "::endgroup::"
-            fi
-            exit "$rc"
-          }
-          trap dump_emulator_log_on_failure EXIT
-
           nohup "$EMULATOR_BIN" -avd gamehub-api35 \
             -port 5554 \
             -no-window \
@@ -385,6 +367,44 @@ jobs:
           EMULATOR_PID=$!
           echo "EMULATOR_PID=$EMULATOR_PID" >> "$GITHUB_ENV"
           echo "EMULATOR_LOG=$EMULATOR_LOG" >> "$GITHUB_ENV"
+
+          sleep 2
+          if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "Android emulator exited immediately after launch."
+            cat "$EMULATOR_LOG" || true
+            exit 1
+          fi
+
+      - name: Build telemetry-disabled release APK and AAB for validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease :app:bundleRelease \
+            --build-cache \
+            --parallel \
+            --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-validation.log"
+
+      - name: Wait for API 35 emulator readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          EMULATOR_LOG="${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"
+          dump_emulator_log_on_failure() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ -f "$EMULATOR_LOG" ]; then
+              echo "::group::Android emulator startup log"
+              cat "$EMULATOR_LOG"
+              echo "::endgroup::"
+            fi
+            exit "$rc"
+          }
+          trap dump_emulator_log_on_failure EXIT
+
+          if [ -z "${EMULATOR_PID:-}" ] || ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "Android emulator process is not alive before readiness validation."
+            exit 1
+          fi
 
           timeout 300 adb wait-for-device
           timeout 600 bash -c '
