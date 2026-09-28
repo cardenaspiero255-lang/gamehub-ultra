@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import com.cardenaspiero255.gamehubultra.network.NetworkGameProfile
+import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationOutcome
 import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
 
 internal data class UltraAgentRoutingRequest(
@@ -14,6 +16,8 @@ internal fun interface UltraAgentRoutingGateway {
     fun route(request: UltraAgentRoutingRequest): UltraAgentRoute
 }
 
-internal fun interface UltraNetworkGamingGateway {
+internal interface UltraNetworkGamingGateway {
     fun execute(intent: UltraUtilityIntent.NetworkGamingControl): String
+
+    fun applyProfile(profile: NetworkGameProfile): NetworkOptimizationOutcome
 }
