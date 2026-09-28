@@ -122,7 +122,30 @@ object VoiceCommandEngine :
                     )
                 },
                 networkStatusProvider = request.networkStatusProvider,
-                applyNetworkProfile = request.applyNetworkProfile
+                applyNetworkProfile = request.applyNetworkProfile,
+                validateOpenGamePersistence = { requestedProfile, profileUnavailable ->
+                    when {
+                        requestedProfile == null || profileUnavailable -> {
+                            if (request.saveSelectedGame == null) {
+                                throw UltraToolInvalidInputException(
+                                    "Falta el callback requerido para guardar el juego seleccionado."
+                                )
+                            }
+                        }
+
+                        request.saveSelectedGameWithProfile != null -> Unit
+
+                        request.saveSelectedGame == null ->
+                            throw UltraToolInvalidInputException(
+                                "Falta el callback requerido para guardar el juego seleccionado."
+                            )
+
+                        request.saveSelectedProfile == null ->
+                            throw UltraToolInvalidInputException(
+                                "Falta el callback requerido para guardar el perfil seleccionado."
+                            )
+                    }
+                }
             )
         }
 
@@ -142,7 +165,8 @@ object VoiceCommandEngine :
         gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
         saveGameAlias: (String, String) -> Unit = { _, _ -> },
         networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
-        applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = { NetworkOptimizationOutcome.UNAVAILABLE }
+        applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = { NetworkOptimizationOutcome.UNAVAILABLE },
+        validateOpenGamePersistence: ((PerformanceProfile?, Boolean) -> Unit)? = null
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -205,6 +229,11 @@ object VoiceCommandEngine :
                     val profileUnavailable =
                         command.requestedProfile != null &&
                             !isProfileAvailable(command.requestedProfile)
+
+                    validateOpenGamePersistence?.invoke(
+                        command.requestedProfile,
+                        profileUnavailable
+                    )
 
                     when {
                         command.requestedProfile == null ->
