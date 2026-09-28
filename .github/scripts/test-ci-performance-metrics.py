@@ -235,6 +235,88 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         self.assertIn("rate limit exceeded", str(caught.exception))
         self.assertNotIn("super-secret-token", str(caught.exception))
 
+    def test_collect_skips_history_from_different_job_topology(self):
+        current_run = {
+            "id": 999,
+            "workflow_id": 123,
+            "name": "Android build",
+            "event": "pull_request",
+            "head_branch": "feature/current",
+            "pull_requests": [{"base": {"ref": "main"}}],
+        }
+        current_jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-09-28T05:00:00Z",
+                "completed_at": "2026-09-28T05:01:00Z",
+                "steps": [],
+            },
+            {
+                "name": "device-validation",
+                "started_at": "2026-09-28T05:00:00Z",
+                "completed_at": "2026-09-28T05:05:00Z",
+                "steps": [],
+            },
+            {
+                "name": "build",
+                "started_at": "2026-09-28T05:05:00Z",
+                "completed_at": "2026-09-28T05:05:03Z",
+                "steps": [],
+            },
+        ]
+        old_topology_jobs = [
+            {
+                "name": "build",
+                "started_at": "2026-09-27T05:00:00Z",
+                "completed_at": "2026-09-27T05:10:00Z",
+                "steps": [],
+            }
+        ]
+        matching_jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-09-27T06:00:00Z",
+                "completed_at": "2026-09-27T06:01:10Z",
+                "steps": [],
+            },
+            {
+                "name": "device-validation",
+                "started_at": "2026-09-27T06:00:00Z",
+                "completed_at": "2026-09-27T06:05:20Z",
+                "steps": [],
+            },
+            {
+                "name": "build",
+                "started_at": "2026-09-27T06:05:20Z",
+                "completed_at": "2026-09-27T06:05:23Z",
+                "steps": [],
+            },
+        ]
+        candidates = [{"id": 1}, {"id": 2}]
+        with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \
+             mock.patch.object(
+                 metrics,
+                 "_fetch_recent_completed_runs",
+                 return_value=candidates,
+             ), \
+             mock.patch.object(
+                 metrics,
+                 "_fetch_jobs",
+                 side_effect=[current_jobs, old_topology_jobs, matching_jobs],
+             ):
+            result = metrics.collect(
+                repository="owner/repo",
+                run_id=999,
+                token="token",
+                history_limit=1,
+            )
+        self.assertEqual(result["history_runs"], 1)
+        self.assertEqual(
+            result["history_summary"]["job.build.seconds"]["p50"],
+            3.0,
+        )
+        self.assertEqual(result["current"]["job.build.seconds"], 3.0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
