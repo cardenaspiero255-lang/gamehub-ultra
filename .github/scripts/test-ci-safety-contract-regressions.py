@@ -15,6 +15,7 @@ CHECKER = ROOT / ".github/scripts/check-ci-safety-contract.py"
 
 
 def run_current_contract_must_pass() -> None:
+    """Require the unmodified workflows to satisfy the current CI contract."""
     result = subprocess.run(
         ["bash", str(CONTRACT)],
         cwd=ROOT,
@@ -30,6 +31,7 @@ def run_current_contract_must_pass() -> None:
         )
 
 def run_mutation(label: str, mutate) -> None:
+    """Apply one workflow mutation and require the safety contract to reject it."""
     with tempfile.TemporaryDirectory(prefix="gamehub-ci-contract-") as raw:
         temp = Path(raw)
         (temp / ".github/workflows").mkdir(parents=True)
@@ -62,13 +64,16 @@ def run_mutation(label: str, mutate) -> None:
 
 
 def remove_unit_test_but_leave_comment(android: str, coverage: str):
-    needle = "            :app:testDebugUnitTest \\\n"
-    if needle not in android:
-        raise SystemExit("Fixture drift: Android unit-test command not found")
-    return android.replace(needle, "            # :app:testDebugUnitTest \\\n", 2), coverage
+    """Replace the active coverage test command with a non-executable comment."""
+    needle = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    if needle not in coverage:
+        raise SystemExit("Fixture drift: coverage-owned unit-test command not found")
+    replacement = "        # run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    return android, coverage.replace(needle, replacement, 1)
 
 
 def make_quality_advisory(android: str, coverage: str):
+    """Mutate the quality gate so failures are incorrectly treated as advisory."""
     needle = """      - name: Run fast quality gates
         shell: bash
 """
@@ -82,6 +87,7 @@ def make_quality_advisory(android: str, coverage: str):
 
 
 def make_coverage_advisory(android: str, coverage: str):
+    """Mutate the coverage gate so failures are incorrectly treated as advisory."""
     needle = """      - name: Generate debug unit-test coverage
         shell: bash
 """
@@ -95,6 +101,7 @@ def make_coverage_advisory(android: str, coverage: str):
 
 
 def comment_out_coverage_command(android: str, coverage: str):
+    """Comment out the authoritative coverage command while preserving its text."""
     needle = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
     if needle not in coverage:
         raise SystemExit("Fixture drift: coverage command not found")
@@ -107,6 +114,7 @@ def comment_out_coverage_command(android: str, coverage: str):
 
 
 def quality_step_bounds(android: str) -> tuple[int, int]:
+    """Return source bounds for the active named quality step fixture."""
     marker = "      - name: Run fast quality gates\n"
     start = android.find(marker)
     while start > 0 and android[start - 1] != "\n":
@@ -121,6 +129,7 @@ def quality_step_bounds(android: str) -> tuple[int, int]:
 
 
 def commented_quality_marker_before_active_step(android: str, coverage: str):
+    """Verify step discovery ignores a commented marker before the active step."""
     marker = "      - name: Run fast quality gates\n"
     if marker not in android:
         raise SystemExit("Fixture drift: quality step not found")
@@ -131,6 +140,7 @@ def commented_quality_marker_before_active_step(android: str, coverage: str):
     return android, coverage
 
 def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
+    """Replace the real quality step with misleading YAML text inside a heredoc."""
     start, end = quality_step_bounds(android)
     fake = """      - shell: bash
         run: |
@@ -144,6 +154,7 @@ def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
     return android[:start] + fake + android[end:], coverage
 
 def make_quality_advisory_with_expression(android: str, coverage: str):
+    """Make the quality gate advisory through a workflow expression."""
     needle = """      - name: Run fast quality gates
         shell: bash
 """
@@ -157,20 +168,17 @@ def make_quality_advisory_with_expression(android: str, coverage: str):
 
 
 def remove_unit_test_but_echo_name(android: str, coverage: str):
-    task = "            :app:testDebugUnitTest \\\n"
-    if task not in android:
-        raise SystemExit("Fixture drift: Android unit-test command not found")
-    android = android.replace(task, "", 2)
-
-    command = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
-    if command not in android:
-        raise SystemExit("Fixture drift: quality Gradle command terminator not found")
-    replacement = command + "          echo ':app:testDebugUnitTest'\n"
-    return android.replace(command, replacement, 1), coverage
+    """Replace coverage execution with an echo that only mentions the task name."""
+    command = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    if command not in coverage:
+        raise SystemExit("Fixture drift: coverage-owned unit-test command not found")
+    replacement = "        run: echo ':app:createDebugUnitTestCoverageReport'\n"
+    return android, coverage.replace(command, replacement, 1)
 
 
 
 def mask_quality_gradle_with_or_true(android: str, coverage: str):
+    """Mask a piped quality Gradle failure with a spaced logical OR true."""
     needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
     if needle not in android:
         raise SystemExit("Fixture drift: quality Gradle terminator not found")
@@ -179,6 +187,7 @@ def mask_quality_gradle_with_or_true(android: str, coverage: str):
 
 
 def mask_quality_gradle_with_fused_or_true(android: str, coverage: str):
+    """Mask a piped quality Gradle failure with a fused logical OR true."""
     needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
     if needle not in android:
         raise SystemExit("Fixture drift: quality Gradle terminator not found")
@@ -187,6 +196,7 @@ def mask_quality_gradle_with_fused_or_true(android: str, coverage: str):
 
 
 def mask_quality_gradle_plain_or_true(android: str, coverage: str):
+    """Mask a direct quality Gradle failure with logical OR true."""
     start, end = quality_step_bounds(android)
     replacement = """      - name: Run fast quality gates
         shell: bash
@@ -203,6 +213,7 @@ def mask_quality_gradle_plain_or_true(android: str, coverage: str):
     return android[:start] + replacement + android[end:], coverage
 
 def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
+    """Remove the assertion proving Configuration Cache reuse."""
     needle = '          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"\n'
     if needle not in android:
         raise SystemExit("Fixture drift: Configuration Cache reuse assertion not found")
@@ -233,7 +244,7 @@ def main() -> None:
     android = ANDROID.read_text(encoding="utf-8")
     quality_start, quality_end = quality_step_bounds(android)
     quality_script = android[quality_start:quality_end]
-    quality_graph_occurrences = quality_script.count(":app:testDebugUnitTest")
+    quality_graph_occurrences = quality_script.count(":app:assembleDebug")
     quality_probe_occurrences = quality_script.count("--dry-run")
     executable_quality_graphs = quality_graph_occurrences - quality_probe_occurrences
     if executable_quality_graphs != 1 or quality_probe_occurrences != 1:
@@ -243,6 +254,12 @@ def main() -> None:
             f"found {executable_quality_graphs} executable and "
             f"{quality_probe_occurrences} probes"
         )
+    coverage = COVERAGE.read_text(encoding="utf-8")
+    if ":app:testDebugUnitTest" in quality_script:
+        raise SystemExit("Phase 2 block 5: quality must not duplicate coverage-owned unit tests")
+    if ":app:createDebugUnitTestCoverageReport" not in coverage:
+        raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
+
     print("CI safety contract regression tests passed.")
 
 

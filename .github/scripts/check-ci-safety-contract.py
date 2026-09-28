@@ -326,13 +326,13 @@ def main() -> None:
     require_gradle_invocation(
         quality,
         "quality/Run fast quality gates",
-        tasks=(":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"),
+        tasks=(":app:assembleDebug", ":app:lintDebug"),
         args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"),
     )
     quality_matches = [
         tokens
         for tokens in gradle_commands(str(quality.get("run", "")))
-        if all(task in set(tokens) for task in (":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"))
+        if all(task in set(tokens) for task in (":app:assembleDebug", ":app:lintDebug"))
         and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"))
     ]
     executable_quality_matches = [tokens for tokens in quality_matches if "--dry-run" not in set(tokens)]
