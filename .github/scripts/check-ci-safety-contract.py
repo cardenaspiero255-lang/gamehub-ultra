@@ -310,8 +310,9 @@ def main() -> None:
         quality,
         "quality/Run fast quality gates",
         tasks=(":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"),
-        args=("--build-cache", "--parallel"),
+        args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"),
     )
+    require_run_fragment(quality, "quality/Configuration Cache reuse", "Reusing configuration cache.")
 
     release = require_step(
         android,
