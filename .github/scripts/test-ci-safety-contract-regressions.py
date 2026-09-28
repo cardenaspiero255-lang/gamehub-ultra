@@ -111,13 +111,27 @@ def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
         shell: bash
         run: |
           set -euo pipefail
-          gradle \\
-            :app:testDebugUnitTest \\
-            :app:assembleDebug \\
-            :app:lintDebug \\
-            --build-cache \\
-            --parallel \\
+          CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
+          gradle \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:lintDebug \
+            --build-cache \
+            --parallel \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
             --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
+
+          gradle \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:lintDebug \
+            --build-cache \
+            --parallel \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
+          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
 """
     if quality not in android:
         raise SystemExit("Fixture drift: quality step block not found")
