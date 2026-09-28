@@ -46,6 +46,10 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-ci-safety-contract.sh
 
+      - name: Verify observability integration regressions
+        shell: bash
+        run: python3 .github/scripts/test-observability-integration-regressions.py
+
       - name: Set up JDK 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
