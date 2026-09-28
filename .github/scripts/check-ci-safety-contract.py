@@ -237,6 +237,23 @@ def require_run_fragment(step_value: dict[str, Any], label: str, fragment: str) 
         fail(f"Required gate lost verification fragment {fragment!r}: {label}")
 
 
+def require_shell_command(step_value: dict[str, Any], label: str, expected: tuple[str, ...]) -> None:
+    """Require one exact executable shell command, not merely matching text."""
+    script = step_value.get("run")
+    if not isinstance(script, str):
+        fail(f"Required run gate has no script: {label}")
+
+    for command in logical_shell_commands(script):
+        try:
+            tokens = shlex.split(command, comments=True, posix=True)
+        except ValueError as exc:
+            fail(f"Unable to parse shell command in required gate: {exc}: {command!r}")
+        if tuple(tokens) == expected:
+            return
+
+    fail(f"Required executable shell command missing in {label}: {expected!r}")
+
+
 def require_step(
     workflow: dict[str, Any],
     job_name: str,
@@ -312,7 +329,7 @@ def main() -> None:
         tasks=(":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"),
         args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"),
     )
-    require_run_fragment(quality, "quality/Configuration Cache reuse", "Reusing configuration cache.")
+    require_shell_command(\n        quality,\n        "quality/Configuration Cache reuse",\n        ("grep", "-Fq", "Reusing configuration cache.", "$CONFIG_CACHE_LOG"),\n    )
 
     release = require_step(
         android,
