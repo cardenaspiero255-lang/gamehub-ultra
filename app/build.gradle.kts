@@ -1,4 +1,10 @@
 import java.util.Base64
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
@@ -46,21 +52,30 @@ plugins {
     id("io.sentry.android.gradle")
 }
 
-val exactLauncherIconSource = layout.projectDirectory.file("src/main/icon/gamehub_ultra_exact.webp.b64")
-val exactLauncherIconResDir = layout.buildDirectory.dir("generated/exactLauncherIcon/res")
+abstract class GenerateExactLauncherIconTask : DefaultTask() {
+    @get:InputFile
+    abstract val sourceFile: RegularFileProperty
 
-val generateExactLauncherIcon by tasks.registering {
-    inputs.file(exactLauncherIconSource)
-    outputs.dir(exactLauncherIconResDir)
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
 
-    doLast {
-        val drawableDir = exactLauncherIconResDir.get().dir("drawable-nodpi").asFile
+    @TaskAction
+    fun generate() {
+        val drawableDir = outputDirectory.get().dir("drawable-nodpi").asFile
         drawableDir.mkdirs()
-        val encoded = exactLauncherIconSource.asFile.readText().trim()
+        val encoded = sourceFile.get().asFile.readText().trim()
         drawableDir.resolve("gamehub_ultra_exact.webp").writeBytes(
             Base64.getDecoder().decode(encoded)
         )
     }
+}
+
+val exactLauncherIconSource = layout.projectDirectory.file("src/main/icon/gamehub_ultra_exact.webp.b64")
+val exactLauncherIconResDir = layout.buildDirectory.dir("generated/exactLauncherIcon/res")
+
+val generateExactLauncherIcon by tasks.registering(GenerateExactLauncherIconTask::class) {
+    sourceFile.set(exactLauncherIconSource)
+    outputDirectory.set(exactLauncherIconResDir)
 }
 
 android {
