@@ -140,6 +140,10 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineReportFormatt
 import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
+import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeActions
+import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeCoordinator
+import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeSnapshot
+import com.cardenaspiero255.gamehubultra.ui.runtime.RuntimeSessionMetrics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
@@ -508,108 +512,95 @@ private fun GameHubUltraApp(
         state = onProfileApplied(uiState.effectiveProfile)
     }
 
-    fun selectProfile(profile: PerformanceProfile) {
-        val previous = uiState.effectiveProfile
-        uiState.selectedGamePackage?.let { packageName ->
-            viewModel.selectGameProfile(packageName, profile)
-        } ?: viewModel.selectGlobalProfile(profile)
-        if (previous != profile) {
-            viewModel.recordPerformanceEvent(
-                PerformanceEvent(
-                    timestampMillis = System.currentTimeMillis(),
-                    type = PerformanceEventType.POLICY_CHANGED,
-                    sessionId = activeSessionId ?: "ui",
-                    profile = profile,
-                    detail = "manual_profile_selection"
-                )
-            )
-        }
-    }
+    val runtimeActions = remember(viewModel) {
+        object : GameHubRuntimeActions {
+            override fun selectGlobalProfile(profile: PerformanceProfile) {
+                viewModel.selectGlobalProfile(profile)
+            }
 
-    fun applySmartGameAssistantSuggestion(suggestion: SmartGameAssistantSuggestion) {
-        uiState.selectedGamePackage?.let { packageName ->
-            viewModel.applySmartGameAssistantSuggestion(packageName, suggestion)
-        } ?: viewModel.selectGlobalProfile(suggestion.profile)
-    }
+            override fun selectGameProfile(
+                packageName: String,
+                profile: PerformanceProfile
+            ) {
+                viewModel.selectGameProfile(packageName, profile)
+            }
 
-    fun endGameSession() {
-        val endedAt = System.currentTimeMillis()
-        val diagnosticsAtEnd = runtimeDiagnostics
-        val profileAtEnd = uiState.effectiveProfile
-        val optimizationKeyAtEnd = currentOptimizationKey
-        val finishHandle = viewModel.finishRuntimeGameSession(
-            SessionEndMetrics(
-                endedAtMillis = endedAt,
-                endBatteryPercent = diagnosticsAtEnd?.battery?.percent,
-                endThermalStatus = diagnosticsAtEnd?.thermal?.status,
-                endRamUsedPercent = diagnosticsAtEnd?.memory?.usedPercent
-            )
-        ) ?: return
+            override fun applySmartGameAssistantSuggestion(
+                packageName: String,
+                suggestion: SmartGameAssistantSuggestion
+            ) {
+                viewModel.applySmartGameAssistantSuggestion(packageName, suggestion)
+            }
 
-        viewModel.recordPerformanceEvent(
-            PerformanceEvent(
-                timestampMillis = endedAt,
-                type = PerformanceEventType.SESSION_ENDED,
-                sessionId = finishHandle.session.id,
-                detail = finishHandle.session.packageName
-            )
-        )
+            override fun finishRuntimeGameSession(
+                metrics: SessionEndMetrics
+            ) = viewModel.finishRuntimeGameSession(metrics)
 
-        scope.launch {
-            finishHandle.job.join()
-            if (!finishHandle.job.isCancelled) {
-                withContext(Dispatchers.IO) {
-                    val thermalStatus = diagnosticsAtEnd?.thermal?.status
-                    val highTemperature = thermalStatus != null && thermalStatus >= 4
-                    optimizationMemoryStore.record(
-                        optimizationKeyAtEnd,
-                        OptimizationObservation(
-                            contextKey = optimizationKeyAtEnd.serialized,
-                            profile = profileAtEnd,
-                            measuredFps = null,
-                            stable = diagnosticsAtEnd?.let {
-                                !highTemperature &&
-                                    (it.thermal.status == null || it.thermal.status <= 2)
-                            } == true,
-                            failed = highTemperature,
-                            highTemperature = highTemperature,
-                            thermalStatus = thermalStatus,
-                            batteryPercent = diagnosticsAtEnd?.battery?.percent,
-                            errorReason = if (highTemperature) "thermal_pressure" else null,
-                            timestampMillis = endedAt
-                        )
-                    )
-                }
+            override fun beginRuntimeGameSession(record: GameSessionRecord) {
+                viewModel.beginRuntimeGameSession(record)
+            }
+
+            override fun recordPerformanceEvent(event: PerformanceEvent) {
+                viewModel.recordPerformanceEvent(event)
+            }
+
+            override fun recordRecentGame(packageName: String) {
+                viewModel.recordRecentGame(packageName)
+            }
+
+            override fun selectGame(packageName: String) {
+                viewModel.selectGame(packageName)
             }
         }
     }
+    val runtimeCoordinator = remember(
+        scope,
+        runtimeActions,
+        optimizationMemoryStore
+    ) {
+        GameHubRuntimeCoordinator(
+            scope = scope,
+            actions = runtimeActions,
+            recordOptimization = optimizationMemoryStore::record
+        )
+    }
+
+    fun runtimeSnapshot() =
+        GameHubRuntimeSnapshot(
+            selectedGamePackage = uiState.selectedGamePackage,
+            effectiveProfile = uiState.effectiveProfile,
+            activeSessionId = activeSessionId,
+            metrics = RuntimeSessionMetrics(
+                batteryPercent = runtimeDiagnostics?.battery?.percent,
+                thermalStatus = runtimeDiagnostics?.thermal?.status,
+                ramUsedPercent = runtimeDiagnostics?.memory?.usedPercent
+            ),
+            optimizationContextKey = currentOptimizationKey
+        )
+
+    fun selectProfile(profile: PerformanceProfile) {
+        runtimeCoordinator.selectProfile(runtimeSnapshot(), profile)
+    }
+
+    fun applySmartGameAssistantSuggestion(
+        suggestion: SmartGameAssistantSuggestion
+    ) {
+        runtimeCoordinator.applySmartGameAssistantSuggestion(
+            runtimeSnapshot(),
+            suggestion
+        )
+    }
+
+    fun endGameSession() {
+        runtimeCoordinator.endGameSession(runtimeSnapshot())
+    }
 
     fun selectGame(packageName: String) {
-        endGameSession()
-        viewModel.selectGame(packageName)
+        runtimeCoordinator.selectGame(runtimeSnapshot(), packageName)
     }
 
     fun recordGameOpened(packageName: String) {
-        endGameSession()
-        val sessionId = UUID.randomUUID().toString()
-        val startedAt = System.currentTimeMillis()
-        val record = GameSessionRecord(
-            id = sessionId,
-            packageName = packageName,
-            profileName = uiState.effectiveProfile.name,
-            startedAtMillis = startedAt,
-            startBatteryPercent = runtimeDiagnostics?.battery?.percent
-        )
-        viewModel.beginRuntimeGameSession(record)
-        viewModel.recordPerformanceEvent(
-            PerformanceEvent(
-                timestampMillis = startedAt,
-                type = PerformanceEventType.SESSION_STARTED,
-                sessionId = sessionId,
-                detail = packageName
-            )
-        )
-        viewModel.recordRecentGame(packageName)
+        runtimeCoordinator.recordGameOpened(runtimeSnapshot(), packageName)
     }
 
     fun playSelectedGame() {
