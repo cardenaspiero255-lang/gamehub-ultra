@@ -340,7 +340,11 @@ def main() -> None:
             "Configuration Cache proof requires exactly two matching quality "
             f"Gradle invocations; found {len(quality_matches)}"
         )
-    require_shell_command(\n        quality,\n        "quality/Configuration Cache reuse",\n        ("grep", "-Fq", "Reusing configuration cache.", "$CONFIG_CACHE_LOG"),\n    )
+    require_shell_command(
+        quality,
+        "quality/Configuration Cache reuse",
+        ("grep", "-Fq", "Reusing configuration cache.", "$CONFIG_CACHE_LOG"),
+    )\n    )
 
     release = require_step(
         android,
