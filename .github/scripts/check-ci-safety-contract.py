@@ -331,6 +331,17 @@ def main() -> None:
         args=("--build-cache", "--parallel"),
     )
 
+    # Phase 2 block 2 must remain a measurable A/B experiment: the candidate
+    # starts the emulator immediately and emits timestamps used to compare
+    # end-to-end device-validation latency against main.
+    for fragment in (
+        "EXCLUSIVE_BUILD_SECONDS=0",
+        "EMULATOR_LAUNCH_EPOCH=",
+        "BUILD_COMPLETE_EPOCH=",
+        "emulator-startup-ab.md",
+    ):
+        require_run_fragment(release, "Phase 2 emulator startup A/B telemetry", fragment)
+
     readiness = require_step(
         android,
         "device-validation",
