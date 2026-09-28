@@ -380,25 +380,35 @@ def main() -> None:
         "--configuration-cache",
         "--configuration-cache-problems=fail",
     )
-    release_matches = [
+    # Count complete release graphs independently of their flags so an extra
+    # expensive invocation cannot hide by dropping Configuration Cache options.
+    release_graphs = [
         tokens
         for tokens in gradle_commands(str(release.get("run", "")))
         if all(task in set(tokens) for task in release_tasks)
-        and all(arg in set(tokens) for arg in release_args)
     ]
-    executable_release_matches = [
-        tokens for tokens in release_matches if "--dry-run" not in set(tokens)
+    executable_release_graphs = [
+        tokens for tokens in release_graphs if "--dry-run" not in set(tokens)
     ]
-    probe_release_matches = [
-        tokens for tokens in release_matches if "--dry-run" in set(tokens)
+    probe_release_graphs = [
+        tokens for tokens in release_graphs if "--dry-run" in set(tokens)
     ]
-    if len(executable_release_matches) != 1 or len(probe_release_matches) != 1:
+    if len(executable_release_graphs) != 1 or len(probe_release_graphs) != 1:
         fail(
-            "Configuration Cache proof requires one executable release/performance "
-            "graph and one non-executing --dry-run reuse probe; found "
-            f"{len(executable_release_matches)} executable and "
-            f"{len(probe_release_matches)} probes"
+            "Configuration Cache proof requires exactly one executable "
+            "release/performance graph and one non-executing --dry-run reuse "
+            "probe; found "
+            f"{len(executable_release_graphs)} executable and "
+            f"{len(probe_release_graphs)} probes"
         )
+    for label, tokens in (
+        ("executable release/performance graph", executable_release_graphs[0]),
+        ("release/performance --dry-run probe", probe_release_graphs[0]),
+    ):
+        token_set = set(tokens)
+        missing_args = [arg for arg in release_args if arg not in token_set]
+        if missing_args:
+            fail(f"{label} is missing required arguments: {missing_args!r}")
     release_task_set = set(release_tasks)
     for tokens in gradle_commands(str(release.get("run", ""))):
         token_set = set(tokens)
