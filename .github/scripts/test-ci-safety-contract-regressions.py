@@ -210,6 +210,7 @@ def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
 
 
 def main() -> None:
+    """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
     android = ANDROID.read_text(encoding="utf-8")
     coverage = COVERAGE.read_text(encoding="utf-8")
@@ -225,6 +226,23 @@ def main() -> None:
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
+
+    # Phase 2 block 4 starts by proving the current workflow still executes the
+    # full quality graph twice. This deliberately fails until the implementation
+    # replaces the duplicate execution with a configuration-only reuse probe.
+    android = ANDROID.read_text(encoding="utf-8")
+    quality_start, quality_end = quality_step_bounds(android)
+    quality_script = android[quality_start:quality_end]
+    quality_graph_occurrences = quality_script.count(":app:testDebugUnitTest")
+    quality_probe_occurrences = quality_script.count("--dry-run")
+    executable_quality_graphs = quality_graph_occurrences - quality_probe_occurrences
+    if executable_quality_graphs != 1 or quality_probe_occurrences != 1:
+        raise SystemExit(
+            "Phase 2 block 4: expected one executable quality task graph and "
+            "one --dry-run cache probe; "
+            f"found {executable_quality_graphs} executable and "
+            f"{quality_probe_occurrences} probes"
+        )
     print("CI safety contract regression tests passed.")
 
 
