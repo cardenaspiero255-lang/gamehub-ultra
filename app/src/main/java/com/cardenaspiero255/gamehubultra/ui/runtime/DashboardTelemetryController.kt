@@ -26,6 +26,7 @@ internal class DashboardTelemetryController(
     private var lastLatencyNetworkHandle: Long? = null
     private var lastThermalStatus: Int? = null
     private var initializedThermalStatus = false
+    private var activeSessionId: String? = null
     private var telemetryTrend = emptyList<RuntimeDiagnostics>()
     private var timelineSamples = emptyList<PerformanceTimelineSample>()
 
@@ -37,6 +38,14 @@ internal class DashboardTelemetryController(
         performanceHintsAvailable: Boolean
     ): DashboardTelemetryUpdate {
         val now = nowMillis()
+
+        if (sessionId != activeSessionId) {
+            activeSessionId = sessionId
+            timelineSamples = emptyList()
+            lastThermalStatus = null
+            initializedThermalStatus = false
+        }
+
         val network = diagnostics.connectivity
 
         if (
