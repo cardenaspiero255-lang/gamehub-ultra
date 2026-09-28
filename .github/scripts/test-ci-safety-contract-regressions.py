@@ -13,6 +13,22 @@ CONTRACT = ROOT / ".github/scripts/test-ci-safety-contract.sh"
 CHECKER = ROOT / ".github/scripts/check-ci-safety-contract.py"
 
 
+
+def run_current_contract_must_pass() -> None:
+    result = subprocess.run(
+        ["bash", str(CONTRACT)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(
+            "Current valid workflows must satisfy the CI safety contract.\n"
+            f"--- contract output ---\n{result.stdout}"
+        )
+
 def run_mutation(label: str, mutate) -> None:
     with tempfile.TemporaryDirectory(prefix="gamehub-ci-contract-") as raw:
         temp = Path(raw)
@@ -90,6 +106,7 @@ def comment_out_coverage_command(android: str, coverage: str):
 
 
 def main() -> None:
+    run_current_contract_must_pass()
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
