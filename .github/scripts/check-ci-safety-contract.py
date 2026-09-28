@@ -18,6 +18,13 @@ def leading_spaces(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
 
+def unquote_scalar(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value
+
+
 def active_lines(path: Path) -> list[str]:
     if not path.is_file():
         fail(f"Missing workflow: {path}")
@@ -39,7 +46,7 @@ def parse_steps(path: Path) -> dict[str, dict[str, object]]:
             i += 1
             continue
         indent = len(match.group(1))
-        name = match.group(2).strip().strip('"').strip("'")
+        name = unquote_scalar(match.group(2))
         block: list[str] = [raw]
         i += 1
         while i < len(lines):
@@ -71,7 +78,7 @@ def parse_steps(path: Path) -> dict[str, dict[str, object]]:
             if not field_match:
                 continue
             key, value = field_match.group(1), field_match.group(2)
-            fields[key] = value.strip().strip('"').strip("'")
+            fields[key] = unquote_scalar(value)
             if key == "run":
                 run_indent = line_indent
                 if value not in ("|", ">", ""):
