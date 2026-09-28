@@ -34,6 +34,8 @@ require_android ":app:bundleRelease" "release AAB build"
 require_android "Validate release APK install-update-uninstall on API 35" "API 35 install/update/uninstall"
 require_android "android-35" "API 35 emulator"
 require_android "connectedNonMinifiedReleaseAndroidTest" "instrumented performance validation"
+require_android "Run baseline profile and macrobenchmarks on API 35" "combined performance validation"
+require_android "enabledRules=BaselineProfile,Macrobenchmark" "combined baseline + macrobenchmark rules"
 require_android "BaselineProfile" "baseline profile validation"
 require_android "Macrobenchmark" "macrobenchmark validation"
 require_android "GameHubMacrobenchmark" "macrobenchmark result verification"
@@ -48,6 +50,12 @@ require_coverage "report.xml" "coverage XML verification"
 require_coverage "codecov/codecov-action@" "Codecov upload"
 require_coverage "fail_ci_if_error: true" "strict Codecov upload when configured"
 require_coverage "cancel-in-progress: true" "stale coverage cancellation"
+
+
+instrumentation_invocations="$(grep -Fc 'connectedNonMinifiedReleaseAndroidTest' "$ANDROID")"
+if [ "$instrumentation_invocations" -ne 1 ]; then
+  fail "Android CI performance validation must use exactly one instrumentation invocation; found $instrumentation_invocations"
+fi
 
 # Required gates are identified by exact commands/verification steps above.
 # Auxiliary diagnostics and Sentry discovery may remain best-effort without
