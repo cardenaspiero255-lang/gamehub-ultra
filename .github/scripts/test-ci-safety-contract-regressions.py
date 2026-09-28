@@ -210,6 +210,7 @@ def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
 
 
 def main() -> None:
+    """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
     android = ANDROID.read_text(encoding="utf-8")
     coverage = COVERAGE.read_text(encoding="utf-8")
