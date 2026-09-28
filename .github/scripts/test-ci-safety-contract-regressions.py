@@ -225,6 +225,17 @@ def main() -> None:
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
+
+    # Phase 2 block 4 starts by proving the current workflow still executes the
+    # full quality graph twice. This deliberately fails until the implementation
+    # replaces the duplicate execution with a configuration-only reuse probe.
+    android = ANDROID.read_text(encoding="utf-8")
+    duplicate_quality_graph = android.count(":app:testDebugUnitTest \\\\n            :app:assembleDebug \\\\n            :app:lintDebug")
+    if duplicate_quality_graph != 1:
+        raise SystemExit(
+            "Phase 2 block 4: expected one executable quality task graph; "
+            f"found {duplicate_quality_graph}"
+        )
     print("CI safety contract regression tests passed.")
 
 
