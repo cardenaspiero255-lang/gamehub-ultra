@@ -123,6 +123,47 @@ class GameHubRuntimeCoordinatorTest {
     }
 
     @Test
+    fun endingSessionWithoutDiagnosticsDoesNotClaimStableObservation() {
+        val completedJob = Job().apply { complete() }
+        val actions = FakeRuntimeActions().apply {
+            finishResult = SessionFinishHandle(
+                session = RuntimeGameSession(
+                    id = "session-no-telemetry",
+                    packageName = "game.a"
+                ),
+                job = completedJob
+            )
+        }
+        val observations = mutableListOf<OptimizationObservation>()
+        val coordinator = GameHubRuntimeCoordinator(
+            scope = CoroutineScope(Job() + Dispatchers.Unconfined),
+            actions = actions,
+            recordOptimization = { _, observation ->
+                observations += observation
+            },
+            optimizationDispatcher = Dispatchers.Unconfined,
+            nowMillis = { 3_500L },
+            sessionIdFactory = { "unused" }
+        )
+
+        coordinator.endGameSession(
+            snapshot(
+                selectedGamePackage = "game.a",
+                activeSessionId = "session-no-telemetry",
+                metrics = RuntimeSessionMetrics(
+                    diagnosticsAvailable = false
+                )
+            )
+        )
+
+        val observation = observations.single()
+        assertFalse(observation.stable)
+        assertFalse(observation.failed)
+        assertFalse(observation.highTemperature)
+        assertNull(observation.thermalStatus)
+    }
+
+    @Test
     fun recordingOpenedGameStartsDeterministicSessionAndRecentGame() {
         val actions = FakeRuntimeActions()
         val coordinator = GameHubRuntimeCoordinator(
@@ -209,7 +250,9 @@ class GameHubRuntimeCoordinatorTest {
         selectedGamePackage: String? = null,
         effectiveProfile: PerformanceProfile = PerformanceProfile.BALANCED,
         activeSessionId: String? = null,
-        metrics: RuntimeSessionMetrics = RuntimeSessionMetrics(),
+        metrics: RuntimeSessionMetrics = RuntimeSessionMetrics(
+            diagnosticsAvailable = true
+        ),
         optimizationContextKey: OptimizationContextKey = OptimizationContextKey(
             deviceFingerprint = "device",
             gamePackage = selectedGamePackage.orEmpty(),
