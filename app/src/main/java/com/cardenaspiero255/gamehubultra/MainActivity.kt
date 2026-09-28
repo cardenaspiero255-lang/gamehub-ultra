@@ -110,7 +110,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
-import com.cardenaspiero255.gamehubultra.domain.AdaptiveRuntimeSnapshot
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
@@ -167,7 +166,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.UUID
 
 private const val MAX_CHAT_HISTORY = 8
 
