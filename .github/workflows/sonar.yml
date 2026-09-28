@@ -141,7 +141,7 @@ jobs:
                       )
                   except Exception as exc:
                       print(
-                          "::warning::Sonar organization discovery failed "
+                          "::notice::Sonar organization discovery failed "
                           f"({type(exc).__name__})."
                       )
 
@@ -163,7 +163,7 @@ jobs:
                       )
                   except Exception as exc:
                       print(
-                          "::warning::Sonar project search failed for organization "
+                          "::notice::Sonar project search failed for organization "
                           f"{candidate_org!r} ({type(exc).__name__})."
                       )
                       continue
@@ -213,11 +213,24 @@ jobs:
                   )
 
           if not found:
-              raise SystemExit(
-                  "SONAR_TOKEN is valid, but no GameHub Ultra Sonar project was found. "
-                  "Import the repository into SonarQube Cloud or set repository variables "
-                  "SONAR_PROJECT_KEY and SONAR_ORGANIZATION, then rerun this workflow."
+              if project_override or org_override:
+                  raise SystemExit(
+                      "Sonar repository variables are configured, but the matching "
+                      "project could not be resolved. Verify SONAR_PROJECT_KEY and "
+                      "SONAR_ORGANIZATION."
+                  )
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                  out.write(f"host={selected_host}\n")
+                  out.write("region_arg=\n")
+                  out.write("found=false\n")
+                  out.write("project_key=\n")
+                  out.write("organization=\n")
+              print(
+                  "::notice::SONAR_TOKEN is valid, but this repository has no "
+                  "configured SonarQube Cloud project. Analysis is skipped until "
+                  "SONAR_PROJECT_KEY and SONAR_ORGANIZATION are configured."
               )
+              raise SystemExit(0)
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"host={selected_host}\n")
