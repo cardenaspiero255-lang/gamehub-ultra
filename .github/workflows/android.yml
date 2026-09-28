@@ -354,9 +354,9 @@ jobs:
           adb start-server >/dev/null
 
           # The release build is CPU-heavy. Give Gradle exclusive CPU for the
-          # first three minutes, then boot the exact same deterministic API 35
+          # first two minutes, then boot the exact same deterministic API 35
           # AVD so its startup overlaps only the tail of the build.
-          EMULATOR_DELAY_SECONDS=180
+          EMULATOR_DELAY_SECONDS=120
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
           nohup bash -c '
             delay="$1"
