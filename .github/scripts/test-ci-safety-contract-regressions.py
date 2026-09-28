@@ -211,7 +211,8 @@ def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
 
 def main() -> None:
     run_current_contract_must_pass()
-    android, coverage = load_sources()
+    android = ANDROID.read_text(encoding="utf-8")
+    coverage = COVERAGE.read_text(encoding="utf-8")
     commented_quality_marker_before_active_step(android, coverage)
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
