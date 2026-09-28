@@ -371,14 +371,15 @@ jobs:
 
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
           BUILD_LOG="$RUNNER_TEMP/release-validation.log"
-          # Phase 2 A/B candidate: main is the 120s control. Launching at 90s
-          # overlaps emulator boot with the tail of the build while retaining every
-          # downstream API 35 readiness, install, baseline-profile and noise gate.
-          EXCLUSIVE_BUILD_SECONDS=90
+          # Phase 2 A/B candidate: main is the build-first control. Start the
+          # emulator immediately so this run actually exercises maximum overlap;
+          # CI then measures whether the saved boot latency outweighs CPU contention.
+          EXCLUSIVE_BUILD_SECONDS=0
+          AB_METRICS="$RUNNER_TEMP/emulator-startup-ab.md"
+          BUILD_START_EPOCH="$(date +%s)"
 
-          # Start the complete release + performance-variant DAG first. Give it
-          # exclusive CPU for up to 90 seconds, but if a warm cache finishes
-          # earlier, launch the emulator immediately instead of sleeping.
+          # Start the complete release + performance-variant DAG first. The A/B
+          # candidate deliberately gives it no exclusive CPU window.
           (
             set -o pipefail
             gradle \
@@ -398,6 +399,7 @@ jobs:
             elapsed=$((elapsed + 2))
           done
 
+          EMULATOR_LAUNCH_EPOCH="$(date +%s)"
           echo "Launching API 35 emulator after ${elapsed}s of build-only CPU time."
           nohup "$EMULATOR_BIN" -avd gamehub-api35 \
             -port 5554 \
@@ -431,6 +433,22 @@ jobs:
             echo "Release/performance prebuild failed."
             exit 1
           fi
+          BUILD_COMPLETE_EPOCH="$(date +%s)"
+          {
+            echo "# Emulator startup A/B"
+            echo
+            echo "- exclusive_build_seconds: ${EXCLUSIVE_BUILD_SECONDS}"
+            echo "- build_start_epoch: ${BUILD_START_EPOCH}"
+            echo "- emulator_launch_epoch: ${EMULATOR_LAUNCH_EPOCH}"
+            echo "- build_complete_epoch: ${BUILD_COMPLETE_EPOCH}"
+            echo "- launch_delay_seconds: $((EMULATOR_LAUNCH_EPOCH - BUILD_START_EPOCH))"
+            echo "- build_duration_seconds: $((BUILD_COMPLETE_EPOCH - BUILD_START_EPOCH))"
+          } > "$AB_METRICS"
+          {
+            echo "EMULATOR_LAUNCH_EPOCH=$EMULATOR_LAUNCH_EPOCH"
+            echo "BUILD_COMPLETE_EPOCH=$BUILD_COMPLETE_EPOCH"
+            echo "AB_METRICS=$AB_METRICS"
+          } >> "$GITHUB_ENV"
 
       - name: Wait for API 35 emulator readiness
         shell: bash
