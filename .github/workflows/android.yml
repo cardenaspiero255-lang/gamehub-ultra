@@ -400,6 +400,11 @@ jobs:
           AB_METRICS="$RUNNER_TEMP/emulator-startup-ab.md"
           BUILD_START_EPOCH="$(date +%s)"
 
+          # Android tooling creates this lazily during the first build. Create it
+          # before configuring the release/performance graph so the identical
+          # second invocation can reuse the Configuration Cache.
+          mkdir -p "$HOME/.config/.android/cache"
+
           # Start the complete release + performance-variant DAG first. The A/B
           # candidate deliberately gives it no exclusive CPU window.
           (
