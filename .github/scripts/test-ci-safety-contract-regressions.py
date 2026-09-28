@@ -227,7 +227,8 @@ def main() -> None:
     run_mutation("quality gate made advisory with expression", make_quality_advisory_with_expression)
     run_mutation("quality Gradle pipeline masked with || true", mask_quality_gradle_with_or_true)
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
-    run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)\n    run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
+    run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
+    run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
     print("CI safety contract regression tests passed.")
 
 
