@@ -456,7 +456,8 @@ internal fun GameHubUltraApp(
             metrics = RuntimeSessionMetrics(
                 batteryPercent = runtimeDiagnostics?.battery?.percent,
                 thermalStatus = runtimeDiagnostics?.thermal?.status,
-                ramUsedPercent = runtimeDiagnostics?.memory?.usedPercent
+                ramUsedPercent = runtimeDiagnostics?.memory?.usedPercent,
+                diagnosticsAvailable = runtimeDiagnostics != null
             ),
             optimizationContextKey = currentOptimizationKey
         )
