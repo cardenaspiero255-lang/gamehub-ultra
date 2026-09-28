@@ -96,6 +96,7 @@ def require_step(
     uses_prefix: str | None = None,
     allowed_if: str | None = None,
     shell: str | None = None,
+    expected_continue_on_error: bool = False,
 ) -> dict[str, object]:
     step = steps.get(name)
     if step is None:
@@ -105,8 +106,12 @@ def require_step(
     run = step["run"]
     assert isinstance(run, str)
 
-    if fields.get("continue-on-error", "").lower() == "true":
-        fail(f"Required gate is advisory via continue-on-error: {name}")
+    actual_continue = fields.get("continue-on-error", "").lower() == "true"
+    if actual_continue != expected_continue_on_error:
+        fail(
+            f"Required gate changed continue-on-error semantics: {name}: "
+            f"{actual_continue}; expected {expected_continue_on_error}"
+        )
 
     actual_if = fields.get("if")
     if allowed_if is None:
@@ -196,6 +201,7 @@ def main() -> None:
         commands=(":app:assembleRelease", ":app:bundleRelease", "--rerun-tasks"),
         allowed_if="success() && github.event_name != 'pull_request'",
         shell="bash",
+        expected_continue_on_error=True,
     )
     require_step(
         android_steps,
