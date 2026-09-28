@@ -38,6 +38,10 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-benchmark-fast-path.sh
 
+      - name: Verify CI safety contract regression coverage
+        shell: bash
+        run: python3 .github/scripts/test-ci-safety-contract-regressions.py
+
       - name: Verify CI safety contract
         shell: bash
         run: bash .github/scripts/test-ci-safety-contract.sh
