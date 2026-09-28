@@ -429,9 +429,12 @@ class CiPerformanceMetricsTests(unittest.TestCase):
                 run_id=999,
                 token="token",
                 history_limit=1,
+                history_job_request_budget=101,
             )
 
         self.assertEqual(result["history_runs"], 1)
+        self.assertFalse(result["history_partial"])
+        self.assertEqual(result["history_job_requests"], 101)
         self.assertEqual(
             result["history_summary"]["job.device_validation.seconds"]["p50"],
             320.0,
