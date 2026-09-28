@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.tools
 
 import android.content.Context
+import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.ai.UltraAnswerConfidence
 import com.cardenaspiero255.gamehubultra.ai.UltraGeneralQueryKind
 import com.cardenaspiero255.gamehubultra.ai.UltraGeneralQueryRequest
@@ -13,6 +14,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraResearchGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraVerifiedResearchResult
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveRuntimeSnapshot
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
@@ -279,6 +281,87 @@ class UltraToolContractTest {
                 command = VoiceCommand.SelectProfile(
                     com.cardenaspiero255.gamehubultra.domain.PerformanceProfile.BALANCED
                 ),
+                isProfileAvailable = { true }
+            )
+        )
+
+        assertIs<UltraToolResult.Failure>(result)
+        assertEquals(UltraToolFailureCode.INVALID_INPUT, result.failure.code)
+    }
+
+    @Test
+    fun openGameWithCombinedPersistenceDoesNotRequireSeparateGameCallback() {
+        val game = GameInfo(
+            packageName = "game.a",
+            label = "Game A"
+        )
+        var persisted: Pair<String, PerformanceProfile>? = null
+
+        val result = VoiceCommandEngine.execute(
+            VoiceCommandExecutionRequest(
+                command = VoiceCommand.OpenGame(
+                    query = "Game A",
+                    requestedProfile = PerformanceProfile.BALANCED
+                ),
+                gamesProvider = { listOf(game) },
+                launchGame = { true },
+                saveSelectedGameWithProfile = { packageName, profile ->
+                    persisted = packageName to profile
+                },
+                isProfileAvailable = { true }
+            )
+        )
+
+        assertIs<UltraToolResult.Success<VoiceActionResult>>(result)
+        assertIs<VoiceActionResult.GameOpened>(result.value)
+        assertEquals("game.a", persisted?.first)
+        assertEquals(PerformanceProfile.BALANCED, persisted?.second)
+    }
+
+    @Test
+    fun openGameWithUnavailableRequestedProfileOnlyRequiresGamePersistence() {
+        val game = GameInfo(
+            packageName = "game.a",
+            label = "Game A"
+        )
+        var selectedGame: String? = null
+
+        val result = VoiceCommandEngine.execute(
+            VoiceCommandExecutionRequest(
+                command = VoiceCommand.OpenGame(
+                    query = "Game A",
+                    requestedProfile = PerformanceProfile.X4
+                ),
+                gamesProvider = { listOf(game) },
+                launchGame = { true },
+                saveSelectedGame = { selectedGame = it },
+                isProfileAvailable = { false }
+            )
+        )
+
+        assertIs<UltraToolResult.Success<VoiceActionResult>>(result)
+        val opened = assertIs<VoiceActionResult.GameOpened>(result.value)
+        assertEquals("game.a", selectedGame)
+        assertTrue(opened.profileUnavailable)
+        assertEquals(null, opened.profile)
+    }
+
+    @Test
+    fun openGameWithAvailableProfileRejectsMissingProfilePersistence() {
+        val game = GameInfo(
+            packageName = "game.a",
+            label = "Game A"
+        )
+
+        val result = VoiceCommandEngine.execute(
+            VoiceCommandExecutionRequest(
+                command = VoiceCommand.OpenGame(
+                    query = "Game A",
+                    requestedProfile = PerformanceProfile.BALANCED
+                ),
+                gamesProvider = { listOf(game) },
+                launchGame = { true },
+                saveSelectedGame = {},
                 isProfileAvailable = { true }
             )
         )
