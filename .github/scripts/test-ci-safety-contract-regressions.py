@@ -243,6 +243,13 @@ def main() -> None:
             f"found {executable_quality_graphs} executable and "
             f"{quality_probe_occurrences} probes"
         )
+    coverage = COVERAGE.read_text(encoding="utf-8")
+    if ":app:createDebugUnitTestCoverageReport" in coverage and ":app:testDebugUnitTest" in quality_script:
+        raise SystemExit(
+            "Phase 2 block 5: unit tests are still executed independently by "
+            "quality and coverage instead of sharing a verified test result"
+        )
+
     print("CI safety contract regression tests passed.")
 
 
