@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ANDROID = ROOT / ".github/workflows/android.yml"
 COVERAGE = ROOT / ".github/workflows/coverage.yml"
 CONTRACT = ROOT / ".github/scripts/test-ci-safety-contract.sh"
+CHECKER = ROOT / ".github/scripts/check-ci-safety-contract.py"
 
 
 def run_mutation(label: str, mutate) -> None:
@@ -25,7 +26,9 @@ def run_mutation(label: str, mutate) -> None:
         (temp / ".github/workflows/android.yml").write_text(android, encoding="utf-8")
         (temp / ".github/workflows/coverage.yml").write_text(coverage, encoding="utf-8")
         target = temp / ".github/scripts/test-ci-safety-contract.sh"
+        checker = temp / ".github/scripts/check-ci-safety-contract.py"
         shutil.copy2(CONTRACT, target)
+        shutil.copy2(CHECKER, checker)
 
         result = subprocess.run(
             ["bash", str(target)],
@@ -62,6 +65,19 @@ def make_quality_advisory(android: str, coverage: str):
     return android.replace(needle, replacement, 1), coverage
 
 
+def make_coverage_advisory(android: str, coverage: str):
+    needle = """      - name: Generate debug unit-test coverage
+        shell: bash
+"""
+    if needle not in coverage:
+        raise SystemExit("Fixture drift: coverage step not found")
+    replacement = """      - name: Generate debug unit-test coverage
+        continue-on-error: true
+        shell: bash
+"""
+    return android, coverage.replace(needle, replacement, 1)
+
+
 def comment_out_coverage_command(android: str, coverage: str):
     needle = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
     if needle not in coverage:
@@ -76,6 +92,7 @@ def comment_out_coverage_command(android: str, coverage: str):
 def main() -> None:
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
+    run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
     run_mutation("coverage command commented out", comment_out_coverage_command)
     print("CI safety contract regression tests passed.")
 
