@@ -201,7 +201,6 @@ def main() -> None:
         commands=(":app:assembleRelease", ":app:bundleRelease", "--rerun-tasks"),
         allowed_if="success() && github.event_name != 'pull_request'",
         shell="bash",
-        expected_continue_on_error=True,
     )
     require_step(
         android_steps,
@@ -209,6 +208,7 @@ def main() -> None:
         commands=("register_sentry_release.py",),
         allowed_if="success() && github.event_name != 'pull_request'",
         shell="bash",
+        expected_continue_on_error=True,
     )
     require_step(
         android_steps,
