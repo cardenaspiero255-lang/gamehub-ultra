@@ -260,16 +260,14 @@ def _run_cohort(run: dict[str, Any]) -> tuple[str, str]:
     return event, f"head:{head_branch or 'unknown'}"
 
 
-def _fetch_recent_completed_runs(
+def _iter_recent_completed_runs(
     repository: str,
     workflow_id: int,
     token: str,
-    history_limit: int,
     current_run: dict[str, Any],
-) -> list[dict[str, Any]]:
+):
     current_run_id = int(current_run.get("id") or 0)
     current_cohort = _run_cohort(current_run)
-    selected: list[dict[str, Any]] = []
     per_page = 100
 
     for page in range(1, 21):
@@ -291,13 +289,29 @@ def _fetch_recent_completed_runs(
                 continue
             if _run_cohort(run) != current_cohort:
                 continue
-            selected.append(run)
-            if len(selected) >= history_limit:
-                return selected
+            yield run
 
         if len(runs) < per_page:
             break
 
+
+def _fetch_recent_completed_runs(
+    repository: str,
+    workflow_id: int,
+    token: str,
+    history_limit: int,
+    current_run: dict[str, Any],
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    for run in _iter_recent_completed_runs(
+        repository=repository,
+        workflow_id=workflow_id,
+        token=token,
+        current_run=current_run,
+    ):
+        selected.append(run)
+        if len(selected) >= history_limit:
+            break
     return selected
 
 
@@ -314,9 +328,11 @@ def collect(
     current_topology = _job_topology(current_jobs)
 
     history_rows: list[dict[str, float]] = []
-    candidate_limit = min(max(history_limit * 5, history_limit), 100)
-    for run in _fetch_recent_completed_runs(
-        repository, workflow_id, token, candidate_limit, current_run
+    for run in _iter_recent_completed_runs(
+        repository=repository,
+        workflow_id=workflow_id,
+        token=token,
+        current_run=current_run,
     ):
         historical_id = int(run.get("id") or 0)
         if historical_id <= 0:
