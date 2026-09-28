@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import importlib.util
 import unittest
+import urllib.error
+from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / ".github/scripts/ci-performance-metrics.py"
@@ -108,6 +111,129 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         self.assertIn("p50", text)
         self.assertIn("p90", text)
         self.assertIn("p95", text)
+
+    def test_recent_history_filters_to_comparable_run_cohort_and_paginates(self):
+        current_run = {
+            "id": 999,
+            "event": "pull_request",
+            "head_branch": "feature/current",
+            "pull_requests": [{"base": {"ref": "main"}}],
+        }
+        first_page = {
+            "workflow_runs": [
+                {
+                    "id": 1,
+                    "event": "push",
+                    "head_branch": "main",
+                    "conclusion": "success",
+                    "pull_requests": [],
+                },
+                {
+                    "id": 2,
+                    "event": "pull_request",
+                    "head_branch": "feature/old",
+                    "conclusion": "cancelled",
+                    "pull_requests": [{"base": {"ref": "main"}}],
+                },
+            ]
+            + [
+                {
+                    "id": 100 + index,
+                    "event": "pull_request",
+                    "head_branch": f"feature/rejected-{index}",
+                    "conclusion": "failure",
+                    "pull_requests": [{"base": {"ref": "main"}}],
+                }
+                for index in range(98)
+            ]
+        }
+        second_page = {
+            "workflow_runs": [
+                {
+                    "id": 200,
+                    "event": "pull_request",
+                    "head_branch": "feature/a",
+                    "conclusion": "success",
+                    "pull_requests": [{"base": {"ref": "main"}}],
+                },
+                {
+                    "id": 201,
+                    "event": "pull_request",
+                    "head_branch": "feature/b",
+                    "conclusion": "success",
+                    "pull_requests": [{"base": {"ref": "main"}}],
+                },
+            ]
+        }
+        with mock.patch.object(
+            metrics,
+            "_get_json",
+            side_effect=[first_page, second_page],
+        ) as get_json:
+            selected = metrics._fetch_recent_completed_runs(
+                "owner/repo",
+                123,
+                "token",
+                2,
+                current_run,
+            )
+        self.assertEqual([run["id"] for run in selected], [200, 201])
+        self.assertEqual(get_json.call_count, 2)
+        self.assertIn("page=2", get_json.call_args_list[1].args[0])
+
+    def test_push_history_matches_same_branch(self):
+        current_run = {
+            "id": 999,
+            "event": "push",
+            "head_branch": "main",
+            "pull_requests": [],
+        }
+        page = {
+            "workflow_runs": [
+                {
+                    "id": 10,
+                    "event": "push",
+                    "head_branch": "release",
+                    "conclusion": "success",
+                    "pull_requests": [],
+                },
+                {
+                    "id": 11,
+                    "event": "push",
+                    "head_branch": "main",
+                    "conclusion": "success",
+                    "pull_requests": [],
+                },
+            ]
+        }
+        with mock.patch.object(metrics, "_get_json", return_value=page):
+            selected = metrics._fetch_recent_completed_runs(
+                "owner/repo",
+                123,
+                "token",
+                1,
+                current_run,
+            )
+        self.assertEqual([run["id"] for run in selected], [11])
+
+    def test_http_error_preserves_status_without_token(self):
+        error = urllib.error.HTTPError(
+            "https://api.github.com/repos/owner/repo/actions/runs/1",
+            403,
+            "Forbidden",
+            {},
+            BytesIO(b'{"message":"rate limit exceeded"}'),
+        )
+        with mock.patch.object(metrics.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(metrics.GitHubApiError) as caught:
+                metrics._get_json(
+                    "https://api.github.com/repos/owner/repo/actions/runs/1",
+                    "super-secret-token",
+                )
+        self.assertEqual(caught.exception.status, 403)
+        self.assertIn("HTTP 403", str(caught.exception))
+        self.assertIn("rate limit exceeded", str(caught.exception))
+        self.assertNotIn("super-secret-token", str(caught.exception))
 
 
 if __name__ == "__main__":
