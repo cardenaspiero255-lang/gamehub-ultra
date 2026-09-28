@@ -116,7 +116,7 @@ class ObservabilityIntegrationRegressionTests(unittest.TestCase):
             repo_owner="cardenaspiero255-lang",
             urlopen=urlopen,
         )
-        self.assertFalse(result["found"])
+        self.assertEqual(result["found"], "false")
         self.assertFalse(any("/api/components/search" in url for url in calls))
 
     def test_sonar_project_search_outage_fails_closed(self):
