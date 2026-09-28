@@ -136,6 +136,8 @@ def discover_project(project_id):
                     if project_slug:
                         matches.append((org_slug, project_slug))
                     break
+        except SentryAuthRejected:
+            raise
         except RuntimeError as exc:
             warning(f"Could not inspect Sentry organization {org_slug!r}: {exc}")
 
@@ -202,6 +204,12 @@ try:
         for item in linked
         if isinstance(item, dict)
     )
+except SentryAuthRejected as exc:
+    notice(
+        f"{exc} Trusted release registration was skipped cleanly; "
+        "runtime telemetry through SENTRY_DSN remains enabled."
+    )
+    sys.exit(0)
 except RuntimeError as exc:
     warning(f"Could not verify Sentry/GitHub repository link: {exc}")
 
