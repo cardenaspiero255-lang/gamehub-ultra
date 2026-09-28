@@ -9,6 +9,7 @@ on:
     branches: ["main"]
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -98,3 +99,44 @@ jobs:
           name: gamehub-ultra-unit-tests
           fail_ci_if_error: true
           verbose: true
+
+  metrics:
+    name: metrics
+    if: always()
+    needs:
+      - coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Collect CI performance metrics
+        env:
+          GH_METRICS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/ci-performance-metrics.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" \
+            --token "$GH_METRICS_TOKEN" \
+            --history 20 \
+            --json-out "$RUNNER_TEMP/ci-performance.json" \
+            --summary-out "$RUNNER_TEMP/ci-performance.md"
+          cat "$RUNNER_TEMP/ci-performance.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CI performance metrics
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-ci-metrics-coverage
+          path: |
+            ${{ runner.temp }}/ci-performance.json
+            ${{ runner.temp }}/ci-performance.md
+          if-no-files-found: error
