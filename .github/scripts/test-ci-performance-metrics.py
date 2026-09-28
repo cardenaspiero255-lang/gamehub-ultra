@@ -296,8 +296,8 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \
              mock.patch.object(
                  metrics,
-                 "_fetch_recent_completed_runs",
-                 return_value=candidates,
+                 "_iter_recent_completed_runs",
+                 return_value=iter(candidates),
              ), \
              mock.patch.object(
                  metrics,
