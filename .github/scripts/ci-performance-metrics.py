@@ -367,10 +367,12 @@ def collect(
 
         history_job_requests += 1
         historical_jobs = _fetch_jobs(repository, historical_id, token)
-        if _job_topology(historical_jobs) != current_topology:
-            continue
-        history_rows.append(extract_metrics(historical_jobs))
-        if len(history_rows) >= history_limit:
+        if _job_topology(historical_jobs) == current_topology:
+            history_rows.append(extract_metrics(historical_jobs))
+            if len(history_rows) >= history_limit:
+                break
+        if history_job_requests >= safe_budget:
+            history_partial = True
             break
 
     return {
