@@ -48,19 +48,36 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK packages only when missing
         shell: bash
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "Coverage SDK packages already present; skipping sdkmanager."
+            exit 0
+          fi
+          sdkmanager "${missing[@]}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
         with:
           gradle-version: "8.13"
+          cache-disabled: false
+          # Android device-validation owns cache writes on normal CI events.
+          # Avoid duplicate cache uploads from the parallel coverage workflow.
+          cache-read-only: ${{ github.event_name != 'workflow_dispatch' }}
 
       - name: Generate debug unit-test coverage
         shell: bash
-        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --stacktrace
+        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace
 
       - name: Verify coverage XML report
         shell: bash

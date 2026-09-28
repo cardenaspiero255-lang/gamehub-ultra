@@ -38,6 +38,14 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-benchmark-fast-path.sh
 
+      - name: Verify CI safety contract regression coverage
+        shell: bash
+        run: python3 .github/scripts/test-ci-safety-contract-regressions.py
+
+      - name: Verify CI safety contract
+        shell: bash
+        run: bash .github/scripts/test-ci-safety-contract.sh
+
       - name: Set up JDK 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
@@ -240,12 +248,6 @@ jobs:
             echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
           } >> "$GITHUB_ENV"
 
-      - name: Build telemetry-disabled release APK and AAB for validation
-        shell: bash
-        run: |
-          set -euo pipefail
-          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-validation.log"
-
       - name: Prepare deterministic API 35 AVD
         shell: bash
         run: |
@@ -339,7 +341,7 @@ jobs:
             exit 1
           fi
 
-      - name: Start API 35 emulator cleanly
+      - name: Build telemetry-disabled release APK and AAB for validation
         shell: bash
         run: |
           set -euo pipefail
@@ -352,18 +354,32 @@ jobs:
           adb start-server >/dev/null
 
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
-          dump_emulator_log_on_failure() {
-            rc=$?
-            trap - EXIT
-            if [ "$rc" -ne 0 ] && [ -f "$EMULATOR_LOG" ]; then
-              echo "::group::Android emulator startup log"
-              cat "$EMULATOR_LOG"
-              echo "::endgroup::"
-            fi
-            exit "$rc"
-          }
-          trap dump_emulator_log_on_failure EXIT
+          BUILD_LOG="$RUNNER_TEMP/release-validation.log"
+          EXCLUSIVE_BUILD_SECONDS=120
 
+          # Start the complete release + performance-variant DAG first. Give it
+          # exclusive CPU for up to two minutes, but if a warm cache finishes
+          # earlier, launch the emulator immediately instead of sleeping.
+          (
+            set -o pipefail
+            gradle \
+              :app:assembleRelease \
+              :app:bundleRelease \
+              :app:assembleNonMinifiedRelease \
+              :baseline-profile:assembleNonMinifiedRelease \
+              --build-cache \
+              --parallel \
+              --stacktrace 2>&1 | tee "$BUILD_LOG"
+          ) &
+          BUILD_PID=$!
+
+          elapsed=0
+          while kill -0 "$BUILD_PID" 2>/dev/null && [ "$elapsed" -lt "$EXCLUSIVE_BUILD_SECONDS" ]; do
+            sleep 2
+            elapsed=$((elapsed + 2))
+          done
+
+          echo "Launching API 35 emulator after ${elapsed}s of build-only CPU time."
           nohup "$EMULATOR_BIN" -avd gamehub-api35 \
             -port 5554 \
             -no-window \
@@ -379,8 +395,45 @@ jobs:
             -netspeed full \
             >"$EMULATOR_LOG" 2>&1 &
           EMULATOR_PID=$!
-          echo "EMULATOR_PID=$EMULATOR_PID" >> "$GITHUB_ENV"
-          echo "EMULATOR_LOG=$EMULATOR_LOG" >> "$GITHUB_ENV"
+          {
+            echo "EMULATOR_PID=$EMULATOR_PID"
+            echo "EMULATOR_LOG=$EMULATOR_LOG"
+            echo "EXCLUSIVE_BUILD_SECONDS=$EXCLUSIVE_BUILD_SECONDS"
+          } >> "$GITHUB_ENV"
+
+          sleep 2
+          if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "Android emulator exited immediately after launch."
+            cat "$EMULATOR_LOG" || true
+            exit 1
+          fi
+
+          if ! wait "$BUILD_PID"; then
+            echo "Release/performance prebuild failed."
+            exit 1
+          fi
+
+      - name: Wait for API 35 emulator readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          EMULATOR_LOG="${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"
+          dump_emulator_log_on_failure() {
+            rc=$?
+            trap - EXIT
+            if [ "$rc" -ne 0 ] && [ -f "$EMULATOR_LOG" ]; then
+              echo "::group::Android emulator startup log"
+              cat "$EMULATOR_LOG"
+              echo "::endgroup::"
+            fi
+            exit "$rc"
+          }
+          trap dump_emulator_log_on_failure EXIT
+
+          if [ -z "${EMULATOR_PID:-}" ] || ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            echo "Android emulator process is not alive before readiness validation."
+            exit 1
+          fi
 
           timeout 300 adb wait-for-device
           timeout 600 bash -c '
@@ -424,36 +477,17 @@ jobs:
             exit 1
           fi
 
-      - name: Run baseline profile instrumentation on API 35
+      - name: Run baseline profile and macrobenchmarks on API 35
         shell: bash
         run: |
           set -euo pipefail
           set -o pipefail
-          LOG="$RUNNER_TEMP/baseline-profile.log"
-          gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile \
-            --build-cache \
-            --no-configuration-cache \
-            --stacktrace 2>&1 | tee "$LOG"
-          if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
-            echo "ddmlib could not connect to the emulator console."
-            exit 1
-          fi
-
-      - name: Run macrobenchmarks on API 35
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -o pipefail
-          # Preserve compiled/intermediate outputs from the baseline-profile run.
-          # Only clear prior instrumentation reports so the result parser below
-          # sees results produced by this macrobenchmark execution.
           rm -rf \
             baseline-profile/build/outputs/androidTest-results \
             baseline-profile/build/reports/androidTests
-          LOG="$RUNNER_TEMP/macrobenchmark.log"
+          LOG="$RUNNER_TEMP/performance-validation.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile,Macrobenchmark \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
             --build-cache \
@@ -469,28 +503,46 @@ jobs:
           import xml.etree.ElementTree as ET
 
           reports = list(Path("baseline-profile/build/outputs/androidTest-results").rglob("TEST-*.xml"))
-          cases = []
+          baseline_cases = []
+          macro_cases = []
           for report in reports:
               try:
                   root = ET.parse(report).getroot()
               except ET.ParseError:
                   continue
               for case in root.iter("testcase"):
-                  if case.attrib.get("classname", "").endswith("GameHubMacrobenchmark"):
-                      cases.append(case)
+                  classname = case.attrib.get("classname", "")
+                  if classname.endswith("BaselineProfileGenerator"):
+                      baseline_cases.append(case)
+                  if classname.endswith("GameHubMacrobenchmark"):
+                      macro_cases.append(case)
 
-          if len(cases) < 3:
-              raise SystemExit(f"Expected at least 3 GameHubMacrobenchmark cases, found {len(cases)}")
+          if len(baseline_cases) < 1:
+              raise SystemExit(
+                  f"Expected at least 1 BaselineProfileGenerator case, found {len(baseline_cases)}"
+              )
+          if len(macro_cases) < 3:
+              raise SystemExit(
+                  f"Expected at least 3 GameHubMacrobenchmark cases, found {len(macro_cases)}"
+              )
 
+          required_cases = baseline_cases + macro_cases
           skipped = [
-              case.attrib.get("name", "<unknown>")
-              for case in cases
+              f"{case.attrib.get('classname', '<unknown>')}#{case.attrib.get('name', '<unknown>')}"
+              for case in required_cases
               if case.find("skipped") is not None
           ]
           if skipped:
-              raise SystemExit(f"Macrobenchmarks were skipped: {skipped}")
+              raise SystemExit(f"Required performance tests were skipped: {skipped}")
 
-          print("Executed macrobenchmarks:", [case.attrib.get("name") for case in cases])
+          print(
+              "Executed baseline profiles:",
+              [case.attrib.get("name") for case in baseline_cases],
+          )
+          print(
+              "Executed macrobenchmarks:",
+              [case.attrib.get("name") for case in macro_cases],
+          )
           PY
 
       - name: Stop API 35 emulator without noisy console shutdown
@@ -516,8 +568,7 @@ jobs:
           bad=0
           for log in \
             "$RUNNER_TEMP/avd-create.log" \
-            "$RUNNER_TEMP/baseline-profile.log" \
-            "$RUNNER_TEMP/macrobenchmark.log" \
+            "$RUNNER_TEMP/performance-validation.log" \
             "${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"; do
             [ -f "$log" ] || continue
             if grep -En \
