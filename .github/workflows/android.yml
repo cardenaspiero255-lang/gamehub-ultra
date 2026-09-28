@@ -106,13 +106,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
+          # Android tooling creates this lazily during the first build. Create it
+          # up front so that filesystem observation does not invalidate the
+          # Configuration Cache before the identical second invocation.
+          mkdir -p "$HOME/.config/.android/cache"
           gradle \
             :app:testDebugUnitTest \
             :app:assembleDebug \
             :app:lintDebug \
             --build-cache \
             --parallel \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
             --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
+
+          # Re-run the exact graph. The second invocation must reuse the stored
+          # configuration rather than merely succeeding with the feature enabled.
+          gradle \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:lintDebug \
+            --build-cache \
+            --parallel \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
+          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -126,7 +146,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-quality-diagnostics
-          path: ${{ runner.temp }}/quality-gates.log
+          path: |
+            ${{ runner.temp }}/quality-gates.log
+            ${{ runner.temp }}/configuration-cache-reuse.log
           if-no-files-found: ignore
 
   device-validation:
@@ -378,6 +400,11 @@ jobs:
           AB_METRICS="$RUNNER_TEMP/emulator-startup-ab.md"
           BUILD_START_EPOCH="$(date +%s)"
 
+          # Android tooling creates this lazily during the first build. Create it
+          # before configuring the release/performance graph so the identical
+          # second invocation can reuse the Configuration Cache.
+          mkdir -p "$HOME/.config/.android/cache"
+
           # Start the complete release + performance-variant DAG first. The A/B
           # candidate deliberately gives it no exclusive CPU window.
           (
@@ -389,7 +416,22 @@ jobs:
               :baseline-profile:assembleNonMinifiedRelease \
               --build-cache \
               --parallel \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
               --stacktrace 2>&1 | tee "$BUILD_LOG"
+
+            RELEASE_CONFIG_CACHE_LOG="$RUNNER_TEMP/release-configuration-cache-reuse.log"
+            gradle \
+              :app:assembleRelease \
+              :app:bundleRelease \
+              :app:assembleNonMinifiedRelease \
+              :baseline-profile:assembleNonMinifiedRelease \
+              --build-cache \
+              --parallel \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --stacktrace 2>&1 | tee "$RELEASE_CONFIG_CACHE_LOG"
+            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"
           ) &
           BUILD_PID=$!
 
