@@ -414,6 +414,19 @@ jobs:
               --configuration-cache \
               --configuration-cache-problems=fail \
               --stacktrace 2>&1 | tee "$BUILD_LOG"
+
+            RELEASE_CONFIG_CACHE_LOG="$RUNNER_TEMP/release-configuration-cache-reuse.log"
+            gradle \
+              :app:assembleRelease \
+              :app:bundleRelease \
+              :app:assembleNonMinifiedRelease \
+              :baseline-profile:assembleNonMinifiedRelease \
+              --build-cache \
+              --parallel \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --stacktrace 2>&1 | tee "$RELEASE_CONFIG_CACHE_LOG"
+            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"
           ) &
           BUILD_PID=$!
 
