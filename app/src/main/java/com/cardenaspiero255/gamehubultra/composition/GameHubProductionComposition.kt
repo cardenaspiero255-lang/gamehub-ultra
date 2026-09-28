@@ -62,16 +62,23 @@ internal object GameHubProductionComposition {
             agentRouter = UltraAgentRoutingGateway { request ->
                 routeAgentRequest(request)
             },
-            networkGaming = UltraNetworkGamingGateway { intent ->
-                UltraNetworkGamingRuntimeController.execute(
-                    intent = intent,
-                    applyCompetitive = {
-                        NetworkRuntimeOptimizer.apply(
-                            appContext,
-                            NetworkGameProfile.COMPETITIVE
-                        )
-                    }
-                )
+            networkGaming = object : UltraNetworkGamingGateway {
+                override fun execute(
+                    intent: com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
+                ): String =
+                    UltraNetworkGamingRuntimeController.execute(
+                        intent = intent,
+                        applyCompetitive = {
+                            NetworkRuntimeOptimizer.apply(
+                                appContext,
+                                NetworkGameProfile.COMPETITIVE
+                            )
+                        }
+                    )
+
+                override fun applyProfile(
+                    profile: NetworkGameProfile
+                ) = NetworkRuntimeOptimizer.apply(appContext, profile)
             }
         )
 
