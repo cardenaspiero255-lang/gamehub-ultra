@@ -439,6 +439,95 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         self.assertEqual(get_json.call_count, 2)
         self.assertIn("page=2", get_json.call_args_list[1].args[0])
 
+    def test_collect_bounds_history_job_requests_and_marks_partial(self):
+        current_run = {
+            "id": 999,
+            "workflow_id": 123,
+            "name": "Android build",
+            "event": "pull_request",
+            "head_branch": "feature/current",
+            "pull_requests": [{"base": {"ref": "main"}}],
+        }
+        current_jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-09-28T05:00:00Z",
+                "completed_at": "2026-09-28T05:01:00Z",
+                "steps": [],
+            },
+            {
+                "name": "device-validation",
+                "started_at": "2026-09-28T05:00:00Z",
+                "completed_at": "2026-09-28T05:05:00Z",
+                "steps": [],
+            },
+            {
+                "name": "build",
+                "started_at": "2026-09-28T05:05:00Z",
+                "completed_at": "2026-09-28T05:05:03Z",
+                "steps": [],
+            },
+        ]
+        old_topology_jobs = [
+            {
+                "name": "build",
+                "started_at": "2026-09-27T05:00:00Z",
+                "completed_at": "2026-09-27T05:10:00Z",
+                "steps": [],
+            }
+        ]
+        candidates = iter(
+            {
+                "id": index + 1,
+                "event": "pull_request",
+                "head_branch": f"legacy-{index}",
+                "conclusion": "success",
+                "pull_requests": [{"base": {"ref": "main"}}],
+            }
+            for index in range(10)
+        )
+
+        with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \
+             mock.patch.object(
+                 metrics,
+                 "_iter_recent_completed_runs",
+                 return_value=candidates,
+             ), \
+             mock.patch.object(
+                 metrics,
+                 "_fetch_jobs",
+                 side_effect=[current_jobs] + [old_topology_jobs] * 3,
+             ) as fetch_jobs:
+            result = metrics.collect(
+                repository="owner/repo",
+                run_id=999,
+                token="token",
+                history_limit=20,
+                history_job_request_budget=3,
+            )
+
+        self.assertEqual(fetch_jobs.call_count, 4)
+        self.assertEqual(result["history_runs"], 0)
+        self.assertTrue(result["history_partial"])
+        self.assertEqual(result["history_job_requests"], 3)
+        self.assertEqual(result["history_job_request_budget"], 3)
+
+    def test_markdown_marks_partial_history(self):
+        text = metrics.render_markdown(
+            "Android build",
+            {"workflow_wall_clock_seconds": 120.0},
+            {
+                "workflow_wall_clock_seconds": {
+                    "samples": 2,
+                    "p50": 110.0,
+                    "p90": 118.0,
+                    "p95": 119.0,
+                }
+            },
+            history_partial=True,
+        )
+        self.assertIn("History status: PARTIAL", text)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
