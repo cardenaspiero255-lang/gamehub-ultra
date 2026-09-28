@@ -399,6 +399,16 @@ def main() -> None:
             f"{len(executable_release_matches)} executable and "
             f"{len(probe_release_matches)} probes"
         )
+    release_task_set = set(release_tasks)
+    for tokens in gradle_commands(str(release.get("run", ""))):
+        token_set = set(tokens)
+        present_release_tasks = release_task_set.intersection(token_set)
+        if present_release_tasks and present_release_tasks != release_task_set:
+            fail(
+                "Release/performance Gradle invocations must not execute a partial "
+                "required task graph; found "
+                f"{sorted(present_release_tasks)!r}"
+            )
     require_shell_command(
         release,
         "device-validation/Configuration Cache reuse",
