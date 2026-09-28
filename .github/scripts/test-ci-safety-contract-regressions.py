@@ -237,6 +237,16 @@ def duplicate_partial_release_graph(android: str, coverage: str):
     return android.replace(needle, duplicate + needle, 1), coverage
 
 
+
+def duplicate_full_release_graph_without_configuration_cache(android: str, coverage: str):
+    """Duplicate the full release graph while omitting Configuration Cache flags."""
+    needle = '            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: release cache assertion not found")
+    duplicate = """            gradle \\\n              :app:assembleRelease \\\n              :app:bundleRelease \\\n              :app:assembleNonMinifiedRelease \\\n              :baseline-profile:assembleNonMinifiedRelease \\\n              --build-cache \\\n              --parallel \\\n              --stacktrace\n"""
+    return android.replace(needle, duplicate + needle, 1), coverage
+
+
 def main() -> None:
     """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
@@ -256,6 +266,7 @@ def main() -> None:
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
     run_mutation("Release Configuration Cache reuse assertion removed", remove_release_configuration_cache_reuse_assertion)
     run_mutation("Partial release/performance graph duplicated", duplicate_partial_release_graph)
+    run_mutation("Full release graph duplicated without Configuration Cache flags", duplicate_full_release_graph_without_configuration_cache)
 
     # Phase 2 block 4 starts by proving the current workflow still executes the
     # full quality graph twice. This deliberately fails until the implementation
