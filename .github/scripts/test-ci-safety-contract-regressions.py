@@ -233,7 +233,7 @@ def main() -> None:
     android = ANDROID.read_text(encoding="utf-8")
     quality_start, quality_end = quality_step_bounds(android)
     quality_script = android[quality_start:quality_end]
-    quality_graph_occurrences = quality_script.count(":app:testDebugUnitTest")
+    quality_graph_occurrences = quality_script.count(":app:assembleDebug")
     quality_probe_occurrences = quality_script.count("--dry-run")
     executable_quality_graphs = quality_graph_occurrences - quality_probe_occurrences
     if executable_quality_graphs != 1 or quality_probe_occurrences != 1:
@@ -244,11 +244,10 @@ def main() -> None:
             f"{quality_probe_occurrences} probes"
         )
     coverage = COVERAGE.read_text(encoding="utf-8")
-    if ":app:createDebugUnitTestCoverageReport" in coverage and ":app:testDebugUnitTest" in quality_script:
-        raise SystemExit(
-            "Phase 2 block 5: unit tests are still executed independently by "
-            "quality and coverage instead of sharing a verified test result"
-        )
+    if ":app:testDebugUnitTest" in quality_script:
+        raise SystemExit("Phase 2 block 5: quality must not duplicate coverage-owned unit tests")
+    if ":app:createDebugUnitTestCoverageReport" not in coverage:
+        raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
 
     print("CI safety contract regression tests passed.")
 
