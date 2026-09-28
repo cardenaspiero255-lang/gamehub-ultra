@@ -107,29 +107,33 @@ def comment_out_coverage_command(android: str, coverage: str):
 
 
 def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
-    original_name = "      - name: Run fast quality gates\n"
-    if original_name not in android:
-        raise SystemExit("Fixture drift: quality step name not found")
-    android = android.replace(original_name, "      - name: Disabled fast quality gates\n", 1)
-
-    run_anchor = """        run: |
+    quality = """      - name: Run fast quality gates
+        shell: bash
+        run: |
           set -euo pipefail
           gradle \\
+            :app:testDebugUnitTest \\
+            :app:assembleDebug \\
+            :app:lintDebug \\
+            --build-cache \\
+            --parallel \\
+            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
 """
-    if run_anchor not in android:
-        raise SystemExit("Fixture drift: quality run block not found")
-    fake = """        run: |
+    if quality not in android:
+        raise SystemExit("Fixture drift: quality step block not found")
+
+    # A nameless GitHub Actions step is valid. The old regex scanner can walk
+    # into its run block and mistake the heredoc text below for a real step.
+    fake = """      - shell: bash
+        run: |
           cat <<'FAKE_GATE'
           - name: Run fast quality gates
             shell: bash
             run: |
               gradle :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --build-cache --parallel
-          - name: End fake gate
           FAKE_GATE
-          set -euo pipefail
-          gradle \\
 """
-    return android.replace(run_anchor, fake, 1), coverage
+    return android.replace(quality, fake, 1), coverage
 
 
 def make_quality_advisory_with_expression(android: str, coverage: str):
@@ -165,8 +169,8 @@ def main() -> None:
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
     run_mutation("coverage command commented out", comment_out_coverage_command)
     run_mutation("fake quality step hidden inside run heredoc", hide_quality_step_inside_run_heredoc)
-    run_mutation("quality gate made advisory with expression", make_quality_advisory_with_expression)
     run_mutation("unit test removed from Gradle but echoed later", remove_unit_test_but_echo_name)
+    run_mutation("quality gate made advisory with expression", make_quality_advisory_with_expression)
     print("CI safety contract regression tests passed.")
 
 
