@@ -278,7 +278,7 @@ class DashboardTelemetryControllerTest {
             gamepadCount = 0,
             keyboardCount = 0,
             mouseCount = 0,
-            audioOutputCount = 0
+            externalAudioCount = 0
         )
     )
 }
