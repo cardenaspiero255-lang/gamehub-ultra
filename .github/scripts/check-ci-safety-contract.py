@@ -165,18 +165,23 @@ def logical_shell_commands(script: str) -> list[str]:
 
 
 def gradle_commands(script: str) -> list[list[str]]:
-    """Return tokenized real Gradle invocations, excluding echo/comment mentions."""
+    """Return tokenized real Gradle invocations, excluding unrelated shell code."""
     result: list[list[str]] = []
     for command in logical_shell_commands(script):
+        stripped = command.lstrip()
+        if not (
+            stripped == "gradle"
+            or stripped.startswith("gradle ")
+            or stripped == "./gradlew"
+            or stripped.startswith("./gradlew ")
+        ):
+            continue
+
         try:
             tokens = shlex.split(command, comments=True, posix=True)
         except ValueError as exc:
-            fail(f"Unable to parse shell command in required gate: {exc}: {command!r}")
+            fail(f"Unable to parse Gradle command in required gate: {exc}: {command!r}")
         if not tokens:
-            continue
-
-        first = tokens[0]
-        if first not in {"gradle", "./gradlew"}:
             continue
 
         if "|" in tokens:
