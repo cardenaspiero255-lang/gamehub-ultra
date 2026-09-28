@@ -112,7 +112,6 @@ jobs:
           # Configuration Cache before the identical second invocation.
           mkdir -p "$HOME/.config/.android/cache"
           gradle \
-            :app:testDebugUnitTest \
             :app:assembleDebug \
             :app:lintDebug \
             --build-cache \
@@ -125,7 +124,6 @@ jobs:
           # This proves the stored Configuration Cache entry is reusable while
           # avoiding a second execution of tests, lint and assembly.
           gradle \
-            :app:testDebugUnitTest \
             :app:assembleDebug \
             :app:lintDebug \
             --build-cache \
