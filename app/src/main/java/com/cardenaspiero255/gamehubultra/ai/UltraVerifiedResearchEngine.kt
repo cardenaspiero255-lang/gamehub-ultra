@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import java.util.Locale
 import java.util.concurrent.ExecutorCompletionService
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -159,26 +160,37 @@ class UltraVerifiedResearchEngine(
         val deadline = System.nanoTime() + timeoutNanos
         var timedOut = false
 
-        repeat(providers.size) {
-            val remaining = deadline - System.nanoTime()
-            if (remaining <= 0L) {
-                timedOut = true
-                return@repeat
-            }
+        try {
+            repeat(providers.size) {
+                val remaining = deadline - System.nanoTime()
+                if (remaining <= 0L) {
+                    timedOut = true
+                    return@repeat
+                }
 
-            val completed = completion.poll(remaining, TimeUnit.NANOSECONDS)
-            if (completed == null) {
-                timedOut = true
-                return@repeat
+                val completed = completion.poll(remaining, TimeUnit.NANOSECONDS)
+                if (completed == null) {
+                    timedOut = true
+                    return@repeat
+                }
+
+                attempts += try {
+                    completed.get()
+                } catch (_: ExecutionException) {
+                    ProviderAttempt(
+                        index = -1,
+                        providerId = "unknown",
+                        evidence = null,
+                        failed = true
+                    )
+                }
             }
-            attempts += runCatching { completed.get() }.getOrElse {
-                ProviderAttempt(
-                    index = -1,
-                    providerId = "unknown",
-                    evidence = null,
-                    failed = true
-                )
+        } catch (interrupted: InterruptedException) {
+            submitted.forEach { future ->
+                if (!future.isDone) future.cancel(true)
             }
+            Thread.currentThread().interrupt()
+            throw interrupted
         }
 
         if (timedOut) {

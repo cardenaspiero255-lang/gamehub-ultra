@@ -1,5 +1,13 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import com.cardenaspiero255.gamehubultra.tools.UltraToolContract
+import com.cardenaspiero255.gamehubultra.tools.UltraToolDescriptor
+import com.cardenaspiero255.gamehubultra.tools.UltraToolExecution
+import com.cardenaspiero255.gamehubultra.tools.UltraToolInvalidInputException
+import com.cardenaspiero255.gamehubultra.tools.UltraToolKind
+import com.cardenaspiero255.gamehubultra.tools.UltraToolResult
+import com.cardenaspiero255.gamehubultra.tools.UltraToolSideEffect
+
 import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
@@ -46,7 +54,101 @@ sealed interface VoiceActionResult {
     data class Failed(val detail: String) : VoiceActionResult
 }
 
-object VoiceCommandEngine {
+data class VoiceCommandExecutionRequest(
+    val command: VoiceCommand,
+    val gamesProvider: () -> List<GameInfo> = { emptyList() },
+    val aliasGamesProvider: (() -> List<GameInfo>)? = null,
+    val launchGame: (String) -> Boolean = { false },
+    val saveSelectedGame: ((String) -> Unit)? = null,
+    val saveSelectedProfile: ((PerformanceProfile) -> Unit)? = null,
+    val saveSelectedGameWithProfile: ((String, PerformanceProfile) -> Unit)? = null,
+    val isProfileAvailable: (PerformanceProfile) -> Boolean = { false },
+    val statusProvider: () -> VoiceDeviceStatus = {
+        VoiceDeviceStatus(
+            batteryPercent = null,
+            thermalLabel = "No disponible"
+        )
+    },
+    val deferProfileApplication: Boolean = false,
+    val aiAdvisor: ((String) -> GameHubAiAdvice)? = null,
+    val aliasIntentResolver: NaturalLanguageIntentResolver? = null,
+    val gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
+    val saveGameAlias: ((String, String) -> Unit)? = null,
+    val networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
+    val applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = {
+        NetworkOptimizationOutcome.UNAVAILABLE
+    }
+)
+
+object VoiceCommandEngine :
+    UltraToolContract<VoiceCommandExecutionRequest, VoiceActionResult> {
+
+    override val descriptor: UltraToolDescriptor =
+        UltraToolDescriptor(
+            id = "ultra.command",
+            kind = UltraToolKind.COMMAND,
+            sideEffect = UltraToolSideEffect.MIXED
+        )
+
+    override fun execute(
+        request: VoiceCommandExecutionRequest
+    ): UltraToolResult<VoiceActionResult> =
+        UltraToolExecution.protect(descriptor) {
+            execute(
+                command = request.command,
+                gamesProvider = request.gamesProvider,
+                aliasGamesProvider = request.aliasGamesProvider,
+                launchGame = request.launchGame,
+                saveSelectedGame = request.saveSelectedGame ?: {
+                    throw UltraToolInvalidInputException(
+                        "Falta el callback requerido para guardar el juego seleccionado."
+                    )
+                },
+                saveSelectedProfile = request.saveSelectedProfile ?: {
+                    throw UltraToolInvalidInputException(
+                        "Falta el callback requerido para guardar el perfil seleccionado."
+                    )
+                },
+                saveSelectedGameWithProfile = request.saveSelectedGameWithProfile,
+                isProfileAvailable = request.isProfileAvailable,
+                statusProvider = request.statusProvider,
+                deferProfileApplication = request.deferProfileApplication,
+                aiAdvisor = request.aiAdvisor,
+                aliasIntentResolver = request.aliasIntentResolver,
+                gameAliasesProvider = request.gameAliasesProvider,
+                saveGameAlias = request.saveGameAlias ?: { _, _ ->
+                    throw UltraToolInvalidInputException(
+                        "Falta el callback requerido para guardar el alias del juego."
+                    )
+                },
+                networkStatusProvider = request.networkStatusProvider,
+                applyNetworkProfile = request.applyNetworkProfile,
+                validateOpenGamePersistence = { requestedProfile, profileUnavailable ->
+                    when {
+                        requestedProfile == null || profileUnavailable -> {
+                            if (request.saveSelectedGame == null) {
+                                throw UltraToolInvalidInputException(
+                                    "Falta el callback requerido para guardar el juego seleccionado."
+                                )
+                            }
+                        }
+
+                        request.saveSelectedGameWithProfile != null -> Unit
+
+                        request.saveSelectedGame == null ->
+                            throw UltraToolInvalidInputException(
+                                "Falta el callback requerido para guardar el juego seleccionado."
+                            )
+
+                        request.saveSelectedProfile == null ->
+                            throw UltraToolInvalidInputException(
+                                "Falta el callback requerido para guardar el perfil seleccionado."
+                            )
+                    }
+                }
+            )
+        }
+
     fun execute(
         command: VoiceCommand,
         gamesProvider: () -> List<GameInfo>,
@@ -63,7 +165,8 @@ object VoiceCommandEngine {
         gameAliasesProvider: () -> Map<String, String> = { emptyMap() },
         saveGameAlias: (String, String) -> Unit = { _, _ -> },
         networkStatusProvider: (() -> VoiceNetworkSnapshot?)? = null,
-        applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = { NetworkOptimizationOutcome.UNAVAILABLE }
+        applyNetworkProfile: (NetworkGameProfile) -> NetworkOptimizationOutcome = { NetworkOptimizationOutcome.UNAVAILABLE },
+        validateOpenGamePersistence: ((PerformanceProfile?, Boolean) -> Unit)? = null
     ): VoiceActionResult =
         when (command) {
             is VoiceCommand.SelectProfile -> {
@@ -126,6 +229,11 @@ object VoiceCommandEngine {
                     val profileUnavailable =
                         command.requestedProfile != null &&
                             !isProfileAvailable(command.requestedProfile)
+
+                    validateOpenGamePersistence?.invoke(
+                        command.requestedProfile,
+                        profileUnavailable
+                    )
 
                     when {
                         command.requestedProfile == null ->

@@ -1,5 +1,12 @@
 package com.cardenaspiero255.gamehubultra.platform
 
+import com.cardenaspiero255.gamehubultra.tools.UltraToolContract
+import com.cardenaspiero255.gamehubultra.tools.UltraToolDescriptor
+import com.cardenaspiero255.gamehubultra.tools.UltraToolExecution
+import com.cardenaspiero255.gamehubultra.tools.UltraToolKind
+import com.cardenaspiero255.gamehubultra.tools.UltraToolResult
+import com.cardenaspiero255.gamehubultra.tools.UltraToolSideEffect
+
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -76,7 +83,21 @@ data class RuntimeDiagnostics(
     val peripherals: PeripheralDiagnostics
 )
 
-object RuntimeDiagnosticsProvider {
+object RuntimeDiagnosticsProvider : UltraToolContract<Context, RuntimeDiagnostics> {
+    override val descriptor: UltraToolDescriptor =
+        UltraToolDescriptor(
+            id = "ultra.telemetry",
+            kind = UltraToolKind.TELEMETRY,
+            sideEffect = UltraToolSideEffect.READ_ONLY
+        )
+
+    override fun execute(
+        request: Context
+    ): UltraToolResult<RuntimeDiagnostics> =
+        UltraToolExecution.protect(descriptor) {
+            get(request)
+        }
+
     fun get(context: Context): RuntimeDiagnostics {
         val appContext = context.applicationContext
         return RuntimeDiagnostics(
