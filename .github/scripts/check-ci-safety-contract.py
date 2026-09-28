@@ -342,6 +342,16 @@ def main() -> None:
     ):
         require_run_fragment(release, "Phase 2 emulator startup A/B telemetry", fragment)
 
+    ab_upload = require_step(
+        android,
+        "device-validation",
+        "Upload emulator startup A/B metrics",
+        uses_prefix="actions/upload-artifact@",
+        allowed_if="always()",
+    )
+    if "${{ runner.temp }}/emulator-startup-ab.md" not in str(ab_upload.get("with", {}).get("path", "")):
+        fail("Phase 2 emulator startup A/B metrics artifact lost its metrics file")
+
     readiness = require_step(
         android,
         "device-validation",
