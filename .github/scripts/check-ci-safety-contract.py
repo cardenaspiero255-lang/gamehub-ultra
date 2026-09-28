@@ -46,6 +46,21 @@ def parse_steps(path: Path) -> dict[str, dict[str, object]]:
             i += 1
             continue
         indent = len(match.group(1))
+        # Workflow steps are direct children of a `steps:` sequence. Ignore
+        # YAML-looking text embedded in run scripts/heredocs.
+        parent_is_steps = False
+        for prev in range(i - 1, -1, -1):
+            prev_raw = lines[prev]
+            prev_stripped = prev_raw.strip()
+            if not prev_stripped or prev_stripped.startswith("#"):
+                continue
+            prev_indent = leading_spaces(prev_raw)
+            if prev_indent < indent:
+                parent_is_steps = prev_stripped == "steps:" and prev_indent == indent - 2
+                break
+        if not parent_is_steps:
+            i += 1
+            continue
         name = unquote_scalar(match.group(2))
         block: list[str] = [raw]
         i += 1
@@ -106,7 +121,13 @@ def require_step(
     run = step["run"]
     assert isinstance(run, str)
 
-    actual_continue = fields.get("continue-on-error", "").lower() == "true"
+    raw_continue = str(fields.get("continue-on-error", "")).strip()
+    if expected_continue_on_error:
+        actual_continue = raw_continue.lower() == "true"
+    else:
+        # Any non-empty value other than literal false can make a required
+        # gate advisory, including expressions such as ${{ true }}.
+        actual_continue = raw_continue.lower() not in ("", "false")
     if actual_continue != expected_continue_on_error:
         fail(
             f"Required gate changed continue-on-error semantics: {name}: "
@@ -123,11 +144,22 @@ def require_step(
     if shell is not None and fields.get("shell") != shell:
         fail(f"Required gate changed shell: {name}: {fields.get('shell')!r}; expected {shell!r}")
 
+    uncommented_lines = [
+        line for line in run.splitlines() if not line.lstrip().startswith("#")
+    ]
+    uncommented = "\n".join(uncommented_lines)
     for command in commands:
-        uncommented = "\n".join(
-            line for line in run.splitlines() if not line.lstrip().startswith("#")
-        )
-        if command not in uncommented:
+        if command.startswith(":"):
+            task_pattern = re.compile(
+                rf"(^|[\\s\\\\]){re.escape(command)}(?=\\s|\\\\|$)"
+            )
+            if not any(
+                task_pattern.search(line)
+                and not re.search(r"\\b(echo|printf)\\b", line[: max(0, line.find(command))])
+                for line in uncommented_lines
+            ):
+                fail(f"Required gate lost executable Gradle task {command!r}: {name}")
+        elif command not in uncommented:
             fail(f"Required gate lost executable command {command!r}: {name}")
 
     if uses_prefix is not None:
