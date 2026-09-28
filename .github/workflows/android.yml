@@ -341,7 +341,7 @@ jobs:
             exit 1
           fi
 
-      - name: Launch API 35 emulator while release builds
+      - name: Schedule API 35 emulator launch during release build
         shell: bash
         run: |
           set -euo pipefail
@@ -353,37 +353,53 @@ jobs:
           fi
           adb start-server >/dev/null
 
+          # The release build is CPU-heavy. Give Gradle exclusive CPU for the
+          # first three minutes, then boot the exact same deterministic API 35
+          # AVD so its startup overlaps only the tail of the build.
+          EMULATOR_DELAY_SECONDS=180
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
-          nohup "$EMULATOR_BIN" -avd gamehub-api35 \
-            -port 5554 \
-            -no-window \
-            -no-audio \
-            -no-boot-anim \
-            -no-snapshot-load \
-            -no-snapshot-save \
-            -no-metrics \
-            -gpu swiftshader_indirect \
-            -camera-back none \
-            -camera-front none \
-            -netdelay none \
-            -netspeed full \
+          nohup bash -c '
+            delay="$1"
+            emulator="$2"
+            sleep "$delay"
+            exec "$emulator" -avd gamehub-api35 \
+              -port 5554 \
+              -no-window \
+              -no-audio \
+              -no-boot-anim \
+              -no-snapshot-load \
+              -no-snapshot-save \
+              -no-metrics \
+              -gpu swiftshader_indirect \
+              -camera-back none \
+              -camera-front none \
+              -netdelay none \
+              -netspeed full
+          ' gamehub-delayed-emulator "$EMULATOR_DELAY_SECONDS" "$EMULATOR_BIN" \
             >"$EMULATOR_LOG" 2>&1 &
           EMULATOR_PID=$!
-          echo "EMULATOR_PID=$EMULATOR_PID" >> "$GITHUB_ENV"
-          echo "EMULATOR_LOG=$EMULATOR_LOG" >> "$GITHUB_ENV"
+          {
+            echo "EMULATOR_PID=$EMULATOR_PID"
+            echo "EMULATOR_LOG=$EMULATOR_LOG"
+            echo "EMULATOR_DELAY_SECONDS=$EMULATOR_DELAY_SECONDS"
+          } >> "$GITHUB_ENV"
 
           sleep 2
           if ! kill -0 "$EMULATOR_PID" 2>/dev/null; then
-            echo "Android emulator exited immediately after launch."
+            echo "Delayed Android emulator launcher exited immediately."
             cat "$EMULATOR_LOG" || true
             exit 1
           fi
 
-      - name: Build telemetry-disabled release APK and AAB for validation
+      - name: Build release and prebuild performance variants
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:assembleRelease :app:bundleRelease \
+          gradle \
+            :app:assembleRelease \
+            :app:bundleRelease \
+            :app:assembleNonMinifiedRelease \
+            :baseline-profile:assembleNonMinifiedRelease \
             --build-cache \
             --parallel \
             --stacktrace 2>&1 | tee "$RUNNER_TEMP/release-validation.log"
