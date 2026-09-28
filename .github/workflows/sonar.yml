@@ -118,7 +118,13 @@ jobs:
                   continue
 
           if not selected_host:
-              raise SystemExit("SONAR_TOKEN was not accepted by sonarcloud.io or sonarqube.us.")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                  out.write("found=false\\n")
+              print(
+                  "::notice::SONAR_TOKEN is not accepted by the configured SonarQube Cloud "
+                  "hosts; analysis is disabled for this run."
+              )
+              raise SystemExit(0)
 
           project_key = project_override
           organization = org_override
@@ -213,11 +219,15 @@ jobs:
                   )
 
           if not found:
-              raise SystemExit(
-                  "SONAR_TOKEN is valid, but no GameHub Ultra Sonar project was found. "
-                  "Import the repository into SonarQube Cloud or set repository variables "
-                  "SONAR_PROJECT_KEY and SONAR_ORGANIZATION, then rerun this workflow."
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                  out.write(f"host={selected_host}\\n")
+                  out.write("found=false\\n")
+              print(
+                  "::notice::SONAR_TOKEN is valid, but no accessible GameHub Ultra project "
+                  "was found; analysis is disabled for this run. Configure SONAR_PROJECT_KEY "
+                  "and SONAR_ORGANIZATION when the project is available."
               )
+              raise SystemExit(0)
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"host={selected_host}\n")
