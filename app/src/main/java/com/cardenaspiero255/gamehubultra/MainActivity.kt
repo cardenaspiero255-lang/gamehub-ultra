@@ -140,6 +140,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineReportFormatt
 import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
+import com.cardenaspiero255.gamehubultra.ui.runtime.DashboardTelemetryController
 import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeActions
 import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeCoordinator
 import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeSnapshot
@@ -262,7 +263,6 @@ private fun GameHubUltraApp(
     val activeSessionId = runtimeGameSession?.id
     var runtimeDiagnostics by remember { mutableStateOf<RuntimeDiagnostics?>(null) }
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
-    var latencyMs by remember { mutableStateOf<Long?>(null) }
     var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
     var performanceTimelineSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineSample>>(emptyList()) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
@@ -320,6 +320,23 @@ private fun GameHubUltraApp(
     }
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
+    }
+    val adaptiveEngineState = rememberUpdatedState(adaptiveEngine)
+    val dashboardTelemetryController = remember(context, viewModel) {
+        DashboardTelemetryController(
+            adaptiveEvaluator = { snapshot ->
+                adaptiveEngineState.value.evaluate(snapshot)
+            },
+            latencyProbe = { networkHandle ->
+                withContext(Dispatchers.IO) {
+                    com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe.measure(
+                        context = context,
+                        expectedNetworkHandle = networkHandle
+                    )
+                }
+            },
+            recordPerformanceEvent = viewModel::recordPerformanceEvent
+        )
     }
     val ultraMemoryStore = remember {
         UltraConversationMemoryStore.get(context.applicationContext)
@@ -390,116 +407,35 @@ private fun GameHubUltraApp(
         onDispose { aiAdvisor.close() }
     }
 
-    LaunchedEffect(lifecycleOwner, adaptiveEngine, activeSessionPackage, activeSessionId) {
+    LaunchedEffect(
+        lifecycleOwner,
+        dashboardTelemetryController,
+        activeSessionPackage,
+        activeSessionId
+    ) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             val selectedGame = activeSessionPackage
             val sessionId = activeSessionId
             val telemetryPlan = dashboardTelemetryPlan(sessionId)
-            var lastThermalStatus: Int? = null
-            var initializedThermalStatus = false
-            var lastLatencyCheckAt = 0L
-            var lastLatencyNetworkHandle: Long? = null
 
             try {
                 while (isActive && telemetryPlan.collectDashboardTelemetry) {
                     val diagnostics = withContext(Dispatchers.IO) {
                         RuntimeDiagnosticsProvider.get(context)
                     }
-                    val now = System.currentTimeMillis()
-                    val network = diagnostics.connectivity
-                    if (!network.connected ||
-                        !network.validated ||
-                        network.networkHandle == null ||
-                        network.metered
-                    ) {
-                        latencyMs = null
-                        lastLatencyNetworkHandle = null
-                        lastLatencyCheckAt = 0L
-                    } else if (
-                        network.networkHandle != lastLatencyNetworkHandle ||
-                        now - lastLatencyCheckAt >= 30_000L
-                    ) {
-                        latencyMs = withContext(Dispatchers.IO) {
-                            com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe.measure(
-                                context = context,
-                                expectedNetworkHandle = network.networkHandle
-                            )
-                        }
-                        lastLatencyNetworkHandle = network.networkHandle
-                        lastLatencyCheckAt = now
-                    }
-
-                    val enrichedDiagnostics = diagnostics.copy(
-                        connectivity = network.copy(latencyMs = latencyMs)
+                    val update = dashboardTelemetryController.sample(
+                        diagnostics = diagnostics,
+                        activeGamePackage = selectedGame,
+                        sessionId = sessionId,
+                        sustainedPerformanceSupported =
+                            initialState.capabilities?.sustainedPerformanceSupported == true,
+                        performanceHintsAvailable =
+                            initialState.capabilities?.performanceHintsAvailable == true
                     )
-                    runtimeDiagnostics = enrichedDiagnostics
-                    telemetryTrend = (telemetryTrend + enrichedDiagnostics).takeLast(12)
-
-                    if (telemetryPlan.recordSessionEvents && sessionId != null) {
-                        performanceTimelineSamples = (
-                            performanceTimelineSamples + PerformanceTimelineBuilder.sample(
-                                timestampMillis = now,
-                                batteryPercent = enrichedDiagnostics.battery.percent,
-                                thermalStatus = enrichedDiagnostics.thermal.status,
-                                thermalHeadroom = enrichedDiagnostics.thermal.headroom,
-                                refreshRateHz = enrichedDiagnostics.refresh.currentRefreshRateHz,
-                                ramUsedPercent = enrichedDiagnostics.memory.usedPercent
-                            )
-                        ).takeLast(24)
-
-                        if (
-                            initializedThermalStatus &&
-                            diagnostics.thermal.status != lastThermalStatus
-                        ) {
-                            viewModel.recordPerformanceEvent(
-                                PerformanceEvent(
-                                    timestampMillis = now,
-                                    type = PerformanceEventType.THERMAL_CHANGED,
-                                    sessionId = sessionId,
-                                    detail = diagnostics.thermal.status?.toString() ?: "unavailable"
-                                )
-                            )
-                        }
-                    } else {
-                        performanceTimelineSamples = emptyList()
-                    }
-
-                    lastThermalStatus = diagnostics.thermal.status
-                    initializedThermalStatus = true
-
-                    val decision = adaptiveEngine.evaluate(
-                        AdaptiveRuntimeSnapshot(
-                            thermalStatus = diagnostics.thermal.status,
-                            thermalHeadroom = diagnostics.thermal.headroom,
-                            batteryPercent = diagnostics.battery.percent,
-                            charging = diagnostics.battery.charging,
-                            powerSaveMode = diagnostics.battery.powerSaveMode,
-                            sessionActive = selectedGame != null,
-                            sustainedPerformanceSupported =
-                                initialState.capabilities?.sustainedPerformanceSupported == true,
-                            performanceHintsAvailable =
-                                initialState.capabilities?.performanceHintsAvailable == true
-                        )
-                    )
-                    adaptiveDecision = decision
-
-                    if (
-                        decision.changed &&
-                        telemetryPlan.recordSessionEvents &&
-                        sessionId != null
-                    ) {
-                        viewModel.recordPerformanceEvent(
-                            PerformanceEvent(
-                                timestampMillis = now,
-                                type = PerformanceEventType.POLICY_CHANGED,
-                                sessionId = sessionId,
-                                profile = decision.profile,
-                                score = decision.score,
-                                detail = decision.reason
-                            )
-                        )
-                    }
-
+                    runtimeDiagnostics = update.diagnostics
+                    telemetryTrend = update.telemetryTrend
+                    performanceTimelineSamples = update.timelineSamples
+                    adaptiveDecision = update.adaptiveDecision
                     delay(10_000)
                 }
             } finally {
