@@ -151,15 +151,15 @@ class ObservabilityIntegrationRegressionTests(unittest.TestCase):
                 yield {"slug": "example-org"}
                 return
             if "/projects/" in path:
-                raise RuntimeError(
-                    'Sentry API returned HTTP 401 for /api/0/projects/: {"detail":"Invalid token"}'
+                raise self.sentry.SentryAuthRejected(
+                    "Sentry API rejected the configured auth token with HTTP 401."
                 )
             raise AssertionError(f"Unexpected Sentry path: {path}")
 
         try:
             self.sentry.paginated = fake_paginated
             with mock.patch.dict(os.environ, {}, clear=True):
-                with self.assertRaises(RuntimeError) as caught:
+                with self.assertRaises(self.sentry.SentryAuthRejected) as caught:
                     self.sentry.discover_project("123")
             self.assertIn("HTTP 401", str(caught.exception))
         finally:
@@ -172,15 +172,15 @@ class ObservabilityIntegrationRegressionTests(unittest.TestCase):
                 "SENTRY_DSN": "https://public@example.invalid/123",
                 "GITHUB_ENV": str(Path(raw) / "github-env.txt"),
             }
-            error = RuntimeError(
-                'Sentry API returned HTTP 401 for /api/0/organizations/: {"detail":"Invalid token"}'
+            error = self.sentry.SentryAuthRejected(
+                "Sentry API rejected the configured auth token with HTTP 403."
             )
             with mock.patch.dict(os.environ, env, clear=True):
                 with mock.patch.object(self.sentry, "discover_project", side_effect=error):
                     stdout = io.StringIO()
                     with redirect_stdout(stdout):
                         self.assertEqual(self.sentry.main(), 0)
-            self.assertIn("invalid or revoked", stdout.getvalue())
+            self.assertIn("Trusted release registration was skipped cleanly", stdout.getvalue())
 
 
 if __name__ == "__main__":
