@@ -17,7 +17,11 @@ SCRIPT = ROOT / ".github/scripts/register_sentry_release.py"
 
 
 class RejectingOpener:
+    def __init__(self):
+        self.calls = 0
+
     def open(self, request, timeout=60):
+        self.calls += 1
         url = getattr(request, "full_url", str(request))
         raise urllib.error.HTTPError(
             url,
@@ -36,16 +40,18 @@ class SentryReleaseAuthFallbackTest(unittest.TestCase):
             "GITHUB_ENV": os.devnull,
         }
         output = io.StringIO()
+        opener = RejectingOpener()
 
-        with mock.patch.dict(os.environ, env, clear=False), \
+        with mock.patch.dict(os.environ, env, clear=True), \
              mock.patch.object(sys, "argv", [str(SCRIPT), "--discover-only"]), \
-             mock.patch.object(urllib.request, "build_opener", return_value=RejectingOpener()), \
+             mock.patch.object(urllib.request, "build_opener", return_value=opener), \
              redirect_stdout(output):
             try:
                 runpy.run_path(str(SCRIPT), run_name="__main__")
             except SystemExit as exc:
                 self.assertEqual(exc.code, 0)
 
+        self.assertGreaterEqual(opener.calls, 1)
         text = output.getvalue()
         self.assertIn("Sentry", text)
         self.assertNotIn("::error::", text)
