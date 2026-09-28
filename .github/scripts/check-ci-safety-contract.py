@@ -329,6 +329,17 @@ def main() -> None:
         tasks=(":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"),
         args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"),
     )
+    quality_matches = [
+        tokens
+        for tokens in gradle_commands(str(quality.get("run", "")))
+        if all(task in set(tokens) for task in (":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"))
+        and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"))
+    ]
+    if len(quality_matches) != 2:
+        fail(
+            "Configuration Cache proof requires exactly two matching quality "
+            f"Gradle invocations; found {len(quality_matches)}"
+        )
     require_shell_command(\n        quality,\n        "quality/Configuration Cache reuse",\n        ("grep", "-Fq", "Reusing configuration cache.", "$CONFIG_CACHE_LOG"),\n    )
 
     release = require_step(
