@@ -1,4 +1,5 @@
 name: SonarQube Cloud Analysis
+# Optional only when discovery completes and confirms no configured Sonar project.
 
 on:
   workflow_dispatch:
