@@ -428,36 +428,17 @@ jobs:
             exit 1
           fi
 
-      - name: Run baseline profile instrumentation on API 35
+      - name: Run baseline profile and macrobenchmarks on API 35
         shell: bash
         run: |
           set -euo pipefail
           set -o pipefail
-          LOG="$RUNNER_TEMP/baseline-profile.log"
-          gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile \
-            --build-cache \
-            --no-configuration-cache \
-            --stacktrace 2>&1 | tee "$LOG"
-          if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
-            echo "ddmlib could not connect to the emulator console."
-            exit 1
-          fi
-
-      - name: Run macrobenchmarks on API 35
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -o pipefail
-          # Preserve compiled/intermediate outputs from the baseline-profile run.
-          # Only clear prior instrumentation reports so the result parser below
-          # sees results produced by this macrobenchmark execution.
           rm -rf \
             baseline-profile/build/outputs/androidTest-results \
             baseline-profile/build/reports/androidTests
-          LOG="$RUNNER_TEMP/macrobenchmark.log"
+          LOG="$RUNNER_TEMP/performance-validation.log"
           gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark \
+            -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=BaselineProfile,Macrobenchmark \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
             --build-cache \
@@ -473,28 +454,46 @@ jobs:
           import xml.etree.ElementTree as ET
 
           reports = list(Path("baseline-profile/build/outputs/androidTest-results").rglob("TEST-*.xml"))
-          cases = []
+          baseline_cases = []
+          macro_cases = []
           for report in reports:
               try:
                   root = ET.parse(report).getroot()
               except ET.ParseError:
                   continue
               for case in root.iter("testcase"):
-                  if case.attrib.get("classname", "").endswith("GameHubMacrobenchmark"):
-                      cases.append(case)
+                  classname = case.attrib.get("classname", "")
+                  if classname.endswith("BaselineProfileGenerator"):
+                      baseline_cases.append(case)
+                  if classname.endswith("GameHubMacrobenchmark"):
+                      macro_cases.append(case)
 
-          if len(cases) < 3:
-              raise SystemExit(f"Expected at least 3 GameHubMacrobenchmark cases, found {len(cases)}")
+          if len(baseline_cases) < 1:
+              raise SystemExit(
+                  f"Expected at least 1 BaselineProfileGenerator case, found {len(baseline_cases)}"
+              )
+          if len(macro_cases) < 3:
+              raise SystemExit(
+                  f"Expected at least 3 GameHubMacrobenchmark cases, found {len(macro_cases)}"
+              )
 
+          required_cases = baseline_cases + macro_cases
           skipped = [
-              case.attrib.get("name", "<unknown>")
-              for case in cases
+              f"{case.attrib.get('classname', '<unknown>')}#{case.attrib.get('name', '<unknown>')}"
+              for case in required_cases
               if case.find("skipped") is not None
           ]
           if skipped:
-              raise SystemExit(f"Macrobenchmarks were skipped: {skipped}")
+              raise SystemExit(f"Required performance tests were skipped: {skipped}")
 
-          print("Executed macrobenchmarks:", [case.attrib.get("name") for case in cases])
+          print(
+              "Executed baseline profiles:",
+              [case.attrib.get("name") for case in baseline_cases],
+          )
+          print(
+              "Executed macrobenchmarks:",
+              [case.attrib.get("name") for case in macro_cases],
+          )
           PY
 
       - name: Stop API 35 emulator without noisy console shutdown
@@ -520,8 +519,7 @@ jobs:
           bad=0
           for log in \
             "$RUNNER_TEMP/avd-create.log" \
-            "$RUNNER_TEMP/baseline-profile.log" \
-            "$RUNNER_TEMP/macrobenchmark.log" \
+            "$RUNNER_TEMP/performance-validation.log" \
             "${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"; do
             [ -f "$log" ] || continue
             if grep -En \
