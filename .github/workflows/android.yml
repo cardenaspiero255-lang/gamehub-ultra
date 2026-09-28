@@ -675,6 +675,14 @@ jobs:
           path: ${{ runner.temp }}/gemini-analysis/**
           if-no-files-found: ignore
 
+      - name: Upload emulator startup A/B metrics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-emulator-startup-ab
+          path: ${{ runner.temp }}/emulator-startup-ab.md
+          if-no-files-found: error
+
       - name: Upload emulator diagnostics
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
