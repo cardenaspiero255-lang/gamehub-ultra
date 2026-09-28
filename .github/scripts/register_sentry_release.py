@@ -18,6 +18,10 @@ MAX_PAGES = 500
 TOKEN = ""
 
 
+class SentryAuthRejected(RuntimeError):
+    """Authentication or authorization rejection from the Sentry API."""
+
+
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -72,6 +76,10 @@ def api_request(path_or_url, *, method="GET", payload=None, include_headers=Fals
             return data
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        if exc.code in (401, 403):
+            raise SentryAuthRejected(
+                f"Sentry API rejected the configured auth token with HTTP {exc.code}."
+            ) from exc
         raise RuntimeError(
             f"Sentry API returned HTTP {exc.code} for {urllib.parse.urlparse(url).path}: "
             f"{detail[:1000]}"
@@ -128,10 +136,9 @@ def discover_project(project_id):
                     if project_slug:
                         matches.append((org_slug, project_slug))
                     break
+        except SentryAuthRejected:
+            raise
         except RuntimeError as exc:
-            message = str(exc)
-            if "HTTP 401" in message or "Invalid token" in message:
-                raise
             warning(f"Could not inspect Sentry organization {org_slug!r}: {exc}")
 
     matches = list(dict.fromkeys(matches))
@@ -170,15 +177,12 @@ def main(argv=None):
 
     try:
         org_slug, project_slug = discover_project(project_id)
-    except RuntimeError as exc:
-        message = str(exc)
-        if "HTTP 401" in message or "Invalid token" in message:
-            notice(
-                "Sentry auth token is invalid or revoked; release registration "
-                "and mapping upload are disabled for this run."
-            )
-            return 0
-        raise
+    except SentryAuthRejected as exc:
+        notice(
+            f"{exc} Trusted release registration was skipped cleanly; "
+            "runtime telemetry through SENTRY_DSN remains enabled."
+        )
+        return 0
 
     if discover_only:
         github_env = os.environ.get("GITHUB_ENV", "").strip()
@@ -211,14 +215,13 @@ def main(argv=None):
             for item in linked
             if isinstance(item, dict)
         )
+    except SentryAuthRejected as exc:
+        notice(
+            f"{exc} Trusted release registration was skipped cleanly; "
+            "runtime telemetry through SENTRY_DSN remains enabled."
+        )
+        return 0
     except RuntimeError as exc:
-        message = str(exc)
-        if "HTTP 401" in message or "Invalid token" in message:
-            notice(
-                "Sentry auth token became invalid before release registration; "
-                "release enrichment is disabled for this run."
-            )
-            return 0
         warning(f"Could not verify Sentry/GitHub repository link: {exc}")
 
     payload = {
@@ -242,15 +245,12 @@ def main(argv=None):
             method="POST",
             payload=payload,
         )
-    except RuntimeError as exc:
-        message = str(exc)
-        if "HTTP 401" in message or "Invalid token" in message:
-            notice(
-                "Sentry auth token became invalid before release creation; "
-                "release enrichment is disabled for this run."
-            )
-            return 0
-        raise
+    except SentryAuthRejected as exc:
+        notice(
+            f"{exc} Trusted release registration was skipped cleanly; "
+            "runtime telemetry through SENTRY_DSN remains enabled."
+        )
+        return 0
 
     commit_count = (
         sentry_release.get("commitCount", 0)
