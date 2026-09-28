@@ -31,6 +31,11 @@ class ArchitectureBoundaryGuardTest {
             .filter { imported -> forbiddenPrefixes.any(imported::startsWith) }
             .forEach { violations += "MainActivity imports runtime implementation: $it" }
 
+        source.readLines()
+            .filterNot { it.startsWith("import ") }
+            .filter { line -> forbiddenPrefixes.any(line::contains) }
+            .forEach { violations += "MainActivity references runtime implementation: $it" }
+
         assertTrue(
             violations.isEmpty(),
             violations.joinToString(
