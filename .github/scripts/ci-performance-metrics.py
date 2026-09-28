@@ -124,6 +124,16 @@ def extract_metrics(jobs: list[dict[str, Any]]) -> dict[str, float]:
     return metrics
 
 
+def _job_topology(jobs: list[dict[str, Any]]) -> tuple[str, ...]:
+    names = []
+    for job in jobs:
+        name = str(job.get("name") or "").strip()
+        if not name or name in METRICS_JOB_NAMES:
+            continue
+        names.append(name)
+    return tuple(sorted(names))
+
+
 def summarize_history(
     history: list[dict[str, float]],
 ) -> dict[str, dict[str, float | int]]:
@@ -299,17 +309,24 @@ def collect(
     if workflow_id <= 0:
         raise RuntimeError("Current workflow id is unavailable")
 
-    current_metrics = extract_metrics(_fetch_jobs(repository, run_id, token))
+    current_jobs = _fetch_jobs(repository, run_id, token)
+    current_metrics = extract_metrics(current_jobs)
+    current_topology = _job_topology(current_jobs)
+
     history_rows: list[dict[str, float]] = []
+    candidate_limit = min(max(history_limit * 5, history_limit), 100)
     for run in _fetch_recent_completed_runs(
-        repository, workflow_id, token, history_limit, current_run
+        repository, workflow_id, token, candidate_limit, current_run
     ):
         historical_id = int(run.get("id") or 0)
         if historical_id <= 0:
             continue
-        history_rows.append(
-            extract_metrics(_fetch_jobs(repository, historical_id, token))
-        )
+        historical_jobs = _fetch_jobs(repository, historical_id, token)
+        if _job_topology(historical_jobs) != current_topology:
+            continue
+        history_rows.append(extract_metrics(historical_jobs))
+        if len(history_rows) >= history_limit:
+            break
 
     return {
         "schema_version": 1,
