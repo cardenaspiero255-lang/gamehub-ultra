@@ -62,10 +62,11 @@ def run_mutation(label: str, mutate) -> None:
 
 
 def remove_unit_test_but_leave_comment(android: str, coverage: str):
-    needle = "            :app:testDebugUnitTest \\\n"
-    if needle not in android:
-        raise SystemExit("Fixture drift: Android unit-test command not found")
-    return android.replace(needle, "            # :app:testDebugUnitTest \\\n", 2), coverage
+    needle = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    if needle not in coverage:
+        raise SystemExit("Fixture drift: coverage-owned unit-test command not found")
+    replacement = "        # run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    return android, coverage.replace(needle, replacement, 1)
 
 
 def make_quality_advisory(android: str, coverage: str):
@@ -157,16 +158,11 @@ def make_quality_advisory_with_expression(android: str, coverage: str):
 
 
 def remove_unit_test_but_echo_name(android: str, coverage: str):
-    task = "            :app:testDebugUnitTest \\\n"
-    if task not in android:
-        raise SystemExit("Fixture drift: Android unit-test command not found")
-    android = android.replace(task, "", 2)
-
-    command = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
-    if command not in android:
-        raise SystemExit("Fixture drift: quality Gradle command terminator not found")
-    replacement = command + "          echo ':app:testDebugUnitTest'\n"
-    return android.replace(command, replacement, 1), coverage
+    command = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    if command not in coverage:
+        raise SystemExit("Fixture drift: coverage-owned unit-test command not found")
+    replacement = "        run: echo ':app:createDebugUnitTestCoverageReport'\n"
+    return android, coverage.replace(command, replacement, 1)
 
 
 
