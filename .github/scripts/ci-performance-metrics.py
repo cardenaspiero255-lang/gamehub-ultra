@@ -191,7 +191,7 @@ def _safe_http_error_detail(exc: urllib.error.HTTPError) -> str:
         if isinstance(payload, dict):
             detail = str(payload.get("message") or "").strip()
         if not detail:
-            detail = re.sub(r"\\s+", " ", raw).strip()
+            detail = re.sub(r"\s+", " ", raw).strip()
     if not detail:
         detail = str(exc.reason or "request rejected")
     return detail[:300]
