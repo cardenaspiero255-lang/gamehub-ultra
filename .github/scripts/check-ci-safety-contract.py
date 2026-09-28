@@ -368,6 +368,43 @@ def main() -> None:
         args=("--build-cache", "--parallel"),
     )
 
+    release_tasks = (
+        ":app:assembleRelease",
+        ":app:bundleRelease",
+        ":app:assembleNonMinifiedRelease",
+        ":baseline-profile:assembleNonMinifiedRelease",
+    )
+    release_args = (
+        "--build-cache",
+        "--parallel",
+        "--configuration-cache",
+        "--configuration-cache-problems=fail",
+    )
+    release_matches = [
+        tokens
+        for tokens in gradle_commands(str(release.get("run", "")))
+        if all(task in set(tokens) for task in release_tasks)
+        and all(arg in set(tokens) for arg in release_args)
+    ]
+    executable_release_matches = [
+        tokens for tokens in release_matches if "--dry-run" not in set(tokens)
+    ]
+    probe_release_matches = [
+        tokens for tokens in release_matches if "--dry-run" in set(tokens)
+    ]
+    if len(executable_release_matches) != 1 or len(probe_release_matches) != 1:
+        fail(
+            "Configuration Cache proof requires one executable release/performance "
+            "graph and one non-executing --dry-run reuse probe; found "
+            f"{len(executable_release_matches)} executable and "
+            f"{len(probe_release_matches)} probes"
+        )
+    require_shell_command(
+        release,
+        "device-validation/Configuration Cache reuse",
+        ("grep", "-Fq", "Reusing configuration cache.", "$RELEASE_CONFIG_CACHE_LOG"),
+    )
+
     # Phase 2 block 2 must remain a measurable A/B experiment: the candidate
     # starts the emulator immediately and emits timestamps used to compare
     # end-to-end device-validation latency against main.
