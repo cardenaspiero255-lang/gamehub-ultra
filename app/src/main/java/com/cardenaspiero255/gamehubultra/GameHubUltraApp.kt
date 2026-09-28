@@ -7,24 +7,19 @@ import android.content.Intent
 import android.content.IntentFilter
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvice
-import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
-import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
+import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoutingRequest
 import com.cardenaspiero255.gamehubultra.ai.UltraQueryExecutor
-import com.cardenaspiero255.gamehubultra.ai.UltraTypedChatRoutePlanner
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
-import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
-import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
-import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -147,6 +142,7 @@ import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeActions
 import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeCoordinator
 import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeSnapshot
 import com.cardenaspiero255.gamehubultra.ui.runtime.RuntimeSessionMetrics
+import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
@@ -192,7 +188,7 @@ internal fun GameHubUltraApp(
     initialState: PerformanceState,
     device: DeviceInfo,
     viewModel: GameHubViewModel,
-    queryExecutor: UltraQueryExecutor,
+    ultraRuntime: UltraUiRuntimeDependencies,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
@@ -216,6 +212,8 @@ internal fun GameHubUltraApp(
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
     val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
+    val aiAdvisor = ultraRuntime.assistant
+    val ultraSessionMemory = ultraRuntime.sessionMemory
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -285,15 +283,6 @@ internal fun GameHubUltraApp(
             recordPerformanceEvent = viewModel::recordPerformanceEvent
         )
     }
-    val ultraMemoryStore = remember {
-        UltraConversationMemoryStore.get(context.applicationContext)
-    }
-    val aiAdvisor = remember(ultraMemoryStore) {
-        GameHubAiAdvisor(
-            modelAdapter = GeminiNanoLocalAiModelAdapter(),
-            memoryGateway = ultraMemoryStore
-        )
-    }
     var restorableUltraGamePackage by rememberSaveable {
         mutableStateOf<String?>(null)
     }
@@ -302,9 +291,6 @@ internal fun GameHubUltraApp(
     }
     var restorableUltraHistoryHydrated by rememberSaveable {
         mutableStateOf<Boolean?>(null)
-    }
-    val ultraSessionMemory = remember(ultraMemoryStore) {
-        UltraConversationSessionMemoryAdapter(ultraMemoryStore)
     }
     val ultraSessionController = remember(scope, ultraSessionMemory) {
         UltraAssistantSessionController(
@@ -625,8 +611,7 @@ internal fun GameHubUltraApp(
                     adaptiveDecision?.let { selectProfile(it.profile) }
                 },
                 aiContext = aiContext,
-                aiAdvisor = aiAdvisor,
-                queryExecutor = queryExecutor,
+                ultraRuntime = ultraRuntime,
                 queryRunner = ultraQueryRunner,
                 conversation = ultraConversation,
                 onConversationChanged = ultraSessionController::updateConversation,
@@ -745,8 +730,7 @@ internal fun GameHubUltraApp(
                 if (ultraWideLayout && !settingsOpen && !profileOpen && selectedTab == 0) {
                     UltraAssistantSidePanel(
                         aiContext = aiContext,
-                        aiAdvisor = aiAdvisor,
-                        queryExecutor = queryExecutor,
+                        ultraRuntime = ultraRuntime,
                         queryRunner = ultraQueryRunner,
                         conversation = ultraConversation,
                         onConversationChanged = ultraSessionController::updateConversation,
@@ -863,8 +847,7 @@ private fun WideNavigationRail(
 @Composable
 private fun UltraAssistantSidePanel(
     aiContext: GameHubAiContext,
-    aiAdvisor: GameHubAiAdvisor,
-    queryExecutor: UltraQueryExecutor,
+    ultraRuntime: UltraUiRuntimeDependencies,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
@@ -891,8 +874,7 @@ private fun UltraAssistantSidePanel(
             onProfileSelected = onProfileSelected,
             onGameSelected = onGameSelected,
             aiContext = aiContext,
-            aiAdvisor = aiAdvisor,
-            queryExecutor = queryExecutor,
+            ultraRuntime = ultraRuntime,
             queryRunner = queryRunner,
             conversation = conversation,
             onConversationChanged = onConversationChanged,
@@ -926,8 +908,7 @@ private fun HomeScreen(
     performanceHistory: List<PerformanceEvent>,
     onApplyAdaptiveProfile: () -> Unit,
     aiContext: GameHubAiContext,
-    aiAdvisor: GameHubAiAdvisor,
-    queryExecutor: UltraQueryExecutor,
+    ultraRuntime: UltraUiRuntimeDependencies,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
@@ -1033,8 +1014,7 @@ private fun HomeScreen(
                     onProfileSelected = onProfileSelected,
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
-                    aiAdvisor = aiAdvisor,
-                    queryExecutor = queryExecutor,
+                    ultraRuntime = ultraRuntime,
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
@@ -1093,8 +1073,7 @@ private fun HomeScreen(
                     onProfileSelected = onProfileSelected,
                     onGameSelected = onGameSelected,
                     aiContext = aiContext,
-                    aiAdvisor = aiAdvisor,
-                    queryExecutor = queryExecutor,
+                    ultraRuntime = ultraRuntime,
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
@@ -1455,8 +1434,7 @@ private fun VoiceAssistantCard(
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit,
     aiContext: GameHubAiContext,
-    aiAdvisor: GameHubAiAdvisor,
-    queryExecutor: UltraQueryExecutor,
+    ultraRuntime: UltraUiRuntimeDependencies,
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
@@ -1464,6 +1442,10 @@ private fun VoiceAssistantCard(
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val aiAdvisor = ultraRuntime.assistant
+    val queryExecutor = ultraRuntime.queryExecutor
+    val agentRouter = ultraRuntime.agentRouter
+    val networkGaming = ultraRuntime.networkGaming
     val continuousVoiceController = remember(context) {
         ContinuousVoiceController(
             AndroidContinuousVoiceGateway(context)
@@ -1532,16 +1514,18 @@ private fun VoiceAssistantCard(
             }
         ) {
             val deviceStatus = VoiceDeviceStatusProvider.read(context)
-            val route = UltraTypedChatRoutePlanner.route(
-                message = message,
-                conversationHistory = previousConversation,
-                optionalResolver = aiIntentResolver,
-                telemetry = UltraRuntimeTelemetry(
-                    batteryPercent = deviceStatus.batteryPercent,
-                    thermalLabel = deviceStatus.thermalLabel,
-                    refreshRateHz = turnAiContext.refreshRateHz
-                ),
-                knownGameAliases = GameAliasStore.aliases(context).keys
+            val route = agentRouter.route(
+                UltraAgentRoutingRequest(
+                    transcript = message.trim(),
+                    conversationHistory = previousConversation,
+                    optionalResolver = aiIntentResolver,
+                    telemetry = UltraRuntimeTelemetry(
+                        batteryPercent = deviceStatus.batteryPercent,
+                        thermalLabel = deviceStatus.thermalLabel,
+                        refreshRateHz = turnAiContext.refreshRateHz
+                    ),
+                    knownGameAliases = GameAliasStore.aliases(context).keys
+                )
             )
 
             when (route) {
@@ -1622,10 +1606,7 @@ private fun VoiceAssistantCard(
                         networkStatusProvider = {
                             VoiceNetworkSnapshotFactory.current(context)
                         },
-                        applyNetworkProfile = { profile ->
-                            com.cardenaspiero255.gamehubultra.network
-                                .NetworkRuntimeOptimizer.apply(context, profile)
-                        }
+                        applyNetworkProfile = networkGaming::applyProfile
                     )
                     val answer = VoiceResponseFormatter.format(context, result)
                     val published = queryRunner.appendAssistantIfCurrentGame(
@@ -1725,16 +1706,18 @@ private fun VoiceAssistantCard(
                     }
 
                     val voiceStatus = VoiceDeviceStatusProvider.read(context)
-                    val route = UltraUnifiedAgentRouter.route(
-                        transcript = spokenText,
-                        optionalResolver = aiIntentResolver,
-                        telemetry = UltraRuntimeTelemetry(
-                            batteryPercent = voiceStatus.batteryPercent,
-                            thermalLabel = voiceStatus.thermalLabel,
-                            refreshRateHz = turnAiContext.refreshRateHz
-                        ),
-                        knownGameAliases = GameAliasStore.aliases(context).keys,
-                        conversationHistory = conversationBeforeTurn
+                    val route = agentRouter.route(
+                        UltraAgentRoutingRequest(
+                            transcript = spokenText,
+                            optionalResolver = aiIntentResolver,
+                            telemetry = UltraRuntimeTelemetry(
+                                batteryPercent = voiceStatus.batteryPercent,
+                                thermalLabel = voiceStatus.thermalLabel,
+                                refreshRateHz = turnAiContext.refreshRateHz
+                            ),
+                            knownGameAliases = GameAliasStore.aliases(context).keys,
+                            conversationHistory = conversationBeforeTurn
+                        )
                     )
                     when (route) {
                         is UltraAgentRoute.Utility -> {
@@ -1743,15 +1726,7 @@ private fun VoiceAssistantCard(
                                     route.answer.intent is
                                         com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
                                 ) {
-                                    com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController.execute(
-                                        intent = route.answer.intent,
-                                        applyCompetitive = {
-                                            com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(
-                                                context,
-                                                com.cardenaspiero255.gamehubultra.network.NetworkGameProfile.COMPETITIVE
-                                            )
-                                        }
-                                    )
+                                    networkGaming.execute(route.answer.intent)
                                 } else {
                                     route.answer.message
                                 }
@@ -1847,9 +1822,7 @@ private fun VoiceAssistantCard(
     GameAliasStore.save(context, alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
-applyNetworkProfile = { profile ->
-    com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(context, profile)
-}
+applyNetworkProfile = networkGaming::applyProfile
                             )
                             val spokenResponse = VoiceResponseFormatter.format(context, result)
                             val withAnswer = UltraConversationPolicy.append(
