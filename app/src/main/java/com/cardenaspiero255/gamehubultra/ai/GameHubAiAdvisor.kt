@@ -9,18 +9,18 @@ import java.util.Locale
 class GameHubAiAdvisor(
     private val modelAdapter: LocalAiModelAdapter? = null,
     private val memoryGateway: UltraLongTermMemoryGateway? = null
-) : AutoCloseable {
+) : UltraAssistantGateway {
 
-    fun hasLocalModelProvider(): Boolean = modelAdapter != null
+    override fun hasLocalModelProvider(): Boolean = modelAdapter != null
 
-    fun isLocalModelAvailable(): Boolean =
+    override fun isLocalModelAvailable(): Boolean =
         runCatching { modelAdapter?.isAvailable() == true }.getOrDefault(false)
 
     /**
      * Returns only a substantive local-model answer for stable knowledge.
      * Unlike chat(), this never substitutes the generic capability boilerplate.
      */
-    fun generalKnowledgeChatOrNull(
+    override fun generalKnowledgeChatOrNull(
         message: String,
         context: GameHubAiContext,
         conversation: List<String> = emptyList()
@@ -34,7 +34,7 @@ class GameHubAiAdvisor(
             ?.let { AiChatSafetyFilter.sanitize(it, message) }
             ?.takeUnless(::looksPredominantlyEnglish)
 
-    fun advise(
+    override fun advise(
         question: String,
         context: GameHubAiContext
     ): GameHubAiAdvice {
@@ -55,7 +55,7 @@ class GameHubAiAdvisor(
         return deterministicAdvice(question, context)
     }
 
-    fun chat(
+    override fun chat(
         message: String,
         context: GameHubAiContext,
         conversation: List<String> = emptyList()
@@ -215,7 +215,7 @@ class GameHubAiAdvisor(
         return englishScore >= 2 && englishScore > spanishScore
     }
 
-    fun intentResolver(): NaturalLanguageIntentResolver =
+    override fun intentResolver(): NaturalLanguageIntentResolver =
         object : NaturalLanguageIntentResolver {
             override fun resolve(transcript: String): VoiceCommand? {
                 val clean = normalize(transcript)
