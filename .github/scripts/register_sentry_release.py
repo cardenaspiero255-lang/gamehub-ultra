@@ -18,6 +18,10 @@ MAX_PAGES = 500
 DISCOVER_ONLY = "--discover-only" in sys.argv
 
 
+class SentryAuthRejected(RuntimeError):
+    """Authentication or authorization rejection from the Sentry API."""
+
+
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -72,6 +76,10 @@ def api_request(path_or_url, *, method="GET", payload=None, include_headers=Fals
             return data
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        if exc.code in (401, 403):
+            raise SentryAuthRejected(
+                f"Sentry API rejected the configured auth token with HTTP {exc.code}."
+            ) from exc
         raise RuntimeError(
             f"Sentry API returned HTTP {exc.code} for {urllib.parse.urlparse(url).path}: "
             f"{detail[:1000]}"
@@ -157,7 +165,14 @@ project_id = parsed_dsn.path.rstrip("/").split("/")[-1]
 if not project_id.isdigit():
     raise SystemExit("Could not derive the numeric Sentry project id from SENTRY_DSN.")
 
-org_slug, project_slug = discover_project(project_id)
+try:
+    org_slug, project_slug = discover_project(project_id)
+except SentryAuthRejected as exc:
+    notice(
+        f"{exc} Trusted release registration was skipped cleanly; "
+        "runtime telemetry through SENTRY_DSN remains enabled."
+    )
+    sys.exit(0)
 
 if DISCOVER_ONLY:
     github_env = os.environ.get("GITHUB_ENV", "").strip()
@@ -205,11 +220,18 @@ else:
         "confirmed. Creating the release without commit refs."
     )
 
-release = api_request(
-    f"/organizations/{urllib.parse.quote(org_slug)}/releases/",
-    method="POST",
-    payload=payload,
-)
+try:
+    release = api_request(
+        f"/organizations/{urllib.parse.quote(org_slug)}/releases/",
+        method="POST",
+        payload=payload,
+    )
+except SentryAuthRejected as exc:
+    notice(
+        f"{exc} Trusted release registration was skipped cleanly; "
+        "runtime telemetry through SENTRY_DSN remains enabled."
+    )
+    sys.exit(0)
 
 commit_count = release.get("commitCount", 0) if isinstance(release, dict) else 0
 notice(
