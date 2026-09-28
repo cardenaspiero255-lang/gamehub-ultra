@@ -220,6 +220,23 @@ def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
     return android.replace(needle, "", 1), coverage
 
 
+def remove_release_configuration_cache_reuse_assertion(android: str, coverage: str):
+    """Remove the release Configuration Cache reuse assertion."""
+    needle = '            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: release Configuration Cache reuse assertion not found")
+    return android.replace(needle, "", 1), coverage
+
+
+def duplicate_partial_release_graph(android: str, coverage: str):
+    """Duplicate release/performance work without repeating assembleRelease."""
+    needle = '            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: release cache assertion not found")
+    duplicate = """            gradle \\\n              :app:bundleRelease \\\n              :app:assembleNonMinifiedRelease \\\n              :baseline-profile:assembleNonMinifiedRelease \\\n              --build-cache \\\n              --parallel \\\n              --configuration-cache \\\n              --configuration-cache-problems=fail \\\n              --stacktrace\n"""
+    return android.replace(needle, duplicate + needle, 1), coverage
+
+
 def main() -> None:
     """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
@@ -237,6 +254,8 @@ def main() -> None:
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
+    run_mutation("Release Configuration Cache reuse assertion removed", remove_release_configuration_cache_reuse_assertion)
+    run_mutation("Partial release/performance graph duplicated", duplicate_partial_release_graph)
 
     # Phase 2 block 4 starts by proving the current workflow still executes the
     # full quality graph twice. This deliberately fails until the implementation
@@ -260,27 +279,8 @@ def main() -> None:
     if ":app:createDebugUnitTestCoverageReport" not in coverage:
         raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
 
-    # Phase 2 block 6: the release/performance graph must execute exactly once.
-    # Configuration Cache reuse is proven by a dry-run probe, not by rebuilding
-    # the release APK/AAB and performance variants a second time.
-    release_marker = "      - name: Build telemetry-disabled release APK and AAB for validation\n"
-    release_start = android.find(release_marker)
-    if release_start < 0:
-        raise SystemExit("Phase 2 block 6: release validation step not found")
-    release_end = android.find("\n      - name: ", release_start + len(release_marker))
-    if release_end < 0:
-        raise SystemExit("Phase 2 block 6: release validation step terminator not found")
-    release_script = android[release_start:release_end]
-    release_graph_occurrences = release_script.count(":app:assembleRelease")
-    release_probe_occurrences = release_script.count("--dry-run")
-    executable_release_graphs = release_graph_occurrences - release_probe_occurrences
-    if executable_release_graphs != 1 or release_probe_occurrences != 1:
-        raise SystemExit(
-            "Phase 2 block 6: expected one executable release/performance graph "
-            "and one --dry-run Configuration Cache probe; "
-            f"found {executable_release_graphs} executable and "
-            f"{release_probe_occurrences} probes"
-        )
+    # Phase 2 block 6 is enforced by the parsed CI safety contract above.
+    # Mutations prove both the reuse assertion and duplicate partial graphs fail.
 
     print("CI safety contract regression tests passed.")
 
