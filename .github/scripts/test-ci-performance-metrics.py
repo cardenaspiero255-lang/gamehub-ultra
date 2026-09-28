@@ -515,6 +515,68 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         self.assertEqual(result["history_job_requests"], 3)
         self.assertEqual(result["history_job_request_budget"], 3)
 
+    def test_collect_stops_before_advancing_iterator_after_budget_is_consumed(self):
+        current_run = {
+            "id": 999,
+            "workflow_id": 123,
+            "name": "Android build",
+            "event": "pull_request",
+            "head_branch": "feature/current",
+            "pull_requests": [{"base": {"ref": "main"}}],
+        }
+        current_jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-09-28T05:00:00Z",
+                "completed_at": "2026-09-28T05:01:00Z",
+                "steps": [],
+            }
+        ]
+        old_topology_jobs = [
+            {
+                "name": "build",
+                "started_at": "2026-09-27T05:00:00Z",
+                "completed_at": "2026-09-27T05:10:00Z",
+                "steps": [],
+            }
+        ]
+        advances = 0
+
+        def candidates():
+            nonlocal advances
+            for index in range(10):
+                advances += 1
+                yield {
+                    "id": index + 1,
+                    "event": "pull_request",
+                    "head_branch": f"legacy-{index}",
+                    "conclusion": "success",
+                    "pull_requests": [{"base": {"ref": "main"}}],
+                }
+
+        with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \
+             mock.patch.object(
+                 metrics,
+                 "_iter_recent_completed_runs",
+                 return_value=candidates(),
+             ), \
+             mock.patch.object(
+                 metrics,
+                 "_fetch_jobs",
+                 side_effect=[current_jobs, old_topology_jobs],
+             ):
+            result = metrics.collect(
+                repository="owner/repo",
+                run_id=999,
+                token="token",
+                history_limit=20,
+                history_job_request_budget=1,
+            )
+
+        self.assertEqual(advances, 1)
+        self.assertTrue(result["history_partial"])
+        self.assertEqual(result["history_job_requests"], 1)
+
     def test_markdown_marks_partial_history(self):
         text = metrics.render_markdown(
             "Android build",
