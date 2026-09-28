@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -262,16 +263,18 @@ class UltraToolContractTest {
         }
         val scope = UltraMemoryScope(userId = "local", gamePackage = null)
 
-        val result = gateway.execute(
-            UltraMemoryToolRequest.Recall(
-                message = "historial",
-                scope = scope,
-                limit = 0
+        listOf(0, 51).forEach { invalidLimit ->
+            val result = gateway.execute(
+                UltraMemoryToolRequest.Recall(
+                    message = "historial",
+                    scope = scope,
+                    limit = invalidLimit
+                )
             )
-        )
 
-        assertIs<UltraToolResult.Failure>(result)
-        assertEquals(UltraToolFailureCode.INVALID_INPUT, result.failure.code)
+            assertIs<UltraToolResult.Failure>(result)
+            assertEquals(UltraToolFailureCode.INVALID_INPUT, result.failure.code)
+        }
     }
 
     @Test
@@ -347,11 +350,12 @@ class UltraToolContractTest {
     }
 
     @Test
-    fun openGameWithAvailableProfileRejectsMissingProfilePersistence() {
+    fun openGameWithAvailableProfileRejectsMissingProfilePersistenceBeforeAnyWrite() {
         val game = GameInfo(
             packageName = "game.a",
             label = "Game A"
         )
+        var gamePersisted = false
 
         val result = VoiceCommandEngine.execute(
             VoiceCommandExecutionRequest(
@@ -361,13 +365,14 @@ class UltraToolContractTest {
                 ),
                 gamesProvider = { listOf(game) },
                 launchGame = { true },
-                saveSelectedGame = {},
+                saveSelectedGame = { gamePersisted = true },
                 isProfileAvailable = { true }
             )
         )
 
         assertIs<UltraToolResult.Failure>(result)
         assertEquals(UltraToolFailureCode.INVALID_INPUT, result.failure.code)
+        assertFalse(gamePersisted, "Invalid command must not partially persist the selected game.")
     }
 
     @Test
