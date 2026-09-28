@@ -106,13 +106,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
           gradle \
             :app:testDebugUnitTest \
             :app:assembleDebug \
             :app:lintDebug \
             --build-cache \
             --parallel \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
             --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
+
+          # Re-run the exact graph. The second invocation must reuse the stored
+          # configuration rather than merely succeeding with the feature enabled.
+          gradle \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            :app:lintDebug \
+            --build-cache \
+            --parallel \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
+          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
