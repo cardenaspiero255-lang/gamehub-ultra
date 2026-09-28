@@ -230,7 +230,9 @@ def main() -> None:
     # full quality graph twice. This deliberately fails until the implementation
     # replaces the duplicate execution with a configuration-only reuse probe.
     android = ANDROID.read_text(encoding="utf-8")
-    duplicate_quality_graph = android.count(":app:testDebugUnitTest \\\\n            :app:assembleDebug \\\\n            :app:lintDebug")
+    quality_start, quality_end = quality_step_bounds(android)
+    quality_script = android[quality_start:quality_end]
+    duplicate_quality_graph = quality_script.count(":app:testDebugUnitTest")
     if duplicate_quality_graph != 1:
         raise SystemExit(
             "Phase 2 block 4: expected one executable quality task graph; "
