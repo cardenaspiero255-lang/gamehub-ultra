@@ -335,10 +335,14 @@ def main() -> None:
         if all(task in set(tokens) for task in (":app:testDebugUnitTest", ":app:assembleDebug", ":app:lintDebug"))
         and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"))
     ]
-    if len(quality_matches) != 2:
+    executable_quality_matches = [tokens for tokens in quality_matches if "--dry-run" not in set(tokens)]
+    probe_quality_matches = [tokens for tokens in quality_matches if "--dry-run" in set(tokens)]
+    if len(executable_quality_matches) != 1 or len(probe_quality_matches) != 1:
         fail(
-            "Configuration Cache proof requires exactly two matching quality "
-            f"Gradle invocations; found {len(quality_matches)}"
+            "Configuration Cache proof requires one executable quality graph and "
+            "one non-executing --dry-run reuse probe; found "
+            f"{len(executable_quality_matches)} executable and "
+            f"{len(probe_quality_matches)} probes"
         )
     require_shell_command(
         quality,
