@@ -391,7 +391,7 @@ jobs:
             exit 1
           fi
 
-      - name: Build release and prebuild performance variants
+      - name: Build telemetry-disabled release APK and AAB for validation
         shell: bash
         run: |
           set -euo pipefail
