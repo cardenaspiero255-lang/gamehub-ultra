@@ -154,8 +154,14 @@ def main() -> None:
     )
     require_step(
         android_steps,
+        "Wait for API 35 emulator readiness",
+        commands=("sys.boot_completed", "ro.build.version.sdk", "grep -Fxq \"35\""),
+        shell="bash",
+    )
+    require_step(
+        android_steps,
         "Validate release APK install-update-uninstall on API 35",
-        commands=("adb install", "adb install -r", "adb uninstall", "ro.build.version.sdk"),
+        commands=("adb install", "adb install -r", "adb uninstall"),
         shell="bash",
     )
     require_step(
