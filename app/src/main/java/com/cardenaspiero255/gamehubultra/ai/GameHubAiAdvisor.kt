@@ -23,7 +23,7 @@ class GameHubAiAdvisor(
     override fun generalKnowledgeChatOrNull(
         message: String,
         context: GameHubAiContext,
-        conversation: List<String> = emptyList()
+        conversation: List<String>
     ): String? =
         runCatching {
             modelAdapter
@@ -58,7 +58,7 @@ class GameHubAiAdvisor(
     override fun chat(
         message: String,
         context: GameHubAiContext,
-        conversation: List<String> = emptyList()
+        conversation: List<String>
     ): String {
         val memoryScope = UltraMemoryScope(
             userId = "local",
