@@ -10,7 +10,7 @@ class ContinuousVoiceControllerTest {
     @Test
     fun resumeStartsWakeServiceOnlyWhenEnabledAndPermissionGranted() {
         val gateway = FakeContinuousVoiceGateway(
-            enabled = true,
+            storedEnabled = true,
             permissionGranted = true
         )
         val controller = ContinuousVoiceController(gateway)
@@ -25,7 +25,7 @@ class ContinuousVoiceControllerTest {
     @Test
     fun resumeDoesNothingWithoutPermission() {
         val gateway = FakeContinuousVoiceGateway(
-            enabled = true,
+            storedEnabled = true,
             permissionGranted = false
         )
         val controller = ContinuousVoiceController(gateway)
@@ -34,13 +34,13 @@ class ContinuousVoiceControllerTest {
 
         assertFalse(resumed)
         assertEquals(0, gateway.startCalls)
-        assertTrue(gateway.enabled)
+        assertTrue(gateway.storedEnabled)
     }
 
     @Test
     fun enablingWithoutPermissionRequestsPermissionWithoutPersistingState() {
         val gateway = FakeContinuousVoiceGateway(
-            enabled = false,
+            storedEnabled = false,
             permissionGranted = false
         )
         val controller = ContinuousVoiceController(gateway)
@@ -51,14 +51,14 @@ class ContinuousVoiceControllerTest {
             ContinuousVoiceChange.PERMISSION_REQUIRED,
             result
         )
-        assertFalse(gateway.enabled)
+        assertFalse(gateway.storedEnabled)
         assertEquals(0, gateway.startCalls)
     }
 
     @Test
     fun enablingWithPermissionPersistsAndStartsWakeService() {
         val gateway = FakeContinuousVoiceGateway(
-            enabled = false,
+            storedEnabled = false,
             permissionGranted = true
         )
         val controller = ContinuousVoiceController(gateway)
@@ -66,14 +66,14 @@ class ContinuousVoiceControllerTest {
         val result = controller.setEnabled(true)
 
         assertEquals(ContinuousVoiceChange.ENABLED, result)
-        assertTrue(gateway.enabled)
+        assertTrue(gateway.storedEnabled)
         assertEquals(1, gateway.startCalls)
     }
 
     @Test
     fun permissionGrantCompletesPendingEnablement() {
         val gateway = FakeContinuousVoiceGateway(
-            enabled = false,
+            storedEnabled = false,
             permissionGranted = true
         )
         val controller = ContinuousVoiceController(gateway)
@@ -81,14 +81,14 @@ class ContinuousVoiceControllerTest {
         val result = controller.enableAfterPermissionGranted()
 
         assertEquals(ContinuousVoiceChange.ENABLED, result)
-        assertTrue(gateway.enabled)
+        assertTrue(gateway.storedEnabled)
         assertEquals(1, gateway.startCalls)
     }
 
     @Test
     fun disablingPersistsAndStopsServiceEvenWhenPermissionIsMissing() {
         val gateway = FakeContinuousVoiceGateway(
-            enabled = true,
+            storedEnabled = true,
             permissionGranted = false
         )
         val controller = ContinuousVoiceController(gateway)
@@ -96,32 +96,32 @@ class ContinuousVoiceControllerTest {
         val result = controller.setEnabled(false)
 
         assertEquals(ContinuousVoiceChange.DISABLED, result)
-        assertFalse(gateway.enabled)
+        assertFalse(gateway.storedEnabled)
         assertEquals(1, gateway.stopCalls)
     }
 
     @Test
     fun currentEnabledStateComesFromGateway() {
-        val gateway = FakeContinuousVoiceGateway(enabled = true)
+        val gateway = FakeContinuousVoiceGateway(storedEnabled = true)
         val controller = ContinuousVoiceController(gateway)
 
         assertTrue(controller.isEnabled())
 
-        gateway.enabled = false
+        gateway.storedEnabled = false
         assertFalse(controller.isEnabled())
     }
 
     private class FakeContinuousVoiceGateway(
-        var enabled: Boolean,
+        var storedEnabled: Boolean,
         var permissionGranted: Boolean = true
     ) : ContinuousVoiceGateway {
         var startCalls = 0
         var stopCalls = 0
 
-        override fun isEnabled(): Boolean = enabled
+        override fun isEnabled(): Boolean = storedEnabled
 
         override fun setEnabled(enabled: Boolean) {
-            this.enabled = enabled
+            this.storedEnabled = enabled
         }
 
         override fun hasRecordAudioPermission(): Boolean =
