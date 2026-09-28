@@ -184,8 +184,23 @@ def gradle_commands(script: str) -> list[list[str]]:
         if not tokens:
             continue
 
+        if any(token == "||" or token.startswith("||") for token in tokens):
+            fail(f"Required Gradle command masks failure with ||: {command!r}")
+
         if "|" in tokens:
-            tokens = tokens[:tokens.index("|")]
+            pipe = tokens.index("|")
+            tail = tokens[pipe + 1:]
+            if not tail or tail[0] != "tee":
+                fail(f"Required Gradle command has unsupported pipeline: {command!r}")
+            if any(
+                token in {"|", "&&", "&"}
+                or token == "||"
+                or token.startswith("||")
+                for token in tail[1:]
+            ):
+                fail(f"Required Gradle pipeline changes failure semantics: {command!r}")
+            tokens = tokens[:pipe]
+
         result.append(tokens)
     return result
 
