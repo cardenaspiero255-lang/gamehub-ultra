@@ -155,6 +155,43 @@ class DashboardTelemetryControllerTest {
     }
 
     @Test
+    fun newSessionResetsThermalBaselineAndTimelineSamples() = runBlocking {
+        var now = 10_000L
+        val events = mutableListOf<PerformanceEvent>()
+        val controller = DashboardTelemetryController(
+            adaptiveEvaluator = { unchangedDecision() },
+            latencyProbe = { null },
+            recordPerformanceEvent = events::add,
+            nowMillis = { now }
+        )
+
+        val first = controller.sample(
+            diagnostics = diagnostics(thermalStatus = 1),
+            activeGamePackage = "game.a",
+            sessionId = "session-a",
+            sustainedPerformanceSupported = true,
+            performanceHintsAvailable = true
+        )
+        now = 20_000L
+        val second = controller.sample(
+            diagnostics = diagnostics(thermalStatus = 4),
+            activeGamePackage = "game.b",
+            sessionId = "session-b",
+            sustainedPerformanceSupported = true,
+            performanceHintsAvailable = true
+        )
+
+        assertEquals(1, first.timelineSamples.size)
+        assertEquals(1, second.timelineSamples.size)
+        assertTrue(
+            events.none {
+                it.type == PerformanceEventType.THERMAL_CHANGED &&
+                    it.sessionId == "session-b"
+            }
+        )
+    }
+
+    @Test
     fun changedAdaptiveDecisionIsRecordedWithSessionAndSnapshotUsesRealSessionState() = runBlocking {
         val events = mutableListOf<PerformanceEvent>()
         var adaptiveSnapshot: AdaptiveRuntimeSnapshot? = null
