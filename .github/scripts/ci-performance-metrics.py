@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 API_ROOT = "https://api.github.com"
+MAX_HISTORY_JOB_REQUESTS = 100
 METRICS_JOB_NAMES = {"metrics", "ci-metrics", "performance-metrics"}
 class GitHubApiError(RuntimeError):
     """GitHub API request failed with a safe diagnostic."""
@@ -154,15 +155,28 @@ def render_markdown(
     workflow_name: str,
     current: dict[str, float],
     summary: dict[str, dict[str, float | int]],
+    history_partial: bool = False,
 ) -> str:
     lines = [
         f"## CI performance — {workflow_name}",
         "",
         "Phase 2 measurement is observational only; no validation gate is skipped.",
         "",
-        "| Metric | Current (s) | Samples | p50 | p90 | p95 |",
-        "|---|---:|---:|---:|---:|---:|",
     ]
+    if history_partial:
+        lines.extend(
+            [
+                "History status: PARTIAL — the historical job-request budget was reached; "
+                "percentiles use the compatible samples collected so far.",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "| Metric | Current (s) | Samples | p50 | p90 | p95 |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
     metric_names = sorted(set(current) | set(summary))
     for name in metric_names:
         hist = summary.get(name, {})
@@ -316,7 +330,12 @@ def _fetch_recent_completed_runs(
 
 
 def collect(
-    *, repository: str, run_id: int, token: str, history_limit: int
+    *,
+    repository: str,
+    run_id: int,
+    token: str,
+    history_limit: int,
+    history_job_request_budget: int = MAX_HISTORY_JOB_REQUESTS,
 ) -> dict[str, Any]:
     current_run = _fetch_run(repository, run_id, token)
     workflow_id = int(current_run.get("workflow_id") or 0)
@@ -328,15 +347,25 @@ def collect(
     current_topology = _job_topology(current_jobs)
 
     history_rows: list[dict[str, float]] = []
+    history_job_requests = 0
+    history_partial = False
+    safe_budget = max(1, history_job_request_budget)
+
     for run in _iter_recent_completed_runs(
         repository=repository,
         workflow_id=workflow_id,
         token=token,
         current_run=current_run,
     ):
+        if history_job_requests >= safe_budget:
+            history_partial = True
+            break
+
         historical_id = int(run.get("id") or 0)
         if historical_id <= 0:
             continue
+
+        history_job_requests += 1
         historical_jobs = _fetch_jobs(repository, historical_id, token)
         if _job_topology(historical_jobs) != current_topology:
             continue
@@ -354,6 +383,9 @@ def collect(
         "current": current_metrics,
         "history_summary": summarize_history(history_rows),
         "history_runs": len(history_rows),
+        "history_partial": history_partial,
+        "history_job_requests": history_job_requests,
+        "history_job_request_budget": safe_budget,
     }
 
 
@@ -363,6 +395,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN", ""))
     parser.add_argument("--history", type=int, default=20)
+    parser.add_argument(
+        "--history-job-request-budget",
+        type=int,
+        default=MAX_HISTORY_JOB_REQUESTS,
+    )
     parser.add_argument("--json-out", required=True)
     parser.add_argument("--summary-out", required=True)
     args = parser.parse_args(argv)
@@ -394,11 +431,16 @@ def main(argv: list[str] | None = None) -> int:
             run_id=args.run_id,
             token=args.token,
             history_limit=max(1, min(args.history, 50)),
+            history_job_request_budget=max(
+                1,
+                min(args.history_job_request_budget, 500),
+            ),
         )
         markdown = render_markdown(
             payload["workflow_name"],
             payload["current"],
             payload["history_summary"],
+            history_partial=bool(payload.get("history_partial")),
         )
     except Exception as exc:
         payload = {
