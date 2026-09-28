@@ -411,6 +411,8 @@ jobs:
               :baseline-profile:assembleNonMinifiedRelease \
               --build-cache \
               --parallel \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
               --stacktrace 2>&1 | tee "$BUILD_LOG"
           ) &
           BUILD_PID=$!
