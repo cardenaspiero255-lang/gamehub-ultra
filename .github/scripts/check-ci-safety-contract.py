@@ -344,7 +344,7 @@ def main() -> None:
         quality,
         "quality/Configuration Cache reuse",
         ("grep", "-Fq", "Reusing configuration cache.", "$CONFIG_CACHE_LOG"),
-    )\n    )
+    ))
 
     release = require_step(
         android,
