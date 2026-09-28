@@ -109,6 +109,8 @@ def comment_out_coverage_command(android: str, coverage: str):
 def quality_step_bounds(android: str) -> tuple[int, int]:
     marker = "      - name: Run fast quality gates\n"
     start = android.find(marker)
+    while start > 0 and android[start - 1] != "\n":
+        start = android.find(marker, start + len(marker))
     if start < 0:
         raise SystemExit("Fixture drift: quality step not found")
     next_step = android.find("\n      - name: ", start + len(marker))
@@ -116,6 +118,17 @@ def quality_step_bounds(android: str) -> tuple[int, int]:
         raise SystemExit("Fixture drift: quality step terminator not found")
     return start, next_step + 1
 
+
+
+def commented_quality_marker_before_active_step(android: str, coverage: str):
+    marker = "      - name: Run fast quality gates\\n"
+    if marker not in android:
+        raise SystemExit("Fixture drift: quality step not found")
+    android = android.replace(marker, f"# {marker}{marker}", 1)
+    start, _ = quality_step_bounds(android)
+    if not android.startswith(marker, start):
+        raise SystemExit("quality_step_bounds selected a commented marker")
+    return android, coverage
 
 def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
     start, end = quality_step_bounds(android)
@@ -198,6 +211,8 @@ def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
 
 def main() -> None:
     run_current_contract_must_pass()
+    android, coverage = load_sources()
+    commented_quality_marker_before_active_step(android, coverage)
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
