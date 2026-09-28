@@ -162,6 +162,53 @@ def remove_unit_test_but_echo_name(android: str, coverage: str):
     return android.replace(command, replacement, 1), coverage
 
 
+
+def mask_quality_gradle_with_or_true(android: str, coverage: str):
+    needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: quality Gradle terminator not found")
+    replacement = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log" || true\n'
+    return android.replace(needle, replacement, 1), coverage
+
+
+def mask_quality_gradle_with_fused_or_true(android: str, coverage: str):
+    needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: quality Gradle terminator not found")
+    replacement = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log" ||true\n'
+    return android.replace(needle, replacement, 1), coverage
+
+
+def mask_quality_gradle_plain_or_true(android: str, coverage: str):
+    needle = """      - name: Run fast quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle \\
+            :app:testDebugUnitTest \\
+            :app:assembleDebug \\
+            :app:lintDebug \\
+            --build-cache \\
+            --parallel \\
+            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: quality step block not found")
+    replacement = """      - name: Run fast quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle \\
+            :app:testDebugUnitTest \\
+            :app:assembleDebug \\
+            :app:lintDebug \\
+            --build-cache \\
+            --parallel \\
+            --stacktrace || true
+"""
+    return android.replace(needle, replacement, 1), coverage
+
+
 def main() -> None:
     run_current_contract_must_pass()
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
@@ -171,6 +218,9 @@ def main() -> None:
     run_mutation("fake quality step hidden inside run heredoc", hide_quality_step_inside_run_heredoc)
     run_mutation("unit test removed from Gradle but echoed later", remove_unit_test_but_echo_name)
     run_mutation("quality gate made advisory with expression", make_quality_advisory_with_expression)
+    run_mutation("quality Gradle pipeline masked with || true", mask_quality_gradle_with_or_true)
+    run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
+    run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
     print("CI safety contract regression tests passed.")
 
 
