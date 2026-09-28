@@ -65,7 +65,7 @@ def remove_unit_test_but_leave_comment(android: str, coverage: str):
     needle = "            :app:testDebugUnitTest \\\n"
     if needle not in android:
         raise SystemExit("Fixture drift: Android unit-test command not found")
-    return android.replace(needle, "            # :app:testDebugUnitTest \\\n", 1), coverage
+    return android.replace(needle, "            # :app:testDebugUnitTest \\\n", 2), coverage
 
 
 def make_quality_advisory(android: str, coverage: str):
@@ -153,7 +153,7 @@ def remove_unit_test_but_echo_name(android: str, coverage: str):
     task = "            :app:testDebugUnitTest \\\n"
     if task not in android:
         raise SystemExit("Fixture drift: Android unit-test command not found")
-    android = android.replace(task, "", 1)
+    android = android.replace(task, "", 2)
 
     command = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
     if command not in android:
@@ -209,6 +209,13 @@ def mask_quality_gradle_plain_or_true(android: str, coverage: str):
     return android.replace(needle, replacement, 1), coverage
 
 
+def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
+    needle = '          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: Configuration Cache reuse assertion not found")
+    return android.replace(needle, "", 1), coverage
+
+
 def main() -> None:
     run_current_contract_must_pass()
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
@@ -220,7 +227,7 @@ def main() -> None:
     run_mutation("quality gate made advisory with expression", make_quality_advisory_with_expression)
     run_mutation("quality Gradle pipeline masked with || true", mask_quality_gradle_with_or_true)
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
-    run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
+    run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)\n    run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
     print("CI safety contract regression tests passed.")
 
 
