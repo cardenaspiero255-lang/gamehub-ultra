@@ -332,6 +332,113 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         )
         self.assertNotIn("\n", detail)
 
+    def test_collect_continues_paging_after_topology_mismatches(self):
+        current_run = {
+            "id": 999,
+            "workflow_id": 123,
+            "name": "Android build",
+            "event": "pull_request",
+            "head_branch": "feature/current",
+            "pull_requests": [{"base": {"ref": "main"}}],
+        }
+        current_jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-09-28T05:00:00Z",
+                "completed_at": "2026-09-28T05:01:00Z",
+                "steps": [],
+            },
+            {
+                "name": "device-validation",
+                "started_at": "2026-09-28T05:00:00Z",
+                "completed_at": "2026-09-28T05:05:00Z",
+                "steps": [],
+            },
+            {
+                "name": "build",
+                "started_at": "2026-09-28T05:05:00Z",
+                "completed_at": "2026-09-28T05:05:03Z",
+                "steps": [],
+            },
+        ]
+        old_topology_jobs = [
+            {
+                "name": "build",
+                "started_at": "2026-09-27T05:00:00Z",
+                "completed_at": "2026-09-27T05:10:00Z",
+                "steps": [],
+            }
+        ]
+        matching_jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-09-26T05:00:00Z",
+                "completed_at": "2026-09-26T05:01:10Z",
+                "steps": [],
+            },
+            {
+                "name": "device-validation",
+                "started_at": "2026-09-26T05:00:00Z",
+                "completed_at": "2026-09-26T05:05:20Z",
+                "steps": [],
+            },
+            {
+                "name": "build",
+                "started_at": "2026-09-26T05:05:20Z",
+                "completed_at": "2026-09-26T05:05:23Z",
+                "steps": [],
+            },
+        ]
+        first_page = {
+            "workflow_runs": [
+                {
+                    "id": index + 1,
+                    "event": "pull_request",
+                    "head_branch": f"legacy-{index}",
+                    "conclusion": "success",
+                    "pull_requests": [{"base": {"ref": "main"}}],
+                }
+                for index in range(100)
+            ]
+        }
+        second_page = {
+            "workflow_runs": [
+                {
+                    "id": 101,
+                    "event": "pull_request",
+                    "head_branch": "compatible",
+                    "conclusion": "success",
+                    "pull_requests": [{"base": {"ref": "main"}}],
+                }
+            ]
+        }
+
+        with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \
+             mock.patch.object(
+                 metrics,
+                 "_get_json",
+                 side_effect=[first_page, second_page],
+             ) as get_json, \
+             mock.patch.object(
+                 metrics,
+                 "_fetch_jobs",
+                 side_effect=[current_jobs] + [old_topology_jobs] * 100 + [matching_jobs],
+             ):
+            result = metrics.collect(
+                repository="owner/repo",
+                run_id=999,
+                token="token",
+                history_limit=1,
+            )
+
+        self.assertEqual(result["history_runs"], 1)
+        self.assertEqual(
+            result["history_summary"]["job.device_validation.seconds"]["p50"],
+            320.0,
+        )
+        self.assertEqual(get_json.call_count, 2)
+        self.assertIn("page=2", get_json.call_args_list[1].args[0])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
