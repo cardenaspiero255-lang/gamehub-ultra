@@ -54,6 +54,10 @@ sealed interface UltraToolResult<out T> {
     data class Failure(val failure: UltraToolFailure) : UltraToolResult<Nothing>
 }
 
+internal class UltraToolInvalidInputException(
+    val safeMessage: String
+) : IllegalArgumentException()
+
 interface UltraToolContract<in I, out O> {
     val descriptor: UltraToolDescriptor
 
@@ -80,6 +84,11 @@ object UltraToolExecution {
     ): UltraToolResult<T> =
         try {
             UltraToolResult.Success(block())
+        } catch (invalid: UltraToolInvalidInputException) {
+            invalidInput(
+                descriptor = descriptor,
+                message = invalid.safeMessage
+            )
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (interrupted: InterruptedException) {
