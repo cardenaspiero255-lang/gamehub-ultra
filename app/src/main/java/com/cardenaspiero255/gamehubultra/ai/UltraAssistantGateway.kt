@@ -2,7 +2,7 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
 
-internal interface UltraAssistantGateway : AutoCloseable {
+interface UltraAssistantGateway : AutoCloseable {
     fun hasLocalModelProvider(): Boolean
 
     fun isLocalModelAvailable(): Boolean
