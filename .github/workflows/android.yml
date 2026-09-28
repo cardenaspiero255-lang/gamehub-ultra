@@ -142,7 +142,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-quality-diagnostics
-          path: ${{ runner.temp }}/quality-gates.log
+          path: |
+            ${{ runner.temp }}/quality-gates.log
+            ${{ runner.temp }}/configuration-cache-reuse.log
           if-no-files-found: ignore
 
   device-validation:
