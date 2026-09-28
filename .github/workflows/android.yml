@@ -121,8 +121,9 @@ jobs:
             --configuration-cache-problems=fail \
             --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
 
-          # Re-run the exact graph. The second invocation must reuse the stored
-          # configuration rather than merely succeeding with the feature enabled.
+          # Probe the exact same requested graph without executing its tasks.
+          # This proves the stored Configuration Cache entry is reusable while
+          # avoiding a second execution of tests, lint and assembly.
           gradle \
             :app:testDebugUnitTest \
             :app:assembleDebug \
@@ -131,6 +132,7 @@ jobs:
             --parallel \
             --configuration-cache \
             --configuration-cache-problems=fail \
+            --dry-run \
             --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
           grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
 
