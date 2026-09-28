@@ -106,38 +106,19 @@ def comment_out_coverage_command(android: str, coverage: str):
 
 
 
+def quality_step_bounds(android: str) -> tuple[int, int]:
+    marker = "      - name: Run fast quality gates\n"
+    start = android.find(marker)
+    if start < 0:
+        raise SystemExit("Fixture drift: quality step not found")
+    next_step = android.find("\n      - name: ", start + len(marker))
+    if next_step < 0:
+        raise SystemExit("Fixture drift: quality step terminator not found")
+    return start, next_step + 1
+
+
 def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
-    quality = """      - name: Run fast quality gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
-          gradle \
-            :app:testDebugUnitTest \
-            :app:assembleDebug \
-            :app:lintDebug \
-            --build-cache \
-            --parallel \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
-
-          gradle \
-            :app:testDebugUnitTest \
-            :app:assembleDebug \
-            :app:lintDebug \
-            --build-cache \
-            --parallel \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
-          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
-"""
-    if quality not in android:
-        raise SystemExit("Fixture drift: quality step block not found")
-
-    # A nameless GitHub Actions step is valid. The old regex scanner can walk
-    # into its run block and mistake the heredoc text below for a real step.
+    start, end = quality_step_bounds(android)
     fake = """      - shell: bash
         run: |
           cat <<'FAKE_GATE'
@@ -147,8 +128,7 @@ def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
               gradle :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --build-cache --parallel
           FAKE_GATE
 """
-    return android.replace(quality, fake, 1), coverage
-
+    return android[:start] + fake + android[end:], coverage
 
 def make_quality_advisory_with_expression(android: str, coverage: str):
     needle = """      - name: Run fast quality gates
@@ -194,34 +174,7 @@ def mask_quality_gradle_with_fused_or_true(android: str, coverage: str):
 
 
 def mask_quality_gradle_plain_or_true(android: str, coverage: str):
-    needle = """      - name: Run fast quality gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
-          gradle \
-            :app:testDebugUnitTest \
-            :app:assembleDebug \
-            :app:lintDebug \
-            --build-cache \
-            --parallel \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
-
-          gradle \
-            :app:testDebugUnitTest \
-            :app:assembleDebug \
-            :app:lintDebug \
-            --build-cache \
-            --parallel \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
-          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
-"""
-    if needle not in android:
-        raise SystemExit("Fixture drift: quality step block not found")
+    start, end = quality_step_bounds(android)
     replacement = """      - name: Run fast quality gates
         shell: bash
         run: |
@@ -234,8 +187,7 @@ def mask_quality_gradle_plain_or_true(android: str, coverage: str):
             --parallel \\
             --stacktrace || true
 """
-    return android.replace(needle, replacement, 1), coverage
-
+    return android[:start] + replacement + android[end:], coverage
 
 def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
     needle = '          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"\n'
