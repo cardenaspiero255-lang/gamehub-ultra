@@ -16,6 +16,14 @@ from typing import Any, Iterable
 
 API_ROOT = "https://api.github.com"
 METRICS_JOB_NAMES = {"metrics", "ci-metrics", "performance-metrics"}
+class GitHubApiError(RuntimeError):
+    """GitHub API request failed with a safe diagnostic."""
+
+    def __init__(self, status: int, detail: str):
+        self.status = status
+        super().__init__(f"GitHub Actions metrics request failed with HTTP {status}: {detail}")
+
+
 TRACKED_STEPS = {
     "Run fast quality gates",
     "Generate debug unit-test coverage",
@@ -159,6 +167,26 @@ def render_markdown(
     return "\n".join(lines)
 
 
+def _safe_http_error_detail(exc: urllib.error.HTTPError) -> str:
+    try:
+        raw = exc.read().decode("utf-8", errors="replace")
+    except Exception:
+        raw = ""
+    detail = ""
+    if raw:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            detail = str(payload.get("message") or "").strip()
+        if not detail:
+            detail = re.sub(r"\\s+", " ", raw).strip()
+    if not detail:
+        detail = str(exc.reason or "request rejected")
+    return detail[:300]
+
+
 def _get_json(url: str, token: str) -> dict[str, Any]:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https" or parsed.netloc != "api.github.com":
@@ -175,9 +203,13 @@ def _get_json(url: str, token: str) -> dict[str, Any]:
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+    except urllib.error.HTTPError as exc:
+        raise GitHubApiError(exc.code, _safe_http_error_detail(exc)) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        reason = getattr(exc, "reason", None)
+        detail = str(reason or type(exc).__name__)
         raise RuntimeError(
-            f"GitHub Actions metrics request failed: {type(exc).__name__}"
+            f"GitHub Actions metrics request failed before a response: {detail}"
         ) from exc
     if not isinstance(data, dict):
         raise RuntimeError("Unexpected GitHub API payload")
@@ -199,32 +231,63 @@ def _fetch_run(repository: str, run_id: int, token: str) -> dict[str, Any]:
     return _get_json(f"{API_ROOT}/repos/{repository}/actions/runs/{run_id}", token)
 
 
+def _run_cohort(run: dict[str, Any]) -> tuple[str, str]:
+    event = str(run.get("event") or "").strip()
+    if event == "pull_request":
+        pull_requests = run.get("pull_requests") or []
+        if isinstance(pull_requests, list):
+            for pull_request in pull_requests:
+                if not isinstance(pull_request, dict):
+                    continue
+                base = pull_request.get("base") or {}
+                if isinstance(base, dict):
+                    ref = str(base.get("ref") or "").strip()
+                    if ref:
+                        return event, f"base:{ref}"
+        return event, "base:unknown"
+
+    head_branch = str(run.get("head_branch") or "").strip()
+    return event, f"head:{head_branch or 'unknown'}"
+
+
 def _fetch_recent_completed_runs(
     repository: str,
     workflow_id: int,
     token: str,
     history_limit: int,
-    current_run_id: int,
+    current_run: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    data = _get_json(
-        f"{API_ROOT}/repos/{repository}/actions/workflows/{workflow_id}/runs"
-        f"?status=completed&per_page={max(1, min(history_limit + 5, 100))}",
-        token,
-    )
-    runs = data.get("workflow_runs") or []
-    if not isinstance(runs, list):
-        raise RuntimeError("GitHub workflow runs payload is not a list")
-    selected = []
-    for run in runs:
-        if not isinstance(run, dict):
-            continue
-        if int(run.get("id") or 0) == current_run_id:
-            continue
-        if run.get("conclusion") != "success":
-            continue
-        selected.append(run)
-        if len(selected) >= history_limit:
+    current_run_id = int(current_run.get("id") or 0)
+    current_cohort = _run_cohort(current_run)
+    selected: list[dict[str, Any]] = []
+    per_page = 100
+
+    for page in range(1, 21):
+        data = _get_json(
+            f"{API_ROOT}/repos/{repository}/actions/workflows/{workflow_id}/runs"
+            f"?status=completed&per_page={per_page}&page={page}",
+            token,
+        )
+        runs = data.get("workflow_runs") or []
+        if not isinstance(runs, list):
+            raise RuntimeError("GitHub workflow runs payload is not a list")
+
+        for run in runs:
+            if not isinstance(run, dict):
+                continue
+            if int(run.get("id") or 0) == current_run_id:
+                continue
+            if run.get("conclusion") != "success":
+                continue
+            if _run_cohort(run) != current_cohort:
+                continue
+            selected.append(run)
+            if len(selected) >= history_limit:
+                return selected
+
+        if len(runs) < per_page:
             break
+
     return selected
 
 
@@ -239,7 +302,7 @@ def collect(
     current_metrics = extract_metrics(_fetch_jobs(repository, run_id, token))
     history_rows: list[dict[str, float]] = []
     for run in _fetch_recent_completed_runs(
-        repository, workflow_id, token, history_limit, run_id
+        repository, workflow_id, token, history_limit, current_run
     ):
         historical_id = int(run.get("id") or 0)
         if historical_id <= 0:
