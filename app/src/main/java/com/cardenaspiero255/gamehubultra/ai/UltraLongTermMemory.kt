@@ -470,11 +470,11 @@ interface UltraLongTermMemoryGateway :
     ): UltraToolResult<UltraMemoryToolResponse> {
         if (
             request is UltraMemoryToolRequest.Recall &&
-            request.limit !in 1..100
+            request.limit !in 1..50
         ) {
             return UltraToolExecution.invalidInput(
                 descriptor = descriptor,
-                message = "El límite de recuerdos debe estar entre 1 y 100."
+                message = "El límite de recuerdos debe estar entre 1 y 50."
             )
         }
 
