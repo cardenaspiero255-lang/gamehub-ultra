@@ -232,16 +232,15 @@ def main() -> None:
     android = ANDROID.read_text(encoding="utf-8")
     quality_start, quality_end = quality_step_bounds(android)
     quality_script = android[quality_start:quality_end]
-    quality_commands = gradle_commands(quality_script)
-    executable_quality_graphs = [
-        tokens
-        for tokens in quality_commands
-        if ":app:testDebugUnitTest" in set(tokens) and "--dry-run" not in set(tokens)
-    ]
-    if len(executable_quality_graphs) != 1:
+    quality_graph_occurrences = quality_script.count(":app:testDebugUnitTest")
+    quality_probe_occurrences = quality_script.count("--dry-run")
+    executable_quality_graphs = quality_graph_occurrences - quality_probe_occurrences
+    if executable_quality_graphs != 1 or quality_probe_occurrences != 1:
         raise SystemExit(
-            "Phase 2 block 4: expected one executable quality task graph; "
-            f"found {len(executable_quality_graphs)}"
+            "Phase 2 block 4: expected one executable quality task graph and "
+            "one --dry-run cache probe; "
+            f"found {executable_quality_graphs} executable and "
+            f"{quality_probe_occurrences} probes"
         )
     print("CI safety contract regression tests passed.")
 
