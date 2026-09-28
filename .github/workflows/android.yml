@@ -371,10 +371,13 @@ jobs:
 
           EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
           BUILD_LOG="$RUNNER_TEMP/release-validation.log"
-          EXCLUSIVE_BUILD_SECONDS=120
+          # Phase 2 A/B candidate: main is the 120s control. Launching at 90s
+          # overlaps emulator boot with the tail of the build while retaining every
+          # downstream API 35 readiness, install, baseline-profile and noise gate.
+          EXCLUSIVE_BUILD_SECONDS=90
 
           # Start the complete release + performance-variant DAG first. Give it
-          # exclusive CPU for up to two minutes, but if a warm cache finishes
+          # exclusive CPU for up to 90 seconds, but if a warm cache finishes
           # earlier, launch the emulator immediately instead of sleeping.
           (
             set -o pipefail
