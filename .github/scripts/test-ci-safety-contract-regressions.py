@@ -232,11 +232,16 @@ def main() -> None:
     android = ANDROID.read_text(encoding="utf-8")
     quality_start, quality_end = quality_step_bounds(android)
     quality_script = android[quality_start:quality_end]
-    duplicate_quality_graph = quality_script.count(":app:testDebugUnitTest")
-    if duplicate_quality_graph != 1:
+    quality_commands = gradle_commands(quality_script)
+    executable_quality_graphs = [
+        tokens
+        for tokens in quality_commands
+        if ":app:testDebugUnitTest" in set(tokens) and "--dry-run" not in set(tokens)
+    ]
+    if len(executable_quality_graphs) != 1:
         raise SystemExit(
             "Phase 2 block 4: expected one executable quality task graph; "
-            f"found {duplicate_quality_graph}"
+            f"found {len(executable_quality_graphs)}"
         )
     print("CI safety contract regression tests passed.")
 
