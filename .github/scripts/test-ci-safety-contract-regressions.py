@@ -105,12 +105,68 @@ def comment_out_coverage_command(android: str, coverage: str):
     )
 
 
+
+def hide_quality_step_inside_run_heredoc(android: str, coverage: str):
+    original_name = "      - name: Run fast quality gates\n"
+    if original_name not in android:
+        raise SystemExit("Fixture drift: quality step name not found")
+    android = android.replace(original_name, "      - name: Disabled fast quality gates\n", 1)
+
+    run_anchor = """        run: |
+          set -euo pipefail
+          gradle \\
+"""
+    if run_anchor not in android:
+        raise SystemExit("Fixture drift: quality run block not found")
+    fake = """        run: |
+          cat <<'FAKE_GATE'
+          - name: Run fast quality gates
+            shell: bash
+            run: |
+              gradle :app:testDebugUnitTest :app:assembleDebug :app:lintDebug --build-cache --parallel
+          - name: End fake gate
+          FAKE_GATE
+          set -euo pipefail
+          gradle \\
+"""
+    return android.replace(run_anchor, fake, 1), coverage
+
+
+def make_quality_advisory_with_expression(android: str, coverage: str):
+    needle = """      - name: Run fast quality gates
+        shell: bash
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: quality step not found")
+    replacement = """      - name: Run fast quality gates
+        continue-on-error: ${{ true }}
+        shell: bash
+"""
+    return android.replace(needle, replacement, 1), coverage
+
+
+def remove_unit_test_but_echo_name(android: str, coverage: str):
+    task = "            :app:testDebugUnitTest \\\n"
+    if task not in android:
+        raise SystemExit("Fixture drift: Android unit-test command not found")
+    android = android.replace(task, "", 1)
+
+    command = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
+    if command not in android:
+        raise SystemExit("Fixture drift: quality Gradle command terminator not found")
+    replacement = command + "          echo ':app:testDebugUnitTest'\n"
+    return android.replace(command, replacement, 1), coverage
+
+
 def main() -> None:
     run_current_contract_must_pass()
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
     run_mutation("coverage command commented out", comment_out_coverage_command)
+    run_mutation("fake quality step hidden inside run heredoc", hide_quality_step_inside_run_heredoc)
+    run_mutation("quality gate made advisory with expression", make_quality_advisory_with_expression)
+    run_mutation("unit test removed from Gradle but echoed later", remove_unit_test_but_echo_name)
     print("CI safety contract regression tests passed.")
 
 
