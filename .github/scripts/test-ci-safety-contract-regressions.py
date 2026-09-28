@@ -121,7 +121,7 @@ def quality_step_bounds(android: str) -> tuple[int, int]:
 
 
 def commented_quality_marker_before_active_step(android: str, coverage: str):
-    marker = "      - name: Run fast quality gates\\n"
+    marker = "      - name: Run fast quality gates\n"
     if marker not in android:
         raise SystemExit("Fixture drift: quality step not found")
     android = android.replace(marker, f"# {marker}{marker}", 1)
