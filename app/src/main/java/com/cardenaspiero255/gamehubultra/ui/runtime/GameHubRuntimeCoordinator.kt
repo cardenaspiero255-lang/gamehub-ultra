@@ -19,7 +19,8 @@ import java.util.UUID
 internal data class RuntimeSessionMetrics(
     val batteryPercent: Int? = null,
     val thermalStatus: Int? = null,
-    val ramUsedPercent: Int? = null
+    val ramUsedPercent: Int? = null,
+    val diagnosticsAvailable: Boolean = false
 )
 
 internal data class GameHubRuntimeSnapshot(
@@ -121,7 +122,8 @@ internal class GameHubRuntimeCoordinator(
                             contextKey = snapshot.optimizationContextKey.serialized,
                             profile = snapshot.effectiveProfile,
                             measuredFps = null,
-                            stable = !highTemperature &&
+                            stable = snapshot.metrics.diagnosticsAvailable &&
+                                !highTemperature &&
                                 (thermalStatus == null || thermalStatus <= 2),
                             failed = highTemperature,
                             highTemperature = highTemperature,
