@@ -107,6 +107,10 @@ jobs:
         run: |
           set -euo pipefail
           CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
+          # Android tooling creates this lazily during the first build. Create it
+          # up front so that filesystem observation does not invalidate the
+          # Configuration Cache before the identical second invocation.
+          mkdir -p "$HOME/.config/.android/cache"
           gradle \
             :app:testDebugUnitTest \
             :app:assembleDebug \
