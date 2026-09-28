@@ -467,8 +467,18 @@ interface UltraLongTermMemoryGateway :
 
     override fun execute(
         request: UltraMemoryToolRequest
-    ): UltraToolResult<UltraMemoryToolResponse> =
-        UltraToolExecution.protect(descriptor) {
+    ): UltraToolResult<UltraMemoryToolResponse> {
+        if (
+            request is UltraMemoryToolRequest.Recall &&
+            request.limit !in 1..100
+        ) {
+            return UltraToolExecution.invalidInput(
+                descriptor = descriptor,
+                message = "El límite de recuerdos debe estar entre 1 y 100."
+            )
+        }
+
+        return UltraToolExecution.protect(descriptor) {
             when (request) {
                 is UltraMemoryToolRequest.Command ->
                     UltraMemoryToolResponse.CommandHandled(
@@ -478,13 +488,7 @@ interface UltraLongTermMemoryGateway :
                         )
                     )
 
-                is UltraMemoryToolRequest.Recall -> {
-                    if (request.limit !in 1..100) {
-                        return UltraToolExecution.invalidInput(
-                            descriptor = descriptor,
-                            message = "El límite de recuerdos debe estar entre 1 y 100."
-                        )
-                    }
+                is UltraMemoryToolRequest.Recall ->
                     UltraMemoryToolResponse.Recalled(
                         recallContext(
                             message = request.message,
@@ -492,7 +496,7 @@ interface UltraLongTermMemoryGateway :
                             limit = request.limit
                         )
                     )
-                }
             }
         }
+    }
 }
