@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.cardenaspiero255.gamehubultra.BuildConfig
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -31,6 +32,10 @@ import java.net.URLEncoder
 import java.time.Instant
 
 class StoreConnectionActivity : ComponentActivity() {
+    private val accountsRepository: ConnectedGameAccountsStateRepository by lazy {
+        ConnectedGameAccountsStore(applicationContext)
+    }
+
     companion object {
         const val EXTRA_PLATFORM = "platform"
         private const val POLL_MS = 1800L
@@ -160,7 +165,7 @@ class StoreConnectionActivity : ComponentActivity() {
 
     private suspend fun syncSteam(result: SteamSyncResult) {
         if (finished) return
-        val account = ConnectedGameAccountsStore(this).upsert(
+        val account = accountsRepository.upsert(
             GamePlatform.STEAM,
             result.displayName.ifBlank { "Steam" },
             result.steamId
@@ -213,7 +218,7 @@ class StoreConnectionActivity : ComponentActivity() {
                     EpicStoreClient.exchangeCode(code)
                 }
                 val account = withContext(Dispatchers.IO) {
-                    ConnectedGameAccountsStore(this@StoreConnectionActivity).upsert(
+                    accountsRepository.upsert(
                         GamePlatform.EPIC_GAMES,
                         credentials.displayName.ifBlank { "Epic Games" },
                         credentials.accountId
