@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.data
 
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -98,4 +99,14 @@ interface StoreLibraryStateRepository {
     fun getAll(): List<StoreLibraryGame>
     fun replaceForAccount(accountId: String, games: List<StoreLibraryGame>)
     fun removeForAccount(accountId: String)
+}
+
+
+/** Owns persisted optimization observations independently from Android UI consumers. */
+interface GameOptimizationMemoryStateRepository {
+    fun observationsFlow(contextKey: OptimizationContextKey): Flow<List<OptimizationObservation>>
+    suspend fun record(contextKey: OptimizationContextKey, observation: OptimizationObservation)
+    suspend fun pruneTo(contextKey: OptimizationContextKey)
+    suspend fun clearAll()
+    suspend fun clearGame(contextKey: OptimizationContextKey)
 }
