@@ -277,10 +277,10 @@ def main() -> None:
     quality_graph_occurrences = quality_script.count(":app:assembleDebug")
     quality_probe_occurrences = quality_script.count("--dry-run")
     executable_quality_graphs = quality_graph_occurrences - quality_probe_occurrences
-    if executable_quality_graphs != 1 or quality_probe_occurrences != 1:
+    if executable_quality_graphs != 1 or quality_probe_occurrences != 2:
         raise SystemExit(
-            "Phase 2 block 4: expected one executable quality task graph and "
-            "one --dry-run cache probe; "
+            "Phase 2 block 7: expected one executable quality task graph and "
+            "two identical --dry-run cache probes; "
             f"found {executable_quality_graphs} executable and "
             f"{quality_probe_occurrences} probes"
         )
