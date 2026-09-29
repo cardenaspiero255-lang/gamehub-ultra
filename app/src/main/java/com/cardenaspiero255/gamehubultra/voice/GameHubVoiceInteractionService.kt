@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
@@ -163,7 +164,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
             runBlocking { selectionRepository.selectedGameFlow().first() }
         }.getOrNull()
         val selectedProfile = runCatching {
-            runBlocking { selectionRepository.selectedProfileFlow().first() }
+            runBlocking {
+                selectionRepository.effectiveProfileForSelection(selectedGamePackage)
+            }
         }.getOrNull() ?: PerformanceProfile.BALANCED
         val device = DeviceInfoProvider.get(context)
         val diagnostics = RuntimeDiagnosticsProvider.get(context)
