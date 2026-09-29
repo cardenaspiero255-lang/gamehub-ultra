@@ -1,7 +1,9 @@
 package com.cardenaspiero255.gamehubultra.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
@@ -120,6 +122,33 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { repository.saveSelectedGame(packageName) }
     }
 
+    fun persistVoiceSelectedGame(packageName: String) {
+        DurableSelectionMutationQueue.enqueue(
+            onFailure = ::reportVoiceSelectionPersistenceFailure
+        ) {
+            repository.saveSelectedGame(packageName)
+        }
+    }
+
+    fun persistVoiceSelectedProfile(profile: PerformanceProfile) {
+        DurableSelectionMutationQueue.enqueue(
+            onFailure = ::reportVoiceSelectionPersistenceFailure
+        ) {
+            repository.saveSelectedProfile(profile)
+        }
+    }
+
+    fun persistVoiceSelectedGameWithProfile(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        DurableSelectionMutationQueue.enqueue(
+            onFailure = ::reportVoiceSelectionPersistenceFailure
+        ) {
+            repository.saveSelectedGameAndProfile(packageName, profile)
+        }
+    }
+
     fun setGameThermalPreference(
         packageName: String,
         preference: ThermalPreference
@@ -202,6 +231,14 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
 
     fun recordPerformanceEvent(event: PerformanceEvent) {
         viewModelScope.launch { repository.appendPerformanceEvent(event) }
+    }
+
+    private fun reportVoiceSelectionPersistenceFailure(error: Throwable) {
+        Log.e(
+            "GameHubViewModel",
+            "No se pudo persistir la selección o el perfil del asistente.",
+            error
+        )
     }
 
     private data class BaseUiState(
