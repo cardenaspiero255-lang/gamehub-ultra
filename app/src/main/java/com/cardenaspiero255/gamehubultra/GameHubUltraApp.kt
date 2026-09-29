@@ -2026,7 +2026,7 @@ private fun sharePerformanceTimeline(
     context.startActivity(Intent.createChooser(intent, "Compartir timeline"))
 }
 
-private fun formatDuration(durationMillis: Long): String {
+internal fun formatDuration(durationMillis: Long): String {
     val totalSeconds = durationMillis / 1000L
     val hours = totalSeconds / 3600L
     val minutes = (totalSeconds % 3600L) / 60L
