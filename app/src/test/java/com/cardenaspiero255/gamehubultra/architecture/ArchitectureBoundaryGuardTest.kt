@@ -47,6 +47,39 @@ class ArchitectureBoundaryGuardTest {
 
 
 
+
+    @Test
+    fun connectedAccountConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/store/StoreConnectionActivity.kt")
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (source.contains("val store = remember(context) { ConnectedGameAccountsStore(")) {
+                    add("${file.name} exposes concrete connected-account ownership")
+                }
+                if (source.contains("ConnectedGameAccountsStore(this).upsert(")) {
+                    add("${file.name} constructs connected-account storage at the write site")
+                }
+                if (source.contains("ConnectedGameAccountsStore(this@StoreConnectionActivity).upsert(")) {
+                    add("${file.name} constructs connected-account storage at the write site")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Connected-account consumers must depend on ConnectedGameAccountsStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
     @Test
     fun sessionConsumersDependOnOwnershipBoundary() {
         val guardedFiles = listOf(
