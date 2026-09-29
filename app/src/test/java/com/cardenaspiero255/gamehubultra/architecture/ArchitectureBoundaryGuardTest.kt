@@ -81,6 +81,26 @@ class ArchitectureBoundaryGuardTest {
 
 
     @Test
+    fun optimizationMemoryConsumerDependsOnOwnershipBoundary() {
+        val file = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
+        val source = file.readText()
+
+        assertTrue(
+            source.contains(
+                "optimizationMemoryStore: GameOptimizationMemoryStateRepository"
+            ),
+            "GameHubUltraApp must type optimizationMemoryStore as " +
+                "GameOptimizationMemoryStateRepository"
+        )
+        assertTrue(
+            !Regex("""optimizationMemoryStore\\s*:\\s*GameOptimizationMemoryStore""")
+                .containsMatchIn(source),
+            "GameHubUltraApp must not expose GameOptimizationMemoryStore as its dependency type"
+        )
+    }
+
+
+    @Test
     fun storeLibraryConsumersDependOnOwnershipBoundary() {
         val guardedFiles = listOf(
             sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
