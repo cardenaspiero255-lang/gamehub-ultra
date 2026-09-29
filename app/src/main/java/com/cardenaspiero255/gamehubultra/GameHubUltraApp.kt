@@ -113,7 +113,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceChange
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
-import com.cardenaspiero255.gamehubultra.voice.GameAliasStore
+import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesGameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.voice.NetworkVoiceResponseText
 import com.cardenaspiero255.gamehubultra.voice.VoiceNetworkSnapshotFactory
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
@@ -1179,7 +1179,7 @@ private fun VoiceAssistantCard(
                         thermalLabel = deviceStatus.thermalLabel,
                         refreshRateHz = turnAiContext.refreshRateHz
                     ),
-                    knownGameAliases = GameAliasStore.aliases(context).keys
+                    knownGameAliases = SharedPreferencesGameAliasStateRepository(context).aliases().keys
                 )
             )
 
@@ -1244,9 +1244,9 @@ private fun VoiceAssistantCard(
                             aiAdvisor.advise(question, latestAiContext)
                         },
                         aliasIntentResolver = aiIntentResolver,
-                        gameAliasesProvider = { GameAliasStore.aliases(context) },
+                        gameAliasesProvider = { SharedPreferencesGameAliasStateRepository(context).aliases() },
                         saveGameAlias = { alias, packageName ->
-                            GameAliasStore.save(context, alias, packageName)
+                            SharedPreferencesGameAliasStateRepository(context).save(alias, packageName)
                         },
                         networkStatusProvider = {
                             VoiceNetworkSnapshotFactory.current(context)
@@ -1360,7 +1360,7 @@ private fun VoiceAssistantCard(
                                 thermalLabel = voiceStatus.thermalLabel,
                                 refreshRateHz = turnAiContext.refreshRateHz
                             ),
-                            knownGameAliases = GameAliasStore.aliases(context).keys,
+                            knownGameAliases = SharedPreferencesGameAliasStateRepository(context).aliases().keys,
                             conversationHistory = conversationBeforeTurn
                         )
                     )
@@ -1452,9 +1452,9 @@ private fun VoiceAssistantCard(
                                     aiAdvisor.advise(question, latestAiContext)
                                 },
                                 aliasIntentResolver = aiIntentResolver,
-                                gameAliasesProvider = { GameAliasStore.aliases(context) },
+                                gameAliasesProvider = { SharedPreferencesGameAliasStateRepository(context).aliases() },
                                 saveGameAlias = { alias, packageName ->
-    GameAliasStore.save(context, alias, packageName)
+    SharedPreferencesGameAliasStateRepository(context).save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = networkGaming::applyProfile
