@@ -2038,11 +2038,12 @@ private fun LibraryScreen(
                                         onToggleFavorite(game.packageName, !favorite)
                                     },
                                     onOpen = {
-                                        if (openGame(context, game.packageName)) {
-                                            launchFailed = false
+                                        val succeeded = openGame(context, game.packageName)
+                                        libraryStateHolder.onEvent(
+                                            LibraryUiEvent.GameLaunchResult(succeeded)
+                                        )
+                                        if (succeeded) {
                                             onGameOpened(game.packageName)
-                                        } else {
-                                            launchFailed = true
                                         }
                                     }
                                 )
