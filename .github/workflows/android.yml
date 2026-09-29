@@ -420,10 +420,20 @@ jobs:
               --configuration-cache-problems=fail \
               --stacktrace 2>&1 | tee "$BUILD_LOG"
 
-            # Prove that the exact release/performance graph can reuse the
-            # stored Configuration Cache entry without executing that expensive
-            # graph a second time. All release/performance tasks above remain
-            # blocking; this invocation is configuration-only.
+            # Prime and then prove reuse of the dry-run Configuration Cache
+            # entry without executing the expensive release/performance graph
+            # again. The two probes are intentionally identical.
+            gradle \
+              :app:assembleRelease \
+              :app:bundleRelease \
+              :app:assembleNonMinifiedRelease \
+              :baseline-profile:assembleNonMinifiedRelease \
+              --build-cache \
+              --parallel \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --dry-run \
+              --stacktrace >/dev/null
             RELEASE_CONFIG_CACHE_LOG="$RUNNER_TEMP/release-configuration-cache-reuse.log"
             gradle \
               :app:assembleRelease \
