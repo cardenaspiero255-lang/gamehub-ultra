@@ -81,6 +81,41 @@ class ArchitectureBoundaryGuardTest {
 
 
     @Test
+    fun storeLibraryConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/store/StoreConnectionActivity.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt")
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (source.contains("StoreLibraryStore(context).getAll()")) {
+                    add("${file.name} constructs store-library persistence at the read site")
+                }
+                if (source.contains("StoreLibraryStore(context).removeForAccount(")) {
+                    add("${file.name} constructs store-library persistence at the remove site")
+                }
+                if (source.contains("StoreLibraryStore(this).replaceForAccount(") ||
+                    source.contains("StoreLibraryStore(this@StoreConnectionActivity)")
+                ) {
+                    add("${file.name} constructs store-library persistence at the sync write site")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Store-library consumers must depend on StoreLibraryStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
+    @Test
     fun sessionConsumersDependOnOwnershipBoundary() {
         val guardedFiles = listOf(
             sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt"),
