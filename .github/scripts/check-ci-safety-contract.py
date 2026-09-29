@@ -337,13 +337,15 @@ def main() -> None:
     ]
     executable_quality_matches = [tokens for tokens in quality_matches if "--dry-run" not in set(tokens)]
     probe_quality_matches = [tokens for tokens in quality_matches if "--dry-run" in set(tokens)]
-    if len(executable_quality_matches) != 1 or len(probe_quality_matches) != 1:
+    if len(executable_quality_matches) != 1 or len(probe_quality_matches) != 2:
         fail(
             "Configuration Cache proof requires one executable quality graph and "
-            "one non-executing --dry-run reuse probe; found "
+            "two non-executing --dry-run reuse probes; found "
             f"{len(executable_quality_matches)} executable and "
             f"{len(probe_quality_matches)} probes"
         )
+    if probe_quality_matches[0] != probe_quality_matches[1]:
+        fail("Quality --dry-run Configuration Cache probes differ")
     require_shell_command(
         quality,
         "quality/Configuration Cache reuse",
