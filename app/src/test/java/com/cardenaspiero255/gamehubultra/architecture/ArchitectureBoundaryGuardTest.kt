@@ -46,6 +46,39 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+
+    @Test
+    fun sessionConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/data/GameSessionLifecycleCoordinator.kt")
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (source.contains("private val store: GameSessionStore")) {
+                    add("${file.name} depends on concrete GameSessionStore")
+                }
+                if (
+                    file.name == "GameHubViewModel.kt" &&
+                    source.contains("private val sessionStore = GameSessionStore")
+                ) {
+                    add("${file.name} exposes concrete session ownership internally")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Session consumers must depend on GameSessionStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
     @Test
     fun aliasConsumersDependOnOwnershipBoundary() {
         val guardedFiles = listOf(
