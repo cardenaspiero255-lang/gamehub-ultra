@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
@@ -46,7 +47,9 @@ internal fun ConnectedAccountsCard(
     onStoreConnectionChanged: () -> Unit
 ) {
     val context = LocalContext.current
-    val store = remember(context) { ConnectedGameAccountsStore(context) }
+    val store: ConnectedGameAccountsStateRepository = remember(context) {
+        ConnectedGameAccountsStore(context)
+    }
     val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeAccountId by store.activeAccountIdFlow().collectAsStateWithLifecycle(initialValue = null)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
