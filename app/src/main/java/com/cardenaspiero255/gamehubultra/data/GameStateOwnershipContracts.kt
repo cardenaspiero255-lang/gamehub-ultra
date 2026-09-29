@@ -70,3 +70,24 @@ interface GameSessionStateRepository {
     suspend fun finishActiveSessions(endedAtMillis: Long): Int
     suspend fun clearSessions()
 }
+
+
+/** Owns persisted connected game accounts independently from Android UI consumers. */
+interface ConnectedGameAccountsStateRepository {
+    fun accountsFlow(): Flow<List<ConnectedGameAccount>>
+    fun activeAccountIdFlow(): Flow<String?>
+    suspend fun setActiveAccount(accountId: String?): Boolean
+    suspend fun upsert(
+        platform: com.cardenaspiero255.gamehubultra.domain.GamePlatform,
+        displayName: String,
+        publicId: String,
+        alias: String? = null,
+        avatarUrl: String? = null,
+    ): ConnectedGameAccount
+    suspend fun updatePublicMetadata(
+        accountId: String,
+        alias: String?,
+        avatarUrl: String?,
+    ): Boolean
+    suspend fun remove(accountId: String)
+}
