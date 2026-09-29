@@ -62,7 +62,7 @@ class GameStateOwnershipContractsTest {
             ).sorted(),
             ConnectedGameAccountsStateRepository::class.java.declaredMethods
                 .map { it.name }
-                .filterNot { it.endsWith("$default") }
+                .filterNot { it.endsWith("\$default") }
                 .sorted(),
         )
         val types = ConnectedGameAccountsStateRepository::class.java.methods.flatMap { method ->
