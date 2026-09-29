@@ -45,6 +45,29 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+
+    @Test
+    fun aliasConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt")
+        )
+
+        val violations = guardedFiles
+            .filter { it.readText().contains("GameAliasStore") }
+            .map { "${it.name} reaches GameAliasStore directly" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Alias consumers must depend on GameAliasStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
     @Test
     fun uiDoesNotReachConcreteUltraResearchOrGamingImplementations() {
         val uiFiles = listOf(
