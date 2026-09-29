@@ -72,8 +72,8 @@ class ConnectedGameAccountsStore(
         platform: GamePlatform,
         displayName: String,
         publicId: String,
-        alias: String? = null,
-        avatarUrl: String? = null
+        alias: String?,
+        avatarUrl: String?
     ): ConnectedGameAccount {
         val normalizedName = displayName.trim().ifBlank { publicId.trim() }
         val normalizedId = publicId.trim()
