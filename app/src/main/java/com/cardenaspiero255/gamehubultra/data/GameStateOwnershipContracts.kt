@@ -91,3 +91,11 @@ interface ConnectedGameAccountsStateRepository {
     ): Boolean
     suspend fun remove(accountId: String)
 }
+
+
+/** Owns the persisted libraries synchronized from connected game stores. */
+interface StoreLibraryStateRepository {
+    fun getAll(): List<StoreLibraryGame>
+    fun replaceForAccount(accountId: String, games: List<StoreLibraryGame>)
+    fun removeForAccount(accountId: String)
+}
