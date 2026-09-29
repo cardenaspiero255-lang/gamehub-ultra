@@ -47,6 +47,25 @@ class GameStateOwnershipContractsTest {
         )
     }
 
+
+    @Test
+    fun sessionContractIsAndroidFreeAndExplicit() {
+        assertEquals(
+            listOf(
+                "clearSessions",
+                "finishActiveSessions",
+                "finishSession",
+                "sessionsFlow",
+                "startSession",
+            ).sorted(),
+            GameSessionStateRepository::class.java.methods.map { it.name }.sorted(),
+        )
+        val types = GameSessionStateRepository::class.java.methods.flatMap { method ->
+            method.genericParameterTypes.toList() + method.genericReturnType
+        }
+        assertFalse(types.any { type -> type.typeName.contains("android.") })
+    }
+
     @Test
     fun aliasContractIsAndroidFreeAndExplicit() {
         assertEquals(
