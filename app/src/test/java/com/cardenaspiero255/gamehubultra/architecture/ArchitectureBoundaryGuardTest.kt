@@ -116,7 +116,7 @@ class ArchitectureBoundaryGuardTest {
         assertTrue(
             lineCount <= 2600,
             "GameHubUltraApp.kt must keep shrinking during weakness block 6; " +
-                "current line count: $lineCount, ceiling: 2150"
+                "current line count: $lineCount, ceiling: 2250"
         )
     }
 
