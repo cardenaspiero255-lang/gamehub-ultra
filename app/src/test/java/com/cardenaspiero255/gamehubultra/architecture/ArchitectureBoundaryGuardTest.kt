@@ -45,6 +45,159 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+
+
+
+    @Test
+    fun connectedAccountConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/store/StoreConnectionActivity.kt")
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (source.contains("val store = remember(context) { ConnectedGameAccountsStore(")) {
+                    add("${file.name} exposes concrete connected-account ownership")
+                }
+                if (source.contains("ConnectedGameAccountsStore(this).upsert(")) {
+                    add("${file.name} constructs connected-account storage at the write site")
+                }
+                if (source.contains("ConnectedGameAccountsStore(this@StoreConnectionActivity).upsert(")) {
+                    add("${file.name} constructs connected-account storage at the write site")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Connected-account consumers must depend on ConnectedGameAccountsStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
+    @Test
+    fun optimizationMemoryConsumerDependsOnOwnershipBoundary() {
+        val file = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
+        val source = file.readText()
+
+        assertTrue(
+            source.contains(
+                "optimizationMemoryStore: GameOptimizationMemoryStateRepository"
+            ),
+            "GameHubUltraApp must type optimizationMemoryStore as " +
+                "GameOptimizationMemoryStateRepository"
+        )
+        assertTrue(
+            !Regex("""optimizationMemoryStore\\s*:\\s*GameOptimizationMemoryStore""")
+                .containsMatchIn(source),
+            "GameHubUltraApp must not expose GameOptimizationMemoryStore as its dependency type"
+        )
+    }
+
+
+    @Test
+    fun storeLibraryConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/store/StoreConnectionActivity.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt")
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (!source.contains("storeLibraryRepository: StoreLibraryStateRepository")) {
+                    add("${file.name} must type storeLibraryRepository as StoreLibraryStateRepository")
+                }
+                val concreteTypedRepository = Regex(
+                    """storeLibraryRepository\s*:\s*StoreLibraryStore"""
+                )
+                if (concreteTypedRepository.containsMatchIn(source)) {
+                    add("${file.name} exposes StoreLibraryStore as the repository dependency type")
+                }
+                val directConcreteCalls = listOf(
+                    "StoreLibraryStore(context).getAll()",
+                    "StoreLibraryStore(context).removeForAccount(",
+                    "StoreLibraryStore(this).replaceForAccount(",
+                    "StoreLibraryStore(this@StoreConnectionActivity)"
+                )
+                directConcreteCalls
+                    .filter(source::contains)
+                    .forEach {
+                        add("${file.name} constructs store-library persistence at a consumer call site")
+                    }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Store-library consumers must depend on StoreLibraryStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
+    @Test
+    fun sessionConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/data/GameSessionLifecycleCoordinator.kt")
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (source.contains("private val store: GameSessionStore")) {
+                    add("${file.name} depends on concrete GameSessionStore")
+                }
+                if (
+                    file.name == "GameHubViewModel.kt" &&
+                    source.contains("private val sessionStore = GameSessionStore")
+                ) {
+                    add("${file.name} exposes concrete session ownership internally")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Session consumers must depend on GameSessionStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
+    @Test
+    fun aliasConsumersDependOnOwnershipBoundary() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt")
+        )
+
+        val violations = guardedFiles
+            .filter { it.readText().contains("GameAliasStore") }
+            .map { "${it.name} reaches GameAliasStore directly" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Alias consumers must depend on GameAliasStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
     @Test
     fun uiDoesNotReachConcreteUltraResearchOrGamingImplementations() {
         val uiFiles = listOf(
@@ -191,6 +344,167 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun productionDoesNotUseLegacySelectionStores() {
+        val productionFiles = sourceRoot()
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .toList()
+        val forbiddenSymbols = listOf(
+            "GameSelectionStore",
+            "ProfileSelectionStore"
+        )
+
+        val violations = productionFiles.flatMap { file ->
+            val source = file.readText()
+            forbiddenSymbols
+                .filter(source::contains)
+                .map { symbol -> "${file.name} still depends on legacy selection store $symbol" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Selection/profile persistence must flow through GameSelectionStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun gameHubViewModelRoutesPersistentLibraryStateThroughLibraryBoundary() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt"
+        ).readText()
+
+        assertTrue(
+            source.contains("private val libraryRepository: GameLibraryStateRepository = repository"),
+            "GameHubViewModel must expose persistent Library state through GameLibraryStateRepository"
+        )
+
+        val forbiddenConcreteCalls = listOf(
+            "repository.favoriteGamesFlow()",
+            "repository.recentGamesFlow()",
+            "repository.manualGamesFlow()",
+            "repository.setFavoriteGame(",
+            "repository.recordRecentGame(",
+            "repository.setManualGame("
+        )
+        val violations = forbiddenConcreteCalls
+            .filter(source::contains)
+            .map { call -> "GameHubViewModel bypasses GameLibraryStateRepository with $call" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Persistent Library collections must flow through GameLibraryStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun voiceSelectionPersistenceDoesNotBlockCommandWorkers() {
+        val serviceFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
+        )
+
+        val violations = serviceFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (!source.contains("DurableSelectionMutationQueue.enqueue")) {
+                    add("${file.name} must use the process-durable selection mutation queue")
+                }
+                if (!source.contains("onFailure =")) {
+                    add("${file.name} must observe asynchronous selection persistence failures")
+                }
+                if (source.contains("selectionSaveScope")) {
+                    add("${file.name} ties accepted selection writes to service lifetime")
+                }
+                if (containsBlockingSelectionWrite(source)) {
+                    add("${file.name} blocks its command worker during selection persistence")
+                }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Voice selection persistence must stay asynchronous, ordered, and observable:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun blockingSelectionWriteDetectionHandlesNestedBlocksAndDispatcherArgument() {
+        val nestedBlockingWrite = """
+            runBlocking(Dispatchers.IO) {
+                if (shouldPersist) {
+                    println("nested")
+                }
+                selectionRepository.saveSelectedGame("game.a")
+            }
+        """.trimIndent()
+        val nestedArgumentBlockingWrite = """
+            kotlinx.coroutines.runBlocking(context.plus(Dispatchers.IO)) {
+                selectionRepository.saveSelectedProfile(PerformanceProfile.X4)
+            }
+        """.trimIndent()
+        val asyncWrite = """
+            runBlocking { selectionRepository.selectedGameFlow().first() }
+            DurableSelectionMutationQueue.enqueue {
+                selectionRepository.saveSelectedGame("game.a")
+            }
+        """.trimIndent()
+
+        assertTrue(containsBlockingSelectionWrite(nestedBlockingWrite))
+        assertTrue(containsBlockingSelectionWrite(nestedArgumentBlockingWrite))
+        assertTrue(!containsBlockingSelectionWrite(asyncWrite))
+    }
+
+    @Test
+    fun embeddedVoiceSelectionUsesProcessDurablePersistence() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val viewModel = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt"
+        ).readText()
+
+        listOf(
+            "onVoiceSelectedGame = viewModel::persistVoiceSelectedGame",
+            "onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile",
+            "onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile"
+        ).forEach { expected ->
+            assertTrue(
+                app.contains(expected),
+                "Embedded voice callbacks must use durable persistence: $expected"
+            )
+        }
+
+        listOf(
+            "onVoiceSelectedGame = viewModel::selectGame",
+            "onVoiceSelectedProfile = viewModel::selectGlobalProfile",
+            "onVoiceSelectedGameWithProfile = viewModel::selectGameWithProfile"
+        ).forEach { forbidden ->
+            assertTrue(
+                !app.contains(forbidden),
+                "Embedded voice persistence must not depend on viewModelScope: $forbidden"
+            )
+        }
+
+        assertTrue(
+            viewModel.contains("DurableSelectionMutationQueue.enqueue"),
+            "GameHubViewModel voice persistence must use the process-durable queue"
+        )
+        assertTrue(
+            viewModel.contains("onFailure = ::reportVoiceSelectionPersistenceFailure"),
+            "GameHubViewModel must observe durable voice persistence failures"
+        )
+    }
+
+    @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
@@ -232,6 +546,154 @@ class ArchitectureBoundaryGuardTest {
                 "Production composition root must own $concrete"
             )
         }
+    }
+
+    private fun containsBlockingSelectionWrite(source: String): Boolean {
+        val runBlockingName = Regex("""\brunBlocking\b""")
+        val selectionWrite = Regex(
+            """selectionRepository\s*\.\s*saveSelected""" +
+                """(?:GameAndProfile|Game|Profile)\s*\("""
+        )
+
+        var searchFrom = 0
+        while (true) {
+            val match = runBlockingName.find(source, searchFrom) ?: return false
+            var cursor = match.range.last + 1
+            cursor = skipWhitespace(source, cursor)
+
+            if (source.getOrNull(cursor) == '(') {
+                val closeParenthesis = matchingDelimiterEnd(
+                    source = source,
+                    openIndex = cursor,
+                    openDelimiter = '(',
+                    closeDelimiter = ')'
+                )
+                if (closeParenthesis == null) {
+                    searchFrom = match.range.last + 1
+                    continue
+                }
+                cursor = skipWhitespace(source, closeParenthesis + 1)
+            }
+
+            if (source.getOrNull(cursor) != '{') {
+                searchFrom = match.range.last + 1
+                continue
+            }
+
+            val closeBrace = matchingDelimiterEnd(
+                source = source,
+                openIndex = cursor,
+                openDelimiter = '{',
+                closeDelimiter = '}'
+            )
+            if (closeBrace == null) {
+                searchFrom = match.range.last + 1
+                continue
+            }
+
+            val body = source.substring(cursor + 1, closeBrace)
+            if (selectionWrite.containsMatchIn(body)) return true
+            searchFrom = closeBrace + 1
+        }
+    }
+
+    private fun skipWhitespace(source: String, start: Int): Int {
+        var index = start
+        while (index < source.length && source[index].isWhitespace()) {
+            index += 1
+        }
+        return index
+    }
+
+    private fun matchingDelimiterEnd(
+        source: String,
+        openIndex: Int,
+        openDelimiter: Char,
+        closeDelimiter: Char
+    ): Int? {
+        var depth = 0
+        var index = openIndex
+        var inString = false
+        var inChar = false
+        var inTripleString = false
+        var inLineComment = false
+        var inBlockComment = false
+        var escaped = false
+
+        while (index < source.length) {
+            val char = source[index]
+            val next = source.getOrNull(index + 1)
+
+            when {
+                inLineComment -> {
+                    if (char == '\n') inLineComment = false
+                    index += 1
+                }
+                inBlockComment -> {
+                    if (char == '*' && next == '/') {
+                        inBlockComment = false
+                        index += 2
+                    } else {
+                        index += 1
+                    }
+                }
+                inTripleString -> {
+                    if (source.startsWith("\"\"\"", index)) {
+                        inTripleString = false
+                        index += 3
+                    } else {
+                        index += 1
+                    }
+                }
+                inString -> {
+                    when {
+                        escaped -> escaped = false
+                        char == '\\' -> escaped = true
+                        char == '"' -> inString = false
+                    }
+                    index += 1
+                }
+                inChar -> {
+                    when {
+                        escaped -> escaped = false
+                        char == '\\' -> escaped = true
+                        char == '\'' -> inChar = false
+                    }
+                    index += 1
+                }
+                source.startsWith("//", index) -> {
+                    inLineComment = true
+                    index += 2
+                }
+                source.startsWith("/*", index) -> {
+                    inBlockComment = true
+                    index += 2
+                }
+                source.startsWith("\"\"\"", index) -> {
+                    inTripleString = true
+                    index += 3
+                }
+                char == '"' -> {
+                    inString = true
+                    index += 1
+                }
+                char == '\'' -> {
+                    inChar = true
+                    index += 1
+                }
+                char == openDelimiter -> {
+                    depth += 1
+                    index += 1
+                }
+                char == closeDelimiter -> {
+                    depth -= 1
+                    if (depth == 0) return index
+                    index += 1
+                }
+                else -> index += 1
+            }
+        }
+        return null
     }
 
     private fun sourceFile(relativePath: String): File {

@@ -14,6 +14,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.view.View
 import android.widget.TextView
 import android.service.voice.VoiceInteractionService
@@ -21,8 +22,10 @@ import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
-import com.cardenaspiero255.gamehubultra.GameSelectionStore
-import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
+import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
@@ -61,6 +64,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private var tts: TextToSpeech? = null
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val aiAdvisor = GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter())
+    private val aliasRepository by lazy {
+        SharedPreferencesGameAliasStateRepository(getContext().applicationContext)
+    }
 
     override fun onCreateContentView(): View =
         TextView(getContext()).apply {
@@ -157,11 +163,15 @@ private class GameHubVoiceInteractionSession(context: Context) :
 
     private fun handleTranscript(transcript: String) {
         val context = getContext()
+        val selectionRepository: GameSelectionStateRepository =
+            GameHubPreferencesRepository(context)
         val selectedGamePackage = runCatching {
-            runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
+            runBlocking { selectionRepository.selectedGameFlow().first() }
         }.getOrNull()
         val selectedProfile = runCatching {
-            runBlocking { ProfileSelectionStore.selectedProfileFlow(context).first() }
+            runBlocking {
+                selectionRepository.effectiveProfileForSelection(selectedGamePackage)
+            }
         }.getOrNull() ?: PerformanceProfile.BALANCED
         val device = DeviceInfoProvider.get(context)
         val diagnostics = RuntimeDiagnosticsProvider.get(context)
@@ -191,18 +201,30 @@ private class GameHubVoiceInteractionSession(context: Context) :
             command = VoiceCommandParser.parse(
                 transcript = transcript,
                 optionalResolver = intentResolver,
-                knownGameAliases = GameAliasStore.aliases(context).keys
+                knownGameAliases = aliasRepository.aliases().keys
             ),
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
             saveSelectedGame = { packageName ->
-                GameSelectionStore.saveSelectedGame(context, packageName)
+                DurableSelectionMutationQueue.enqueue(
+                    onFailure = ::reportSelectionPersistenceFailure
+                ) {
+                    selectionRepository.saveSelectedGame(packageName)
+                }
             },
             saveSelectedProfile = { profile ->
-                ProfileSelectionStore.saveSelectedProfile(context, profile)
+                DurableSelectionMutationQueue.enqueue(
+                    onFailure = ::reportSelectionPersistenceFailure
+                ) {
+                    selectionRepository.saveSelectedProfile(profile)
+                }
             },
             saveSelectedGameWithProfile = { packageName, profile ->
-                GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
+                DurableSelectionMutationQueue.enqueue(
+                    onFailure = ::reportSelectionPersistenceFailure
+                ) {
+                    selectionRepository.saveSelectedGameAndProfile(packageName, profile)
+                }
             },
             // X4 is selectable as a GameHub Ultra profile. Platform-only performance
             // hooks are enabled separately when the device reports support.
@@ -211,9 +233,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
             deferProfileApplication = true,
             aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
             aliasIntentResolver = intentResolver,
-            gameAliasesProvider = { GameAliasStore.aliases(context) },
+            gameAliasesProvider = { aliasRepository.aliases() },
             saveGameAlias = { alias, packageName ->
-    GameAliasStore.save(context, alias, packageName)
+    aliasRepository.save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = { profile ->
@@ -351,6 +373,14 @@ applyNetworkProfile = { profile ->
         recognizer?.cancel()
         recognizer?.destroy()
         recognizer = null
+    }
+
+    private fun reportSelectionPersistenceFailure(error: Throwable) {
+        Log.e(
+            "GameHubUltraVoice",
+            "No se pudo persistir la selección o el perfil de voz.",
+            error
+        )
     }
 
     override fun onDestroy() {

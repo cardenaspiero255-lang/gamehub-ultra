@@ -32,7 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
@@ -46,7 +48,12 @@ internal fun ConnectedAccountsCard(
     onStoreConnectionChanged: () -> Unit
 ) {
     val context = LocalContext.current
-    val store = remember(context) { ConnectedGameAccountsStore(context) }
+    val store: ConnectedGameAccountsStateRepository = remember(context) {
+        ConnectedGameAccountsStore(context)
+    }
+    val storeLibraryRepository: StoreLibraryStateRepository = remember(context) {
+        StoreLibraryStore(context)
+    }
     val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeAccountId by store.activeAccountIdFlow().collectAsStateWithLifecycle(initialValue = null)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -140,7 +147,7 @@ internal fun ConnectedAccountsCard(
                     onRemove = {
                         scope.launch {
                             store.remove(account.id)
-                            StoreLibraryStore(context).removeForAccount(account.id)
+                            storeLibraryRepository.removeForAccount(account.id)
                             onStoreConnectionChanged()
                         }
                     },
@@ -243,7 +250,7 @@ internal fun ConnectedAccountsCard(
                     enabled = displayName.isNotBlank() && publicId.isNotBlank() && profileIdSupported,
                     onClick = {
                         scope.launch {
-                            store.add(platform, displayName, publicId, alias, avatarUrl)
+                            store.upsert(platform, displayName, publicId, alias, avatarUrl)
                             displayName = ""
                             publicId = ""
                             showAddDialog = false

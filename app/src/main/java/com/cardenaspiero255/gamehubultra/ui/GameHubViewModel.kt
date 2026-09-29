@@ -1,10 +1,14 @@
 package com.cardenaspiero255.gamehubultra.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
+import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
@@ -29,7 +33,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 class GameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameHubPreferencesRepository(application)
-    private val sessionStore = GameSessionStore(application)
+    private val libraryRepository: GameLibraryStateRepository = repository
+    private val sessionStore: GameSessionStateRepository = GameSessionStore(application)
     private val sessionCoordinator = GameSessionLifecycleCoordinator(
         store = sessionStore,
         scope = viewModelScope
@@ -60,7 +65,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         repository.selectedProfileFlow(),
         selectedGameFlow,
         selectedGameConfigFlow,
-        repository.favoriteGamesFlow()
+        libraryRepository.favoriteGamesFlow()
     ) { globalProfile, selectedGamePackage, selectedGameConfig, favoriteGames ->
         BaseUiState(
             globalProfile = globalProfile,
@@ -75,8 +80,8 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
 
     val uiState = combine(
         baseStateFlow,
-        repository.recentGamesFlow(),
-        repository.manualGamesFlow()
+        libraryRepository.recentGamesFlow(),
+        libraryRepository.manualGamesFlow()
     ) { base, recentGames, manualGames ->
         GameHubUiState(
             globalProfile = base.globalProfile,
@@ -116,6 +121,33 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectGame(packageName: String) {
         viewModelScope.launch { repository.saveSelectedGame(packageName) }
+    }
+
+    fun persistVoiceSelectedGame(packageName: String) {
+        DurableSelectionMutationQueue.enqueue(
+            onFailure = ::reportVoiceSelectionPersistenceFailure
+        ) {
+            repository.saveSelectedGame(packageName)
+        }
+    }
+
+    fun persistVoiceSelectedProfile(profile: PerformanceProfile) {
+        DurableSelectionMutationQueue.enqueue(
+            onFailure = ::reportVoiceSelectionPersistenceFailure
+        ) {
+            repository.saveSelectedProfile(profile)
+        }
+    }
+
+    fun persistVoiceSelectedGameWithProfile(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        DurableSelectionMutationQueue.enqueue(
+            onFailure = ::reportVoiceSelectionPersistenceFailure
+        ) {
+            repository.saveSelectedGameAndProfile(packageName, profile)
+        }
     }
 
     fun setGameThermalPreference(
@@ -187,19 +219,27 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setFavoriteGame(packageName: String, favorite: Boolean) {
-        viewModelScope.launch { repository.setFavoriteGame(packageName, favorite) }
+        viewModelScope.launch { libraryRepository.setFavoriteGame(packageName, favorite) }
     }
 
     fun recordRecentGame(packageName: String) {
-        viewModelScope.launch { repository.recordRecentGame(packageName) }
+        viewModelScope.launch { libraryRepository.recordRecentGame(packageName) }
     }
 
     fun setManualGame(packageName: String, manual: Boolean) {
-        viewModelScope.launch { repository.setManualGame(packageName, manual) }
+        viewModelScope.launch { libraryRepository.setManualGame(packageName, manual) }
     }
 
     fun recordPerformanceEvent(event: PerformanceEvent) {
         viewModelScope.launch { repository.appendPerformanceEvent(event) }
+    }
+
+    private fun reportVoiceSelectionPersistenceFailure(error: Throwable) {
+        Log.e(
+            "GameHubViewModel",
+            "No se pudo persistir la selección o el perfil del asistente.",
+            error
+        )
     }
 
     private data class BaseUiState(

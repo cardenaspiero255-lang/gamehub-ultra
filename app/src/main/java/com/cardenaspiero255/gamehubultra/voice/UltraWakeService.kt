@@ -19,11 +19,14 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
-import com.cardenaspiero255.gamehubultra.GameSelectionStore
-import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
+import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
@@ -75,6 +78,9 @@ class UltraWakeService : Service() {
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
+    private val aliasRepository by lazy {
+        SharedPreferencesGameAliasStateRepository(applicationContext)
+    }
     private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
     private var persistentSpeechSource: UltraPersistentSpeechSource? = null
@@ -418,13 +424,17 @@ class UltraWakeService : Service() {
                 ) {
             val response = UltraWakeFailureGuard.run {
                 val context = applicationContext
-            val selectedGamePackage = runCatching {
-                runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
-            }.getOrNull()
+                val selectionRepository: GameSelectionStateRepository =
+                    GameHubPreferencesRepository(context)
+                val selectedGamePackage = runCatching {
+                    runBlocking { selectionRepository.selectedGameFlow().first() }
+                }.getOrNull()
 
-            val selectedProfile = runCatching {
-                runBlocking { ProfileSelectionStore.selectedProfileFlow(context).first() }
-            }.getOrNull() ?: PerformanceProfile.BALANCED
+                val selectedProfile = runCatching {
+                    runBlocking {
+                        selectionRepository.effectiveProfileForSelection(selectedGamePackage)
+                    }
+                }.getOrNull() ?: PerformanceProfile.BALANCED
 
             val device = DeviceInfoProvider.get(context)
             val diagnostics = RuntimeDiagnosticsProvider.get(context)
@@ -466,7 +476,7 @@ class UltraWakeService : Service() {
                     thermalLabel = status.thermalLabel,
                     refreshRateHz = diagnostics.refresh.currentRefreshRateHz
                 ),
-                knownGameAliases = GameAliasStore.aliases(context).keys,
+                knownGameAliases = aliasRepository.aliases().keys,
                 conversationHistory = conversationBefore
             )
 
@@ -537,13 +547,25 @@ class UltraWakeService : Service() {
                             launchGameFromService(context, packageName)
                         },
                         saveSelectedGame = { packageName ->
-                            GameSelectionStore.saveSelectedGame(context, packageName)
+                            DurableSelectionMutationQueue.enqueue(
+                                onFailure = ::reportSelectionPersistenceFailure
+                            ) {
+                                selectionRepository.saveSelectedGame(packageName)
+                            }
                         },
                         saveSelectedProfile = { profile ->
-                            ProfileSelectionStore.saveSelectedProfile(context, profile)
+                            DurableSelectionMutationQueue.enqueue(
+                                onFailure = ::reportSelectionPersistenceFailure
+                            ) {
+                                selectionRepository.saveSelectedProfile(profile)
+                            }
                         },
                         saveSelectedGameWithProfile = { packageName, profile ->
-                            GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
+                            DurableSelectionMutationQueue.enqueue(
+                                onFailure = ::reportSelectionPersistenceFailure
+                            ) {
+                                selectionRepository.saveSelectedGameAndProfile(packageName, profile)
+                            }
                         },
                         // X4 remains selectable even when the OEM does not expose Android's
                         // Sustained Performance Mode; unsupported hardware hooks degrade safely.
@@ -552,9 +574,9 @@ class UltraWakeService : Service() {
                         deferProfileApplication = true,
                         aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
                         aliasIntentResolver = intentResolver,
-                        gameAliasesProvider = { GameAliasStore.aliases(context) },
+                        gameAliasesProvider = { aliasRepository.aliases() },
                         saveGameAlias = { alias, packageName ->
-    GameAliasStore.save(context, alias, packageName)
+    aliasRepository.save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = { profile ->
@@ -746,6 +768,14 @@ applyNetworkProfile = { profile ->
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun reportSelectionPersistenceFailure(error: Throwable) {
+        Log.e(
+            "UltraWakeService",
+            "No se pudo persistir la selección o el perfil de voz.",
+            error
+        )
+    }
 
     override fun onDestroy() {
         stopped = true

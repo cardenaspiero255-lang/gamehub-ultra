@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -22,13 +23,21 @@ class SerialMutationQueue(
     private var tail: Job? = null
     private val failureHandler = CoroutineExceptionHandler { _, _ -> Unit }
 
-    fun enqueue(block: suspend () -> Unit): Job {
+    fun enqueue(
+        onFailure: (Throwable) -> Unit = {},
+        block: suspend () -> Unit
+    ): Job {
         val job = synchronized(monitor) {
             val previous = tail
             scope.launch(dispatcher + failureHandler, start = CoroutineStart.LAZY) {
                 previous?.join()
                 block()
             }.also { tail = it }
+        }
+        job.invokeOnCompletion { cause ->
+            if (cause != null && cause !is CancellationException) {
+                runCatching { onFailure(cause) }
+            }
         }
         job.start()
         return job

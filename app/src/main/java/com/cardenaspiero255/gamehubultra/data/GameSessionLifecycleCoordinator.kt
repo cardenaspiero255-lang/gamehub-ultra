@@ -33,7 +33,7 @@ data class SessionFinishHandle(
  * without publishing an unpersisted session to the UI.
  */
 class GameSessionLifecycleCoordinator(
-    private val store: GameSessionStore,
+    private val store: GameSessionStateRepository,
     scope: CoroutineScope,
     dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {

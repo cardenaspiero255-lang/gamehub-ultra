@@ -32,7 +32,7 @@ private val Context.gameHubDataStore by preferencesDataStore(
 
 class GameHubPreferencesRepository(
     private val dataStore: DataStore<Preferences>
-) {
+) : GameSelectionStateRepository, GameLibraryStateRepository {
     constructor(context: Context) : this(context.applicationContext.gameHubDataStore)
 
     private val selectedProfileKey = stringPreferencesKey("selected_profile")
@@ -42,18 +42,18 @@ class GameHubPreferencesRepository(
     private val manualGamesKey = stringSetPreferencesKey("manual_game_packages")
     private val performanceHistoryKey = stringPreferencesKey("performance_history")
 
-    fun selectedProfileFlow(): Flow<PerformanceProfile> =
+    override fun selectedProfileFlow(): Flow<PerformanceProfile> =
         dataStore.data.map { preferences ->
             decodeProfile(preferences[selectedProfileKey]) ?: PerformanceProfile.BALANCED
         }
 
-    fun selectedGameFlow(): Flow<String?> =
+    override fun selectedGameFlow(): Flow<String?> =
         dataStore.data.map { preferences -> preferences[selectedGameKey] }
 
-    fun profileForGameFlow(packageName: String): Flow<PerformanceProfile?> =
+    override fun profileForGameFlow(packageName: String): Flow<PerformanceProfile?> =
         gameProfileConfigFlow(packageName).map { it?.performanceProfile }
 
-    fun gameProfileConfigFlow(packageName: String): Flow<GameProfileConfig?> =
+    override fun gameProfileConfigFlow(packageName: String): Flow<GameProfileConfig?> =
         dataStore.data.map { preferences ->
             val profile = decodeProfile(preferences[gameProfileKey(packageName)])
             val thermal = decodeThermalPreference(preferences[gameThermalKey(packageName)])
@@ -76,12 +76,12 @@ class GameHubPreferencesRepository(
             }
         }
 
-    fun favoriteGamesFlow(): Flow<Set<String>> =
+    override fun favoriteGamesFlow(): Flow<Set<String>> =
         dataStore.data.map { preferences ->
             preferences[favoriteGamesKey] ?: emptySet()
         }
 
-    fun recentGamesFlow(): Flow<List<String>> =
+    override fun recentGamesFlow(): Flow<List<String>> =
         dataStore.data.map { preferences ->
             preferences[recentGamesKey]
                 .orEmpty()
@@ -90,7 +90,7 @@ class GameHubPreferencesRepository(
                 .filter(String::isNotEmpty)
         }
 
-    fun manualGamesFlow(): Flow<Set<String>> =
+    override fun manualGamesFlow(): Flow<Set<String>> =
         dataStore.data.map { preferences ->
             preferences[manualGamesKey] ?: emptySet()
         }
@@ -105,19 +105,19 @@ class GameHubPreferencesRepository(
                 .takeLast(limit.coerceIn(1, 50))
         }
 
-    suspend fun saveSelectedProfile(profile: PerformanceProfile) {
+    override suspend fun saveSelectedProfile(profile: PerformanceProfile) {
         dataStore.edit { preferences ->
             preferences[selectedProfileKey] = profile.name
         }
     }
 
-    suspend fun saveSelectedGame(packageName: String) {
+    override suspend fun saveSelectedGame(packageName: String) {
         dataStore.edit { preferences ->
             preferences[selectedGameKey] = packageName
         }
     }
 
-    suspend fun saveSelectedGameAndProfile(
+    override suspend fun saveSelectedGameAndProfile(
         packageName: String,
         profile: PerformanceProfile
     ) {
@@ -127,7 +127,7 @@ class GameHubPreferencesRepository(
         }
     }
 
-    suspend fun saveProfileForGame(
+    override suspend fun saveProfileForGame(
         packageName: String,
         profile: PerformanceProfile
     ) {
@@ -136,7 +136,7 @@ class GameHubPreferencesRepository(
         }
     }
 
-    suspend fun saveGameProfileConfig(
+    override suspend fun saveGameProfileConfig(
         packageName: String,
         config: GameProfileConfig
     ) {
@@ -155,7 +155,7 @@ class GameHubPreferencesRepository(
         }
     }
 
-    suspend fun setFavoriteGame(packageName: String, favorite: Boolean) {
+    override suspend fun setFavoriteGame(packageName: String, favorite: Boolean) {
         dataStore.edit { preferences ->
             val current = preferences[favoriteGamesKey].orEmpty().toMutableSet()
             if (favorite) current += packageName else current -= packageName
@@ -163,7 +163,7 @@ class GameHubPreferencesRepository(
         }
     }
 
-    suspend fun recordRecentGame(packageName: String) {
+    override suspend fun recordRecentGame(packageName: String) {
         dataStore.edit { preferences ->
             val current = preferences[recentGamesKey]
                 .orEmpty()
@@ -177,7 +177,7 @@ class GameHubPreferencesRepository(
         }
     }
 
-    suspend fun setManualGame(packageName: String, manual: Boolean) {
+    override suspend fun setManualGame(packageName: String, manual: Boolean) {
         dataStore.edit { preferences ->
             val current = preferences[manualGamesKey].orEmpty().toMutableSet()
             if (manual) current += packageName else current -= packageName

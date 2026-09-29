@@ -20,8 +20,9 @@ import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
-import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.store.StoreConnectionActivity
 import android.os.Build
@@ -113,7 +114,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceChange
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
-import com.cardenaspiero255.gamehubultra.voice.GameAliasStore
+import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesGameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.voice.NetworkVoiceResponseText
 import com.cardenaspiero255.gamehubultra.voice.VoiceNetworkSnapshotFactory
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
@@ -227,6 +228,9 @@ internal fun GameHubUltraApp(
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
+    val storeLibraryRepository: StoreLibraryStateRepository = remember(context) {
+        StoreLibraryStore(context)
+    }
     val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     val aiAdvisor = ultraRuntime.assistant
     val ultraSessionMemory = ultraRuntime.sessionMemory
@@ -242,7 +246,9 @@ internal fun GameHubUltraApp(
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
-    val optimizationMemoryStore = remember(context) { GameOptimizationMemoryStore(context) }
+    val optimizationMemoryStore: GameOptimizationMemoryStateRepository = remember(context) {
+        GameOptimizationMemoryStore(context)
+    }
     val selectedGameForMemory = uiState.selectedGamePackage
     val selectedGameVersion = remember(selectedGameForMemory) {
         selectedGameForMemory?.let { packageVersionName(context, it) }
@@ -276,7 +282,7 @@ internal fun GameHubUltraApp(
 
     LaunchedEffect(storeRefreshToken) {
         storeGames = withContext(Dispatchers.IO) {
-            StoreLibraryStore(context).getAll()
+            storeLibraryRepository.getAll()
         }
     }
     val adaptiveEngine = remember(uiState.effectiveProfile) {
@@ -632,6 +638,9 @@ internal fun GameHubUltraApp(
                 conversation = ultraConversation,
                 onConversationChanged = ultraSessionController::updateConversation,
                 assistantInputEnabled = ultraAssistantInputReady,
+                onVoiceSelectedGame = viewModel::persistVoiceSelectedGame,
+                onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile,
+                onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
@@ -753,7 +762,10 @@ internal fun GameHubUltraApp(
                         assistantInputEnabled = ultraAssistantInputReady,
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
-                        onGameSelected = ::selectGame
+                        onGameSelected = ::selectGame,
+                        onVoiceSelectedGame = viewModel::persistVoiceSelectedGame,
+                        onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile,
+                        onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile
                     )
                 }
             }
@@ -818,7 +830,10 @@ private fun UltraAssistantSidePanel(
     assistantInputEnabled: Boolean,
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
-    onGameSelected: (String) -> Unit
+    onGameSelected: (String) -> Unit,
+    onVoiceSelectedGame: (String) -> Unit,
+    onVoiceSelectedProfile: (PerformanceProfile) -> Unit,
+    onVoiceSelectedGameWithProfile: (String, PerformanceProfile) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -837,6 +852,9 @@ private fun UltraAssistantSidePanel(
             selectedProfileName = selectedProfileName,
             onProfileSelected = onProfileSelected,
             onGameSelected = onGameSelected,
+            onVoiceSelectedGame = onVoiceSelectedGame,
+            onVoiceSelectedProfile = onVoiceSelectedProfile,
+            onVoiceSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
             aiContext = aiContext,
             ultraRuntime = ultraRuntime,
             queryRunner = queryRunner,
@@ -877,6 +895,9 @@ private fun HomeScreen(
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     assistantInputEnabled: Boolean,
+    onVoiceSelectedGame: (String) -> Unit,
+    onVoiceSelectedProfile: (PerformanceProfile) -> Unit,
+    onVoiceSelectedGameWithProfile: (String, PerformanceProfile) -> Unit,
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
@@ -973,6 +994,9 @@ private fun HomeScreen(
                     selectedProfileName = selectedProfileName,
                     onProfileSelected = onProfileSelected,
                     onGameSelected = onGameSelected,
+                    onVoiceSelectedGame = onVoiceSelectedGame,
+                    onVoiceSelectedProfile = onVoiceSelectedProfile,
+                    onVoiceSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                     aiContext = aiContext,
                     ultraRuntime = ultraRuntime,
                     queryRunner = queryRunner,
@@ -1032,6 +1056,9 @@ private fun HomeScreen(
                     selectedProfileName = selectedProfileName,
                     onProfileSelected = onProfileSelected,
                     onGameSelected = onGameSelected,
+                    onVoiceSelectedGame = onVoiceSelectedGame,
+                    onVoiceSelectedProfile = onVoiceSelectedProfile,
+                    onVoiceSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                     aiContext = aiContext,
                     ultraRuntime = ultraRuntime,
                     queryRunner = queryRunner,
@@ -1064,6 +1091,9 @@ private fun VoiceAssistantCard(
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit,
+    onVoiceSelectedGame: (String) -> Unit,
+    onVoiceSelectedProfile: (PerformanceProfile) -> Unit,
+    onVoiceSelectedGameWithProfile: (String, PerformanceProfile) -> Unit,
     aiContext: GameHubAiContext,
     ultraRuntime: UltraUiRuntimeDependencies,
     queryRunner: UltraAssistantQueryRunner,
@@ -1073,6 +1103,9 @@ private fun VoiceAssistantCard(
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val aliasRepository = remember(context) {
+        SharedPreferencesGameAliasStateRepository(context)
+    }
     val aiAdvisor = ultraRuntime.assistant
     val queryExecutor = ultraRuntime.queryExecutor
     val agentRouter = ultraRuntime.agentRouter
@@ -1155,7 +1188,7 @@ private fun VoiceAssistantCard(
                         thermalLabel = deviceStatus.thermalLabel,
                         refreshRateHz = turnAiContext.refreshRateHz
                     ),
-                    knownGameAliases = GameAliasStore.aliases(context).keys
+                    knownGameAliases = aliasRepository.aliases().keys
                 )
             )
 
@@ -1211,28 +1244,18 @@ private fun VoiceAssistantCard(
                         launchGame = { packageName ->
                             GameLauncher.launch(context, packageName)
                         },
-                        saveSelectedGame = { packageName ->
-                            GameSelectionStore.saveSelectedGame(context, packageName)
-                        },
-                        saveSelectedProfile = { profile ->
-                            ProfileSelectionStore.saveSelectedProfile(context, profile)
-                        },
-                        saveSelectedGameWithProfile = { packageName, profile ->
-                            GameSelectionStore.saveSelectedGameAndProfile(
-                                context,
-                                packageName,
-                                profile
-                            )
-                        },
+                        saveSelectedGame = onVoiceSelectedGame,
+                        saveSelectedProfile = onVoiceSelectedProfile,
+                        saveSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                         isProfileAvailable = { _ -> true },
                         statusProvider = { VoiceDeviceStatusProvider.read(context) },
                         aiAdvisor = { question ->
                             aiAdvisor.advise(question, latestAiContext)
                         },
                         aliasIntentResolver = aiIntentResolver,
-                        gameAliasesProvider = { GameAliasStore.aliases(context) },
+                        gameAliasesProvider = { aliasRepository.aliases() },
                         saveGameAlias = { alias, packageName ->
-                            GameAliasStore.save(context, alias, packageName)
+                            aliasRepository.save(alias, packageName)
                         },
                         networkStatusProvider = {
                             VoiceNetworkSnapshotFactory.current(context)
@@ -1346,7 +1369,7 @@ private fun VoiceAssistantCard(
                                 thermalLabel = voiceStatus.thermalLabel,
                                 refreshRateHz = turnAiContext.refreshRateHz
                             ),
-                            knownGameAliases = GameAliasStore.aliases(context).keys,
+                            knownGameAliases = aliasRepository.aliases().keys,
                             conversationHistory = conversationBeforeTurn
                         )
                     )
@@ -1427,19 +1450,9 @@ private fun VoiceAssistantCard(
                                 launchGame = { packageName ->
                                     GameLauncher.launch(context, packageName)
                                 },
-                                saveSelectedGame = { packageName ->
-                                    GameSelectionStore.saveSelectedGame(context, packageName)
-                                },
-                                saveSelectedProfile = { profile ->
-                                    ProfileSelectionStore.saveSelectedProfile(context, profile)
-                                },
-                                saveSelectedGameWithProfile = { packageName, profile ->
-                                    GameSelectionStore.saveSelectedGameAndProfile(
-                                        context,
-                                        packageName,
-                                        profile
-                                    )
-                                },
+                                saveSelectedGame = onVoiceSelectedGame,
+                                saveSelectedProfile = onVoiceSelectedProfile,
+                                saveSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                                 // X4 is an app profile. Hardware Sustained Performance Mode is
                                 // applied opportunistically by PerformanceController when supported.
                                 isProfileAvailable = { _ -> true },
@@ -1448,9 +1461,9 @@ private fun VoiceAssistantCard(
                                     aiAdvisor.advise(question, latestAiContext)
                                 },
                                 aliasIntentResolver = aiIntentResolver,
-                                gameAliasesProvider = { GameAliasStore.aliases(context) },
+                                gameAliasesProvider = { aliasRepository.aliases() },
                                 saveGameAlias = { alias, packageName ->
-    GameAliasStore.save(context, alias, packageName)
+    aliasRepository.save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = networkGaming::applyProfile

@@ -78,4 +78,31 @@ class SerialMutationQueueTest {
         }
     }
 
+
+    @Test
+    fun failedMutationInvokesFailureCallbackAndNextMutationStillRuns() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val queue = SerialMutationQueue(scope)
+        val reported = CompletableDeferred<Throwable>()
+        val nextRan = CompletableDeferred<Unit>()
+
+        try {
+            queue.enqueue(
+                onFailure = { throwable -> reported.complete(throwable) }
+            ) {
+                error("simulated datastore failure")
+            }
+            queue.enqueue {
+                nextRan.complete(Unit)
+            }
+
+            queue.awaitIdle()
+
+            assertEquals("simulated datastore failure", reported.await().message)
+            assertTrue(nextRan.isCompleted)
+        } finally {
+            scope.cancel()
+        }
+    }
+
 }

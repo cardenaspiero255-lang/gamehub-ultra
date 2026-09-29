@@ -38,10 +38,10 @@ private val Context.gameSessionDataStore: DataStore<Preferences> by preferencesD
 class GameSessionStore(
     private val dataStore: DataStore<Preferences>,
     private val maxSessions: Int = 30
-) {
+) : GameSessionStateRepository {
     constructor(context: Context) : this(context.applicationContext.gameSessionDataStore)
 
-    fun sessionsFlow(): Flow<List<GameSessionRecord>> =
+    override fun sessionsFlow(): Flow<List<GameSessionRecord>> =
         dataStore.data.map { preferences ->
             preferences[sessionsKey]
                 .orEmpty()
@@ -52,7 +52,7 @@ class GameSessionStore(
                 .toList()
         }
 
-    suspend fun startSession(record: GameSessionRecord) {
+    override suspend fun startSession(record: GameSessionRecord) {
         dataStore.edit { preferences ->
             val current = preferences[sessionsKey]
                 .orEmpty()
@@ -71,7 +71,7 @@ class GameSessionStore(
         }
     }
 
-    suspend fun finishSession(
+    override suspend fun finishSession(
         sessionId: String,
         endedAtMillis: Long,
         endBatteryPercent: Int?,
@@ -104,7 +104,7 @@ class GameSessionStore(
         return updated
     }
 
-    suspend fun finishActiveSessions(endedAtMillis: Long): Int {
+    override suspend fun finishActiveSessions(endedAtMillis: Long): Int {
         var updatedCount = 0
         dataStore.edit { preferences ->
             val current = preferences[sessionsKey]
@@ -128,7 +128,7 @@ class GameSessionStore(
         return updatedCount
     }
 
-    suspend fun clearSessions() {
+    override suspend fun clearSessions() {
         dataStore.edit { preferences -> preferences.remove(sessionsKey) }
     }
 
