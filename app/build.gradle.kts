@@ -86,6 +86,7 @@ android {
         applicationId = "com.cardenaspiero255.gamehubultra"
         minSdk = 26
         targetSdk = 36
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = 3
         versionName = "0.3.0"
         buildConfigField(
@@ -210,4 +211,8 @@ dependencies {
     baselineProfile(project(":baseline-profile"))
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.3.21")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

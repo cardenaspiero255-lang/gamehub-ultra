@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
+import com.cardenaspiero255.gamehubultra.ui.GameHubPresentation
 
 class MainActivity : ComponentActivity() {
 
@@ -17,7 +18,7 @@ class MainActivity : ComponentActivity() {
         val bootstrap = GameHubProductionComposition.create(this)
 
         setContent {
-            GameHubProductionComposition.Content(
+            GameHubPresentation.Content(
                 activity = this,
                 bootstrap = bootstrap,
                 deepLinkHost = intent?.data?.host

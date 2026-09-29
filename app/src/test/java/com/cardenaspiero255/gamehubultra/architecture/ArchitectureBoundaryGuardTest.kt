@@ -84,6 +84,32 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun productionCompositionDoesNotOwnComposePresentation() {
+        val composition = sourceFile(
+            "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
+        ).readText()
+
+        val forbiddenPresentationSymbols = listOf(
+            "androidx.compose.",
+            "GameHubUltraTheme",
+            "GameHubUltraApp",
+            "GameHubViewModel",
+            "@Composable"
+        )
+        val violations = forbiddenPresentationSymbols
+            .filter(composition::contains)
+            .map { symbol -> "Production composition reaches presentation symbol $symbol" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Production composition must build runtime dependencies only; presentation belongs to the UI boundary:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun productionCompositionOwnsConcreteUltraImplementations() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"

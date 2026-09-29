@@ -2,14 +2,6 @@ package com.cardenaspiero255.gamehubultra.composition
 
 import android.content.Context
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.cardenaspiero255.gamehubultra.GameHubUltraApp
 import com.cardenaspiero255.gamehubultra.UltraConversationSessionMemoryAdapter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
@@ -28,9 +20,7 @@ import com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
-import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
-import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
 
@@ -94,36 +84,6 @@ internal object GameHubProductionComposition {
         ContinuousVoiceController(
             AndroidContinuousVoiceGateway(context)
         ).resumeIfEnabled()
-    }
-
-    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    @Composable
-    fun Content(
-        activity: ComponentActivity,
-        bootstrap: GameHubProductionBootstrap,
-        deepLinkHost: String?
-    ) {
-        val initialTab = if (deepLinkHost == "library") 1 else 0
-        val gameHubViewModel: GameHubViewModel = viewModel()
-
-        GameHubUltraTheme {
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .semantics { testTagsAsResourceId = true }
-            ) {
-                GameHubUltraApp(
-                    initialState = bootstrap.initialState,
-                    device = bootstrap.device,
-                    viewModel = gameHubViewModel,
-                    ultraRuntime = bootstrap.ultraRuntime,
-                    initialTab = initialTab,
-                    onProfileApplied = { profile ->
-                        bootstrap.performanceController.apply(profile, activity.window)
-                    }
-                )
-            }
-        }
     }
 
     private fun routeAgentRequest(
