@@ -632,6 +632,9 @@ internal fun GameHubUltraApp(
                 conversation = ultraConversation,
                 onConversationChanged = ultraSessionController::updateConversation,
                 assistantInputEnabled = ultraAssistantInputReady,
+                onVoiceSelectedGame = viewModel::selectGame,
+                onVoiceSelectedProfile = viewModel::selectGlobalProfile,
+                onVoiceSelectedGameWithProfile = viewModel::selectGameWithProfile,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
@@ -753,7 +756,10 @@ internal fun GameHubUltraApp(
                         assistantInputEnabled = ultraAssistantInputReady,
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
-                        onGameSelected = ::selectGame
+                        onGameSelected = ::selectGame,
+                        onVoiceSelectedGame = viewModel::selectGame,
+                        onVoiceSelectedProfile = viewModel::selectGlobalProfile,
+                        onVoiceSelectedGameWithProfile = viewModel::selectGameWithProfile
                     )
                 }
             }
@@ -818,7 +824,10 @@ private fun UltraAssistantSidePanel(
     assistantInputEnabled: Boolean,
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
-    onGameSelected: (String) -> Unit
+    onGameSelected: (String) -> Unit,
+    onVoiceSelectedGame: (String) -> Unit,
+    onVoiceSelectedProfile: (PerformanceProfile) -> Unit,
+    onVoiceSelectedGameWithProfile: (String, PerformanceProfile) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -837,6 +846,9 @@ private fun UltraAssistantSidePanel(
             selectedProfileName = selectedProfileName,
             onProfileSelected = onProfileSelected,
             onGameSelected = onGameSelected,
+            onVoiceSelectedGame = onVoiceSelectedGame,
+            onVoiceSelectedProfile = onVoiceSelectedProfile,
+            onVoiceSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
             aiContext = aiContext,
             ultraRuntime = ultraRuntime,
             queryRunner = queryRunner,
@@ -877,6 +889,9 @@ private fun HomeScreen(
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     assistantInputEnabled: Boolean,
+    onVoiceSelectedGame: (String) -> Unit,
+    onVoiceSelectedProfile: (PerformanceProfile) -> Unit,
+    onVoiceSelectedGameWithProfile: (String, PerformanceProfile) -> Unit,
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
     manualGamePackages: Set<String>,
@@ -973,6 +988,9 @@ private fun HomeScreen(
                     selectedProfileName = selectedProfileName,
                     onProfileSelected = onProfileSelected,
                     onGameSelected = onGameSelected,
+                    onVoiceSelectedGame = onVoiceSelectedGame,
+                    onVoiceSelectedProfile = onVoiceSelectedProfile,
+                    onVoiceSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                     aiContext = aiContext,
                     ultraRuntime = ultraRuntime,
                     queryRunner = queryRunner,
@@ -1032,6 +1050,9 @@ private fun HomeScreen(
                     selectedProfileName = selectedProfileName,
                     onProfileSelected = onProfileSelected,
                     onGameSelected = onGameSelected,
+                    onVoiceSelectedGame = onVoiceSelectedGame,
+                    onVoiceSelectedProfile = onVoiceSelectedProfile,
+                    onVoiceSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                     aiContext = aiContext,
                     ultraRuntime = ultraRuntime,
                     queryRunner = queryRunner,
@@ -1064,6 +1085,9 @@ private fun VoiceAssistantCard(
     selectedProfileName: String,
     onProfileSelected: (PerformanceProfile) -> Unit,
     onGameSelected: (String) -> Unit,
+    onVoiceSelectedGame: (String) -> Unit,
+    onVoiceSelectedProfile: (PerformanceProfile) -> Unit,
+    onVoiceSelectedGameWithProfile: (String, PerformanceProfile) -> Unit,
     aiContext: GameHubAiContext,
     ultraRuntime: UltraUiRuntimeDependencies,
     queryRunner: UltraAssistantQueryRunner,
@@ -1211,19 +1235,9 @@ private fun VoiceAssistantCard(
                         launchGame = { packageName ->
                             GameLauncher.launch(context, packageName)
                         },
-                        saveSelectedGame = { packageName ->
-                            GameSelectionStore.saveSelectedGame(context, packageName)
-                        },
-                        saveSelectedProfile = { profile ->
-                            ProfileSelectionStore.saveSelectedProfile(context, profile)
-                        },
-                        saveSelectedGameWithProfile = { packageName, profile ->
-                            GameSelectionStore.saveSelectedGameAndProfile(
-                                context,
-                                packageName,
-                                profile
-                            )
-                        },
+                        saveSelectedGame = onVoiceSelectedGame,
+                        saveSelectedProfile = onVoiceSelectedProfile,
+                        saveSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                         isProfileAvailable = { _ -> true },
                         statusProvider = { VoiceDeviceStatusProvider.read(context) },
                         aiAdvisor = { question ->
@@ -1427,19 +1441,9 @@ private fun VoiceAssistantCard(
                                 launchGame = { packageName ->
                                     GameLauncher.launch(context, packageName)
                                 },
-                                saveSelectedGame = { packageName ->
-                                    GameSelectionStore.saveSelectedGame(context, packageName)
-                                },
-                                saveSelectedProfile = { profile ->
-                                    ProfileSelectionStore.saveSelectedProfile(context, profile)
-                                },
-                                saveSelectedGameWithProfile = { packageName, profile ->
-                                    GameSelectionStore.saveSelectedGameAndProfile(
-                                        context,
-                                        packageName,
-                                        profile
-                                    )
-                                },
+                                saveSelectedGame = onVoiceSelectedGame,
+                                saveSelectedProfile = onVoiceSelectedProfile,
+                                saveSelectedGameWithProfile = onVoiceSelectedGameWithProfile,
                                 // X4 is an app profile. Hardware Sustained Performance Mode is
                                 // applied opportunistically by PerformanceController when supported.
                                 isProfileAvailable = { _ -> true },
