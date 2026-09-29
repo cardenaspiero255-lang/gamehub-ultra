@@ -114,9 +114,9 @@ class ArchitectureBoundaryGuardTest {
         val lineCount = app.readLines().size
 
         assertTrue(
-            lineCount <= 3_730,
+            lineCount <= 3_630,
             "GameHubUltraApp.kt must keep shrinking during weakness block 6; " +
-                "current line count: $lineCount, ceiling: 3730"
+                "current line count: $lineCount, ceiling: 3630"
         )
     }
 
