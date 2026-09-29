@@ -350,11 +350,11 @@ class ArchitectureBoundaryGuardTest {
 
     private fun containsBlockingSelectionWrite(source: String): Boolean {
         val runBlockingStart = Regex(
-            """\\brunBlocking(?:\\s*\\([^)]*\\))?\\s*\\{"""
+            """\brunBlocking(?:\s*\([^)]*\))?\s*\{"""
         )
         val selectionWrite = Regex(
-            """selectionRepository\\s*\\.\\s*saveSelected""" +
-                """(?:GameAndProfile|Game|Profile)\\s*\\("""
+            """selectionRepository\s*\.\s*saveSelected""" +
+                """(?:GameAndProfile|Game|Profile)\s*\("""
         )
 
         var searchFrom = 0
