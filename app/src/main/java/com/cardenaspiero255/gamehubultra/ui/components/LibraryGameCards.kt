@@ -26,10 +26,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
-import com.cardenaspiero255.gamehubultra.DeviceRow
 import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.R
-import com.cardenaspiero255.gamehubultra.formatDuration
 import com.cardenaspiero255.gamehubultra.isPackageInstalled
 import com.cardenaspiero255.gamehubultra.localizedProfileTitle
 import com.cardenaspiero255.gamehubultra.packageVersionName
