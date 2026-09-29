@@ -205,6 +205,18 @@ def gradle_commands(script: str) -> list[list[str]]:
     return result
 
 
+def normalized_gradle_invocation(tokens: list[str]) -> list[str]:
+    """Keep every Gradle argument while dropping only shell redirection plumbing."""
+    normalized: list[str] = []
+    for token in tokens:
+        if token in {"|", ">", ">>", "1>", "1>>", "2>", "2>>", "2>&1"}:
+            break
+        if token.startswith((">", "1>", "2>")):
+            break
+        normalized.append(token)
+    return normalized
+
+
 def require_gradle_invocation(
     step_value: dict[str, Any],
     label: str,
@@ -344,7 +356,7 @@ def main() -> None:
             f"{len(executable_quality_matches)} executable and "
             f"{len(probe_quality_matches)} probes"
         )
-    if probe_quality_matches[0] != probe_quality_matches[1]:
+    if normalized_gradle_invocation(probe_quality_matches[0]) != normalized_gradle_invocation(probe_quality_matches[1]):
         fail("Quality --dry-run Configuration Cache probes differ")
     require_shell_command(
         quality,
@@ -403,18 +415,7 @@ def main() -> None:
             f"{len(executable_release_graphs)} executable and "
             f"{len(probe_release_graphs)} probes"
         )
-    # Compare every Gradle argument while ignoring only shell output plumbing
-    # that may follow the command (redirection or a tee pipeline).
-    def gradle_invocation(tokens):
-        shell_markers = {"|", ">", ">>", "1>", "1>>", "2>", "2>>", "2>&1"}
-        normalized = []
-        for token in tokens:
-            if token in shell_markers or token.startswith((">", "1>", "2>")):
-                break
-            normalized.append(token)
-        return normalized
-
-    if gradle_invocation(probe_release_graphs[0]) != gradle_invocation(probe_release_graphs[1]):
+    if normalized_gradle_invocation(probe_release_graphs[0]) != normalized_gradle_invocation(probe_release_graphs[1]):
         fail("Release/performance --dry-run Configuration Cache probes differ")
     for label, tokens in (
         ("executable release/performance graph", executable_release_graphs[0]),
