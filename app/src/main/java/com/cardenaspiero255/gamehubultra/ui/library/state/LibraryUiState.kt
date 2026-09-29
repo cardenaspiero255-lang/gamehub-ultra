@@ -36,11 +36,13 @@ internal fun LibraryUiState.reduce(event: LibraryUiEvent): LibraryUiState =
     }
 
 internal class LibraryUiStateHolder(initialState: LibraryUiState = LibraryUiState()) {
-    var state by androidx.compose.runtime.mutableStateOf(initialState)
-        private set
+    private val mutableState = androidx.compose.runtime.mutableStateOf(initialState)
+
+    val state: LibraryUiState
+        get() = mutableState.value
 
     fun onEvent(event: LibraryUiEvent) {
-        state = state.reduce(event)
+        mutableState.value = mutableState.value.reduce(event)
     }
 }
 
