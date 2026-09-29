@@ -1819,19 +1819,21 @@ private fun LibraryScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val libraryStateHolder = rememberLibraryUiStateHolder()
     val libraryUiState = libraryStateHolder.state
-    var discovery by remember { mutableStateOf<GameDiscoveryResult?>(null) }
-    var launchableApps by remember { mutableStateOf<List<GameInfo>>(emptyList()) }
     LaunchedEffect(context, libraryUiState.refreshToken, manualGamePackages) {
-        discovery = withContext(Dispatchers.IO) {
+        val discovery = withContext(Dispatchers.IO) {
             GameLibrary.discover(context, manualGamePackages)
         }
+        libraryStateHolder.onEvent(LibraryUiEvent.DiscoveryLoaded(discovery))
     }
 
     LaunchedEffect(context, libraryUiState.addGameDialogVisible) {
         if (libraryUiState.addGameDialogVisible) {
-            launchableApps = withContext(Dispatchers.IO) {
+            val launchableApps = withContext(Dispatchers.IO) {
                 GameLibrary.discoverNonGameLaunchableApps(context)
             }
+            libraryStateHolder.onEvent(
+                LibraryUiEvent.LaunchableAppsLoaded(launchableApps)
+            )
         }
     }
 
@@ -1847,7 +1849,7 @@ private fun LibraryScreen(
         }
     }
 
-    val result = discovery
+    val result = libraryUiState.discovery
     val orderedGames = remember(result?.games, favoriteGames, recentGamePackages) {
         val recentOrder = recentGamePackages.withIndex()
             .associate { indexed -> indexed.value to indexed.index }
@@ -2087,7 +2089,7 @@ private fun LibraryScreen(
     }
 
     if (libraryUiState.addGameDialogVisible) {
-        val candidates = launchableApps
+        val candidates = libraryUiState.launchableApps
         AlertDialog(
             onDismissRequest = {
                 libraryStateHolder.onEvent(
