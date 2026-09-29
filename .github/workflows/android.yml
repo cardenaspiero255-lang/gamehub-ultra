@@ -420,6 +420,20 @@ jobs:
               --configuration-cache-problems=fail \
               --stacktrace 2>&1 | tee "$BUILD_LOG"
 
+            # Prime and then prove reuse of the dry-run Configuration Cache
+            # entry without executing the expensive release/performance graph
+            # again. The two probes are intentionally identical.
+            gradle \
+              :app:assembleRelease \
+              :app:bundleRelease \
+              :app:assembleNonMinifiedRelease \
+              :baseline-profile:assembleNonMinifiedRelease \
+              --build-cache \
+              --parallel \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --dry-run \
+              --stacktrace >/dev/null
             RELEASE_CONFIG_CACHE_LOG="$RUNNER_TEMP/release-configuration-cache-reuse.log"
             gradle \
               :app:assembleRelease \
@@ -430,6 +444,7 @@ jobs:
               --parallel \
               --configuration-cache \
               --configuration-cache-problems=fail \
+              --dry-run \
               --stacktrace 2>&1 | tee "$RELEASE_CONFIG_CACHE_LOG"
             grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"
           ) &

@@ -368,6 +368,77 @@ def main() -> None:
         args=("--build-cache", "--parallel"),
     )
 
+    release_tasks = (
+        ":app:assembleRelease",
+        ":app:bundleRelease",
+        ":app:assembleNonMinifiedRelease",
+        ":baseline-profile:assembleNonMinifiedRelease",
+    )
+    release_args = (
+        "--build-cache",
+        "--parallel",
+        "--configuration-cache",
+        "--configuration-cache-problems=fail",
+    )
+    # Count complete release graphs independently of their flags so an extra
+    # expensive invocation cannot hide by dropping Configuration Cache options.
+    release_graphs = [
+        tokens
+        for tokens in gradle_commands(str(release.get("run", "")))
+        if all(task in set(tokens) for task in release_tasks)
+    ]
+    executable_release_graphs = [
+        tokens for tokens in release_graphs if "--dry-run" not in set(tokens)
+    ]
+    probe_release_graphs = [
+        tokens for tokens in release_graphs if "--dry-run" in set(tokens)
+    ]
+    if len(executable_release_graphs) != 1 or len(probe_release_graphs) != 2:
+        fail(
+            "Configuration Cache proof requires exactly one executable "
+            "release/performance graph and two identical non-executing --dry-run "
+            "probes; found "
+            f"{len(executable_release_graphs)} executable and "
+            f"{len(probe_release_graphs)} probes"
+        )
+    # Compare every Gradle argument while ignoring only shell output plumbing
+    # that may follow the command (redirection or a tee pipeline).
+    def gradle_invocation(tokens):
+        shell_markers = {"|", ">", ">>", "1>", "1>>", "2>", "2>>", "2>&1"}
+        normalized = []
+        for token in tokens:
+            if token in shell_markers or token.startswith((">", "1>", "2>")):
+                break
+            normalized.append(token)
+        return normalized
+
+    if gradle_invocation(probe_release_graphs[0]) != gradle_invocation(probe_release_graphs[1]):
+        fail("Release/performance --dry-run Configuration Cache probes differ")
+    for label, tokens in (
+        ("executable release/performance graph", executable_release_graphs[0]),
+        ("first release/performance --dry-run probe", probe_release_graphs[0]),
+        ("second release/performance --dry-run probe", probe_release_graphs[1]),
+    ):
+        token_set = set(tokens)
+        missing_args = [arg for arg in release_args if arg not in token_set]
+        if missing_args:
+            fail(f"{label} is missing required arguments: {missing_args!r}")
+    release_task_set = set(release_tasks)
+    for tokens in gradle_commands(str(release.get("run", ""))):
+        token_set = set(tokens)
+        present_release_tasks = release_task_set.intersection(token_set)
+        if present_release_tasks and present_release_tasks != release_task_set:
+            fail(
+                "Release/performance Gradle invocations must not execute a partial "
+                "required task graph; found "
+                f"{sorted(present_release_tasks)!r}"
+            )
+    require_shell_command(
+        release,
+        "device-validation/Configuration Cache reuse",
+        ("grep", "-Fq", "Reusing configuration cache.", "$RELEASE_CONFIG_CACHE_LOG"),
+    )
+
     # Phase 2 block 2 must remain a measurable A/B experiment: the candidate
     # starts the emulator immediately and emits timestamps used to compare
     # end-to-end device-validation latency against main.
