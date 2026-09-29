@@ -14,6 +14,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.view.View
 import android.widget.TextView
 import android.service.voice.VoiceInteractionService
@@ -202,17 +203,23 @@ private class GameHubVoiceInteractionSession(context: Context) :
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
             saveSelectedGame = { packageName ->
-                DurableSelectionMutationQueue.enqueue {
+                DurableSelectionMutationQueue.enqueue(
+                    onFailure = ::reportSelectionPersistenceFailure
+                ) {
                     selectionRepository.saveSelectedGame(packageName)
                 }
             },
             saveSelectedProfile = { profile ->
-                DurableSelectionMutationQueue.enqueue {
+                DurableSelectionMutationQueue.enqueue(
+                    onFailure = ::reportSelectionPersistenceFailure
+                ) {
                     selectionRepository.saveSelectedProfile(profile)
                 }
             },
             saveSelectedGameWithProfile = { packageName, profile ->
-                DurableSelectionMutationQueue.enqueue {
+                DurableSelectionMutationQueue.enqueue(
+                    onFailure = ::reportSelectionPersistenceFailure
+                ) {
                     selectionRepository.saveSelectedGameAndProfile(packageName, profile)
                 }
             },
@@ -363,6 +370,14 @@ applyNetworkProfile = { profile ->
         recognizer?.cancel()
         recognizer?.destroy()
         recognizer = null
+    }
+
+    private fun reportSelectionPersistenceFailure(error: Throwable) {
+        Log.e(
+            "GameHubUltraVoice",
+            "No se pudo persistir la selección o el perfil de voz.",
+            error
+        )
     }
 
     override fun onDestroy() {
