@@ -198,6 +198,20 @@ class UltraToolContractTest {
     }
 
     @Test
+    fun cancellationHasAFirstClassTypedRepresentationWithoutLeakingReason() {
+        val descriptor = UltraToolDescriptor(
+            id = "test.typed-cancel",
+            kind = UltraToolKind.RESEARCH,
+            sideEffect = UltraToolSideEffect.READ_ONLY
+        )
+
+        val result = UltraToolExecution.cancelled(descriptor)
+
+        assertIs<UltraToolResult.Cancelled>(result)
+        assertEquals("test.typed-cancel", result.toolId)
+    }
+
+    @Test
     fun executionProtectionNeverSwallowsCancellation() {
         val descriptor = UltraToolDescriptor(
             id = "test.cancel",
