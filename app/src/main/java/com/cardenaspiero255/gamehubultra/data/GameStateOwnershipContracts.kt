@@ -53,3 +53,20 @@ interface GameAliasStateRepository {
     fun aliases(): Map<String, String>
     fun save(alias: String, packageName: String)
 }
+
+
+/** Owns persisted game-session history independently from UI lifecycle state. */
+interface GameSessionStateRepository {
+    fun sessionsFlow(): Flow<List<GameSessionRecord>>
+
+    suspend fun startSession(record: GameSessionRecord)
+    suspend fun finishSession(
+        sessionId: String,
+        endedAtMillis: Long,
+        endBatteryPercent: Int?,
+        endThermalStatus: Int?,
+        endRamUsedPercent: Int?,
+    ): Boolean
+    suspend fun finishActiveSessions(endedAtMillis: Long): Int
+    suspend fun clearSessions()
+}
