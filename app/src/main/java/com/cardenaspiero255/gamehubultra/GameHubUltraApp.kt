@@ -176,6 +176,10 @@ import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import com.cardenaspiero255.gamehubultra.ui.layout.LibraryLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.layout.ResponsiveLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.layout.UltraLayoutMode
+import com.cardenaspiero255.gamehubultra.ui.home.state.HomeUiEvent
+import com.cardenaspiero255.gamehubultra.ui.home.state.rememberHomeUiStateHolder
+import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryUiEvent
+import com.cardenaspiero255.gamehubultra.ui.library.state.rememberLibraryUiStateHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -190,10 +194,6 @@ private val UltraHomePanel = Color(0xFF0B0B0E)
 private val UltraHomePanelAlt = Color(0xFF111116)
 private val UltraHomeMuted = Color(0xFF9696A2)
 private val UltraHomeLine = Color(0xFF2A2A31)
-
-internal fun shouldRevealQuickVoiceControls(wasOpen: Boolean, isOpen: Boolean): Boolean =
-    !wasOpen && isOpen
-
 
 @OptIn(
     androidx.compose.material3.ExperimentalMaterial3Api::class,
@@ -886,27 +886,27 @@ private fun HomeScreen(
     showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
+    val homeStateHolder = rememberHomeUiStateHolder()
+    val homeUiState = homeStateHolder.state
     val recentGameNames = remember(recentGamePackages) {
         recentGamePackages.map { packageName ->
             packageDisplayName(timelineContext, packageName)
         }
     }
-    var localGameCount by remember { mutableIntStateOf(0) }
-    var quickVoiceOpen by rememberSaveable { mutableStateOf(false) }
-    var quickVoiceRevealRequest by remember { mutableIntStateOf(0) }
     val homeListState = androidx.compose.foundation.lazy.rememberLazyListState()
-    LaunchedEffect(quickVoiceRevealRequest) {
-        if (quickVoiceRevealRequest > 0) {
+    LaunchedEffect(homeUiState.quickVoiceRevealRequest) {
+        if (homeUiState.quickVoiceRevealRequest > 0) {
             homeListState.animateScrollToItem(3)
         }
     }
     LaunchedEffect(timelineContext, manualGamePackages, gameCatalogRefreshToken) {
-        localGameCount = withContext(Dispatchers.IO) {
+        val localGameCount = withContext(Dispatchers.IO) {
             GameLibrary.discover(
                 context = timelineContext,
                 additionalPackages = manualGamePackages
             ).games.size
         }
+        homeStateHolder.onEvent(HomeUiEvent.GameCountLoaded(localGameCount))
     }
     val homeTypography = MaterialTheme.typography
     val homeShapes = MaterialTheme.shapes
@@ -958,20 +958,16 @@ private fun HomeScreen(
                 gameName = aiContext.selectedGamePackage?.let { packageDisplayName(timelineContext, it) }
                     ?: "Selecciona un juego",
                 recentGames = recentGameNames,
-                gameCount = localGameCount,
+                gameCount = homeUiState.localGameCount,
                 sessionCount = sessionHistory.size,
                 onProfileSelected = onProfileSelected,
                 onPlay = onPlaySelectedGame,
                 onVoiceClick = {
-                    val next = !quickVoiceOpen
-                    if (shouldRevealQuickVoiceControls(quickVoiceOpen, next)) {
-                        quickVoiceRevealRequest += 1
-                    }
-                    quickVoiceOpen = next
+                    homeStateHolder.onEvent(HomeUiEvent.QuickVoiceToggled)
                 }
             )
         }
-        if (quickVoiceOpen) {
+        if (homeUiState.quickVoiceOpen) {
             item {
                 VoiceAssistantCard(
                     selectedProfileName = selectedProfileName,
@@ -1815,31 +1811,30 @@ private fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var refreshToken by rememberSaveable { mutableIntStateOf(0) }
-    var discovery by remember { mutableStateOf<GameDiscoveryResult?>(null) }
-    var launchFailed by rememberSaveable { mutableStateOf(false) }
-    var showAddGameDialog by rememberSaveable { mutableStateOf(false) }
-    var launchableApps by remember { mutableStateOf<List<GameInfo>>(emptyList()) }
-    var libraryQuery by rememberSaveable { mutableStateOf("") }
-    var showSelectedGameDetails by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(context, refreshToken, manualGamePackages) {
-        discovery = withContext(Dispatchers.IO) {
+    val libraryStateHolder = rememberLibraryUiStateHolder()
+    val libraryUiState = libraryStateHolder.state
+    LaunchedEffect(context, libraryUiState.refreshToken, manualGamePackages) {
+        val discovery = withContext(Dispatchers.IO) {
             GameLibrary.discover(context, manualGamePackages)
         }
+        libraryStateHolder.onEvent(LibraryUiEvent.DiscoveryLoaded(discovery))
     }
 
-    LaunchedEffect(context, showAddGameDialog) {
-        if (showAddGameDialog) {
-            launchableApps = withContext(Dispatchers.IO) {
+    LaunchedEffect(context, libraryUiState.addGameDialogVisible) {
+        if (libraryUiState.addGameDialogVisible) {
+            val launchableApps = withContext(Dispatchers.IO) {
                 GameLibrary.discoverNonGameLaunchableApps(context)
             }
+            libraryStateHolder.onEvent(
+                LibraryUiEvent.LaunchableAppsLoaded(launchableApps)
+            )
         }
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                refreshToken += 1
+                libraryStateHolder.onEvent(LibraryUiEvent.Resumed)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -1848,7 +1843,7 @@ private fun LibraryScreen(
         }
     }
 
-    val result = discovery
+    val result = libraryUiState.discovery
     val orderedGames = remember(result?.games, favoriteGames, recentGamePackages) {
         val recentOrder = recentGamePackages.withIndex()
             .associate { indexed -> indexed.value to indexed.index }
@@ -1863,15 +1858,15 @@ private fun LibraryScreen(
                 .thenBy { it.label.lowercase() }
         )
     }
-    val visibleGames = remember(orderedGames, libraryQuery) {
-        GameLibrary.filterGames(orderedGames, libraryQuery)
+    val visibleGames = remember(orderedGames, libraryUiState.query) {
+        GameLibrary.filterGames(orderedGames, libraryUiState.query)
     }
 
-    val visibleStoreGames = remember(storeGames, libraryQuery) {
+    val visibleStoreGames = remember(storeGames, libraryUiState.query) {
         storeGames.filter {
-            libraryQuery.isBlank() ||
-                it.title.contains(libraryQuery, ignoreCase = true) ||
-                it.platformGameId.contains(libraryQuery, ignoreCase = true)
+            libraryUiState.query.isBlank() ||
+                it.title.contains(libraryUiState.query, ignoreCase = true) ||
+                it.platformGameId.contains(libraryUiState.query, ignoreCase = true)
         }
     }
 
@@ -1902,7 +1897,11 @@ private fun LibraryScreen(
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    onClick = { showAddGameDialog = true }
+                    onClick = {
+                        libraryStateHolder.onEvent(
+                            LibraryUiEvent.AddGameDialogVisibilityChanged(true)
+                        )
+                    }
                 ) {
                     Text(stringResource(R.string.add_game))
                 }
@@ -1911,8 +1910,10 @@ private fun LibraryScreen(
 
         item(span = { GridItemSpan(maxLineSpan) }) {
             OutlinedTextField(
-                value = libraryQuery,
-                onValueChange = { libraryQuery = it },
+                value = libraryUiState.query,
+                onValueChange = { query ->
+                    libraryStateHolder.onEvent(LibraryUiEvent.QueryChanged(query))
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 label = { Text(stringResource(R.string.library_search)) }
@@ -1923,7 +1924,7 @@ private fun LibraryScreen(
             StoreLibrarySection(games = visibleStoreGames)
         }
 
-        if (launchFailed) {
+        if (libraryUiState.launchFailed) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Text(
@@ -1982,7 +1983,7 @@ private fun LibraryScreen(
                     Text(stringResource(R.string.library_count, result.games.size))
                 }
 
-                if (libraryQuery.isNotBlank() && result.games.isNotEmpty() && visibleGames.isEmpty()) {
+                if (libraryUiState.query.isNotBlank() && result.games.isNotEmpty() && visibleGames.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(stringResource(R.string.library_search_empty))
                     }
@@ -1997,24 +1998,29 @@ private fun LibraryScreen(
                             SelectedGameCompactBar(
                                 game = game,
                                 favorite = favorite,
-                                detailsVisible = showSelectedGameDetails,
+                                detailsVisible = libraryUiState.selectedGameDetailsVisible,
                                 onToggleDetails = {
-                                    showSelectedGameDetails = !showSelectedGameDetails
+                                    libraryStateHolder.onEvent(
+                                        LibraryUiEvent.SelectedGameDetailsVisibilityChanged(
+                                            !libraryUiState.selectedGameDetailsVisible
+                                        )
+                                    )
                                 },
                                 onToggleFavorite = {
                                     onToggleFavorite(game.packageName, !favorite)
                                 },
                                 onOpen = {
-                                    if (openGame(context, game.packageName)) {
-                                        launchFailed = false
+                                    val succeeded = openGame(context, game.packageName)
+                                    libraryStateHolder.onEvent(
+                                        LibraryUiEvent.GameLaunchResult(succeeded)
+                                    )
+                                    if (succeeded) {
                                         onGameOpened(game.packageName)
-                                    } else {
-                                        launchFailed = true
                                     }
                                 }
                             )
                         }
-                        if (showSelectedGameDetails) {
+                        if (libraryUiState.selectedGameDetailsVisible) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 SelectedGameCard(
                                     game = game,
@@ -2028,11 +2034,12 @@ private fun LibraryScreen(
                                         onToggleFavorite(game.packageName, !favorite)
                                     },
                                     onOpen = {
-                                        if (openGame(context, game.packageName)) {
-                                            launchFailed = false
+                                        val succeeded = openGame(context, game.packageName)
+                                        libraryStateHolder.onEvent(
+                                            LibraryUiEvent.GameLaunchResult(succeeded)
+                                        )
+                                        if (succeeded) {
                                             onGameOpened(game.packageName)
-                                        } else {
-                                            launchFailed = true
                                         }
                                     }
                                 )
@@ -2051,7 +2058,7 @@ private fun LibraryScreen(
                         favorite = favoriteGames.contains(game.packageName),
                         minTileHeightDp = gridMetrics.minTileHeightDp,
                         onSelect = {
-                            launchFailed = false
+                            libraryStateHolder.onEvent(LibraryUiEvent.GameSelected)
                             onGameSelected(game.packageName)
                         },
                         onToggleFavorite = {
@@ -2061,11 +2068,12 @@ private fun LibraryScreen(
                             )
                         },
                         onOpen = {
-                            if (openGame(context, game.packageName)) {
-                                launchFailed = false
+                            val succeeded = openGame(context, game.packageName)
+                            libraryStateHolder.onEvent(
+                                LibraryUiEvent.GameLaunchResult(succeeded)
+                            )
+                            if (succeeded) {
                                 onGameOpened(game.packageName)
-                            } else {
-                                launchFailed = true
                             }
                         }
                     )
@@ -2074,10 +2082,14 @@ private fun LibraryScreen(
         }
     }
 
-    if (showAddGameDialog) {
-        val candidates = launchableApps
+    if (libraryUiState.addGameDialogVisible) {
+        val candidates = libraryUiState.launchableApps
         AlertDialog(
-            onDismissRequest = { showAddGameDialog = false },
+            onDismissRequest = {
+                libraryStateHolder.onEvent(
+                    LibraryUiEvent.AddGameDialogVisibilityChanged(false)
+                )
+            },
             title = { Text(stringResource(R.string.add_game_title)) },
             text = {
                 LazyColumn(
@@ -2112,7 +2124,13 @@ private fun LibraryScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showAddGameDialog = false }) {
+                TextButton(
+                    onClick = {
+                        libraryStateHolder.onEvent(
+                            LibraryUiEvent.AddGameDialogVisibilityChanged(false)
+                        )
+                    }
+                ) {
                     Text(stringResource(R.string.close))
                 }
             }

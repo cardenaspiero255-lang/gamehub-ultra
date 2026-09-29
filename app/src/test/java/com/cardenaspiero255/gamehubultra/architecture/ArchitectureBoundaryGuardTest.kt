@@ -114,9 +114,79 @@ class ArchitectureBoundaryGuardTest {
         val lineCount = app.readLines().size
 
         assertTrue(
-            lineCount <= 2600,
-            "GameHubUltraApp.kt must keep shrinking during weakness block 6; " +
+            lineCount <= 2250,
+            "GameHubUltraApp.kt must keep shrinking during screen-state block 7; " +
                 "current line count: $lineCount, ceiling: 2250"
+        )
+    }
+
+    @Test
+    fun homeAndLibraryPresentationStateStaysExtractedFromCompose() {
+        val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt").readText()
+
+        val forbiddenLegacyState = listOf(
+            "var localGameCount by remember",
+            "var quickVoiceOpen by remember",
+            "var quickVoiceRevealRequest by remember",
+            "var discovery by remember",
+            "var launchableApps by remember",
+            "var query by rememberSaveable",
+            "var launchFailed by rememberSaveable",
+            "var addGameDialogVisible by rememberSaveable",
+            "var selectedGameDetailsVisible by rememberSaveable",
+            "shouldRevealQuickVoiceControls"
+        )
+        val violations = forbiddenLegacyState
+            .filter(app::contains)
+            .map { symbol -> "GameHubUltraApp.kt still owns legacy screen state: $symbol" }
+
+        assertTrue(
+            app.contains("rememberHomeUiStateHolder()"),
+            "HomeScreen must obtain presentation state from HomeUiStateHolder"
+        )
+        assertTrue(
+            app.contains("rememberLibraryUiStateHolder()"),
+            "LibraryScreen must obtain presentation state from LibraryUiStateHolder"
+        )
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Home and Library presentation state must stay outside Compose-local state:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun screenStateHoldersStayFreeOfRuntimeSideEffects() {
+        val stateFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/home/state/HomeUiState.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/library/state/LibraryUiState.kt")
+        )
+        val forbiddenRuntimeSymbols = listOf(
+            "GameLibrary.",
+            "GameLauncher.",
+            "GameSelectionStore",
+            "ProfileSelectionStore",
+            "LocalContext",
+            "Dispatchers.",
+            "withContext(",
+            "LifecycleEventObserver"
+        )
+
+        val violations = stateFiles.flatMap { file ->
+            val source = file.readText()
+            forbiddenRuntimeSymbols
+                .filter(source::contains)
+                .map { symbol -> "${file.name} owns runtime side effect $symbol" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Screen state holders must remain presentation-only:\n",
+                separator = "\n"
+            )
         )
     }
 
