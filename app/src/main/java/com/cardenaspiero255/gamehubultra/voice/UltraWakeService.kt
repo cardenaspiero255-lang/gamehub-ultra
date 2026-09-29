@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
@@ -425,7 +426,9 @@ class UltraWakeService : Service() {
                 }.getOrNull()
 
                 val selectedProfile = runCatching {
-                    runBlocking { selectionRepository.selectedProfileFlow().first() }
+                    runBlocking {
+                selectionRepository.effectiveProfileForSelection(selectedGamePackage)
+            }
                 }.getOrNull() ?: PerformanceProfile.BALANCED
 
             val device = DeviceInfoProvider.get(context)
