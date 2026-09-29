@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ui
 
+import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import java.lang.reflect.Type
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -22,6 +24,8 @@ class GameHubViewModelDependenciesTest {
             "ViewModel dependency boundaries must not expose Android or AndroidX types"
         )
         assertTrue(factory.methods.any { it.name == "create" })
+        assertTrue(GameSelectionStateRepository::class.java.isAssignableFrom(dependencyContract))
+        assertTrue(GameLibraryStateRepository::class.java.isAssignableFrom(dependencyContract))
     }
 
     private fun containsAndroidPlatformType(type: Type): Boolean {
