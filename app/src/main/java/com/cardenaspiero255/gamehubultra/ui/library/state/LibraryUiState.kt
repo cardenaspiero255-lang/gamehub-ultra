@@ -3,8 +3,9 @@ package com.cardenaspiero255.gamehubultra.ui.library.state
 /**
  * Presentation-owned state for the Library screen.
  *
- * Runtime discovery data remains outside this contract until its dedicated cut,
- * keeping this first extraction behavior-preserving and independently testable.
+ * Runtime discovery results and add-game candidates live here as transient state.
+ * The saver intentionally persists only user-facing presentation flags and query
+ * text so runtime data is refreshed after restoration instead of being serialized.
  */
 internal data class LibraryUiState(
     val refreshToken: Int = 0,
