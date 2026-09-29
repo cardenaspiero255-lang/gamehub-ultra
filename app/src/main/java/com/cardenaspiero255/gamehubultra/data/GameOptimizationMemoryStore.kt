@@ -40,12 +40,12 @@ data class OptimizationContextKey(
 class GameOptimizationMemoryStore(
     private val dataStore: DataStore<Preferences>,
     private val maxObservations: Int = 120
-) {
+) : GameOptimizationMemoryStateRepository {
     constructor(context: Context) : this(context.applicationContext.optimizationMemoryDataStore)
 
     private val observationsKey = stringPreferencesKey("observations_v1")
 
-    fun observationsFlow(contextKey: OptimizationContextKey): Flow<List<OptimizationObservation>> =
+    override fun observationsFlow(contextKey: OptimizationContextKey): Flow<List<OptimizationObservation>> =
         dataStore.data.map { preferences ->
             preferences[observationsKey]
                 .orEmpty()
@@ -57,7 +57,7 @@ class GameOptimizationMemoryStore(
                 .toList()
         }
 
-    suspend fun record(contextKey: OptimizationContextKey, observation: OptimizationObservation) {
+    override suspend fun record(contextKey: OptimizationContextKey, observation: OptimizationObservation) {
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
@@ -73,7 +73,7 @@ class GameOptimizationMemoryStore(
         }
     }
 
-    suspend fun pruneTo(contextKey: OptimizationContextKey) {
+    override suspend fun pruneTo(contextKey: OptimizationContextKey) {
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
@@ -84,11 +84,11 @@ class GameOptimizationMemoryStore(
         }
     }
 
-    suspend fun clearAll() {
+    override suspend fun clearAll() {
         dataStore.edit { preferences -> preferences.remove(observationsKey) }
     }
 
-    suspend fun clearGame(contextKey: OptimizationContextKey) {
+    override suspend fun clearGame(contextKey: OptimizationContextKey) {
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
