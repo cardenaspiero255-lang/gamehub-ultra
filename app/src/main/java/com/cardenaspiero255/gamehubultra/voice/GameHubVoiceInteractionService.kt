@@ -64,6 +64,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private var tts: TextToSpeech? = null
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val aiAdvisor = GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter())
+    private val aliasRepository by lazy {
+        SharedPreferencesGameAliasStateRepository(getContext().applicationContext)
+    }
 
     override fun onCreateContentView(): View =
         TextView(getContext()).apply {
@@ -198,7 +201,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
             command = VoiceCommandParser.parse(
                 transcript = transcript,
                 optionalResolver = intentResolver,
-                knownGameAliases = SharedPreferencesGameAliasStateRepository(context).aliases().keys
+                knownGameAliases = aliasRepository.aliases().keys
             ),
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
@@ -230,9 +233,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
             deferProfileApplication = true,
             aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
             aliasIntentResolver = intentResolver,
-            gameAliasesProvider = { SharedPreferencesGameAliasStateRepository(context).aliases() },
+            gameAliasesProvider = { aliasRepository.aliases() },
             saveGameAlias = { alias, packageName ->
-    SharedPreferencesGameAliasStateRepository(context).save(alias, packageName)
+    aliasRepository.save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = { profile ->
