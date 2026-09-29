@@ -44,4 +44,13 @@ class LibraryUiStateTest {
         assertTrue(opened.addGameDialogVisible)
         assertTrue(opened.selectedGameDetailsVisible)
     }
+    @Test
+    fun stateHolderDispatchesThroughReducer() {
+        val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
+        holder.onEvent(LibraryUiEvent.QueryChanged("after"))
+        holder.onEvent(LibraryUiEvent.GameLaunchResult(false))
+
+        assertEquals("after", holder.state.query)
+        assertTrue(holder.state.launchFailed)
+    }
 }
