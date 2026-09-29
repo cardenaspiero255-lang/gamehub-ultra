@@ -52,6 +52,7 @@ data class UltraToolFailure(
 sealed interface UltraToolResult<out T> {
     data class Success<T>(val value: T) : UltraToolResult<T>
     data class Failure(val failure: UltraToolFailure) : UltraToolResult<Nothing>
+    data class Cancelled(val toolId: String) : UltraToolResult<Nothing>
 }
 
 internal class UltraToolInvalidInputException(
@@ -65,6 +66,9 @@ interface UltraToolContract<in I, out O> {
 }
 
 object UltraToolExecution {
+    fun cancelled(descriptor: UltraToolDescriptor): UltraToolResult.Cancelled =
+        UltraToolResult.Cancelled(toolId = descriptor.id)
+
     fun invalidInput(
         descriptor: UltraToolDescriptor,
         message: String = "La solicitud de la herramienta no es válida."
