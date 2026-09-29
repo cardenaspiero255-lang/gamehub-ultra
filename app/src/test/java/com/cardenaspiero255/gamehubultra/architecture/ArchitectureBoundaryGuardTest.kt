@@ -83,6 +83,19 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+
+    @Test
+    fun gameHubUltraAppMonolithHasStrictSizeCeiling() {
+        val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
+        val lineCount = app.readLines().size
+
+        assertTrue(
+            lineCount <= 3_700,
+            "GameHubUltraApp.kt must keep shrinking during weakness block 6; " +
+                "current line count: $lineCount, ceiling: 3700"
+        )
+    }
+
     @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
