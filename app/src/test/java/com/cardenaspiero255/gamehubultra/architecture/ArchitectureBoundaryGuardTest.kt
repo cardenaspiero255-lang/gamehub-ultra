@@ -83,6 +83,43 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+
+    @Test
+    fun uiAndResearchCoordinatorsDoNotReachSupabaseProviderDirectly() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ai/UltraGeneralResearchCoordinator.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ai/UltraQueryExecutionCoordinator.kt")
+        ) + sourceDirectory("com/cardenaspiero255/gamehubultra/ui")
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .toList()
+
+        val violations = guardedFiles
+            .filter { it.readText().contains("SupabaseUltraResearchProvider") }
+            .map { "${it.name} reaches SupabaseUltraResearchProvider directly" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Ultra/UI coordinators must depend on the research boundary, not Supabase:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun gameHubUltraAppMonolithHasStrictSizeCeiling() {
+        val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
+        val lineCount = app.readLines().size
+
+        assertTrue(
+            lineCount <= 2600,
+            "GameHubUltraApp.kt must keep shrinking during weakness block 6; " +
+                "current line count: $lineCount, ceiling: 2250"
+        )
+    }
+
     @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
