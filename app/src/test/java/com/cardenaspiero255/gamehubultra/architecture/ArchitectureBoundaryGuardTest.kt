@@ -305,6 +305,47 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun embeddedVoiceSelectionUsesProcessDurablePersistence() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val viewModel = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt"
+        ).readText()
+
+        listOf(
+            "onVoiceSelectedGame = viewModel::persistVoiceSelectedGame",
+            "onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile",
+            "onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile"
+        ).forEach { expected ->
+            assertTrue(
+                app.contains(expected),
+                "Embedded voice callbacks must use durable persistence: $expected"
+            )
+        }
+
+        listOf(
+            "onVoiceSelectedGame = viewModel::selectGame",
+            "onVoiceSelectedProfile = viewModel::selectGlobalProfile",
+            "onVoiceSelectedGameWithProfile = viewModel::selectGameWithProfile"
+        ).forEach { forbidden ->
+            assertTrue(
+                !app.contains(forbidden),
+                "Embedded voice persistence must not depend on viewModelScope: $forbidden"
+            )
+        }
+
+        assertTrue(
+            viewModel.contains("DurableSelectionMutationQueue.enqueue"),
+            "GameHubViewModel voice persistence must use the process-durable queue"
+        )
+        assertTrue(
+            viewModel.contains("onFailure = ::reportVoiceSelectionPersistenceFailure"),
+            "GameHubViewModel must observe durable voice persistence failures"
+        )
+    }
+
+    @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
