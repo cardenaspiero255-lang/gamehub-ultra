@@ -49,6 +49,13 @@ data class UltraToolFailure(
     val causeType: String? = null
 )
 
+/**
+ * Typed outcome shared by every Ultra tool boundary.
+ *
+ * Cancellation is intentionally distinct from failure. Execution helpers still propagate
+ * [CancellationException] and thread interruption; [Cancelled] is for callers that need to
+ * represent an already-observed cancellation without exposing a reason or internal detail.
+ */
 sealed interface UltraToolResult<out T> {
     data class Success<T>(val value: T) : UltraToolResult<T>
     data class Failure(val failure: UltraToolFailure) : UltraToolResult<Nothing>
@@ -66,6 +73,7 @@ interface UltraToolContract<in I, out O> {
 }
 
 object UltraToolExecution {
+    /** Creates a sanitized typed cancellation associated only with the canonical tool id. */
     fun cancelled(descriptor: UltraToolDescriptor): UltraToolResult.Cancelled =
         UltraToolResult.Cancelled(toolId = descriptor.id)
 
