@@ -19,6 +19,7 @@ import com.cardenaspiero255.gamehubultra.BuildConfig
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +35,9 @@ import java.time.Instant
 class StoreConnectionActivity : ComponentActivity() {
     private val accountsRepository: ConnectedGameAccountsStateRepository by lazy {
         ConnectedGameAccountsStore(applicationContext)
+    }
+    private val storeLibraryRepository: StoreLibraryStateRepository by lazy {
+        StoreLibraryStore(applicationContext)
     }
 
     companion object {
@@ -180,7 +184,7 @@ class StoreConnectionActivity : ComponentActivity() {
                 artworkUrl = it.artworkUrl
             )
         }
-        StoreLibraryStore(this).replaceForAccount(account.id, games)
+        storeLibraryRepository.replaceForAccount(account.id, games)
         finishSuccess("Steam conectado · " + games.size + " juegos sincronizados")
     }
 
@@ -236,8 +240,7 @@ class StoreConnectionActivity : ComponentActivity() {
                         artworkUrl = it.artworkUrl
                     )
                 }
-                StoreLibraryStore(this@StoreConnectionActivity)
-                    .replaceForAccount(account.id, games)
+                storeLibraryRepository.replaceForAccount(account.id, games)
                 finishSuccess(
                     "Epic Games conectado · " + games.size + " juegos sincronizados"
                 )
