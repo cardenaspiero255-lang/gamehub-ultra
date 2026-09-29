@@ -250,6 +250,41 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun voiceSelectionPersistenceDoesNotBlockCommandWorkers() {
+        val serviceFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
+        )
+
+        val blockingWrites = listOf(
+            "runBlocking { selectionRepository.saveSelectedGame(",
+            "runBlocking { selectionRepository.saveSelectedProfile(",
+            "runBlocking {\n                    selectionRepository.saveSelectedGameAndProfile(",
+            "runBlocking {\n                                selectionRepository.saveSelectedGameAndProfile("
+        )
+
+        val violations = serviceFiles.flatMap { file ->
+            val source = file.readText()
+            buildList {
+                if (!source.contains("SerialMutationQueue")) {
+                    add("${file.name} must serialize selection writes off its command worker")
+                }
+                blockingWrites
+                    .filter(source::contains)
+                    .forEach { add("${file.name} blocks its command worker during selection persistence") }
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Voice selection persistence must stay asynchronous and ordered:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
