@@ -22,8 +22,8 @@ import android.speech.tts.UtteranceProgressListener
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
-import com.cardenaspiero255.gamehubultra.GameSelectionStore
-import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
@@ -418,13 +418,15 @@ class UltraWakeService : Service() {
                 ) {
             val response = UltraWakeFailureGuard.run {
                 val context = applicationContext
-            val selectedGamePackage = runCatching {
-                runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
-            }.getOrNull()
+                val selectionRepository: GameSelectionStateRepository =
+                    GameHubPreferencesRepository(context)
+                val selectedGamePackage = runCatching {
+                    runBlocking { selectionRepository.selectedGameFlow().first() }
+                }.getOrNull()
 
-            val selectedProfile = runCatching {
-                runBlocking { ProfileSelectionStore.selectedProfileFlow(context).first() }
-            }.getOrNull() ?: PerformanceProfile.BALANCED
+                val selectedProfile = runCatching {
+                    runBlocking { selectionRepository.selectedProfileFlow().first() }
+                }.getOrNull() ?: PerformanceProfile.BALANCED
 
             val device = DeviceInfoProvider.get(context)
             val diagnostics = RuntimeDiagnosticsProvider.get(context)
@@ -537,13 +539,15 @@ class UltraWakeService : Service() {
                             launchGameFromService(context, packageName)
                         },
                         saveSelectedGame = { packageName ->
-                            GameSelectionStore.saveSelectedGame(context, packageName)
+                            runBlocking { selectionRepository.saveSelectedGame(packageName) }
                         },
                         saveSelectedProfile = { profile ->
-                            ProfileSelectionStore.saveSelectedProfile(context, profile)
+                            runBlocking { selectionRepository.saveSelectedProfile(profile) }
                         },
                         saveSelectedGameWithProfile = { packageName, profile ->
-                            GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
+                            runBlocking {
+                                selectionRepository.saveSelectedGameAndProfile(packageName, profile)
+                            }
                         },
                         // X4 remains selectable even when the OEM does not expose Android's
                         // Sustained Performance Mode; unsupported hardware hooks degrade safely.
