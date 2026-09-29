@@ -91,17 +91,26 @@ class ArchitectureBoundaryGuardTest {
         val violations = guardedFiles.flatMap { file ->
             val source = file.readText()
             buildList {
-                if (source.contains("StoreLibraryStore(context).getAll()")) {
-                    add("${file.name} constructs store-library persistence at the read site")
+                if (!source.contains("storeLibraryRepository: StoreLibraryStateRepository")) {
+                    add("${file.name} must type storeLibraryRepository as StoreLibraryStateRepository")
                 }
-                if (source.contains("StoreLibraryStore(context).removeForAccount(")) {
-                    add("${file.name} constructs store-library persistence at the remove site")
+                val concreteTypedRepository = Regex(
+                    """storeLibraryRepository\s*:\s*StoreLibraryStore"""
+                )
+                if (concreteTypedRepository.containsMatchIn(source)) {
+                    add("${file.name} exposes StoreLibraryStore as the repository dependency type")
                 }
-                if (source.contains("StoreLibraryStore(this).replaceForAccount(") ||
-                    source.contains("StoreLibraryStore(this@StoreConnectionActivity)")
-                ) {
-                    add("${file.name} constructs store-library persistence at the sync write site")
-                }
+                val directConcreteCalls = listOf(
+                    "StoreLibraryStore(context).getAll()",
+                    "StoreLibraryStore(context).removeForAccount(",
+                    "StoreLibraryStore(this).replaceForAccount(",
+                    "StoreLibraryStore(this@StoreConnectionActivity)"
+                )
+                directConcreteCalls
+                    .filter(source::contains)
+                    .forEach {
+                        add("${file.name} constructs store-library persistence at a consumer call site")
+                    }
             }
         }
 
