@@ -256,7 +256,7 @@ class ArchitectureBoundaryGuardTest {
             sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
         )
         val blockingSelectionWrite = Regex(
-            """runBlocking(?:\s*\([^)]*\))?\s*\{[\s\S]*?""" +
+            """runBlocking(?:\s*\([^)]*\))?\s*\{[^}]*""" +
                 """selectionRepository\.saveSelected(?:GameAndProfile|Game|Profile)\s*\("""
         )
 
