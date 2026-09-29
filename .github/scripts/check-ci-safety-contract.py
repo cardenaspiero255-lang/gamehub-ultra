@@ -393,17 +393,20 @@ def main() -> None:
     probe_release_graphs = [
         tokens for tokens in release_graphs if "--dry-run" in set(tokens)
     ]
-    if len(executable_release_graphs) != 1 or len(probe_release_graphs) != 1:
+    if len(executable_release_graphs) != 1 or len(probe_release_graphs) != 2:
         fail(
             "Configuration Cache proof requires exactly one executable "
-            "release/performance graph and one non-executing --dry-run reuse "
-            "probe; found "
+            "release/performance graph and two identical non-executing --dry-run "
+            "probes; found "
             f"{len(executable_release_graphs)} executable and "
             f"{len(probe_release_graphs)} probes"
         )
+    if probe_release_graphs[0] != probe_release_graphs[1]:
+        fail("Release/performance --dry-run Configuration Cache probes differ")
     for label, tokens in (
         ("executable release/performance graph", executable_release_graphs[0]),
-        ("release/performance --dry-run probe", probe_release_graphs[0]),
+        ("first release/performance --dry-run probe", probe_release_graphs[0]),
+        ("second release/performance --dry-run probe", probe_release_graphs[1]),
     ):
         token_set = set(tokens)
         missing_args = [arg for arg in release_args if arg not in token_set]
