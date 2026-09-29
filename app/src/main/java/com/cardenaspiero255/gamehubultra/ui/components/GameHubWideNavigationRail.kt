@@ -10,6 +10,19 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 
+internal enum class GameHubWideNavDestination { HOME, LIBRARY, PROFILE, SETTINGS }
+
+internal fun selectedWideNavDestination(
+    selectedTab: Int,
+    settingsOpen: Boolean,
+    profileOpen: Boolean
+): GameHubWideNavDestination = when {
+    settingsOpen -> GameHubWideNavDestination.SETTINGS
+    profileOpen -> GameHubWideNavDestination.PROFILE
+    selectedTab == 1 -> GameHubWideNavDestination.LIBRARY
+    else -> GameHubWideNavDestination.HOME
+}
+
 /** Navigation rail for wide GameHub layouts. */
 @Composable
 internal fun GameHubWideNavigationRail(
@@ -21,9 +34,10 @@ internal fun GameHubWideNavigationRail(
     onProfile: () -> Unit,
     onSettings: () -> Unit
 ) {
+    val selectedDestination = selectedWideNavDestination(selectedTab, settingsOpen, profileOpen)
     NavigationRail(containerColor = MaterialTheme.colorScheme.background) {
         NavigationRailItem(
-            selected = !settingsOpen && !profileOpen && selectedTab == 0,
+            selected = selectedDestination == GameHubWideNavDestination.HOME,
             onClick = onHome,
             icon = { Text("⌂") },
             label = { Text("Inicio") },
@@ -31,7 +45,7 @@ internal fun GameHubWideNavigationRail(
                 .semantics { contentDescription = "nav_inicio" }
         )
         NavigationRailItem(
-            selected = !settingsOpen && !profileOpen && selectedTab == 1,
+            selected = selectedDestination == GameHubWideNavDestination.LIBRARY,
             onClick = onLibrary,
             icon = { Text("▦") },
             label = { Text("Biblioteca") },
@@ -39,7 +53,7 @@ internal fun GameHubWideNavigationRail(
                 .semantics { contentDescription = "nav_biblioteca" }
         )
         NavigationRailItem(
-            selected = profileOpen,
+            selected = selectedDestination == GameHubWideNavDestination.PROFILE,
             onClick = onProfile,
             icon = { Text("◎") },
             label = { Text("Perfil") },
@@ -47,7 +61,7 @@ internal fun GameHubWideNavigationRail(
                 .semantics { contentDescription = "nav_perfil" }
         )
         NavigationRailItem(
-            selected = settingsOpen,
+            selected = selectedDestination == GameHubWideNavDestination.SETTINGS,
             onClick = onSettings,
             icon = { Text("⚙") },
             label = { Text("Ajustes") },
