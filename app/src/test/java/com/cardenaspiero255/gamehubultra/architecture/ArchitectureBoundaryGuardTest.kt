@@ -266,8 +266,11 @@ class ArchitectureBoundaryGuardTest {
         val violations = serviceFiles.flatMap { file ->
             val source = file.readText()
             buildList {
-                if (!source.contains("SerialMutationQueue")) {
-                    add("${file.name} must serialize selection writes off its command worker")
+                if (!source.contains("DurableSelectionMutationQueue.enqueue")) {
+                    add("${file.name} must use the process-durable selection mutation queue")
+                }
+                if (source.contains("selectionSaveScope")) {
+                    add("${file.name} ties accepted selection writes to service lifetime")
                 }
                 blockingWrites
                     .filter(source::contains)
