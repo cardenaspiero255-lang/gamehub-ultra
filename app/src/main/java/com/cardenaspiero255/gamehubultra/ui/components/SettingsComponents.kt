@@ -34,6 +34,7 @@ import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
@@ -49,6 +50,9 @@ internal fun ConnectedAccountsCard(
     val context = LocalContext.current
     val store: ConnectedGameAccountsStateRepository = remember(context) {
         ConnectedGameAccountsStore(context)
+    }
+    val storeLibraryRepository: StoreLibraryStateRepository = remember(context) {
+        StoreLibraryStore(context)
     }
     val accounts by store.accountsFlow().collectAsStateWithLifecycle(initialValue = emptyList())
     val activeAccountId by store.activeAccountIdFlow().collectAsStateWithLifecycle(initialValue = null)
@@ -143,7 +147,7 @@ internal fun ConnectedAccountsCard(
                     onRemove = {
                         scope.launch {
                             store.remove(account.id)
-                            StoreLibraryStore(context).removeForAccount(account.id)
+                            storeLibraryRepository.removeForAccount(account.id)
                             onStoreConnectionChanged()
                         }
                     },
