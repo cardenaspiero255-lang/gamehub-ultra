@@ -23,7 +23,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
-import com.cardenaspiero255.gamehubultra.data.SerialMutationQueue
+import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -36,9 +36,6 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import java.util.Locale
 import java.util.concurrent.Executors
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -61,8 +58,6 @@ private class GameHubVoiceInteractionSession(context: Context) :
     VoiceInteractionSession(context) {
 
     private val executor = Executors.newSingleThreadExecutor()
-    private val selectionSaveScope = CoroutineScope(SupervisorJob())
-    private val selectionMutationQueue = SerialMutationQueue(selectionSaveScope)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
@@ -207,17 +202,17 @@ private class GameHubVoiceInteractionSession(context: Context) :
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
             saveSelectedGame = { packageName ->
-                selectionMutationQueue.enqueue {
+                DurableSelectionMutationQueue.enqueue {
                     selectionRepository.saveSelectedGame(packageName)
                 }
             },
             saveSelectedProfile = { profile ->
-                selectionMutationQueue.enqueue {
+                DurableSelectionMutationQueue.enqueue {
                     selectionRepository.saveSelectedProfile(profile)
                 }
             },
             saveSelectedGameWithProfile = { packageName, profile ->
-                selectionMutationQueue.enqueue {
+                DurableSelectionMutationQueue.enqueue {
                     selectionRepository.saveSelectedGameAndProfile(packageName, profile)
                 }
             },
@@ -371,7 +366,6 @@ applyNetworkProfile = { profile ->
     }
 
     override fun onDestroy() {
-        selectionSaveScope.cancel()
         stopRecognizer()
         executor.shutdownNow()
         tts?.stop()
