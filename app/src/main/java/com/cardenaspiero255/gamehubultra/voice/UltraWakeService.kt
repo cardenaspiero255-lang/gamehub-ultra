@@ -19,6 +19,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
@@ -543,17 +544,23 @@ class UltraWakeService : Service() {
                             launchGameFromService(context, packageName)
                         },
                         saveSelectedGame = { packageName ->
-                            DurableSelectionMutationQueue.enqueue {
+                            DurableSelectionMutationQueue.enqueue(
+                                onFailure = ::reportSelectionPersistenceFailure
+                            ) {
                                 selectionRepository.saveSelectedGame(packageName)
                             }
                         },
                         saveSelectedProfile = { profile ->
-                            DurableSelectionMutationQueue.enqueue {
+                            DurableSelectionMutationQueue.enqueue(
+                                onFailure = ::reportSelectionPersistenceFailure
+                            ) {
                                 selectionRepository.saveSelectedProfile(profile)
                             }
                         },
                         saveSelectedGameWithProfile = { packageName, profile ->
-                            DurableSelectionMutationQueue.enqueue {
+                            DurableSelectionMutationQueue.enqueue(
+                                onFailure = ::reportSelectionPersistenceFailure
+                            ) {
                                 selectionRepository.saveSelectedGameAndProfile(packageName, profile)
                             }
                         },
@@ -758,6 +765,14 @@ applyNetworkProfile = { profile ->
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun reportSelectionPersistenceFailure(error: Throwable) {
+        Log.e(
+            "UltraWakeService",
+            "No se pudo persistir la selección o el perfil de voz.",
+            error
+        )
+    }
 
     override fun onDestroy() {
         stopped = true
