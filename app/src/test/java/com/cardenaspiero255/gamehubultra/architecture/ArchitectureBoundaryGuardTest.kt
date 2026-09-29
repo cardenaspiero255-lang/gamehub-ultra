@@ -396,9 +396,7 @@ class ArchitectureBoundaryGuardTest {
     }
 
     private fun containsBlockingSelectionWrite(source: String): Boolean {
-        val runBlockingStart = Regex(
-            """\brunBlocking(?:\s*\([^)]*\))?\s*\{"""
-        )
+        val runBlockingName = Regex("""\brunBlocking\b""")
         val selectionWrite = Regex(
             """selectionRepository\s*\.\s*saveSelected""" +
                 """(?:GameAndProfile|Game|Profile)\s*\("""
@@ -406,23 +404,62 @@ class ArchitectureBoundaryGuardTest {
 
         var searchFrom = 0
         while (true) {
-            val match = runBlockingStart.find(source, searchFrom) ?: return false
-            val openBrace = source.indexOf('{', match.range.first)
-            val closeBrace = matchingBraceEnd(source, openBrace)
+            val match = runBlockingName.find(source, searchFrom) ?: return false
+            var cursor = match.range.last + 1
+            cursor = skipWhitespace(source, cursor)
+
+            if (source.getOrNull(cursor) == '(') {
+                val closeParenthesis = matchingDelimiterEnd(
+                    source = source,
+                    openIndex = cursor,
+                    openDelimiter = '(',
+                    closeDelimiter = ')'
+                )
+                if (closeParenthesis == null) {
+                    searchFrom = match.range.last + 1
+                    continue
+                }
+                cursor = skipWhitespace(source, closeParenthesis + 1)
+            }
+
+            if (source.getOrNull(cursor) != '{') {
+                searchFrom = match.range.last + 1
+                continue
+            }
+
+            val closeBrace = matchingDelimiterEnd(
+                source = source,
+                openIndex = cursor,
+                openDelimiter = '{',
+                closeDelimiter = '}'
+            )
             if (closeBrace == null) {
                 searchFrom = match.range.last + 1
                 continue
             }
 
-            val body = source.substring(openBrace + 1, closeBrace)
+            val body = source.substring(cursor + 1, closeBrace)
             if (selectionWrite.containsMatchIn(body)) return true
             searchFrom = closeBrace + 1
         }
     }
 
-    private fun matchingBraceEnd(source: String, openBrace: Int): Int? {
+    private fun skipWhitespace(source: String, start: Int): Int {
+        var index = start
+        while (index < source.length && source[index].isWhitespace()) {
+            index += 1
+        }
+        return index
+    }
+
+    private fun matchingDelimiterEnd(
+        source: String,
+        openIndex: Int,
+        openDelimiter: Char,
+        closeDelimiter: Char
+    ): Int? {
         var depth = 0
-        var index = openBrace
+        var index = openIndex
         var inString = false
         var inChar = false
         var inTripleString = false
@@ -491,11 +528,11 @@ class ArchitectureBoundaryGuardTest {
                     inChar = true
                     index += 1
                 }
-                char == '{' -> {
+                char == openDelimiter -> {
                     depth += 1
                     index += 1
                 }
-                char == '}' -> {
+                char == closeDelimiter -> {
                     depth -= 1
                     if (depth == 0) return index
                     index += 1
