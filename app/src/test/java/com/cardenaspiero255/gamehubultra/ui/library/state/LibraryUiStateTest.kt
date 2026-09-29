@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ui.library.state
 
+import com.cardenaspiero255.gamehubultra.GameDiscoveryResult
+import com.cardenaspiero255.gamehubultra.GameInfo
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -32,8 +34,16 @@ class LibraryUiStateTest {
 
     @Test
     fun launchResultReflectsFailureOnly() {
-        assertFalse(LibraryUiState(launchFailed = true).reduce(LibraryUiEvent.GameLaunchResult(true)).launchFailed)
-        assertTrue(LibraryUiState().reduce(LibraryUiEvent.GameLaunchResult(false)).launchFailed)
+        assertFalse(
+            LibraryUiState(launchFailed = true)
+                .reduce(LibraryUiEvent.GameLaunchResult(true))
+                .launchFailed
+        )
+        assertTrue(
+            LibraryUiState()
+                .reduce(LibraryUiEvent.GameLaunchResult(false))
+                .launchFailed
+        )
     }
 
     @Test
@@ -44,6 +54,33 @@ class LibraryUiStateTest {
         assertTrue(opened.addGameDialogVisible)
         assertTrue(opened.selectedGameDetailsVisible)
     }
+
+    @Test
+    fun discoveryLoadedStoresRuntimeSnapshotWithoutChangingPresentationState() {
+        val result = GameDiscoveryResult(
+            games = listOf(GameInfo(packageName = "com.example.game", label = "Example Game"))
+        )
+        val updated = LibraryUiState(query = "example", launchFailed = true)
+            .reduce(LibraryUiEvent.DiscoveryLoaded(result))
+
+        assertEquals(result, updated.discovery)
+        assertEquals("example", updated.query)
+        assertTrue(updated.launchFailed)
+    }
+
+    @Test
+    fun launchableAppsLoadedReplacesCandidatesWithoutClosingDialog() {
+        val apps = listOf(
+            GameInfo(packageName = "com.example.one", label = "One"),
+            GameInfo(packageName = "com.example.two", label = "Two")
+        )
+        val updated = LibraryUiState(addGameDialogVisible = true)
+            .reduce(LibraryUiEvent.LaunchableAppsLoaded(apps))
+
+        assertEquals(apps, updated.launchableApps)
+        assertTrue(updated.addGameDialogVisible)
+    }
+
     @Test
     fun stateHolderDispatchesThroughReducer() {
         val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
