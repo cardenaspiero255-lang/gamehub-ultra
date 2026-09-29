@@ -1,5 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ui
 
+import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+
 /**
  * Android-free composition boundary for dependencies consumed by [GameHubViewModel].
  *
@@ -11,9 +14,11 @@ fun interface GameHubViewModelDependencyFactory {
 }
 
 /**
- * Marker contract for the ViewModel dependency graph.
+ * State boundaries consumed by [GameHubViewModel].
  *
- * Individual dependencies are introduced through this contract in subsequent cuts so
- * each migration remains independently testable and reviewable.
+ * Selection/profile and Library ownership are exposed as contracts rather than concrete
+ * Android-backed repositories. Session ownership is migrated in the next Block 9 cut.
  */
-interface GameHubViewModelDependencies
+interface GameHubViewModelDependencies :
+    GameSelectionStateRepository,
+    GameLibraryStateRepository
