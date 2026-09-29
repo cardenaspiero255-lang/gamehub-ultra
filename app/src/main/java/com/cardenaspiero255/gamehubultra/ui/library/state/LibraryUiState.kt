@@ -12,8 +12,8 @@ internal data class LibraryUiState(
     val addGameDialogVisible: Boolean = false,
     val query: String = "",
     val selectedGameDetailsVisible: Boolean = false,
-    val discovery: com.cardenaspiero255.gamehubultra.data.GameDiscoveryResult? = null,
-    val launchableApps: List<com.cardenaspiero255.gamehubultra.data.GameInfo> = emptyList(),
+    val discovery: com.cardenaspiero255.gamehubultra.GameDiscoveryResult? = null,
+    val launchableApps: List<com.cardenaspiero255.gamehubultra.GameInfo> = emptyList(),
 )
 
 internal sealed interface LibraryUiEvent {
@@ -24,10 +24,10 @@ internal sealed interface LibraryUiEvent {
     data class AddGameDialogVisibilityChanged(val visible: Boolean) : LibraryUiEvent
     data class SelectedGameDetailsVisibilityChanged(val visible: Boolean) : LibraryUiEvent
     data class DiscoveryLoaded(
-        val result: com.cardenaspiero255.gamehubultra.data.GameDiscoveryResult
+        val result: com.cardenaspiero255.gamehubultra.GameDiscoveryResult
     ) : LibraryUiEvent
     data class LaunchableAppsLoaded(
-        val apps: List<com.cardenaspiero255.gamehubultra.data.GameInfo>
+        val apps: List<com.cardenaspiero255.gamehubultra.GameInfo>
     ) : LibraryUiEvent
 }
 
