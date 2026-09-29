@@ -24,6 +24,7 @@ import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.SerialMutationQueue
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
@@ -45,6 +46,9 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import java.util.Locale
 import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -75,6 +79,8 @@ class UltraWakeService : Service() {
     private val lifecycleGate = UltraWakeLifecycleGate()
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
+    private val selectionSaveScope = CoroutineScope(SupervisorJob())
+    private val selectionMutationQueue = SerialMutationQueue(selectionSaveScope)
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
     private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
@@ -542,13 +548,17 @@ class UltraWakeService : Service() {
                             launchGameFromService(context, packageName)
                         },
                         saveSelectedGame = { packageName ->
-                            runBlocking { selectionRepository.saveSelectedGame(packageName) }
+                            selectionMutationQueue.enqueue {
+                                selectionRepository.saveSelectedGame(packageName)
+                            }
                         },
                         saveSelectedProfile = { profile ->
-                            runBlocking { selectionRepository.saveSelectedProfile(profile) }
+                            selectionMutationQueue.enqueue {
+                                selectionRepository.saveSelectedProfile(profile)
+                            }
                         },
                         saveSelectedGameWithProfile = { packageName, profile ->
-                            runBlocking {
+                            selectionMutationQueue.enqueue {
                                 selectionRepository.saveSelectedGameAndProfile(packageName, profile)
                             }
                         },
@@ -755,6 +765,7 @@ applyNetworkProfile = { profile ->
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        selectionSaveScope.cancel()
         stopped = true
         lifecycleGate.stop()
         mainHandler.removeCallbacksAndMessages(null)
