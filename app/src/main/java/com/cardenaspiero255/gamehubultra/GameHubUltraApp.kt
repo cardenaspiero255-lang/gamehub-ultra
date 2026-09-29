@@ -137,6 +137,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineReportFormatt
 import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModel
+import com.cardenaspiero255.gamehubultra.ui.components.GameHubWideNavigationRail
 import com.cardenaspiero255.gamehubultra.ui.runtime.DashboardTelemetryController
 import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeActions
 import com.cardenaspiero255.gamehubultra.ui.runtime.GameHubRuntimeCoordinator
@@ -683,7 +684,7 @@ internal fun GameHubUltraApp(
                     .padding(padding)
                     .fillMaxSize()
             ) {
-                WideNavigationRail(
+                GameHubWideNavigationRail(
                     selectedTab = selectedTab,
                     settingsOpen = settingsOpen,
                     profileOpen = profileOpen,
@@ -789,58 +790,6 @@ internal fun GameHubUltraApp(
                 screenContent(Modifier.fillMaxSize(), true)
             }
         }
-    }
-}
-
-@Composable
-private fun WideNavigationRail(
-    selectedTab: Int,
-    settingsOpen: Boolean,
-    profileOpen: Boolean,
-    onHome: () -> Unit,
-    onLibrary: () -> Unit,
-    onProfile: () -> Unit,
-    onSettings: () -> Unit
-) {
-    NavigationRail(
-        containerColor = MaterialTheme.colorScheme.background
-    ) {
-        NavigationRailItem(
-            selected = !settingsOpen && !profileOpen && selectedTab == 0,
-            onClick = onHome,
-            icon = { Text("⌂") },
-            label = { Text("Inicio") },
-            modifier = Modifier
-                .testTag("nav_inicio")
-                .semantics { contentDescription = "nav_inicio" }
-        )
-        NavigationRailItem(
-            selected = !settingsOpen && !profileOpen && selectedTab == 1,
-            onClick = onLibrary,
-            icon = { Text("▦") },
-            label = { Text("Biblioteca") },
-            modifier = Modifier
-                .testTag("nav_biblioteca")
-                .semantics { contentDescription = "nav_biblioteca" }
-        )
-        NavigationRailItem(
-            selected = profileOpen,
-            onClick = onProfile,
-            icon = { Text("◎") },
-            label = { Text("Perfil") },
-            modifier = Modifier
-                .testTag("nav_perfil")
-                .semantics { contentDescription = "nav_perfil" }
-        )
-        NavigationRailItem(
-            selected = settingsOpen,
-            onClick = onSettings,
-            icon = { Text("⚙") },
-            label = { Text("Ajustes") },
-            modifier = Modifier
-                .testTag("nav_ajustes")
-                .semantics { contentDescription = "nav_ajustes" }
-        )
     }
 }
 
