@@ -427,8 +427,8 @@ class UltraWakeService : Service() {
 
                 val selectedProfile = runCatching {
                     runBlocking {
-                selectionRepository.effectiveProfileForSelection(selectedGamePackage)
-            }
+                        selectionRepository.effectiveProfileForSelection(selectedGamePackage)
+                    }
                 }.getOrNull() ?: PerformanceProfile.BALANCED
 
             val device = DeviceInfoProvider.get(context)
