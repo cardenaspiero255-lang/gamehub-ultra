@@ -72,6 +72,25 @@ class GameStateOwnershipContractsTest {
         assertFalse(types.any { type -> type.typeName.contains("android.") })
     }
 
+
+    @Test
+    fun optimizationMemoryContractIsAndroidFreeAndExplicit() {
+        assertEquals(
+            listOf(
+                "clearAll",
+                "clearGame",
+                "observationsFlow",
+                "pruneTo",
+                "record",
+            ).sorted(),
+            GameOptimizationMemoryStateRepository::class.java.methods.map { it.name }.sorted(),
+        )
+        val types = GameOptimizationMemoryStateRepository::class.java.methods.flatMap { method ->
+            method.genericParameterTypes.toList() + method.genericReturnType
+        }
+        assertFalse(types.any { type -> type.typeName.contains("android.") })
+    }
+
     @Test
     fun storeLibraryContractIsAndroidFreeAndExplicit() {
         assertEquals(
