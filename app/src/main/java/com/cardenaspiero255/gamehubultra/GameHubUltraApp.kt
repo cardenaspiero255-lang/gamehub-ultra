@@ -195,10 +195,6 @@ private val UltraHomePanelAlt = Color(0xFF111116)
 private val UltraHomeMuted = Color(0xFF9696A2)
 private val UltraHomeLine = Color(0xFF2A2A31)
 
-internal fun shouldRevealQuickVoiceControls(wasOpen: Boolean, isOpen: Boolean): Boolean =
-    !wasOpen && isOpen
-
-
 @OptIn(
     androidx.compose.material3.ExperimentalMaterial3Api::class,
     androidx.compose.ui.ExperimentalComposeUiApi::class
