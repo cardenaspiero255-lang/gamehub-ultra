@@ -78,6 +78,9 @@ class UltraWakeService : Service() {
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
+    private val aliasRepository by lazy {
+        SharedPreferencesGameAliasStateRepository(applicationContext)
+    }
     private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
     private var persistentSpeechSource: UltraPersistentSpeechSource? = null
@@ -473,7 +476,7 @@ class UltraWakeService : Service() {
                     thermalLabel = status.thermalLabel,
                     refreshRateHz = diagnostics.refresh.currentRefreshRateHz
                 ),
-                knownGameAliases = SharedPreferencesGameAliasStateRepository(context).aliases().keys,
+                knownGameAliases = aliasRepository.aliases().keys,
                 conversationHistory = conversationBefore
             )
 
@@ -571,9 +574,9 @@ class UltraWakeService : Service() {
                         deferProfileApplication = true,
                         aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
                         aliasIntentResolver = intentResolver,
-                        gameAliasesProvider = { SharedPreferencesGameAliasStateRepository(context).aliases() },
+                        gameAliasesProvider = { aliasRepository.aliases() },
                         saveGameAlias = { alias, packageName ->
-    SharedPreferencesGameAliasStateRepository(context).save(alias, packageName)
+    aliasRepository.save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = { profile ->
