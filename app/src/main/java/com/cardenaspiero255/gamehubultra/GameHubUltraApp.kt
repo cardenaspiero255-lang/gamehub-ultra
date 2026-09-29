@@ -2296,7 +2296,7 @@ private fun packageDisplayName(context: Context, packageName: String): String =
         context.packageManager.getApplicationLabel(appInfo).toString()
     }.getOrDefault(packageName)
 
-private fun packageVersionName(context: Context, packageName: String): String? =
+internal fun packageVersionName(context: Context, packageName: String): String? =
     runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.packageManager.getPackageInfo(
@@ -2309,7 +2309,7 @@ private fun packageVersionName(context: Context, packageName: String): String? =
         }
     }.getOrNull()?.takeIf(String::isNotBlank)
 
-private fun isPackageInstalled(context: Context, packageName: String): Boolean =
+internal fun isPackageInstalled(context: Context, packageName: String): Boolean =
     runCatching {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.packageManager.getApplicationInfo(
@@ -2504,7 +2504,7 @@ private fun CapabilityRow(
 }
 
 @Composable
-private fun DeviceRow(
+internal fun DeviceRow(
     label: String,
     value: String
 ) {
@@ -3559,7 +3559,7 @@ private fun SettingsScreen(
 }
 
 @Composable
-private fun localizedProfileTitle(
+internal fun localizedProfileTitle(
     profile: PerformanceProfile
 ): String =
     when (profile) {
@@ -3585,7 +3585,7 @@ private fun localizedProfileDescription(
     }
 
 @Composable
-private fun thermalLabel(status: Int?): String =
+internal fun thermalLabel(status: Int?): String =
     when (status) {
         PowerManager.THERMAL_STATUS_NONE ->
             stringResource(R.string.normal)
