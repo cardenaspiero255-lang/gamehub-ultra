@@ -401,7 +401,17 @@ def main() -> None:
             f"{len(executable_release_graphs)} executable and "
             f"{len(probe_release_graphs)} probes"
         )
-    if probe_release_graphs[0] != probe_release_graphs[1]:
+    # gradle_commands() may preserve shell output plumbing attached to the
+    # invocation. Compare only Gradle arguments through --stacktrace so logging
+    # via redirection/tee cannot make otherwise identical probes look different.
+    def gradle_invocation(tokens):
+        try:
+            end = tokens.index("--stacktrace") + 1
+        except ValueError:
+            end = len(tokens)
+        return tokens[:end]
+
+    if gradle_invocation(probe_release_graphs[0]) != gradle_invocation(probe_release_graphs[1]):
         fail("Release/performance --dry-run Configuration Cache probes differ")
     for label, tokens in (
         ("executable release/performance graph", executable_release_graphs[0]),
