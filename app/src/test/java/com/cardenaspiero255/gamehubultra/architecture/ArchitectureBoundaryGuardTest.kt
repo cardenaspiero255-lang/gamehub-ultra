@@ -293,6 +293,11 @@ class ArchitectureBoundaryGuardTest {
                 selectionRepository.saveSelectedGame("game.a")
             }
         """.trimIndent()
+        val nestedArgumentBlockingWrite = """
+            kotlinx.coroutines.runBlocking(context.plus(Dispatchers.IO)) {
+                selectionRepository.saveSelectedProfile(PerformanceProfile.X4)
+            }
+        """.trimIndent()
         val asyncWrite = """
             runBlocking { selectionRepository.selectedGameFlow().first() }
             DurableSelectionMutationQueue.enqueue {
@@ -301,6 +306,7 @@ class ArchitectureBoundaryGuardTest {
         """.trimIndent()
 
         assertTrue(containsBlockingSelectionWrite(nestedBlockingWrite))
+        assertTrue(containsBlockingSelectionWrite(nestedArgumentBlockingWrite))
         assertTrue(!containsBlockingSelectionWrite(asyncWrite))
     }
 
