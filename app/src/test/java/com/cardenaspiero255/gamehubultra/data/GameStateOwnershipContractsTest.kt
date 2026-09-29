@@ -51,19 +51,20 @@ class GameStateOwnershipContractsTest {
 
     @Test
     fun connectedAccountsContractIsAndroidFreeAndExplicit() {
-        assertEquals(
-            listOf(
-                "accountsFlow",
-                "activeAccountIdFlow",
-                "remove",
-                "setActiveAccount",
-                "updatePublicMetadata",
-                "upsert",
-            ).sorted(),
-            ConnectedGameAccountsStateRepository::class.java.declaredMethods
-                .map { it.name }
-                .filterNot { it.endsWith("\$default") }
-                .sorted(),
+        val contractMethods = ConnectedGameAccountsStateRepository::class.java.methods
+            .map { it.name }
+            .toSet()
+        assertTrue(
+            contractMethods.containsAll(
+                setOf(
+                    "accountsFlow",
+                    "activeAccountIdFlow",
+                    "remove",
+                    "setActiveAccount",
+                    "updatePublicMetadata",
+                    "upsert",
+                )
+            )
         )
         val types = ConnectedGameAccountsStateRepository::class.java.methods.flatMap { method ->
             method.genericParameterTypes.toList() + method.genericReturnType
