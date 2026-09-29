@@ -8,6 +8,7 @@ import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
+import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
@@ -33,7 +34,7 @@ import kotlinx.coroutines.launch
 class GameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameHubPreferencesRepository(application)
     private val libraryRepository: GameLibraryStateRepository = repository
-    private val sessionStore = GameSessionStore(application)
+    private val sessionStore: GameSessionStateRepository = GameSessionStore(application)
     private val sessionCoordinator = GameSessionLifecycleCoordinator(
         store = sessionStore,
         scope = viewModelScope
