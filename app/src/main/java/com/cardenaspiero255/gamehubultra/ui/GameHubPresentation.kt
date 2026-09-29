@@ -14,6 +14,10 @@ import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
 
 internal object GameHubPresentation {
 
+    /**
+     * Owns the Compose presentation boundary while runtime construction remains in production
+     * composition. Deep links are reduced to presentation-only navigation state before rendering.
+     */
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     @Composable
     fun Content(
@@ -21,7 +25,7 @@ internal object GameHubPresentation {
         bootstrap: GameHubProductionBootstrap,
         deepLinkHost: String?
     ) {
-        val initialTab = if (deepLinkHost == "library") 1 else 0
+        val initialTab = initialTabFor(deepLinkHost)
         val gameHubViewModel: GameHubViewModel = viewModel()
 
         GameHubUltraTheme {
@@ -43,4 +47,12 @@ internal object GameHubPresentation {
             }
         }
     }
+
+    /** Maps the only supported presentation deep link to its initial tab. */
+    internal fun initialTabFor(deepLinkHost: String?): Int =
+        if (deepLinkHost == LIBRARY_DEEP_LINK_HOST) LIBRARY_TAB else DEFAULT_TAB
+
+    private const val DEFAULT_TAB = 0
+    private const val LIBRARY_TAB = 1
+    private const val LIBRARY_DEEP_LINK_HOST = "library"
 }
