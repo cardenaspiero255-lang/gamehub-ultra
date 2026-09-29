@@ -73,6 +73,22 @@ class GameStateOwnershipContractsTest {
     }
 
     @Test
+    fun storeLibraryContractIsAndroidFreeAndExplicit() {
+        assertEquals(
+            listOf(
+                "getAll",
+                "removeForAccount",
+                "replaceForAccount",
+            ).sorted(),
+            StoreLibraryStateRepository::class.java.methods.map { it.name }.sorted(),
+        )
+        val types = StoreLibraryStateRepository::class.java.methods.flatMap { method ->
+            method.genericParameterTypes.toList() + method.genericReturnType
+        }
+        assertFalse(types.any { type -> type.typeName.contains("android.") })
+    }
+
+    @Test
     fun sessionContractIsAndroidFreeAndExplicit() {
         assertEquals(
             listOf(
