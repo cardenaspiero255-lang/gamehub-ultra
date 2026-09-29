@@ -17,7 +17,7 @@ class GameStateOwnershipContractsTest {
     @Test
     fun selectionContractInventoriesOnlySelectionAndPerGameProfileState() {
         assertEquals(
-            setOf(
+            listOf(
                 "gameProfileConfigFlow",
                 "profileForGameFlow",
                 "saveGameProfileConfig",
@@ -27,35 +27,35 @@ class GameStateOwnershipContractsTest {
                 "saveSelectedProfile",
                 "selectedGameFlow",
                 "selectedProfileFlow",
-            ),
-            GameSelectionStateRepository::class.java.methods.map { it.name }.toSet(),
+            ).sorted(),
+            GameSelectionStateRepository::class.java.methods.map { it.name }.sorted(),
         )
     }
 
     @Test
     fun libraryContractInventoriesOnlyPersistentLibraryCollections() {
         assertEquals(
-            setOf(
+            listOf(
                 "favoriteGamesFlow",
                 "manualGamesFlow",
                 "recentGamesFlow",
                 "recordRecentGame",
                 "setFavoriteGame",
                 "setManualGame",
-            ),
-            GameLibraryStateRepository::class.java.methods.map { it.name }.toSet(),
+            ).sorted(),
+            GameLibraryStateRepository::class.java.methods.map { it.name }.sorted(),
         )
     }
 
     @Test
     fun aliasContractIsAndroidFreeAndExplicit() {
         assertEquals(
-            setOf("aliases", "save"),
-            GameAliasStateRepository::class.java.methods.map { it.name }.toSet(),
+            listOf("aliases", "save"),
+            GameAliasStateRepository::class.java.methods.map { it.name }.sorted(),
         )
         val types = GameAliasStateRepository::class.java.methods.flatMap { method ->
-            method.parameterTypes.toList() + method.returnType
+            method.genericParameterTypes.toList() + method.genericReturnType
         }
-        assertFalse(types.any { it.name == "android.content.Context" })
+        assertFalse(types.any { type -> type.typeName.contains("android.") })
     }
 }
