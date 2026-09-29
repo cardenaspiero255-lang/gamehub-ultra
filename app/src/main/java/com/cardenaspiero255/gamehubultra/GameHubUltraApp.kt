@@ -20,6 +20,7 @@ import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
@@ -245,7 +246,9 @@ internal fun GameHubUltraApp(
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
-    val optimizationMemoryStore = remember(context) { GameOptimizationMemoryStore(context) }
+    val optimizationMemoryStore: GameOptimizationMemoryStateRepository = remember(context) {
+        GameOptimizationMemoryStore(context)
+    }
     val selectedGameForMemory = uiState.selectedGamePackage
     val selectedGameVersion = remember(selectedGameForMemory) {
         selectedGameForMemory?.let { packageVersionName(context, it) }
