@@ -8,11 +8,16 @@ class GameHubViewModelDependenciesTest {
     @Test
     fun dependencyFactoryContractIsAndroidFreeAndExplicit() {
         val factory = GameHubViewModelDependencyFactory::class.java
-        val types = factory.methods.flatMap { method ->
-            method.genericParameterTypes.toList() + method.genericReturnType
-        }
+        val dependencyContract = GameHubViewModelDependencies::class.java
+        val exposedTypes = (factory.methods + dependencyContract.methods)
+            .flatMap { method ->
+                method.genericParameterTypes.toList() + method.genericReturnType
+            } + dependencyContract.interfaces.toList()
 
-        assertFalse(types.any { type -> type.typeName.contains("android.") })
+        assertFalse(
+            exposedTypes.any { type -> type.typeName.contains("android.") },
+            "ViewModel dependency boundaries must not expose Android types"
+        )
         assertTrue(factory.methods.any { it.name == "create" })
     }
 }
