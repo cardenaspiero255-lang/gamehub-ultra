@@ -2285,7 +2285,7 @@ private fun SmartPerformanceCard(
     }
 }
 
-private fun packageDisplayName(context: Context, packageName: String): String =
+internal fun packageDisplayName(context: Context, packageName: String): String =
     runCatching {
         val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.packageManager.getApplicationInfo(
@@ -3229,7 +3229,7 @@ internal fun thermalLabel(status: Int?): String =
 private fun Float.roundToInt(): Int = kotlin.math.round(this).toInt()
 
 @Composable
-private fun eventLabel(event: PerformanceEvent): String =
+internal fun eventLabel(event: PerformanceEvent): String =
     when (event.type) {
         PerformanceEventType.SESSION_STARTED ->
             "• " + stringResource(R.string.event_session_started)
