@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 class GameHubViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GameHubPreferencesRepository(application)
+    private val libraryRepository: GameLibraryStateRepository = repository
     private val sessionStore = GameSessionStore(application)
     private val sessionCoordinator = GameSessionLifecycleCoordinator(
         store = sessionStore,
@@ -60,7 +62,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         repository.selectedProfileFlow(),
         selectedGameFlow,
         selectedGameConfigFlow,
-        repository.favoriteGamesFlow()
+        libraryRepository.favoriteGamesFlow()
     ) { globalProfile, selectedGamePackage, selectedGameConfig, favoriteGames ->
         BaseUiState(
             globalProfile = globalProfile,
@@ -75,8 +77,8 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
 
     val uiState = combine(
         baseStateFlow,
-        repository.recentGamesFlow(),
-        repository.manualGamesFlow()
+        libraryRepository.recentGamesFlow(),
+        libraryRepository.manualGamesFlow()
     ) { base, recentGames, manualGames ->
         GameHubUiState(
             globalProfile = base.globalProfile,
@@ -187,15 +189,15 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setFavoriteGame(packageName: String, favorite: Boolean) {
-        viewModelScope.launch { repository.setFavoriteGame(packageName, favorite) }
+        viewModelScope.launch { libraryRepository.setFavoriteGame(packageName, favorite) }
     }
 
     fun recordRecentGame(packageName: String) {
-        viewModelScope.launch { repository.recordRecentGame(packageName) }
+        viewModelScope.launch { libraryRepository.recordRecentGame(packageName) }
     }
 
     fun setManualGame(packageName: String, manual: Boolean) {
-        viewModelScope.launch { repository.setManualGame(packageName, manual) }
+        viewModelScope.launch { libraryRepository.setManualGame(packageName, manual) }
     }
 
     fun recordPerformanceEvent(event: PerformanceEvent) {
