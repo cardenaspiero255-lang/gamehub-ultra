@@ -112,6 +112,32 @@ class GameOptimizationMemoryStoreTest {
     }
 
     @Test
+    fun pruneToKeepsOnlyRequestedContext() = runBlocking {
+        val other = key.copy(gamePackage = "game-b")
+        store.record(
+            key,
+            OptimizationObservation(
+                contextKey = "",
+                profile = PerformanceProfile.BALANCED,
+                timestampMillis = 1L
+            )
+        )
+        store.record(
+            other,
+            OptimizationObservation(
+                contextKey = "",
+                profile = PerformanceProfile.X4,
+                timestampMillis = 2L
+            )
+        )
+
+        store.pruneTo(key)
+
+        assertEquals(1, store.observationsFlow(key).first().size)
+        assertTrue(store.observationsFlow(other).first().isEmpty())
+    }
+
+    @Test
     fun limitsHistoryToConfiguredSize() = runBlocking {
         repeat(125) { index ->
             store.record(
