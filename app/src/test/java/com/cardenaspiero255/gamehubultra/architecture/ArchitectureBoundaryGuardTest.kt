@@ -255,12 +255,9 @@ class ArchitectureBoundaryGuardTest {
             sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt"),
             sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
         )
-
-        val blockingWrites = listOf(
-            "runBlocking { selectionRepository.saveSelectedGame(",
-            "runBlocking { selectionRepository.saveSelectedProfile(",
-            "runBlocking {\n                    selectionRepository.saveSelectedGameAndProfile(",
-            "runBlocking {\n                                selectionRepository.saveSelectedGameAndProfile("
+        val blockingSelectionWrite = Regex(
+            """runBlocking(?:\\s*\\([^)]*\\))?\\s*\\{[\\s\\S]*?""" +
+                """selectionRepository\\.saveSelected(?:GameAndProfile|Game|Profile)\\s*\\("""
         )
 
         val violations = serviceFiles.flatMap { file ->
@@ -269,19 +266,22 @@ class ArchitectureBoundaryGuardTest {
                 if (!source.contains("DurableSelectionMutationQueue.enqueue")) {
                     add("${file.name} must use the process-durable selection mutation queue")
                 }
+                if (!source.contains("onFailure =")) {
+                    add("${file.name} must observe asynchronous selection persistence failures")
+                }
                 if (source.contains("selectionSaveScope")) {
                     add("${file.name} ties accepted selection writes to service lifetime")
                 }
-                blockingWrites
-                    .filter(source::contains)
-                    .forEach { add("${file.name} blocks its command worker during selection persistence") }
+                if (blockingSelectionWrite.containsMatchIn(source)) {
+                    add("${file.name} blocks its command worker during selection persistence")
+                }
             }
         }
 
         assertTrue(
             violations.isEmpty(),
             violations.joinToString(
-                prefix = "Voice selection persistence must stay asynchronous and ordered:\n",
+                prefix = "Voice selection persistence must stay asynchronous, ordered, and observable:\n",
                 separator = "\n"
             )
         )
