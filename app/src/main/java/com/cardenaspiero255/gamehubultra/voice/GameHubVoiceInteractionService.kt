@@ -21,8 +21,8 @@ import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
-import com.cardenaspiero255.gamehubultra.GameSelectionStore
-import com.cardenaspiero255.gamehubultra.ProfileSelectionStore
+import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
@@ -157,11 +157,13 @@ private class GameHubVoiceInteractionSession(context: Context) :
 
     private fun handleTranscript(transcript: String) {
         val context = getContext()
+        val selectionRepository: GameSelectionStateRepository =
+            GameHubPreferencesRepository(context)
         val selectedGamePackage = runCatching {
-            runBlocking { GameSelectionStore.selectedGameFlow(context).first() }
+            runBlocking { selectionRepository.selectedGameFlow().first() }
         }.getOrNull()
         val selectedProfile = runCatching {
-            runBlocking { ProfileSelectionStore.selectedProfileFlow(context).first() }
+            runBlocking { selectionRepository.selectedProfileFlow().first() }
         }.getOrNull() ?: PerformanceProfile.BALANCED
         val device = DeviceInfoProvider.get(context)
         val diagnostics = RuntimeDiagnosticsProvider.get(context)
@@ -196,13 +198,15 @@ private class GameHubVoiceInteractionSession(context: Context) :
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
             saveSelectedGame = { packageName ->
-                GameSelectionStore.saveSelectedGame(context, packageName)
+                runBlocking { selectionRepository.saveSelectedGame(packageName) }
             },
             saveSelectedProfile = { profile ->
-                ProfileSelectionStore.saveSelectedProfile(context, profile)
+                runBlocking { selectionRepository.saveSelectedProfile(profile) }
             },
             saveSelectedGameWithProfile = { packageName, profile ->
-                GameSelectionStore.saveSelectedGameAndProfile(context, packageName, profile)
+                runBlocking {
+                    selectionRepository.saveSelectedGameAndProfile(packageName, profile)
+                }
             },
             // X4 is selectable as a GameHub Ultra profile. Platform-only performance
             // hooks are enabled separately when the device reports support.
