@@ -246,7 +246,7 @@ internal fun ConnectedAccountsCard(
                     enabled = displayName.isNotBlank() && publicId.isNotBlank() && profileIdSupported,
                     onClick = {
                         scope.launch {
-                            store.add(platform, displayName, publicId, alias, avatarUrl)
+                            store.upsert(platform, displayName, publicId, alias, avatarUrl)
                             displayName = ""
                             publicId = ""
                             showAddDialog = false
