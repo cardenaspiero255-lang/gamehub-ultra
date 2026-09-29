@@ -191,6 +191,33 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun productionDoesNotUseLegacySelectionStores() {
+        val productionFiles = sourceRoot()
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .toList()
+        val forbiddenSymbols = listOf(
+            "GameSelectionStore",
+            "ProfileSelectionStore"
+        )
+
+        val violations = productionFiles.flatMap { file ->
+            val source = file.readText()
+            forbiddenSymbols
+                .filter(source::contains)
+                .map { symbol -> "${file.name} still depends on legacy selection store $symbol" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Selection/profile persistence must flow through GameSelectionStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
