@@ -757,9 +757,9 @@ internal fun GameHubUltraApp(
                         selectedProfileName = selectedProfileName,
                         onProfileSelected = ::selectProfile,
                         onGameSelected = ::selectGame,
-                        onVoiceSelectedGame = viewModel::selectGame,
-                        onVoiceSelectedProfile = viewModel::selectGlobalProfile,
-                        onVoiceSelectedGameWithProfile = viewModel::selectGameWithProfile
+                        onVoiceSelectedGame = viewModel::persistVoiceSelectedGame,
+                        onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile,
+                        onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile
                     )
                 }
             }
