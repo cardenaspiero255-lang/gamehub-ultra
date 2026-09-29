@@ -198,7 +198,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
             command = VoiceCommandParser.parse(
                 transcript = transcript,
                 optionalResolver = intentResolver,
-                knownGameAliases = GameAliasStore.aliases(context).keys
+                knownGameAliases = SharedPreferencesGameAliasStateRepository(context).aliases().keys
             ),
             gamesProvider = { GameLibrary.discover(context).games },
             launchGame = { packageName -> launchGameFromVoice(packageName) },
@@ -230,9 +230,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
             deferProfileApplication = true,
             aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
             aliasIntentResolver = intentResolver,
-            gameAliasesProvider = { GameAliasStore.aliases(context) },
+            gameAliasesProvider = { SharedPreferencesGameAliasStateRepository(context).aliases() },
             saveGameAlias = { alias, packageName ->
-    GameAliasStore.save(context, alias, packageName)
+    SharedPreferencesGameAliasStateRepository(context).save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = { profile ->
