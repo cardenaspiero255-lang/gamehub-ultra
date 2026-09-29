@@ -288,6 +288,27 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun blockingSelectionWriteDetectionHandlesNestedBlocksAndDispatcherArgument() {
+        val nestedBlockingWrite = """
+            runBlocking(Dispatchers.IO) {
+                if (shouldPersist) {
+                    println("nested")
+                }
+                selectionRepository.saveSelectedGame("game.a")
+            }
+        """.trimIndent()
+        val asyncWrite = """
+            runBlocking { selectionRepository.selectedGameFlow().first() }
+            DurableSelectionMutationQueue.enqueue {
+                selectionRepository.saveSelectedGame("game.a")
+            }
+        """.trimIndent()
+
+        assertTrue(containsBlockingSelectionWrite(nestedBlockingWrite))
+        assertTrue(!containsBlockingSelectionWrite(asyncWrite))
+    }
+
+    @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
