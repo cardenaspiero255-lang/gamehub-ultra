@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.data
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * Owns persisted selection and per-game performance-profile state.
@@ -24,6 +25,14 @@ interface GameSelectionStateRepository {
 }
 
 /** Owns persisted Library collections independently from selection/profile state. */
+suspend fun GameSelectionStateRepository.effectiveProfileForSelection(
+    selectedGamePackage: String?,
+): PerformanceProfile {
+    val gameProfile = selectedGamePackage
+        ?.let { packageName -> profileForGameFlow(packageName).first() }
+    return gameProfile ?: selectedProfileFlow().first()
+}
+
 interface GameLibraryStateRepository {
     fun favoriteGamesFlow(): Flow<Set<String>>
     fun recentGamesFlow(): Flow<List<String>>
