@@ -120,9 +120,17 @@ jobs:
             --configuration-cache-problems=fail \
             --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
 
-          # Probe the exact same requested graph without executing its tasks.
-          # This proves the stored Configuration Cache entry is reusable while
-          # avoiding a second execution of tests, lint and assembly.
+          # Prime and then prove reuse of the dry-run Configuration Cache
+          # entry without executing lint or assembly again.
+          gradle \
+            :app:assembleDebug \
+            :app:lintDebug \
+            --build-cache \
+            --parallel \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --dry-run \
+            --stacktrace >/dev/null
           gradle \
             :app:assembleDebug \
             :app:lintDebug \
