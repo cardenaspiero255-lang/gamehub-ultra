@@ -176,6 +176,8 @@ import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import com.cardenaspiero255.gamehubultra.ui.layout.LibraryLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.layout.ResponsiveLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.layout.UltraLayoutMode
+import com.cardenaspiero255.gamehubultra.ui.home.state.HomeUiEvent
+import com.cardenaspiero255.gamehubultra.ui.home.state.rememberHomeUiStateHolder
 import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryUiEvent
 import com.cardenaspiero255.gamehubultra.ui.library.state.rememberLibraryUiStateHolder
 import kotlinx.coroutines.Dispatchers
@@ -888,27 +890,27 @@ private fun HomeScreen(
     showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
+    val homeStateHolder = rememberHomeUiStateHolder()
+    val homeUiState = homeStateHolder.state
     val recentGameNames = remember(recentGamePackages) {
         recentGamePackages.map { packageName ->
             packageDisplayName(timelineContext, packageName)
         }
     }
-    var localGameCount by remember { mutableIntStateOf(0) }
-    var quickVoiceOpen by rememberSaveable { mutableStateOf(false) }
-    var quickVoiceRevealRequest by remember { mutableIntStateOf(0) }
     val homeListState = androidx.compose.foundation.lazy.rememberLazyListState()
-    LaunchedEffect(quickVoiceRevealRequest) {
-        if (quickVoiceRevealRequest > 0) {
+    LaunchedEffect(homeUiState.quickVoiceRevealRequest) {
+        if (homeUiState.quickVoiceRevealRequest > 0) {
             homeListState.animateScrollToItem(3)
         }
     }
     LaunchedEffect(timelineContext, manualGamePackages, gameCatalogRefreshToken) {
-        localGameCount = withContext(Dispatchers.IO) {
+        val localGameCount = withContext(Dispatchers.IO) {
             GameLibrary.discover(
                 context = timelineContext,
                 additionalPackages = manualGamePackages
             ).games.size
         }
+        homeStateHolder.onEvent(HomeUiEvent.GameCountLoaded(localGameCount))
     }
     val homeTypography = MaterialTheme.typography
     val homeShapes = MaterialTheme.shapes
@@ -960,20 +962,16 @@ private fun HomeScreen(
                 gameName = aiContext.selectedGamePackage?.let { packageDisplayName(timelineContext, it) }
                     ?: "Selecciona un juego",
                 recentGames = recentGameNames,
-                gameCount = localGameCount,
+                gameCount = homeUiState.localGameCount,
                 sessionCount = sessionHistory.size,
                 onProfileSelected = onProfileSelected,
                 onPlay = onPlaySelectedGame,
                 onVoiceClick = {
-                    val next = !quickVoiceOpen
-                    if (shouldRevealQuickVoiceControls(quickVoiceOpen, next)) {
-                        quickVoiceRevealRequest += 1
-                    }
-                    quickVoiceOpen = next
+                    homeStateHolder.onEvent(HomeUiEvent.QuickVoiceToggled)
                 }
             )
         }
-        if (quickVoiceOpen) {
+        if (homeUiState.quickVoiceOpen) {
             item {
                 VoiceAssistantCard(
                     selectedProfileName = selectedProfileName,
