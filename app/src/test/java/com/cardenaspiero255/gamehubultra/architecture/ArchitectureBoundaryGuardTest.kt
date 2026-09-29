@@ -121,6 +121,43 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun homeAndLibraryPresentationStateStaysExtractedFromCompose() {
+        val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt").readText()
+
+        val forbiddenLegacyState = listOf(
+            "var localGameCount by remember",
+            "var quickVoiceOpen by remember",
+            "var quickVoiceRevealRequest by remember",
+            "var discovery by remember",
+            "var launchableApps by remember",
+            "var query by rememberSaveable",
+            "var launchFailed by rememberSaveable",
+            "var addGameDialogVisible by rememberSaveable",
+            "var selectedGameDetailsVisible by rememberSaveable",
+            "shouldRevealQuickVoiceControls"
+        )
+        val violations = forbiddenLegacyState
+            .filter(app::contains)
+            .map { symbol -> "GameHubUltraApp.kt still owns legacy screen state: $symbol" }
+
+        assertTrue(
+            app.contains("rememberHomeUiStateHolder()"),
+            "HomeScreen must obtain presentation state from HomeUiStateHolder"
+        )
+        assertTrue(
+            app.contains("rememberLibraryUiStateHolder()"),
+            "LibraryScreen must obtain presentation state from LibraryUiStateHolder"
+        )
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Home and Library presentation state must stay outside Compose-local state:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
