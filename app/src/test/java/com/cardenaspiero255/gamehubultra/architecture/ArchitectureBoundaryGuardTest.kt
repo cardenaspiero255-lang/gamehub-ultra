@@ -218,6 +218,38 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun gameHubViewModelRoutesPersistentLibraryStateThroughLibraryBoundary() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt"
+        ).readText()
+
+        assertTrue(
+            source.contains("private val libraryRepository: GameLibraryStateRepository = repository"),
+            "GameHubViewModel must expose persistent Library state through GameLibraryStateRepository"
+        )
+
+        val forbiddenConcreteCalls = listOf(
+            "repository.favoriteGamesFlow()",
+            "repository.recentGamesFlow()",
+            "repository.manualGamesFlow()",
+            "repository.setFavoriteGame(",
+            "repository.recordRecentGame(",
+            "repository.setManualGame("
+        )
+        val violations = forbiddenConcreteCalls
+            .filter(source::contains)
+            .map { call -> "GameHubViewModel bypasses GameLibraryStateRepository with $call" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Persistent Library collections must flow through GameLibraryStateRepository:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun productionCompositionDoesNotOwnComposePresentation() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
