@@ -60,7 +60,10 @@ class GameStateOwnershipContractsTest {
                 "updatePublicMetadata",
                 "upsert",
             ).sorted(),
-            ConnectedGameAccountsStateRepository::class.java.methods.map { it.name }.sorted(),
+            ConnectedGameAccountsStateRepository::class.java.declaredMethods
+                .map { it.name }
+                .filterNot { it.endsWith("$default") }
+                .sorted(),
         )
         val types = ConnectedGameAccountsStateRepository::class.java.methods.flatMap { method ->
             method.genericParameterTypes.toList() + method.genericReturnType
