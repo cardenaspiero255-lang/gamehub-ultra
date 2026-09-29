@@ -1097,6 +1097,9 @@ private fun VoiceAssistantCard(
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val aliasRepository = remember(context) {
+        SharedPreferencesGameAliasStateRepository(context)
+    }
     val aiAdvisor = ultraRuntime.assistant
     val queryExecutor = ultraRuntime.queryExecutor
     val agentRouter = ultraRuntime.agentRouter
@@ -1179,7 +1182,7 @@ private fun VoiceAssistantCard(
                         thermalLabel = deviceStatus.thermalLabel,
                         refreshRateHz = turnAiContext.refreshRateHz
                     ),
-                    knownGameAliases = SharedPreferencesGameAliasStateRepository(context).aliases().keys
+                    knownGameAliases = aliasRepository.aliases().keys
                 )
             )
 
@@ -1244,9 +1247,9 @@ private fun VoiceAssistantCard(
                             aiAdvisor.advise(question, latestAiContext)
                         },
                         aliasIntentResolver = aiIntentResolver,
-                        gameAliasesProvider = { SharedPreferencesGameAliasStateRepository(context).aliases() },
+                        gameAliasesProvider = { aliasRepository.aliases() },
                         saveGameAlias = { alias, packageName ->
-                            SharedPreferencesGameAliasStateRepository(context).save(alias, packageName)
+                            aliasRepository.save(alias, packageName)
                         },
                         networkStatusProvider = {
                             VoiceNetworkSnapshotFactory.current(context)
@@ -1360,7 +1363,7 @@ private fun VoiceAssistantCard(
                                 thermalLabel = voiceStatus.thermalLabel,
                                 refreshRateHz = turnAiContext.refreshRateHz
                             ),
-                            knownGameAliases = SharedPreferencesGameAliasStateRepository(context).aliases().keys,
+                            knownGameAliases = aliasRepository.aliases().keys,
                             conversationHistory = conversationBeforeTurn
                         )
                     )
@@ -1452,9 +1455,9 @@ private fun VoiceAssistantCard(
                                     aiAdvisor.advise(question, latestAiContext)
                                 },
                                 aliasIntentResolver = aiIntentResolver,
-                                gameAliasesProvider = { SharedPreferencesGameAliasStateRepository(context).aliases() },
+                                gameAliasesProvider = { aliasRepository.aliases() },
                                 saveGameAlias = { alias, packageName ->
-    SharedPreferencesGameAliasStateRepository(context).save(alias, packageName)
+    aliasRepository.save(alias, packageName)
 },
 networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
 applyNetworkProfile = networkGaming::applyProfile
