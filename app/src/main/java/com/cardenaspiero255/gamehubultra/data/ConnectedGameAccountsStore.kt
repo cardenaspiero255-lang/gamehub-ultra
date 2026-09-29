@@ -32,24 +32,24 @@ data class ConnectedGameAccount(
 
 class ConnectedGameAccountsStore(
     private val dataStore: DataStore<Preferences>
-) {
+) : ConnectedGameAccountsStateRepository {
     constructor(context: Context) : this(context.applicationContext.connectedAccountsDataStore)
     private val accountsKey = stringPreferencesKey("accounts_v2")
     private val legacyAccountsKey = stringPreferencesKey("accounts_v1")
     private val activeAccountKey = stringPreferencesKey("active_account_id_v1")
 
-    fun accountsFlow(): Flow<List<ConnectedGameAccount>> =
+    override fun accountsFlow(): Flow<List<ConnectedGameAccount>> =
         dataStore.data.map { preferences ->
             readAccounts(preferences)
         }
 
-    fun activeAccountIdFlow(): Flow<String?> =
+    override fun activeAccountIdFlow(): Flow<String?> =
         dataStore.data.map { preferences ->
             preferences[activeAccountKey]
                 ?.takeIf { id -> readAccounts(preferences).any { it.id == id } }
         }
 
-    suspend fun setActiveAccount(accountId: String?): Boolean {
+    override suspend fun setActiveAccount(accountId: String?): Boolean {
         var accepted = false
         dataStore.edit { preferences ->
             val accounts = readAccounts(preferences)
@@ -68,7 +68,7 @@ class ConnectedGameAccountsStore(
         return accepted
     }
 
-    suspend fun upsert(
+    override suspend fun upsert(
         platform: GamePlatform,
         displayName: String,
         publicId: String,
@@ -122,7 +122,7 @@ class ConnectedGameAccountsStore(
     ): ConnectedGameAccount =
         upsert(platform, displayName, publicId, alias, avatarUrl)
 
-    suspend fun updatePublicMetadata(
+    override suspend fun updatePublicMetadata(
         accountId: String,
         alias: String?,
         avatarUrl: String?
@@ -145,7 +145,7 @@ class ConnectedGameAccountsStore(
         return updated
     }
 
-    suspend fun remove(accountId: String) {
+    override suspend fun remove(accountId: String) {
         dataStore.edit { preferences ->
             val current = readAccounts(preferences).filterNot { it.id == accountId }
             preferences[accountsKey] = current.joinToString("\n", transform = ::encode)
