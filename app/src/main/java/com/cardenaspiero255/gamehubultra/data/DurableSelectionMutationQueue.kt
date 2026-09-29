@@ -16,6 +16,12 @@ internal object DurableSelectionMutationQueue {
         scope = CoroutineScope(SupervisorJob())
     )
 
-    fun enqueue(block: suspend () -> Unit): Job =
-        queue.enqueue(block)
+    fun enqueue(
+        onFailure: (Throwable) -> Unit = {},
+        block: suspend () -> Unit
+    ): Job =
+        queue.enqueue(
+            onFailure = onFailure,
+            block = block
+        )
 }
