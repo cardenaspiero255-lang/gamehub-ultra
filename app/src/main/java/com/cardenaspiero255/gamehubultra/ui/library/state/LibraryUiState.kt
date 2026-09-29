@@ -34,3 +34,41 @@ internal fun LibraryUiState.reduce(event: LibraryUiEvent): LibraryUiState =
         is LibraryUiEvent.SelectedGameDetailsVisibilityChanged ->
             copy(selectedGameDetailsVisible = event.visible)
     }
+
+internal class LibraryUiStateHolder(initialState: LibraryUiState = LibraryUiState()) {
+    var state by androidx.compose.runtime.mutableStateOf(initialState)
+        private set
+
+    fun onEvent(event: LibraryUiEvent) {
+        state = state.reduce(event)
+    }
+}
+
+@androidx.compose.runtime.Composable
+internal fun rememberLibraryUiStateHolder(): LibraryUiStateHolder {
+    val saver = androidx.compose.runtime.saveable.Saver<LibraryUiStateHolder, List<Any?>>(
+        save = { holder ->
+            listOf(
+                holder.state.refreshToken,
+                holder.state.launchFailed,
+                holder.state.addGameDialogVisible,
+                holder.state.query,
+                holder.state.selectedGameDetailsVisible,
+            )
+        },
+        restore = { values ->
+            LibraryUiStateHolder(
+                LibraryUiState(
+                    refreshToken = values[0] as Int,
+                    launchFailed = values[1] as Boolean,
+                    addGameDialogVisible = values[2] as Boolean,
+                    query = values[3] as String,
+                    selectedGameDetailsVisible = values[4] as Boolean,
+                )
+            )
+        },
+    )
+    return androidx.compose.runtime.saveable.rememberSaveable(saver = saver) {
+        LibraryUiStateHolder()
+    }
+}
