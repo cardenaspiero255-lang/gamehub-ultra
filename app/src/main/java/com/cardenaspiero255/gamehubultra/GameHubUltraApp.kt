@@ -1915,8 +1915,8 @@ private fun LibraryScreen(
         item(span = { GridItemSpan(maxLineSpan) }) {
             OutlinedTextField(
                 value = libraryUiState.query,
-                onValueChange = {
-                    libraryStateHolder.onEvent(LibraryUiEvent.QueryChanged(it))
+                onValueChange = { query ->
+                    libraryStateHolder.onEvent(LibraryUiEvent.QueryChanged(query))
                 },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
