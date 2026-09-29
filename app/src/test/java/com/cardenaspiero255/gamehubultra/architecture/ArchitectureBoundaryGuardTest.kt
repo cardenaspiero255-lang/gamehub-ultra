@@ -255,10 +255,6 @@ class ArchitectureBoundaryGuardTest {
             sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt"),
             sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
         )
-        val blockingSelectionWrite = Regex(
-            """runBlocking(?:\s*\([^)]*\))?\s*\{[^}]*""" +
-                """selectionRepository\.saveSelected(?:GameAndProfile|Game|Profile)\s*\("""
-        )
 
         val violations = serviceFiles.flatMap { file ->
             val source = file.readText()
@@ -272,7 +268,7 @@ class ArchitectureBoundaryGuardTest {
                 if (source.contains("selectionSaveScope")) {
                     add("${file.name} ties accepted selection writes to service lifetime")
                 }
-                if (blockingSelectionWrite.containsMatchIn(source)) {
+                if (containsBlockingSelectionWrite(source)) {
                     add("${file.name} blocks its command worker during selection persistence")
                 }
             }
@@ -350,6 +346,117 @@ class ArchitectureBoundaryGuardTest {
                 "Production composition root must own $concrete"
             )
         }
+    }
+
+    private fun containsBlockingSelectionWrite(source: String): Boolean {
+        val runBlockingStart = Regex(
+            """\\brunBlocking(?:\\s*\\([^)]*\\))?\\s*\\{"""
+        )
+        val selectionWrite = Regex(
+            """selectionRepository\\s*\\.\\s*saveSelected""" +
+                """(?:GameAndProfile|Game|Profile)\\s*\\("""
+        )
+
+        var searchFrom = 0
+        while (true) {
+            val match = runBlockingStart.find(source, searchFrom) ?: return false
+            val openBrace = source.indexOf('{', match.range.first)
+            val closeBrace = matchingBraceEnd(source, openBrace)
+            if (closeBrace == null) {
+                searchFrom = match.range.last + 1
+                continue
+            }
+
+            val body = source.substring(openBrace + 1, closeBrace)
+            if (selectionWrite.containsMatchIn(body)) return true
+            searchFrom = closeBrace + 1
+        }
+    }
+
+    private fun matchingBraceEnd(source: String, openBrace: Int): Int? {
+        var depth = 0
+        var index = openBrace
+        var inString = false
+        var inChar = false
+        var inTripleString = false
+        var inLineComment = false
+        var inBlockComment = false
+        var escaped = false
+
+        while (index < source.length) {
+            val char = source[index]
+            val next = source.getOrNull(index + 1)
+
+            when {
+                inLineComment -> {
+                    if (char == '\n') inLineComment = false
+                    index += 1
+                }
+                inBlockComment -> {
+                    if (char == '*' && next == '/') {
+                        inBlockComment = false
+                        index += 2
+                    } else {
+                        index += 1
+                    }
+                }
+                inTripleString -> {
+                    if (source.startsWith("\"\"\"", index)) {
+                        inTripleString = false
+                        index += 3
+                    } else {
+                        index += 1
+                    }
+                }
+                inString -> {
+                    when {
+                        escaped -> escaped = false
+                        char == '\\' -> escaped = true
+                        char == '"' -> inString = false
+                    }
+                    index += 1
+                }
+                inChar -> {
+                    when {
+                        escaped -> escaped = false
+                        char == '\\' -> escaped = true
+                        char == '\'' -> inChar = false
+                    }
+                    index += 1
+                }
+                source.startsWith("//", index) -> {
+                    inLineComment = true
+                    index += 2
+                }
+                source.startsWith("/*", index) -> {
+                    inBlockComment = true
+                    index += 2
+                }
+                source.startsWith("\"\"\"", index) -> {
+                    inTripleString = true
+                    index += 3
+                }
+                char == '"' -> {
+                    inString = true
+                    index += 1
+                }
+                char == '\'' -> {
+                    inChar = true
+                    index += 1
+                }
+                char == '{' -> {
+                    depth += 1
+                    index += 1
+                }
+                char == '}' -> {
+                    depth -= 1
+                    if (depth == 0) return index
+                    index += 1
+                }
+                else -> index += 1
+            }
+        }
+        return null
     }
 
     private fun sourceFile(relativePath: String): File {
