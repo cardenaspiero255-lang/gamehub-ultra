@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
 import com.cardenaspiero255.gamehubultra.data.PerformanceHistoryStateRepository
 import java.lang.reflect.Type
 import kotlin.test.Test
@@ -43,6 +44,12 @@ class GameHubViewModelDependenciesTest {
             dependencyContract.methods.any {
                 it.name == "getPerformanceHistoryRepository" &&
                     it.returnType == PerformanceHistoryStateRepository::class.java
+            }
+        )
+        assertTrue(
+            dependencyContract.methods.any {
+                it.name == "getSessionRepository" &&
+                    it.returnType == GameSessionStateRepository::class.java
             }
         )
     }
