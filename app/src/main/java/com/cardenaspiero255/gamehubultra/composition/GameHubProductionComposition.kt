@@ -12,6 +12,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -45,11 +46,13 @@ internal object GameHubProductionComposition {
         val device = DeviceInfoProvider.get(activity)
         val appContext = activity.applicationContext
         val preferencesRepository = GameHubPreferencesRepository(appContext)
+        val sessionRepository = GameSessionStore(appContext)
         val viewModelDependencyFactory = GameHubViewModelDependencyFactory {
             GameHubViewModelDependencies(
                 selectionRepository = preferencesRepository,
                 libraryRepository = preferencesRepository,
-                performanceHistoryRepository = preferencesRepository
+                performanceHistoryRepository = preferencesRepository,
+                sessionRepository = sessionRepository
             )
         }
         val memoryStore = UltraConversationMemoryStore.get(appContext)
