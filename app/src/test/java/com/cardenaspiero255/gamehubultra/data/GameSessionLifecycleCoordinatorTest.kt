@@ -263,4 +263,55 @@ class GameSessionLifecycleCoordinatorTest {
         assertEquals(2, finishAttempts)
     }
 
+
+    @Test
+    fun rejectedFinishKeepsRuntimeSessionAvailableForRetry() = runBlocking {
+        var finishAttempts = 0
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) = Unit
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean {
+                finishAttempts += 1
+                return finishAttempts > 1
+            }
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+            override suspend fun clearSessions() = Unit
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_000L)
+        )?.job?.join()
+
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_100L)
+        )?.job?.join()
+        assertNull(localCoordinator.runtimeSession.value)
+        assertEquals(2, finishAttempts)
+    }
+
 }
