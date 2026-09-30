@@ -15,6 +15,8 @@ import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinatorFactory
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
@@ -38,7 +40,8 @@ internal data class GameHubProductionBootstrap(
     val performanceController: PerformanceController,
     val ultraRuntime: UltraUiRuntimeDependencies,
     val viewModelDependencyFactory: GameHubViewModelDependencyFactory,
-    val storeLibraryRepository: StoreLibraryStateRepository
+    val storeLibraryRepository: StoreLibraryStateRepository,
+    val optimizationMemoryRepository: GameOptimizationMemoryStateRepository
 )
 
 internal object GameHubProductionComposition {
@@ -53,6 +56,8 @@ internal object GameHubProductionComposition {
         val preferencesRepository = GameHubPreferencesRepository(appContext)
         val sessionRepository = GameSessionStore(appContext)
         val storeLibraryRepository: StoreLibraryStateRepository = StoreLibraryStore(appContext)
+        val optimizationMemoryRepository: GameOptimizationMemoryStateRepository =
+            GameOptimizationMemoryStore(appContext)
         val sessionCoordinatorFactory = GameSessionLifecycleCoordinatorFactory { scope ->
             GameSessionLifecycleCoordinator(
                 store = sessionRepository,
@@ -106,7 +111,8 @@ internal object GameHubProductionComposition {
             performanceController = performanceController,
             ultraRuntime = ultraRuntime,
             viewModelDependencyFactory = viewModelDependencyFactory,
-            storeLibraryRepository = storeLibraryRepository
+            storeLibraryRepository = storeLibraryRepository,
+            optimizationMemoryRepository = optimizationMemoryRepository
         )
     }
 
