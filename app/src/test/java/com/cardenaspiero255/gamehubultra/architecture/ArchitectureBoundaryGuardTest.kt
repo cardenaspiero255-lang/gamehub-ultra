@@ -7,6 +7,28 @@ import kotlin.test.assertTrue
 class ArchitectureBoundaryGuardTest {
 
     @Test
+    fun gameHubViewModelConsumesCompositionBoundary() {
+        val source = sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt").readText()
+        val violations = buildList {
+            if (source.contains("GameHubPreferencesRepository(")) {
+                add("GameHubViewModel constructs GameHubPreferencesRepository directly")
+            }
+            if (!source.contains("private val repository: GameHubViewModelDependencies")) {
+                add("GameHubViewModel does not receive GameHubViewModelDependencies")
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "GameHubViewModel state dependencies must come from production composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
+    @Test
     fun mainActivityStaysBootstrapOnly() {
         val source = sourceFile("com/cardenaspiero255/gamehubultra/MainActivity.kt")
         val violations = mutableListOf<String>()
