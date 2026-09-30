@@ -12,6 +12,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
@@ -120,6 +121,9 @@ internal object GameHubProductionComposition {
             optimizationMemoryRepository = optimizationMemoryRepository
         )
     }
+
+    fun selectionRepository(appContext: Context): GameSelectionStateRepository =
+        GameHubPreferencesRepository(appContext)
 
     fun connectedAccountsRepository(appContext: Context): ConnectedGameAccountsStateRepository =
         ConnectedGameAccountsStore(appContext)
