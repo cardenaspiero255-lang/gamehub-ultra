@@ -14,8 +14,9 @@ class GameHubViewModelDependenciesTest {
     fun dependencyFactoryContractIsAndroidFreeAndExplicit() {
         val factory = GameHubViewModelDependencyFactory::class.java
         val dependencyContract = GameHubViewModelDependencies::class.java
+        val sessionCoordinatorFactory = GameSessionLifecycleCoordinatorFactory::class.java
         val exposedTypes =
-            listOf(factory, dependencyContract).flatMap { contract ->
+            listOf(factory, dependencyContract, sessionCoordinatorFactory).flatMap { contract ->
                 contract.methods.flatMap { method ->
                     method.genericParameterTypes.toList() + method.genericReturnType
                 } + contract.genericInterfaces.toList()
@@ -50,6 +51,12 @@ class GameHubViewModelDependenciesTest {
             dependencyContract.methods.any {
                 it.name == "getSessionRepository" &&
                     it.returnType == GameSessionStateRepository::class.java
+            }
+        )
+        assertTrue(
+            dependencyContract.methods.any {
+                it.name == "getSessionCoordinatorFactory" &&
+                    it.returnType == GameSessionLifecycleCoordinatorFactory::class.java
             }
         )
     }
