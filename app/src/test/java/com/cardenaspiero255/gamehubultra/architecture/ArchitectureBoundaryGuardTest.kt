@@ -142,9 +142,16 @@ class ArchitectureBoundaryGuardTest {
                 if (concreteTypedRepository.containsMatchIn(source)) {
                     add("${file.name} exposes StoreLibraryStore as the repository dependency type")
                 }
+                if (
+                    file.name == "GameHubUltraApp.kt" &&
+                    source.contains("StoreLibraryStore(")
+                ) {
+                    add("${file.name} constructs store-library persistence directly")
+                }
                 val directConcreteCalls = listOf(
-                    "StoreLibraryStore(context)",
-                    "StoreLibraryStore(this)",
+                    "StoreLibraryStore(context).getAll()",
+                    "StoreLibraryStore(context).removeForAccount(",
+                    "StoreLibraryStore(this).replaceForAccount(",
                     "StoreLibraryStore(this@StoreConnectionActivity)"
                 )
                 directConcreteCalls
