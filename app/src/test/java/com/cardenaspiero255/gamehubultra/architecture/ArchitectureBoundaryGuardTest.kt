@@ -119,6 +119,10 @@ class ArchitectureBoundaryGuardTest {
                 .containsMatchIn(source),
             "GameHubUltraApp must not expose GameOptimizationMemoryStore as its dependency type"
         )
+        assertTrue(
+            !source.contains("GameOptimizationMemoryStore("),
+            "GameHubUltraApp must not construct optimization-memory persistence directly"
+        )
     }
 
 
