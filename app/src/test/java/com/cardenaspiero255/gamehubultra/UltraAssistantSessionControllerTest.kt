@@ -741,4 +741,61 @@ class UltraAssistantSessionControllerTest {
     }
 
 
+    @Test
+    fun failedRetryCannotReportReadyWhenConversationChangedDuringRetry() = runBlocking {
+        val ownerScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var attempts = 0
+        val retryStarted = CompletableDeferred<Unit>()
+        val releaseRetry = CompletableDeferred<Unit>()
+
+        val memory = object : UltraAssistantSessionMemory {
+            override suspend fun warmUp() = Unit
+
+            override suspend fun recentConversationLines(
+                limit: Int,
+                scope: UltraMemoryScope
+            ): List<String> {
+                attempts += 1
+                if (attempts == 1) error("initial failure")
+                retryStarted.complete(Unit)
+                releaseRetry.await()
+                error("retry failure")
+            }
+
+            override fun enqueueSyncConversation(
+                previous: List<String>,
+                next: List<String>,
+                scope: UltraMemoryScope,
+                timestampMillis: Long
+            ) = Unit
+
+            override fun enqueueClearConversationHistory(scope: UltraMemoryScope) = Unit
+        }
+
+        try {
+            val controller = UltraAssistantSessionController(
+                ownerScope = ownerScope,
+                memory = memory,
+                maxHistory = 20,
+                ioDispatcher = Dispatchers.Unconfined,
+                publicationDispatcher = Dispatchers.Unconfined
+            )
+
+            controller.selectGame("game.a").join()
+            val retry = controller.retryLoad()
+            retryStarted.await()
+
+            controller.updateConversation(listOf("Tú: mensaje durante retry"))
+            releaseRetry.complete(Unit)
+            retry.join()
+
+            assertEquals(listOf("Tú: mensaje durante retry"), controller.conversation.value)
+            assertTrue(controller.scopeReady.value)
+            assertNull(controller.loadError.value)
+        } finally {
+            ownerScope.cancel()
+        }
+    }
+
+
 }
