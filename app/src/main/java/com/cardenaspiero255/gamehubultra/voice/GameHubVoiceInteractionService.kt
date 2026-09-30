@@ -22,8 +22,8 @@ import android.service.voice.VoiceInteractionSession
 import android.service.voice.VoiceInteractionSessionService
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
-import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
@@ -65,7 +65,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val aiAdvisor = GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter())
     private val aliasRepository by lazy {
-        SharedPreferencesGameAliasStateRepository(getContext().applicationContext)
+        GameHubProductionComposition.aliasRepository(getContext().applicationContext)
     }
 
     override fun onCreateContentView(): View =
@@ -164,7 +164,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private fun handleTranscript(transcript: String) {
         val context = getContext()
         val selectionRepository: GameSelectionStateRepository =
-            GameHubPreferencesRepository(context)
+            GameHubProductionComposition.selectionRepository(context.applicationContext)
         val selectedGamePackage = runCatching {
             runBlocking { selectionRepository.selectedGameFlow().first() }
         }.getOrNull()

@@ -12,6 +12,10 @@ import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinatorFactory
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
@@ -33,6 +37,7 @@ import com.cardenaspiero255.gamehubultra.ui.GameHubViewModelDependencyFactory
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
+import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesGameAliasStateRepository
 
 internal data class GameHubProductionBootstrap(
     val initialState: PerformanceState,
@@ -40,6 +45,7 @@ internal data class GameHubProductionBootstrap(
     val performanceController: PerformanceController,
     val ultraRuntime: UltraUiRuntimeDependencies,
     val viewModelDependencyFactory: GameHubViewModelDependencyFactory,
+    val connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     val storeLibraryRepository: StoreLibraryStateRepository,
     val optimizationMemoryRepository: GameOptimizationMemoryStateRepository
 )
@@ -55,7 +61,8 @@ internal object GameHubProductionComposition {
         val appContext = activity.applicationContext
         val preferencesRepository = GameHubPreferencesRepository(appContext)
         val sessionRepository = GameSessionStore(appContext)
-        val storeLibraryRepository: StoreLibraryStateRepository = StoreLibraryStore(appContext)
+        val connectedAccountsRepository = connectedAccountsRepository(appContext)
+        val storeLibraryRepository = storeLibraryRepository(appContext)
         val optimizationMemoryRepository: GameOptimizationMemoryStateRepository =
             GameOptimizationMemoryStore(appContext)
         val sessionCoordinatorFactory = GameSessionLifecycleCoordinatorFactory { scope ->
@@ -111,10 +118,26 @@ internal object GameHubProductionComposition {
             performanceController = performanceController,
             ultraRuntime = ultraRuntime,
             viewModelDependencyFactory = viewModelDependencyFactory,
+            connectedAccountsRepository = connectedAccountsRepository,
             storeLibraryRepository = storeLibraryRepository,
             optimizationMemoryRepository = optimizationMemoryRepository
         )
     }
+
+    fun ultraConversationMemory(appContext: Context): UltraConversationMemoryStore =
+        UltraConversationMemoryStore.get(appContext)
+
+    fun aliasRepository(appContext: Context): GameAliasStateRepository =
+        SharedPreferencesGameAliasStateRepository(appContext)
+
+    fun selectionRepository(appContext: Context): GameSelectionStateRepository =
+        GameHubPreferencesRepository(appContext)
+
+    fun connectedAccountsRepository(appContext: Context): ConnectedGameAccountsStateRepository =
+        ConnectedGameAccountsStore(appContext)
+
+    fun storeLibraryRepository(appContext: Context): StoreLibraryStateRepository =
+        StoreLibraryStore(appContext)
 
     fun resumeContinuousVoice(context: Context) {
         ContinuousVoiceController(

@@ -17,11 +17,10 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.cardenaspiero255.gamehubultra.BuildConfig
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
-import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
-import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.domain.GamePlatform
+import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,10 +33,10 @@ import java.time.Instant
 
 class StoreConnectionActivity : ComponentActivity() {
     private val accountsRepository: ConnectedGameAccountsStateRepository by lazy {
-        ConnectedGameAccountsStore(applicationContext)
+        GameHubProductionComposition.connectedAccountsRepository(applicationContext)
     }
     private val storeLibraryRepository: StoreLibraryStateRepository by lazy {
-        StoreLibraryStore(applicationContext)
+        GameHubProductionComposition.storeLibraryRepository(applicationContext)
     }
 
     companion object {

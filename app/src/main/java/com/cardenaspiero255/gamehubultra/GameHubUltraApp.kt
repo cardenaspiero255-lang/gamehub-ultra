@@ -15,6 +15,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
@@ -102,6 +103,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator
@@ -112,7 +114,6 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceChange
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
-import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesGameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.voice.NetworkVoiceResponseText
 import com.cardenaspiero255.gamehubultra.voice.VoiceNetworkSnapshotFactory
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
@@ -204,6 +205,7 @@ internal fun GameHubUltraApp(
     device: DeviceInfo,
     viewModel: GameHubViewModel,
     ultraRuntime: UltraUiRuntimeDependencies,
+    connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     storeLibraryRepository: StoreLibraryStateRepository,
     optimizationMemoryStore: GameOptimizationMemoryStateRepository,
     initialTab: Int,
@@ -579,6 +581,8 @@ internal fun GameHubUltraApp(
         when {
             settingsOpen -> SettingsScreen(
                 modifier = contentModifier,
+                accountsRepository = connectedAccountsRepository,
+                storeLibraryRepository = storeLibraryRepository,
                 onStoreConnectionChanged = { storeRefreshToken += 1 },
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
@@ -1098,7 +1102,7 @@ private fun VoiceAssistantCard(
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val aliasRepository = remember(context) {
-        SharedPreferencesGameAliasStateRepository(context)
+        GameHubProductionComposition.aliasRepository(context.applicationContext)
     }
     val aiAdvisor = ultraRuntime.assistant
     val queryExecutor = ultraRuntime.queryExecutor

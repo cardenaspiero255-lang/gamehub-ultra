@@ -71,6 +71,43 @@ class ArchitectureBoundaryGuardTest {
 
 
     @Test
+    fun settingsDoesNotConstructConnectedAccountPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("ConnectedGameAccountsStore("),
+            "SettingsComponents must receive connected-account persistence through a boundary"
+        )
+    }
+
+    @Test
+    fun storeConnectionActivityDoesNotConstructConnectedAccountPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/store/StoreConnectionActivity.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("ConnectedGameAccountsStore("),
+            "StoreConnectionActivity must receive connected-account persistence through a boundary"
+        )
+    }
+
+    @Test
+    fun settingsDoesNotConstructStoreLibraryPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("StoreLibraryStore("),
+            "SettingsComponents must receive store-library persistence through a boundary"
+        )
+    }
+
+
+    @Test
     fun connectedAccountConsumersDependOnOwnershipBoundary() {
         val guardedFiles = listOf(
             sourceFile("com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"),
@@ -101,6 +138,59 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+
+    @Test
+    fun voiceServicesDoNotConstructSelectionPersistence() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt")
+        )
+
+        val violations = guardedFiles
+            .filter { it.readText().contains("GameHubPreferencesRepository(") }
+            .map { "${it.name} constructs selection persistence directly" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Voice services must receive selection persistence through composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun aliasConsumersDoNotConstructSharedPreferencesPersistence() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt")
+        )
+
+        val violations = guardedFiles
+            .filter { it.readText().contains("SharedPreferencesGameAliasStateRepository(") }
+            .map { "${it.name} constructs alias persistence directly" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Alias consumers must receive GameAliasStateRepository through composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun ultraWakeServiceDoesNotOwnConversationMemoryPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("UltraConversationMemoryStore.get("),
+            "UltraWakeService must receive Ultra conversation memory through production composition"
+        )
+    }
 
     @Test
     fun optimizationMemoryConsumerDependsOnOwnershipBoundary() {

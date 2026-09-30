@@ -23,8 +23,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
-import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
@@ -41,7 +41,6 @@ import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
-import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
@@ -79,7 +78,7 @@ class UltraWakeService : Service() {
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
     private val aliasRepository by lazy {
-        SharedPreferencesGameAliasStateRepository(applicationContext)
+        GameHubProductionComposition.aliasRepository(applicationContext)
     }
     private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
@@ -91,7 +90,7 @@ class UltraWakeService : Service() {
     private var recognitionStarting = false
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val ultraMemoryStore by lazy {
-        UltraConversationMemoryStore.get(applicationContext)
+        GameHubProductionComposition.ultraConversationMemory(applicationContext)
     }
     private val aiAdvisor by lazy {
         GameHubAiAdvisor(
@@ -425,7 +424,7 @@ class UltraWakeService : Service() {
             val response = UltraWakeFailureGuard.run {
                 val context = applicationContext
                 val selectionRepository: GameSelectionStateRepository =
-                    GameHubPreferencesRepository(context)
+                    GameHubProductionComposition.selectionRepository(context.applicationContext)
                 val selectedGamePackage = runCatching {
                     runBlocking { selectionRepository.selectedGameFlow().first() }
                 }.getOrNull()
