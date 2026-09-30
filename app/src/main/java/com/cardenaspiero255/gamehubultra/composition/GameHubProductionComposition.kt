@@ -12,6 +12,8 @@ import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinatorFactory
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
@@ -40,6 +42,7 @@ internal data class GameHubProductionBootstrap(
     val performanceController: PerformanceController,
     val ultraRuntime: UltraUiRuntimeDependencies,
     val viewModelDependencyFactory: GameHubViewModelDependencyFactory,
+    val connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     val storeLibraryRepository: StoreLibraryStateRepository,
     val optimizationMemoryRepository: GameOptimizationMemoryStateRepository
 )
@@ -55,6 +58,8 @@ internal object GameHubProductionComposition {
         val appContext = activity.applicationContext
         val preferencesRepository = GameHubPreferencesRepository(appContext)
         val sessionRepository = GameSessionStore(appContext)
+        val connectedAccountsRepository: ConnectedGameAccountsStateRepository =
+            ConnectedGameAccountsStore(appContext)
         val storeLibraryRepository: StoreLibraryStateRepository = StoreLibraryStore(appContext)
         val optimizationMemoryRepository: GameOptimizationMemoryStateRepository =
             GameOptimizationMemoryStore(appContext)
@@ -111,6 +116,7 @@ internal object GameHubProductionComposition {
             performanceController = performanceController,
             ultraRuntime = ultraRuntime,
             viewModelDependencyFactory = viewModelDependencyFactory,
+            connectedAccountsRepository = connectedAccountsRepository,
             storeLibraryRepository = storeLibraryRepository,
             optimizationMemoryRepository = optimizationMemoryRepository
         )
