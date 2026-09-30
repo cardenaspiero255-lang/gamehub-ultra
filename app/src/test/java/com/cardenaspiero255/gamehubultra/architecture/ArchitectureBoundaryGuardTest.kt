@@ -181,9 +181,9 @@ class ArchitectureBoundaryGuardTest {
                 }
                 if (
                     file.name == "GameHubViewModel.kt" &&
-                    source.contains("private val sessionStore = GameSessionStore")
+                    source.contains("GameSessionStore(")
                 ) {
-                    add("${file.name} exposes concrete session ownership internally")
+                    add("${file.name} constructs GameSessionStore directly")
                 }
             }
         }
