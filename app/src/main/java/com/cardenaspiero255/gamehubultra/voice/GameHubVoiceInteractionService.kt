@@ -65,7 +65,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val aiAdvisor = GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter())
     private val aliasRepository by lazy {
-        SharedPreferencesGameAliasStateRepository(getContext().applicationContext)
+        GameHubProductionComposition.aliasRepository(getContext().applicationContext)
     }
 
     override fun onCreateContentView(): View =
