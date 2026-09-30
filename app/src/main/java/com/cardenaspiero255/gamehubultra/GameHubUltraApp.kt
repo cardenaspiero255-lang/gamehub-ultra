@@ -15,6 +15,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraConversationPolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraRuntimeTelemetry
+import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
@@ -204,6 +205,7 @@ internal fun GameHubUltraApp(
     device: DeviceInfo,
     viewModel: GameHubViewModel,
     ultraRuntime: UltraUiRuntimeDependencies,
+    connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     storeLibraryRepository: StoreLibraryStateRepository,
     optimizationMemoryStore: GameOptimizationMemoryStateRepository,
     initialTab: Int,
@@ -579,6 +581,7 @@ internal fun GameHubUltraApp(
         when {
             settingsOpen -> SettingsScreen(
                 modifier = contentModifier,
+                accountsRepository = connectedAccountsRepository,
                 onStoreConnectionChanged = { storeRefreshToken += 1 },
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
