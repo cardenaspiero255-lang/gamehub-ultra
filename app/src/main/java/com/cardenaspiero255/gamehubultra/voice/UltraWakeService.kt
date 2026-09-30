@@ -23,8 +23,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.GameLibrary
-import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
@@ -425,7 +425,7 @@ class UltraWakeService : Service() {
             val response = UltraWakeFailureGuard.run {
                 val context = applicationContext
                 val selectionRepository: GameSelectionStateRepository =
-                    GameHubPreferencesRepository(context)
+                    GameHubProductionComposition.selectionRepository(context.applicationContext)
                 val selectedGamePackage = runCatching {
                     runBlocking { selectionRepository.selectedGameFlow().first() }
                 }.getOrNull()
