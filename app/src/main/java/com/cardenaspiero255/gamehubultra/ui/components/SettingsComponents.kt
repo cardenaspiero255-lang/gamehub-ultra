@@ -33,7 +33,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
-import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.domain.GameAccountValidation
@@ -45,12 +44,11 @@ import kotlinx.coroutines.launch
 
 @Composable
 internal fun ConnectedAccountsCard(
+    accountsRepository: ConnectedGameAccountsStateRepository,
     onStoreConnectionChanged: () -> Unit
 ) {
     val context = LocalContext.current
-    val store: ConnectedGameAccountsStateRepository = remember(context) {
-        ConnectedGameAccountsStore(context)
-    }
+    val store = accountsRepository
     val storeLibraryRepository: StoreLibraryStateRepository = remember(context) {
         StoreLibraryStore(context)
     }
@@ -312,6 +310,7 @@ internal fun ConnectedAccountRow(
 @Composable
 internal fun SettingsScreen(
     modifier: Modifier,
+    accountsRepository: ConnectedGameAccountsStateRepository,
     onStoreConnectionChanged: () -> Unit,
     onClearOptimizationMemory: () -> Unit
 ) {
@@ -327,7 +326,10 @@ internal fun SettingsScreen(
             stringResource(R.string.settings_title),
             style = MaterialTheme.typography.headlineSmall
         )
-        ConnectedAccountsCard(onStoreConnectionChanged = onStoreConnectionChanged)
+        ConnectedAccountsCard(
+            accountsRepository = accountsRepository,
+            onStoreConnectionChanged = onStoreConnectionChanged
+        )
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),
