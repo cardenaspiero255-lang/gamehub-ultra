@@ -181,6 +181,18 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun ultraWakeServiceDoesNotOwnConversationMemoryPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("UltraConversationMemoryStore.get("),
+            "UltraWakeService must receive Ultra conversation memory through production composition"
+        )
+    }
+
+    @Test
     fun optimizationMemoryConsumerDependsOnOwnershipBoundary() {
         val file = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
         val source = file.readText()
