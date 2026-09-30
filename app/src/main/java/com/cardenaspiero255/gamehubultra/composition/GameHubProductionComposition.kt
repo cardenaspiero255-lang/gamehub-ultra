@@ -15,6 +15,8 @@ import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinatorFactory
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
+import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -35,7 +37,8 @@ internal data class GameHubProductionBootstrap(
     val device: DeviceInfo,
     val performanceController: PerformanceController,
     val ultraRuntime: UltraUiRuntimeDependencies,
-    val viewModelDependencyFactory: GameHubViewModelDependencyFactory
+    val viewModelDependencyFactory: GameHubViewModelDependencyFactory,
+    val storeLibraryRepository: StoreLibraryStateRepository
 )
 
 internal object GameHubProductionComposition {
@@ -49,6 +52,7 @@ internal object GameHubProductionComposition {
         val appContext = activity.applicationContext
         val preferencesRepository = GameHubPreferencesRepository(appContext)
         val sessionRepository = GameSessionStore(appContext)
+        val storeLibraryRepository: StoreLibraryStateRepository = StoreLibraryStore(appContext)
         val sessionCoordinatorFactory = GameSessionLifecycleCoordinatorFactory { scope ->
             GameSessionLifecycleCoordinator(
                 store = sessionRepository,
@@ -101,7 +105,8 @@ internal object GameHubProductionComposition {
             device = device,
             performanceController = performanceController,
             ultraRuntime = ultraRuntime,
-            viewModelDependencyFactory = viewModelDependencyFactory
+            viewModelDependencyFactory = viewModelDependencyFactory,
+            storeLibraryRepository = storeLibraryRepository
         )
     }
 
