@@ -185,6 +185,12 @@ class ArchitectureBoundaryGuardTest {
                 ) {
                     add("${file.name} constructs GameSessionStore directly")
                 }
+                if (
+                    file.name == "GameHubViewModel.kt" &&
+                    source.contains("GameSessionLifecycleCoordinator(")
+                ) {
+                    add("${file.name} constructs GameSessionLifecycleCoordinator directly")
+                }
             }
         }
 
