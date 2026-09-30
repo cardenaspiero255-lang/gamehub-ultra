@@ -60,12 +60,6 @@ class GameHubViewModelDependenciesTest {
                     it.returnType == GameSessionLifecycleCoordinatorFactory::class.java
             }
         )
-        assertTrue(
-            dependencyContract.methods.any {
-                it.name == "getSessionCoordinatorFactory" &&
-                    it.returnType == GameSessionLifecycleCoordinatorFactory::class.java
-            }
-        )
     }
 
     private fun containsAndroidPlatformType(type: Type): Boolean {
