@@ -1,9 +1,11 @@
 package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
 import com.cardenaspiero255.gamehubultra.data.PerformanceHistoryStateRepository
+import kotlinx.coroutines.CoroutineScope
 
 /**
  * Android-free composition boundary for dependencies consumed by [GameHubViewModel].
@@ -12,6 +14,10 @@ import com.cardenaspiero255.gamehubultra.data.PerformanceHistoryStateRepository
  */
 fun interface GameHubViewModelDependencyFactory {
     fun create(): GameHubViewModelDependencies
+}
+
+fun interface GameSessionLifecycleCoordinatorFactory {
+    fun create(scope: CoroutineScope): GameSessionLifecycleCoordinator
 }
 
 /**
@@ -25,4 +31,5 @@ data class GameHubViewModelDependencies(
     val libraryRepository: GameLibraryStateRepository,
     val performanceHistoryRepository: PerformanceHistoryStateRepository,
     val sessionRepository: GameSessionStateRepository,
+    val sessionCoordinatorFactory: GameSessionLifecycleCoordinatorFactory,
 )
