@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
-import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
 import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
@@ -37,10 +36,8 @@ class GameHubViewModel(
     private val libraryRepository: GameLibraryStateRepository = dependencies.libraryRepository
     private val performanceHistoryRepository = dependencies.performanceHistoryRepository
     private val sessionStore: GameSessionStateRepository = dependencies.sessionRepository
-    private val sessionCoordinator = GameSessionLifecycleCoordinator(
-        store = sessionStore,
-        scope = viewModelScope
-    )
+    private val sessionCoordinator =
+        dependencies.sessionCoordinatorFactory.create(viewModelScope)
 
     val runtimeGameSession = sessionCoordinator.runtimeSession
     val sessionHistory = sessionStore.sessionsFlow()
