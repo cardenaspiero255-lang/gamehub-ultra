@@ -582,6 +582,7 @@ internal fun GameHubUltraApp(
             settingsOpen -> SettingsScreen(
                 modifier = contentModifier,
                 accountsRepository = connectedAccountsRepository,
+                storeLibraryRepository = storeLibraryRepository,
                 onStoreConnectionChanged = { storeRefreshToken += 1 },
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
