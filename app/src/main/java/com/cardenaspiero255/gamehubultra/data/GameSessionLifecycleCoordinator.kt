@@ -136,6 +136,11 @@ class GameSessionLifecycleCoordinator(
     fun clearSessions(): Job =
         queue.enqueue {
             store.clearSessions()
+            synchronized(monitor) {
+                requestedSession = null
+                finishingSessionIds.clear()
+                _runtimeSession.value = null
+            }
         }
 
     suspend fun awaitIdle() {
