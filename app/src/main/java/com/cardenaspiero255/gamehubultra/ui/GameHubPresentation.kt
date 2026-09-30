@@ -50,6 +50,7 @@ internal object GameHubPresentation {
                     device = bootstrap.device,
                     viewModel = gameHubViewModel,
                     ultraRuntime = bootstrap.ultraRuntime,
+                    storeLibraryRepository = bootstrap.storeLibraryRepository,
                     initialTab = initialTab,
                     onProfileApplied = { profile ->
                         bootstrap.performanceController.apply(profile, activity.window)
