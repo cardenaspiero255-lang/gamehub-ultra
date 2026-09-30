@@ -25,6 +25,10 @@ data class SessionFinishHandle(
     val job: Job
 )
 
+fun interface GameSessionLifecycleCoordinatorFactory {
+    fun create(scope: CoroutineScope): GameSessionLifecycleCoordinator
+}
+
 /**
  * Owns ordered game-session persistence for a lifecycle scope that outlives UI composition.
  *
