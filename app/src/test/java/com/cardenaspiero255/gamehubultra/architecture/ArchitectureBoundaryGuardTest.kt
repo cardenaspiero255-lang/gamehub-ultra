@@ -83,6 +83,19 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun settingsDoesNotConstructStoreLibraryPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("StoreLibraryStore("),
+            "SettingsComponents must receive store-library persistence through a boundary"
+        )
+    }
+
+
+    @Test
     fun connectedAccountConsumersDependOnOwnershipBoundary() {
         val guardedFiles = listOf(
             sourceFile("com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"),
