@@ -50,6 +50,7 @@ internal object GameHubPresentation {
                     device = bootstrap.device,
                     viewModel = gameHubViewModel,
                     ultraRuntime = bootstrap.ultraRuntime,
+                    connectedAccountsRepository = bootstrap.connectedAccountsRepository,
                     storeLibraryRepository = bootstrap.storeLibraryRepository,
                     optimizationMemoryStore = bootstrap.optimizationMemoryRepository,
                     initialTab = initialTab,
