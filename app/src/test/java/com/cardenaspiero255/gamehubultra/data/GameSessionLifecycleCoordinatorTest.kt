@@ -11,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
@@ -166,6 +167,7 @@ class GameSessionLifecycleCoordinatorTest {
 
             override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
             override suspend fun clearSessions() = Unit
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
         }
         val localCoordinator = GameSessionLifecycleCoordinator(
             store = repository,
