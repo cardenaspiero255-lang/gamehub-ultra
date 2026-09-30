@@ -12,6 +12,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStore
@@ -36,6 +37,7 @@ import com.cardenaspiero255.gamehubultra.ui.GameHubViewModelDependencyFactory
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
+import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesGameAliasStateRepository
 
 internal data class GameHubProductionBootstrap(
     val initialState: PerformanceState,
@@ -121,6 +123,9 @@ internal object GameHubProductionComposition {
             optimizationMemoryRepository = optimizationMemoryRepository
         )
     }
+
+    fun aliasRepository(appContext: Context): GameAliasStateRepository =
+        SharedPreferencesGameAliasStateRepository(appContext)
 
     fun selectionRepository(appContext: Context): GameSelectionStateRepository =
         GameHubPreferencesRepository(appContext)
