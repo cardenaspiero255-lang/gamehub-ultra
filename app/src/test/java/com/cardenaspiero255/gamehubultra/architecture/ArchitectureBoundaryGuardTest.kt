@@ -71,6 +71,18 @@ class ArchitectureBoundaryGuardTest {
 
 
     @Test
+    fun settingsDoesNotConstructConnectedAccountPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("ConnectedGameAccountsStore("),
+            "SettingsComponents must receive connected-account persistence through a boundary"
+        )
+    }
+
+    @Test
     fun connectedAccountConsumersDependOnOwnershipBoundary() {
         val guardedFiles = listOf(
             sourceFile("com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"),
