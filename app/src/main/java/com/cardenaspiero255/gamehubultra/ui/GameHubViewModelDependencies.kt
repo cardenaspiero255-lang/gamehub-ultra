@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
 import com.cardenaspiero255.gamehubultra.data.PerformanceHistoryStateRepository
 
 /**
@@ -23,4 +24,5 @@ data class GameHubViewModelDependencies(
     val selectionRepository: GameSelectionStateRepository,
     val libraryRepository: GameLibraryStateRepository,
     val performanceHistoryRepository: PerformanceHistoryStateRepository,
+    val sessionRepository: GameSessionStateRepository,
 )
