@@ -160,6 +160,27 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun aliasConsumersDoNotConstructSharedPreferencesPersistence() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt")
+        )
+
+        val violations = guardedFiles
+            .filter { it.readText().contains("SharedPreferencesGameAliasStateRepository(") }
+            .map { "${it.name} constructs alias persistence directly" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Alias consumers must receive GameAliasStateRepository through composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun optimizationMemoryConsumerDependsOnOwnershipBoundary() {
         val file = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
         val source = file.readText()
