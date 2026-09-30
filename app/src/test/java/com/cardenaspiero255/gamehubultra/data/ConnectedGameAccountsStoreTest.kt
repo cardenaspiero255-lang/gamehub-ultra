@@ -98,4 +98,30 @@ class ConnectedGameAccountsStoreTest {
     }
 
 
+    @Test
+    fun resyncClearsPublicMetadataNoLongerProvidedBySource() = runBlocking {
+        val original = store.add(
+            GamePlatform.STEAM,
+            "Piero",
+            "76561198000000005",
+            alias = "Old alias",
+            avatarUrl = "https://example.com/old.png"
+        )
+
+        val refreshed = store.upsert(
+            GamePlatform.STEAM,
+            "Piero",
+            "76561198000000005",
+            alias = null,
+            avatarUrl = null
+        )
+
+        assertEquals(original.id, refreshed.id)
+        assertEquals(null, refreshed.alias)
+        assertEquals(null, refreshed.avatarUrl)
+        assertEquals(null, store.accountsFlow().first().single().alias)
+        assertEquals(null, store.accountsFlow().first().single().avatarUrl)
+    }
+
+
 }
