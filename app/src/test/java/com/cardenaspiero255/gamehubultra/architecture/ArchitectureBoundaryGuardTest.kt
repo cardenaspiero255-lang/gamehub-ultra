@@ -143,9 +143,8 @@ class ArchitectureBoundaryGuardTest {
                     add("${file.name} exposes StoreLibraryStore as the repository dependency type")
                 }
                 val directConcreteCalls = listOf(
-                    "StoreLibraryStore(context).getAll()",
-                    "StoreLibraryStore(context).removeForAccount(",
-                    "StoreLibraryStore(this).replaceForAccount(",
+                    "StoreLibraryStore(context)",
+                    "StoreLibraryStore(this)",
                     "StoreLibraryStore(this@StoreConnectionActivity)"
                 )
                 directConcreteCalls
