@@ -69,6 +69,9 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
 internal fun normalizeStoreLibraryReplacement(
     accountId: String,
     games: List<StoreLibraryGame>
-): List<StoreLibraryGame> = games.map { game ->
-    if (game.accountId == accountId) game else game.copy(accountId = accountId)
+): List<StoreLibraryGame> {
+    require(accountId.isNotBlank()) { "accountId must not be blank" }
+    return games.map { game ->
+        if (game.accountId == accountId) game else game.copy(accountId = accountId)
+    }
 }
