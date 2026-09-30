@@ -124,6 +124,9 @@ internal object GameHubProductionComposition {
         )
     }
 
+    fun ultraConversationMemory(appContext: Context): UltraConversationMemoryStore =
+        UltraConversationMemoryStore.get(appContext)
+
     fun aliasRepository(appContext: Context): GameAliasStateRepository =
         SharedPreferencesGameAliasStateRepository(appContext)
 
