@@ -84,6 +84,7 @@ class GameSessionLifecycleCoordinator(
     }
 
     fun finishCurrent(metrics: SessionEndMetrics): SessionFinishHandle? {
+        var wasRequested = false
         val target = synchronized(monitor) {
             val current = requestedSession ?: _runtimeSession.value
             when {
@@ -92,6 +93,7 @@ class GameSessionLifecycleCoordinator(
                 else -> {
                     finishingSessionIds += current.id
                     if (requestedSession == current) {
+                        wasRequested = true
                         requestedSession = null
                     }
                     current
@@ -111,6 +113,17 @@ class GameSessionLifecycleCoordinator(
                 if (_runtimeSession.value?.id == target.id) {
                     _runtimeSession.value = null
                 }
+            } catch (throwable: Throwable) {
+                synchronized(monitor) {
+                    if (
+                        wasRequested &&
+                        requestedSession == null &&
+                        _runtimeSession.value?.id != target.id
+                    ) {
+                        requestedSession = target
+                    }
+                }
+                throw throwable
             } finally {
                 synchronized(monitor) {
                     finishingSessionIds.remove(target.id)
