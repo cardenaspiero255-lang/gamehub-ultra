@@ -133,15 +133,22 @@ class GameSessionLifecycleCoordinator(
         return SessionFinishHandle(session = target, job = job)
     }
 
-    fun clearSessions(): Job =
-        queue.enqueue {
+    fun clearSessions(): Job {
+        val requestedAtClear = synchronized(monitor) { requestedSession }
+        val runtimeAtClear = _runtimeSession.value
+        return queue.enqueue {
             store.clearSessions()
             synchronized(monitor) {
-                requestedSession = null
-                finishingSessionIds.clear()
-                _runtimeSession.value = null
+                if (requestedSession == requestedAtClear) {
+                    requestedSession = null
+                }
+                finishingSessionIds.remove(runtimeAtClear?.id)
+                if (_runtimeSession.value == runtimeAtClear) {
+                    _runtimeSession.value = null
+                }
             }
         }
+    }
 
     suspend fun awaitIdle() {
         queue.awaitIdle()
