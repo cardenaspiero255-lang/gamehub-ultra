@@ -2,23 +2,25 @@ package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.PerformanceHistoryStateRepository
 
 /**
  * Android-free composition boundary for dependencies consumed by [GameHubViewModel].
  *
- * Production wiring remains outside the ViewModel and will be migrated incrementally
- * by the following Block 9 cuts.
+ * Production wiring remains outside the ViewModel and is migrated incrementally by Block 9.
  */
 fun interface GameHubViewModelDependencyFactory {
     fun create(): GameHubViewModelDependencies
 }
 
 /**
- * State boundaries consumed by [GameHubViewModel].
+ * Explicit state bundle consumed by [GameHubViewModel].
  *
- * Selection/profile and Library ownership are exposed as contracts rather than concrete
- * Android-backed repositories. Session ownership is migrated in the next Block 9 cut.
+ * Persistent ownership stays behind dedicated contracts so the ViewModel never constructs
+ * Android-backed repository implementations itself.
  */
-interface GameHubViewModelDependencies :
-    GameSelectionStateRepository,
-    GameLibraryStateRepository
+data class GameHubViewModelDependencies(
+    val selectionRepository: GameSelectionStateRepository,
+    val libraryRepository: GameLibraryStateRepository,
+    val performanceHistoryRepository: PerformanceHistoryStateRepository,
+)

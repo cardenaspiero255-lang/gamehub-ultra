@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
+import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -20,6 +21,8 @@ import com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
+import com.cardenaspiero255.gamehubultra.ui.GameHubViewModelDependencies
+import com.cardenaspiero255.gamehubultra.ui.GameHubViewModelDependencyFactory
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
@@ -28,7 +31,8 @@ internal data class GameHubProductionBootstrap(
     val initialState: PerformanceState,
     val device: DeviceInfo,
     val performanceController: PerformanceController,
-    val ultraRuntime: UltraUiRuntimeDependencies
+    val ultraRuntime: UltraUiRuntimeDependencies,
+    val viewModelDependencyFactory: GameHubViewModelDependencyFactory
 )
 
 internal object GameHubProductionComposition {
@@ -40,6 +44,14 @@ internal object GameHubProductionComposition {
             performanceController.apply(PerformanceProfile.BALANCED, activity.window)
         val device = DeviceInfoProvider.get(activity)
         val appContext = activity.applicationContext
+        val preferencesRepository = GameHubPreferencesRepository(appContext)
+        val viewModelDependencyFactory = GameHubViewModelDependencyFactory {
+            GameHubViewModelDependencies(
+                selectionRepository = preferencesRepository,
+                libraryRepository = preferencesRepository,
+                performanceHistoryRepository = preferencesRepository
+            )
+        }
         val memoryStore = UltraConversationMemoryStore.get(appContext)
 
         val ultraRuntime = UltraUiRuntimeDependencies(
@@ -76,7 +88,8 @@ internal object GameHubProductionComposition {
             initialState = initialState,
             device = device,
             performanceController = performanceController,
-            ultraRuntime = ultraRuntime
+            ultraRuntime = ultraRuntime,
+            viewModelDependencyFactory = viewModelDependencyFactory
         )
     }
 

@@ -13,7 +13,7 @@ class ArchitectureBoundaryGuardTest {
             if (source.contains("GameHubPreferencesRepository(")) {
                 add("GameHubViewModel constructs GameHubPreferencesRepository directly")
             }
-            if (!source.contains("private val repository: GameHubViewModelDependencies")) {
+            if (!source.contains("dependencies: GameHubViewModelDependencies")) {
                 add("GameHubViewModel does not receive GameHubViewModelDependencies")
             }
         }
