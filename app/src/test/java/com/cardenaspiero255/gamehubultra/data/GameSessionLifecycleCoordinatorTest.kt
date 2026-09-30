@@ -150,7 +150,7 @@ class GameSessionLifecycleCoordinatorTest {
     fun failedFinishCanBeRetriedWithoutLosingRequestedSession() = runBlocking {
         var finishAttempts = 0
         val repository = object : GameSessionStateRepository {
-            override suspend fun startSession(record: GameSessionRecord) = Unit
+            override suspend fun startSession(record: GameSessionRecord): Boolean = true
 
             override suspend fun finishSession(
                 sessionId: String,
@@ -158,13 +158,14 @@ class GameSessionLifecycleCoordinatorTest {
                 endBatteryPercent: Int?,
                 endThermalStatus: Int?,
                 endRamUsedPercent: Int?
-            ) {
+            ): Boolean {
                 finishAttempts += 1
                 if (finishAttempts == 1) error("transient finish failure")
+                return true
             }
 
-            override suspend fun finishActiveSessions(endedAtMillis: Long) = Unit
-            override suspend fun clearSessions() = Unit
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+            override suspend fun clearSessions(): Boolean = true
         }
         val localCoordinator = GameSessionLifecycleCoordinator(
             store = repository,
