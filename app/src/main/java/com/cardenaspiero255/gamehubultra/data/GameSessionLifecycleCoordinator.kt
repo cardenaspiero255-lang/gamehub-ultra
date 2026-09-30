@@ -103,14 +103,14 @@ class GameSessionLifecycleCoordinator(
 
         val job = queue.enqueue {
             try {
-                store.finishSession(
+                val finished = store.finishSession(
                     sessionId = target.id,
                     endedAtMillis = metrics.endedAtMillis,
                     endBatteryPercent = metrics.endBatteryPercent,
                     endThermalStatus = metrics.endThermalStatus,
                     endRamUsedPercent = metrics.endRamUsedPercent
                 )
-                if (_runtimeSession.value?.id == target.id) {
+                if (finished && _runtimeSession.value?.id == target.id) {
                     _runtimeSession.value = null
                 }
             } catch (throwable: Throwable) {
