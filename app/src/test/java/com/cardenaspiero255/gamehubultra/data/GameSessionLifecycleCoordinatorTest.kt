@@ -383,4 +383,69 @@ class GameSessionLifecycleCoordinatorTest {
     }
 
 
+
+    @Test
+    fun clearDoesNotDiscardSessionRequestedAfterClearWasQueued() = runBlocking {
+        val clearEntered = CompletableDeferred<Unit>()
+        val releaseClear = CompletableDeferred<Unit>()
+        val persistedIds = mutableListOf<String>()
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) {
+                persistedIds += record.id
+            }
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean = true
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+
+            override suspend fun clearSessions() {
+                clearEntered.complete(Unit)
+                releaseClear.await()
+                persistedIds.clear()
+            }
+
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        val clear = localCoordinator.clearSessions()
+        clearEntered.await()
+        val replacement = localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s2",
+                packageName = "game.two",
+                profileName = "BALANCED",
+                startedAtMillis = 2_000L
+            )
+        )
+
+        releaseClear.complete(Unit)
+        clear.join()
+        replacement.join()
+
+        assertEquals(listOf("s2"), persistedIds)
+        assertEquals("s2", localCoordinator.runtimeSession.value?.id)
+    }
+
+
 }
