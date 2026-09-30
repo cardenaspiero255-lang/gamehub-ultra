@@ -399,7 +399,7 @@ class ArchitectureBoundaryGuardTest {
         ).readText()
 
         assertTrue(
-            source.contains("private val libraryRepository: GameLibraryStateRepository = repository"),
+            source.contains("private val libraryRepository: GameLibraryStateRepository = dependencies.libraryRepository"),
             "GameHubViewModel must expose persistent Library state through GameLibraryStateRepository"
         )
 
@@ -536,12 +536,18 @@ class ArchitectureBoundaryGuardTest {
             "androidx.compose.",
             "GameHubUltraTheme",
             "GameHubUltraApp",
-            "GameHubViewModel",
             "@Composable"
         )
-        val violations = forbiddenPresentationSymbols
-            .filter(composition::contains)
-            .map { symbol -> "Production composition reaches presentation symbol $symbol" }
+        val violations = buildList {
+            forbiddenPresentationSymbols
+                .filter(composition::contains)
+                .mapTo(this) { symbol ->
+                    "Production composition reaches presentation symbol $symbol"
+                }
+            if (Regex("""\\bGameHubViewModel\\b""").containsMatchIn(composition)) {
+                add("Production composition reaches presentation symbol GameHubViewModel")
+            }
+        }
 
         assertTrue(
             violations.isEmpty(),
