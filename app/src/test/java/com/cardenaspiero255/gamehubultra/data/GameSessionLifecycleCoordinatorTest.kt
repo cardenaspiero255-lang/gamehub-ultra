@@ -314,4 +314,24 @@ class GameSessionLifecycleCoordinatorTest {
         assertEquals(2, finishAttempts)
     }
 
+
+    @Test
+    fun clearSessionsClearsPublishedRuntimeSessionAfterPersistenceSucceeds() = runBlocking {
+        coordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", coordinator.runtimeSession.value?.id)
+
+        coordinator.clearSessions().join()
+
+        assertTrue(store.sessionsFlow().first().isEmpty())
+        assertNull(coordinator.runtimeSession.value)
+    }
+
+
 }
