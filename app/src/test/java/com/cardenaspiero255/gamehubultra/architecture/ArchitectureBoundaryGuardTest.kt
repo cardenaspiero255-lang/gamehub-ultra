@@ -575,6 +575,62 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun gameHubPresentationBoundaryDoesNotConstructBlockNinePersistence() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubPresentation.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt")
+        )
+        val forbiddenConstructions = listOf(
+            "GameHubPreferencesRepository(",
+            "GameSessionStore(",
+            "GameSessionLifecycleCoordinator(",
+            "StoreLibraryStore(",
+            "GameOptimizationMemoryStore("
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            forbiddenConstructions
+                .filter(source::contains)
+                .map { construction ->
+                    "${file.name} constructs Block 9 production dependency $construction"
+                }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Block 9 persistence/runtime construction belongs to production composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun productionCompositionOwnsBlockNinePersistenceConstruction() {
+        val composition = sourceFile(
+            "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
+        ).readText()
+
+        listOf(
+            "GameHubPreferencesRepository(appContext)",
+            "GameSessionStore(appContext)",
+            "StoreLibraryStore(appContext)",
+            "GameOptimizationMemoryStore(appContext)"
+        ).forEach { construction ->
+            assertTrue(
+                composition.contains(construction),
+                "Production composition must own $construction"
+            )
+        }
+        assertTrue(
+            composition.contains("GameSessionLifecycleCoordinatorFactory"),
+            "Production composition must own the session coordinator factory"
+        )
+    }
+
+    @Test
     fun productionCompositionOwnsConcreteUltraImplementations() {
         val composition = sourceFile(
             "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
