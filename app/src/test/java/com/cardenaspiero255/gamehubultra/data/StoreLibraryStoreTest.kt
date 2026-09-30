@@ -43,4 +43,24 @@ class StoreLibraryStoreTest {
             )
         }
     }
+
+    @Test
+    fun replacementCanonicalizesOwningAccountId() {
+        val games = normalizeStoreLibraryReplacement(
+            "  account-a  ",
+            listOf(
+                StoreLibraryGame(
+                    id = "steam:10",
+                    accountId = "account-a",
+                    platform = GamePlatform.STEAM,
+                    title = "Game",
+                    platformGameId = "10",
+                    artworkUrl = ""
+                )
+            )
+        )
+
+        assertEquals(listOf("account-a"), games.map { it.accountId })
+    }
+
 }
