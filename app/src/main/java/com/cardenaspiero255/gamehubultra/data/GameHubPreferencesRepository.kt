@@ -32,7 +32,7 @@ private val Context.gameHubDataStore by preferencesDataStore(
 
 class GameHubPreferencesRepository(
     private val dataStore: DataStore<Preferences>
-) : GameSelectionStateRepository, GameLibraryStateRepository {
+) : GameSelectionStateRepository, GameLibraryStateRepository, PerformanceHistoryStateRepository {
     constructor(context: Context) : this(context.applicationContext.gameHubDataStore)
 
     private val selectedProfileKey = stringPreferencesKey("selected_profile")
@@ -95,7 +95,7 @@ class GameHubPreferencesRepository(
             preferences[manualGamesKey] ?: emptySet()
         }
 
-    fun performanceHistoryFlow(limit: Int = 20): Flow<List<PerformanceEvent>> =
+    override fun performanceHistoryFlow(limit: Int): Flow<List<PerformanceEvent>> =
         dataStore.data.map { preferences ->
             preferences[performanceHistoryKey]
                 .orEmpty()
@@ -185,7 +185,7 @@ class GameHubPreferencesRepository(
         }
     }
 
-    suspend fun appendPerformanceEvent(event: PerformanceEvent) {
+    override suspend fun appendPerformanceEvent(event: PerformanceEvent) {
         dataStore.edit { preferences ->
             val current = preferences[performanceHistoryKey]
                 .orEmpty()

@@ -4,12 +4,9 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
-import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
-import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
-import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.SessionFinishHandle
@@ -31,14 +28,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class GameHubViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = GameHubPreferencesRepository(application)
-    private val libraryRepository: GameLibraryStateRepository = repository
-    private val sessionStore: GameSessionStateRepository = GameSessionStore(application)
-    private val sessionCoordinator = GameSessionLifecycleCoordinator(
-        store = sessionStore,
-        scope = viewModelScope
-    )
+class GameHubViewModel(
+    application: Application,
+    dependencies: GameHubViewModelDependencies
+) : AndroidViewModel(application) {
+    private val repository = dependencies.selectionRepository
+    private val libraryRepository: GameLibraryStateRepository = dependencies.libraryRepository
+    private val performanceHistoryRepository = dependencies.performanceHistoryRepository
+    private val sessionStore: GameSessionStateRepository = dependencies.sessionRepository
+    private val sessionCoordinator =
+        dependencies.sessionCoordinatorFactory.create(viewModelScope)
 
     val runtimeGameSession = sessionCoordinator.runtimeSession
     val sessionHistory = sessionStore.sessionsFlow()
@@ -76,7 +75,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    val performanceHistory = repository.performanceHistoryFlow()
+    val performanceHistory = performanceHistoryRepository.performanceHistoryFlow()
 
     val uiState = combine(
         baseStateFlow,
@@ -231,7 +230,7 @@ class GameHubViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun recordPerformanceEvent(event: PerformanceEvent) {
-        viewModelScope.launch { repository.appendPerformanceEvent(event) }
+        viewModelScope.launch { performanceHistoryRepository.appendPerformanceEvent(event) }
     }
 
     private fun reportVoiceSelectionPersistenceFailure(error: Throwable) {

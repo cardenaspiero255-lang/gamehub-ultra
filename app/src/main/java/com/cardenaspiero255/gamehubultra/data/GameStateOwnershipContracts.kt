@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.data
 
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
+import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -42,6 +43,12 @@ interface GameLibraryStateRepository {
     suspend fun setFavoriteGame(packageName: String, favorite: Boolean)
     suspend fun recordRecentGame(packageName: String)
     suspend fun setManualGame(packageName: String, manual: Boolean)
+}
+
+/** Owns persisted performance-history events independently from UI composition. */
+interface PerformanceHistoryStateRepository {
+    fun performanceHistoryFlow(limit: Int = 20): Flow<List<PerformanceEvent>>
+    suspend fun appendPerformanceEvent(event: PerformanceEvent)
 }
 
 /**

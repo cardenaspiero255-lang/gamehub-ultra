@@ -7,6 +7,28 @@ import kotlin.test.assertTrue
 class ArchitectureBoundaryGuardTest {
 
     @Test
+    fun gameHubViewModelConsumesCompositionBoundary() {
+        val source = sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt").readText()
+        val violations = buildList {
+            if (source.contains("GameHubPreferencesRepository(")) {
+                add("GameHubViewModel constructs GameHubPreferencesRepository directly")
+            }
+            if (!source.contains("dependencies: GameHubViewModelDependencies")) {
+                add("GameHubViewModel does not receive GameHubViewModelDependencies")
+            }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "GameHubViewModel state dependencies must come from production composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
+    @Test
     fun mainActivityStaysBootstrapOnly() {
         val source = sourceFile("com/cardenaspiero255/gamehubultra/MainActivity.kt")
         val violations = mutableListOf<String>()
@@ -97,6 +119,10 @@ class ArchitectureBoundaryGuardTest {
                 .containsMatchIn(source),
             "GameHubUltraApp must not expose GameOptimizationMemoryStore as its dependency type"
         )
+        assertTrue(
+            !source.contains("GameOptimizationMemoryStore("),
+            "GameHubUltraApp must not construct optimization-memory persistence directly"
+        )
     }
 
 
@@ -119,6 +145,12 @@ class ArchitectureBoundaryGuardTest {
                 )
                 if (concreteTypedRepository.containsMatchIn(source)) {
                     add("${file.name} exposes StoreLibraryStore as the repository dependency type")
+                }
+                if (
+                    file.name == "GameHubUltraApp.kt" &&
+                    source.contains("StoreLibraryStore(")
+                ) {
+                    add("${file.name} constructs store-library persistence directly")
                 }
                 val directConcreteCalls = listOf(
                     "StoreLibraryStore(context).getAll()",
@@ -159,9 +191,15 @@ class ArchitectureBoundaryGuardTest {
                 }
                 if (
                     file.name == "GameHubViewModel.kt" &&
-                    source.contains("private val sessionStore = GameSessionStore")
+                    source.contains("GameSessionStore(")
                 ) {
-                    add("${file.name} exposes concrete session ownership internally")
+                    add("${file.name} constructs GameSessionStore directly")
+                }
+                if (
+                    file.name == "GameHubViewModel.kt" &&
+                    source.contains("GameSessionLifecycleCoordinator(")
+                ) {
+                    add("${file.name} constructs GameSessionLifecycleCoordinator directly")
                 }
             }
         }
@@ -377,7 +415,7 @@ class ArchitectureBoundaryGuardTest {
         ).readText()
 
         assertTrue(
-            source.contains("private val libraryRepository: GameLibraryStateRepository = repository"),
+            source.contains("private val libraryRepository: GameLibraryStateRepository = dependencies.libraryRepository"),
             "GameHubViewModel must expose persistent Library state through GameLibraryStateRepository"
         )
 
@@ -514,12 +552,18 @@ class ArchitectureBoundaryGuardTest {
             "androidx.compose.",
             "GameHubUltraTheme",
             "GameHubUltraApp",
-            "GameHubViewModel",
             "@Composable"
         )
-        val violations = forbiddenPresentationSymbols
-            .filter(composition::contains)
-            .map { symbol -> "Production composition reaches presentation symbol $symbol" }
+        val violations = buildList {
+            forbiddenPresentationSymbols
+                .filter(composition::contains)
+                .mapTo(this) { symbol ->
+                    "Production composition reaches presentation symbol $symbol"
+                }
+            if (Regex("""\\bGameHubViewModel\\b""").containsMatchIn(composition)) {
+                add("Production composition reaches presentation symbol GameHubViewModel")
+            }
+        }
 
         assertTrue(
             violations.isEmpty(),
@@ -527,6 +571,62 @@ class ArchitectureBoundaryGuardTest {
                 prefix = "Production composition must build runtime dependencies only; presentation belongs to the UI boundary:\n",
                 separator = "\n"
             )
+        )
+    }
+
+    @Test
+    fun gameHubPresentationBoundaryDoesNotConstructBlockNinePersistence() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubPresentation.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/ui/GameHubViewModel.kt")
+        )
+        val forbiddenConstructions = listOf(
+            "GameHubPreferencesRepository(",
+            "GameSessionStore(",
+            "GameSessionLifecycleCoordinator(",
+            "StoreLibraryStore(",
+            "GameOptimizationMemoryStore("
+        )
+
+        val violations = guardedFiles.flatMap { file ->
+            val source = file.readText()
+            forbiddenConstructions
+                .filter(source::contains)
+                .map { construction ->
+                    "${file.name} constructs Block 9 production dependency $construction"
+                }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Block 9 persistence/runtime construction belongs to production composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun productionCompositionOwnsBlockNinePersistenceConstruction() {
+        val composition = sourceFile(
+            "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
+        ).readText()
+
+        listOf(
+            "GameHubPreferencesRepository(appContext)",
+            "GameSessionStore(appContext)",
+            "StoreLibraryStore(appContext)",
+            "GameOptimizationMemoryStore(appContext)"
+        ).forEach { construction ->
+            assertTrue(
+                composition.contains(construction),
+                "Production composition must own $construction"
+            )
+        }
+        assertTrue(
+            composition.contains("GameSessionLifecycleCoordinatorFactory"),
+            "Production composition must own the session coordinator factory"
         )
     }
 

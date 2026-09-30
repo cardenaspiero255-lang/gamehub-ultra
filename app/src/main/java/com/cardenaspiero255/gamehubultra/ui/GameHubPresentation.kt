@@ -8,6 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cardenaspiero255.gamehubultra.GameHubUltraApp
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionBootstrap
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUltraTheme
@@ -26,7 +28,16 @@ internal object GameHubPresentation {
         deepLinkHost: String?
     ) {
         val initialTab = initialTabFor(deepLinkHost)
-        val gameHubViewModel: GameHubViewModel = viewModel()
+        val gameHubViewModel: GameHubViewModel = viewModel(
+            factory = viewModelFactory {
+                initializer {
+                    GameHubViewModel(
+                        application = activity.application,
+                        dependencies = bootstrap.viewModelDependencyFactory.create()
+                    )
+                }
+            }
+        )
 
         GameHubUltraTheme {
             Surface(
@@ -39,6 +50,8 @@ internal object GameHubPresentation {
                     device = bootstrap.device,
                     viewModel = gameHubViewModel,
                     ultraRuntime = bootstrap.ultraRuntime,
+                    storeLibraryRepository = bootstrap.storeLibraryRepository,
+                    optimizationMemoryStore = bootstrap.optimizationMemoryRepository,
                     initialTab = initialTab,
                     onProfileApplied = { profile ->
                         bootstrap.performanceController.apply(profile, activity.window)
