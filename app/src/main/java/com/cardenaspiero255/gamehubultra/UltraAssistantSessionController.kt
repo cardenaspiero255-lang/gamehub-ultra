@@ -295,8 +295,8 @@ internal class UltraAssistantSessionController(
                             onHistoryHydrationChanged(false)
                             _loadError.value = error
                         } else {
-                            failedLoadRevision = null
-                            _loadError.value = null
+                            failedLoadRevision = conversationRevision
+                            _loadError.value = error
                         }
                         _scopeReady.value = true
                     }
