@@ -19,7 +19,6 @@ import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccount
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
-import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
@@ -206,6 +205,7 @@ internal fun GameHubUltraApp(
     viewModel: GameHubViewModel,
     ultraRuntime: UltraUiRuntimeDependencies,
     storeLibraryRepository: StoreLibraryStateRepository,
+    optimizationMemoryRepository: GameOptimizationMemoryStateRepository,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
@@ -243,9 +243,6 @@ internal fun GameHubUltraApp(
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
-    val optimizationMemoryStore: GameOptimizationMemoryStateRepository = remember(context) {
-        GameOptimizationMemoryStore(context)
-    }
     val selectedGameForMemory = uiState.selectedGamePackage
     val selectedGameVersion = remember(selectedGameForMemory) {
         selectedGameForMemory?.let { packageVersionName(context, it) }
@@ -273,7 +270,7 @@ internal fun GameHubUltraApp(
             driverFingerprint = driverFingerprint
         )
     }
-    val optimizationObservations by optimizationMemoryStore
+    val optimizationObservations by optimizationMemoryRepository
         .observationsFlow(currentOptimizationKey)
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
@@ -444,12 +441,12 @@ internal fun GameHubUltraApp(
     val runtimeCoordinator = remember(
         scope,
         runtimeActions,
-        optimizationMemoryStore
+        optimizationMemoryRepository
     ) {
         GameHubRuntimeCoordinator(
             scope = scope,
             actions = runtimeActions,
-            recordOptimization = optimizationMemoryStore::record
+            recordOptimization = optimizationMemoryRepository::record
         )
     }
 
@@ -584,7 +581,7 @@ internal fun GameHubUltraApp(
                 modifier = contentModifier,
                 onStoreConnectionChanged = { storeRefreshToken += 1 },
                 onClearOptimizationMemory = {
-                    scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
+                    scope.launch(Dispatchers.IO) { optimizationMemoryRepository.clearAll() }
                 }
             )
             wideLayout && profileOpen -> UltraProfileScreen(
@@ -622,7 +619,7 @@ internal fun GameHubUltraApp(
                 optimizationObservations = optimizationObservations,
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) {
-                        optimizationMemoryStore.clearGame(currentOptimizationKey)
+                        optimizationMemoryRepository.clearGame(currentOptimizationKey)
                     }
                 },
                 performanceHistory = performanceHistory,
