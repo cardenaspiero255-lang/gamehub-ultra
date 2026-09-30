@@ -41,7 +41,6 @@ import com.cardenaspiero255.gamehubultra.ai.UltraMemoryCommandParser
 import com.cardenaspiero255.gamehubultra.ai.UltraMemoryTurnPersistencePolicy
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
-import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
@@ -91,7 +90,7 @@ class UltraWakeService : Service() {
     private var recognitionStarting = false
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val ultraMemoryStore by lazy {
-        UltraConversationMemoryStore.get(applicationContext)
+        GameHubProductionComposition.ultraConversationMemory(applicationContext)
     }
     private val aiAdvisor by lazy {
         GameHubAiAdvisor(
