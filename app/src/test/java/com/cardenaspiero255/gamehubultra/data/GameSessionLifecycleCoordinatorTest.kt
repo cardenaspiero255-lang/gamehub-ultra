@@ -334,4 +334,53 @@ class GameSessionLifecycleCoordinatorTest {
     }
 
 
+
+    @Test
+    fun failedClearKeepsRuntimeSessionAvailableForRetry() = runBlocking {
+        var clearAttempts = 0
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) = Unit
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean = true
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+
+            override suspend fun clearSessions() {
+                clearAttempts += 1
+                if (clearAttempts == 1) error("transient clear failure")
+            }
+
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.clearSessions().join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.clearSessions().join()
+        assertNull(localCoordinator.runtimeSession.value)
+        assertEquals(2, clearAttempts)
+    }
+
+
 }
