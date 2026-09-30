@@ -84,6 +84,7 @@ class GameSessionLifecycleCoordinator(
     }
 
     fun finishCurrent(metrics: SessionEndMetrics): SessionFinishHandle? {
+        var wasRequested = false
         val target = synchronized(monitor) {
             val current = requestedSession ?: _runtimeSession.value
             when {
@@ -92,6 +93,7 @@ class GameSessionLifecycleCoordinator(
                 else -> {
                     finishingSessionIds += current.id
                     if (requestedSession == current) {
+                        wasRequested = true
                         requestedSession = null
                     }
                     current
@@ -101,16 +103,27 @@ class GameSessionLifecycleCoordinator(
 
         val job = queue.enqueue {
             try {
-                store.finishSession(
+                val finished = store.finishSession(
                     sessionId = target.id,
                     endedAtMillis = metrics.endedAtMillis,
                     endBatteryPercent = metrics.endBatteryPercent,
                     endThermalStatus = metrics.endThermalStatus,
                     endRamUsedPercent = metrics.endRamUsedPercent
                 )
-                if (_runtimeSession.value?.id == target.id) {
+                if (finished && _runtimeSession.value?.id == target.id) {
                     _runtimeSession.value = null
                 }
+            } catch (throwable: Throwable) {
+                synchronized(monitor) {
+                    if (
+                        wasRequested &&
+                        requestedSession == null &&
+                        _runtimeSession.value?.id != target.id
+                    ) {
+                        requestedSession = target
+                    }
+                }
+                throw throwable
             } finally {
                 synchronized(monitor) {
                     finishingSessionIds.remove(target.id)
@@ -120,10 +133,22 @@ class GameSessionLifecycleCoordinator(
         return SessionFinishHandle(session = target, job = job)
     }
 
-    fun clearSessions(): Job =
-        queue.enqueue {
+    fun clearSessions(): Job {
+        val requestedAtClear = synchronized(monitor) { requestedSession }
+        val runtimeAtClear = _runtimeSession.value
+        return queue.enqueue {
             store.clearSessions()
+            synchronized(monitor) {
+                if (requestedSession == requestedAtClear) {
+                    requestedSession = null
+                }
+                finishingSessionIds.remove(runtimeAtClear?.id)
+                if (_runtimeSession.value == runtimeAtClear) {
+                    _runtimeSession.value = null
+                }
+            }
         }
+    }
 
     suspend fun awaitIdle() {
         queue.awaitIdle()

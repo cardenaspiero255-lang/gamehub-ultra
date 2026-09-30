@@ -6,11 +6,13 @@ import androidx.datastore.preferences.core.Preferences
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
@@ -144,5 +146,306 @@ class GameSessionLifecycleCoordinatorTest {
         coordinator.awaitIdle()
         assertNull(coordinator.runtimeSession.value)
     }
+
+
+    @Test
+    fun failedFinishCanBeRetriedWithoutLosingRequestedSession() = runBlocking {
+        var finishAttempts = 0
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) = Unit
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean {
+                finishAttempts += 1
+                if (finishAttempts == 1) error("transient finish failure")
+                return true
+            }
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+            override suspend fun clearSessions() = Unit
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        val first = localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_000L)
+        )
+        first?.job?.join()
+
+        val retry = localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_100L)
+        )
+
+        assertEquals("s1", retry?.session?.id)
+        retry?.job?.join()
+        assertNull(localCoordinator.runtimeSession.value)
+        assertEquals(2, finishAttempts)
+    }
+
+
+    @Test
+    fun failedImmediateFinishCanBeRetriedAfterPendingStartPersists() = runBlocking {
+        val startEntered = CompletableDeferred<Unit>()
+        val releaseStart = CompletableDeferred<Unit>()
+        var finishAttempts = 0
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) {
+                startEntered.complete(Unit)
+                releaseStart.await()
+            }
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean {
+                finishAttempts += 1
+                if (finishAttempts == 1) error("transient finish failure")
+                return true
+            }
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+            override suspend fun clearSessions() = Unit
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        val start = localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        )
+        startEntered.await()
+
+        val firstFinish = localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_000L)
+        )
+        assertEquals("s1", firstFinish?.session?.id)
+
+        releaseStart.complete(Unit)
+        start.join()
+        firstFinish?.job?.join()
+
+        val retry = localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_100L)
+        )
+
+        assertEquals("s1", retry?.session?.id)
+        retry?.job?.join()
+        assertEquals(2, finishAttempts)
+    }
+
+
+    @Test
+    fun rejectedFinishKeepsRuntimeSessionAvailableForRetry() = runBlocking {
+        var finishAttempts = 0
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) = Unit
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean {
+                finishAttempts += 1
+                return finishAttempts > 1
+            }
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+            override suspend fun clearSessions() = Unit
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_000L)
+        )?.job?.join()
+
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_100L)
+        )?.job?.join()
+        assertNull(localCoordinator.runtimeSession.value)
+        assertEquals(2, finishAttempts)
+    }
+
+
+    @Test
+    fun clearSessionsClearsPublishedRuntimeSessionAfterPersistenceSucceeds() = runBlocking {
+        coordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", coordinator.runtimeSession.value?.id)
+
+        coordinator.clearSessions().join()
+
+        assertTrue(store.sessionsFlow().first().isEmpty())
+        assertNull(coordinator.runtimeSession.value)
+    }
+
+
+
+    @Test
+    fun failedClearKeepsRuntimeSessionAvailableForRetry() = runBlocking {
+        var clearAttempts = 0
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) = Unit
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean = true
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+
+            override suspend fun clearSessions() {
+                clearAttempts += 1
+                if (clearAttempts == 1) error("transient clear failure")
+            }
+
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.clearSessions().join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        localCoordinator.clearSessions().join()
+        assertNull(localCoordinator.runtimeSession.value)
+        assertEquals(2, clearAttempts)
+    }
+
+
+
+    @Test
+    fun clearDoesNotDiscardSessionRequestedAfterClearWasQueued() = runBlocking {
+        val clearEntered = CompletableDeferred<Unit>()
+        val releaseClear = CompletableDeferred<Unit>()
+        val persistedIds = mutableListOf<String>()
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) {
+                persistedIds += record.id
+            }
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean = true
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+
+            override suspend fun clearSessions() {
+                clearEntered.complete(Unit)
+                releaseClear.await()
+                persistedIds.clear()
+            }
+
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        ).join()
+        assertEquals("s1", localCoordinator.runtimeSession.value?.id)
+
+        val clear = localCoordinator.clearSessions()
+        clearEntered.await()
+        val replacement = localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s2",
+                packageName = "game.two",
+                profileName = "BALANCED",
+                startedAtMillis = 2_000L
+            )
+        )
+
+        releaseClear.complete(Unit)
+        clear.join()
+        replacement.join()
+
+        assertEquals(listOf("s2"), persistedIds)
+        assertEquals("s2", localCoordinator.runtimeSession.value?.id)
+    }
+
 
 }
