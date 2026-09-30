@@ -205,7 +205,7 @@ internal fun GameHubUltraApp(
     viewModel: GameHubViewModel,
     ultraRuntime: UltraUiRuntimeDependencies,
     storeLibraryRepository: StoreLibraryStateRepository,
-    optimizationMemoryRepository: GameOptimizationMemoryStateRepository,
+    optimizationMemoryStore: GameOptimizationMemoryStateRepository,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
@@ -270,7 +270,7 @@ internal fun GameHubUltraApp(
             driverFingerprint = driverFingerprint
         )
     }
-    val optimizationObservations by optimizationMemoryRepository
+    val optimizationObservations by optimizationMemoryStore
         .observationsFlow(currentOptimizationKey)
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
@@ -441,12 +441,12 @@ internal fun GameHubUltraApp(
     val runtimeCoordinator = remember(
         scope,
         runtimeActions,
-        optimizationMemoryRepository
+        optimizationMemoryStore
     ) {
         GameHubRuntimeCoordinator(
             scope = scope,
             actions = runtimeActions,
-            recordOptimization = optimizationMemoryRepository::record
+            recordOptimization = optimizationMemoryStore::record
         )
     }
 
@@ -581,7 +581,7 @@ internal fun GameHubUltraApp(
                 modifier = contentModifier,
                 onStoreConnectionChanged = { storeRefreshToken += 1 },
                 onClearOptimizationMemory = {
-                    scope.launch(Dispatchers.IO) { optimizationMemoryRepository.clearAll() }
+                    scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
                 }
             )
             wideLayout && profileOpen -> UltraProfileScreen(
@@ -619,7 +619,7 @@ internal fun GameHubUltraApp(
                 optimizationObservations = optimizationObservations,
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) {
-                        optimizationMemoryRepository.clearGame(currentOptimizationKey)
+                        optimizationMemoryStore.clearGame(currentOptimizationKey)
                     }
                 },
                 performanceHistory = performanceHistory,
