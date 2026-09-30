@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -197,6 +198,68 @@ class GameSessionLifecycleCoordinatorTest {
         assertEquals("s1", retry?.session?.id)
         retry?.job?.join()
         assertNull(localCoordinator.runtimeSession.value)
+        assertEquals(2, finishAttempts)
+    }
+
+
+    @Test
+    fun failedImmediateFinishCanBeRetriedAfterPendingStartPersists() = runBlocking {
+        val startEntered = CompletableDeferred<Unit>()
+        val releaseStart = CompletableDeferred<Unit>()
+        var finishAttempts = 0
+        val repository = object : GameSessionStateRepository {
+            override suspend fun startSession(record: GameSessionRecord) {
+                startEntered.complete(Unit)
+                releaseStart.await()
+            }
+
+            override suspend fun finishSession(
+                sessionId: String,
+                endedAtMillis: Long,
+                endBatteryPercent: Int?,
+                endThermalStatus: Int?,
+                endRamUsedPercent: Int?
+            ): Boolean {
+                finishAttempts += 1
+                if (finishAttempts == 1) error("transient finish failure")
+                return true
+            }
+
+            override suspend fun finishActiveSessions(endedAtMillis: Long): Int = 0
+            override suspend fun clearSessions() = Unit
+            override fun sessionsFlow() = flowOf(emptyList<GameSessionRecord>())
+        }
+        val localCoordinator = GameSessionLifecycleCoordinator(
+            store = repository,
+            scope = scope,
+            dispatcher = dispatcher
+        )
+
+        val start = localCoordinator.startSession(
+            GameSessionRecord(
+                id = "s1",
+                packageName = "game.one",
+                profileName = "X4",
+                startedAtMillis = 1_000L
+            )
+        )
+        startEntered.await()
+
+        val firstFinish = localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_000L)
+        )
+        assertEquals("s1", firstFinish?.session?.id)
+
+        releaseStart.complete(Unit)
+        start.join()
+        firstFinish?.job?.join()
+
+        val retry = localCoordinator.finishCurrent(
+            SessionEndMetrics(endedAtMillis = 2_100L)
+        )
+
+        assertEquals("s1", retry?.session?.id)
+        retry?.job?.join()
         assertEquals(2, finishAttempts)
     }
 
