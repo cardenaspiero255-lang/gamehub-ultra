@@ -13,6 +13,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
+import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinatorFactory
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceController
@@ -24,7 +25,6 @@ import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModelDependencies
-import com.cardenaspiero255.gamehubultra.ui.GameSessionLifecycleCoordinatorFactory
 import com.cardenaspiero255.gamehubultra.ui.GameHubViewModelDependencyFactory
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
