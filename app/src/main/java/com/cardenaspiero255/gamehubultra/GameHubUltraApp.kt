@@ -113,7 +113,6 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceController
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceChange
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
-import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesGameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.voice.NetworkVoiceResponseText
 import com.cardenaspiero255.gamehubultra.voice.VoiceNetworkSnapshotFactory
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
@@ -1102,7 +1101,7 @@ private fun VoiceAssistantCard(
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val aliasRepository = remember(context) {
-        SharedPreferencesGameAliasStateRepository(context)
+        GameHubProductionComposition.aliasRepository(context.applicationContext)
     }
     val aiAdvisor = ultraRuntime.assistant
     val queryExecutor = ultraRuntime.queryExecutor
