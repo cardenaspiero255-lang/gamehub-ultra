@@ -140,6 +140,26 @@ class ArchitectureBoundaryGuardTest {
 
 
     @Test
+    fun voiceServicesDoNotConstructSelectionPersistence() {
+        val guardedFiles = listOf(
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"),
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt")
+        )
+
+        val violations = guardedFiles
+            .filter { it.readText().contains("GameHubPreferencesRepository(") }
+            .map { "${it.name} constructs selection persistence directly" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Voice services must receive selection persistence through composition:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun optimizationMemoryConsumerDependsOnOwnershipBoundary() {
         val file = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
         val source = file.readText()
