@@ -26,6 +26,8 @@ class GameHubViewModelDependenciesTest {
         assertTrue(factory.methods.any { it.name == "create" })
         assertTrue(GameSelectionStateRepository::class.java.isAssignableFrom(dependencyContract))
         assertTrue(GameLibraryStateRepository::class.java.isAssignableFrom(dependencyContract))
+        assertTrue(dependencyContract.methods.any { it.name == "performanceHistoryFlow" })
+        assertTrue(dependencyContract.methods.any { it.name == "appendPerformanceEvent" })
     }
 
     private fun containsAndroidPlatformType(type: Type): Boolean {
