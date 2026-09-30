@@ -95,6 +95,18 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun storeConnectionActivityDoesNotConstructConnectedAccountPersistence() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/store/StoreConnectionActivity.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("ConnectedGameAccountsStore("),
+            "StoreConnectionActivity must receive connected-account persistence through a boundary"
+        )
+    }
+
+    @Test
     fun settingsDoesNotConstructStoreLibraryPersistence() {
         val source = sourceFile(
             "com/cardenaspiero255/gamehubultra/ui/components/SettingsComponents.kt"
