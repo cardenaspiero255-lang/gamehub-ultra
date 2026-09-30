@@ -791,7 +791,10 @@ class UltraAssistantSessionControllerTest {
 
             assertEquals(listOf("Tú: mensaje durante retry"), controller.conversation.value)
             assertTrue(controller.scopeReady.value)
-            assertNull(controller.loadError.value)
+            assertEquals("retry failure", controller.loadError.value?.message)
+
+            val secondRetry = controller.retryLoad()
+            assertFalse(secondRetry.isCompleted)
         } finally {
             ownerScope.cancel()
         }
