@@ -23,7 +23,6 @@ import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
-import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.store.StoreConnectionActivity
 import android.os.Build
 import android.os.Bundle
@@ -206,6 +205,7 @@ internal fun GameHubUltraApp(
     device: DeviceInfo,
     viewModel: GameHubViewModel,
     ultraRuntime: UltraUiRuntimeDependencies,
+    storeLibraryRepository: StoreLibraryStateRepository,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
@@ -228,9 +228,6 @@ internal fun GameHubUltraApp(
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
-    val storeLibraryRepository: StoreLibraryStateRepository = remember(context) {
-        StoreLibraryStore(context)
-    }
     val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     val aiAdvisor = ultraRuntime.assistant
     val ultraSessionMemory = ultraRuntime.sessionMemory
