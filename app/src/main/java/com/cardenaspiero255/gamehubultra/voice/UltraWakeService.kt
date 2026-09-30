@@ -79,7 +79,7 @@ class UltraWakeService : Service() {
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
     private val aliasRepository by lazy {
-        SharedPreferencesGameAliasStateRepository(applicationContext)
+        GameHubProductionComposition.aliasRepository(applicationContext)
     }
     private val restartRecognition = Runnable { startRecognition() }
     private var recognizer: SpeechRecognizer? = null
