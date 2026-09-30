@@ -8,7 +8,6 @@ import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinator
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
-import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.SessionFinishHandle
@@ -37,7 +36,7 @@ class GameHubViewModel(
     private val repository = dependencies.selectionRepository
     private val libraryRepository: GameLibraryStateRepository = dependencies.libraryRepository
     private val performanceHistoryRepository = dependencies.performanceHistoryRepository
-    private val sessionStore: GameSessionStateRepository = GameSessionStore(application)
+    private val sessionStore: GameSessionStateRepository = dependencies.sessionRepository
     private val sessionCoordinator = GameSessionLifecycleCoordinator(
         store = sessionStore,
         scope = viewModelScope
