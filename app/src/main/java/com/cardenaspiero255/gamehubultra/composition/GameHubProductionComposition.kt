@@ -58,9 +58,8 @@ internal object GameHubProductionComposition {
         val appContext = activity.applicationContext
         val preferencesRepository = GameHubPreferencesRepository(appContext)
         val sessionRepository = GameSessionStore(appContext)
-        val connectedAccountsRepository: ConnectedGameAccountsStateRepository =
-            ConnectedGameAccountsStore(appContext)
-        val storeLibraryRepository: StoreLibraryStateRepository = StoreLibraryStore(appContext)
+        val connectedAccountsRepository = connectedAccountsRepository(appContext)
+        val storeLibraryRepository = storeLibraryRepository(appContext)
         val optimizationMemoryRepository: GameOptimizationMemoryStateRepository =
             GameOptimizationMemoryStore(appContext)
         val sessionCoordinatorFactory = GameSessionLifecycleCoordinatorFactory { scope ->
@@ -121,6 +120,12 @@ internal object GameHubProductionComposition {
             optimizationMemoryRepository = optimizationMemoryRepository
         )
     }
+
+    fun connectedAccountsRepository(context: Context): ConnectedGameAccountsStateRepository =
+        ConnectedGameAccountsStore(context.applicationContext)
+
+    fun storeLibraryRepository(context: Context): StoreLibraryStateRepository =
+        StoreLibraryStore(context.applicationContext)
 
     fun resumeContinuousVoice(context: Context) {
         ContinuousVoiceController(
