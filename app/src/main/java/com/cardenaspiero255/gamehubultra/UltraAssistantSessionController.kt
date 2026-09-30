@@ -289,10 +289,15 @@ internal class UltraAssistantSessionController(
                         generation == loadGeneration &&
                         _selectedGamePackage.value == gamePackage
                     ) {
-                        failedLoadRevision = revisionAtLoadStart
-                        historyHydrated = false
-                        onHistoryHydrationChanged(false)
-                        _loadError.value = error
+                        if (conversationRevision == revisionAtLoadStart) {
+                            failedLoadRevision = revisionAtLoadStart
+                            historyHydrated = false
+                            onHistoryHydrationChanged(false)
+                            _loadError.value = error
+                        } else {
+                            failedLoadRevision = null
+                            _loadError.value = null
+                        }
                         _scopeReady.value = true
                     }
                 }
