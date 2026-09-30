@@ -91,8 +91,8 @@ class ConnectedGameAccountsStore(
             val account = previous?.copy(
                 displayName = normalizedName,
                 publicId = normalizedId,
-                alias = alias?.trim()?.takeIf(String::isNotBlank) ?: previous.alias,
-                avatarUrl = sanitizePublicUrl(avatarUrl) ?: previous.avatarUrl,
+                alias = alias?.trim()?.takeIf(String::isNotBlank),
+                avatarUrl = sanitizePublicUrl(avatarUrl),
                 lastSyncedAtMillis = syncTimestamp
             ) ?: ConnectedGameAccount(
                 id = UUID.randomUUID().toString(),
