@@ -41,7 +41,10 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
 
     override fun replaceForAccount(accountId: String, games: List<StoreLibraryGame>) {
         val retained = getAll().filterNot { it.accountId == accountId }
-        val merged = retained + games.distinctBy { "${it.platform}:${it.accountId}:${it.platformGameId}" }
+        val replacement = normalizeStoreLibraryReplacement(accountId, games)
+        val merged = retained + replacement.distinctBy {
+            "${it.platform}:${it.accountId}:${it.platformGameId}"
+        }
         val array = JSONArray()
         merged.forEach { game ->
             array.put(
@@ -60,4 +63,12 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
     override fun removeForAccount(accountId: String) {
         replaceForAccount(accountId, emptyList())
     }
+}
+
+
+internal fun normalizeStoreLibraryReplacement(
+    accountId: String,
+    games: List<StoreLibraryGame>
+): List<StoreLibraryGame> = games.map { game ->
+    if (game.accountId == accountId) game else game.copy(accountId = accountId)
 }
