@@ -75,8 +75,9 @@ class ConnectedGameAccountsStore(
         alias: String?,
         avatarUrl: String?
     ): ConnectedGameAccount {
-        val normalizedName = displayName.trim().ifBlank { publicId.trim() }
         val normalizedId = publicId.trim()
+        require(normalizedId.isNotEmpty()) { "publicId must not be blank" }
+        val normalizedName = displayName.trim().ifBlank { normalizedId }
         var result: ConnectedGameAccount? = null
         val syncTimestamp = System.currentTimeMillis()
 
