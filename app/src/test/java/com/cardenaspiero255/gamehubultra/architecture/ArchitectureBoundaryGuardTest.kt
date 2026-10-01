@@ -439,6 +439,9 @@ class ArchitectureBoundaryGuardTest {
     @Test
     fun homeAndLibraryPresentationStateStaysExtractedFromCompose() {
         val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt").readText()
+        val homeScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/home/HomeScreen.kt"
+        ).readText()
         val libraryScreen = sourceFile(
             "com/cardenaspiero255/gamehubultra/ui/library/LibraryScreen.kt"
         ).readText()
@@ -460,7 +463,7 @@ class ArchitectureBoundaryGuardTest {
             .map { symbol -> "GameHubUltraApp.kt still owns legacy screen state: $symbol" }
 
         assertTrue(
-            app.contains("rememberHomeUiStateHolder()"),
+            homeScreen.contains("rememberHomeUiStateHolder()"),
             "HomeScreen must obtain presentation state from HomeUiStateHolder"
         )
         assertTrue(
