@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.util.Log
@@ -153,7 +152,6 @@ class UltraWakeService : Service() {
                 recognizer = it
             }
 
-            val intent = baseRecognitionIntent()
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 val source = UltraPersistentSpeechSource.create()
                 if (source == null) {
@@ -162,35 +160,14 @@ class UltraWakeService : Service() {
                 } else {
                     persistentSpeechSource = source
                     persistentSessionActive = true
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE,
-                            source.readDescriptor
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT,
-                            UltraPersistentSpeechSource.CHANNEL_COUNT
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING,
-                            UltraPersistentSpeechSource.ENCODING
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE,
-                            UltraPersistentSpeechSource.SAMPLE_RATE_HZ
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_SEGMENTED_SESSION,
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE
-                        )
-                        intent.putStringArrayListExtra(
-                            RecognizerIntent.EXTRA_BIASING_STRINGS,
-                            arrayListOf("Ultra", "ultra")
-                        )
-                    }
                 }
             }
 
+            val intent = UltraWakeRecognitionIntentFactory.create(
+                languageTag = recognitionLanguageTag,
+                mode = requestedMode,
+                persistentSource = persistentSpeechSource
+            )
             speech.startListening(intent)
             if (
                 requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED &&
@@ -212,27 +189,6 @@ class UltraWakeService : Service() {
             scheduleRestart()
         }
     }
-
-    private fun baseRecognitionIntent(): Intent =
-        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            if (sessionPolicy.preferredMode() == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    1200L
-                )
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    850L
-                )
-            }
-        }
 
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) = Unit
