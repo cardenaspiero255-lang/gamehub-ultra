@@ -390,6 +390,18 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun gameHubUltraAppDoesNotUseProductionCompositionAsServiceLocator() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("GameHubProductionComposition"),
+            "GameHubUltraApp must receive production dependencies through the presentation boundary"
+        )
+    }
+
+    @Test
     fun gameHubUltraAppMonolithHasStrictSizeCeiling() {
         val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
         val lineCount = app.readLines().size
