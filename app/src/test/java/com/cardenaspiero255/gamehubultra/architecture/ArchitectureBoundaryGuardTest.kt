@@ -439,6 +439,9 @@ class ArchitectureBoundaryGuardTest {
     @Test
     fun homeAndLibraryPresentationStateStaysExtractedFromCompose() {
         val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt").readText()
+        val libraryScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/library/LibraryScreen.kt"
+        ).readText()
 
         val forbiddenLegacyState = listOf(
             "var localGameCount by remember",
@@ -461,7 +464,7 @@ class ArchitectureBoundaryGuardTest {
             "HomeScreen must obtain presentation state from HomeUiStateHolder"
         )
         assertTrue(
-            app.contains("rememberLibraryUiStateHolder()"),
+            libraryScreen.contains("rememberLibraryUiStateHolder()"),
             "LibraryScreen must obtain presentation state from LibraryUiStateHolder"
         )
         assertTrue(
