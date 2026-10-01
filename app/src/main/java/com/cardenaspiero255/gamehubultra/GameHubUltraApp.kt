@@ -1715,6 +1715,9 @@ internal fun isPackageInstalled(context: Context, packageName: String): Boolean 
         }
     }.isSuccess
 
+private fun openGame(context: Context, packageName: String): Boolean =
+    GameLauncher.launch(context, packageName)
+
 @Composable
 internal fun localizedProfileTitle(
     profile: PerformanceProfile
