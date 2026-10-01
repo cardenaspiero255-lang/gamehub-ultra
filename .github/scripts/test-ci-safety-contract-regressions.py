@@ -333,11 +333,24 @@ def require_exact_artifact_reuse_contract(android_text: str) -> None:
 
 
 def require_artifact_reuse_mutations_rejected(android_text: str) -> None:
-    """Prove foreign-run and mismatched-SHA reuse cannot satisfy the contract."""
+    """Prove unsafe artifact provenance changes cannot satisfy the contract."""
+    assertions = (
+        'grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"',
+        'grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"',
+        'test "$ACTUAL_SHA256" = "$RECORDED_SHA256"',
+    )
+    commented = android_text
+    masked = android_text
+    for assertion in assertions:
+        commented = commented.replace(assertion, f"# {assertion}", 1)
+        masked = masked.replace(assertion, f"{assertion} || true", 1)
+
     mutations = {
         "foreign run": android_text.replace("run-id: ${{ github.run_id }}", "run-id: ${{ github.event.workflow_run.id }}", 1),
         "mismatched SHA": android_text.replace('EXPECTED_SHA: ${{ github.sha }}', 'EXPECTED_SHA: foreign-sha', 1),
         "unverified run": android_text.replace('grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"', 'grep -Fq "run_id=" "$PROVENANCE"', 1),
+        "commented verifier assertions": commented,
+        "masked verifier assertions": masked,
     }
     for label, mutated in mutations.items():
         if mutated == android_text:
