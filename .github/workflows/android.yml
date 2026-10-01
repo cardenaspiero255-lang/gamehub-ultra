@@ -815,23 +815,6 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
-      - name: Download exact-run quality artifact
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: gamehub-ultra-debug
-          path: ${{ runner.temp }}/phase3-quality-artifact
-          run-id: ${{ github.run_id }}
-          github-token: ${{ github.token }}
-
-      - name: Verify Phase 3 artifact provenance
-        shell: bash
-        run: |
-          set -euo pipefail
-          PROVENANCE="$RUNNER_TEMP/phase3-quality-artifact/phase3-artifact-provenance.txt"
-          test -f "$PROVENANCE"
-          grep -Fxq "run_id=${{ github.run_id }}" "$PROVENANCE"
-          grep -Fxq "sha=${{ github.sha }}" "$PROVENANCE"
-
       - name: Verify all Android CI gates
         shell: bash
         run: |
@@ -841,11 +824,13 @@ jobs:
           test "${{ needs.quality.result }}" = "success"
           test "${{ needs.device-validation.result }}" = "success"
 
-      - name: Download exact-run debug artifact
+      - name: Download exact-run quality artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: gamehub-ultra-debug
           path: ${{ runner.temp }}/phase3-debug-reuse
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Verify Phase 3 artifact provenance
         shell: bash
