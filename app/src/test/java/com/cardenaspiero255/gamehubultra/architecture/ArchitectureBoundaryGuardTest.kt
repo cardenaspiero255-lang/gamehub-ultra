@@ -1108,4 +1108,17 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun ownershipContractsDoNotCarryCompletedMigrationPromises() {
+        val contracts = sourceFile(
+            "com/cardenaspiero255/gamehubultra/data/GameStateOwnershipContracts.kt"
+        ).readText()
+
+        assertTrue(
+            !contracts.contains("later Block 8 cut"),
+            "Completed architecture migrations must not remain documented as future work"
+        )
+    }
+
+
 }
