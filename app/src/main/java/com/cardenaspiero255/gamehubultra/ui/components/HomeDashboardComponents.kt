@@ -22,8 +22,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.GameLibrary
 import com.cardenaspiero255.gamehubultra.R
-import com.cardenaspiero255.gamehubultra.eventLabel
-import com.cardenaspiero255.gamehubultra.thermalLabel
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput

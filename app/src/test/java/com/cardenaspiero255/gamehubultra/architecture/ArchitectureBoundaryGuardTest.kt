@@ -390,6 +390,41 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun gameHubUltraAppDoesNotUseProductionCompositionAsServiceLocator() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        assertTrue(
+            !source.contains("GameHubProductionComposition"),
+            "GameHubUltraApp must receive production dependencies through the presentation boundary"
+        )
+    }
+
+    @Test
+    fun gameHubUltraAppDoesNotOwnAndroidVoiceInfrastructure() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        val forbiddenSymbols = listOf(
+            "private object VoiceDeviceStatusProvider",
+            "private object VoiceResponseFormatter"
+        )
+        val violations = forbiddenSymbols
+            .filter(source::contains)
+            .map { symbol -> "GameHubUltraApp owns voice infrastructure: $symbol" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Android voice infrastructure belongs behind the voice boundary:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun gameHubUltraAppMonolithHasStrictSizeCeiling() {
         val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
         val lineCount = app.readLines().size
@@ -404,6 +439,12 @@ class ArchitectureBoundaryGuardTest {
     @Test
     fun homeAndLibraryPresentationStateStaysExtractedFromCompose() {
         val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt").readText()
+        val homeScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/home/HomeScreen.kt"
+        ).readText()
+        val libraryScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/library/LibraryScreen.kt"
+        ).readText()
 
         val forbiddenLegacyState = listOf(
             "var localGameCount by remember",
@@ -422,11 +463,11 @@ class ArchitectureBoundaryGuardTest {
             .map { symbol -> "GameHubUltraApp.kt still owns legacy screen state: $symbol" }
 
         assertTrue(
-            app.contains("rememberHomeUiStateHolder()"),
+            homeScreen.contains("rememberHomeUiStateHolder()"),
             "HomeScreen must obtain presentation state from HomeUiStateHolder"
         )
         assertTrue(
-            app.contains("rememberLibraryUiStateHolder()"),
+            libraryScreen.contains("rememberLibraryUiStateHolder()"),
             "LibraryScreen must obtain presentation state from LibraryUiStateHolder"
         )
         assertTrue(
@@ -534,7 +575,7 @@ class ArchitectureBoundaryGuardTest {
     fun voiceSelectionPersistenceDoesNotBlockCommandWorkers() {
         val serviceFiles = listOf(
             sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt"),
-            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeCommandRuntime.kt")
         )
 
         val violations = serviceFiles.flatMap { file ->
@@ -906,4 +947,251 @@ class ArchitectureBoundaryGuardTest {
             File("app/src/main/java")
         ).firstOrNull(File::isDirectory)
             ?: error("Main source root must be available to architecture tests")
+    @Test
+    fun gameHubUltraAppDoesNotOwnSessionSharingInfrastructure() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        val forbiddenSymbols = listOf(
+            "fun shareSessionHistory(",
+            "fun sharePerformanceTimeline("
+        )
+        val violations = forbiddenSymbols.filter(source::contains)
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Session sharing infrastructure belongs behind the presentation boundary:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
+    fun gameHubUltraAppDoesNotOwnLibraryScreen() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val libraryScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/library/LibraryScreen.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("fun LibraryScreen("),
+            "LibraryScreen belongs to the ui.library presentation boundary"
+        )
+        assertTrue(
+            libraryScreen.contains("internal fun LibraryScreen("),
+            "The Library presentation boundary must own LibraryScreen"
+        )
+    }
+
+    @Test
+    fun gameHubUltraAppDoesNotOwnHomeScreen() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val homeScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/home/HomeScreen.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("fun HomeScreen("),
+            "HomeScreen belongs to the ui.home presentation boundary"
+        )
+        assertTrue(
+            homeScreen.contains("internal fun HomeScreen("),
+            "The Home presentation boundary must own HomeScreen"
+        )
+    }
+
+    @Test
+    fun gameHubUltraAppDoesNotOwnVoiceAssistantCard() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val voiceCard = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/voice/VoiceAssistantCard.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("fun VoiceAssistantCard("),
+            "VoiceAssistantCard belongs to the ui.voice presentation boundary"
+        )
+        assertTrue(
+            voiceCard.contains("internal fun VoiceAssistantCard("),
+            "The voice presentation boundary must own VoiceAssistantCard"
+        )
+    }
+
+    @Test
+    fun ultraWakeServiceDoesNotOwnForegroundNotificationInfrastructure() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val foreground = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeForegroundController.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("NotificationChannel(") &&
+                !service.contains("NotificationCompat.Builder("),
+            "UltraWakeService must delegate foreground notification infrastructure"
+        )
+        assertTrue(
+            foreground.contains("internal class UltraWakeForegroundController"),
+            "The voice infrastructure boundary must own foreground notification setup"
+        )
+    }
+
+
+    @Test
+    fun ultraWakeServiceDoesNotOwnSpeechPlaybackWatchdog() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val playback = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeSpeechPlaybackController.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("COMMAND_SPEECH_TIMEOUT_MS") &&
+                !service.contains("checkSpeechWatchdog("),
+            "UltraWakeService must delegate TTS playback watchdog infrastructure"
+        )
+        assertTrue(
+            playback.contains("internal class UltraWakeSpeechPlaybackController"),
+            "The voice infrastructure boundary must own TTS playback watchdog behavior"
+        )
+    }
+
+
+    @Test
+    fun ultraWakeServiceDoesNotOwnRecognizerIntentConfiguration() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val factory = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeRecognitionIntentFactory.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("private fun baseRecognitionIntent()"),
+            "UltraWakeService must delegate Android recognizer intent configuration"
+        )
+        assertTrue(
+            factory.contains("internal object UltraWakeRecognitionIntentFactory"),
+            "The voice infrastructure boundary must own recognizer intent configuration"
+        )
+    }
+
+
+    @Test
+    fun ultraWakeServiceDoesNotOwnCommandRuntime() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val runtime = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeCommandRuntime.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("UltraUnifiedAgentRouter.route(") &&
+                !service.contains("VoiceCommandEngine.execute("),
+            "UltraWakeService must delegate Ultra command execution runtime"
+        )
+        assertTrue(
+            runtime.contains("internal class UltraWakeCommandRuntime"),
+            "The voice domain boundary must own Ultra command execution"
+        )
+    }
+
+
+    @Test
+    fun ownershipContractsDoNotCarryCompletedMigrationPromises() {
+        val contracts = sourceFile(
+            "com/cardenaspiero255/gamehubultra/data/GameStateOwnershipContracts.kt"
+        ).readText()
+
+        assertTrue(
+            !contracts.contains("later Block 8 cut"),
+            "Completed architecture migrations must not remain documented as future work"
+        )
+    }
+
+
+    @Test
+    fun ultraImplementationHelpersStayModuleInternal() {
+        val declarations = mapOf(
+            "com/cardenaspiero255/gamehubultra/UltraAssistantQueryRunner.kt" to listOf(
+                "internal sealed interface UltraAssistantQuerySubmission",
+                "internal class UltraAssistantQueryRunner"
+            ),
+            "com/cardenaspiero255/gamehubultra/UltraCommandUiEffectPolicy.kt" to listOf(
+                "internal data class UltraScopedProfileRecommendation",
+                "internal object UltraCommandUiEffectPolicy"
+            ),
+            "com/cardenaspiero255/gamehubultra/UltraSessionScopeSelection.kt" to listOf(
+                "internal data class UltraVoiceTurnScope",
+                "internal fun captureUltraVoiceTurnScope",
+                "internal fun isUltraVoiceTurnScopeCurrent"
+            ),
+            "com/cardenaspiero255/gamehubultra/UltraVoiceResultPublisher.kt" to listOf(
+                "internal object UltraVoiceResultPublisher"
+            )
+        )
+
+        val violations = declarations.flatMap { (path, expectedDeclarations) ->
+            val source = sourceFile(path).readText()
+            expectedDeclarations
+                .filterNot(source::contains)
+                .map { declaration -> "$path must keep $declaration module-internal" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Ultra implementation helpers must not expand the public API:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
+    @Test
+    fun uiComponentsDoNotDependOnRootAppHelpers() {
+        val componentFiles = listOf(
+            "com/cardenaspiero255/gamehubultra/ui/components/LibraryGameCards.kt",
+            "com/cardenaspiero255/gamehubultra/ui/components/PerformanceSessionComponents.kt",
+            "com/cardenaspiero255/gamehubultra/ui/components/DeviceStatusComponents.kt",
+            "com/cardenaspiero255/gamehubultra/ui/components/HomeDashboardComponents.kt"
+        )
+
+        val forbiddenImports = listOf(
+            "com.cardenaspiero255.gamehubultra.packageVersionName",
+            "com.cardenaspiero255.gamehubultra.isPackageInstalled",
+            "com.cardenaspiero255.gamehubultra.localizedProfileTitle",
+            "com.cardenaspiero255.gamehubultra.localizedProfileDescription",
+            "com.cardenaspiero255.gamehubultra.thermalLabel",
+            "com.cardenaspiero255.gamehubultra.eventLabel"
+        )
+
+        val violations = componentFiles.flatMap { path ->
+            val source = sourceFile(path).readText()
+            forbiddenImports
+                .filter(source::contains)
+                .map { dependency -> "$path depends backwards on root helper $dependency" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "UI components must own/use lower-level helpers instead of GameHubUltraApp:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
 }

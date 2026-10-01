@@ -54,8 +54,8 @@ interface PerformanceHistoryStateRepository {
 /**
  * Android-free boundary for user-defined game aliases.
  *
- * The current SharedPreferences-backed alias store will be adapted behind this boundary in a
- * later Block 8 cut.
+ * Android persistence is adapted behind this contract so consumers do not depend on the
+ * SharedPreferences implementation.
  */
 interface GameAliasStateRepository {
     fun aliases(): Map<String, String>

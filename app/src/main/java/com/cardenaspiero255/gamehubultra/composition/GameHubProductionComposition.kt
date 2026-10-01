@@ -109,7 +109,8 @@ internal object GameHubProductionComposition {
                 override fun applyProfile(
                     profile: NetworkGameProfile
                 ) = NetworkRuntimeOptimizer.apply(appContext, profile)
-            }
+            },
+            aliasRepository = SharedPreferencesGameAliasStateRepository(appContext)
         )
 
         return GameHubProductionBootstrap(

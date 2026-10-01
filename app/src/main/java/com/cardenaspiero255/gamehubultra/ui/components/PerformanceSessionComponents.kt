@@ -16,8 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.R
-import com.cardenaspiero255.gamehubultra.localizedProfileDescription
-import com.cardenaspiero255.gamehubultra.localizedProfileTitle
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState

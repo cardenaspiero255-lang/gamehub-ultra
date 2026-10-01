@@ -15,10 +15,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -58,22 +56,26 @@ class UltraWakeService : Service() {
     companion object {
         const val ACTION_START = "com.cardenaspiero255.gamehubultra.voice.START"
         const val ACTION_STOP = "com.cardenaspiero255.gamehubultra.voice.STOP"
-        private const val CHANNEL_ID = "ultra_voice"
-        private const val NOTIFICATION_ID = 2301
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
-        private const val COMMAND_UTTERANCE_PREFIX = "ultra-command"
-        private const val COMMAND_SPEECH_TIMEOUT_MS = 10_000L
-        private const val COMMAND_SPEECH_RECHECK_MS = 5_000L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val foregroundController by lazy { UltraWakeForegroundController(this) }
     private val commandCoordinator = UltraWakeCommandCoordinator()
     private val commandQueue = UltraWakeCommandQueue()
     private val voiceConversationLedger = UltraVoiceConversationLedger(maxEntries = 8)
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
     private val lifecycleGate = UltraWakeLifecycleGate()
+    private val speechPlayback by lazy {
+        UltraWakeSpeechPlaybackController(
+            mainHandler = mainHandler,
+            speechGeneration = speechGeneration,
+            playbackGuard = playbackGuard,
+            onPlaybackFinished = { token -> finishCommandAndResume(token, playbackEnded = true) }
+        )
+    }
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
@@ -101,37 +103,13 @@ class UltraWakeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        ensureForeground()
+        foregroundController.ensureForeground()
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.let(UltraSpeechLocalePolicy::applyTo)
             }
         }
-        tts?.setOnUtteranceProgressListener(
-            object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = Unit
-
-                override fun onDone(utteranceId: String?) {
-                    speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
-                    }
-                }
-
-                @Deprecated("Android legacy TextToSpeech callback")
-                override fun onError(utteranceId: String?) {
-                    speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
-                    }
-                }
-
-                override fun onError(utteranceId: String?, errorCode: Int) {
-                    speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
-                    }
-                }
-            }
-        )
+        tts?.let(speechPlayback::attach)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -140,32 +118,11 @@ class UltraWakeService : Service() {
             ACTION_START, null -> {
                 stopped = false
                 lifecycleGate.restart()
-                ensureForeground()
+                foregroundController.ensureForeground()
                 mainHandler.post { startRecognition() }
             }
         }
         return START_NOT_STICKY
-    }
-
-    private fun ensureForeground() {
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(com.cardenaspiero255.gamehubultra.R.drawable.ic_gamehub_tile)
-            .setContentTitle("GameHub Ultra")
-            .setContentText("Escucha activa: di “Ultra …” para usar comandos.")
-            .setOngoing(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
     }
 
     private fun startRecognition() {
@@ -195,7 +152,6 @@ class UltraWakeService : Service() {
                 recognizer = it
             }
 
-            val intent = baseRecognitionIntent()
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 val source = UltraPersistentSpeechSource.create()
                 if (source == null) {
@@ -204,35 +160,14 @@ class UltraWakeService : Service() {
                 } else {
                     persistentSpeechSource = source
                     persistentSessionActive = true
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE,
-                            source.readDescriptor
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT,
-                            UltraPersistentSpeechSource.CHANNEL_COUNT
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING,
-                            UltraPersistentSpeechSource.ENCODING
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE,
-                            UltraPersistentSpeechSource.SAMPLE_RATE_HZ
-                        )
-                        intent.putExtra(
-                            RecognizerIntent.EXTRA_SEGMENTED_SESSION,
-                            RecognizerIntent.EXTRA_AUDIO_SOURCE
-                        )
-                        intent.putStringArrayListExtra(
-                            RecognizerIntent.EXTRA_BIASING_STRINGS,
-                            arrayListOf("Ultra", "ultra")
-                        )
-                    }
                 }
             }
 
+            val intent = UltraWakeRecognitionIntentFactory.create(
+                languageTag = recognitionLanguageTag,
+                mode = requestedMode,
+                persistentSource = persistentSpeechSource
+            )
             speech.startListening(intent)
             if (
                 requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED &&
@@ -254,27 +189,6 @@ class UltraWakeService : Service() {
             scheduleRestart()
         }
     }
-
-    private fun baseRecognitionIntent(): Intent =
-        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-            )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            if (sessionPolicy.preferredMode() == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    1200L
-                )
-                putExtra(
-                    RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,
-                    850L
-                )
-            }
-        }
 
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) = Unit
@@ -369,7 +283,7 @@ class UltraWakeService : Service() {
                 }
                 lastTranscriptAt = now
                 commandQueue.offer(transcript)
-                tts?.stop()
+                speechPlayback.stop()
                 speechGeneration.activeToken()?.let { token ->
                     finishCommandAndResume(token, playbackEnded = true)
                 }
@@ -407,6 +321,17 @@ class UltraWakeService : Service() {
     private fun containsWakeWord(transcript: String): Boolean =
         UltraWakeWordMatcher.contains(transcript)
 
+    private val commandRuntime by lazy {
+        UltraWakeCommandRuntime(
+            context = applicationContext,
+            queryExecutor = queryExecutor,
+            aiAdvisor = aiAdvisor,
+            aliasRepository = aliasRepository,
+            memoryStore = ultraMemoryStore,
+            conversationLedger = voiceConversationLedger
+        )
+    }
+
     private fun handleCommand(transcript: String) {
         if (!lifecycleGate.canAcceptRecognition()) {
             commandCoordinator.finishCommand()
@@ -421,206 +346,16 @@ class UltraWakeService : Service() {
                         scheduleRestart()
                     }
                 ) {
-            val response = UltraWakeFailureGuard.run {
-                val context = applicationContext
-                val selectionRepository: GameSelectionStateRepository =
-                    GameHubProductionComposition.selectionRepository(context.applicationContext)
-                val selectedGamePackage = runCatching {
-                    runBlocking { selectionRepository.selectedGameFlow().first() }
-                }.getOrNull()
-
-                val selectedProfile = runCatching {
-                    runBlocking {
-                        selectionRepository.effectiveProfileForSelection(selectedGamePackage)
+                    val response = UltraWakeFailureGuard.run {
+                        commandRuntime.execute(transcript)
                     }
-                }.getOrNull() ?: PerformanceProfile.BALANCED
-
-            val device = DeviceInfoProvider.get(context)
-            val diagnostics = RuntimeDiagnosticsProvider.get(context)
-            val capabilities = DeviceCapabilitiesProvider.get(context)
-            val aiContext = GameHubAiContext(
-                selectedGamePackage = selectedGamePackage,
-                sustainedPerformanceSupported = capabilities.sustainedPerformanceSupported,
-                cpuCores = device.cpuCores,
-                totalRamMb = device.totalRamMb.toInt(),
-                gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
-                    !device.gpuVendor.isNullOrBlank(),
-                thermalStatus = diagnostics.thermal.status,
-                thermalHeadroom = diagnostics.thermal.headroom,
-                batteryPercent = diagnostics.battery.percent,
-                charging = diagnostics.battery.charging,
-                refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
-                networkValidated = diagnostics.connectivity.validated,
-                networkLatencyMs = diagnostics.connectivity.latencyMs,
-                downstreamBandwidthKbps =
-                    diagnostics.connectivity.downstreamBandwidthKbps?.toLong(),
-                storageFreePercent = diagnostics.storage.freePercent,
-                inputDeviceCount = diagnostics.inputDeviceCount,
-                selectedProfile = selectedProfile,
-                sessionActive = selectedGamePackage != null
-            )
-
-            val status = VoiceDeviceStatus(
-                batteryPercent = diagnostics.battery.percent,
-                thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
-            )
-            val intentResolver = aiAdvisor.intentResolver()
-            voiceConversationLedger.bindScope(selectedGamePackage)
-            val conversationBefore = voiceConversationLedger.snapshot()
-            val route = UltraUnifiedAgentRouter.route(
-                transcript = transcript,
-                optionalResolver = intentResolver,
-                telemetry = UltraRuntimeTelemetry(
-                    batteryPercent = status.batteryPercent,
-                    thermalLabel = status.thermalLabel,
-                    refreshRateHz = diagnostics.refresh.currentRefreshRateHz
-                ),
-                knownGameAliases = aliasRepository.aliases().keys,
-                conversationHistory = conversationBefore
-            )
-
-                when (route) {
-                is UltraAgentRoute.Utility -> {
-                    if (
-                        route.answer.intent is
-                            com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
-                    ) {
-                        com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController.execute(
-                            intent = route.answer.intent,
-                            applyCompetitive = {
-                                com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(
-                                    context,
-                                    com.cardenaspiero255.gamehubultra.network.NetworkGameProfile.COMPETITIVE
-                                )
-                            }
-                        )
-                    } else {
-                        route.answer.message
-                    }
-                }
-                is UltraAgentRoute.Chat -> {
-                    val memoryCommand = UltraMemoryCommandParser.parse(route.message)
-                    val answer = queryExecutor.answer(
-                        route = route,
-                        stableKnowledgeFallback = {
-                            aiAdvisor.generalKnowledgeChatOrNull(
-                                message = route.message,
-                                context = aiContext,
-                                conversation = conversationBefore
-                            )
+                    mainHandler.post {
+                        if (stopped || !lifecycleGate.canAcceptRecognition()) {
+                            commandCoordinator.finishCommand()
+                        } else {
+                            speakAndResume(response)
                         }
-                    ) {
-                        aiAdvisor.chat(
-                            message = route.message,
-                            context = aiContext,
-                            conversation = conversationBefore
-                        )
                     }
-                    if (memoryCommand == null) {
-                        val delta = voiceConversationLedger.record(
-                            userMessage = route.message,
-                            assistantMessage = answer
-                        )
-                        ultraMemoryStore.enqueueSyncConversation(
-                            previous = delta.previous,
-                            next = delta.next,
-                            scope = UltraMemoryScope(
-                                userId = "local",
-                                gamePackage = selectedGamePackage
-                            ),
-                            timestampMillis = System.currentTimeMillis()
-                        )
-                    } else if (
-                        UltraMemoryTurnPersistencePolicy.resetsConversationContext(memoryCommand)
-                    ) {
-                        voiceConversationLedger.clear()
-                    }
-                    answer
-                }
-                is UltraAgentRoute.Command -> {
-                    val result = VoiceCommandEngine.execute(
-                        command = route.command,
-                        gamesProvider = { GameLibrary.discoverForVoice(context) },
-                        aliasGamesProvider = { GameLibrary.discover(context).games },
-                        launchGame = { packageName ->
-                            launchGameFromService(context, packageName)
-                        },
-                        saveSelectedGame = { packageName ->
-                            DurableSelectionMutationQueue.enqueue(
-                                onFailure = ::reportSelectionPersistenceFailure
-                            ) {
-                                selectionRepository.saveSelectedGame(packageName)
-                            }
-                        },
-                        saveSelectedProfile = { profile ->
-                            DurableSelectionMutationQueue.enqueue(
-                                onFailure = ::reportSelectionPersistenceFailure
-                            ) {
-                                selectionRepository.saveSelectedProfile(profile)
-                            }
-                        },
-                        saveSelectedGameWithProfile = { packageName, profile ->
-                            DurableSelectionMutationQueue.enqueue(
-                                onFailure = ::reportSelectionPersistenceFailure
-                            ) {
-                                selectionRepository.saveSelectedGameAndProfile(packageName, profile)
-                            }
-                        },
-                        // X4 remains selectable even when the OEM does not expose Android's
-                        // Sustained Performance Mode; unsupported hardware hooks degrade safely.
-                        isProfileAvailable = { _ -> true },
-                        statusProvider = { status },
-                        deferProfileApplication = true,
-                        aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
-                        aliasIntentResolver = intentResolver,
-                        gameAliasesProvider = { aliasRepository.aliases() },
-                        saveGameAlias = { alias, packageName ->
-    aliasRepository.save(alias, packageName)
-},
-networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
-applyNetworkProfile = { profile ->
-    com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(context, profile)
-}
-                    )
-
-                    when (result) {
-                        is VoiceActionResult.ProfileSelected ->
-                            "Perfil ${result.profile.title} seleccionado."
-                        is VoiceActionResult.GameOpened ->
-                            "Abriendo ${result.game.label}."
-                        is VoiceActionResult.GameAliasSaved ->
-                            context.getString(
-                                R.string.voice_result_game_alias_saved,
-                                result.alias.uppercase(),
-                                result.game.label
-                            )
-                        is VoiceActionResult.DeviceStatus ->
-                            "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
-                        is VoiceActionResult.NetworkReport ->
-                            NetworkVoiceResponseText.format(result)
-                        is VoiceActionResult.AiAdvice ->
-                            AiAdviceFormatter.fullResponse(context, result.advice)
-                        VoiceActionResult.Help ->
-                            "Puedes decir: Ultra, dime la hora. Ultra, dime la temperatura. Ultra, dime los Hz. Ultra, abre un juego. Ultra, pon X4."
-                        is VoiceActionResult.NotAvailable ->
-                            "No disponible. ${result.detail}"
-                        VoiceActionResult.RequiresPermission ->
-                            "Necesito permiso de micrófono."
-                        is VoiceActionResult.Failed ->
-                            "No pude completar el comando. ${result.detail}"
-                    }
-                }
-            }
-
-            }
-
-                mainHandler.post {
-                    if (stopped || !lifecycleGate.canAcceptRecognition()) {
-                        commandCoordinator.finishCommand()
-                    } else {
-                        speakAndResume(response)
-                    }
-                }
                 }
             }
             true
@@ -631,62 +366,7 @@ applyNetworkProfile = { profile ->
         }
     }
 
-    private fun speakAndResume(response: String) {
-        val token = speechGeneration.begin()
-        val startedAtMillis = System.currentTimeMillis()
-        playbackGuard.onPlaybackStarted(response)
-        val utteranceId = "$COMMAND_UTTERANCE_PREFIX-$token"
-        val result = tts?.speak(
-            response,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            utteranceId
-        ) ?: TextToSpeech.ERROR
-
-        if (result == TextToSpeech.ERROR) {
-            finishCommandAndResume(token, playbackEnded = true)
-            return
-        }
-
-        scheduleSpeechWatchdog(token, startedAtMillis, COMMAND_SPEECH_TIMEOUT_MS)
-    }
-
-    private fun scheduleSpeechWatchdog(
-        token: Long,
-        startedAtMillis: Long,
-        delayMillis: Long
-    ) {
-        mainHandler.postDelayed(
-            { checkSpeechWatchdog(token, startedAtMillis) },
-            delayMillis
-        )
-    }
-
-    private fun checkSpeechWatchdog(token: Long, startedAtMillis: Long) {
-        if (!speechGeneration.isActive(token)) return
-        val now = System.currentTimeMillis()
-        when (
-            playbackGuard.timeoutAction(
-                isSpeaking = tts?.isSpeaking == true,
-                elapsedMillis = (now - startedAtMillis).coerceAtLeast(0L)
-            )
-        ) {
-            UltraWakeSpeechTimeoutAction.WAIT ->
-                scheduleSpeechWatchdog(token, startedAtMillis, COMMAND_SPEECH_RECHECK_MS)
-            UltraWakeSpeechTimeoutAction.FINISH ->
-                finishCommandAndResume(token, playbackEnded = true)
-            UltraWakeSpeechTimeoutAction.STOP_AND_FINISH -> {
-                tts?.stop()
-                finishCommandAndResume(token, playbackEnded = true)
-            }
-        }
-    }
-
-    private fun speechToken(utteranceId: String?): Long? =
-        utteranceId
-            ?.takeIf { it.startsWith("$COMMAND_UTTERANCE_PREFIX-") }
-            ?.substringAfterLast('-')
-            ?.toLongOrNull()
+    private fun speakAndResume(response: String) = speechPlayback.speak(response)
 
     private fun finishCommandAndResume(
         token: Long,
@@ -720,30 +400,6 @@ applyNetworkProfile = { profile ->
         persistentSpeechSource = null
     }
 
-    private fun voiceThermalLabel(status: Int?): String =
-        when (status) {
-            PowerManager.THERMAL_STATUS_NONE -> "Normal"
-            PowerManager.THERMAL_STATUS_LIGHT -> "Leve"
-            PowerManager.THERMAL_STATUS_MODERATE -> "Moderado"
-            PowerManager.THERMAL_STATUS_SEVERE -> "Severo"
-            PowerManager.THERMAL_STATUS_CRITICAL -> "Crítico"
-            PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergencia"
-            PowerManager.THERMAL_STATUS_SHUTDOWN -> "Apagado térmico"
-            null -> "No disponible"
-            else -> "Desconocido"
-        }
-
-    private fun launchGameFromService(context: Context, packageName: String): Boolean {
-        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-            ?: return false
-
-        return runCatching {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            true
-        }.getOrDefault(false)
-    }
-
     private fun scheduleRestart() {
         mainHandler.removeCallbacks(restartRecognition)
         if (!stopped && !commandCoordinator.isCommandRunning()) {
@@ -751,30 +407,7 @@ applyNetworkProfile = { profile ->
         }
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Asistente de voz GameHub Ultra",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Indica que la escucha continua está activa."
-            }
-
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
-        }
-    }
-
     override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun reportSelectionPersistenceFailure(error: Throwable) {
-        Log.e(
-            "UltraWakeService",
-            "No se pudo persistir la selección o el perfil de voz.",
-            error
-        )
-    }
 
     override fun onDestroy() {
         stopped = true
@@ -791,8 +424,7 @@ applyNetworkProfile = { profile ->
         recognizer?.cancel()
         recognizer?.destroy()
         recognizer = null
-        tts?.stop()
-        tts?.shutdown()
+        speechPlayback.shutdown()
         tts = null
         aiAdvisor.close()
         super.onDestroy()
