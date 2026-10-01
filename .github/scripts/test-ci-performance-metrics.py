@@ -574,7 +574,15 @@ class CiPerformanceMetricsTests(unittest.TestCase):
                 "started_at": "2026-09-28T05:00:00Z",
                 "completed_at": "2026-09-28T05:01:00Z",
                 "steps": [],
-            }
+            },
+            {
+                "name": "build",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-09-28T05:01:00Z",
+                "completed_at": "2026-09-28T05:01:03Z",
+                "steps": [],
+            },
         ]
         old_topology_jobs = [
             {
