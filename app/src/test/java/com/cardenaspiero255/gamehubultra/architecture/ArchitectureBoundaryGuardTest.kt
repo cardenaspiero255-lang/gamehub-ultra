@@ -1006,4 +1006,23 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+    @Test
+    fun gameHubUltraAppDoesNotOwnVoiceAssistantCard() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val voiceCard = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/voice/VoiceAssistantCard.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("fun VoiceAssistantCard("),
+            "VoiceAssistantCard belongs to the ui.voice presentation boundary"
+        )
+        assertTrue(
+            voiceCard.contains("internal fun VoiceAssistantCard("),
+            "The voice presentation boundary must own VoiceAssistantCard"
+        )
+    }
+
 }
