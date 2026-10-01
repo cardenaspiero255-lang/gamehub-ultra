@@ -347,6 +347,21 @@ def main() -> None:
     if ":app:createDebugUnitTestCoverageReport" not in coverage:
         raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
 
+    # Phase 3 block 3 cut 1 RED: artifact reuse must be same-run and exact-SHA.
+    android_workflow = ANDROID.read_text(encoding="utf-8")
+    artifact_reuse_fragments = (
+        "actions/download-artifact@",
+        "github.run_id",
+        "github.sha",
+        "Phase 3 artifact provenance",
+    )
+    missing_reuse = [fragment for fragment in artifact_reuse_fragments if fragment not in android_workflow]
+    if missing_reuse:
+        raise SystemExit(
+            "Phase 3 block 3: exact-SHA same-run artifact reuse contract is missing: "
+            f"{missing_reuse!r}"
+        )
+
     # Phase 2 block 6 is enforced by the parsed CI safety contract above.
     # Mutations prove both the reuse assertion and duplicate partial graphs fail.
 
