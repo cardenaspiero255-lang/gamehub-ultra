@@ -290,6 +290,18 @@ def duplicate_full_release_graph_without_configuration_cache(android: str, cover
     return android.replace(needle, duplicate + needle, 1), coverage
 
 
+def require_blocking_shell_line(script: str, expected: str, label: str) -> None:
+    """Require an active, exact verifier command under fail-fast shell semantics."""
+    active_lines = [
+        line.strip()
+        for line in script.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if "set -euo pipefail" not in active_lines:
+        raise SystemExit(f"Phase 3 block 3: {label} verifier is not fail-fast")
+    if expected not in active_lines:
+        raise SystemExit(f"Phase 3 block 3: {label} assertion is not active and blocking")
+
 def require_exact_artifact_reuse_contract(android_text: str) -> None:
     """Validate the actual producer, consumer and exact provenance relationship."""
     workflow = yaml.safe_load(android_text)
@@ -324,12 +336,21 @@ def require_exact_artifact_reuse_contract(android_text: str) -> None:
         raise SystemExit("Phase 3 block 3: downloaded run provenance is not bound")
     if verifier_env.get("EXPECTED_SHA") != "${{ github.sha }}":
         raise SystemExit("Phase 3 block 3: downloaded SHA provenance is not bound")
-    if 'grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"' not in verifier_run:
-        raise SystemExit("Phase 3 block 3: downloaded run provenance is not verified")
-    if 'grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"' not in verifier_run:
-        raise SystemExit("Phase 3 block 3: downloaded SHA provenance is not verified")
-    if 'test "$ACTUAL_SHA256" = "$RECORDED_SHA256"' not in verifier_run:
-        raise SystemExit("Phase 3 block 3: downloaded artifact integrity is not verified")
+    require_blocking_shell_line(
+        verifier_run,
+        'grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"',
+        "downloaded run provenance",
+    )
+    require_blocking_shell_line(
+        verifier_run,
+        'grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"',
+        "downloaded SHA provenance",
+    )
+    require_blocking_shell_line(
+        verifier_run,
+        'test "$ACTUAL_SHA256" = "$RECORDED_SHA256"',
+        "downloaded artifact integrity",
+    )
 
 
 def require_artifact_reuse_mutations_rejected(android_text: str) -> None:
