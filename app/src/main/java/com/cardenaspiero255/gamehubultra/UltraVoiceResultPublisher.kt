@@ -3,7 +3,7 @@ package com.cardenaspiero255.gamehubultra
 import com.cardenaspiero255.gamehubultra.ai.UltraConversationScopePolicy
 
 /** Prevents an asynchronous voice result from leaking into a newly selected game. */
-object UltraVoiceResultPublisher {
+internal object UltraVoiceResultPublisher {
     fun publishIfCurrentGame(
         originatingGamePackage: String?,
         currentGamePackage: String?,
