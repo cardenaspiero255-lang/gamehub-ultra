@@ -256,6 +256,68 @@ def _fetch_run(repository: str, run_id: int, token: str) -> dict[str, Any]:
     return _get_json(f"{API_ROOT}/repos/{repository}/actions/runs/{run_id}", token)
 
 
+
+
+def validate_parent_provenance(
+    run: dict[str, Any],
+    *,
+    expected_run_id: int | None = None,
+    expected_head_sha: str | None = None,
+    expected_workflow: str | None = None,
+    require_completed: bool = False,
+) -> None:
+    """Fail closed when a post-run collector is not bound to the expected parent."""
+    actual_run_id = int(run.get("id") or 0)
+    if expected_run_id is not None and actual_run_id != expected_run_id:
+        raise RuntimeError(
+            f"Parent run id mismatch: expected {expected_run_id}, got {actual_run_id}"
+        )
+
+    actual_head_sha = str(run.get("head_sha") or "").strip()
+    if expected_head_sha is not None and actual_head_sha != expected_head_sha:
+        raise RuntimeError("Parent head SHA does not match the workflow_run event")
+
+    actual_workflow = str(run.get("name") or "").strip()
+    if expected_workflow is not None and actual_workflow != expected_workflow:
+        raise RuntimeError(
+            f"Parent workflow mismatch: expected {expected_workflow!r}, got {actual_workflow!r}"
+        )
+
+    if require_completed and str(run.get("status") or "").strip() != "completed":
+        raise RuntimeError("Parent workflow run is not completed")
+
+
+def _required_jobs_are_completed(
+    jobs: list[dict[str, Any]], required_job_names: Iterable[str]
+) -> bool:
+    for required_name in required_job_names:
+        matches = [
+            job
+            for job in jobs
+            if str(job.get("name") or "").strip() == required_name
+        ]
+        if not matches:
+            return False
+        for job in matches:
+            if not job.get("completed_at"):
+                return False
+            status = str(job.get("status") or "").strip()
+            if status and status != "completed":
+                return False
+    return True
+
+
+def validate_required_jobs(
+    jobs: list[dict[str, Any]], required_job_names: Iterable[str]
+) -> None:
+    names = tuple(dict.fromkeys(name.strip() for name in required_job_names if name.strip()))
+    if not names:
+        raise RuntimeError("At least one required metrics job must be configured")
+    if not _required_jobs_are_completed(jobs, names):
+        raise RuntimeError(
+            "Required parent jobs are missing or incomplete: " + ", ".join(names)
+        )
+
 def _run_cohort(run: dict[str, Any]) -> tuple[str, str]:
     event = str(run.get("event") or "").strip()
     if event == "pull_request":
@@ -339,24 +401,49 @@ def collect(
     history_job_request_budget: int = MAX_HISTORY_JOB_REQUESTS,
     current_job_wait_seconds: int = 60,
     current_job_poll_seconds: int = 2,
+    expected_run_id: int | None = None,
+    expected_head_sha: str | None = None,
+    expected_workflow: str | None = None,
+    require_completed: bool = False,
+    required_job_names: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     current_run = _fetch_run(repository, run_id, token)
+    validate_parent_provenance(
+        current_run,
+        expected_run_id=expected_run_id,
+        expected_head_sha=expected_head_sha,
+        expected_workflow=expected_workflow,
+        require_completed=require_completed,
+    )
     workflow_id = int(current_run.get("workflow_id") or 0)
     if workflow_id <= 0:
         raise RuntimeError("Current workflow id is unavailable")
 
+    if required_job_names is None:
+        workflow_name = str(current_run.get("name") or "").strip()
+        required_jobs = (
+            ("coverage",)
+            if workflow_name == "Unit Test Coverage"
+            else ("build",)
+        )
+    else:
+        required_jobs = tuple(
+            dict.fromkeys(name.strip() for name in required_job_names if name.strip())
+        )
+    if not required_jobs:
+        raise RuntimeError("No required jobs configured for metrics collection")
+
     deadline = time.monotonic() + max(0, current_job_wait_seconds)
     while True:
         current_jobs = _fetch_jobs(repository, run_id, token)
-        build_jobs = [
-            job for job in current_jobs
-            if str(job.get("name") or "").strip() == "build"
-        ]
-        if build_jobs and all(job.get("completed_at") for job in build_jobs):
+        if _required_jobs_are_completed(current_jobs, required_jobs):
             break
+        if require_completed:
+            validate_required_jobs(current_jobs, required_jobs)
         if time.monotonic() >= deadline:
             raise RuntimeError(
-                "Aggregate build job did not complete before metrics sampling timeout"
+                "Required parent jobs did not complete before metrics sampling timeout: "
+                + ", ".join(required_jobs)
             )
         time.sleep(max(1, current_job_poll_seconds))
 
@@ -398,6 +485,12 @@ def collect(
         "workflow_id": workflow_id,
         "workflow_name": str(current_run.get("name") or "unknown"),
         "run_id": run_id,
+        "provenance": {
+            "run_id": int(current_run.get("id") or run_id),
+            "head_sha": str(current_run.get("head_sha") or ""),
+            "workflow": str(current_run.get("name") or "unknown"),
+            "status": str(current_run.get("status") or ""),
+        },
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "current": current_metrics,
         "history_summary": summarize_history(history_rows),
@@ -412,6 +505,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", required=True)
     parser.add_argument("--run-id", required=True, type=int)
+    parser.add_argument("--expected-run-id", type=int)
+    parser.add_argument("--expected-head-sha")
+    parser.add_argument("--expected-workflow")
+    parser.add_argument("--require-completed", action="store_true")
+    parser.add_argument("--require-job", action="append", dest="required_jobs")
+    parser.add_argument("--fail-on-unavailable", action="store_true")
     parser.add_argument("--token", default=os.environ.get("GITHUB_TOKEN", ""))
     parser.add_argument("--history", type=int, default=20)
     parser.add_argument(
@@ -442,8 +541,9 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         )
         notice("CI performance metrics skipped because GITHUB_TOKEN is unavailable.")
-        return 0
+        return 1 if args.fail_on_unavailable else 0
 
+    exit_code = 0
     try:
         payload = collect(
             repository=args.repository,
@@ -454,6 +554,11 @@ def main(argv: list[str] | None = None) -> int:
                 1,
                 min(args.history_job_request_budget, 500),
             ),
+            expected_run_id=args.expected_run_id,
+            expected_head_sha=args.expected_head_sha,
+            expected_workflow=args.expected_workflow,
+            require_completed=args.require_completed,
+            required_job_names=args.required_jobs,
         )
         markdown = render_markdown(
             payload["workflow_name"],
@@ -474,6 +579,8 @@ def main(argv: list[str] | None = None) -> int:
             "Core CI gates are unaffected.\n"
         )
         notice(f"CI performance metrics unavailable: {exc}")
+        if args.fail_on_unavailable:
+            exit_code = 1
 
     json_path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -481,7 +588,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     summary_path.write_text(markdown, encoding="utf-8")
     print(markdown)
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
