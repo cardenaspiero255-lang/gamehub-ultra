@@ -58,8 +58,6 @@ class UltraWakeService : Service() {
     companion object {
         const val ACTION_START = "com.cardenaspiero255.gamehubultra.voice.START"
         const val ACTION_STOP = "com.cardenaspiero255.gamehubultra.voice.STOP"
-        private const val CHANNEL_ID = "ultra_voice"
-        private const val NOTIFICATION_ID = 2301
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
         private const val COMMAND_UTTERANCE_PREFIX = "ultra-command"
@@ -68,6 +66,7 @@ class UltraWakeService : Service() {
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val foregroundController by lazy { UltraWakeForegroundController(this) }
     private val commandCoordinator = UltraWakeCommandCoordinator()
     private val commandQueue = UltraWakeCommandQueue()
     private val voiceConversationLedger = UltraVoiceConversationLedger(maxEntries = 8)
@@ -101,8 +100,7 @@ class UltraWakeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
-        ensureForeground()
+        foregroundController.ensureForeground()
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.let(UltraSpeechLocalePolicy::applyTo)
@@ -140,32 +138,11 @@ class UltraWakeService : Service() {
             ACTION_START, null -> {
                 stopped = false
                 lifecycleGate.restart()
-                ensureForeground()
+                foregroundController.ensureForeground()
                 mainHandler.post { startRecognition() }
             }
         }
         return START_NOT_STICKY
-    }
-
-    private fun ensureForeground() {
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(com.cardenaspiero255.gamehubultra.R.drawable.ic_gamehub_tile)
-            .setContentTitle("GameHub Ultra")
-            .setContentText("Escucha activa: di “Ultra …” para usar comandos.")
-            .setOngoing(true)
-            .setCategory(Notification.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
     }
 
     private fun startRecognition() {
@@ -748,21 +725,6 @@ applyNetworkProfile = { profile ->
         mainHandler.removeCallbacks(restartRecognition)
         if (!stopped && !commandCoordinator.isCommandRunning()) {
             mainHandler.postDelayed(restartRecognition, RESTART_DELAY_MS)
-        }
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Asistente de voz GameHub Ultra",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Indica que la escucha continua está activa."
-            }
-
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
         }
     }
 
