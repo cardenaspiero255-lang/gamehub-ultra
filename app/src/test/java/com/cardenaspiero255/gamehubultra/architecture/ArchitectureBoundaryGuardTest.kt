@@ -962,4 +962,23 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+    @Test
+    fun gameHubUltraAppDoesNotOwnLibraryScreen() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val libraryScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/library/LibraryScreen.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("fun LibraryScreen("),
+            "LibraryScreen belongs to the ui.library presentation boundary"
+        )
+        assertTrue(
+            libraryScreen.contains("internal fun LibraryScreen("),
+            "The Library presentation boundary must own LibraryScreen"
+        )
+    }
+
 }
