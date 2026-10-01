@@ -18,7 +18,6 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -60,9 +59,6 @@ class UltraWakeService : Service() {
         const val ACTION_STOP = "com.cardenaspiero255.gamehubultra.voice.STOP"
         private const val RESTART_DELAY_MS = 180L
         private const val WAKE_DEBOUNCE_MS = 700L
-        private const val COMMAND_UTTERANCE_PREFIX = "ultra-command"
-        private const val COMMAND_SPEECH_TIMEOUT_MS = 10_000L
-        private const val COMMAND_SPEECH_RECHECK_MS = 5_000L
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -73,6 +69,14 @@ class UltraWakeService : Service() {
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
     private val lifecycleGate = UltraWakeLifecycleGate()
+    private val speechPlayback by lazy {
+        UltraWakeSpeechPlaybackController(
+            mainHandler = mainHandler,
+            speechGeneration = speechGeneration,
+            playbackGuard = playbackGuard,
+            onPlaybackFinished = { token -> finishCommandAndResume(token, playbackEnded = true) }
+        )
+    }
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
@@ -106,30 +110,7 @@ class UltraWakeService : Service() {
                 tts?.let(UltraSpeechLocalePolicy::applyTo)
             }
         }
-        tts?.setOnUtteranceProgressListener(
-            object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = Unit
-
-                override fun onDone(utteranceId: String?) {
-                    speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
-                    }
-                }
-
-                @Deprecated("Android legacy TextToSpeech callback")
-                override fun onError(utteranceId: String?) {
-                    speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
-                    }
-                }
-
-                override fun onError(utteranceId: String?, errorCode: Int) {
-                    speechToken(utteranceId)?.let { token ->
-                        mainHandler.post { finishCommandAndResume(token, playbackEnded = true) }
-                    }
-                }
-            }
-        )
+        tts?.let(speechPlayback::attach)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -346,7 +327,7 @@ class UltraWakeService : Service() {
                 }
                 lastTranscriptAt = now
                 commandQueue.offer(transcript)
-                tts?.stop()
+                speechPlayback.stop()
                 speechGeneration.activeToken()?.let { token ->
                     finishCommandAndResume(token, playbackEnded = true)
                 }
@@ -608,62 +589,7 @@ applyNetworkProfile = { profile ->
         }
     }
 
-    private fun speakAndResume(response: String) {
-        val token = speechGeneration.begin()
-        val startedAtMillis = System.currentTimeMillis()
-        playbackGuard.onPlaybackStarted(response)
-        val utteranceId = "$COMMAND_UTTERANCE_PREFIX-$token"
-        val result = tts?.speak(
-            response,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            utteranceId
-        ) ?: TextToSpeech.ERROR
-
-        if (result == TextToSpeech.ERROR) {
-            finishCommandAndResume(token, playbackEnded = true)
-            return
-        }
-
-        scheduleSpeechWatchdog(token, startedAtMillis, COMMAND_SPEECH_TIMEOUT_MS)
-    }
-
-    private fun scheduleSpeechWatchdog(
-        token: Long,
-        startedAtMillis: Long,
-        delayMillis: Long
-    ) {
-        mainHandler.postDelayed(
-            { checkSpeechWatchdog(token, startedAtMillis) },
-            delayMillis
-        )
-    }
-
-    private fun checkSpeechWatchdog(token: Long, startedAtMillis: Long) {
-        if (!speechGeneration.isActive(token)) return
-        val now = System.currentTimeMillis()
-        when (
-            playbackGuard.timeoutAction(
-                isSpeaking = tts?.isSpeaking == true,
-                elapsedMillis = (now - startedAtMillis).coerceAtLeast(0L)
-            )
-        ) {
-            UltraWakeSpeechTimeoutAction.WAIT ->
-                scheduleSpeechWatchdog(token, startedAtMillis, COMMAND_SPEECH_RECHECK_MS)
-            UltraWakeSpeechTimeoutAction.FINISH ->
-                finishCommandAndResume(token, playbackEnded = true)
-            UltraWakeSpeechTimeoutAction.STOP_AND_FINISH -> {
-                tts?.stop()
-                finishCommandAndResume(token, playbackEnded = true)
-            }
-        }
-    }
-
-    private fun speechToken(utteranceId: String?): Long? =
-        utteranceId
-            ?.takeIf { it.startsWith("$COMMAND_UTTERANCE_PREFIX-") }
-            ?.substringAfterLast('-')
-            ?.toLongOrNull()
+    private fun speakAndResume(response: String) = speechPlayback.speak(response)
 
     private fun finishCommandAndResume(
         token: Long,
@@ -753,8 +679,7 @@ applyNetworkProfile = { profile ->
         recognizer?.cancel()
         recognizer?.destroy()
         recognizer = null
-        tts?.stop()
-        tts?.shutdown()
+        speechPlayback.shutdown()
         tts = null
         aiAdvisor.close()
         super.onDestroy()
