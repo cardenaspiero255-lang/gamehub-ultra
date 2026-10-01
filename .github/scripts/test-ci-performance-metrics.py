@@ -629,6 +629,80 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         self.assertTrue(result["history_partial"])
         self.assertEqual(result["history_job_requests"], 1)
 
+
+    def test_validate_parent_provenance_requires_exact_identity(self):
+        run = {
+            "id": 999,
+            "name": "Android build",
+            "head_sha": "a" * 40,
+            "status": "completed",
+        }
+        metrics.validate_parent_provenance(
+            run,
+            expected_run_id=999,
+            expected_head_sha="a" * 40,
+            expected_workflow="Android build",
+            require_completed=True,
+        )
+        with self.assertRaisesRegex(RuntimeError, "head SHA"):
+            metrics.validate_parent_provenance(
+                run,
+                expected_run_id=999,
+                expected_head_sha="b" * 40,
+                expected_workflow="Android build",
+                require_completed=True,
+            )
+        with self.assertRaisesRegex(RuntimeError, "workflow"):
+            metrics.validate_parent_provenance(
+                run,
+                expected_run_id=999,
+                expected_head_sha="a" * 40,
+                expected_workflow="Unit Test Coverage",
+                require_completed=True,
+            )
+
+    def test_collect_completed_coverage_requires_coverage_not_build(self):
+        current_run = {
+            "id": 999,
+            "workflow_id": 456,
+            "name": "Unit Test Coverage",
+            "head_sha": "c" * 40,
+            "status": "completed",
+            "event": "pull_request",
+            "head_branch": "feature/current",
+            "pull_requests": [{"base": {"ref": "main"}}],
+        }
+        current_jobs = [
+            {
+                "name": "coverage",
+                "status": "completed",
+                "conclusion": "success",
+                "started_at": "2026-10-01T20:00:00Z",
+                "completed_at": "2026-10-01T20:01:00Z",
+                "steps": [],
+            }
+        ]
+        with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \\
+             mock.patch.object(metrics, "_fetch_jobs", return_value=current_jobs) as fetch_jobs, \\
+             mock.patch.object(metrics, "_iter_recent_completed_runs", return_value=iter(())), \\
+             mock.patch.object(metrics.time, "sleep") as sleep:
+            result = metrics.collect(
+                repository="owner/repo",
+                run_id=999,
+                token="token",
+                history_limit=1,
+                expected_run_id=999,
+                expected_head_sha="c" * 40,
+                expected_workflow="Unit Test Coverage",
+                require_completed=True,
+                required_job_names=("coverage",),
+                current_job_wait_seconds=0,
+            )
+        self.assertEqual(fetch_jobs.call_count, 1)
+        sleep.assert_not_called()
+        self.assertEqual(result["current"]["job.coverage.seconds"], 60.0)
+        self.assertEqual(result["provenance"]["head_sha"], "c" * 40)
+
     def test_markdown_marks_partial_history(self):
         text = metrics.render_markdown(
             "Android build",
