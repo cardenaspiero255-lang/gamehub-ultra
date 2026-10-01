@@ -37,6 +37,7 @@ def require_shadow_metrics_contract() -> None:
         "--expected-workflow",
         "--require-completed",
         "--require-job",
+        "--fail-on-unavailable",
     )
     missing = [fragment for fragment in required_fragments if fragment not in text]
     if missing:
