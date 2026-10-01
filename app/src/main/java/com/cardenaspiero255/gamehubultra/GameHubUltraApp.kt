@@ -103,7 +103,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator
@@ -1101,9 +1100,7 @@ private fun VoiceAssistantCard(
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val aliasRepository = remember(context) {
-        GameHubProductionComposition.aliasRepository(context.applicationContext)
-    }
+    val aliasRepository = ultraRuntime.aliasRepository
     val aiAdvisor = ultraRuntime.assistant
     val queryExecutor = ultraRuntime.queryExecutor
     val agentRouter = ultraRuntime.agentRouter
