@@ -27,7 +27,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.cardenaspiero255.gamehubultra.R
-import com.cardenaspiero255.gamehubultra.thermalLabel
 import com.cardenaspiero255.gamehubultra.BatteryTelemetry
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
