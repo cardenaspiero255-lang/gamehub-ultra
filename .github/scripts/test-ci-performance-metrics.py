@@ -682,9 +682,9 @@ class CiPerformanceMetricsTests(unittest.TestCase):
                 "steps": [],
             }
         ]
-        with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \\
-             mock.patch.object(metrics, "_fetch_jobs", return_value=current_jobs) as fetch_jobs, \\
-             mock.patch.object(metrics, "_iter_recent_completed_runs", return_value=iter(())), \\
+        with mock.patch.object(metrics, "_fetch_run", return_value=current_run), \
+             mock.patch.object(metrics, "_fetch_jobs", return_value=current_jobs) as fetch_jobs, \
+             mock.patch.object(metrics, "_iter_recent_completed_runs", return_value=iter(())), \
              mock.patch.object(metrics.time, "sleep") as sleep:
             result = metrics.collect(
                 repository="owner/repo",
