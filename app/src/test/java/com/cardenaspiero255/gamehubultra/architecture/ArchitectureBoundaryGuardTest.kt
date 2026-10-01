@@ -1067,4 +1067,24 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun ultraWakeServiceDoesNotOwnRecognizerIntentConfiguration() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val factory = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeRecognitionIntentFactory.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("private fun baseRecognitionIntent()"),
+            "UltraWakeService must delegate Android recognizer intent configuration"
+        )
+        assertTrue(
+            factory.contains("internal object UltraWakeRecognitionIntentFactory"),
+            "The voice infrastructure boundary must own recognizer intent configuration"
+        )
+    }
+
+
 }
