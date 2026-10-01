@@ -24,6 +24,7 @@ import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.store.StoreConnectionActivity
 import android.os.Build
+import android.os.PowerManager
 import android.os.Bundle
 import android.os.Trace
 import android.content.pm.PackageManager
@@ -114,6 +115,8 @@ import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
 import com.cardenaspiero255.gamehubultra.voice.NetworkVoiceResponseText
 import com.cardenaspiero255.gamehubultra.voice.VoiceNetworkSnapshotFactory
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
+import com.cardenaspiero255.gamehubultra.voice.VoiceDeviceStatusProvider
+import com.cardenaspiero255.gamehubultra.voice.VoiceResponseFormatter
 import com.cardenaspiero255.gamehubultra.voice.VoiceAssistantController
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandEngine
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
