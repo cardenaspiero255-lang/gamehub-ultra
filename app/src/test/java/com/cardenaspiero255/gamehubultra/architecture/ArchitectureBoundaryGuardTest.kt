@@ -1121,4 +1121,42 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun ultraImplementationHelpersStayModuleInternal() {
+        val declarations = mapOf(
+            "com/cardenaspiero255/gamehubultra/UltraAssistantQueryRunner.kt" to listOf(
+                "internal sealed interface UltraAssistantQuerySubmission",
+                "internal class UltraAssistantQueryRunner"
+            ),
+            "com/cardenaspiero255/gamehubultra/UltraCommandUiEffectPolicy.kt" to listOf(
+                "internal data class UltraScopedProfileRecommendation",
+                "internal object UltraCommandUiEffectPolicy"
+            ),
+            "com/cardenaspiero255/gamehubultra/UltraSessionScopeSelection.kt" to listOf(
+                "internal data class UltraVoiceTurnScope",
+                "internal fun captureUltraVoiceTurnScope",
+                "internal fun isUltraVoiceTurnScopeCurrent"
+            ),
+            "com/cardenaspiero255/gamehubultra/UltraVoiceResultPublisher.kt" to listOf(
+                "internal object UltraVoiceResultPublisher"
+            )
+        )
+
+        val violations = declarations.flatMap { (path, expectedDeclarations) ->
+            val source = sourceFile(path).readText()
+            expectedDeclarations
+                .filterNot(source::contains)
+                .map { declaration -> "$path must keep $declaration module-internal" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Ultra implementation helpers must not expand the public API:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
 }
