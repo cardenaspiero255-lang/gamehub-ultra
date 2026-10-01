@@ -327,6 +327,12 @@ def require_exact_artifact_reuse_contract(android_text: str) -> None:
         raise SystemExit("Phase 3 block 3: consumer selected the wrong artifact")
     if download_with.get("run-id") != "${{ github.run_id }}":
         raise SystemExit("Phase 3 block 3: consumer is not restricted to the current run")
+    upload = next((step for step in quality_steps if step.get("name") == "Upload debug APK"), None)
+    if not upload:
+        raise SystemExit("Phase 3 block 3: debug artifact upload is missing")
+    upload_with = upload.get("with", {})
+    if upload_with.get("compression-level") != 0:
+        raise SystemExit("Phase 3 block 3 cut 2: reusable APK must skip redundant artifact compression")
     verifier = next((step for step in build_steps if step.get("name") == "Verify Phase 3 artifact provenance"), None)
     if not verifier:
         raise SystemExit("Phase 3 block 3: provenance verifier is missing")
