@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal sealed interface UltraAssistantQuerySubmission {
+sealed interface UltraAssistantQuerySubmission {
     data class Accepted(val job: Job) : UltraAssistantQuerySubmission
     data object Rejected : UltraAssistantQuerySubmission
 }
@@ -23,7 +23,7 @@ internal sealed interface UltraAssistantQuerySubmission {
  * from composition does not cancel a submitted request or publish into stale UI
  * state.
  */
-internal class UltraAssistantQueryRunner(
+class UltraAssistantQueryRunner(
     private val ownerScope: CoroutineScope,
     private val executionDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val publicationDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
