@@ -1,8 +1,9 @@
 # Phase 3 CI baseline
 
 Baseline commit: `ed9ad65e83f96a58202f818a5edf34d936a99662`
-Baseline run: Android build #1720 (push to `main`)
-Result: success
+Baseline Android run: Android build #1720 (push to `main`)
+Matching coverage baseline: Unit Test Coverage run for commit `ed9ad65e83f96a58202f818a5edf34d936a99662`
+Result: Android and coverage baselines successful
 
 ## Safety contract
 
@@ -47,7 +48,7 @@ The critical expensive boundary remains `device-validation`. It owns the API 35 
 
 ## Phase 3 target
 
-Prefer removing setup/build duplication across workflow boundaries, improving the job DAG, and safely reusing immutable outputs. The final phase report must compare the optimized pipeline against Android build #1720 rather than against the pre-Maximum-Structure baseline.
+Prefer removing setup/build duplication across workflow boundaries, improving the job DAG, and safely reusing immutable outputs. The final phase report must compare equivalent trusted-main Android runs against Android build #1720 and also compare the matching Unit Test Coverage workflow. A change is not accepted as an optimization if it merely shifts critical-path latency or CI cost from `android.yml` into `coverage.yml`.
 
 
 ## Cut 2 measurement findings
@@ -62,7 +63,7 @@ Android build #1721 is a pull-request validation run for this Phase 3 branch. It
 
 The next block may change the workflow DAG only where validation semantics remain identical. Initial candidates are:
 
-1. remove orchestration latency that exists only because independent successful gates wait on an otherwise trivial aggregate job;
+1. remove unnecessary downstream waits on the aggregate `build` job when consumers can safely depend directly on the required `quality` and `device-validation` gates;
 2. move metrics collection off unnecessary serial dependencies when it can still observe the complete run safely;
 3. preserve `quality` and `device-validation` as independent required gates unless exact-SHA artifact provenance proves a replacement equivalent;
 4. leave the trusted Sentry distributable rebuild untouched until a dedicated cut proves an equivalent telemetry-enabled output without `--rerun-tasks`.
