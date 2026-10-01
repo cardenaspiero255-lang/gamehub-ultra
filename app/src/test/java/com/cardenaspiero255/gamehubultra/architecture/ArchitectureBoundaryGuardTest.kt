@@ -941,4 +941,25 @@ class ArchitectureBoundaryGuardTest {
             File("app/src/main/java")
         ).firstOrNull(File::isDirectory)
             ?: error("Main source root must be available to architecture tests")
+    @Test
+    fun gameHubUltraAppDoesNotOwnSessionSharingInfrastructure() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        val forbiddenSymbols = listOf(
+            "fun shareSessionHistory(",
+            "fun sharePerformanceTimeline("
+        )
+        val violations = forbiddenSymbols.filter(source::contains)
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Session sharing infrastructure belongs behind the presentation boundary:\n",
+                separator = "\n"
+            )
+        )
+    }
+
 }
