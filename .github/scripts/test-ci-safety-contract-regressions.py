@@ -4,14 +4,57 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ANDROID = ROOT / ".github/workflows/android.yml"
 COVERAGE = ROOT / ".github/workflows/coverage.yml"
+SHADOW_METRICS = ROOT / ".github/workflows/ci-metrics-shadow.yml"
 CONTRACT = ROOT / ".github/scripts/test-ci-safety-contract.sh"
 CHECKER = ROOT / ".github/scripts/check-ci-safety-contract.py"
 
+
+
+
+def require_shadow_metrics_contract() -> None:
+    """Require a read-only post-run shadow collector with exact parent provenance."""
+    if not SHADOW_METRICS.is_file():
+        raise SystemExit("Phase 3 block 2: shadow metrics workflow is missing")
+
+    text = SHADOW_METRICS.read_text(encoding="utf-8")
+    required_fragments = (
+        "workflow_run:",
+        "Android build",
+        "Unit Test Coverage",
+        "types: [completed]",
+        "actions: read",
+        "contents: read",
+        "github.event.workflow_run.id",
+        "github.event.workflow_run.head_sha",
+        "github.event.workflow_run.name",
+        "--expected-run-id",
+        "--expected-head-sha",
+        "--expected-workflow",
+        "--require-completed",
+        "--require-job",
+        "--fail-on-unavailable",
+    )
+    missing = [fragment for fragment in required_fragments if fragment not in text]
+    if missing:
+        raise SystemExit(
+            "Phase 3 block 2: shadow metrics provenance contract is incomplete: "
+            f"{missing!r}"
+        )
+    if "actions/checkout@" in text:
+        raise SystemExit(
+            "Phase 3 block 2: post-run shadow metrics must not checkout untrusted PR code"
+        )
+    if "permissions:\n  actions: read\n  contents: read" not in text:
+        raise SystemExit(
+            "Phase 3 block 2: shadow metrics permissions must remain read-only"
+        )
 
 
 def run_current_contract_must_pass() -> None:
@@ -250,6 +293,20 @@ def duplicate_full_release_graph_without_configuration_cache(android: str, cover
 def main() -> None:
     """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
+    require_shadow_metrics_contract()
+    # Phase 3 block 2 cut 3: the aggregate build gate must remain a pure
+    # fan-in of the two blocking Android gates. Metrics must stay off that
+    # critical path and must never become a prerequisite of build.
+    android = yaml.safe_load(ANDROID.read_text(encoding="utf-8"))
+    jobs = android.get("jobs", {})
+    build_needs = jobs.get("build", {}).get("needs", [])
+    metrics_needs = jobs.get("metrics", {}).get("needs", [])
+    if set(build_needs) != {"quality", "device-validation"}:
+        raise SystemExit("Phase 3 block 2: build fan-in gate changed")
+    if set(metrics_needs) != {"quality", "device-validation"}:
+        raise SystemExit("Phase 3 block 2: metrics re-entered the build critical path")
+    if "metrics" in build_needs or "build" in metrics_needs:
+        raise SystemExit("Phase 3 block 2: DAG contains a forbidden build/metrics serial edge")
     android = ANDROID.read_text(encoding="utf-8")
     coverage = COVERAGE.read_text(encoding="utf-8")
     commented_quality_marker_before_active_step(android, coverage)

@@ -808,7 +808,8 @@ jobs:
     name: metrics
     if: always()
     needs:
-      - build
+      - quality
+      - device-validation
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     continue-on-error: true

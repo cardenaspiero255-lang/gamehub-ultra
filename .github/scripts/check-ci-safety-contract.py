@@ -579,6 +579,14 @@ def main() -> None:
     if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
         fail("Codecov upload no longer has fail_ci_if_error: true")
 
+    metrics_job = job(android, "metrics")
+    metrics_needs = metrics_job.get("needs")
+    if not isinstance(metrics_needs, list) or set(metrics_needs) != {"quality", "device-validation"}:
+        fail(
+            "Phase 3 DAG requires metrics to depend directly on quality and "
+            "device-validation, not on the aggregate build job"
+        )
+
     require_concurrency(android, "Android workflow")
     require_concurrency(coverage, "coverage workflow")
 

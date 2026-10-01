@@ -1,0 +1,71 @@
+name: CI metrics shadow
+
+on:
+  workflow_run:
+    workflows:
+      - "Android build"
+      - "Unit Test Coverage"
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ci-metrics-shadow-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: shadow-metrics
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      PARENT_RUN_ID: ${{ github.event.workflow_run.id }}
+      PARENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      PARENT_WORKFLOW: ${{ github.event.workflow_run.name }}
+      TRUSTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
+    steps:
+      - name: Fetch trusted metrics collector
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! [[ "$TRUSTED_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid trusted workflow SHA."
+            exit 1
+          fi
+          COLLECTOR="$RUNNER_TEMP/ci-performance-metrics.py"
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location             "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$TRUSTED_WORKFLOW_SHA/.github/scripts/ci-performance-metrics.py"             --output "$COLLECTOR"
+          test -s "$COLLECTOR"
+          chmod 500 "$COLLECTOR"
+
+      - name: Collect completed parent metrics in shadow mode
+        env:
+          GH_METRICS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$PARENT_WORKFLOW" in
+            "Android build")
+              REQUIRED_JOB="build"
+              ;;
+            "Unit Test Coverage")
+              REQUIRED_JOB="coverage"
+              ;;
+            *)
+              echo "Unexpected parent workflow: $PARENT_WORKFLOW"
+              exit 1
+              ;;
+          esac
+
+          python3 "$RUNNER_TEMP/ci-performance-metrics.py"             --repository "$GITHUB_REPOSITORY"             --run-id "$PARENT_RUN_ID"             --expected-run-id "$PARENT_RUN_ID"             --expected-head-sha "$PARENT_HEAD_SHA"             --expected-workflow "$PARENT_WORKFLOW"             --require-completed             --require-job "$REQUIRED_JOB"             --fail-on-unavailable             --token "$GH_METRICS_TOKEN"             --history 20             --json-out "$RUNNER_TEMP/ci-performance-shadow.json"             --summary-out "$RUNNER_TEMP/ci-performance-shadow.md"
+          cat "$RUNNER_TEMP/ci-performance-shadow.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload shadow CI performance metrics
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-ci-metrics-shadow-${{ github.event.workflow_run.id }}
+          path: |
+            ${{ runner.temp }}/ci-performance-shadow.json
+            ${{ runner.temp }}/ci-performance-shadow.md
+          if-no-files-found: error
