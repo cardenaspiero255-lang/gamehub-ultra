@@ -3,7 +3,7 @@ package com.cardenaspiero255.gamehubultra
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.voice.VoiceActionResult
 
-data class UltraScopedProfileRecommendation(
+internal data class UltraScopedProfileRecommendation(
     val gamePackage: String?,
     val profile: PerformanceProfile
 )
@@ -12,7 +12,7 @@ data class UltraScopedProfileRecommendation(
  * Keeps command-result UI callbacks from duplicating persistence already
  * performed by VoiceCommandEngine.
  */
-object UltraCommandUiEffectPolicy {
+internal object UltraCommandUiEffectPolicy {
     fun profileForCurrentGameCallback(
         result: VoiceActionResult
     ): PerformanceProfile? =
