@@ -40,7 +40,7 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
     }
 
     override fun replaceForAccount(accountId: String, games: List<StoreLibraryGame>) {
-        val retained = getAll().filterNot { it.accountId == accountId }
+        val retained = retainStoreLibraryOutsideAccount(accountId, getAll())
         val replacement = normalizeStoreLibraryReplacement(accountId, games)
         val merged = retained + replacement.distinctBy {
             "${it.platform}:${it.accountId}:${it.platformGameId}"
@@ -66,12 +66,24 @@ class StoreLibraryStore(context: Context) : StoreLibraryStateRepository {
 }
 
 
+private fun normalizeStoreLibraryAccountId(accountId: String): String =
+    accountId.trim().also {
+        require(it.isNotEmpty()) { "accountId must not be blank" }
+    }
+
+internal fun retainStoreLibraryOutsideAccount(
+    accountId: String,
+    games: List<StoreLibraryGame>
+): List<StoreLibraryGame> {
+    val normalizedAccountId = normalizeStoreLibraryAccountId(accountId)
+    return games.filterNot { it.accountId == normalizedAccountId }
+}
+
 internal fun normalizeStoreLibraryReplacement(
     accountId: String,
     games: List<StoreLibraryGame>
 ): List<StoreLibraryGame> {
-    val normalizedAccountId = accountId.trim()
-    require(normalizedAccountId.isNotEmpty()) { "accountId must not be blank" }
+    val normalizedAccountId = normalizeStoreLibraryAccountId(accountId)
     return games.map { game ->
         if (game.accountId == normalizedAccountId) game
         else game.copy(accountId = normalizedAccountId)
