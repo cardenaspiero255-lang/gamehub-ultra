@@ -168,6 +168,8 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk
             app/build/outputs/apk/debug/phase3-artifact-provenance.env
           if-no-files-found: error
+          # APKs are already ZIP-compressed; recompressing them wastes CPU on the critical artifact path.
+          compression-level: 0
 
       - name: Upload quality diagnostics
         if: failure()
