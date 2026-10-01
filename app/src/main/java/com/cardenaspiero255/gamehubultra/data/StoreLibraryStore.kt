@@ -70,8 +70,10 @@ internal fun normalizeStoreLibraryReplacement(
     accountId: String,
     games: List<StoreLibraryGame>
 ): List<StoreLibraryGame> {
-    require(accountId.isNotBlank()) { "accountId must not be blank" }
+    val normalizedAccountId = accountId.trim()
+    require(normalizedAccountId.isNotEmpty()) { "accountId must not be blank" }
     return games.map { game ->
-        if (game.accountId == accountId) game else game.copy(accountId = accountId)
+        if (game.accountId == normalizedAccountId) game
+        else game.copy(accountId = normalizedAccountId)
     }
 }
