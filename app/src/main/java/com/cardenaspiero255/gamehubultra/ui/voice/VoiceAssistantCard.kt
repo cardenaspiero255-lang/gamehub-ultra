@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cardenaspiero255.gamehubultra.*
+import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.*
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
