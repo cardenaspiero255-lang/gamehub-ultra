@@ -402,6 +402,29 @@ class ArchitectureBoundaryGuardTest {
     }
 
     @Test
+    fun gameHubUltraAppDoesNotOwnAndroidVoiceInfrastructure() {
+        val source = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        val forbiddenSymbols = listOf(
+            "private object VoiceDeviceStatusProvider",
+            "private object VoiceResponseFormatter"
+        )
+        val violations = forbiddenSymbols
+            .filter(source::contains)
+            .map { symbol -> "GameHubUltraApp owns voice infrastructure: $symbol" }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "Android voice infrastructure belongs behind the voice boundary:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+    @Test
     fun gameHubUltraAppMonolithHasStrictSizeCeiling() {
         val app = sourceFile("com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt")
         val lineCount = app.readLines().size
