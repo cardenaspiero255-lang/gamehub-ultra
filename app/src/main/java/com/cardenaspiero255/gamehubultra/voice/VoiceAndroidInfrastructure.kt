@@ -5,7 +5,7 @@ import android.os.Build
 import android.os.PowerManager
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
-import com.cardenaspiero255.gamehubultra.platform.BatteryTelemetry
+import com.cardenaspiero255.gamehubultra.BatteryTelemetry
 
 internal object VoiceDeviceStatusProvider {
     fun read(context: Context): VoiceDeviceStatus {
