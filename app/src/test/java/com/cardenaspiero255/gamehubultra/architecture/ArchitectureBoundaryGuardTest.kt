@@ -1025,4 +1025,25 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+    @Test
+    fun ultraWakeServiceDoesNotOwnForegroundNotificationInfrastructure() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val foreground = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeForegroundController.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("NotificationChannel(") &&
+                !service.contains("NotificationCompat.Builder("),
+            "UltraWakeService must delegate foreground notification infrastructure"
+        )
+        assertTrue(
+            foreground.contains("internal class UltraWakeForegroundController"),
+            "The voice infrastructure boundary must own foreground notification setup"
+        )
+    }
+
+
 }
