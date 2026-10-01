@@ -290,6 +290,55 @@ def duplicate_full_release_graph_without_configuration_cache(android: str, cover
     return android.replace(needle, duplicate + needle, 1), coverage
 
 
+def require_exact_artifact_reuse_contract(android_text: str) -> None:
+    """Validate the actual producer, consumer and exact provenance relationship."""
+    workflow = yaml.safe_load(android_text)
+    jobs = workflow.get("jobs", {})
+    quality_steps = jobs.get("quality", {}).get("steps", [])
+    producer = next((step for step in quality_steps if step.get("name") == "Record Phase 3 artifact provenance"), None)
+    if not producer:
+        raise SystemExit("Phase 3 block 3: artifact provenance producer is missing")
+    producer_run = producer.get("run", "")
+    if 'echo "run_id=${{ github.run_id }}"' not in producer_run:
+        raise SystemExit("Phase 3 block 3: producer is not bound to the current run")
+    if 'echo "sha=${{ github.sha }}"' not in producer_run:
+        raise SystemExit("Phase 3 block 3: producer is not bound to the current SHA")
+    build_steps = jobs.get("build", {}).get("steps", [])
+    download = next((step for step in build_steps if step.get("name") == "Download exact-run quality artifact"), None)
+    if not download or not str(download.get("uses", "")).startswith("actions/download-artifact@"):
+        raise SystemExit("Phase 3 block 3: exact-run artifact consumer is missing")
+    download_with = download.get("with", {})
+    if download_with.get("name") != "gamehub-ultra-debug":
+        raise SystemExit("Phase 3 block 3: consumer selected the wrong artifact")
+    if download_with.get("run-id") != "${{ github.run_id }}":
+        raise SystemExit("Phase 3 block 3: consumer is not restricted to the current run")
+    verifier = next((step for step in build_steps if step.get("name") == "Verify Phase 3 artifact provenance"), None)
+    if not verifier:
+        raise SystemExit("Phase 3 block 3: provenance verifier is missing")
+    verifier_run = verifier.get("run", "")
+    if 'grep -Fxq "run_id=${{ github.run_id }}" "$PROVENANCE"' not in verifier_run:
+        raise SystemExit("Phase 3 block 3: downloaded run provenance is not verified")
+    if 'grep -Fxq "sha=${{ github.sha }}" "$PROVENANCE"' not in verifier_run:
+        raise SystemExit("Phase 3 block 3: downloaded SHA provenance is not verified")
+
+
+def require_artifact_reuse_mutations_rejected(android_text: str) -> None:
+    """Prove foreign-run and mismatched-SHA reuse cannot satisfy the contract."""
+    mutations = {
+        "foreign run": android_text.replace("run-id: ${{ github.run_id }}", "run-id: ${{ github.event.workflow_run.id }}", 1),
+        "mismatched SHA": android_text.replace('grep -Fxq "sha=${{ github.sha }}" "$PROVENANCE"', 'grep -Fxq "sha=foreign-sha" "$PROVENANCE"', 1),
+        "unverified run": android_text.replace('grep -Fxq "run_id=${{ github.run_id }}" "$PROVENANCE"', 'grep -Fq "run_id=" "$PROVENANCE"', 1),
+    }
+    for label, mutated in mutations.items():
+        if mutated == android_text:
+            raise SystemExit(f"Phase 3 block 3: mutation fixture drift for {label}")
+        try:
+            require_exact_artifact_reuse_contract(mutated)
+        except SystemExit:
+            continue
+        raise SystemExit(f"Phase 3 block 3: unsafe {label} mutation was accepted")
+
+
 def main() -> None:
     """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
@@ -347,20 +396,10 @@ def main() -> None:
     if ":app:createDebugUnitTestCoverageReport" not in coverage:
         raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
 
-    # Phase 3 block 3 cut 1 RED: artifact reuse must be same-run and exact-SHA.
+    # Phase 3 block 3 cut 1: validate the real producer/consumer relationship.
     android_workflow = ANDROID.read_text(encoding="utf-8")
-    artifact_reuse_fragments = (
-        "actions/download-artifact@",
-        "github.run_id",
-        "github.sha",
-        "Phase 3 artifact provenance",
-    )
-    missing_reuse = [fragment for fragment in artifact_reuse_fragments if fragment not in android_workflow]
-    if missing_reuse:
-        raise SystemExit(
-            "Phase 3 block 3: exact-SHA same-run artifact reuse contract is missing: "
-            f"{missing_reuse!r}"
-        )
+    require_exact_artifact_reuse_contract(android_workflow)
+    require_artifact_reuse_mutations_rejected(android_workflow)
 
     # Phase 2 block 6 is enforced by the parsed CI safety contract above.
     # Mutations prove both the reuse assertion and duplicate partial graphs fail.
