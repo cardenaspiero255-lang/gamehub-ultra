@@ -984,4 +984,23 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+    @Test
+    fun gameHubUltraAppDoesNotOwnHomeScreen() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val homeScreen = sourceFile(
+            "com/cardenaspiero255/gamehubultra/ui/home/HomeScreen.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("fun HomeScreen("),
+            "HomeScreen belongs to the ui.home presentation boundary"
+        )
+        assertTrue(
+            homeScreen.contains("internal fun HomeScreen("),
+            "The Home presentation boundary must own HomeScreen"
+        )
+    }
+
 }
