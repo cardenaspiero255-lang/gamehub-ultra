@@ -7,6 +7,7 @@ import math
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -336,13 +337,29 @@ def collect(
     token: str,
     history_limit: int,
     history_job_request_budget: int = MAX_HISTORY_JOB_REQUESTS,
+    current_job_wait_seconds: int = 60,
+    current_job_poll_seconds: int = 2,
 ) -> dict[str, Any]:
     current_run = _fetch_run(repository, run_id, token)
     workflow_id = int(current_run.get("workflow_id") or 0)
     if workflow_id <= 0:
         raise RuntimeError("Current workflow id is unavailable")
 
-    current_jobs = _fetch_jobs(repository, run_id, token)
+    deadline = time.monotonic() + max(0, current_job_wait_seconds)
+    while True:
+        current_jobs = _fetch_jobs(repository, run_id, token)
+        build_jobs = [
+            job for job in current_jobs
+            if str(job.get("name") or "").strip() == "build"
+        ]
+        if build_jobs and all(job.get("completed_at") for job in build_jobs):
+            break
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                "Aggregate build job did not complete before metrics sampling timeout"
+            )
+        time.sleep(max(1, current_job_poll_seconds))
+
     current_metrics = extract_metrics(current_jobs)
     current_topology = _job_topology(current_jobs)
 
