@@ -32,6 +32,7 @@ import com.cardenaspiero255.gamehubultra.ui.components.*
 import com.cardenaspiero255.gamehubultra.ui.home.state.HomeUiEvent
 import com.cardenaspiero255.gamehubultra.ui.home.state.rememberHomeUiStateHolder
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
+import com.cardenaspiero255.gamehubultra.ui.voice.VoiceAssistantCard
 import com.cardenaspiero255.gamehubultra.ui.share.sharePerformanceTimeline
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import kotlinx.coroutines.Dispatchers
