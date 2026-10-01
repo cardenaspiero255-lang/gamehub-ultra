@@ -63,4 +63,32 @@ class StoreLibraryStoreTest {
         assertEquals(listOf("account-a"), games.map { it.accountId })
     }
 
+
+    @Test
+    fun replacementScopeUsesCanonicalOwningAccountId() {
+        val retained = retainStoreLibraryOutsideAccount(
+            "  account-a  ",
+            listOf(
+                StoreLibraryGame(
+                    id = "steam:old",
+                    accountId = "account-a",
+                    platform = GamePlatform.STEAM,
+                    title = "Old",
+                    platformGameId = "old",
+                    artworkUrl = ""
+                ),
+                StoreLibraryGame(
+                    id = "steam:other",
+                    accountId = "account-b",
+                    platform = GamePlatform.STEAM,
+                    title = "Other",
+                    platformGameId = "other",
+                    artworkUrl = ""
+                )
+            )
+        )
+
+        assertEquals(listOf("account-b"), retained.map { it.accountId })
+    }
+
 }
