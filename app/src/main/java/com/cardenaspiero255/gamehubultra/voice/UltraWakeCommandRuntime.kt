@@ -18,7 +18,7 @@ import com.cardenaspiero255.gamehubultra.composition.GameHubProductionCompositio
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
-import com.cardenaspiero255.gamehubultra.ai.UltraConversationMemoryStore
+import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
