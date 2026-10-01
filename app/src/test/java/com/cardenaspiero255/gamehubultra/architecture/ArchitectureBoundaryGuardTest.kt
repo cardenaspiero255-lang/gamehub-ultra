@@ -1159,4 +1159,39 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun uiComponentsDoNotDependOnRootAppHelpers() {
+        val componentFiles = listOf(
+            "com/cardenaspiero255/gamehubultra/ui/components/LibraryGameCards.kt",
+            "com/cardenaspiero255/gamehubultra/ui/components/PerformanceSessionComponents.kt",
+            "com/cardenaspiero255/gamehubultra/ui/components/DeviceStatusComponents.kt",
+            "com/cardenaspiero255/gamehubultra/ui/components/HomeDashboardComponents.kt"
+        )
+
+        val forbiddenImports = listOf(
+            "com.cardenaspiero255.gamehubultra.packageVersionName",
+            "com.cardenaspiero255.gamehubultra.isPackageInstalled",
+            "com.cardenaspiero255.gamehubultra.localizedProfileTitle",
+            "com.cardenaspiero255.gamehubultra.localizedProfileDescription",
+            "com.cardenaspiero255.gamehubultra.thermalLabel",
+            "com.cardenaspiero255.gamehubultra.eventLabel"
+        )
+
+        val violations = componentFiles.flatMap { path ->
+            val source = sourceFile(path).readText()
+            forbiddenImports
+                .filter(source::contains)
+                .map { dependency -> "$path depends backwards on root helper $dependency" }
+        }
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "UI components must own/use lower-level helpers instead of GameHubUltraApp:\n",
+                separator = "\n"
+            )
+        )
+    }
+
+
 }
