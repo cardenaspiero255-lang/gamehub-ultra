@@ -298,11 +298,14 @@ def require_exact_artifact_reuse_contract(android_text: str) -> None:
     producer = next((step for step in quality_steps if step.get("name") == "Record Phase 3 artifact provenance"), None)
     if not producer:
         raise SystemExit("Phase 3 block 3: artifact provenance producer is missing")
+    producer_env = producer.get("env", {})
     producer_run = producer.get("run", "")
-    if 'echo "run_id=${{ github.run_id }}"' not in producer_run:
+    if producer_env.get("PHASE3_RUN_ID") != "${{ github.run_id }}":
         raise SystemExit("Phase 3 block 3: producer is not bound to the current run")
-    if 'echo "sha=${{ github.sha }}"' not in producer_run:
+    if producer_env.get("PHASE3_SHA") != "${{ github.sha }}":
         raise SystemExit("Phase 3 block 3: producer is not bound to the current SHA")
+    if "apk_sha256=" not in producer_run:
+        raise SystemExit("Phase 3 block 3: producer does not record artifact integrity")
     build_steps = jobs.get("build", {}).get("steps", [])
     download = next((step for step in build_steps if step.get("name") == "Download exact-run quality artifact"), None)
     if not download or not str(download.get("uses", "")).startswith("actions/download-artifact@"):
@@ -315,19 +318,26 @@ def require_exact_artifact_reuse_contract(android_text: str) -> None:
     verifier = next((step for step in build_steps if step.get("name") == "Verify Phase 3 artifact provenance"), None)
     if not verifier:
         raise SystemExit("Phase 3 block 3: provenance verifier is missing")
+    verifier_env = verifier.get("env", {})
     verifier_run = verifier.get("run", "")
-    if 'grep -Fxq "run_id=${{ github.run_id }}" "$PROVENANCE"' not in verifier_run:
+    if verifier_env.get("EXPECTED_RUN_ID") != "${{ github.run_id }}":
+        raise SystemExit("Phase 3 block 3: downloaded run provenance is not bound")
+    if verifier_env.get("EXPECTED_SHA") != "${{ github.sha }}":
+        raise SystemExit("Phase 3 block 3: downloaded SHA provenance is not bound")
+    if 'grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"' not in verifier_run:
         raise SystemExit("Phase 3 block 3: downloaded run provenance is not verified")
-    if 'grep -Fxq "sha=${{ github.sha }}" "$PROVENANCE"' not in verifier_run:
+    if 'grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"' not in verifier_run:
         raise SystemExit("Phase 3 block 3: downloaded SHA provenance is not verified")
+    if 'test "$ACTUAL_SHA256" = "$RECORDED_SHA256"' not in verifier_run:
+        raise SystemExit("Phase 3 block 3: downloaded artifact integrity is not verified")
 
 
 def require_artifact_reuse_mutations_rejected(android_text: str) -> None:
     """Prove foreign-run and mismatched-SHA reuse cannot satisfy the contract."""
     mutations = {
         "foreign run": android_text.replace("run-id: ${{ github.run_id }}", "run-id: ${{ github.event.workflow_run.id }}", 1),
-        "mismatched SHA": android_text.replace('grep -Fxq "sha=${{ github.sha }}" "$PROVENANCE"', 'grep -Fxq "sha=foreign-sha" "$PROVENANCE"', 1),
-        "unverified run": android_text.replace('grep -Fxq "run_id=${{ github.run_id }}" "$PROVENANCE"', 'grep -Fq "run_id=" "$PROVENANCE"', 1),
+        "mismatched SHA": android_text.replace('EXPECTED_SHA: ${{ github.sha }}', 'EXPECTED_SHA: foreign-sha', 1),
+        "unverified run": android_text.replace('grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"', 'grep -Fq "run_id=" "$PROVENANCE"', 1),
     }
     for label, mutated in mutations.items():
         if mutated == android_text:
