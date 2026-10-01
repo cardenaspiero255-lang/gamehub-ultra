@@ -1087,4 +1087,25 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun ultraWakeServiceDoesNotOwnCommandRuntime() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val runtime = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeCommandRuntime.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("UltraUnifiedAgentRouter.route(") &&
+                !service.contains("VoiceCommandEngine.execute("),
+            "UltraWakeService must delegate Ultra command execution runtime"
+        )
+        assertTrue(
+            runtime.contains("internal class UltraWakeCommandRuntime"),
+            "The voice domain boundary must own Ultra command execution"
+        )
+    }
+
+
 }
