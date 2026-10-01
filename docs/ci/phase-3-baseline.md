@@ -48,3 +48,23 @@ The critical expensive boundary remains `device-validation`. It owns the API 35 
 ## Phase 3 target
 
 Prefer removing setup/build duplication across workflow boundaries, improving the job DAG, and safely reusing immutable outputs. The final phase report must compare the optimized pipeline against Android build #1720 rather than against the pre-Maximum-Structure baseline.
+
+
+## Cut 2 measurement findings
+
+Android build #1721 is a pull-request validation run for this Phase 3 branch. It also completed `quality`, `device-validation`, `build`, and `metrics` successfully, but it is **not** an elapsed-time replacement for #1720:
+
+- #1720 is a trusted `push` to `main`; Sentry discovery, distributable Release rebuild, and release registration execute there.
+- #1721 is a `pull_request` run; those trusted-release steps are intentionally skipped because PR workflows do not receive that release path.
+- Therefore Phase 3 performance claims must compare equivalent event classes. PR cuts are used for safety validation; final wall-clock improvement is measured against a post-merge trusted `main` run.
+
+### Safe candidates for Block 2
+
+The next block may change the workflow DAG only where validation semantics remain identical. Initial candidates are:
+
+1. remove orchestration latency that exists only because independent successful gates wait on an otherwise trivial aggregate job;
+2. move metrics collection off unnecessary serial dependencies when it can still observe the complete run safely;
+3. preserve `quality` and `device-validation` as independent required gates unless exact-SHA artifact provenance proves a replacement equivalent;
+4. leave the trusted Sentry distributable rebuild untouched until a dedicated cut proves an equivalent telemetry-enabled output without `--rerun-tasks`.
+
+These are candidates, not assumed wins. Each must be measured independently and reverted if it adds fragility or does not improve equivalent wall-clock latency.
