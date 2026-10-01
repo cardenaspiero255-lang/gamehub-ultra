@@ -39,7 +39,7 @@ class VoiceAliasProcessConfigTest {
 
         val files = listOf(
             File(sourceRoot, "com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt"),
-            File(sourceRoot, "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
+            File(sourceRoot, "com/cardenaspiero255/gamehubultra/voice/UltraWakeCommandRuntime.kt")
         )
 
         files.forEach { file ->
