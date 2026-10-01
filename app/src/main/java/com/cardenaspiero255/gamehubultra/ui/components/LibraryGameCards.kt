@@ -28,10 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import com.cardenaspiero255.gamehubultra.GameInfo
 import com.cardenaspiero255.gamehubultra.R
-import com.cardenaspiero255.gamehubultra.isPackageInstalled
-import com.cardenaspiero255.gamehubultra.localizedProfileTitle
-import com.cardenaspiero255.gamehubultra.packageVersionName
-import com.cardenaspiero255.gamehubultra.thermalLabel
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
