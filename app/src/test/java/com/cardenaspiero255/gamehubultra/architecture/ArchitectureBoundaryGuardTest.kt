@@ -1046,4 +1046,25 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun ultraWakeServiceDoesNotOwnSpeechPlaybackWatchdog() {
+        val service = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt"
+        ).readText()
+        val playback = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeSpeechPlaybackController.kt"
+        ).readText()
+
+        assertTrue(
+            !service.contains("COMMAND_SPEECH_TIMEOUT_MS") &&
+                !service.contains("checkSpeechWatchdog("),
+            "UltraWakeService must delegate TTS playback watchdog infrastructure"
+        )
+        assertTrue(
+            playback.contains("internal class UltraWakeSpeechPlaybackController"),
+            "The voice infrastructure boundary must own TTS playback watchdog behavior"
+        )
+    }
+
+
 }
