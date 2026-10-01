@@ -575,7 +575,7 @@ class ArchitectureBoundaryGuardTest {
     fun voiceSelectionPersistenceDoesNotBlockCommandWorkers() {
         val serviceFiles = listOf(
             sourceFile("com/cardenaspiero255/gamehubultra/voice/GameHubVoiceInteractionService.kt"),
-            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt")
+            sourceFile("com/cardenaspiero255/gamehubultra/voice/UltraWakeCommandRuntime.kt")
         )
 
         val violations = serviceFiles.flatMap { file ->
