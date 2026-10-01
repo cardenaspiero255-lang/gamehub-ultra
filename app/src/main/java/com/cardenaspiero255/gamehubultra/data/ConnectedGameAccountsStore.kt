@@ -75,8 +75,9 @@ class ConnectedGameAccountsStore(
         alias: String?,
         avatarUrl: String?
     ): ConnectedGameAccount {
-        val normalizedName = displayName.trim().ifBlank { publicId.trim() }
         val normalizedId = publicId.trim()
+        require(normalizedId.isNotEmpty()) { "publicId must not be blank" }
+        val normalizedName = displayName.trim().ifBlank { normalizedId }
         var result: ConnectedGameAccount? = null
         val syncTimestamp = System.currentTimeMillis()
 
@@ -90,8 +91,8 @@ class ConnectedGameAccountsStore(
             val account = previous?.copy(
                 displayName = normalizedName,
                 publicId = normalizedId,
-                alias = alias?.trim()?.takeIf(String::isNotBlank) ?: previous.alias,
-                avatarUrl = sanitizePublicUrl(avatarUrl) ?: previous.avatarUrl,
+                alias = alias?.trim()?.takeIf(String::isNotBlank),
+                avatarUrl = sanitizePublicUrl(avatarUrl),
                 lastSyncedAtMillis = syncTimestamp
             ) ?: ConnectedGameAccount(
                 id = UUID.randomUUID().toString(),
