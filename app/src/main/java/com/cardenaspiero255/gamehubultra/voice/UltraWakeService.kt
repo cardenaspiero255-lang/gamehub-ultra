@@ -321,6 +321,17 @@ class UltraWakeService : Service() {
     private fun containsWakeWord(transcript: String): Boolean =
         UltraWakeWordMatcher.contains(transcript)
 
+    private val commandRuntime by lazy {
+        UltraWakeCommandRuntime(
+            context = applicationContext,
+            queryExecutor = queryExecutor,
+            aiAdvisor = aiAdvisor,
+            aliasRepository = aliasRepository,
+            memoryStore = ultraMemoryStore,
+            conversationLedger = voiceConversationLedger
+        )
+    }
+
     private fun handleCommand(transcript: String) {
         if (!lifecycleGate.canAcceptRecognition()) {
             commandCoordinator.finishCommand()
@@ -335,206 +346,16 @@ class UltraWakeService : Service() {
                         scheduleRestart()
                     }
                 ) {
-            val response = UltraWakeFailureGuard.run {
-                val context = applicationContext
-                val selectionRepository: GameSelectionStateRepository =
-                    GameHubProductionComposition.selectionRepository(context.applicationContext)
-                val selectedGamePackage = runCatching {
-                    runBlocking { selectionRepository.selectedGameFlow().first() }
-                }.getOrNull()
-
-                val selectedProfile = runCatching {
-                    runBlocking {
-                        selectionRepository.effectiveProfileForSelection(selectedGamePackage)
+                    val response = UltraWakeFailureGuard.run {
+                        commandRuntime.execute(transcript)
                     }
-                }.getOrNull() ?: PerformanceProfile.BALANCED
-
-            val device = DeviceInfoProvider.get(context)
-            val diagnostics = RuntimeDiagnosticsProvider.get(context)
-            val capabilities = DeviceCapabilitiesProvider.get(context)
-            val aiContext = GameHubAiContext(
-                selectedGamePackage = selectedGamePackage,
-                sustainedPerformanceSupported = capabilities.sustainedPerformanceSupported,
-                cpuCores = device.cpuCores,
-                totalRamMb = device.totalRamMb.toInt(),
-                gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
-                    !device.gpuVendor.isNullOrBlank(),
-                thermalStatus = diagnostics.thermal.status,
-                thermalHeadroom = diagnostics.thermal.headroom,
-                batteryPercent = diagnostics.battery.percent,
-                charging = diagnostics.battery.charging,
-                refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
-                networkValidated = diagnostics.connectivity.validated,
-                networkLatencyMs = diagnostics.connectivity.latencyMs,
-                downstreamBandwidthKbps =
-                    diagnostics.connectivity.downstreamBandwidthKbps?.toLong(),
-                storageFreePercent = diagnostics.storage.freePercent,
-                inputDeviceCount = diagnostics.inputDeviceCount,
-                selectedProfile = selectedProfile,
-                sessionActive = selectedGamePackage != null
-            )
-
-            val status = VoiceDeviceStatus(
-                batteryPercent = diagnostics.battery.percent,
-                thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
-            )
-            val intentResolver = aiAdvisor.intentResolver()
-            voiceConversationLedger.bindScope(selectedGamePackage)
-            val conversationBefore = voiceConversationLedger.snapshot()
-            val route = UltraUnifiedAgentRouter.route(
-                transcript = transcript,
-                optionalResolver = intentResolver,
-                telemetry = UltraRuntimeTelemetry(
-                    batteryPercent = status.batteryPercent,
-                    thermalLabel = status.thermalLabel,
-                    refreshRateHz = diagnostics.refresh.currentRefreshRateHz
-                ),
-                knownGameAliases = aliasRepository.aliases().keys,
-                conversationHistory = conversationBefore
-            )
-
-                when (route) {
-                is UltraAgentRoute.Utility -> {
-                    if (
-                        route.answer.intent is
-                            com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
-                    ) {
-                        com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController.execute(
-                            intent = route.answer.intent,
-                            applyCompetitive = {
-                                com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(
-                                    context,
-                                    com.cardenaspiero255.gamehubultra.network.NetworkGameProfile.COMPETITIVE
-                                )
-                            }
-                        )
-                    } else {
-                        route.answer.message
-                    }
-                }
-                is UltraAgentRoute.Chat -> {
-                    val memoryCommand = UltraMemoryCommandParser.parse(route.message)
-                    val answer = queryExecutor.answer(
-                        route = route,
-                        stableKnowledgeFallback = {
-                            aiAdvisor.generalKnowledgeChatOrNull(
-                                message = route.message,
-                                context = aiContext,
-                                conversation = conversationBefore
-                            )
+                    mainHandler.post {
+                        if (stopped || !lifecycleGate.canAcceptRecognition()) {
+                            commandCoordinator.finishCommand()
+                        } else {
+                            speakAndResume(response)
                         }
-                    ) {
-                        aiAdvisor.chat(
-                            message = route.message,
-                            context = aiContext,
-                            conversation = conversationBefore
-                        )
                     }
-                    if (memoryCommand == null) {
-                        val delta = voiceConversationLedger.record(
-                            userMessage = route.message,
-                            assistantMessage = answer
-                        )
-                        ultraMemoryStore.enqueueSyncConversation(
-                            previous = delta.previous,
-                            next = delta.next,
-                            scope = UltraMemoryScope(
-                                userId = "local",
-                                gamePackage = selectedGamePackage
-                            ),
-                            timestampMillis = System.currentTimeMillis()
-                        )
-                    } else if (
-                        UltraMemoryTurnPersistencePolicy.resetsConversationContext(memoryCommand)
-                    ) {
-                        voiceConversationLedger.clear()
-                    }
-                    answer
-                }
-                is UltraAgentRoute.Command -> {
-                    val result = VoiceCommandEngine.execute(
-                        command = route.command,
-                        gamesProvider = { GameLibrary.discoverForVoice(context) },
-                        aliasGamesProvider = { GameLibrary.discover(context).games },
-                        launchGame = { packageName ->
-                            launchGameFromService(context, packageName)
-                        },
-                        saveSelectedGame = { packageName ->
-                            DurableSelectionMutationQueue.enqueue(
-                                onFailure = ::reportSelectionPersistenceFailure
-                            ) {
-                                selectionRepository.saveSelectedGame(packageName)
-                            }
-                        },
-                        saveSelectedProfile = { profile ->
-                            DurableSelectionMutationQueue.enqueue(
-                                onFailure = ::reportSelectionPersistenceFailure
-                            ) {
-                                selectionRepository.saveSelectedProfile(profile)
-                            }
-                        },
-                        saveSelectedGameWithProfile = { packageName, profile ->
-                            DurableSelectionMutationQueue.enqueue(
-                                onFailure = ::reportSelectionPersistenceFailure
-                            ) {
-                                selectionRepository.saveSelectedGameAndProfile(packageName, profile)
-                            }
-                        },
-                        // X4 remains selectable even when the OEM does not expose Android's
-                        // Sustained Performance Mode; unsupported hardware hooks degrade safely.
-                        isProfileAvailable = { _ -> true },
-                        statusProvider = { status },
-                        deferProfileApplication = true,
-                        aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
-                        aliasIntentResolver = intentResolver,
-                        gameAliasesProvider = { aliasRepository.aliases() },
-                        saveGameAlias = { alias, packageName ->
-    aliasRepository.save(alias, packageName)
-},
-networkStatusProvider = { VoiceNetworkSnapshotFactory.current(context) },
-applyNetworkProfile = { profile ->
-    com.cardenaspiero255.gamehubultra.network.NetworkRuntimeOptimizer.apply(context, profile)
-}
-                    )
-
-                    when (result) {
-                        is VoiceActionResult.ProfileSelected ->
-                            "Perfil ${result.profile.title} seleccionado."
-                        is VoiceActionResult.GameOpened ->
-                            "Abriendo ${result.game.label}."
-                        is VoiceActionResult.GameAliasSaved ->
-                            context.getString(
-                                R.string.voice_result_game_alias_saved,
-                                result.alias.uppercase(),
-                                result.game.label
-                            )
-                        is VoiceActionResult.DeviceStatus ->
-                            "Estado: batería ${result.status.batteryPercent ?: "no disponible"} por ciento, térmica ${result.status.thermalLabel}."
-                        is VoiceActionResult.NetworkReport ->
-                            NetworkVoiceResponseText.format(result)
-                        is VoiceActionResult.AiAdvice ->
-                            AiAdviceFormatter.fullResponse(context, result.advice)
-                        VoiceActionResult.Help ->
-                            "Puedes decir: Ultra, dime la hora. Ultra, dime la temperatura. Ultra, dime los Hz. Ultra, abre un juego. Ultra, pon X4."
-                        is VoiceActionResult.NotAvailable ->
-                            "No disponible. ${result.detail}"
-                        VoiceActionResult.RequiresPermission ->
-                            "Necesito permiso de micrófono."
-                        is VoiceActionResult.Failed ->
-                            "No pude completar el comando. ${result.detail}"
-                    }
-                }
-            }
-
-            }
-
-                mainHandler.post {
-                    if (stopped || !lifecycleGate.canAcceptRecognition()) {
-                        commandCoordinator.finishCommand()
-                    } else {
-                        speakAndResume(response)
-                    }
-                }
                 }
             }
             true
@@ -579,30 +400,6 @@ applyNetworkProfile = { profile ->
         persistentSpeechSource = null
     }
 
-    private fun voiceThermalLabel(status: Int?): String =
-        when (status) {
-            PowerManager.THERMAL_STATUS_NONE -> "Normal"
-            PowerManager.THERMAL_STATUS_LIGHT -> "Leve"
-            PowerManager.THERMAL_STATUS_MODERATE -> "Moderado"
-            PowerManager.THERMAL_STATUS_SEVERE -> "Severo"
-            PowerManager.THERMAL_STATUS_CRITICAL -> "Crítico"
-            PowerManager.THERMAL_STATUS_EMERGENCY -> "Emergencia"
-            PowerManager.THERMAL_STATUS_SHUTDOWN -> "Apagado térmico"
-            null -> "No disponible"
-            else -> "Desconocido"
-        }
-
-    private fun launchGameFromService(context: Context, packageName: String): Boolean {
-        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-            ?: return false
-
-        return runCatching {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            true
-        }.getOrDefault(false)
-    }
-
     private fun scheduleRestart() {
         mainHandler.removeCallbacks(restartRecognition)
         if (!stopped && !commandCoordinator.isCommandRunning()) {
@@ -611,14 +408,6 @@ applyNetworkProfile = { profile ->
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun reportSelectionPersistenceFailure(error: Throwable) {
-        Log.e(
-            "UltraWakeService",
-            "No se pudo persistir la selección o el perfil de voz.",
-            error
-        )
-    }
 
     override fun onDestroy() {
         stopped = true
