@@ -17,6 +17,8 @@ import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
+import com.cardenaspiero255.gamehubultra.ai.UltraConversationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
@@ -29,7 +31,7 @@ internal class UltraWakeCommandRuntime(
     private val context: Context,
     private val queryExecutor: UltraQueryExecutor,
     private val aiAdvisor: GameHubAiAdvisor,
-    private val aliasRepository: GameAliasRepository,
+    private val aliasRepository: GameAliasStateRepository,
     private val memoryStore: UltraConversationMemoryStore,
     private val conversationLedger: UltraVoiceConversationLedger
 ) {
