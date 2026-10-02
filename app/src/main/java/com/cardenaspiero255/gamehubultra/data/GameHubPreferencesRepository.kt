@@ -32,7 +32,7 @@ private val Context.gameHubDataStore by preferencesDataStore(
 
 class GameHubPreferencesRepository(
     private val dataStore: DataStore<Preferences>
-) : GameSelectionStateRepository, GameLibraryStateRepository, PerformanceHistoryStateRepository {
+) : GameSelectionStateRepository, GameLibraryStateRepository, PerformanceHistoryStateRepository, PlayerProfileStateRepository {
     constructor(context: Context) : this(context.applicationContext.gameHubDataStore)
 
     private val selectedProfileKey = stringPreferencesKey("selected_profile")
@@ -41,6 +41,7 @@ class GameHubPreferencesRepository(
     private val recentGamesKey = stringPreferencesKey("recent_games")
     private val manualGamesKey = stringSetPreferencesKey("manual_game_packages")
     private val performanceHistoryKey = stringPreferencesKey("performance_history")
+    private val playerNameKey = stringPreferencesKey("player_name")
 
     override fun selectedProfileFlow(): Flow<PerformanceProfile> =
         dataStore.data.map { preferences ->
@@ -94,6 +95,17 @@ class GameHubPreferencesRepository(
         dataStore.data.map { preferences ->
             preferences[manualGamesKey] ?: emptySet()
         }
+
+    override fun playerNameFlow(): Flow<String> =
+        dataStore.data.map { preferences ->
+            normalizePlayerName(preferences[playerNameKey])
+        }
+
+    override suspend fun savePlayerName(name: String) {
+        dataStore.edit { preferences ->
+            preferences[playerNameKey] = normalizePlayerName(name)
+        }
+    }
 
     override fun performanceHistoryFlow(limit: Int): Flow<List<PerformanceEvent>> =
         dataStore.data.map { preferences ->
@@ -211,6 +223,14 @@ class GameHubPreferencesRepository(
 
     private fun gameOrientationKey(packageName: String): Preferences.Key<String> =
         stringPreferencesKey("game_orientation_${packageName}")
+
+    private fun normalizePlayerName(value: String?): String =
+        value
+            .orEmpty()
+            .trim()
+            .replace(Regex("""\s+"""), " ")
+            .take(32)
+            .ifBlank { DEFAULT_PLAYER_NAME }
 
     private fun decodeProfile(value: String?): PerformanceProfile? =
         value?.let { raw ->

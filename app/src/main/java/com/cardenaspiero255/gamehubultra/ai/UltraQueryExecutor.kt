@@ -28,7 +28,16 @@ class DefaultUltraQueryExecutor(
         val request = route.query ?: return localChat()
         val fallback =
             if (request.requiresInternet) {
-                stableKnowledgeFallback ?: { localChat() }
+                {
+                    val stableAnswer = try {
+                        stableKnowledgeFallback?.invoke()
+                    } catch (_: Exception) {
+                        null
+                    }
+                    stableAnswer
+                        ?.takeIf(String::isNotBlank)
+                        ?: localChat()
+                }
             } else {
                 { localChat() }
             }

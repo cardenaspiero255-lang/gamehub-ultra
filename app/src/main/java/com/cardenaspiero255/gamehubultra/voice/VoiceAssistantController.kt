@@ -116,7 +116,7 @@ class VoiceAssistantController(
                 return
             }
             onListeningChanged(false)
-            onError(error)
+            this@VoiceAssistantController.onError(error)
         }
     }
 }

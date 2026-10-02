@@ -172,11 +172,11 @@ internal fun HomeScreen(
                 onProfileSelected = onProfileSelected,
                 onPlay = onPlaySelectedGame,
                 onVoiceClick = {
-                    homeStateHolder.onEvent(HomeUiEvent.QuickVoiceToggled)
+                    homeStateHolder.onEvent(HomeUiEvent.QuickVoiceListenRequested)
                 }
             )
         }
-        if (homeUiState.quickVoiceOpen && !showAssistantCards) {
+        if (homeUiState.quickVoiceOpen) {
             item {
                 VoiceAssistantCard(
                     selectedProfileName = selectedProfileName,
@@ -190,7 +190,11 @@ internal fun HomeScreen(
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
-                    assistantInputEnabled = assistantInputEnabled
+                    assistantInputEnabled = assistantInputEnabled,
+                    startListeningRequest = homeUiState.quickVoiceListenRequest,
+                    onListeningRequestConsumed = {
+                        homeStateHolder.onEvent(HomeUiEvent.QuickVoiceListenConsumed)
+                    }
                 )
             }
         }
@@ -238,7 +242,7 @@ internal fun HomeScreen(
                 onGameSelected = onGameSelected
             )
         }
-        if (showAssistantCards) {
+        if (showAssistantCards && !homeUiState.quickVoiceOpen) {
             item {
                 VoiceAssistantCard(
                     selectedProfileName = selectedProfileName,
@@ -252,7 +256,9 @@ internal fun HomeScreen(
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
-                    assistantInputEnabled = assistantInputEnabled
+                    assistantInputEnabled = assistantInputEnabled,
+                    startListeningRequest = 0,
+                    onListeningRequestConsumed = {}
                 )
             }
         }

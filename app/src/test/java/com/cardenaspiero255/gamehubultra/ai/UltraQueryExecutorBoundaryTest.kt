@@ -88,6 +88,69 @@ class UltraQueryExecutorBoundaryTest {
         }
     }
 
+
+    @Test
+    fun stableKnowledgeFallsThroughToLocalChatWhenSpecializedFallbackHasNoAnswer() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                error("provider unavailable")
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val executor: UltraQueryExecutor = DefaultUltraQueryExecutor(
+            coordinator = UltraQueryExecutionCoordinator(engine)
+        )
+        val route = UltraAgentRoute.Chat(
+            message = "Ultra, explícame qué es Vulkan",
+            query = UltraGeneralQueryRouter.classify("Ultra, explícame qué es Vulkan")
+        )
+
+        try {
+            val answer = executor.answer(
+                route = route,
+                stableKnowledgeFallback = { null },
+                localChat = { "respuesta local general" }
+            )
+
+            assertEquals("respuesta local general", answer)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun freshQueryNeverFallsThroughToUnverifiedLocalChat() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-provider"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                error("provider unavailable")
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val executor: UltraQueryExecutor = DefaultUltraQueryExecutor(
+            coordinator = UltraQueryExecutionCoordinator(engine)
+        )
+        val route = UltraAgentRoute.Chat(
+            message = "Ultra, precio actual del RedMagic",
+            query = UltraGeneralQueryRouter.classify("Ultra, precio actual del RedMagic")
+        )
+
+        try {
+            val answer = executor.answer(
+                route = route,
+                stableKnowledgeFallback = { null },
+                localChat = { "precio local sin verificar" }
+            )
+
+            kotlin.test.assertTrue(answer.contains("verificar", ignoreCase = true))
+        } finally {
+            engine.close()
+        }
+    }
+
     @Test
     fun localQueryUsesLocalChatAndIgnoresStableKnowledgeFallback() {
         val engine = UltraVerifiedResearchEngine(emptyList())

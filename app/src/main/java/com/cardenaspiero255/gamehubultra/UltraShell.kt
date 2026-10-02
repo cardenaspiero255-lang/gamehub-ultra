@@ -12,9 +12,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,8 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
-
-internal const val ULTRA_PLAYER_NAME = "ejecutor3.0"
 
 @Composable
 internal fun UltraShellHeader(
@@ -98,8 +102,10 @@ internal fun UltraProfileScreen(
     favoriteCount: Int,
     recentCount: Int,
     sessionCount: Int,
-    device: DeviceInfo
+    device: DeviceInfo,
+    onPlayerNameChanged: (String) -> Unit
 ) {
+    var playerNameDraft by rememberSaveable(playerName) { mutableStateOf(playerName) }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -130,6 +136,20 @@ internal fun UltraProfileScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text("Perfil activo · ${activeProfile.title}", color = Color(0xFFBDBDC8))
+                OutlinedTextField(
+                    value = playerNameDraft,
+                    onValueChange = { playerNameDraft = it.take(32) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Nombre del perfil") },
+                    singleLine = true
+                )
+                Button(
+                    onClick = { onPlayerNameChanged(playerNameDraft) },
+                    enabled = playerNameDraft.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Guardar nombre")
+                }
             }
         }
 

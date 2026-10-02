@@ -124,6 +124,7 @@ internal fun GameHubUltraApp(
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val performanceHistory by viewModel.performanceHistory.collectAsStateWithLifecycle(initialValue = emptyList())
+    val playerName by viewModel.playerName.collectAsStateWithLifecycle()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var state by remember { mutableStateOf(initialState) }
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
@@ -500,12 +501,13 @@ internal fun GameHubUltraApp(
             )
             wideLayout && profileOpen -> UltraProfileScreen(
                 modifier = contentModifier,
-                playerName = ULTRA_PLAYER_NAME,
+                playerName = playerName,
                 activeProfile = uiState.effectiveProfile,
                 favoriteCount = favoriteGames.size,
                 recentCount = recentGamePackages.distinct().size,
                 sessionCount = sessionHistory.size,
-                device = device
+                device = device,
+                onPlayerNameChanged = viewModel::savePlayerName
             )
             selectedTab == 0 -> HomeScreen(
                 modifier = contentModifier,
@@ -656,7 +658,7 @@ internal fun GameHubUltraApp(
                         .fillMaxSize()
                 ) {
                     UltraShellHeader(
-                        playerName = ULTRA_PLAYER_NAME
+                        playerName = playerName
                     )
                     Box(
                         modifier = Modifier
