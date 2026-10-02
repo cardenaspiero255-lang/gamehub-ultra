@@ -12,10 +12,15 @@ val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
     .orElse("")
     .get()
 
-val supabaseUrl = providers.environmentVariable("SUPABASE_URL")
+val configuredSupabaseUrl = providers.environmentVariable("SUPABASE_URL")
     .orElse(providers.gradleProperty("SUPABASE_URL"))
     .orElse("")
     .get()
+    .trim()
+
+val supabaseUrl = configuredSupabaseUrl.ifBlank {
+    "https://upkmszocqiqslrxuxevx.supabase.co"
+}
 
 val supabasePublishableKey = providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY")
     .orElse(providers.gradleProperty("SUPABASE_PUBLISHABLE_KEY"))

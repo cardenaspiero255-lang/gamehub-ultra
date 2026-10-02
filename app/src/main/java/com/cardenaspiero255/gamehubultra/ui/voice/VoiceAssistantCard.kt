@@ -134,7 +134,10 @@ internal fun VoiceAssistantCard(
 
             when (route) {
                 is UltraAgentRoute.Utility -> {
-                    val answer = route.answer.message
+                    val answer = UltraUtilityRuntimeExecutor.execute(
+                        answer = route.answer,
+                        networkGaming = networkGaming
+                    )
                     val published = queryRunner.appendAssistantIfCurrentGame(
                         originatingGamePackage = originatingGamePackage,
                         assistantEntry = "Ultra: " + answer,
@@ -315,15 +318,10 @@ internal fun VoiceAssistantCard(
                     )
                     when (route) {
                         is UltraAgentRoute.Utility -> {
-                            val answer =
-                                if (
-                                    route.answer.intent is
-                                        com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
-                                ) {
-                                    networkGaming.execute(route.answer.intent)
-                                } else {
-                                    route.answer.message
-                                }
+                            val answer = UltraUtilityRuntimeExecutor.execute(
+                                answer = route.answer,
+                                networkGaming = networkGaming
+                            )
                             val withAnswer = UltraConversationPolicy.append(
                                 history = withUser,
                                 entry = "Ultra: " + answer,
