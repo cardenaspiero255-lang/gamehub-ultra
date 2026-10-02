@@ -358,13 +358,11 @@ def main() -> None:
         require_run_fragment(quality, "quality/bounded transient dependency retry", fragment)
 
     active_retry_bounds: list[str] = []
-    for command in logical_shell_commands(quality_run):
-        try:
-            tokens = shlex.split(command, comments=True, posix=True)
-        except ValueError as exc:
-            fail(f"Unable to parse quality retry assignment: {exc}: {command!r}")
-        if len(tokens) == 1 and tokens[0].startswith("QUALITY_MAX_ATTEMPTS="):
-            active_retry_bounds.append(tokens[0].split("=", 1)[1])
+    for line in quality_run.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("QUALITY_MAX_ATTEMPTS="):
+            value = stripped.split("=", 1)[1].split("#", 1)[0].strip().strip("'\"")
+            active_retry_bounds.append(value)
     if active_retry_bounds != ["3"]:
         fail(
             "Quality retry bound must have exactly one active shell assignment "
