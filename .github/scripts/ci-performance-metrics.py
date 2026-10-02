@@ -119,14 +119,21 @@ def extract_metrics(jobs: list[dict[str, Any]]) -> dict[str, float]:
     if aggregate is not None:
         aggregate_start = _parse_time(aggregate.get("started_at"))
         aggregate_end = _parse_time(aggregate.get("completed_at"))
-        dependencies = [
-            job
+        required_gate_names = {"quality", "device-validation"}
+        dependencies = {
+            str(job.get("name") or "").strip(): _parse_time(job.get("completed_at"))
             for job in core_jobs
-            if str(job.get("name") or "").strip() in {"quality", "device-validation"}
+            if str(job.get("name") or "").strip() in required_gate_names
+        }
+        dependency_ends = [
+            dependencies.get(name)
+            for name in required_gate_names
         ]
-        dependency_ends = [_parse_time(job.get("completed_at")) for job in dependencies]
-        dependency_ends = [value for value in dependency_ends if value is not None]
-        if aggregate_start is not None and aggregate_end is not None and dependency_ends:
+        if (
+            aggregate_start is not None
+            and aggregate_end is not None
+            and all(value is not None for value in dependency_ends)
+        ):
             dependency_ready = max(dependency_ends)
             queue_seconds = max(0.0, (aggregate_start - dependency_ready).total_seconds())
             runtime_seconds = max(0.0, (aggregate_end - aggregate_start).total_seconds())
