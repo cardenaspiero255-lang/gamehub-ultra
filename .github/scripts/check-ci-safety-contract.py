@@ -345,7 +345,6 @@ def main() -> None:
     )
     quality_run = str(quality.get("run", ""))
     quality_retry_fragments = (
-        "QUALITY_MAX_ATTEMPTS=3",
         "QUALITY_RETRY_BASE_SECONDS=5",
         "QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'",
         'if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_ATTEMPT_LOG"; then',
@@ -354,8 +353,20 @@ def main() -> None:
     )
     for fragment in quality_retry_fragments:
         require_run_fragment(quality, "quality/bounded transient dependency retry", fragment)
-    if quality_run.count("QUALITY_MAX_ATTEMPTS=3") != 1:
-        fail("Quality retry bound must be declared exactly once")
+
+    active_retry_bounds: list[str] = []
+    for command in logical_shell_commands(quality_run):
+        try:
+            tokens = shlex.split(command, comments=True, posix=True)
+        except ValueError as exc:
+            fail(f"Unable to parse quality retry assignment: {exc}: {command!r}")
+        if len(tokens) == 1 and tokens[0].startswith("QUALITY_MAX_ATTEMPTS="):
+            active_retry_bounds.append(tokens[0].split("=", 1)[1])
+    if active_retry_bounds != ["3"]:
+        fail(
+            "Quality retry bound must have exactly one active shell assignment "
+            f"QUALITY_MAX_ATTEMPTS=3; found {active_retry_bounds!r}"
+        )
     quality_matches = [
         tokens
         for tokens in gradle_commands(str(quality.get("run", "")))
