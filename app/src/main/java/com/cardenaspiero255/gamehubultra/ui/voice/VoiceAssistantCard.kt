@@ -41,7 +41,8 @@ internal fun VoiceAssistantCard(
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
-    assistantInputEnabled: Boolean
+    assistantInputEnabled: Boolean,
+    startListeningRequest: Int = 0
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -70,6 +71,7 @@ internal fun VoiceAssistantCard(
         mutableStateOf<UltraScopedProfileRecommendation?>(null)
     }
     var pendingContinuousListening by rememberSaveable { mutableStateOf(false) }
+    var pendingSingleListening by rememberSaveable { mutableStateOf(false) }
     var showTextChat by rememberSaveable { mutableStateOf(false) }
     var chatMessage by rememberSaveable { mutableStateOf("") }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
@@ -258,6 +260,7 @@ internal fun VoiceAssistantCard(
             }
         } else if (!granted) {
             pendingContinuousListening = false
+            pendingSingleListening = false
             continuousListeningEnabled = continuousVoiceController.isEnabled()
             response = context.getString(R.string.voice_permission_required)
         }
@@ -457,6 +460,23 @@ applyNetworkProfile = networkGaming::applyProfile
 
     DisposableEffect(voiceController) {
         onDispose { voiceController.release() }
+    }
+
+    LaunchedEffect(startListeningRequest, assistantInputEnabled) {
+        if (startListeningRequest <= 0 || !assistantInputEnabled) return@LaunchedEffect
+        if (permissionGranted) {
+            voiceController.startListening()
+        } else {
+            pendingSingleListening = true
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    LaunchedEffect(permissionGranted, pendingSingleListening, assistantInputEnabled) {
+        if (permissionGranted && pendingSingleListening && assistantInputEnabled) {
+            pendingSingleListening = false
+            voiceController.startListening()
+        }
     }
 
     if (showTextChat) {
