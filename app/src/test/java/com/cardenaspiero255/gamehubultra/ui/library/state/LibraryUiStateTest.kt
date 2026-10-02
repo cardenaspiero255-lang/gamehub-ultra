@@ -238,7 +238,7 @@ class LibraryUiStateTest {
     fun stateHolderDispatchesThroughReducer() {
         val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
         holder.onEvent(LibraryUiEvent.QueryChanged("after"))
-        holder.onEvent(LibraryUiEvent.GameLaunchResult(false))
+        holder.onEvent(LibraryUiEvent.GameLaunchResult("com.game.test", false))
 
         assertEquals("after", holder.state.query)
         assertTrue(holder.state.launchFailed)
