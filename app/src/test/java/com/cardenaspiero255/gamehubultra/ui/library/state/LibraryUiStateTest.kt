@@ -82,6 +82,27 @@ class LibraryUiStateTest {
     }
 
     @Test
+    fun localFilterSelectionIsStoredWithoutMutatingOtherLibraryState() {
+        val initial = LibraryUiState(query = "resident", launchFailed = true)
+
+        val updated = initial.reduce(
+            LibraryUiEvent.LocalFilterChanged(LibraryLocalFilter.FAVORITES)
+        )
+
+        assertEquals(LibraryLocalFilter.FAVORITES, updated.localFilter)
+        assertEquals("resident", updated.query)
+        assertTrue(updated.launchFailed)
+    }
+
+    @Test
+    fun localFilterCanReturnToAllGames() {
+        val updated = LibraryUiState(localFilter = LibraryLocalFilter.RECENT)
+            .reduce(LibraryUiEvent.LocalFilterChanged(LibraryLocalFilter.ALL))
+
+        assertEquals(LibraryLocalFilter.ALL, updated.localFilter)
+    }
+
+    @Test
     fun stateHolderDispatchesThroughReducer() {
         val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
         holder.onEvent(LibraryUiEvent.QueryChanged("after"))
