@@ -32,6 +32,10 @@
     <string name="performance_hint_api">API Performance Hint</string>
     <string name="capability_note">Las funciones no disponibles se muestran como informativas y no se activan.</string>
     <string name="library_title">Biblioteca de juegos</string>
+    <string name="library_filter_all">Todos</string>
+    <string name="library_filter_favorites">Favoritos</string>
+    <string name="library_filter_recent">Recientes</string>
+    <string name="library_filter_empty">No hay juegos en este filtro.</string>
     <string name="library_loading">Cargando juegos detectados…</string>
     <string name="open_game">Abrir juego</string>
     <string name="library_open_error">No se pudo abrir el juego seleccionado.</string>
