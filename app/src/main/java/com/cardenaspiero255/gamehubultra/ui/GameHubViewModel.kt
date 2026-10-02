@@ -35,6 +35,7 @@ class GameHubViewModel(
     private val repository = dependencies.selectionRepository
     private val libraryRepository: GameLibraryStateRepository = dependencies.libraryRepository
     private val performanceHistoryRepository = dependencies.performanceHistoryRepository
+    private val playerProfileRepository = dependencies.playerProfileRepository
     private val sessionStore: GameSessionStateRepository = dependencies.sessionRepository
     private val sessionCoordinator =
         dependencies.sessionCoordinatorFactory.create(viewModelScope)
@@ -76,6 +77,11 @@ class GameHubViewModel(
     }
 
     val performanceHistory = performanceHistoryRepository.performanceHistoryFlow()
+    val playerName = playerProfileRepository.playerNameFlow().stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        "Jugador Ultra"
+    )
 
     val uiState = combine(
         baseStateFlow,
@@ -96,6 +102,10 @@ class GameHubViewModel(
         SharingStarted.WhileSubscribed(5_000),
         GameHubUiState()
     )
+
+    fun savePlayerName(name: String) {
+        viewModelScope.launch { playerProfileRepository.savePlayerName(name) }
+    }
 
     fun selectGlobalProfile(profile: PerformanceProfile) {
         viewModelScope.launch { repository.saveSelectedProfile(profile) }
