@@ -190,6 +190,22 @@ class GameHubPreferencesRepositoryTest {
     }
 
     @Test
+    fun playerNameDefaultsAndPersistsSanitizedValue() = runBlocking {
+        assertEquals("Jugador Ultra", repository.playerNameFlow().first())
+
+        repository.savePlayerName("  Piero   Ultra  ")
+
+        assertEquals("Piero Ultra", repository.playerNameFlow().first())
+    }
+
+    @Test
+    fun blankPlayerNameFallsBackToDefault() = runBlocking {
+        repository.savePlayerName("   ")
+
+        assertEquals("Jugador Ultra", repository.playerNameFlow().first())
+    }
+
+    @Test
     fun performanceHistoryPersistsAndKeepsLatestEvents() = runBlocking {
         repeat(55) { index ->
             repository.appendPerformanceEvent(
