@@ -216,7 +216,19 @@ class GameHubAiAdvisorTest {
             conversation = emptyList()
         )
 
-        assertTrue(answer?.contains("sentimientos", ignoreCase = true) == true)
+        assertTrue(answer?.contains("emociones", ignoreCase = true) == true)
+        assertTrue(answer?.contains("respuestas psicofisiológicas", ignoreCase = true) == true)
+    }
+
+    @Test
+    fun unrelatedEmotionStatementDoesNotTriggerDefinitionFallback() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "Ese final fue muy emocionante y me dejó con emociones mezcladas",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertNull(answer)
     }
 
     @Test

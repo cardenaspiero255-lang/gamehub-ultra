@@ -167,9 +167,20 @@ class GameHubAiAdvisor(
 
     private fun deterministicStableKnowledgeOrNull(message: String): String? {
         val normalized = normalize(message)
+        val asksDefinition = listOf(
+            "que es ",
+            "que son ",
+            "que significa ",
+            "define ",
+            "definicion de "
+        ).any { cue -> normalized.startsWith(cue) || normalized.contains(" $cue") }
+        if (!asksDefinition) return null
+
         return when {
-            Regex("""\b(?:sentimientos?|emociones?)\b""").containsMatchIn(normalized) ->
+            Regex("""\bsentimientos?\b""").containsMatchIn(normalized) ->
                 "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones. Pueden influir en cómo percibimos, decidimos y actuamos, y suelen durar más que una reacción emocional instantánea."
+            Regex("""\bemociones?\b""").containsMatchIn(normalized) ->
+                "Las emociones son respuestas psicofisiológicas ante estímulos internos o externos. Suelen aparecer rápidamente, preparan al organismo para responder y pueden dar lugar a sentimientos cuando las interpretamos conscientemente."
             else -> null
         }
     }

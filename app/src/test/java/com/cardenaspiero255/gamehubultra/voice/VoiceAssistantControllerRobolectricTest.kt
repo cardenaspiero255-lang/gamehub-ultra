@@ -7,6 +7,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -23,6 +24,7 @@ class VoiceAssistantControllerRobolectricTest {
         )
 
         controller.startListening()
+        val initialErrorCount = errors.size
 
         val listenerField = VoiceAssistantController::class.java
             .getDeclaredField("listener")
@@ -31,6 +33,7 @@ class VoiceAssistantControllerRobolectricTest {
 
         listener.onError(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED)
 
-        assertTrue(errors.isNotEmpty())
+        assertTrue(errors.size > initialErrorCount)
+        assertEquals(SpeechRecognizer.ERROR_CLIENT, errors.last())
     }
 }
