@@ -84,11 +84,17 @@ internal fun HomeScreen(
     storeGames: List<StoreLibraryGame>,
     gameCatalogRefreshToken: Int,
     onOpenLibrary: () -> Unit,
+    assistantRevealRequest: Int,
     showAssistantCards: Boolean
 ) {
     val timelineContext = LocalContext.current
     val homeStateHolder = rememberHomeUiStateHolder()
     val homeUiState = homeStateHolder.state
+    LaunchedEffect(assistantRevealRequest) {
+        if (assistantRevealRequest > 0) {
+            homeStateHolder.onEvent(HomeUiEvent.QuickVoiceRevealed)
+        }
+    }
     val recentGameNames = remember(recentGamePackages) {
         recentGamePackages.map { packageName ->
             packageDisplayName(timelineContext, packageName)
