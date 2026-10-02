@@ -9,6 +9,34 @@ package com.cardenaspiero255.gamehubultra.ui.library.state
  */
 internal enum class LibraryLocalFilter { ALL, FAVORITES, RECENT }
 
+internal fun filterLibraryGames(
+    games: List<com.cardenaspiero255.gamehubultra.GameInfo>,
+    query: String,
+    localFilter: LibraryLocalFilter,
+    favoriteGames: Set<String>,
+    recentGamePackages: List<String>,
+): List<com.cardenaspiero255.gamehubultra.GameInfo> {
+    val locallyFiltered = when (localFilter) {
+        LibraryLocalFilter.ALL -> games
+        LibraryLocalFilter.FAVORITES ->
+            games.filter { game -> favoriteGames.contains(game.packageName) }
+        LibraryLocalFilter.RECENT -> {
+            val gamesByPackage = games.associateBy { game -> game.packageName }
+            recentGamePackages
+                .mapNotNull(gamesByPackage::get)
+                .distinctBy { game -> game.packageName }
+        }
+    }
+
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isBlank()) return locallyFiltered
+
+    return locallyFiltered.filter { game ->
+        game.label.contains(normalizedQuery, ignoreCase = true) ||
+            game.packageName.contains(normalizedQuery, ignoreCase = true)
+    }
+}
+
 internal data class LibraryUiState(
     val refreshToken: Int = 0,
     val launchFailed: Boolean = false,
