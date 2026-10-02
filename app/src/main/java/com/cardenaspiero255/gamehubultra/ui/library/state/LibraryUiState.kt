@@ -7,7 +7,9 @@ package com.cardenaspiero255.gamehubultra.ui.library.state
  * The saver intentionally persists only user-facing presentation flags and query
  * text so runtime data is refreshed after restoration instead of being serialized.
  */
-internal enum class LibraryLocalFilter { ALL, FAVORITES, RECENT }
+internal enum class LibraryLocalFilter { ALL, FAVORITES, RECENT, INSTALLED }
+
+internal enum class LibraryCategory { ALL, DETECTED, MANUAL }
 
 internal fun filterLibraryGames(
     games: List<com.cardenaspiero255.gamehubultra.GameInfo>,
@@ -15,9 +17,12 @@ internal fun filterLibraryGames(
     localFilter: LibraryLocalFilter,
     favoriteGames: Set<String>,
     recentGamePackages: List<String>,
+    category: LibraryCategory = LibraryCategory.ALL,
+    manualGamePackages: Set<String> = emptySet(),
 ): List<com.cardenaspiero255.gamehubultra.GameInfo> {
     val locallyFiltered = when (localFilter) {
-        LibraryLocalFilter.ALL -> games
+        LibraryLocalFilter.ALL,
+        LibraryLocalFilter.INSTALLED -> games
         LibraryLocalFilter.FAVORITES ->
             games.filter { game -> favoriteGames.contains(game.packageName) }
         LibraryLocalFilter.RECENT -> {
@@ -28,10 +33,18 @@ internal fun filterLibraryGames(
         }
     }
 
-    val normalizedQuery = query.trim()
-    if (normalizedQuery.isBlank()) return locallyFiltered
+    val categorized = when (category) {
+        LibraryCategory.ALL -> locallyFiltered
+        LibraryCategory.DETECTED ->
+            locallyFiltered.filterNot { game -> manualGamePackages.contains(game.packageName) }
+        LibraryCategory.MANUAL ->
+            locallyFiltered.filter { game -> manualGamePackages.contains(game.packageName) }
+    }
 
-    return locallyFiltered.filter { game ->
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isBlank()) return categorized
+
+    return categorized.filter { game ->
         game.label.contains(normalizedQuery, ignoreCase = true) ||
             game.packageName.contains(normalizedQuery, ignoreCase = true)
     }
@@ -43,6 +56,7 @@ internal data class LibraryUiState(
     val addGameDialogVisible: Boolean = false,
     val query: String = "",
     val localFilter: LibraryLocalFilter = LibraryLocalFilter.ALL,
+    val category: LibraryCategory = LibraryCategory.ALL,
     val selectedGameDetailsVisible: Boolean = false,
     val discovery: com.cardenaspiero255.gamehubultra.GameDiscoveryResult? = null,
     val launchableApps: List<com.cardenaspiero255.gamehubultra.GameInfo> = emptyList(),
@@ -52,6 +66,7 @@ internal sealed interface LibraryUiEvent {
     data class QueryChanged(val query: String) : LibraryUiEvent
     data object Resumed : LibraryUiEvent
     data class LocalFilterChanged(val filter: LibraryLocalFilter) : LibraryUiEvent
+    data class CategoryChanged(val category: LibraryCategory) : LibraryUiEvent
     data object GameSelected : LibraryUiEvent
     data class GameLaunchResult(val succeeded: Boolean) : LibraryUiEvent
     data class AddGameDialogVisibilityChanged(val visible: Boolean) : LibraryUiEvent
@@ -69,6 +84,7 @@ internal fun LibraryUiState.reduce(event: LibraryUiEvent): LibraryUiState =
         is LibraryUiEvent.QueryChanged -> copy(query = event.query)
         LibraryUiEvent.Resumed -> copy(refreshToken = refreshToken + 1)
         is LibraryUiEvent.LocalFilterChanged -> copy(localFilter = event.filter)
+        is LibraryUiEvent.CategoryChanged -> copy(category = event.category)
         LibraryUiEvent.GameSelected -> copy(launchFailed = false)
         is LibraryUiEvent.GameLaunchResult -> copy(launchFailed = !event.succeeded)
         is LibraryUiEvent.AddGameDialogVisibilityChanged ->
@@ -90,6 +106,14 @@ internal class LibraryUiStateHolder(initialState: LibraryUiState = LibraryUiStat
     }
 }
 
+private fun restoreLocalFilter(value: Any?): LibraryLocalFilter =
+    runCatching { LibraryLocalFilter.valueOf(value as? String ?: "") }
+        .getOrDefault(LibraryLocalFilter.ALL)
+
+private fun restoreCategory(value: Any?): LibraryCategory =
+    runCatching { LibraryCategory.valueOf(value as? String ?: "") }
+        .getOrDefault(LibraryCategory.ALL)
+
 @androidx.compose.runtime.Composable
 internal fun rememberLibraryUiStateHolder(): LibraryUiStateHolder {
     val saver = androidx.compose.runtime.saveable.Saver<LibraryUiStateHolder, List<Any?>>(
@@ -100,18 +124,22 @@ internal fun rememberLibraryUiStateHolder(): LibraryUiStateHolder {
                 holder.state.addGameDialogVisible,
                 holder.state.query,
                 holder.state.localFilter.name,
+                holder.state.category.name,
                 holder.state.selectedGameDetailsVisible,
             )
         },
         restore = { values ->
+            val legacyDetails = values.getOrNull(5) as? Boolean ?: false
             LibraryUiStateHolder(
                 LibraryUiState(
-                    refreshToken = values[0] as Int,
-                    launchFailed = values[1] as Boolean,
-                    addGameDialogVisible = values[2] as Boolean,
-                    query = values[3] as String,
-                    localFilter = LibraryLocalFilter.valueOf(values[4] as String),
-                    selectedGameDetailsVisible = values[5] as Boolean,
+                    refreshToken = values.getOrNull(0) as? Int ?: 0,
+                    launchFailed = values.getOrNull(1) as? Boolean ?: false,
+                    addGameDialogVisible = values.getOrNull(2) as? Boolean ?: false,
+                    query = values.getOrNull(3) as? String ?: "",
+                    localFilter = restoreLocalFilter(values.getOrNull(4)),
+                    category = restoreCategory(values.getOrNull(5)),
+                    selectedGameDetailsVisible =
+                        values.getOrNull(6) as? Boolean ?: legacyDetails,
                 )
             )
         },
