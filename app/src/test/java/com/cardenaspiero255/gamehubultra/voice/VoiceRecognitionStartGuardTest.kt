@@ -19,4 +19,20 @@ class VoiceRecognitionStartGuardTest {
         assertFalse(started)
         assertEquals(SpeechRecognizer.ERROR_CLIENT, error)
     }
+
+    @Test
+    fun successfulStartupReturnsTrueWithoutReportingError() {
+        var error: Int? = null
+        var invoked = false
+
+        val started = VoiceRecognitionStartGuard.run(
+            onError = { error = it }
+        ) {
+            invoked = true
+        }
+
+        kotlin.test.assertTrue(started)
+        kotlin.test.assertTrue(invoked)
+        kotlin.test.assertEquals(null, error)
+    }
 }
