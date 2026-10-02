@@ -43,8 +43,7 @@ import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.ui.components.GameTile
-import com.cardenaspiero255.gamehubultra.ui.components.SelectedGameCard
-import com.cardenaspiero255.gamehubultra.ui.components.SelectedGameCompactBar
+import com.cardenaspiero255.gamehubultra.ui.components.SelectedGameHero
 import com.cardenaspiero255.gamehubultra.ui.components.StoreLibrarySection
 import com.cardenaspiero255.gamehubultra.ui.layout.LibraryLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryLocalFilter
@@ -301,17 +300,14 @@ internal fun LibraryScreen(
                     }?.let { game ->
                         val favorite = favoriteGames.contains(game.packageName)
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            SelectedGameCompactBar(
+                            SelectedGameHero(
                                 game = game,
                                 favorite = favorite,
-                                detailsVisible = libraryUiState.selectedGameDetailsVisible,
-                                onToggleDetails = {
-                                    libraryStateHolder.onEvent(
-                                        LibraryUiEvent.SelectedGameDetailsVisibilityChanged(
-                                            !libraryUiState.selectedGameDetailsVisible
-                                        )
-                                    )
-                                },
+                                recent = recentGamePackages.contains(game.packageName),
+                                selectedProfile = selectedProfile,
+                                diagnostics = runtimeDiagnostics,
+                                sessions = sessionHistory.filter { it.packageName == game.packageName },
+                                onProfileSelected = onProfileSelected,
                                 onToggleFavorite = {
                                     onToggleFavorite(game.packageName, !favorite)
                                 },
@@ -325,31 +321,6 @@ internal fun LibraryScreen(
                                     }
                                 }
                             )
-                        }
-                        if (libraryUiState.selectedGameDetailsVisible) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                SelectedGameCard(
-                                    game = game,
-                                    favorite = favorite,
-                                    recent = recentGamePackages.contains(game.packageName),
-                                    selectedProfile = selectedProfile,
-                                    diagnostics = runtimeDiagnostics,
-                                    sessions = sessionHistory.filter { it.packageName == game.packageName },
-                                    onProfileSelected = onProfileSelected,
-                                    onToggleFavorite = {
-                                        onToggleFavorite(game.packageName, !favorite)
-                                    },
-                                    onOpen = {
-                                        val succeeded = openGame(context, game.packageName)
-                                        libraryStateHolder.onEvent(
-                                            LibraryUiEvent.GameLaunchResult(succeeded)
-                                        )
-                                        if (succeeded) {
-                                            onGameOpened(game.packageName)
-                                        }
-                                    }
-                                )
-                            }
                         }
                     }
                 }
