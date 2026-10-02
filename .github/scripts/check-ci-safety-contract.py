@@ -9,6 +9,7 @@ from typing import Any
 
 ANDROID = Path(".github/workflows/android.yml")
 COVERAGE = Path(".github/workflows/coverage.yml")
+SHADOW_METRICS = Path(".github/workflows/ci-metrics-shadow.yml")
 
 
 def fail(message: str) -> None:
@@ -328,6 +329,7 @@ def main() -> None:
     """Validate that CI optimization preserves every required blocking gate."""
     android = load_workflow(ANDROID)
     coverage = load_workflow(COVERAGE)
+    shadow_metrics = load_workflow(SHADOW_METRICS)
 
     quality = require_step(
         android,
@@ -579,13 +581,64 @@ def main() -> None:
     if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
         fail("Codecov upload no longer has fail_ci_if_error: true")
 
-    metrics_job = job(android, "metrics")
-    metrics_needs = metrics_job.get("needs")
-    if not isinstance(metrics_needs, list) or set(metrics_needs) != {"quality", "device-validation"}:
-        fail(
-            "Phase 3 DAG requires metrics to depend directly on quality and "
-            "device-validation, not on the aggregate build job"
-        )
+    android_jobs = android.get("jobs")
+    if not isinstance(android_jobs, dict):
+        fail("Android workflow jobs mapping is missing")
+    if "metrics" in android_jobs:
+        fail("Phase 3 block 4 requires Android metrics to run only post-run in shadow mode")
+
+    build_job = job(android, "build")
+    build_needs = build_job.get("needs")
+    if not isinstance(build_needs, list) or set(build_needs) != {"quality", "device-validation"}:
+        fail("Aggregate build gate must depend directly on quality and device-validation")
+    if normalized_if(build_job.get("if")) != "always()":
+        fail("Aggregate build gate must use if: always() so failed dependencies remain observable")
+    if build_job.get("continue-on-error") not in (None, False):
+        fail("Aggregate build gate must remain blocking")
+
+    aggregate_gate = require_step(
+        android,
+        "build",
+        "Verify all Android CI gates",
+        shell="bash",
+    )
+    require_shell_command(
+        aggregate_gate,
+        "build/Verify all Android CI gates quality result",
+        ("test", "${{ needs.quality.result }}", "=", "success"),
+    )
+    require_shell_command(
+        aggregate_gate,
+        "build/Verify all Android CI gates device-validation result",
+        ("test", "${{ needs.device-validation.result }}", "=", "success"),
+    )
+    require_step(
+        android,
+        "build",
+        "Verify Phase 3 artifact provenance",
+        shell="bash",
+    )
+
+    shadow_collect = job(shadow_metrics, "collect")
+    if shadow_collect.get("continue-on-error") not in (None, False):
+        fail("Shadow metrics collector unexpectedly became advisory")
+    shadow_step = require_step(
+        shadow_metrics,
+        "collect",
+        "Collect completed parent metrics in shadow mode",
+        shell="bash",
+    )
+    shadow_run = str(shadow_step.get("run", ""))
+    for fragment in (
+        'REQUIRED_JOB="build"',
+        '--require-completed',
+        '--require-job "$REQUIRED_JOB"',
+        '--expected-run-id "$PARENT_RUN_ID"',
+        '--expected-head-sha "$PARENT_HEAD_SHA"',
+        '--expected-workflow "$PARENT_WORKFLOW"',
+    ):
+        if fragment not in shadow_run:
+            fail(f"Shadow metrics lost required provenance fragment: {fragment}")
 
     require_concurrency(android, "Android workflow")
     require_concurrency(coverage, "coverage workflow")

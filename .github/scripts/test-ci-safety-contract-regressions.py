@@ -86,6 +86,7 @@ def run_mutation(label: str, mutate) -> None:
 
         (temp / ".github/workflows/android.yml").write_text(android, encoding="utf-8")
         (temp / ".github/workflows/coverage.yml").write_text(coverage, encoding="utf-8")
+        shutil.copy2(SHADOW_METRICS, temp / ".github/workflows/ci-metrics-shadow.yml")
         target = temp / ".github/scripts/test-ci-safety-contract.sh"
         checker = temp / ".github/scripts/check-ci-safety-contract.py"
         shutil.copy2(CONTRACT, target)
@@ -104,6 +105,27 @@ def run_mutation(label: str, mutate) -> None:
                 f"CI contract regression was not rejected: {label}\n"
                 f"--- contract output ---\n{result.stdout}"
             )
+
+
+def remove_build_always_condition(android: str, coverage: str):
+    """Remove the fan-in job condition that makes dependency failures observable."""
+    needle = """  build:
+    name: build
+    if: always()
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: aggregate build job condition not found")
+    return android.replace(needle, """  build:
+    name: build
+""", 1), coverage
+
+
+def remove_device_validation_result_assertion(android: str, coverage: str):
+    """Remove one blocking dependency-result assertion from the aggregate gate."""
+    needle = '          test "${{ needs.device-validation.result }}" = "success"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: device-validation aggregate assertion not found")
+    return android.replace(needle, "", 1), coverage
 
 
 def remove_unit_test_but_leave_comment(android: str, coverage: str):
@@ -393,22 +415,21 @@ def main() -> None:
     """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
     require_shadow_metrics_contract()
-    # Phase 3 block 2 cut 3: the aggregate build gate must remain a pure
-    # fan-in of the two blocking Android gates. Metrics must stay off that
-    # critical path and must never become a prerequisite of build.
+    # Phase 3 block 4 cut 2: keep the aggregate build gate as the only
+    # in-workflow fan-in. Performance metrics are collected post-run by the
+    # read-only shadow workflow, so they cannot delay the blocking CI path.
     android = yaml.safe_load(ANDROID.read_text(encoding="utf-8"))
     jobs = android.get("jobs", {})
     build_needs = jobs.get("build", {}).get("needs", [])
-    metrics_needs = jobs.get("metrics", {}).get("needs", [])
     if set(build_needs) != {"quality", "device-validation"}:
-        raise SystemExit("Phase 3 block 2: build fan-in gate changed")
-    if set(metrics_needs) != {"quality", "device-validation"}:
-        raise SystemExit("Phase 3 block 2: metrics re-entered the build critical path")
-    if "metrics" in build_needs or "build" in metrics_needs:
-        raise SystemExit("Phase 3 block 2: DAG contains a forbidden build/metrics serial edge")
+        raise SystemExit("Phase 3 block 4 cut 2: build fan-in gate changed")
+    if "metrics" in jobs:
+        raise SystemExit("Phase 3 block 4 cut 2: inline metrics still delays Android workflow completion")
     android = ANDROID.read_text(encoding="utf-8")
     coverage = COVERAGE.read_text(encoding="utf-8")
     commented_quality_marker_before_active_step(android, coverage)
+    run_mutation("aggregate build loses always() fan-in condition", remove_build_always_condition)
+    run_mutation("aggregate build loses device-validation result assertion", remove_device_validation_result_assertion)
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
@@ -463,6 +484,12 @@ def main() -> None:
         raise SystemExit("Phase 3 block 3 cut 3: aggregate gate must not rebuild Gradle outputs")
     if not any(step.get("name") == "Verify Phase 3 artifact provenance" for step in build_steps):
         raise SystemExit("Phase 3 block 3 cut 3: aggregate gate lost artifact verification")
+
+    # Phase 3 block 4 cut 2: post-run metrics must retain exact parent
+    # provenance and must continue to require the blocking Android build job.
+    shadow_text = SHADOW_METRICS.read_text(encoding="utf-8")
+    if 'REQUIRED_JOB="build"' not in shadow_text:
+        raise SystemExit("Phase 3 block 4 cut 2: shadow Android metrics lost required build provenance")
 
     # Phase 2 block 6 is enforced by the parsed CI safety contract above.
     # Mutations prove both the reuse assertion and duplicate partial graphs fail.

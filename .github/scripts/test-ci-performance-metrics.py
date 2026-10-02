@@ -81,6 +81,58 @@ class CiPerformanceMetricsTests(unittest.TestCase):
         )
         self.assertNotIn("job.metrics.seconds", result)
 
+    def test_extract_metrics_tracks_aggregate_gate_overhead(self):
+        jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-10-01T20:00:00Z",
+                "completed_at": "2026-10-01T20:02:00Z",
+                "steps": [],
+            },
+            {
+                "name": "device-validation",
+                "started_at": "2026-10-01T20:00:00Z",
+                "completed_at": "2026-10-01T20:10:00Z",
+                "steps": [],
+            },
+            {
+                "name": "build",
+                "started_at": "2026-10-01T20:10:05Z",
+                "completed_at": "2026-10-01T20:10:09Z",
+                "steps": [],
+            },
+        ]
+        result = metrics.extract_metrics(jobs)
+        self.assertEqual(result["aggregate_gate_queue_seconds"], 5.0)
+        self.assertEqual(result["aggregate_gate_runtime_seconds"], 4.0)
+        self.assertEqual(result["aggregate_gate_overhead_seconds"], 9.0)
+
+    def test_extract_metrics_omits_aggregate_overhead_when_required_gate_timing_is_missing(self):
+        jobs = [
+            {
+                "name": "quality",
+                "started_at": "2026-10-01T20:00:00Z",
+                "completed_at": None,
+                "steps": [],
+            },
+            {
+                "name": "device-validation",
+                "started_at": "2026-10-01T20:00:00Z",
+                "completed_at": "2026-10-01T20:10:00Z",
+                "steps": [],
+            },
+            {
+                "name": "build",
+                "started_at": "2026-10-01T20:10:05Z",
+                "completed_at": "2026-10-01T20:10:09Z",
+                "steps": [],
+            },
+        ]
+        result = metrics.extract_metrics(jobs)
+        self.assertNotIn("aggregate_gate_queue_seconds", result)
+        self.assertNotIn("aggregate_gate_runtime_seconds", result)
+        self.assertNotIn("aggregate_gate_overhead_seconds", result)
+
     def test_collect_waits_for_build_completion_before_sampling(self):
         current_run = {
             "id": 999,
