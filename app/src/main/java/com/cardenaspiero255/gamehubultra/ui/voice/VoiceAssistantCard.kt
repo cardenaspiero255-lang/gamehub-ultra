@@ -134,7 +134,13 @@ internal fun VoiceAssistantCard(
 
             when (route) {
                 is UltraAgentRoute.Utility -> {
-                    val answer = route.answer.message
+                    val answer = UltraUtilityRuntimeExecutor.executeIfCurrent(
+                        answer = route.answer,
+                        networkGaming = networkGaming,
+                        isCurrent = {
+                            latestAiContext.selectedGamePackage == originatingGamePackage
+                        }
+                    ) ?: return@launch
                     val published = queryRunner.appendAssistantIfCurrentGame(
                         originatingGamePackage = originatingGamePackage,
                         assistantEntry = "Ultra: " + answer,
@@ -315,15 +321,17 @@ internal fun VoiceAssistantCard(
                     )
                     when (route) {
                         is UltraAgentRoute.Utility -> {
-                            val answer =
-                                if (
-                                    route.answer.intent is
-                                        com.cardenaspiero255.gamehubultra.ai.UltraUtilityIntent.NetworkGamingControl
-                                ) {
-                                    networkGaming.execute(route.answer.intent)
-                                } else {
-                                    route.answer.message
+                            val answer = UltraUtilityRuntimeExecutor.executeIfCurrent(
+                                answer = route.answer,
+                                networkGaming = networkGaming,
+                                isCurrent = {
+                                    isUltraVoiceTurnScopeCurrent(
+                                        captured = capturedVoiceScope,
+                                        assistantInputReady = latestAssistantInputEnabled,
+                                        currentGamePackage = latestAiContext.selectedGamePackage
+                                    )
                                 }
+                            ) ?: return@launch
                             val withAnswer = UltraConversationPolicy.append(
                                 history = withUser,
                                 entry = "Ultra: " + answer,

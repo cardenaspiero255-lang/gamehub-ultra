@@ -21,3 +21,36 @@ internal interface UltraNetworkGamingGateway {
 
     fun applyProfile(profile: NetworkGameProfile): NetworkOptimizationOutcome
 }
+
+
+/**
+ * Resolves utility answers that have a runtime side effect.
+ *
+ * Keeping this policy outside Compose prevents typed and spoken Ultra turns
+ * from drifting into different behavior.
+ */
+internal object UltraUtilityRuntimeExecutor {
+    fun execute(
+        answer: UltraAgentAnswer,
+        networkGaming: UltraNetworkGamingGateway
+    ): String =
+        when (val intent = answer.intent) {
+            is UltraUtilityIntent.NetworkGamingControl ->
+                networkGaming.execute(intent)
+            else -> answer.message
+        }
+
+    fun executeIfCurrent(
+        answer: UltraAgentAnswer,
+        networkGaming: UltraNetworkGamingGateway,
+        isCurrent: () -> Boolean
+    ): String? {
+        if (
+            answer.intent is UltraUtilityIntent.NetworkGamingControl &&
+            !isCurrent()
+        ) {
+            return null
+        }
+        return execute(answer, networkGaming)
+    }
+}
