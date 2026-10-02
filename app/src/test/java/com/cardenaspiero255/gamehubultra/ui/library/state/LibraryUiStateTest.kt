@@ -135,6 +135,61 @@ class LibraryUiStateTest {
     }
 
     @Test
+    fun installedAndSourceCategoryFiltersComposeWithoutInventingMetadata() {
+        val games = listOf(
+            GameInfo(packageName = "com.game.detected", label = "Detected Game"),
+            GameInfo(packageName = "com.game.manual", label = "Manual Game")
+        )
+        val manualPackages = setOf("com.game.manual")
+
+        assertEquals(
+            games,
+            filterLibraryGames(
+                games = games,
+                query = "",
+                localFilter = LibraryLocalFilter.INSTALLED,
+                favoriteGames = emptySet(),
+                recentGamePackages = emptyList(),
+                category = LibraryCategory.ALL,
+                manualGamePackages = manualPackages
+            )
+        )
+        assertEquals(
+            listOf("com.game.manual"),
+            filterLibraryGames(
+                games = games,
+                query = "",
+                localFilter = LibraryLocalFilter.ALL,
+                favoriteGames = emptySet(),
+                recentGamePackages = emptyList(),
+                category = LibraryCategory.MANUAL,
+                manualGamePackages = manualPackages
+            ).map { it.packageName }
+        )
+        assertEquals(
+            listOf("com.game.detected"),
+            filterLibraryGames(
+                games = games,
+                query = "",
+                localFilter = LibraryLocalFilter.ALL,
+                favoriteGames = emptySet(),
+                recentGamePackages = emptyList(),
+                category = LibraryCategory.DETECTED,
+                manualGamePackages = manualPackages
+            ).map { it.packageName }
+        )
+    }
+
+    @Test
+    fun categorySelectionIsStoredIndependentlyFromLocalFilter() {
+        val updated = LibraryUiState(localFilter = LibraryLocalFilter.FAVORITES)
+            .reduce(LibraryUiEvent.CategoryChanged(LibraryCategory.MANUAL))
+
+        assertEquals(LibraryCategory.MANUAL, updated.category)
+        assertEquals(LibraryLocalFilter.FAVORITES, updated.localFilter)
+    }
+
+    @Test
     fun stateHolderDispatchesThroughReducer() {
         val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
         holder.onEvent(LibraryUiEvent.QueryChanged("after"))
