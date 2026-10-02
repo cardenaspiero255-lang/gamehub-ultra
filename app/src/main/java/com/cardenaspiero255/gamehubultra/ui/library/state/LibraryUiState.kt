@@ -7,11 +7,14 @@ package com.cardenaspiero255.gamehubultra.ui.library.state
  * The saver intentionally persists only user-facing presentation flags and query
  * text so runtime data is refreshed after restoration instead of being serialized.
  */
+internal enum class LibraryLocalFilter { ALL, FAVORITES, RECENT }
+
 internal data class LibraryUiState(
     val refreshToken: Int = 0,
     val launchFailed: Boolean = false,
     val addGameDialogVisible: Boolean = false,
     val query: String = "",
+    val localFilter: LibraryLocalFilter = LibraryLocalFilter.ALL,
     val selectedGameDetailsVisible: Boolean = false,
     val discovery: com.cardenaspiero255.gamehubultra.GameDiscoveryResult? = null,
     val launchableApps: List<com.cardenaspiero255.gamehubultra.GameInfo> = emptyList(),
@@ -20,6 +23,7 @@ internal data class LibraryUiState(
 internal sealed interface LibraryUiEvent {
     data class QueryChanged(val query: String) : LibraryUiEvent
     data object Resumed : LibraryUiEvent
+    data class LocalFilterChanged(val filter: LibraryLocalFilter) : LibraryUiEvent
     data object GameSelected : LibraryUiEvent
     data class GameLaunchResult(val succeeded: Boolean) : LibraryUiEvent
     data class AddGameDialogVisibilityChanged(val visible: Boolean) : LibraryUiEvent
@@ -36,6 +40,7 @@ internal fun LibraryUiState.reduce(event: LibraryUiEvent): LibraryUiState =
     when (event) {
         is LibraryUiEvent.QueryChanged -> copy(query = event.query)
         LibraryUiEvent.Resumed -> copy(refreshToken = refreshToken + 1)
+        is LibraryUiEvent.LocalFilterChanged -> copy(localFilter = event.filter)
         LibraryUiEvent.GameSelected -> copy(launchFailed = false)
         is LibraryUiEvent.GameLaunchResult -> copy(launchFailed = !event.succeeded)
         is LibraryUiEvent.AddGameDialogVisibilityChanged ->
@@ -66,6 +71,7 @@ internal fun rememberLibraryUiStateHolder(): LibraryUiStateHolder {
                 holder.state.launchFailed,
                 holder.state.addGameDialogVisible,
                 holder.state.query,
+                holder.state.localFilter.name,
                 holder.state.selectedGameDetailsVisible,
             )
         },
@@ -76,7 +82,8 @@ internal fun rememberLibraryUiStateHolder(): LibraryUiStateHolder {
                     launchFailed = values[1] as Boolean,
                     addGameDialogVisible = values[2] as Boolean,
                     query = values[3] as String,
-                    selectedGameDetailsVisible = values[4] as Boolean,
+                    localFilter = LibraryLocalFilter.valueOf(values[4] as String),
+                    selectedGameDetailsVisible = values[5] as Boolean,
                 )
             )
         },
