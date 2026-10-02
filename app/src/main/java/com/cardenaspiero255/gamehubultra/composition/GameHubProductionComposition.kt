@@ -76,6 +76,7 @@ internal object GameHubProductionComposition {
                 selectionRepository = preferencesRepository,
                 libraryRepository = preferencesRepository,
                 performanceHistoryRepository = preferencesRepository,
+                playerProfileRepository = preferencesRepository,
                 sessionRepository = sessionRepository,
                 sessionCoordinatorFactory = sessionCoordinatorFactory
             )
