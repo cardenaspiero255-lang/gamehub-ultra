@@ -111,7 +111,7 @@ internal fun SelectedGameCompactBar(
 }
 
 @Composable
-internal fun SelectedGameCard(
+internal fun SelectedGameHero(
     game: GameInfo,
     favorite: Boolean,
     recent: Boolean,
@@ -164,14 +164,14 @@ internal fun SelectedGameCard(
                             R.string.game_icon_content_description,
                             game.label
                         ),
-                        modifier = Modifier.size(56.dp)
+                        modifier = Modifier.size(96.dp)
                     )
                 }
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Text(game.label, style = MaterialTheme.typography.titleMedium)
+                    Text(game.label, style = MaterialTheme.typography.headlineSmall)
                     Text(game.packageName, style = MaterialTheme.typography.bodySmall)
                     versionName?.let {
                         Text(
@@ -218,7 +218,7 @@ internal fun SelectedGameCard(
                     enabled = installed,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(stringResource(R.string.open_game))
+                    Text("JUGAR")
                 }
                 Button(
                     onClick = onToggleFavorite,
