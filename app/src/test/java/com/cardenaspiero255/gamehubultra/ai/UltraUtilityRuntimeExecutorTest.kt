@@ -53,4 +53,66 @@ class UltraUtilityRuntimeExecutorTest {
             UltraUtilityRuntimeExecutor.execute(answer, gateway)
         )
     }
+    @Test
+    fun staleNetworkUtilityDoesNotExecuteRuntimeSideEffect() {
+        var executions = 0
+        val gateway = object : UltraNetworkGamingGateway {
+            override fun execute(intent: UltraUtilityIntent.NetworkGamingControl): String {
+                executions += 1
+                return "unexpected"
+            }
+
+            override fun applyProfile(profile: NetworkGameProfile) =
+                NetworkOptimizationOutcome.APPLIED
+        }
+        val answer = UltraAgentAnswer(
+            message = "ack",
+            intent = UltraUtilityIntent.NetworkGamingControl(
+                competitive = true,
+                routerGaming = false
+            ),
+            canRunDuringGame = true
+        )
+
+        val result = UltraUtilityRuntimeExecutor.executeIfCurrent(
+            answer = answer,
+            networkGaming = gateway,
+            isCurrent = { false }
+        )
+
+        assertEquals(0, executions)
+        assertEquals(null, result)
+    }
+
+    @Test
+    fun currentNetworkUtilityExecutesRuntimeSideEffect() {
+        var executions = 0
+        val gateway = object : UltraNetworkGamingGateway {
+            override fun execute(intent: UltraUtilityIntent.NetworkGamingControl): String {
+                executions += 1
+                return "Modo competitivo: ACTIVO"
+            }
+
+            override fun applyProfile(profile: NetworkGameProfile) =
+                NetworkOptimizationOutcome.APPLIED
+        }
+        val answer = UltraAgentAnswer(
+            message = "ack",
+            intent = UltraUtilityIntent.NetworkGamingControl(
+                competitive = true,
+                routerGaming = false
+            ),
+            canRunDuringGame = true
+        )
+
+        val result = UltraUtilityRuntimeExecutor.executeIfCurrent(
+            answer = answer,
+            networkGaming = gateway,
+            isCurrent = { true }
+        )
+
+        assertEquals(1, executions)
+        assertEquals("Modo competitivo: ACTIVO", result)
+    }
+
 }

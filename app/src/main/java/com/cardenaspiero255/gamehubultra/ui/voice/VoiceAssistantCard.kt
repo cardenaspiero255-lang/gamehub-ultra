@@ -318,10 +318,17 @@ internal fun VoiceAssistantCard(
                     )
                     when (route) {
                         is UltraAgentRoute.Utility -> {
-                            val answer = UltraUtilityRuntimeExecutor.execute(
+                            val answer = UltraUtilityRuntimeExecutor.executeIfCurrent(
                                 answer = route.answer,
-                                networkGaming = networkGaming
-                            )
+                                networkGaming = networkGaming,
+                                isCurrent = {
+                                    isUltraVoiceTurnScopeCurrent(
+                                        captured = capturedVoiceScope,
+                                        assistantInputReady = latestAssistantInputEnabled,
+                                        currentGamePackage = latestAiContext.selectedGamePackage
+                                    )
+                                }
+                            ) ?: return@launch
                             val withAnswer = UltraConversationPolicy.append(
                                 history = withUser,
                                 entry = "Ultra: " + answer,

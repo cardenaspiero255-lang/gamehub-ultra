@@ -42,10 +42,20 @@ class ConfiguredUltraResearchProviderSource(
  *
  * BuildConfig and concrete backend knowledge stop here.
  */
+internal object UltraResearchProductionConfig {
+    const val DEFAULT_SUPABASE_URL =
+        "https://upkmszocqiqslrxuxevx.supabase.co"
+
+    fun resolveSupabaseUrl(configuredUrl: String): String =
+        configuredUrl.trim().ifBlank { DEFAULT_SUPABASE_URL }
+}
+
 object UltraProductionResearchProviderSource : UltraResearchProviderSource {
     private val delegate: UltraResearchProviderSource =
         ConfiguredUltraResearchProviderSource(
-            supabaseUrl = BuildConfig.SUPABASE_URL,
+            supabaseUrl = UltraResearchProductionConfig.resolveSupabaseUrl(
+                BuildConfig.SUPABASE_URL
+            ),
             publishableKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
         )
 

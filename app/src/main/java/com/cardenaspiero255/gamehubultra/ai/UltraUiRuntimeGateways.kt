@@ -39,4 +39,18 @@ internal object UltraUtilityRuntimeExecutor {
                 networkGaming.execute(intent)
             else -> answer.message
         }
+
+    fun executeIfCurrent(
+        answer: UltraAgentAnswer,
+        networkGaming: UltraNetworkGamingGateway,
+        isCurrent: () -> Boolean
+    ): String? {
+        if (
+            answer.intent is UltraUtilityIntent.NetworkGamingControl &&
+            !isCurrent()
+        ) {
+            return null
+        }
+        return execute(answer, networkGaming)
+    }
 }
