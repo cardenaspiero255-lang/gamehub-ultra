@@ -198,6 +198,17 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun stableGeneralQuestionDoesNotCollapseToCapabilityBoilerplateOffline() {
+        val answer = GameHubAiAdvisor().chat(
+            message = "Ultra, ¿qué son los sentimientos?",
+            context = healthyContext
+        )
+
+        assertTrue(answer.contains("sentimientos", ignoreCase = true))
+        assertFalse(answer.startsWith("Soy Ultra. Puedo ayudarte"))
+    }
+
+    @Test
     fun deterministicChatAlwaysRespondsInSpanishEvenForEnglishInput() {
         val answer = GameHubAiAdvisor().chat(
             message = "Ultra, what is my battery?",
