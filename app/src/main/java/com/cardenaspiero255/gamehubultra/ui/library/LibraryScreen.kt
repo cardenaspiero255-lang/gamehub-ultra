@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -46,7 +47,9 @@ import com.cardenaspiero255.gamehubultra.ui.components.SelectedGameCard
 import com.cardenaspiero255.gamehubultra.ui.components.SelectedGameCompactBar
 import com.cardenaspiero255.gamehubultra.ui.components.StoreLibrarySection
 import com.cardenaspiero255.gamehubultra.ui.layout.LibraryLayoutPolicy
+import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryLocalFilter
 import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryUiEvent
+import com.cardenaspiero255.gamehubultra.ui.library.state.filterLibraryGames
 import com.cardenaspiero255.gamehubultra.ui.library.state.rememberLibraryUiStateHolder
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import kotlinx.coroutines.Dispatchers
@@ -118,8 +121,20 @@ internal fun LibraryScreen(
                 .thenBy { it.label.lowercase() }
         )
     }
-    val visibleGames = remember(orderedGames, libraryUiState.query) {
-        GameLibrary.filterGames(orderedGames, libraryUiState.query)
+    val visibleGames = remember(
+        orderedGames,
+        libraryUiState.query,
+        libraryUiState.localFilter,
+        favoriteGames,
+        recentGamePackages
+    ) {
+        filterLibraryGames(
+            games = orderedGames,
+            query = libraryUiState.query,
+            localFilter = libraryUiState.localFilter,
+            favoriteGames = favoriteGames,
+            recentGamePackages = recentGamePackages
+        )
     }
 
     val visibleStoreGames = remember(storeGames, libraryUiState.query) {
@@ -178,6 +193,29 @@ internal fun LibraryScreen(
                 singleLine = true,
                 label = { Text(stringResource(R.string.library_search)) }
             )
+        }
+
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    LibraryLocalFilter.ALL to R.string.library_filter_all,
+                    LibraryLocalFilter.FAVORITES to R.string.library_filter_favorites,
+                    LibraryLocalFilter.RECENT to R.string.library_filter_recent
+                ).forEach { (filter, labelRes) ->
+                    FilterChip(
+                        selected = libraryUiState.localFilter == filter,
+                        onClick = {
+                            libraryStateHolder.onEvent(
+                                LibraryUiEvent.LocalFilterChanged(filter)
+                            )
+                        },
+                        label = { Text(stringResource(labelRes)) }
+                    )
+                }
+            }
         }
 
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -243,9 +281,17 @@ internal fun LibraryScreen(
                     Text(stringResource(R.string.library_count, result.games.size))
                 }
 
-                if (libraryUiState.query.isNotBlank() && result.games.isNotEmpty() && visibleGames.isEmpty()) {
+                if (result.games.isNotEmpty() && visibleGames.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        Text(stringResource(R.string.library_search_empty))
+                        Text(
+                            stringResource(
+                                if (libraryUiState.query.isNotBlank()) {
+                                    R.string.library_search_empty
+                                } else {
+                                    R.string.library_filter_empty
+                                }
+                            )
+                        )
                     }
                 }
 
