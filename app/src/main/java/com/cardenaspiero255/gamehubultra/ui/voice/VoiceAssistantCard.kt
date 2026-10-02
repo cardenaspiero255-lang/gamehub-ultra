@@ -42,7 +42,8 @@ internal fun VoiceAssistantCard(
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
     assistantInputEnabled: Boolean,
-    startListeningRequest: Int = 0
+    startListeningRequest: Int = 0,
+    onListeningRequestConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -470,6 +471,7 @@ applyNetworkProfile = networkGaming::applyProfile
             pendingSingleListening = true
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
+        onListeningRequestConsumed()
     }
 
     LaunchedEffect(permissionGranted, pendingSingleListening, assistantInputEnabled) {
