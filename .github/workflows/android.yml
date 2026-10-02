@@ -132,27 +132,7 @@ jobs:
           }
 
           extract_quality_terminal_failure() {
-            awk '
-              /^\* What went wrong:$/ {
-                capture = 1
-                block = $0 ORS
-                next
-              }
-              capture && /^\* Try:$/ {
-                terminal = block
-                capture = 0
-                next
-              }
-              capture {
-                block = block $0 ORS
-              }
-              END {
-                if (capture) {
-                  terminal = block
-                }
-                printf "%s", terminal
-              }
-            ' "$QUALITY_ATTEMPT_LOG" > "$QUALITY_TERMINAL_LOG"
+            awk '/^\* What went wrong:$/ { capture=1; block=$0 ORS; next } capture && /^\* Try:$/ { terminal=block; capture=0; next } capture { block=block $0 ORS } END { if (capture) terminal=block; printf "%s", terminal }' "$QUALITY_ATTEMPT_LOG" > "$QUALITY_TERMINAL_LOG"
           }
 
           : > "$QUALITY_LOG"
