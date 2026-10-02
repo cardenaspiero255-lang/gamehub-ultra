@@ -17,6 +17,22 @@ class UltraResearchProductionConfigTest {
     }
 
     @Test
+    fun blankPublishableKeyUsesClientFallback() {
+        val resolved = UltraResearchProductionConfig.resolvePublishableKey("   ")
+        kotlin.test.assertTrue(resolved.startsWith("sb_publishable_"))
+    }
+
+    @Test
+    fun explicitPublishableKeyIsPreserved() {
+        assertEquals(
+            "sb_publishable_custom",
+            UltraResearchProductionConfig.resolvePublishableKey(
+                "  sb_publishable_custom  "
+            )
+        )
+    }
+
+    @Test
     fun explicitConfiguredUrlIsPreserved() {
         assertEquals(
             "https://custom-project.supabase.co",
