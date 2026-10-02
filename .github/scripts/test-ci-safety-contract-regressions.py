@@ -312,6 +312,15 @@ def duplicate_full_release_graph_without_configuration_cache(android: str, cover
     return android.replace(needle, duplicate + needle, 1), coverage
 
 
+def remove_quality_transient_retry(android: str, coverage: str):
+    """Reject losing bounded retry protection around the executable quality graph."""
+    needle = 'QUALITY_MAX_ATTEMPTS=3'
+    if needle not in android:
+        # RED fixture: current workflow has no bounded retry yet.
+        return android, coverage
+    return android.replace(needle, 'QUALITY_MAX_ATTEMPTS=1', 1), coverage
+
+
 def hide_connected_validation_inside_echo(android: str, coverage: str):
     """Replace the real connected Gradle invocation with inert echoed text."""
     needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
@@ -479,6 +488,7 @@ def main() -> None:
     run_mutation("quality Gradle pipeline masked with || true", mask_quality_gradle_with_or_true)
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
+    run_mutation("quality transient retry removed", remove_quality_transient_retry)
     run_mutation("connected validation hidden inside echo", hide_connected_validation_inside_echo)
     run_mutation("connected validation loses Configuration Cache enablement", remove_connected_configuration_cache_flag)
     run_mutation("connected cache flags moved to dry-run only", move_connected_cache_flags_to_dry_run)
