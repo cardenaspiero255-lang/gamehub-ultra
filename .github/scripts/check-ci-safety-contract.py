@@ -591,14 +591,26 @@ def main() -> None:
     build_needs = build_job.get("needs")
     if not isinstance(build_needs, list) or set(build_needs) != {"quality", "device-validation"}:
         fail("Aggregate build gate must depend directly on quality and device-validation")
+    if normalized_if(build_job.get("if")) != "always()":
+        fail("Aggregate build gate must use if: always() so failed dependencies remain observable")
     if build_job.get("continue-on-error") not in (None, False):
         fail("Aggregate build gate must remain blocking")
 
-    require_step(
+    aggregate_gate = require_step(
         android,
         "build",
         "Verify all Android CI gates",
         shell="bash",
+    )
+    require_shell_command(
+        aggregate_gate,
+        "build/Verify all Android CI gates quality result",
+        ("test", "${{ needs.quality.result }}", "=", "success"),
+    )
+    require_shell_command(
+        aggregate_gate,
+        "build/Verify all Android CI gates device-validation result",
+        ("test", "${{ needs.device-validation.result }}", "=", "success"),
     )
     require_step(
         android,
