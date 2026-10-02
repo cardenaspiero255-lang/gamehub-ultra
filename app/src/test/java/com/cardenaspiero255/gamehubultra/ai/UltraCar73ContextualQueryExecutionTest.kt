@@ -200,7 +200,7 @@ class UltraCar73ContextualQueryExecutionTest {
     }
 
     @Test
-    fun contradictoryEvidenceDoesNotFallBackToUnverifiedLocalChat() {
+    fun contradictoryStableKnowledgeFallsBackToLocalAnswerInsteadOfGenericAbstention() {
         fun provider(id: String, value: String) = object : UltraResearchProvider {
             override val id = id
 
@@ -245,13 +245,11 @@ class UltraCar73ContextualQueryExecutionTest {
             }
         )
 
-        assertTrue(answer.abstained)
+        assertFalse(answer.abstained)
         assertFalse(answer.verified)
-        assertEquals(
-            setOf("source-one", "source-two"),
-            answer.sources.toSet()
-        )
-        assertEquals(0, localCalls)
+        assertTrue(answer.fallbackUsed)
+        assertEquals("respuesta local no verificada", answer.message)
+        assertEquals(1, localCalls)
         engine.close()
     }
 
