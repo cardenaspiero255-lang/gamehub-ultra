@@ -133,12 +133,12 @@ jobs:
 
           extract_quality_terminal_failure() {
             awk '
-              /^\\* What went wrong:$/ {
+              /^\* What went wrong:$/ {
                 capture = 1
                 block = $0 ORS
                 next
               }
-              capture && /^\\* Try:$/ {
+              capture && /^\* Try:$/ {
                 terminal = block
                 capture = 0
                 next
