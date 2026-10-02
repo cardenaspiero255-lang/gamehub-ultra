@@ -321,6 +321,25 @@ def remove_quality_transient_retry(android: str, coverage: str):
     return android.replace(needle, 'QUALITY_MAX_ATTEMPTS=1', 1), coverage
 
 
+def spoof_quality_retry_bound_with_comment(android: str, coverage: str):
+    """Reject a stale comment that hides a weakened active retry assignment."""
+    needle = "          QUALITY_MAX_ATTEMPTS=3\n"
+    if needle not in android:
+        raise SystemExit("Fixture drift: active quality retry bound not found")
+    replacement = "          QUALITY_MAX_ATTEMPTS=1\n          # QUALITY_MAX_ATTEMPTS=3\n"
+    return android.replace(needle, replacement, 1), coverage
+
+
+def scan_full_quality_history_for_retry(android: str, coverage: str):
+    """Reject retry decisions that scan the whole attempt instead of the terminal failure."""
+    needle = '            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_TERMINAL_LOG"; then\n'
+    if needle not in android:
+        # RED fixture until terminal-failure scoping is implemented.
+        return android, coverage
+    replacement = '            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_ATTEMPT_LOG"; then\n'
+    return android.replace(needle, replacement, 1), coverage
+
+
 def hide_connected_validation_inside_echo(android: str, coverage: str):
     """Replace the real connected Gradle invocation with inert echoed text."""
     needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
@@ -489,6 +508,8 @@ def main() -> None:
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
     run_mutation("quality transient retry removed", remove_quality_transient_retry)
+    run_mutation("quality retry bound spoofed by stale comment", spoof_quality_retry_bound_with_comment)
+    run_mutation("quality retry scans full attempt history", scan_full_quality_history_for_retry)
     run_mutation("connected validation hidden inside echo", hide_connected_validation_inside_echo)
     run_mutation("connected validation loses Configuration Cache enablement", remove_connected_configuration_cache_flag)
     run_mutation("connected cache flags moved to dry-run only", move_connected_cache_flags_to_dry_run)
