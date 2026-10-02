@@ -7,7 +7,7 @@ package com.cardenaspiero255.gamehubultra.ui.library.state
  * The saver intentionally persists only user-facing presentation flags and query
  * text so runtime data is refreshed after restoration instead of being serialized.
  */
-internal enum class LibraryLocalFilter { ALL, FAVORITES, RECENT, INSTALLED }
+internal enum class LibraryLocalFilter { ALL, FAVORITES, RECENT }
 
 internal enum class LibraryCategory { ALL, DETECTED, MANUAL }
 
@@ -21,8 +21,7 @@ internal fun filterLibraryGames(
     manualGamePackages: Set<String> = emptySet(),
 ): List<com.cardenaspiero255.gamehubultra.GameInfo> {
     val locallyFiltered = when (localFilter) {
-        LibraryLocalFilter.ALL,
-        LibraryLocalFilter.INSTALLED -> games
+        LibraryLocalFilter.ALL -> games
         LibraryLocalFilter.FAVORITES ->
             games.filter { game -> favoriteGames.contains(game.packageName) }
         LibraryLocalFilter.RECENT -> {
