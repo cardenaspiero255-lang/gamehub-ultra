@@ -607,7 +607,8 @@ jobs:
           set -euo pipefail
           gradle :app:connectedDebugAndroidTest \
             --build-cache \
-            --no-configuration-cache \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
             --stacktrace
 
       - name: Run baseline profile and macrobenchmarks on API 35
