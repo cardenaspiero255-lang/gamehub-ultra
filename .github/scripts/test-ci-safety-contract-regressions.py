@@ -451,6 +451,19 @@ def main() -> None:
     require_exact_artifact_reuse_contract(android_workflow)
     require_artifact_reuse_mutations_rejected(android_workflow)
 
+    # Phase 3 block 3 cut 3: keep the aggregate gate blocking while ensuring
+    # it never re-enters Gradle or rebuilds an artifact already produced by quality.
+    workflow = yaml.safe_load(android_workflow)
+    build_job = workflow.get("jobs", {}).get("build", {})
+    build_steps = build_job.get("steps", [])
+    if set(build_job.get("needs", [])) != {"quality", "device-validation"}:
+        raise SystemExit("Phase 3 block 3 cut 3: aggregate build gate dependencies changed")
+    build_scripts = "\n".join(str(step.get("run", "")) for step in build_steps)
+    if "gradle " in build_scripts or "./gradlew" in build_scripts:
+        raise SystemExit("Phase 3 block 3 cut 3: aggregate gate must not rebuild Gradle outputs")
+    if not any(step.get("name") == "Verify Phase 3 artifact provenance" for step in build_steps):
+        raise SystemExit("Phase 3 block 3 cut 3: aggregate gate lost artifact verification")
+
     # Phase 2 block 6 is enforced by the parsed CI safety contract above.
     # Mutations prove both the reuse assertion and duplicate partial graphs fail.
 
