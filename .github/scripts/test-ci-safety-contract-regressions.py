@@ -393,19 +393,16 @@ def main() -> None:
     """Run CI-contract mutations and verify the optimized quality graph shape."""
     run_current_contract_must_pass()
     require_shadow_metrics_contract()
-    # Phase 3 block 2 cut 3: the aggregate build gate must remain a pure
-    # fan-in of the two blocking Android gates. Metrics must stay off that
-    # critical path and must never become a prerequisite of build.
+    # Phase 3 block 4 cut 2: keep the aggregate build gate as the only
+    # in-workflow fan-in. Performance metrics are collected post-run by the
+    # read-only shadow workflow, so they cannot delay the blocking CI path.
     android = yaml.safe_load(ANDROID.read_text(encoding="utf-8"))
     jobs = android.get("jobs", {})
     build_needs = jobs.get("build", {}).get("needs", [])
-    metrics_needs = jobs.get("metrics", {}).get("needs", [])
     if set(build_needs) != {"quality", "device-validation"}:
-        raise SystemExit("Phase 3 block 2: build fan-in gate changed")
-    if set(metrics_needs) != {"quality", "device-validation"}:
-        raise SystemExit("Phase 3 block 2: metrics re-entered the build critical path")
-    if "metrics" in build_needs or "build" in metrics_needs:
-        raise SystemExit("Phase 3 block 2: DAG contains a forbidden build/metrics serial edge")
+        raise SystemExit("Phase 3 block 4 cut 2: build fan-in gate changed")
+    if "metrics" in jobs:
+        raise SystemExit("Phase 3 block 4 cut 2: inline metrics still delays Android workflow completion")
     android = ANDROID.read_text(encoding="utf-8")
     coverage = COVERAGE.read_text(encoding="utf-8")
     commented_quality_marker_before_active_step(android, coverage)
@@ -463,6 +460,12 @@ def main() -> None:
         raise SystemExit("Phase 3 block 3 cut 3: aggregate gate must not rebuild Gradle outputs")
     if not any(step.get("name") == "Verify Phase 3 artifact provenance" for step in build_steps):
         raise SystemExit("Phase 3 block 3 cut 3: aggregate gate lost artifact verification")
+
+    # Phase 3 block 4 cut 2: post-run metrics must retain exact parent
+    # provenance and must continue to require the blocking Android build job.
+    shadow_text = SHADOW_METRICS.read_text(encoding="utf-8")
+    if 'REQUIRED_JOB="build"' not in shadow_text:
+        raise SystemExit("Phase 3 block 4 cut 2: shadow Android metrics lost required build provenance")
 
     # Phase 2 block 6 is enforced by the parsed CI safety contract above.
     # Mutations prove both the reuse assertion and duplicate partial graphs fail.
