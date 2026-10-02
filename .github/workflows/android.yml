@@ -833,6 +833,9 @@ jobs:
           path: ${{ runner.temp }}/phase3-debug-reuse
           run-id: ${{ github.run_id }}
           github-token: ${{ github.token }}
+          # Cut 3 keeps this gate verification-only: consume the exact artifact
+          # produced by quality and never invoke Gradle or rebuild it here.
+          merge-multiple: false
 
       - name: Verify Phase 3 artifact provenance
         shell: bash
