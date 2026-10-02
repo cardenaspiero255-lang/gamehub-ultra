@@ -35,6 +35,12 @@ suspend fun GameSelectionStateRepository.effectiveProfileForSelection(
     return gameProfile ?: selectedProfileFlow().first()
 }
 
+/** Owns the editable Ultra player identity independently from UI composition. */
+interface PlayerProfileStateRepository {
+    fun playerNameFlow(): Flow<String>
+    suspend fun savePlayerName(name: String)
+}
+
 interface GameLibraryStateRepository {
     fun favoriteGamesFlow(): Flow<Set<String>>
     fun recentGamesFlow(): Flow<List<String>>
