@@ -36,12 +36,12 @@ class LibraryUiStateTest {
     fun launchResultReflectsFailureOnly() {
         assertFalse(
             LibraryUiState(launchFailed = true)
-                .reduce(LibraryUiEvent.GameLaunchResult(true))
+                .reduce(LibraryUiEvent.GameLaunchResult("com.game.test", true))
                 .launchFailed
         )
         assertTrue(
             LibraryUiState()
-                .reduce(LibraryUiEvent.GameLaunchResult(false))
+                .reduce(LibraryUiEvent.GameLaunchResult("com.game.test", false))
                 .launchFailed
         )
     }
