@@ -61,12 +61,12 @@ class VoiceAssistantController(
         }
 
         VoiceRecognitionStartGuard.run(
-            onError = { error ->
+            onListeningChanged = onListeningChanged,
+            onError = onError,
+            cleanup = {
                 runCatching { recognizer?.cancel() }
                 runCatching { recognizer?.destroy() }
                 recognizer = null
-                onListeningChanged(false)
-                onError(error)
             }
         ) {
             runCatching { recognizer?.cancel() }
