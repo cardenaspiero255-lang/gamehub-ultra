@@ -312,6 +312,33 @@ def duplicate_full_release_graph_without_configuration_cache(android: str, cover
     return android.replace(needle, duplicate + needle, 1), coverage
 
 
+def hide_connected_validation_inside_echo(android: str, coverage: str):
+    """Replace the real connected Gradle invocation with inert echoed text."""
+    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
+"""
+    replacement = """          echo 'gradle :app:connectedDebugAndroidTest --build-cache --configuration-cache --configuration-cache-problems=fail --stacktrace'
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: connected validation invocation not found")
+    return android.replace(needle, replacement, 1), coverage
+
+
+def remove_connected_configuration_cache_flag(android: str, coverage: str):
+    """Remove the positive Configuration Cache enablement from connected validation."""
+    needle = """            --configuration-cache \\\n"""
+    step_name = "      - name: Verify MainActivity presentation wiring on API 35\n"
+    start = android.find(step_name)
+    if start < 0:
+        raise SystemExit("Fixture drift: connected validation step not found")
+    end = android.find("\n      - name:", start + len(step_name))
+    if end < 0:
+        end = len(android)
+    step = android[start:end]
+    if needle not in step:
+        raise SystemExit("Fixture drift: connected Configuration Cache flag not found")
+    return android[:start] + step.replace(needle, "", 1) + android[end:], coverage
+
+
 def require_blocking_shell_line(script: str, expected: str, label: str) -> None:
     """Require an active, exact verifier command under fail-fast shell semantics."""
     active_lines = [
@@ -440,6 +467,8 @@ def main() -> None:
     run_mutation("quality Gradle pipeline masked with || true", mask_quality_gradle_with_or_true)
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
+    run_mutation("connected validation hidden inside echo", hide_connected_validation_inside_echo)
+    run_mutation("connected validation loses Configuration Cache enablement", remove_connected_configuration_cache_flag)
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
     run_mutation("Release Configuration Cache reuse assertion removed", remove_release_configuration_cache_reuse_assertion)
     run_mutation("Partial release/performance graph duplicated", duplicate_partial_release_graph)
