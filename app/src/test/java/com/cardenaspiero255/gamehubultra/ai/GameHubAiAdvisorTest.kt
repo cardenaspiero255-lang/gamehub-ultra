@@ -209,6 +209,17 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun unrelatedUnknownGeneralQuestionDoesNotPretendHardcodedKnowledge() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "¿Qué es la fotosíntesis?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertEquals(null, answer)
+    }
+
+    @Test
     fun deterministicChatAlwaysRespondsInSpanishEvenForEnglishInput() {
         val answer = GameHubAiAdvisor().chat(
             message = "Ultra, what is my battery?",
