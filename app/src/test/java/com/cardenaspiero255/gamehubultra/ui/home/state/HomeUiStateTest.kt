@@ -70,6 +70,18 @@ class HomeUiStateTest {
     }
 
     @Test
+    fun consumedTalkRequestDoesNotReplayUntilNextTap() {
+        val requested = HomeUiState().reduce(HomeUiEvent.QuickVoiceListenRequested)
+        val consumed = requested.reduce(HomeUiEvent.QuickVoiceListenConsumed)
+
+        assertTrue(consumed.quickVoiceOpen)
+        assertEquals(0, consumed.quickVoiceListenRequest)
+
+        val requestedAgain = consumed.reduce(HomeUiEvent.QuickVoiceListenRequested)
+        assertEquals(1, requestedAgain.quickVoiceListenRequest)
+    }
+
+    @Test
     fun repeatedTalkRequestCreatesNewListeningRequestWithoutClosingVoice() {
         val first = HomeUiState().reduce(HomeUiEvent.QuickVoiceListenRequested)
         val second = first.reduce(HomeUiEvent.QuickVoiceListenRequested)
