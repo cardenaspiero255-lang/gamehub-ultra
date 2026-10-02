@@ -223,8 +223,7 @@ internal fun LibraryScreen(
                     listOf(
                         LibraryLocalFilter.ALL to R.string.library_filter_all,
                         LibraryLocalFilter.FAVORITES to R.string.library_filter_favorites,
-                        LibraryLocalFilter.RECENT to R.string.library_filter_recent,
-                        LibraryLocalFilter.INSTALLED to R.string.library_filter_installed
+                        LibraryLocalFilter.RECENT to R.string.library_filter_recent
                     )
                 ) { (filter, labelRes) ->
                     FilterChip(
