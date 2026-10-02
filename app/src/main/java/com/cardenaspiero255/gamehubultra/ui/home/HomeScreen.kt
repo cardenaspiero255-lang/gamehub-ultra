@@ -176,7 +176,7 @@ internal fun HomeScreen(
                 }
             )
         }
-        if (homeUiState.quickVoiceOpen && !showAssistantCards) {
+        if (homeUiState.quickVoiceOpen) {
             item {
                 VoiceAssistantCard(
                     selectedProfileName = selectedProfileName,
@@ -191,7 +191,10 @@ internal fun HomeScreen(
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
                     assistantInputEnabled = assistantInputEnabled,
-                    startListeningRequest = homeUiState.quickVoiceListenRequest
+                    startListeningRequest = homeUiState.quickVoiceListenRequest,
+                    onListeningRequestConsumed = {
+                        homeStateHolder.onEvent(HomeUiEvent.QuickVoiceListenConsumed)
+                    }
                 )
             }
         }
@@ -239,7 +242,7 @@ internal fun HomeScreen(
                 onGameSelected = onGameSelected
             )
         }
-        if (showAssistantCards) {
+        if (showAssistantCards && !homeUiState.quickVoiceOpen) {
             item {
                 VoiceAssistantCard(
                     selectedProfileName = selectedProfileName,
@@ -254,7 +257,8 @@ internal fun HomeScreen(
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
                     assistantInputEnabled = assistantInputEnabled,
-                    startListeningRequest = homeUiState.quickVoiceListenRequest
+                    startListeningRequest = 0,
+                    onListeningRequestConsumed = {}
                 )
             }
         }
