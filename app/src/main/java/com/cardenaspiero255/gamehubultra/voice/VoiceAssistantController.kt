@@ -11,17 +11,6 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import androidx.core.content.ContextCompat
 
-internal object VoiceRecognitionStartGuard {
-    fun run(onError: (Int) -> Unit, action: () -> Unit): Boolean =
-        try {
-            action()
-            true
-        } catch (_: RuntimeException) {
-            onError(SpeechRecognizer.ERROR_CLIENT)
-            false
-        }
-}
-
 class VoiceAssistantController(
     context: Context,
     private val onListeningChanged: (Boolean) -> Unit,
