@@ -15,6 +15,7 @@ internal data class HomeUiState(
 internal sealed interface HomeUiEvent {
     data class GameCountLoaded(val count: Int) : HomeUiEvent
     data object QuickVoiceToggled : HomeUiEvent
+    data object QuickVoiceRevealed : HomeUiEvent
 }
 
 /** Applies one Home UI event without side effects. */
@@ -31,6 +32,10 @@ internal fun HomeUiState.reduce(event: HomeUiEvent): HomeUiState =
                 )
             }
         }
+        HomeUiEvent.QuickVoiceRevealed -> copy(
+            quickVoiceOpen = true,
+            quickVoiceRevealRequest = quickVoiceRevealRequest + 1,
+        )
     }
 
 /** Owns the current Home UI state and routes events through the pure reducer. */

@@ -17,6 +17,15 @@ class LibraryLayoutPolicyTest {
     }
 
     @Test
+    fun selectedGameHeroSwitchesToWideCompositionOnlyWhenSpaceAllows() {
+        assertEquals(LibraryHeroLayout.COMPACT, LibraryLayoutPolicy.heroLayoutForWidthDp(412))
+        assertEquals(LibraryHeroLayout.COMPACT, LibraryLayoutPolicy.heroLayoutForWidthDp(699))
+        assertEquals(LibraryHeroLayout.WIDE, LibraryLayoutPolicy.heroLayoutForWidthDp(700))
+        assertEquals(172, LibraryLayoutPolicy.carouselCardWidthForWidthDp(412))
+        assertEquals(208, LibraryLayoutPolicy.carouselCardWidthForWidthDp(840))
+    }
+
+    @Test
     fun widerLayoutsKeepCardsBoundedWithoutStretching() {
         assertEquals(
             LibraryGridMetrics(minTileWidthDp = 168, minTileHeightDp = 132),

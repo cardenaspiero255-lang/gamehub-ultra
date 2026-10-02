@@ -36,12 +36,12 @@ class LibraryUiStateTest {
     fun launchResultReflectsFailureOnly() {
         assertFalse(
             LibraryUiState(launchFailed = true)
-                .reduce(LibraryUiEvent.GameLaunchResult(true))
+                .reduce(LibraryUiEvent.GameLaunchResult("com.game.test", true))
                 .launchFailed
         )
         assertTrue(
             LibraryUiState()
-                .reduce(LibraryUiEvent.GameLaunchResult(false))
+                .reduce(LibraryUiEvent.GameLaunchResult("com.game.test", false))
                 .launchFailed
         )
     }
@@ -82,10 +82,163 @@ class LibraryUiStateTest {
     }
 
     @Test
+    fun localFilterSelectionIsStoredWithoutMutatingOtherLibraryState() {
+        val initial = LibraryUiState(query = "resident", launchFailed = true)
+
+        val updated = initial.reduce(
+            LibraryUiEvent.LocalFilterChanged(LibraryLocalFilter.FAVORITES)
+        )
+
+        assertEquals(LibraryLocalFilter.FAVORITES, updated.localFilter)
+        assertEquals("resident", updated.query)
+        assertTrue(updated.launchFailed)
+    }
+
+    @Test
+    fun localFilterCanReturnToAllGames() {
+        val updated = LibraryUiState(localFilter = LibraryLocalFilter.RECENT)
+            .reduce(LibraryUiEvent.LocalFilterChanged(LibraryLocalFilter.ALL))
+
+        assertEquals(LibraryLocalFilter.ALL, updated.localFilter)
+    }
+
+
+    @Test
+    fun localFilterAppliesFavoritesRecentsAndQueryDeterministically() {
+        val games = listOf(
+            GameInfo(packageName = "com.game.resident", label = "Resident Evil 4"),
+            GameInfo(packageName = "com.game.brawl", label = "Brawl Stars"),
+            GameInfo(packageName = "com.game.cod", label = "Call of Duty")
+        )
+        val favorites = setOf("com.game.resident", "com.game.cod")
+        val recents = listOf("com.game.brawl", "com.game.resident")
+
+        assertEquals(
+            listOf("com.game.resident", "com.game.cod"),
+            filterLibraryGames(games, "", LibraryLocalFilter.FAVORITES, favorites, recents)
+                .map { it.packageName }
+        )
+        assertEquals(
+            listOf("com.game.brawl", "com.game.resident"),
+            filterLibraryGames(games, "", LibraryLocalFilter.RECENT, favorites, recents)
+                .map { it.packageName }
+        )
+        assertEquals(
+            listOf("com.game.resident"),
+            filterLibraryGames(games, "resident", LibraryLocalFilter.FAVORITES, favorites, recents)
+                .map { it.packageName }
+        )
+        assertEquals(
+            games,
+            filterLibraryGames(games, "", LibraryLocalFilter.ALL, favorites, recents)
+        )
+    }
+
+    @Test
+    fun sourceCategoryFiltersComposeWithoutInventingMetadata() {
+        val games = listOf(
+            GameInfo(packageName = "com.game.detected", label = "Detected Game"),
+            GameInfo(packageName = "com.game.manual", label = "Manual Game")
+        )
+        val manualPackages = setOf("com.game.manual")
+
+        assertEquals(
+            games,
+            filterLibraryGames(
+                games = games,
+                query = "",
+                localFilter = LibraryLocalFilter.ALL,
+                favoriteGames = emptySet(),
+                recentGamePackages = emptyList(),
+                category = LibraryCategory.ALL,
+                manualGamePackages = manualPackages
+            )
+        )
+        assertEquals(
+            listOf("com.game.manual"),
+            filterLibraryGames(
+                games = games,
+                query = "",
+                localFilter = LibraryLocalFilter.ALL,
+                favoriteGames = emptySet(),
+                recentGamePackages = emptyList(),
+                category = LibraryCategory.MANUAL,
+                manualGamePackages = manualPackages
+            ).map { it.packageName }
+        )
+        assertEquals(
+            listOf("com.game.detected"),
+            filterLibraryGames(
+                games = games,
+                query = "",
+                localFilter = LibraryLocalFilter.ALL,
+                favoriteGames = emptySet(),
+                recentGamePackages = emptyList(),
+                category = LibraryCategory.DETECTED,
+                manualGamePackages = manualPackages
+            ).map { it.packageName }
+        )
+    }
+
+    @Test
+    fun categorySelectionIsStoredIndependentlyFromLocalFilter() {
+        val updated = LibraryUiState(localFilter = LibraryLocalFilter.FAVORITES)
+            .reduce(LibraryUiEvent.CategoryChanged(LibraryCategory.MANUAL))
+
+        assertEquals(LibraryCategory.MANUAL, updated.category)
+        assertEquals(LibraryLocalFilter.FAVORITES, updated.localFilter)
+    }
+
+
+    @Test
+    fun failedLaunchRemembersExactPackageForRetryAndSuccessClearsIt() {
+        val failed = LibraryUiState().reduce(
+            LibraryUiEvent.GameLaunchResult(
+                packageName = "com.game.brawl",
+                succeeded = false
+            )
+        )
+        assertEquals("com.game.brawl", failed.failedLaunchPackage)
+
+        val recovered = failed.reduce(
+            LibraryUiEvent.GameLaunchResult(
+                packageName = "com.game.brawl",
+                succeeded = true
+            )
+        )
+        assertEquals(null, recovered.failedLaunchPackage)
+    }
+
+    @Test
+    fun selectingAnotherGameClearsFailedLaunchPackage() {
+        val updated = LibraryUiState(failedLaunchPackage = "com.game.old")
+            .reduce(LibraryUiEvent.GameSelected)
+
+        assertEquals(null, updated.failedLaunchPackage)
+    }
+
+    @Test
+    fun selectedHeroOnlyResolvesFromVisibleGames() {
+        val visible = listOf(
+            GameInfo(packageName = "com.game.brawl", label = "Brawl Stars")
+        )
+
+        assertEquals(
+            null,
+            resolveVisibleSelectedGame(visible, "com.game.resident")
+        )
+        assertEquals(
+            "com.game.brawl",
+            resolveVisibleSelectedGame(visible, "com.game.brawl")?.packageName
+        )
+    }
+
+
+    @Test
     fun stateHolderDispatchesThroughReducer() {
         val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
         holder.onEvent(LibraryUiEvent.QueryChanged("after"))
-        holder.onEvent(LibraryUiEvent.GameLaunchResult(false))
+        holder.onEvent(LibraryUiEvent.GameLaunchResult("com.game.test", false))
 
         assertEquals("after", holder.state.query)
         assertTrue(holder.state.launchFailed)

@@ -45,6 +45,19 @@ class HomeUiStateTest {
     }
 
     @Test
+    fun explicitQuickVoiceRevealAlwaysOpensAndRequestsScroll() {
+        val alreadyOpen = HomeUiState(
+            quickVoiceOpen = true,
+            quickVoiceRevealRequest = 4,
+        )
+
+        val revealed = alreadyOpen.reduce(HomeUiEvent.QuickVoiceRevealed)
+
+        assertTrue(revealed.quickVoiceOpen)
+        assertEquals(5, revealed.quickVoiceRevealRequest)
+    }
+
+    @Test
     fun holderDispatchesHomeEventsThroughReducer() {
         val holder = HomeUiStateHolder()
 
