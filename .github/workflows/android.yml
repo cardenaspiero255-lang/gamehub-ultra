@@ -109,6 +109,7 @@ jobs:
           CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
           QUALITY_LOG="$RUNNER_TEMP/quality-gates.log"
           QUALITY_ATTEMPT_LOG="$RUNNER_TEMP/quality-gates-attempt.log"
+          QUALITY_TERMINAL_LOG="$RUNNER_TEMP/quality-gates-terminal.log"
           QUALITY_MAX_ATTEMPTS=3
           QUALITY_RETRY_BASE_SECONDS=5
           QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'
@@ -126,7 +127,32 @@ jobs:
               --parallel \
               --configuration-cache \
               --configuration-cache-problems=fail \
+              --console=plain \
               --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG"
+          }
+
+          extract_quality_terminal_failure() {
+            awk '
+              /^\\* What went wrong:$/ {
+                capture = 1
+                block = $0 ORS
+                next
+              }
+              capture && /^\\* Try:$/ {
+                terminal = block
+                capture = 0
+                next
+              }
+              capture {
+                block = block $0 ORS
+              }
+              END {
+                if (capture) {
+                  terminal = block
+                }
+                printf "%s", terminal
+              }
+            ' "$QUALITY_ATTEMPT_LOG" > "$QUALITY_TERMINAL_LOG"
           }
 
           : > "$QUALITY_LOG"
@@ -147,8 +173,14 @@ jobs:
               exit "$quality_status"
             fi
 
-            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_ATTEMPT_LOG"; then
-              echo "Quality gate failed with a non-transient error; not retrying." >&2
+            : > "$QUALITY_TERMINAL_LOG"
+            extract_quality_terminal_failure
+            if [[ ! -s "$QUALITY_TERMINAL_LOG" ]]; then
+              echo "Quality gate failed without a recognized Gradle terminal failure block; not retrying." >&2
+              exit "$quality_status"
+            fi
+            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_TERMINAL_LOG"; then
+              echo "Quality gate terminal cause is non-transient; not retrying." >&2
               exit "$quality_status"
             fi
 
@@ -167,6 +199,7 @@ jobs:
             --parallel \
             --configuration-cache \
             --configuration-cache-problems=fail \
+            --console=plain \
             --dry-run \
             --stacktrace >/dev/null
           gradle \
@@ -176,6 +209,7 @@ jobs:
             --parallel \
             --configuration-cache \
             --configuration-cache-problems=fail \
+            --console=plain \
             --dry-run \
             --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
           grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
