@@ -115,6 +115,27 @@ def extract_metrics(jobs: list[dict[str, Any]]) -> dict[str, float]:
                 f"step.{_slug(name)}.{_slug(step_name)}.seconds"
             ] = step_duration
 
+    aggregate = next((job for job in core_jobs if str(job.get("name") or "").strip() == "build"), None)
+    if aggregate is not None:
+        aggregate_start = _parse_time(aggregate.get("started_at"))
+        aggregate_end = _parse_time(aggregate.get("completed_at"))
+        dependencies = [
+            job
+            for job in core_jobs
+            if str(job.get("name") or "").strip() in {"quality", "device-validation"}
+        ]
+        dependency_ends = [_parse_time(job.get("completed_at")) for job in dependencies]
+        dependency_ends = [value for value in dependency_ends if value is not None]
+        if aggregate_start is not None and aggregate_end is not None and dependency_ends:
+            dependency_ready = max(dependency_ends)
+            queue_seconds = max(0.0, (aggregate_start - dependency_ready).total_seconds())
+            runtime_seconds = max(0.0, (aggregate_end - aggregate_start).total_seconds())
+            metrics["aggregate_gate_queue_seconds"] = round(queue_seconds, 3)
+            metrics["aggregate_gate_runtime_seconds"] = round(runtime_seconds, 3)
+            metrics["aggregate_gate_overhead_seconds"] = round(
+                queue_seconds + runtime_seconds, 3
+            )
+
     starts = [_parse_time(job.get("started_at")) for job in core_jobs]
     ends = [_parse_time(job.get("completed_at")) for job in core_jobs]
     starts = [value for value in starts if value is not None]
