@@ -220,6 +220,17 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun consentQuestionDoesNotMatchSentimentFallbackBySubstring() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "¿Qué es el consentimiento informado?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertNull(answer)
+    }
+
+    @Test
     fun unrelatedUnknownGeneralQuestionDoesNotPretendHardcodedKnowledge() {
         val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
             message = "¿Qué es la fotosíntesis?",
@@ -443,6 +454,22 @@ class GameHubAiAdvisorTest {
         assertTrue(answer.contains("prefiero respuestas cortas"))
     }
 
+
+    @Test
+    fun memoryRecallTakesPriorityOverStableKnowledgeFallback() {
+        val gateway = fixedMemoryGateway("mis emociones cambian mucho cuando juego competitivo")
+
+        val answer = GameHubAiAdvisor(
+            modelAdapter = null,
+            memoryGateway = gateway
+        ).chat(
+            message = "Ultra, ¿qué recuerdas de mis emociones?",
+            context = healthyContext
+        )
+
+        assertTrue(answer.contains("mis emociones cambian mucho"))
+        assertFalse(answer.startsWith("Los sentimientos son"))
+    }
 
     @Test
     fun visibleConversationIsNotDuplicatedFromLongTermRecall() {

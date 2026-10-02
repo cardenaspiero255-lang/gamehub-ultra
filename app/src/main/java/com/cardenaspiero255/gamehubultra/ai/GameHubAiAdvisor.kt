@@ -108,7 +108,6 @@ class GameHubAiAdvisor(
             ?.let { AiChatSafetyFilter.sanitize(it, message) }
             ?.takeUnless(::looksPredominantlyEnglish)
         if (local != null) return local
-        deterministicStableKnowledgeOrNull(message)?.let { return it }
 
         val normalized = normalize(message)
         val memoryRecallQuestion = listOf(
@@ -124,6 +123,8 @@ class GameHubAiAdvisor(
                 .joinToString(" · ") { it.record.text }
             return "Recuerdo: $memoryText"
         }
+
+        deterministicStableKnowledgeOrNull(message)?.let { return it }
 
         val advice = advise(message, context)
         val profile = profileLabel(advice.suggestedProfile)
@@ -167,7 +168,7 @@ class GameHubAiAdvisor(
     private fun deterministicStableKnowledgeOrNull(message: String): String? {
         val normalized = normalize(message)
         return when {
-            normalized.contains("sentimiento") || normalized.contains("emocion") ->
+            Regex("""\b(?:sentimientos?|emociones?)\b""").containsMatchIn(normalized) ->
                 "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones. Pueden influir en cómo percibimos, decidimos y actuamos, y suelen durar más que una reacción emocional instantánea."
             else -> null
         }
