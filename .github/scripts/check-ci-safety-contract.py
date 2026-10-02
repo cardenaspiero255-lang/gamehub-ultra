@@ -474,6 +474,21 @@ def main() -> None:
             f"invocation; found {len(executable_connected)}"
         )
 
+    connected_required_args = {
+        "--build-cache",
+        "--configuration-cache",
+        "--configuration-cache-problems=fail",
+    }
+    executable_connected_args = set(executable_connected[0])
+    missing_connected_args = sorted(
+        connected_required_args.difference(executable_connected_args)
+    )
+    if missing_connected_args:
+        fail(
+            "Executable connected API 35 validation is missing required arguments: "
+            f"{missing_connected_args!r}"
+        )
+
     # Phase 2 block 2 must remain a measurable A/B experiment: the candidate
     # starts the emulator immediately and emits timestamps used to compare
     # end-to-end device-validation latency against main.
