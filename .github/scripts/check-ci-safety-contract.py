@@ -444,6 +444,36 @@ def main() -> None:
         ("grep", "-Fq", "Reusing configuration cache.", "$RELEASE_CONFIG_CACHE_LOG"),
     )
 
+    connected = require_step(
+        android,
+        "device-validation",
+        "Verify MainActivity presentation wiring on API 35",
+        shell="bash",
+    )
+    require_gradle_invocation(
+        connected,
+        "device-validation/Verify MainActivity presentation wiring on API 35",
+        tasks=(":app:connectedDebugAndroidTest",),
+        args=(
+            "--build-cache",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+        ),
+    )
+    connected_commands = [
+        tokens
+        for tokens in gradle_commands(str(connected.get("run", "")))
+        if ":app:connectedDebugAndroidTest" in set(tokens)
+    ]
+    executable_connected = [
+        tokens for tokens in connected_commands if "--dry-run" not in set(tokens)
+    ]
+    if len(executable_connected) != 1:
+        fail(
+            "Connected API 35 validation requires exactly one executable Gradle "
+            f"invocation; found {len(executable_connected)}"
+        )
+
     # Phase 2 block 2 must remain a measurable A/B experiment: the candidate
     # starts the emulator immediately and emits timestamps used to compare
     # end-to-end device-validation latency against main.
