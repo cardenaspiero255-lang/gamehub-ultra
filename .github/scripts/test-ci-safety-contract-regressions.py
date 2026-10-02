@@ -86,6 +86,7 @@ def run_mutation(label: str, mutate) -> None:
 
         (temp / ".github/workflows/android.yml").write_text(android, encoding="utf-8")
         (temp / ".github/workflows/coverage.yml").write_text(coverage, encoding="utf-8")
+        shutil.copy2(SHADOW_METRICS, temp / ".github/workflows/ci-metrics-shadow.yml")
         target = temp / ".github/scripts/test-ci-safety-contract.sh"
         checker = temp / ".github/scripts/check-ci-safety-contract.py"
         shutil.copy2(CONTRACT, target)
@@ -104,6 +105,27 @@ def run_mutation(label: str, mutate) -> None:
                 f"CI contract regression was not rejected: {label}\n"
                 f"--- contract output ---\n{result.stdout}"
             )
+
+
+def remove_build_always_condition(android: str, coverage: str):
+    """Remove the fan-in job condition that makes dependency failures observable."""
+    needle = """  build:
+    name: build
+    if: always()
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: aggregate build job condition not found")
+    return android.replace(needle, """  build:
+    name: build
+""", 1), coverage
+
+
+def remove_device_validation_result_assertion(android: str, coverage: str):
+    """Remove one blocking dependency-result assertion from the aggregate gate."""
+    needle = '          test "${{ needs.device-validation.result }}" = "success"\n'
+    if needle not in android:
+        raise SystemExit("Fixture drift: device-validation aggregate assertion not found")
+    return android.replace(needle, "", 1), coverage
 
 
 def remove_unit_test_but_leave_comment(android: str, coverage: str):
@@ -406,6 +428,8 @@ def main() -> None:
     android = ANDROID.read_text(encoding="utf-8")
     coverage = COVERAGE.read_text(encoding="utf-8")
     commented_quality_marker_before_active_step(android, coverage)
+    run_mutation("aggregate build loses always() fan-in condition", remove_build_always_condition)
+    run_mutation("aggregate build loses device-validation result assertion", remove_device_validation_result_assertion)
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
