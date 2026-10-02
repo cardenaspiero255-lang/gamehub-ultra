@@ -323,6 +323,18 @@ def hide_connected_validation_inside_echo(android: str, coverage: str):
     return android.replace(needle, replacement, 1), coverage
 
 
+def move_connected_cache_flags_to_dry_run(android: str, coverage: str):
+    """Keep cache flags only on a dry-run while weakening the real device test."""
+    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
+"""
+    replacement = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --dry-run \\\n            --stacktrace
+          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --stacktrace
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: connected validation invocation not found")
+    return android.replace(needle, replacement, 1), coverage
+
+
 def remove_connected_configuration_cache_flag(android: str, coverage: str):
     """Remove the positive Configuration Cache enablement from connected validation."""
     needle = """            --configuration-cache \\\n"""
@@ -469,6 +481,7 @@ def main() -> None:
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
     run_mutation("connected validation hidden inside echo", hide_connected_validation_inside_echo)
     run_mutation("connected validation loses Configuration Cache enablement", remove_connected_configuration_cache_flag)
+    run_mutation("connected cache flags moved to dry-run only", move_connected_cache_flags_to_dry_run)
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
     run_mutation("Release Configuration Cache reuse assertion removed", remove_release_configuration_cache_reuse_assertion)
     run_mutation("Partial release/performance graph duplicated", duplicate_partial_release_graph)
