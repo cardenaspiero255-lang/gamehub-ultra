@@ -51,6 +51,7 @@ import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryLocalFilter
 import com.cardenaspiero255.gamehubultra.ui.library.state.LibraryUiEvent
 import com.cardenaspiero255.gamehubultra.ui.library.state.filterLibraryGames
 import com.cardenaspiero255.gamehubultra.ui.library.state.rememberLibraryUiStateHolder
+import com.cardenaspiero255.gamehubultra.ui.library.state.resolveVisibleSelectedGame
 import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -142,10 +143,11 @@ internal fun LibraryScreen(
             manualGamePackages = manualGamePackages
         )
     }
-    val selectedGame = remember(result?.games, selectedGamePackage) {
-        result?.games.orEmpty().firstOrNull { game ->
-            game.packageName == selectedGamePackage
-        }
+    val selectedGame = remember(visibleGames, selectedGamePackage) {
+        resolveVisibleSelectedGame(visibleGames, selectedGamePackage)
+    }
+    val selectedGameExists = remember(result?.games, selectedGamePackage) {
+        result?.games.orEmpty().any { game -> game.packageName == selectedGamePackage }
     }
     val visibleStoreGames = remember(storeGames, libraryUiState.query) {
         storeGames.filter { game ->
@@ -281,12 +283,12 @@ internal fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(stringResource(R.string.library_open_error))
-                        selectedGamePackage?.let { packageName ->
+                        libraryUiState.failedLaunchPackage?.let { packageName ->
                             TextButton(
                                 onClick = {
                                     val succeeded = openGame(context, packageName)
                                     libraryStateHolder.onEvent(
-                                        LibraryUiEvent.GameLaunchResult(succeeded)
+                                        LibraryUiEvent.GameLaunchResult(packageName, succeeded)
                                     )
                                     if (succeeded) {
                                         onGameOpened(packageName)
@@ -442,7 +444,7 @@ internal fun LibraryScreen(
                                     onOpen = {
                                         val succeeded = openGame(context, game.packageName)
                                         libraryStateHolder.onEvent(
-                                            LibraryUiEvent.GameLaunchResult(succeeded)
+                                            LibraryUiEvent.GameLaunchResult(game.packageName, succeeded)
                                         )
                                         if (succeeded) {
                                             onGameOpened(game.packageName)
@@ -474,7 +476,7 @@ internal fun LibraryScreen(
                             onOpen = {
                                 val succeeded = openGame(context, game.packageName)
                                 libraryStateHolder.onEvent(
-                                    LibraryUiEvent.GameLaunchResult(succeeded)
+                                    LibraryUiEvent.GameLaunchResult(game.packageName, succeeded)
                                 )
                                 if (succeeded) {
                                     onGameOpened(game.packageName)
@@ -485,7 +487,7 @@ internal fun LibraryScreen(
                     }
                 }
 
-                if (selectedGamePackage != null && selectedGame == null) {
+                if (selectedGamePackage != null && !selectedGameExists) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(
@@ -508,10 +510,11 @@ internal fun LibraryScreen(
                     }
                 }
 
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    StoreLibrarySection(games = visibleStoreGames)
-                }
             }
+        }
+
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            StoreLibrarySection(games = visibleStoreGames)
         }
     }
 
