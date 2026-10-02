@@ -560,6 +560,7 @@ internal fun GameHubUltraApp(
                     selectedTab = 1
                 },
                 assistantRevealRequest = assistantRevealRequest,
+                onAssistantRevealConsumed = { assistantRevealRequest = 0 },
                 showAssistantCards = showAssistantCards
             )
             else -> LibraryScreen(
