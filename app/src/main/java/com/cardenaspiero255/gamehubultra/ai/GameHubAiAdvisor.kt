@@ -24,8 +24,8 @@ class GameHubAiAdvisor(
         message: String,
         context: GameHubAiContext,
         conversation: List<String>
-    ): String? =
-        runCatching {
+    ): String? {
+        val modelAnswer = runCatching {
             modelAdapter
                 ?.takeIf { it.isAvailable() }
                 ?.chat(message, context, conversation.takeLast(18))
@@ -33,6 +33,9 @@ class GameHubAiAdvisor(
             ?.takeIf { it.isNotBlank() }
             ?.let { AiChatSafetyFilter.sanitize(it, message) }
             ?.takeUnless(::looksPredominantlyEnglish)
+
+        return modelAnswer ?: deterministicStableKnowledgeOrNull(message)
+    }
 
     override fun advise(
         question: String,
@@ -121,6 +124,8 @@ class GameHubAiAdvisor(
             return "Recuerdo: $memoryText"
         }
 
+        deterministicStableKnowledgeOrNull(message)?.let { return it }
+
         val advice = advise(message, context)
         val profile = profileLabel(advice.suggestedProfile)
 
@@ -157,6 +162,29 @@ class GameHubAiAdvisor(
 
             else ->
                 "Soy Ultra. Puedo ayudarte en español con rendimiento, FPS, temperatura, batería, red, perfiles de GameHub Ultra y consultas generales. Si una respuesta necesita datos externos, intentaré usar información verificada."
+        }
+    }
+
+    private fun deterministicStableKnowledgeOrNull(message: String): String? {
+        val normalized = normalize(message)
+        val definitionQuery = normalized
+            .removePrefix("ultra ")
+            .trimStart()
+        val asksDefinition = listOf(
+            "que es ",
+            "que son ",
+            "que significa ",
+            "define ",
+            "definicion de "
+        ).any(definitionQuery::startsWith)
+        if (!asksDefinition) return null
+
+        return when {
+            Regex("""\bsentimientos?\b""").containsMatchIn(normalized) ->
+                "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones. Pueden influir en cómo percibimos, decidimos y actuamos, y suelen durar más que una reacción emocional instantánea."
+            Regex("""\bemocion(?:es)?\b""").containsMatchIn(normalized) ->
+                "Las emociones son respuestas psicofisiológicas ante estímulos internos o externos. Suelen aparecer rápidamente, preparan al organismo para responder y pueden dar lugar a sentimientos cuando las interpretamos conscientemente."
+            else -> null
         }
     }
 
