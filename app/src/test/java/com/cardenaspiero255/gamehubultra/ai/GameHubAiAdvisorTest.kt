@@ -232,6 +232,17 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun definitionCueInsideStatementDoesNotTriggerStableKnowledgeFallback() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "Ese final es lo que define mis emociones",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertNull(answer)
+    }
+
+    @Test
     fun consentQuestionDoesNotMatchSentimentFallbackBySubstring() {
         val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
             message = "¿Qué es el consentimiento informado?",

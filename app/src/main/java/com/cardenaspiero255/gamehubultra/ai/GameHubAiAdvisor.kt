@@ -167,13 +167,16 @@ class GameHubAiAdvisor(
 
     private fun deterministicStableKnowledgeOrNull(message: String): String? {
         val normalized = normalize(message)
+        val definitionQuery = normalized
+            .removePrefix("ultra ")
+            .trimStart()
         val asksDefinition = listOf(
             "que es ",
             "que son ",
             "que significa ",
             "define ",
             "definicion de "
-        ).any { cue -> normalized.startsWith(cue) || normalized.contains(" $cue") }
+        ).any(definitionQuery::startsWith)
         if (!asksDefinition) return null
 
         return when {
