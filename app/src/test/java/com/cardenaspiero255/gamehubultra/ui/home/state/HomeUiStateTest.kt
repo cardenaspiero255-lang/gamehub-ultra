@@ -13,6 +13,7 @@ class HomeUiStateTest {
         assertEquals(0, state.localGameCount)
         assertFalse(state.quickVoiceOpen)
         assertEquals(0, state.quickVoiceRevealRequest)
+        assertEquals(0, state.quickVoiceListenRequest)
     }
 
     @Test
@@ -20,6 +21,7 @@ class HomeUiStateTest {
         val initial = HomeUiState(
             quickVoiceOpen = true,
             quickVoiceRevealRequest = 2,
+            quickVoiceListenRequest = 3,
         )
 
         val updated = initial.reduce(HomeUiEvent.GameCountLoaded(7))
@@ -27,6 +29,7 @@ class HomeUiStateTest {
         assertEquals(7, updated.localGameCount)
         assertTrue(updated.quickVoiceOpen)
         assertEquals(2, updated.quickVoiceRevealRequest)
+        assertEquals(3, updated.quickVoiceListenRequest)
     }
 
     @Test
@@ -55,6 +58,25 @@ class HomeUiStateTest {
 
         assertTrue(revealed.quickVoiceOpen)
         assertEquals(5, revealed.quickVoiceRevealRequest)
+    }
+
+    @Test
+    fun talkRequestOpensVoiceAndRequestsImmediateListening() {
+        val requested = HomeUiState().reduce(HomeUiEvent.QuickVoiceListenRequested)
+
+        assertTrue(requested.quickVoiceOpen)
+        assertEquals(1, requested.quickVoiceRevealRequest)
+        assertEquals(1, requested.quickVoiceListenRequest)
+    }
+
+    @Test
+    fun repeatedTalkRequestCreatesNewListeningRequestWithoutClosingVoice() {
+        val first = HomeUiState().reduce(HomeUiEvent.QuickVoiceListenRequested)
+        val second = first.reduce(HomeUiEvent.QuickVoiceListenRequested)
+
+        assertTrue(second.quickVoiceOpen)
+        assertEquals(2, second.quickVoiceRevealRequest)
+        assertEquals(2, second.quickVoiceListenRequest)
     }
 
     @Test
