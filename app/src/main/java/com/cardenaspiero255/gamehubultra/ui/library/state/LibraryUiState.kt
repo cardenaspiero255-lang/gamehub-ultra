@@ -53,6 +53,7 @@ internal fun filterLibraryGames(
 internal data class LibraryUiState(
     val refreshToken: Int = 0,
     val launchFailed: Boolean = false,
+    val failedLaunchPackage: String? = null,
     val addGameDialogVisible: Boolean = false,
     val query: String = "",
     val localFilter: LibraryLocalFilter = LibraryLocalFilter.ALL,
@@ -68,7 +69,10 @@ internal sealed interface LibraryUiEvent {
     data class LocalFilterChanged(val filter: LibraryLocalFilter) : LibraryUiEvent
     data class CategoryChanged(val category: LibraryCategory) : LibraryUiEvent
     data object GameSelected : LibraryUiEvent
-    data class GameLaunchResult(val succeeded: Boolean) : LibraryUiEvent
+    data class GameLaunchResult(
+        val packageName: String,
+        val succeeded: Boolean
+    ) : LibraryUiEvent
     data class AddGameDialogVisibilityChanged(val visible: Boolean) : LibraryUiEvent
     data class SelectedGameDetailsVisibilityChanged(val visible: Boolean) : LibraryUiEvent
     data class DiscoveryLoaded(
@@ -85,8 +89,14 @@ internal fun LibraryUiState.reduce(event: LibraryUiEvent): LibraryUiState =
         LibraryUiEvent.Resumed -> copy(refreshToken = refreshToken + 1)
         is LibraryUiEvent.LocalFilterChanged -> copy(localFilter = event.filter)
         is LibraryUiEvent.CategoryChanged -> copy(category = event.category)
-        LibraryUiEvent.GameSelected -> copy(launchFailed = false)
-        is LibraryUiEvent.GameLaunchResult -> copy(launchFailed = !event.succeeded)
+        LibraryUiEvent.GameSelected -> copy(
+            launchFailed = false,
+            failedLaunchPackage = null
+        )
+        is LibraryUiEvent.GameLaunchResult -> copy(
+            launchFailed = !event.succeeded,
+            failedLaunchPackage = if (event.succeeded) null else event.packageName
+        )
         is LibraryUiEvent.AddGameDialogVisibilityChanged ->
             copy(addGameDialogVisible = event.visible)
         is LibraryUiEvent.SelectedGameDetailsVisibilityChanged ->
@@ -105,6 +115,14 @@ internal class LibraryUiStateHolder(initialState: LibraryUiState = LibraryUiStat
         mutableState.value = mutableState.value.reduce(event)
     }
 }
+
+internal fun resolveVisibleSelectedGame(
+    visibleGames: List<com.cardenaspiero255.gamehubultra.GameInfo>,
+    selectedPackage: String?,
+): com.cardenaspiero255.gamehubultra.GameInfo? =
+    selectedPackage?.let { packageName ->
+        visibleGames.firstOrNull { game -> game.packageName == packageName }
+    }
 
 private fun restoreLocalFilter(value: Any?): LibraryLocalFilter =
     runCatching { LibraryLocalFilter.valueOf(value as? String ?: "") }
@@ -129,15 +147,21 @@ internal fun rememberLibraryUiStateHolder(): LibraryUiStateHolder {
             )
         },
         restore = { values ->
-            val legacyDetails = values.getOrNull(5) as? Boolean ?: false
+            val legacyFormat = values.size == 5
+            val legacyDetails =
+                if (legacyFormat) values.getOrNull(4) as? Boolean ?: false else false
             LibraryUiStateHolder(
                 LibraryUiState(
                     refreshToken = values.getOrNull(0) as? Int ?: 0,
                     launchFailed = values.getOrNull(1) as? Boolean ?: false,
                     addGameDialogVisible = values.getOrNull(2) as? Boolean ?: false,
                     query = values.getOrNull(3) as? String ?: "",
-                    localFilter = restoreLocalFilter(values.getOrNull(4)),
-                    category = restoreCategory(values.getOrNull(5)),
+                    localFilter =
+                        if (legacyFormat) LibraryLocalFilter.ALL
+                        else restoreLocalFilter(values.getOrNull(4)),
+                    category =
+                        if (legacyFormat) LibraryCategory.ALL
+                        else restoreCategory(values.getOrNull(5)),
                     selectedGameDetailsVisible =
                         values.getOrNull(6) as? Boolean ?: legacyDetails,
                 )
