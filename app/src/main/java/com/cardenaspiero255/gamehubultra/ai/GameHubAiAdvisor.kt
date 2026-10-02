@@ -179,7 +179,7 @@ class GameHubAiAdvisor(
         return when {
             Regex("""\bsentimientos?\b""").containsMatchIn(normalized) ->
                 "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones. Pueden influir en cómo percibimos, decidimos y actuamos, y suelen durar más que una reacción emocional instantánea."
-            Regex("""\bemociones?\b""").containsMatchIn(normalized) ->
+            Regex("""\bemocion(?:es)?\b""").containsMatchIn(normalized) ->
                 "Las emociones son respuestas psicofisiológicas ante estímulos internos o externos. Suelen aparecer rápidamente, preparan al organismo para responder y pueden dar lugar a sentimientos cuando las interpretamos conscientemente."
             else -> null
         }
