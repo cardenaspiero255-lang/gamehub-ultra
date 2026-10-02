@@ -343,6 +343,19 @@ def main() -> None:
         tasks=(":app:assembleDebug", ":app:lintDebug"),
         args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"),
     )
+    quality_run = str(quality.get("run", ""))
+    quality_retry_fragments = (
+        "QUALITY_MAX_ATTEMPTS=3",
+        "QUALITY_RETRY_BASE_SECONDS=5",
+        "QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'",
+        'if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_ATTEMPT_LOG"; then',
+        'if (( quality_attempt >= QUALITY_MAX_ATTEMPTS )); then',
+        'exit "$quality_status"',
+    )
+    for fragment in quality_retry_fragments:
+        require_run_fragment(quality, "quality/bounded transient dependency retry", fragment)
+    if quality_run.count("QUALITY_MAX_ATTEMPTS=3") != 1:
+        fail("Quality retry bound must be declared exactly once")
     quality_matches = [
         tokens
         for tokens in gradle_commands(str(quality.get("run", "")))
