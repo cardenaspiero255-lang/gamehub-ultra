@@ -244,19 +244,19 @@ def remove_unit_test_but_echo_name(android: str, coverage: str):
 
 def mask_quality_gradle_with_or_true(android: str, coverage: str):
     """Mask a piped quality Gradle failure with a spaced logical OR true."""
-    needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
+    needle = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG"\n'
     if needle not in android:
         raise SystemExit("Fixture drift: quality Gradle terminator not found")
-    replacement = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log" || true\n'
+    replacement = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG" || true\n'
     return android.replace(needle, replacement, 1), coverage
 
 
 def mask_quality_gradle_with_fused_or_true(android: str, coverage: str):
     """Mask a piped quality Gradle failure with a fused logical OR true."""
-    needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
+    needle = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG"\n'
     if needle not in android:
         raise SystemExit("Fixture drift: quality Gradle terminator not found")
-    replacement = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log" ||true\n'
+    replacement = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG" ||true\n'
     return android.replace(needle, replacement, 1), coverage
 
 
@@ -310,6 +310,73 @@ def duplicate_full_release_graph_without_configuration_cache(android: str, cover
         raise SystemExit("Fixture drift: release cache assertion not found")
     duplicate = """            gradle \\\n              :app:assembleRelease \\\n              :app:bundleRelease \\\n              :app:assembleNonMinifiedRelease \\\n              :baseline-profile:assembleNonMinifiedRelease \\\n              --build-cache \\\n              --parallel \\\n              --stacktrace\n"""
     return android.replace(needle, duplicate + needle, 1), coverage
+
+
+def remove_quality_transient_retry(android: str, coverage: str):
+    """Reject losing bounded retry protection around the executable quality graph."""
+    needle = 'QUALITY_MAX_ATTEMPTS=3'
+    if needle not in android:
+        # RED fixture: current workflow has no bounded retry yet.
+        return android, coverage
+    return android.replace(needle, 'QUALITY_MAX_ATTEMPTS=1', 1), coverage
+
+
+def spoof_quality_retry_bound_with_comment(android: str, coverage: str):
+    """Reject a stale comment that hides a weakened active retry assignment."""
+    needle = "          QUALITY_MAX_ATTEMPTS=3\n"
+    if needle not in android:
+        raise SystemExit("Fixture drift: active quality retry bound not found")
+    replacement = "          QUALITY_MAX_ATTEMPTS=1\n          # QUALITY_MAX_ATTEMPTS=3\n"
+    return android.replace(needle, replacement, 1), coverage
+
+
+def scan_full_quality_history_for_retry(android: str, coverage: str):
+    """Reject retry decisions that scan the whole attempt instead of the terminal failure."""
+    needle = '            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_TERMINAL_LOG"; then\n'
+    if needle not in android:
+        # RED fixture until terminal-failure scoping is implemented.
+        return android, coverage
+    replacement = '            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_ATTEMPT_LOG"; then\n'
+    return android.replace(needle, replacement, 1), coverage
+
+
+def hide_connected_validation_inside_echo(android: str, coverage: str):
+    """Replace the real connected Gradle invocation with inert echoed text."""
+    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
+"""
+    replacement = """          echo 'gradle :app:connectedDebugAndroidTest --build-cache --configuration-cache --configuration-cache-problems=fail --stacktrace'
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: connected validation invocation not found")
+    return android.replace(needle, replacement, 1), coverage
+
+
+def move_connected_cache_flags_to_dry_run(android: str, coverage: str):
+    """Keep cache flags only on a dry-run while weakening the real device test."""
+    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
+"""
+    replacement = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --dry-run \\\n            --stacktrace
+          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --stacktrace
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: connected validation invocation not found")
+    return android.replace(needle, replacement, 1), coverage
+
+
+def remove_connected_configuration_cache_flag(android: str, coverage: str):
+    """Remove the positive Configuration Cache enablement from connected validation."""
+    needle = """            --configuration-cache \\\n"""
+    step_name = "      - name: Verify MainActivity presentation wiring on API 35\n"
+    start = android.find(step_name)
+    if start < 0:
+        raise SystemExit("Fixture drift: connected validation step not found")
+    end = android.find("\n      - name:", start + len(step_name))
+    if end < 0:
+        end = len(android)
+    step = android[start:end]
+    if needle not in step:
+        raise SystemExit("Fixture drift: connected Configuration Cache flag not found")
+    return android[:start] + step.replace(needle, "", 1) + android[end:], coverage
 
 
 def require_blocking_shell_line(script: str, expected: str, label: str) -> None:
@@ -440,6 +507,12 @@ def main() -> None:
     run_mutation("quality Gradle pipeline masked with || true", mask_quality_gradle_with_or_true)
     run_mutation("quality Gradle pipeline masked with fused ||true", mask_quality_gradle_with_fused_or_true)
     run_mutation("quality Gradle command masked with plain || true", mask_quality_gradle_plain_or_true)
+    run_mutation("quality transient retry removed", remove_quality_transient_retry)
+    run_mutation("quality retry bound spoofed by stale comment", spoof_quality_retry_bound_with_comment)
+    run_mutation("quality retry scans full attempt history", scan_full_quality_history_for_retry)
+    run_mutation("connected validation hidden inside echo", hide_connected_validation_inside_echo)
+    run_mutation("connected validation loses Configuration Cache enablement", remove_connected_configuration_cache_flag)
+    run_mutation("connected cache flags moved to dry-run only", move_connected_cache_flags_to_dry_run)
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
     run_mutation("Release Configuration Cache reuse assertion removed", remove_release_configuration_cache_reuse_assertion)
     run_mutation("Partial release/performance graph duplicated", duplicate_partial_release_graph)
@@ -466,6 +539,54 @@ def main() -> None:
         raise SystemExit("Phase 2 block 5: quality must not duplicate coverage-owned unit tests")
     if ":app:createDebugUnitTestCoverageReport" not in coverage:
         raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
+
+    # Phase 3 block 5 cut 1: connected debug validation must reuse the
+    # already-running API 35 emulator without rebuilding the debug APK that
+    # quality already produced. The device gate remains authoritative; only
+    # duplicate host-side assembly is forbidden.
+    device_steps = jobs.get("device-validation", {}).get("steps", [])
+    wiring = next(
+        (step for step in device_steps if step.get("name") == "Verify MainActivity presentation wiring on API 35"),
+        None,
+    )
+    if not wiring:
+        raise SystemExit("Phase 3 block 5 cut 1: MainActivity device validation is missing")
+    wiring_run = str(wiring.get("run", ""))
+    if ":app:connectedDebugAndroidTest" not in wiring_run:
+        raise SystemExit("Phase 3 block 5 cut 1: connected MainActivity validation changed")
+    if "--no-build-cache" in wiring_run:
+        raise SystemExit("Phase 3 block 5 cut 1: connected validation disabled build-cache reuse")
+    if "--build-cache" not in wiring_run:
+        raise SystemExit("Phase 3 block 5 cut 1: connected validation must preserve build-cache reuse")
+    if "--no-configuration-cache" in wiring_run:
+        raise SystemExit(
+            "Phase 3 block 5 cut 1: connected validation still disables Configuration Cache"
+        )
+
+    # Phase 3 block 5 cut 2 RED: the real Baseline Profile/Macrobenchmark
+    # invocation must preserve every performance case while enabling strict
+    # Configuration Cache reuse. This intentionally fails until GREEN updates
+    # the performance command.
+    performance = next(
+        (step for step in device_steps if step.get("name") == "Run baseline profile and macrobenchmarks on API 35"),
+        None,
+    )
+    if not performance:
+        raise SystemExit("Phase 3 block 5 cut 2: performance validation is missing")
+    performance_run = str(performance.get("run", ""))
+    required_performance_cache_flags = (
+        "--build-cache",
+        "--configuration-cache",
+        "--configuration-cache-problems=fail",
+    )
+    missing_performance_cache_flags = [
+        flag for flag in required_performance_cache_flags if flag not in performance_run
+    ]
+    if missing_performance_cache_flags or "--no-configuration-cache" in performance_run:
+        raise SystemExit(
+            "Phase 3 block 5 cut 2 RED: performance validation must use strict "
+            f"Configuration Cache; missing={missing_performance_cache_flags!r}"
+        )
 
     # Phase 3 block 3 cut 1: validate the real producer/consumer relationship.
     android_workflow = ANDROID.read_text(encoding="utf-8")

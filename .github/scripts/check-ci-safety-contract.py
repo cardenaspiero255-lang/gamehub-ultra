@@ -341,13 +341,38 @@ def main() -> None:
         quality,
         "quality/Run fast quality gates",
         tasks=(":app:assembleDebug", ":app:lintDebug"),
-        args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"),
+        args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail", "--console=plain"),
     )
+    quality_run = str(quality.get("run", ""))
+    quality_retry_fragments = (
+        "QUALITY_RETRY_BASE_SECONDS=5",
+        'QUALITY_TERMINAL_LOG="$RUNNER_TEMP/quality-gates-terminal.log"',
+        "QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'",
+        "/^\\* What went wrong:$/",
+        "/^\\* Try:$/",
+        'if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_TERMINAL_LOG"; then',
+        'if (( quality_attempt >= QUALITY_MAX_ATTEMPTS )); then',
+        'exit "$quality_status"',
+    )
+    for fragment in quality_retry_fragments:
+        require_run_fragment(quality, "quality/bounded transient dependency retry", fragment)
+
+    active_retry_bounds: list[str] = []
+    for line in quality_run.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("QUALITY_MAX_ATTEMPTS="):
+            value = stripped.split("=", 1)[1].split("#", 1)[0].strip().strip("'\"")
+            active_retry_bounds.append(value)
+    if active_retry_bounds != ["3"]:
+        fail(
+            "Quality retry bound must have exactly one active shell assignment "
+            f"QUALITY_MAX_ATTEMPTS=3; found {active_retry_bounds!r}"
+        )
     quality_matches = [
         tokens
         for tokens in gradle_commands(str(quality.get("run", "")))
         if all(task in set(tokens) for task in (":app:assembleDebug", ":app:lintDebug"))
-        and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"))
+        and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail", "--console=plain"))
     ]
     executable_quality_matches = [tokens for tokens in quality_matches if "--dry-run" not in set(tokens)]
     probe_quality_matches = [tokens for tokens in quality_matches if "--dry-run" in set(tokens)]
@@ -443,6 +468,51 @@ def main() -> None:
         "device-validation/Configuration Cache reuse",
         ("grep", "-Fq", "Reusing configuration cache.", "$RELEASE_CONFIG_CACHE_LOG"),
     )
+
+    connected = require_step(
+        android,
+        "device-validation",
+        "Verify MainActivity presentation wiring on API 35",
+        shell="bash",
+    )
+    require_gradle_invocation(
+        connected,
+        "device-validation/Verify MainActivity presentation wiring on API 35",
+        tasks=(":app:connectedDebugAndroidTest",),
+        args=(
+            "--build-cache",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+        ),
+    )
+    connected_commands = [
+        tokens
+        for tokens in gradle_commands(str(connected.get("run", "")))
+        if ":app:connectedDebugAndroidTest" in set(tokens)
+    ]
+    executable_connected = [
+        tokens for tokens in connected_commands if "--dry-run" not in set(tokens)
+    ]
+    if len(executable_connected) != 1:
+        fail(
+            "Connected API 35 validation requires exactly one executable Gradle "
+            f"invocation; found {len(executable_connected)}"
+        )
+
+    connected_required_args = {
+        "--build-cache",
+        "--configuration-cache",
+        "--configuration-cache-problems=fail",
+    }
+    executable_connected_args = set(executable_connected[0])
+    missing_connected_args = sorted(
+        connected_required_args.difference(executable_connected_args)
+    )
+    if missing_connected_args:
+        fail(
+            "Executable connected API 35 validation is missing required arguments: "
+            f"{missing_connected_args!r}"
+        )
 
     # Phase 2 block 2 must remain a measurable A/B experiment: the candidate
     # starts the emulator immediately and emits timestamps used to compare
