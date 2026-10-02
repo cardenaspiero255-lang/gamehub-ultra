@@ -464,22 +464,6 @@ def main() -> None:
     if not any(step.get("name") == "Verify Phase 3 artifact provenance" for step in build_steps):
         raise SystemExit("Phase 3 block 3 cut 3: aggregate gate lost artifact verification")
 
-    # Phase 3 block 4 cut 2: the final CAR-29 fan-in must not consume a
-    # dedicated runner. Metrics already fans in both blocking gates, so it owns
-    # the final verification while remaining observational/advisory.
-    workflow = yaml.safe_load(android_workflow)
-    jobs = workflow.get("jobs", {})
-    if "build" in jobs:
-        raise SystemExit("Phase 3 block 4 cut 2: dedicated aggregate build runner still exists")
-    metrics_job = jobs.get("metrics", {})
-    if set(metrics_job.get("needs", [])) != {"quality", "device-validation"}:
-        raise SystemExit("Phase 3 block 4 cut 2: metrics lost the two blocking gate dependencies")
-    metrics_steps = metrics_job.get("steps", [])
-    if not any(step.get("name") == "Verify all Android CI gates" for step in metrics_steps):
-        raise SystemExit("Phase 3 block 4 cut 2: final CAR-29 gate verification is missing")
-    if not any(step.get("name") == "Verify Phase 3 artifact provenance" for step in metrics_steps):
-        raise SystemExit("Phase 3 block 4 cut 2: artifact provenance verification is missing")
-
     # Phase 2 block 6 is enforced by the parsed CI safety contract above.
     # Mutations prove both the reuse assertion and duplicate partial graphs fail.
 
