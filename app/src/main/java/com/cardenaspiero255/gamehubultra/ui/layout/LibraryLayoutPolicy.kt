@@ -5,6 +5,8 @@ data class LibraryGridMetrics(
     val minTileHeightDp: Int
 )
 
+internal enum class LibraryHeroLayout { COMPACT, WIDE }
+
 object LibraryLayoutPolicy {
     fun metricsForWidthDp(widthDp: Int): LibraryGridMetrics =
         when {
@@ -20,5 +22,15 @@ object LibraryLayoutPolicy {
                 minTileWidthDp = 148,
                 minTileHeightDp = 132
             )
+        }
+
+    internal fun heroLayoutForWidthDp(widthDp: Int): LibraryHeroLayout =
+        if (widthDp >= 700) LibraryHeroLayout.WIDE else LibraryHeroLayout.COMPACT
+
+    internal fun carouselCardWidthForWidthDp(widthDp: Int): Int =
+        when {
+            widthDp >= 840 -> 208
+            widthDp >= 600 -> 190
+            else -> 172
         }
 }
