@@ -467,6 +467,29 @@ def main() -> None:
     if ":app:createDebugUnitTestCoverageReport" not in coverage:
         raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
 
+    # Phase 3 block 5 cut 1: connected debug validation must reuse the
+    # already-running API 35 emulator without rebuilding the debug APK that
+    # quality already produced. The device gate remains authoritative; only
+    # duplicate host-side assembly is forbidden.
+    device_steps = jobs.get("device-validation", {}).get("steps", [])
+    wiring = next(
+        (step for step in device_steps if step.get("name") == "Verify MainActivity presentation wiring on API 35"),
+        None,
+    )
+    if not wiring:
+        raise SystemExit("Phase 3 block 5 cut 1: MainActivity device validation is missing")
+    wiring_run = str(wiring.get("run", ""))
+    if ":app:connectedDebugAndroidTest" not in wiring_run:
+        raise SystemExit("Phase 3 block 5 cut 1: connected MainActivity validation changed")
+    if "--no-build-cache" in wiring_run:
+        raise SystemExit("Phase 3 block 5 cut 1: connected validation disabled build-cache reuse")
+    if "--build-cache" not in wiring_run:
+        raise SystemExit("Phase 3 block 5 cut 1: connected validation must preserve build-cache reuse")
+    if "--no-configuration-cache" in wiring_run:
+        raise SystemExit(
+            "Phase 3 block 5 cut 1: connected validation still disables Configuration Cache"
+        )
+
     # Phase 3 block 3 cut 1: validate the real producer/consumer relationship.
     android_workflow = ANDROID.read_text(encoding="utf-8")
     require_exact_artifact_reuse_contract(android_workflow)
