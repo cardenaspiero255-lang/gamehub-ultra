@@ -111,14 +111,35 @@ jobs:
           # up front so that filesystem observation does not invalidate the
           # Configuration Cache before the identical second invocation.
           mkdir -p "$HOME/.config/.android/cache"
-          gradle \
-            :app:assembleDebug \
-            :app:lintDebug \
-            --build-cache \
-            --parallel \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
+          QUALITY_MAX_ATTEMPTS=3
+          QUALITY_ATTEMPT=1
+          while true; do
+            set +e
+            gradle \
+              :app:assembleDebug \
+              :app:lintDebug \
+              --build-cache \
+              --parallel \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
+            QUALITY_STATUS=${PIPESTATUS[0]}
+            set -e
+
+            if [[ "$QUALITY_STATUS" -eq 0 ]]; then
+              break
+            fi
+            if [[ "$QUALITY_ATTEMPT" -ge "$QUALITY_MAX_ATTEMPTS" ]]; then
+              exit "$QUALITY_STATUS"
+            fi
+            if ! grep -Eq 'Received status code (429|5[0-9]{2})|Could not GET|Could not download|Connection reset|Read timed out|Connect timed out' "$RUNNER_TEMP/quality-gates.log"; then
+              exit "$QUALITY_STATUS"
+            fi
+
+            echo "Transient dependency/network failure; retrying quality gates (attempt $((QUALITY_ATTEMPT + 1))/$QUALITY_MAX_ATTEMPTS)."
+            sleep "$((QUALITY_ATTEMPT * 10))"
+            QUALITY_ATTEMPT=$((QUALITY_ATTEMPT + 1))
+          done
 
           # Prime and then prove reuse of the dry-run Configuration Cache
           # entry without executing lint or assembly again.
