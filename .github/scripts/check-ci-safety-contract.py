@@ -341,13 +341,16 @@ def main() -> None:
         quality,
         "quality/Run fast quality gates",
         tasks=(":app:assembleDebug", ":app:lintDebug"),
-        args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"),
+        args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail", "--console=plain"),
     )
     quality_run = str(quality.get("run", ""))
     quality_retry_fragments = (
         "QUALITY_RETRY_BASE_SECONDS=5",
+        'QUALITY_TERMINAL_LOG="$RUNNER_TEMP/quality-gates-terminal.log"',
         "QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'",
-        'if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_ATTEMPT_LOG"; then',
+        "/^\\* What went wrong:$/",
+        "/^\\* Try:$/",
+        'if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_TERMINAL_LOG"; then',
         'if (( quality_attempt >= QUALITY_MAX_ATTEMPTS )); then',
         'exit "$quality_status"',
     )
@@ -371,7 +374,7 @@ def main() -> None:
         tokens
         for tokens in gradle_commands(str(quality.get("run", "")))
         if all(task in set(tokens) for task in (":app:assembleDebug", ":app:lintDebug"))
-        and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail"))
+        and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail", "--console=plain"))
     ]
     executable_quality_matches = [tokens for tokens in quality_matches if "--dry-run" not in set(tokens)]
     probe_quality_matches = [tokens for tokens in quality_matches if "--dry-run" in set(tokens)]
