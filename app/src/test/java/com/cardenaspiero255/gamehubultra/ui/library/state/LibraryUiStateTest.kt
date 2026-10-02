@@ -102,6 +102,38 @@ class LibraryUiStateTest {
         assertEquals(LibraryLocalFilter.ALL, updated.localFilter)
     }
 
+
+    @Test
+    fun localFilterAppliesFavoritesRecentsAndQueryDeterministically() {
+        val games = listOf(
+            GameInfo(packageName = "com.game.resident", label = "Resident Evil 4"),
+            GameInfo(packageName = "com.game.brawl", label = "Brawl Stars"),
+            GameInfo(packageName = "com.game.cod", label = "Call of Duty")
+        )
+        val favorites = setOf("com.game.resident", "com.game.cod")
+        val recents = listOf("com.game.brawl", "com.game.resident")
+
+        assertEquals(
+            listOf("com.game.resident", "com.game.cod"),
+            filterLibraryGames(games, "", LibraryLocalFilter.FAVORITES, favorites, recents)
+                .map { it.packageName }
+        )
+        assertEquals(
+            listOf("com.game.brawl", "com.game.resident"),
+            filterLibraryGames(games, "", LibraryLocalFilter.RECENT, favorites, recents)
+                .map { it.packageName }
+        )
+        assertEquals(
+            listOf("com.game.resident"),
+            filterLibraryGames(games, "resident", LibraryLocalFilter.FAVORITES, favorites, recents)
+                .map { it.packageName }
+        )
+        assertEquals(
+            games,
+            filterLibraryGames(games, "", LibraryLocalFilter.ALL, favorites, recents)
+        )
+    }
+
     @Test
     fun stateHolderDispatchesThroughReducer() {
         val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
