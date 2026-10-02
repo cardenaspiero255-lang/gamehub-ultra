@@ -189,6 +189,51 @@ class LibraryUiStateTest {
         assertEquals(LibraryLocalFilter.FAVORITES, updated.localFilter)
     }
 
+
+    @Test
+    fun failedLaunchRemembersExactPackageForRetryAndSuccessClearsIt() {
+        val failed = LibraryUiState().reduce(
+            LibraryUiEvent.GameLaunchResult(
+                packageName = "com.game.brawl",
+                succeeded = false
+            )
+        )
+        assertEquals("com.game.brawl", failed.failedLaunchPackage)
+
+        val recovered = failed.reduce(
+            LibraryUiEvent.GameLaunchResult(
+                packageName = "com.game.brawl",
+                succeeded = true
+            )
+        )
+        assertEquals(null, recovered.failedLaunchPackage)
+    }
+
+    @Test
+    fun selectingAnotherGameClearsFailedLaunchPackage() {
+        val updated = LibraryUiState(failedLaunchPackage = "com.game.old")
+            .reduce(LibraryUiEvent.GameSelected)
+
+        assertEquals(null, updated.failedLaunchPackage)
+    }
+
+    @Test
+    fun selectedHeroOnlyResolvesFromVisibleGames() {
+        val visible = listOf(
+            GameInfo(packageName = "com.game.brawl", label = "Brawl Stars")
+        )
+
+        assertEquals(
+            null,
+            resolveVisibleSelectedGame(visible, "com.game.resident")
+        )
+        assertEquals(
+            "com.game.brawl",
+            resolveVisibleSelectedGame(visible, "com.game.brawl")?.packageName
+        )
+    }
+
+
     @Test
     fun stateHolderDispatchesThroughReducer() {
         val holder = LibraryUiStateHolder(LibraryUiState(query = "before"))
