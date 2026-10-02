@@ -677,7 +677,8 @@ jobs:
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
             --build-cache \
-            --no-configuration-cache \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
             --stacktrace 2>&1 | tee "$LOG"
           if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
             echo "ddmlib could not connect to the emulator console."
