@@ -8,23 +8,18 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class VoiceAssistantControllerRobolectricTest {
     @Test
-    fun startAndLanguageFallbackStayInsideCrashGuard() {
-        val errors = mutableListOf<Int>()
+    fun languageErrorSwitchesControllerToSpanishFallbackWithoutEscaping() {
         val controller = VoiceAssistantController(
             context = RuntimeEnvironment.getApplication(),
             onListeningChanged = {},
             onTranscript = {},
-            onError = errors::add
+            onError = {}
         )
-
-        controller.startListening()
-        val initialErrorCount = errors.size
 
         val listenerField = VoiceAssistantController::class.java
             .getDeclaredField("listener")
@@ -33,7 +28,10 @@ class VoiceAssistantControllerRobolectricTest {
 
         listener.onError(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED)
 
-        assertTrue(errors.size > initialErrorCount)
-        assertEquals(SpeechRecognizer.ERROR_CLIENT, errors.last())
+        val languageField = VoiceAssistantController::class.java
+            .getDeclaredField("recognitionLanguageTag")
+            .apply { isAccessible = true }
+
+        assertEquals(UltraSpeechLocalePolicy.FALLBACK_TAG, languageField.get(controller))
     }
 }
