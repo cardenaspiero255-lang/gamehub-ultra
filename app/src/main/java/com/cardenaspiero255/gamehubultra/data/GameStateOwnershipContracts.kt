@@ -35,6 +35,8 @@ suspend fun GameSelectionStateRepository.effectiveProfileForSelection(
     return gameProfile ?: selectedProfileFlow().first()
 }
 
+const val DEFAULT_PLAYER_NAME = "ejecutor3.0"
+
 /** Owns the editable Ultra player identity independently from UI composition. */
 interface PlayerProfileStateRepository {
     fun playerNameFlow(): Flow<String>

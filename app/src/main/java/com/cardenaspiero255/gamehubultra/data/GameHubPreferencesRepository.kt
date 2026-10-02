@@ -230,7 +230,7 @@ class GameHubPreferencesRepository(
             .trim()
             .replace(Regex("""\s+"""), " ")
             .take(32)
-            .ifBlank { "Jugador Ultra" }
+            .ifBlank { DEFAULT_PLAYER_NAME }
 
     private fun decodeProfile(value: String?): PerformanceProfile? =
         value?.let { raw ->

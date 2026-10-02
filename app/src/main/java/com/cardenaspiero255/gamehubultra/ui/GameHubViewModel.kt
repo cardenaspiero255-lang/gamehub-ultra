@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.ui
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
+import com.cardenaspiero255.gamehubultra.data.DEFAULT_PLAYER_NAME
 import com.cardenaspiero255.gamehubultra.data.DurableSelectionMutationQueue
 import com.cardenaspiero255.gamehubultra.data.GameLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
@@ -80,7 +81,7 @@ class GameHubViewModel(
     val playerName = playerProfileRepository.playerNameFlow().stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
-        "Jugador Ultra"
+        DEFAULT_PLAYER_NAME
     )
 
     val uiState = combine(
