@@ -14,7 +14,7 @@ internal object VoiceRecognitionStartGuard {
         try {
             action()
             true
-        } catch (_: Exception) {
+        } catch (_: RuntimeException) {
             onError(SpeechRecognizer.ERROR_CLIENT)
             false
         }
