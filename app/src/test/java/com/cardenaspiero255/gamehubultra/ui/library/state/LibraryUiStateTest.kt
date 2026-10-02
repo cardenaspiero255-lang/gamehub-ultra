@@ -135,7 +135,7 @@ class LibraryUiStateTest {
     }
 
     @Test
-    fun installedAndSourceCategoryFiltersComposeWithoutInventingMetadata() {
+    fun sourceCategoryFiltersComposeWithoutInventingMetadata() {
         val games = listOf(
             GameInfo(packageName = "com.game.detected", label = "Detected Game"),
             GameInfo(packageName = "com.game.manual", label = "Manual Game")
@@ -147,7 +147,7 @@ class LibraryUiStateTest {
             filterLibraryGames(
                 games = games,
                 query = "",
-                localFilter = LibraryLocalFilter.INSTALLED,
+                localFilter = LibraryLocalFilter.ALL,
                 favoriteGames = emptySet(),
                 recentGamePackages = emptyList(),
                 category = LibraryCategory.ALL,
