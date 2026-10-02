@@ -18,6 +18,7 @@ internal sealed interface HomeUiEvent {
     data object QuickVoiceToggled : HomeUiEvent
     data object QuickVoiceRevealed : HomeUiEvent
     data object QuickVoiceListenRequested : HomeUiEvent
+    data object QuickVoiceListenConsumed : HomeUiEvent
 }
 
 /** Applies one Home UI event without side effects. */
@@ -43,6 +44,7 @@ internal fun HomeUiState.reduce(event: HomeUiEvent): HomeUiState =
             quickVoiceRevealRequest = quickVoiceRevealRequest + 1,
             quickVoiceListenRequest = quickVoiceListenRequest + 1,
         )
+        HomeUiEvent.QuickVoiceListenConsumed -> copy(quickVoiceListenRequest = 0)
     }
 
 /** Owns the current Home UI state and routes events through the pure reducer. */
