@@ -209,6 +209,17 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun emotionVariantCoversStableOfflineKnowledgeBranch() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "Ultra, ¿qué es una emoción?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertTrue(answer?.contains("sentimientos", ignoreCase = true) == true)
+    }
+
+    @Test
     fun unrelatedUnknownGeneralQuestionDoesNotPretendHardcodedKnowledge() {
         val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
             message = "¿Qué es la fotosíntesis?",
