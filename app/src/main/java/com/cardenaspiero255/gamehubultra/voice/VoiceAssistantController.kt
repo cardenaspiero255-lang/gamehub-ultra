@@ -32,7 +32,7 @@ class VoiceAssistantController(
 
     fun startListening() {
         recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
-        startListeningWithCurrentLanguage()
+        VoiceRecognitionStartGuard.run(onListeningChanged, onError, { runCatching { recognizer?.destroy() }; recognizer = null }) { startListeningWithCurrentLanguage() }
     }
 
     private fun startListeningWithCurrentLanguage() {
@@ -41,13 +41,7 @@ class VoiceAssistantController(
                 appContext,
                 Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
-        val recognitionAvailable = runCatching {
-            SpeechRecognizer.isRecognitionAvailable(appContext)
-        }.getOrElse {
-            onListeningChanged(false)
-            onError(SpeechRecognizer.ERROR_CLIENT)
-            return
-        }
+        val recognitionAvailable = SpeechRecognizer.isRecognitionAvailable(appContext)
 
         if (!VoicePermissionGate.canStartRecognition(microphoneGranted, recognitionAvailable)) {
             onError(
@@ -60,35 +54,25 @@ class VoiceAssistantController(
             return
         }
 
-        VoiceRecognitionStartGuard.run(
-            onListeningChanged = onListeningChanged,
-            onError = onError,
-            cleanup = {
-                runCatching { recognizer?.cancel() }
-                runCatching { recognizer?.destroy() }
-                recognizer = null
+        recognizer?.cancel()
+        recognizer?.destroy()
+        recognizer = SpeechRecognizer.createSpeechRecognizer(appContext).also { speech ->
+            speech.setRecognitionListener(listener)
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                )
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
-        ) {
-            runCatching { recognizer?.cancel() }
-            runCatching { recognizer?.destroy() }
-            recognizer = SpeechRecognizer.createSpeechRecognizer(appContext).also { speech ->
-                speech.setRecognitionListener(listener)
-                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                    putExtra(
-                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                    )
-                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-                }
-                onListeningChanged(true)
-                speech.startListening(intent)
-            }
+            onListeningChanged(true)
+            speech.startListening(intent)
         }
     }
 
     fun stopListening() {
-        runCatching { recognizer?.cancel() }
+        recognizer?.cancel()
         onListeningChanged(false)
     }
 
@@ -97,10 +81,10 @@ class VoiceAssistantController(
     }
 
     fun release() {
-        runCatching { recognizer?.destroy() }
+        recognizer?.destroy()
         recognizer = null
-        runCatching { tts?.stop() }
-        runCatching { tts?.shutdown() }
+        tts?.stop()
+        tts?.shutdown()
         tts = null
     }
 
@@ -128,7 +112,7 @@ class VoiceAssistantController(
             )
             if (fallback != null) {
                 recognitionLanguageTag = fallback
-                startListeningWithCurrentLanguage()
+                VoiceRecognitionStartGuard.run(onListeningChanged, this@VoiceAssistantController.onError, { runCatching { recognizer?.destroy() }; recognizer = null }) { startListeningWithCurrentLanguage() }
                 return
             }
             onListeningChanged(false)
