@@ -32,6 +32,10 @@
     <string name="performance_hint_api">Performance Hint API</string>
     <string name="capability_note">Unavailable features are informational and are not activated.</string>
     <string name="library_title">Game library</string>
+    <string name="library_filter_all">All</string>
+    <string name="library_filter_favorites">Favorites</string>
+    <string name="library_filter_recent">Recent</string>
+    <string name="library_filter_empty">No games match this filter.</string>
     <string name="library_loading">Loading detected games…</string>
     <string name="open_game">Open game</string>
     <string name="library_open_error">The selected game could not be opened.</string>
