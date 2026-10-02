@@ -107,14 +107,18 @@ jobs:
         run: |
           set -euo pipefail
           CONFIG_CACHE_LOG="$RUNNER_TEMP/configuration-cache-reuse.log"
+          QUALITY_LOG="$RUNNER_TEMP/quality-gates.log"
+          QUALITY_ATTEMPT_LOG="$RUNNER_TEMP/quality-gates-attempt.log"
+          QUALITY_MAX_ATTEMPTS=3
+          QUALITY_RETRY_BASE_SECONDS=5
+          QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'
+
           # Android tooling creates this lazily during the first build. Create it
           # up front so that filesystem observation does not invalidate the
           # Configuration Cache before the identical second invocation.
           mkdir -p "$HOME/.config/.android/cache"
-          QUALITY_MAX_ATTEMPTS=3
-          QUALITY_ATTEMPT=1
-          while true; do
-            set +e
+
+          run_quality_graph() {
             gradle \
               :app:assembleDebug \
               :app:lintDebug \
@@ -122,23 +126,36 @@ jobs:
               --parallel \
               --configuration-cache \
               --configuration-cache-problems=fail \
-              --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"
-            QUALITY_STATUS=${PIPESTATUS[0]}
-            set -e
+              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG"
+          }
 
-            if [[ "$QUALITY_STATUS" -eq 0 ]]; then
+          : > "$QUALITY_LOG"
+          quality_attempt=1
+          while true; do
+            : > "$QUALITY_ATTEMPT_LOG"
+            if run_quality_graph; then
+              cat "$QUALITY_ATTEMPT_LOG" >> "$QUALITY_LOG"
               break
-            fi
-            if [[ "$QUALITY_ATTEMPT" -ge "$QUALITY_MAX_ATTEMPTS" ]]; then
-              exit "$QUALITY_STATUS"
-            fi
-            if ! grep -Eq 'Received status code (429|5[0-9]{2})|Could not GET|Could not download|Connection reset|Read timed out|Connect timed out' "$RUNNER_TEMP/quality-gates.log"; then
-              exit "$QUALITY_STATUS"
+            else
+              quality_status=$?
             fi
 
-            echo "Transient dependency/network failure; retrying quality gates (attempt $((QUALITY_ATTEMPT + 1))/$QUALITY_MAX_ATTEMPTS)."
-            sleep "$((QUALITY_ATTEMPT * 10))"
-            QUALITY_ATTEMPT=$((QUALITY_ATTEMPT + 1))
+            cat "$QUALITY_ATTEMPT_LOG" >> "$QUALITY_LOG"
+
+            if (( quality_attempt >= QUALITY_MAX_ATTEMPTS )); then
+              echo "Quality gate failed after $quality_attempt attempts." >&2
+              exit "$quality_status"
+            fi
+
+            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_ATTEMPT_LOG"; then
+              echo "Quality gate failed with a non-transient error; not retrying." >&2
+              exit "$quality_status"
+            fi
+
+            sleep_seconds=$((QUALITY_RETRY_BASE_SECONDS * quality_attempt))
+            echo "Transient dependency/network failure detected; retrying quality gate in ${sleep_seconds}s (attempt $((quality_attempt + 1))/$QUALITY_MAX_ATTEMPTS)." >&2
+            sleep "$sleep_seconds"
+            quality_attempt=$((quality_attempt + 1))
           done
 
           # Prime and then prove reuse of the dry-run Configuration Cache
