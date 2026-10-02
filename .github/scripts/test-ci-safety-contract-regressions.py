@@ -563,6 +563,31 @@ def main() -> None:
             "Phase 3 block 5 cut 1: connected validation still disables Configuration Cache"
         )
 
+    # Phase 3 block 5 cut 2 RED: the real Baseline Profile/Macrobenchmark
+    # invocation must preserve every performance case while enabling strict
+    # Configuration Cache reuse. This intentionally fails until GREEN updates
+    # the performance command.
+    performance = next(
+        (step for step in device_steps if step.get("name") == "Run baseline profile and macrobenchmarks on API 35"),
+        None,
+    )
+    if not performance:
+        raise SystemExit("Phase 3 block 5 cut 2: performance validation is missing")
+    performance_run = str(performance.get("run", ""))
+    required_performance_cache_flags = (
+        "--build-cache",
+        "--configuration-cache",
+        "--configuration-cache-problems=fail",
+    )
+    missing_performance_cache_flags = [
+        flag for flag in required_performance_cache_flags if flag not in performance_run
+    ]
+    if missing_performance_cache_flags or "--no-configuration-cache" in performance_run:
+        raise SystemExit(
+            "Phase 3 block 5 cut 2 RED: performance validation must use strict "
+            f"Configuration Cache; missing={missing_performance_cache_flags!r}"
+        )
+
     # Phase 3 block 3 cut 1: validate the real producer/consumer relationship.
     android_workflow = ANDROID.read_text(encoding="utf-8")
     require_exact_artifact_reuse_contract(android_workflow)
