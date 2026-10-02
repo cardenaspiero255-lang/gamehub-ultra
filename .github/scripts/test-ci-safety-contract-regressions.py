@@ -244,19 +244,19 @@ def remove_unit_test_but_echo_name(android: str, coverage: str):
 
 def mask_quality_gradle_with_or_true(android: str, coverage: str):
     """Mask a piped quality Gradle failure with a spaced logical OR true."""
-    needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
+    needle = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG"\n'
     if needle not in android:
         raise SystemExit("Fixture drift: quality Gradle terminator not found")
-    replacement = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log" || true\n'
+    replacement = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG" || true\n'
     return android.replace(needle, replacement, 1), coverage
 
 
 def mask_quality_gradle_with_fused_or_true(android: str, coverage: str):
     """Mask a piped quality Gradle failure with a fused logical OR true."""
-    needle = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log"\n'
+    needle = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG"\n'
     if needle not in android:
         raise SystemExit("Fixture drift: quality Gradle terminator not found")
-    replacement = '            --stacktrace 2>&1 | tee "$RUNNER_TEMP/quality-gates.log" ||true\n'
+    replacement = '              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG" ||true\n'
     return android.replace(needle, replacement, 1), coverage
 
 
