@@ -30,45 +30,6 @@ jobs:
       SENTRY_DSN: ""
     timeout-minutes: 20
     steps:
-      - name: Verify all Android CI gates
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "quality=${{ needs.quality.result }}"
-          echo "device-validation=${{ needs.device-validation.result }}"
-          test "${{ needs.quality.result }}" = "success"
-          test "${{ needs.device-validation.result }}" = "success"
-
-      - name: Download exact-run quality artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: gamehub-ultra-debug
-          path: ${{ runner.temp }}/phase3-debug-reuse
-          run-id: ${{ github.run_id }}
-          github-token: ${{ github.token }}
-          merge-multiple: false
-
-      - name: Verify Phase 3 artifact provenance
-        shell: bash
-        env:
-          EXPECTED_RUN_ID: ${{ github.run_id }}
-          EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          ARTIFACT_DIR="${RUNNER_TEMP}/phase3-debug-reuse"
-          APK="$ARTIFACT_DIR/app-debug.apk"
-          PROVENANCE="$ARTIFACT_DIR/phase3-artifact-provenance.env"
-          test -f "$APK"
-          test -f "$PROVENANCE"
-          grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"
-          grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"
-          RECORDED_SHA256="$(sed -n 's/^apk_sha256=//p' "$PROVENANCE")"
-          test -n "$RECORDED_SHA256"
-          test "$(printf '%s' "$RECORDED_SHA256" | wc -l)" -eq 0
-          ACTUAL_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
-          test "$ACTUAL_SHA256" = "$RECORDED_SHA256"
-
-
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -846,6 +807,55 @@ jobs:
             app/build/outputs/bundle/release/**/*.aab
           if-no-files-found: error
 
+
+  build:
+    name: build
+    if: always()
+    needs:
+      - quality
+      - device-validation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify all Android CI gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "quality=${{ needs.quality.result }}"
+          echo "device-validation=${{ needs.device-validation.result }}"
+          test "${{ needs.quality.result }}" = "success"
+          test "${{ needs.device-validation.result }}" = "success"
+
+      - name: Download exact-run quality artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gamehub-ultra-debug
+          path: ${{ runner.temp }}/phase3-debug-reuse
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+          # Cut 3 keeps this gate verification-only: consume the exact artifact
+          # produced by quality and never invoke Gradle or rebuild it here.
+          merge-multiple: false
+
+      - name: Verify Phase 3 artifact provenance
+        shell: bash
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="${RUNNER_TEMP}/phase3-debug-reuse"
+          APK="$ARTIFACT_DIR/app-debug.apk"
+          PROVENANCE="$ARTIFACT_DIR/phase3-artifact-provenance.env"
+          test -f "$APK"
+          test -f "$PROVENANCE"
+          grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"
+          grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"
+          RECORDED_SHA256="$(sed -n 's/^apk_sha256=//p' "$PROVENANCE")"
+          test -n "$RECORDED_SHA256"
+          test "$(printf '%s' "$RECORDED_SHA256" | wc -l)" -eq 0
+          ACTUAL_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          test "$ACTUAL_SHA256" = "$RECORDED_SHA256"
 
   metrics:
     name: metrics
