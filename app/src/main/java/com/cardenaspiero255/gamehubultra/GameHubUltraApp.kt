@@ -129,6 +129,7 @@ internal fun GameHubUltraApp(
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var profileOpen by rememberSaveable { mutableStateOf(false) }
+    var assistantRevealRequest by rememberSaveable { mutableIntStateOf(0) }
     val runtimeGameSession by viewModel.runtimeGameSession.collectAsStateWithLifecycle()
     val activeSessionPackage = runtimeGameSession?.packageName
     val activeSessionId = runtimeGameSession?.id
@@ -558,6 +559,7 @@ internal fun GameHubUltraApp(
                     profileOpen = false
                     selectedTab = 1
                 },
+                assistantRevealRequest = assistantRevealRequest,
                 showAssistantCards = showAssistantCards
             )
             else -> LibraryScreen(
@@ -574,7 +576,15 @@ internal fun GameHubUltraApp(
                 onProfileSelected = ::selectProfile,
                 onToggleFavorite = viewModel::setFavoriteGame,
                 onGameOpened = ::recordGameOpened,
-                onToggleManualGame = viewModel::setManualGame
+                onToggleManualGame = viewModel::setManualGame,
+                onOpenAssistant = {
+                    settingsOpen = false
+                    profileOpen = false
+                    selectedTab = 0
+                    if (!ultraWideLayout) {
+                        assistantRevealRequest += 1
+                    }
+                }
             )
         }
     }
