@@ -191,7 +191,7 @@ class GameHubPreferencesRepositoryTest {
 
     @Test
     fun playerNameDefaultsAndPersistsSanitizedValue() = runBlocking {
-        assertEquals("Jugador Ultra", repository.playerNameFlow().first())
+        assertEquals("ejecutor3.0", repository.playerNameFlow().first())
 
         repository.savePlayerName("  Piero   Ultra  ")
 
@@ -202,7 +202,7 @@ class GameHubPreferencesRepositoryTest {
     fun blankPlayerNameFallsBackToDefault() = runBlocking {
         repository.savePlayerName("   ")
 
-        assertEquals("Jugador Ultra", repository.playerNameFlow().first())
+        assertEquals("ejecutor3.0", repository.playerNameFlow().first())
     }
 
     @Test
