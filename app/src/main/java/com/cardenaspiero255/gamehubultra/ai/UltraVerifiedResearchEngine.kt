@@ -36,6 +36,8 @@ interface UltraResearchProvider {
 
     fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence
 
+    fun cancelActiveRequest() = Unit
+
     fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult =
         try {
             UltraProviderResult.Evidence(fetch(request))
@@ -347,16 +349,22 @@ class UltraVerifiedResearchEngine(
                 }
             }
         } catch (interrupted: InterruptedException) {
-            submitted.forEach { future ->
-                if (!future.isDone) future.cancel(true)
+            submitted.forEachIndexed { index, future ->
+                if (!future.isDone) {
+                    runCatching { providers[index].cancelActiveRequest() }
+                    future.cancel(true)
+                }
             }
             Thread.currentThread().interrupt()
             throw interrupted
         }
 
         if (timedOut || stoppedAfterGrace) {
-            submitted.forEach { future ->
-                if (!future.isDone) future.cancel(true)
+            submitted.forEachIndexed { index, future ->
+                if (!future.isDone) {
+                    runCatching { providers[index].cancelActiveRequest() }
+                    future.cancel(true)
+                }
             }
         }
 
@@ -437,14 +445,20 @@ class UltraVerifiedResearchEngine(
         }
 
         if (evidenceAttempts.isEmpty()) {
-            val structuredIssue = attempts
+            val orderedResults = attempts
                 .sortedBy { it.index }
                 .map { it.result }
-                .firstOrNull { it is UltraProviderResult.Abstained }
-                ?: attempts
-                    .sortedBy { it.index }
-                    .map { it.result }
-                    .firstOrNull { it is UltraProviderResult.Failure }
+            val structuredIssue = orderedResults
+                .firstOrNull { result ->
+                    result is UltraProviderResult.Abstained &&
+                        result.reasonCode !in NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS
+                }
+                ?: orderedResults.firstOrNull {
+                    it is UltraProviderResult.Failure
+                }
+                ?: orderedResults.firstOrNull {
+                    it is UltraProviderResult.Abstained
+                }
 
             return when (structuredIssue) {
                 is UltraProviderResult.Abstained ->
@@ -728,7 +742,14 @@ class UltraVerifiedResearchEngine(
 
         val STABLE_KNOWLEDGE_NEGATION_FILLERS = setOf(
             "esta", "estan", "este", "estos", "estas", "puede", "pueden",
-            "debe", "deben", "suele", "suelen", "solo", "solamente"
+            "debe", "deben", "suele", "suelen", "solo", "solamente",
+            "son", "ser", "fue", "fueron", "era", "eran", "hay",
+            "tiene", "tienen", "posee", "poseen"
+        )
+
+        val NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS = setOf(
+            "PUBLIC_FALLBACK_NOT_APPLICABLE",
+            "PUBLIC_FALLBACK_CONTEXT_REQUIRED"
         )
 
         val STABLE_KNOWLEDGE_STOP_WORDS = setOf(
