@@ -328,7 +328,7 @@ class WikimediaUltraResearchProviderTest {
 
         val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
         assertEquals(
-            "https://es.wikipedia.org/wiki/Agujero%20negro",
+            "https://es.wikipedia.org/wiki/Agujero_negro",
             evidence.sourceId
         )
         assertEquals("general:agujero-negro", evidence.claimKey)
