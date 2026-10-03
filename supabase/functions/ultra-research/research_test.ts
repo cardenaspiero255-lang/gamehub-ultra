@@ -2378,8 +2378,7 @@ Deno.test(
               {
                 title: "Referencia marciana",
                 url: "https://wrong-b.example/marte",
-                content:
-                  "La escala de referencia de Marte registra 10 grados.",
+                content: "La escala de referencia de Marte registra 10 grados.",
                 score: 0.98,
               },
             ],
