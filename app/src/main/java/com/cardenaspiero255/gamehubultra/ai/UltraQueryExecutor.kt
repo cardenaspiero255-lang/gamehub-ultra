@@ -38,7 +38,6 @@ class DefaultUltraQueryExecutor(
                         ?.invoke()
                         ?.trim()
                         ?.takeIf(String::isNotBlank)
-                        ?: localChat()
                 }
             }
 
