@@ -244,6 +244,38 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
+    fun stableTimeAndTemperatureExplanationsStayOptional() {
+        val morningSky = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿por qué el cielo es rojo en la mañana?"
+        )
+        val bodyTemperature = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿cómo funciona la temperatura corporal?"
+        )
+        val windowsUpdate = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿cómo funciona Windows Update?"
+        )
+
+        listOf(morningSky, bodyTemperature, windowsUpdate).forEach { request ->
+            assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
+            assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
+            assertFalse(request.requiresInternet)
+            assertFalse(request.requiresFreshData)
+        }
+    }
+
+    @Test
+    fun explicitTemperatureNowRemainsFresh() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿qué temperatura hace ahora en Rancagua?"
+        )
+
+        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
+        assertTrue(request.requiresInternet)
+        assertTrue(request.requiresFreshData)
+    }
+
+    @Test
     fun legacyExplicitInternetRequirementRemainsRequired() {
         val request = UltraGeneralQueryRequest(
             originalText = "consulta externa explícita",
