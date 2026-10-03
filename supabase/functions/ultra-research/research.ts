@@ -191,11 +191,16 @@ function evidencePolarityCompatible(
   return !firstContradictsSecond && !secondContradictsFirst;
 }
 
+function queryTopicTokens(query: string): Set<string> {
+  const topic = extractGeneralKnowledgeQuery(query);
+  return evidenceTokens(topic || stripAssistantInvocation(query));
+}
+
 function candidateMatchesQuery(
   query: string,
   candidateText: string,
 ): boolean {
-  const queryTokens = evidenceTokens(stripAssistantInvocation(query));
+  const queryTokens = queryTopicTokens(query);
   if (queryTokens.size === 0) return true;
   const candidateTokens = evidenceTokens(candidateText);
   return [...queryTokens].some((token) => candidateTokens.has(token));
@@ -206,7 +211,7 @@ function candidateSupportsPrimary(
   primaryText: string,
   candidateText: string,
 ): boolean {
-  const queryTokens = evidenceTokens(stripAssistantInvocation(query));
+  const queryTokens = queryTopicTokens(query);
   const primaryTokens = evidenceTokens(primaryText);
   const candidateTokens = evidenceTokens(candidateText);
 
@@ -239,7 +244,7 @@ function generalKnowledgeRouteTimeoutMs(
   if (Number.isFinite(configured) && configured > 0) {
     return Math.max(800, Math.min(10_000, Math.trunc(configured)));
   }
-  return 4_500;
+  return 8_000;
 }
 
 function primaryEvidenceTimeoutMs(
@@ -396,19 +401,38 @@ function optionalSynthesisTimeoutMs(
   return 600;
 }
 
+function xaiSynthesisTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_XAI_SYNTHESIS_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(500, Math.min(5_000, Math.trunc(configured)));
+  }
+  if (deps.env("ULTRA_SYNTHESIS_TIMEOUT_MS")?.trim()) {
+    return optionalSynthesisTimeoutMs(deps);
+  }
+  return 1_800;
+}
+
 async function settleOptionalSynthesis(
   promise: Promise<ResearchResult>,
   controller: AbortController,
   evidence: ResearchResult,
   deps: ResearchDependencies,
   remainingBudget?: number,
+  timeoutOverrideMs?: number,
 ): Promise<ResearchResult> {
   let timer: number | undefined;
   const timeout = new Promise<ResearchResult>((resolve) => {
     timer = setTimeout(() => {
       controller.abort();
       resolve(evidence);
-    }, boundedTimeout(optionalSynthesisTimeoutMs(deps), remainingBudget));
+    }, boundedTimeout(
+      timeoutOverrideMs ?? optionalSynthesisTimeoutMs(deps),
+      remainingBudget,
+    ));
   });
 
   try {
@@ -430,12 +454,28 @@ function generalModelFallbackTimeoutMs(
   return 1_200;
 }
 
+function xaiGeneralModelTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_XAI_GENERAL_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(800, Math.min(8_000, Math.trunc(configured)));
+  }
+  if (deps.env("ULTRA_GENERAL_MODEL_TIMEOUT_MS")?.trim()) {
+    return generalModelFallbackTimeoutMs(deps);
+  }
+  return 3_000;
+}
+
 async function settleGeneralModelFallback(
   promise: Promise<ResearchResult>,
   controller: AbortController,
   stage: string,
   deps: ResearchDependencies,
   remainingBudget?: number,
+  timeoutOverrideMs?: number,
 ): Promise<ResearchResult> {
   let timer: number | undefined;
   const timeout = new Promise<ResearchResult>((resolve) => {
@@ -451,7 +491,10 @@ async function settleGeneralModelFallback(
           },
         ),
       );
-    }, boundedTimeout(generalModelFallbackTimeoutMs(deps), remainingBudget));
+    }, boundedTimeout(
+      timeoutOverrideMs ?? generalModelFallbackTimeoutMs(deps),
+      remainingBudget,
+    ));
   });
 
   try {
@@ -836,7 +879,8 @@ async function maybeSynthesizeWithXai(
           { role: "user", content: prompt },
         ],
         temperature: 0.1,
-        max_tokens: 700,
+        reasoning_effort: "low",
+        max_completion_tokens: 1500,
       }),
       signal,
     },
@@ -913,6 +957,7 @@ async function maybeSynthesizeWithAi(
     routeDeadlineAt === undefined
       ? undefined
       : remainingRouteBudgetMs(routeDeadlineAt),
+    xaiSynthesisTimeoutMs(deps),
   );
 }
 
@@ -970,7 +1015,8 @@ async function generalKnowledgeXaiFallback(
           { role: "user", content: prompt },
         ],
         temperature: 0.2,
-        max_tokens: 700,
+        reasoning_effort: "low",
+        max_completion_tokens: 1500,
       }),
       signal,
     },
@@ -1075,6 +1121,7 @@ async function generalKnowledgeAiFallback(
     routeDeadlineAt === undefined
       ? undefined
       : remainingRouteBudgetMs(routeDeadlineAt),
+    xaiGeneralModelTimeoutMs(deps),
   );
   if (!xai.abstained) return xai;
 
