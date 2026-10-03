@@ -268,19 +268,78 @@ async function settleOptionalSynthesis(
   }
 }
 
+function generalModelFallbackTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_GENERAL_MODEL_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(200, Math.min(5_000, Math.trunc(configured)));
+  }
+  return 1_200;
+}
+
+async function settleGeneralModelFallback(
+  promise: Promise<ResearchResult>,
+  controller: AbortController,
+  stage: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  let timer: number | undefined;
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "El asistente general online agotó su tiempo de respuesta.",
+          {
+            reasonCode: "GENERAL_MODEL_TIMEOUT",
+            retryable: true,
+            stage,
+          },
+        ),
+      );
+    }, generalModelFallbackTimeoutMs(deps));
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 async function providerSecret(
   deps: ResearchDependencies,
   name: string,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   const envValue = deps.env(name)?.trim();
   if (envValue) return envValue;
+  if (!deps.secret || signal?.aborted) return undefined;
+
+  let onAbort: (() => void) | undefined;
+  const aborted = signal
+    ? new Promise<undefined>((resolve) => {
+      onAbort = () => resolve(undefined);
+      signal.addEventListener("abort", onAbort, { once: true });
+    })
+    : null;
 
   try {
-    const secretValue = await deps.secret?.(name);
+    const lookup = deps.secret(name);
+    const secretValue = aborted
+      ? await Promise.race([lookup, aborted])
+      : await lookup;
     const clean = secretValue?.trim();
     return clean || undefined;
   } catch {
     return undefined;
+  } finally {
+    if (signal && onAbort) {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
 }
 
@@ -463,8 +522,9 @@ async function generalKnowledgeGeminiFallback(
   query: string,
   context: string,
   deps: ResearchDependencies,
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
-  const apiKey = await providerSecret(deps, "GEMINI_API_KEY");
+  const apiKey = await providerSecret(deps, "GEMINI_API_KEY", signal);
   if (!apiKey) {
     return abstain(
       "No hay un asistente general online configurado para responder esta consulta.",
@@ -510,6 +570,7 @@ async function generalKnowledgeGeminiFallback(
         maxOutputTokens: 700,
       },
     }),
+    signal,
   });
 
   if (!response) {
@@ -695,10 +756,11 @@ async function generalKnowledgeXaiFallback(
   query: string,
   context: string,
   deps: ResearchDependencies,
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const apiKey =
-    await providerSecret(deps, "XAI_API_KEY") ??
-    await providerSecret(deps, "GROK_API_KEY");
+    await providerSecret(deps, "XAI_API_KEY", signal) ??
+    await providerSecret(deps, "GROK_API_KEY", signal);
   if (!apiKey) {
     return abstain(
       "No hay un segundo asistente general online configurado.",
@@ -746,6 +808,7 @@ async function generalKnowledgeXaiFallback(
         temperature: 0.2,
         max_tokens: 700,
       }),
+      signal,
     },
   );
 
@@ -810,10 +873,32 @@ async function generalKnowledgeAiFallback(
   context: string,
   deps: ResearchDependencies,
 ): Promise<ResearchResult> {
-  const gemini = await generalKnowledgeGeminiFallback(query, context, deps);
+  const geminiController = new AbortController();
+  const gemini = await settleGeneralModelFallback(
+    generalKnowledgeGeminiFallback(
+      query,
+      context,
+      deps,
+      geminiController.signal,
+    ),
+    geminiController,
+    "gemini_general",
+    deps,
+  );
   if (!gemini.abstained) return gemini;
 
-  const xai = await generalKnowledgeXaiFallback(query, context, deps);
+  const xaiController = new AbortController();
+  const xai = await settleGeneralModelFallback(
+    generalKnowledgeXaiFallback(
+      query,
+      context,
+      deps,
+      xaiController.signal,
+    ),
+    xaiController,
+    "xai_general",
+    deps,
+  );
   if (!xai.abstained) return xai;
 
   if (gemini.reasonCode !== "GENERAL_MODEL_NOT_CONFIGURED") {
