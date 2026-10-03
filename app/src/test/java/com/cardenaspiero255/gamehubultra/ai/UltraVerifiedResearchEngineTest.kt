@@ -453,6 +453,51 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun optionalStableKnowledgeRejectsPartialNumericOverlap() {
+        val expected = object : UltraResearchProvider {
+            override val id = "expected-values"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:agua",
+                    value = "el agua hierve a 100 grados y se congela a 0 grados",
+                    displayText =
+                        "El agua hierve a 100 grados y se congela a 0 grados.",
+                    sourceId = "https://source-a.example/agua",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val conflicting = object : UltraResearchProvider {
+            override val id = "conflicting-values"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:agua",
+                    value = "el agua hierve a 90 grados y se congela a 0 grados",
+                    displayText =
+                        "El agua hierve a 90 grados y se congela a 0 grados.",
+                    sourceId = "https://source-b.example/agua",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(expected, conflicting))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es el agua?")
+            )
+
+            assertTrue(result.abstained)
+            assertEquals("INSUFFICIENT_CORROBORATION", result.reasonCode)
+            assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun optionalStableKnowledgeRejectsOppositeSignedNumericFacts() {
         val negative = object : UltraResearchProvider {
             override val id = "negative-value"
