@@ -558,6 +558,148 @@ class UltraVerifiedResearchEngineTest {
     }
 
 
+    @Test
+    fun graceCancellationExplicitlyReleasesBlockingProvider() {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val released = java.util.concurrent.CountDownLatch(1)
+        val cancelCalls = AtomicInteger(0)
+        val primary = object : UltraResearchProvider {
+            override val id = "blocking-primary"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                entered.countDown()
+                while (released.count > 0L) {
+                    try {
+                        released.await()
+                    } catch (_: InterruptedException) {
+                        // Simula I/O bloqueante que no se libera solo con interrupt().
+                    }
+                }
+                error("La llamada primaria cancelada no debe producir evidencia")
+            }
+
+            override fun cancelActiveRequest() {
+                cancelCalls.incrementAndGet()
+                released.countDown()
+            }
+        }
+        val fallback = object : UltraResearchProvider {
+            override val id = "wikimedia-public"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "motor transforma energia",
+                    displayText = "Un motor transforma energía en movimiento.",
+                    sourceId = "https://es.wikipedia.org/wiki/Motor",
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(primary, fallback))
+
+        try {
+            assertTrue(entered.await(1, java.util.concurrent.TimeUnit.SECONDS))
+            val result = engine.answer(
+                UltraGeneralQueryRouter
+                    .classify("Ultra, ¿qué es un motor?")
+                    .copy(timeoutMillis = 2_000L)
+            )
+
+            assertFalse(result.abstained)
+            assertTrue(result.fallbackUsed)
+            assertEquals(1, cancelCalls.get())
+            assertTrue(released.await(1, java.util.concurrent.TimeUnit.SECONDS))
+        } finally {
+            released.countDown()
+            engine.close()
+        }
+    }
+
+    @Test
+    fun nonApplicablePublicFallbackDoesNotHidePrimaryFailure() {
+        val primary = object : UltraResearchProvider {
+            override val id = "supabase-ultra-research"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                error("unused")
+
+            override fun fetchResult(
+                request: UltraGeneralQueryRequest
+            ): UltraProviderResult =
+                UltraProviderResult.Failure(
+                    reasonCode = "BACKEND_NETWORK_FAILURE",
+                    message = "backend offline",
+                    retryable = true,
+                    stage = "supabase"
+                )
+        }
+        val fallback = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                error("CURRENT_DATA no debe consultar Wikimedia")
+            }
+        )
+        val engine = UltraVerifiedResearchEngine(listOf(primary, fallback))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Ultra, ¿cuál es el clima actual en Rancagua?"
+                )
+            )
+
+            assertTrue(result.abstained)
+            assertEquals("BACKEND_NETWORK_FAILURE", result.reasonCode)
+            assertTrue(result.retryable)
+            assertEquals("supabase", result.stage)
+            assertTrue(
+                result.message.contains("no está disponible", ignoreCase = true)
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun copulaNegationDoesNotCreateFalseConflictForCompatibleFacts() {
+        val first = object : UltraResearchProvider {
+            override val id = "one"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:ballenas",
+                    value = "las ballenas no son peces son mamiferos",
+                    displayText = "Las ballenas no son peces, son mamíferos.",
+                    sourceId = "https://source-a.example/ballenas",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val second = object : UltraResearchProvider {
+            override val id = "two"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:ballenas",
+                    value = "las ballenas son mamiferos marinos",
+                    displayText = "Las ballenas son mamíferos marinos.",
+                    sourceId = "https://source-b.example/ballenas",
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(first, second))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué son las ballenas?")
+            )
+
+            assertFalse(result.abstained)
+            assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
     private fun fixedProvider(
         providerId: String,
         claimKey: String,
