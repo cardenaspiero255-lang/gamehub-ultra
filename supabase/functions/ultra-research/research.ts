@@ -727,6 +727,13 @@ function isPredominantlyEnglishText(value: string): boolean {
   return english >= 2 && english > spanish;
 }
 
+function geminiThinkingConfig(model: string): Record<string, string | number> {
+  const normalized = model.trim().toLowerCase();
+  return normalized.startsWith("gemini-2.5")
+    ? { thinkingBudget: 512 }
+    : { thinkingLevel: "minimal" };
+}
+
 async function maybeSynthesizeWithGemini(
   query: string,
   evidence: ResearchResult,
@@ -777,7 +784,7 @@ async function maybeSynthesizeWithGemini(
         }],
         generationConfig: {
           maxOutputTokens: 1500,
-          thinkingConfig: { thinkingLevel: "minimal" },
+          thinkingConfig: geminiThinkingConfig(model),
         },
       }),
       signal,
@@ -864,7 +871,7 @@ async function generalKnowledgeGeminiFallback(
       }],
       generationConfig: {
         maxOutputTokens: 1500,
-        thinkingConfig: { thinkingLevel: "minimal" },
+        thinkingConfig: geminiThinkingConfig(model),
       },
     }),
     signal,
