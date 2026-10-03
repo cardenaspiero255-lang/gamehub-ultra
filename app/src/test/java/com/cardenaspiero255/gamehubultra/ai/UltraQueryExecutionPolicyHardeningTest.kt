@@ -183,6 +183,32 @@ class UltraQueryExecutionPolicyHardeningTest {
     }
 
 
+    @Test
+    fun stableKnowledgeFallsBackEvenWhenResearchHasPartialSources() {
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult =
+                UltraVerifiedResearchResult(
+                    message = "No encontré fuentes suficientes para confirmar ese dato.",
+                    confidence = UltraAnswerConfidence.LOW,
+                    sources = listOf("https://es.wikipedia.org/wiki/Motor"),
+                    abstained = true
+                )
+        }
+        val coordinator = UltraQueryExecutionCoordinator(gateway)
+
+        val answer = coordinator.answer(
+            request = UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?"),
+            localChat = {
+                "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico."
+            }
+        )
+
+        assertFalse(answer.abstained)
+        assertFalse(answer.verified)
+        assertTrue(answer.fallbackUsed)
+        assertTrue(answer.message.startsWith("Un motor"))
+    }
+
     private fun fixedProvider(
         text: String,
         authoritative: Boolean
