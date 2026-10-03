@@ -311,6 +311,56 @@ class UltraVerifiedResearchEngineTest {
     }
 
 
+    @Test
+    fun optionalStableKnowledgeChoosesHigherQualityEvidenceWhenProvidersParaphrase() {
+        val primary = object : UltraResearchProvider {
+            override val id = "primary-multi-source"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "energia-a-trabajo-mecanico",
+                    displayText = "Un motor transforma energía en trabajo mecánico o movimiento.",
+                    sourceId = "https://fuente-uno.example/motor",
+                    supportingSourceIds = listOf("https://fuente-dos.example/motor"),
+                    independentSourceCount = 2,
+                    authoritative = false
+                )
+        }
+        val publicFallback = object : UltraResearchProvider {
+            override val id = "wikimedia-public"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "maquina-que-produce-movimiento",
+                    displayText = "Un motor es una máquina capaz de producir movimiento.",
+                    sourceId = "https://es.wikipedia.org/wiki/Motor",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(primary, publicFallback)
+        )
+        val request = UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+
+        try {
+            val result = engine.answer(request)
+
+            assertFalse(result.abstained)
+            assertEquals(
+                "Un motor transforma energía en trabajo mecánico o movimiento.",
+                result.message
+            )
+            assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
+            assertFalse(result.fallbackUsed)
+        } finally {
+            engine.close()
+        }
+    }
+
+
     private fun fixedProvider(
         providerId: String,
         claimKey: String,
