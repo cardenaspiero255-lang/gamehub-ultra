@@ -1373,7 +1373,7 @@ Deno.test("unsupported current query falls back to Tavily web search", async () 
 Deno.test("general knowledge falls back to Gemini when verified sources are unavailable", async () => {
   let geminiCalled = false;
   const deps: ResearchDependencies = {
-    fetcher: (input) => {
+    fetcher: (input, init) => {
       const url = new URL(String(input));
 
       if (
@@ -1384,6 +1384,19 @@ Deno.test("general knowledge falls back to Gemini when verified sources are unav
 
       if (url.hostname === "generativelanguage.googleapis.com") {
         geminiCalled = true;
+        const body = JSON.parse(String(init?.body)) as {
+          generationConfig?: Record<string, unknown>;
+        };
+        const generationConfig = body.generationConfig ?? {};
+        if (generationConfig.maxOutputTokens !== 1500) {
+          throw new Error("Gemini general fallback needs output-token headroom");
+        }
+        const thinkingConfig = generationConfig.thinkingConfig as
+          | Record<string, unknown>
+          | undefined;
+        if (thinkingConfig?.thinkingLevel !== "minimal") {
+          throw new Error("Gemini general fallback must use minimal thinking");
+        }
         return jsonResponse({
           candidates: [{
             finishReason: "STOP",
@@ -2689,6 +2702,78 @@ Deno.test(
       throw new Error(
         "expected Tavily evidence after the longer fallback wait",
       );
+    }
+  },
+);
+
+Deno.test(
+  "verified Gemini synthesis uses latency tuned thinking budget",
+  async () => {
+    const verifiedText =
+      "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.";
+    let geminiCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input, init) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({ query: { search: [{ title: "Motor" }] } });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract: verifiedText,
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalled = true;
+          const body = JSON.parse(String(init?.body)) as {
+            generationConfig?: Record<string, unknown>;
+          };
+          const generationConfig = body.generationConfig ?? {};
+          if (generationConfig.maxOutputTokens !== 1500) {
+            throw new Error("Gemini synthesis needs output-token headroom");
+          }
+          const thinkingConfig = generationConfig.thinkingConfig as
+            | Record<string, unknown>
+            | undefined;
+          if (thinkingConfig?.thinkingLevel !== "minimal") {
+            throw new Error("Gemini synthesis must use minimal thinking");
+          }
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: { parts: [{ text: verifiedText }] },
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!geminiCalled) {
+      throw new Error("expected grounded Gemini synthesis");
+    }
+    if (result.abstained || result.displayText !== verifiedText) {
+      throw new Error("Gemini synthesis must preserve verified evidence");
     }
   },
 );
