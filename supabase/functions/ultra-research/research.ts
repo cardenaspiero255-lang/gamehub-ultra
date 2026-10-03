@@ -1299,8 +1299,8 @@ async function fetchJson(
 function extractWeatherLocation(query: string): string | null {
   const clean = query.replace(/[?¿!¡]/g, " ").replace(/\s+/g, " ").trim();
   const patterns = [
-    /(?:clima|tiempo|weather|pronostico|forecast)(?:\s+de\s+hoy|\s+hoy)?\s+(?:en|de|para)\s+(.+)$/i,
-    /(?:en|de|para)\s+([\p{L}][\p{L}\s.'-]{1,80})$/iu,
+    /(?:clima|tiempo|weather|pronostico|forecast|temperatura|temperature)(?:\s+de\s+hoy|\s+hoy|\s+today)?\s+(?:en|de|para|in|for)\s+(.+)$/i,
+    /(?:en|de|para|in|for)\s+([\p{L}][\p{L}\s.'-]{1,80})$/iu,
   ];
   for (const pattern of patterns) {
     const match = clean.match(pattern);
@@ -2383,7 +2383,7 @@ export async function routeResearchQuery(
   const cleanContext = normalize(context);
   const combinedSignals = `${clean} ${cleanContext}`.trim();
 
-  const weatherSignal = /\b(clima|tiempo de hoy|weather|pronostico|forecast|temperatura|temperature)\b/;
+  const weatherSignal = /\b(?:clima|tiempo de hoy|weather|pronostico|forecast|que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
   const newsSignal =
     /\b(noticias|news|salio nuevo|que salio nuevo|latest news|released)\b/;
   const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;
