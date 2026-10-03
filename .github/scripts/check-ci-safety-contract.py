@@ -611,12 +611,59 @@ def main() -> None:
         "register_sentry_release.py",
     )
 
-    require_step(
+    research_config = require_step(
+        android,
+        "device-validation",
+        "Verify release research configuration",
+        shell="bash",
+    )
+    research_env = research_config.get("env")
+    if not isinstance(research_env, dict):
+        fail("Release research configuration env is missing")
+    trusted_release_context = str(
+        research_env.get("TRUSTED_RELEASE_CONTEXT", "")
+    )
+    expected_trusted_release_context = (
+        "${{ github.event_name != 'pull_request' || "
+        "(github.actor != 'dependabot[bot]' && "
+        "github.event.pull_request.head.repo.full_name == github.repository) }}"
+    )
+    if trusted_release_context != expected_trusted_release_context:
+        fail(
+            "TRUSTED_RELEASE_CONTEXT must keep Dependabot pull requests "
+            "on the untrusted validation path"
+        )
+
+    for fragment in (
+        'RESEARCH_RELEASE_READY=false',
+        'research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"',
+        'if [ "${TRUSTED_RELEASE_CONTEXT}" = "true" ]; then',
+        'exit 1',
+        'RESEARCH_RELEASE_READY=true',
+    ):
+        require_run_fragment(
+            research_config,
+            "whitespace-safe release research configuration",
+            fragment,
+        )
+
+    release_upload = require_step(
         android,
         "device-validation",
         "Upload installable release outputs",
         uses_prefix="actions/upload-artifact@",
+        allowed_if="env.RESEARCH_RELEASE_READY == 'true'",
     )
+    release_upload_with = release_upload.get("with")
+    if not isinstance(release_upload_with, dict):
+        fail("Release artifact upload configuration is missing")
+    release_upload_paths = str(release_upload_with.get("path", ""))
+    for required_path in (
+        "app/build/outputs/apk/release/**/*.apk",
+        "app/build/outputs/bundle/release/**/*.aab",
+    ):
+        if required_path not in release_upload_paths:
+            fail(f"Release artifact upload lost required output: {required_path}")
 
     coverage_generate = require_step(
         coverage,

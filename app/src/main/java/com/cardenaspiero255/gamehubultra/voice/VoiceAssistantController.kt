@@ -14,6 +14,17 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import androidx.core.content.ContextCompat
 
+internal object VoiceRecognitionErrorForwarder {
+    fun forward(
+        error: Int,
+        onListeningChanged: (Boolean) -> Unit,
+        onError: (Int) -> Unit
+    ) {
+        onListeningChanged(false)
+        onError(error)
+    }
+}
+
 class VoiceAssistantController(
     context: Context,
     private val onListeningChanged: (Boolean) -> Unit,
@@ -164,8 +175,11 @@ class VoiceAssistantController(
                 }
                 return
             }
-            onListeningChanged(false)
-            onError(error)
+            VoiceRecognitionErrorForwarder.forward(
+                error = error,
+                onListeningChanged = onListeningChanged,
+                onError = this@VoiceAssistantController.onError
+            )
         }
     }
 }
