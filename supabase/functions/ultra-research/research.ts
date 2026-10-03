@@ -250,9 +250,21 @@ function evidenceNumericFacts(value: string): Map<string, Set<string>> {
       );
     if (!anchor) return;
 
-    const values = facts.get(anchor) ?? new Set<string>();
+    const predicate = rawTokens
+      .slice(0, index)
+      .reverse()
+      .map(canonicalEvidenceToken)
+      .find((candidate) =>
+        candidate.length >= 3 &&
+        !/\d/.test(candidate) &&
+        candidate !== anchor &&
+        !CORROBORATION_STOP_WORDS.has(candidate) &&
+        !EVIDENCE_NEGATION_FILLERS.has(candidate)
+      );
+    const factKey = predicate ? `${anchor}|${predicate}` : anchor;
+    const values = facts.get(factKey) ?? new Set<string>();
     values.add(number + percentSuffix);
-    facts.set(anchor, values);
+    facts.set(factKey, values);
   });
 
   return facts;
@@ -268,8 +280,13 @@ function evidenceNumericFactsCompatible(
   for (const [anchor, firstValues] of firstFacts) {
     const secondValues = secondFacts.get(anchor);
     if (!secondValues) continue;
-    const agrees = [...firstValues].some((value) => secondValues.has(value));
-    if (!agrees) return false;
+    const firstOnly = [...firstValues].some(
+      (value) => !secondValues.has(value),
+    );
+    const secondOnly = [...secondValues].some(
+      (value) => !firstValues.has(value),
+    );
+    if (firstOnly && secondOnly) return false;
   }
   return true;
 }
