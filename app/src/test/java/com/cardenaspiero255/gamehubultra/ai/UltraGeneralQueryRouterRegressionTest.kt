@@ -8,6 +8,17 @@ import kotlin.test.assertTrue
 class UltraGeneralQueryRouterRegressionTest {
 
     @Test
+    fun stableDefinitionDoesNotRequireInternetToBeAnswerable() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿qué es un motor?"
+        )
+
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
+        assertFalse(request.requiresInternet)
+        assertFalse(request.requiresFreshData)
+    }
+
+    @Test
     fun generalKnowledgeUsesVerifiedResearchWithoutPretendingItIsFresh() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, por qué el cielo es azul"
