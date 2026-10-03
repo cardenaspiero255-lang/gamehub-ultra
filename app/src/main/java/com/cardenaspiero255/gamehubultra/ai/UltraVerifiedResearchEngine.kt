@@ -365,10 +365,14 @@ class UltraVerifiedResearchEngine(
                     attempts.size < providers.size &&
                     graceDeadlineNanos == null
                 ) {
-                    val graceMillis = minOf(
-                        PRIMARY_PROVIDER_GRACE_MS,
-                        (request.timeoutMillis / 4L).coerceAtLeast(1L)
-                    )
+                    val graceMillis = if (attempt.index == 0) {
+                        minOf(
+                            PRIMARY_PROVIDER_GRACE_MS,
+                            (request.timeoutMillis / 4L).coerceAtLeast(1L)
+                        )
+                    } else {
+                        (request.timeoutMillis / 2L).coerceAtLeast(1L)
+                    }
                     graceDeadlineNanos = minOf(
                         deadline,
                         System.nanoTime() +
