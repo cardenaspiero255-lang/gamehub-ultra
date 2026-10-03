@@ -613,16 +613,16 @@ class UltraVerifiedResearchEngine(
     ): Boolean {
         val firstText = first.displayText + " " + first.value
         val secondText = second.displayText + " " + second.value
-        val firstValue = normalizeStableText(first.value)
-        val secondValue = normalizeStableText(second.value)
-        if (firstValue.isNotBlank() && firstValue == secondValue) return true
-
         if (
             stableKnowledgeHasExplicitNegation(firstText) !=
             stableKnowledgeHasExplicitNegation(secondText)
         ) {
             return false
         }
+
+        val firstValue = normalizeStableText(first.value)
+        val secondValue = normalizeStableText(second.value)
+        if (firstValue.isNotBlank() && firstValue == secondValue) return true
 
         val firstTokens = stableKnowledgeTokens(firstText)
         val secondTokens = stableKnowledgeTokens(secondText)
