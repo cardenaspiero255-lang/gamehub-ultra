@@ -491,7 +491,7 @@ class UltraVerifiedResearchEngineTest {
 
             assertFalse(result.abstained)
             assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
-            assertEquals(2, result.sources.size)
+            assertTrue(result.message.contains("Marte es un planeta rocoso"))
         } finally {
             engine.close()
         }
