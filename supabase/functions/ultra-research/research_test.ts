@@ -1813,7 +1813,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "vault lookup failure does not discard available Wikipedia evidence",
   async () => {
@@ -1920,8 +1919,7 @@ Deno.test(
 
         throw new Error("unexpected URL " + url);
       },
-      env: (name) =>
-        name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+      env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
     };
 
     const result = await routeResearchQuery(
@@ -1981,8 +1979,7 @@ Deno.test(
 
         throw new Error("unexpected URL " + url);
       },
-      env: (name) =>
-        name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+      env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
     };
 
     const result = await Promise.race([
