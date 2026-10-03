@@ -453,6 +453,51 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun optionalStableKnowledgeAllowsDifferentIncidentalDates() {
+        val first = object : UltraResearchProvider {
+            override val id = "first"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:marte",
+                    value = "marte es un planeta rocoso del sistema solar",
+                    displayText =
+                        "Marte es un planeta rocoso del sistema solar. Fuente actualizada el 12 de agosto.",
+                    sourceId = "https://source-a.example/marte",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val second = object : UltraResearchProvider {
+            override val id = "second"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:marte",
+                    value = "marte es un planeta rocoso del sistema solar",
+                    displayText =
+                        "Marte es un planeta rocoso del sistema solar. Fuente revisada el 18 de agosto.",
+                    sourceId = "https://source-b.example/marte",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(first, second))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es Marte?")
+            )
+
+            assertFalse(result.abstained)
+            assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
+            assertEquals(2, result.sources.size)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun optionalStableKnowledgeRejectsNegatedContradictionDespiteTokenOverlap() {
         val positive = object : UltraResearchProvider {
             override val id = "positive"
