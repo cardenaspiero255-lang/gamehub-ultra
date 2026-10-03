@@ -870,6 +870,7 @@ jobs:
             app/build/reports/**
 
       - name: Upload installable release outputs
+        if: env.SUPABASE_PUBLISHABLE_KEY != ''
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-release
