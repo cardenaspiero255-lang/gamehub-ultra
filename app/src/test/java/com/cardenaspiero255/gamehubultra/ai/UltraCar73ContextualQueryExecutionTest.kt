@@ -195,7 +195,7 @@ class UltraCar73ContextualQueryExecutionTest {
         assertTrue(answer.abstained)
         assertFalse(answer.verified)
         assertFalse(answer.fallbackUsed)
-        assertTrue(answer.message.contains("verificar", ignoreCase = true))
+        assertTrue(answer.message.contains("fuentes verificables", ignoreCase = true))
         engine.close()
     }
 
@@ -292,7 +292,7 @@ class UltraCar73ContextualQueryExecutionTest {
         assertTrue(answer.abstained)
         assertFalse(answer.verified)
         assertFalse(answer.fallbackUsed)
-        assertTrue(answer.message.contains("verificar", ignoreCase = true))
+        assertTrue(answer.message.contains("fuentes verificables", ignoreCase = true))
         engine.close()
     }
 
