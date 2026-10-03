@@ -191,6 +191,59 @@ function evidencePolarityCompatible(
   return !firstContradictsSecond && !secondContradictsFirst;
 }
 
+function evidenceNumericFacts(value: string): Map<string, Set<string>> {
+  const rawTokens = normalize(value)
+    .replace(/[^a-z0-9.,%]+/g, " ")
+    .split(" ")
+    .map((token) => token.trim())
+    .filter(Boolean);
+  const facts = new Map<string, Set<string>>();
+
+  rawTokens.forEach((token, index) => {
+    const percentSuffix = token.endsWith("%") ? "%" : "";
+    const number = token
+      .replace(/%$/, "")
+      .replace(",", ".");
+    if (!/^\d+(?:\.\d+)?$/.test(number)) return;
+
+    const surrounding = [
+      ...rawTokens.slice(index + 1),
+      ...rawTokens.slice(0, index).reverse(),
+    ];
+    const anchor = surrounding
+      .map(canonicalEvidenceToken)
+      .find((candidate) =>
+        candidate.length >= 2 &&
+        !/\d/.test(candidate) &&
+        !CORROBORATION_STOP_WORDS.has(candidate) &&
+        !EVIDENCE_NEGATION_FILLERS.has(candidate)
+      );
+    if (!anchor) return;
+
+    const values = facts.get(anchor) ?? new Set<string>();
+    values.add(number + percentSuffix);
+    facts.set(anchor, values);
+  });
+
+  return facts;
+}
+
+function evidenceNumericFactsCompatible(
+  firstText: string,
+  secondText: string,
+): boolean {
+  const firstFacts = evidenceNumericFacts(firstText);
+  const secondFacts = evidenceNumericFacts(secondText);
+
+  for (const [anchor, firstValues] of firstFacts) {
+    const secondValues = secondFacts.get(anchor);
+    if (!secondValues) continue;
+    const agrees = [...firstValues].some((value) => secondValues.has(value));
+    if (!agrees) return false;
+  }
+  return true;
+}
+
 function queryTopicTokens(query: string): Set<string> {
   const topic = extractGeneralKnowledgeQuery(query);
   return evidenceTokens(topic || stripAssistantInvocation(query));
@@ -232,7 +285,8 @@ function candidateSupportsPrimary(
 
   return queryOverlap.length >= 1 &&
     evidenceOverlap.length >= 2 &&
-    evidencePolarityCompatible(primaryText, candidateText);
+    evidencePolarityCompatible(primaryText, candidateText) &&
+    evidenceNumericFactsCompatible(primaryText, candidateText);
 }
 
 function generalKnowledgeRouteTimeoutMs(
