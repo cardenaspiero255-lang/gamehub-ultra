@@ -1581,7 +1581,7 @@ Deno.test(
                 title: "Britannica motor",
                 url: "https://www.britannica.com/technology/motor",
                 content:
-                  "A motor converts energy into mechanical motion and useful work.",
+                  "Un motor convierte energía en movimiento mecánico y trabajo útil.",
                 score: 0.93,
               },
               {
@@ -1737,7 +1737,7 @@ Deno.test(
                 title: "Britannica motor",
                 url: "https://www.britannica.com/technology/motor",
                 content:
-                  "A motor converts energy into mechanical motion and useful work.",
+                  "Un motor convierte energía en movimiento mecánico y trabajo útil.",
                 score: 0.93,
               },
               {
