@@ -733,10 +733,7 @@ class UltraVerifiedResearchEngine(
         val facts = linkedMapOf<String, MutableSet<String>>()
 
         tokens.forEachIndexed { index, token ->
-            val number = token
-                .removeSuffix("%")
-                .replace(',', '.')
-                .takeIf { it.matches(Regex("""\d+(?:\.\d+)?""")) }
+            val number = stableKnowledgeQuantityValue(token)
                 ?: return@forEachIndexed
             val precedingContext = tokens
                 .subList(maxOf(0, index - 4), index)
@@ -764,6 +761,16 @@ class UltraVerifiedResearchEngine(
         }
 
         return facts.mapValues { (_, values) -> values.toSet() }
+    }
+
+    private fun stableKnowledgeQuantityValue(token: String): String? {
+        val normalized = token
+            .removeSuffix("%")
+            .replace(',', '.')
+        if (normalized.matches(Regex("""\d+(?:\.\d+)?"""))) {
+            return normalized
+        }
+        return STABLE_KNOWLEDGE_WRITTEN_QUANTITIES[normalized]
     }
 
     private fun canonicalStableKnowledgeToken(value: String): String {
@@ -882,6 +889,30 @@ class UltraVerifiedResearchEngine(
         val STABLE_KNOWLEDGE_EDITORIAL_DATE_MARKERS = setOf(
             "actualizada", "actualizado", "revisada", "revisado", "publicada", "publicado",
             "editada", "editado", "modificada", "modificado", "consultada", "consultado"
+        )
+
+        val STABLE_KNOWLEDGE_WRITTEN_QUANTITIES = mapOf(
+            "cero" to "0", "zero" to "0",
+            "un" to "1", "una" to "1", "uno" to "1", "one" to "1",
+            "dos" to "2", "two" to "2",
+            "tres" to "3", "three" to "3",
+            "cuatro" to "4", "four" to "4",
+            "cinco" to "5", "five" to "5",
+            "seis" to "6", "six" to "6",
+            "siete" to "7", "seven" to "7",
+            "ocho" to "8", "eight" to "8",
+            "nueve" to "9", "nine" to "9",
+            "diez" to "10", "ten" to "10",
+            "once" to "11", "eleven" to "11",
+            "doce" to "12", "twelve" to "12",
+            "trece" to "13", "thirteen" to "13",
+            "catorce" to "14", "fourteen" to "14",
+            "quince" to "15", "fifteen" to "15",
+            "dieciseis" to "16", "sixteen" to "16",
+            "diecisiete" to "17", "seventeen" to "17",
+            "dieciocho" to "18", "eighteen" to "18",
+            "diecinueve" to "19", "nineteen" to "19",
+            "veinte" to "20", "twenty" to "20"
         )
 
         val NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS = setOf(
