@@ -164,6 +164,17 @@ def require_dependabot_prs_are_untrusted(android: str, coverage: str):
     return android, coverage
 
 
+def remove_dependabot_untrusted_guard(android: str, coverage: str):
+    """Reject treating same-repository Dependabot pull requests as trusted."""
+    needle = """          TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: Dependabot release-context guard not found")
+    replacement = """          TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+"""
+    return android.replace(needle, replacement, 1), coverage
+
+
 def remove_device_validation_result_assertion(android: str, coverage: str):
     """Remove one blocking dependency-result assertion from the aggregate gate."""
     needle = '          test "${{ needs.device-validation.result }}" = "success"\n'
@@ -545,6 +556,7 @@ def main() -> None:
     run_mutation("release research key accepts whitespace-only secret", weaken_release_research_key_whitespace_guard)
     run_mutation("trusted release empty-key branch disabled", disable_trusted_release_empty_key_failure_branch)
     require_dependabot_prs_are_untrusted(android, coverage)
+    run_mutation("Dependabot PR trusted guard removed", remove_dependabot_untrusted_guard)
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
