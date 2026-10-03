@@ -453,6 +453,49 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun optionalStableKnowledgeRejectsOppositeSignedNumericFacts() {
+        val negative = object : UltraResearchProvider {
+            override val id = "negative-value"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:escala",
+                    value = "la escala registra -10 grados",
+                    displayText = "La escala registra -10 grados.",
+                    sourceId = "https://source-a.example/escala",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val positive = object : UltraResearchProvider {
+            override val id = "positive-value"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:escala",
+                    value = "la escala registra 10 grados",
+                    displayText = "La escala registra 10 grados.",
+                    sourceId = "https://source-b.example/escala",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(negative, positive))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es esta escala?")
+            )
+
+            assertTrue(result.abstained)
+            assertEquals("INSUFFICIENT_CORROBORATION", result.reasonCode)
+            assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun optionalStableKnowledgeRejectsConflictingWrittenQuantities() {
         val twoMoons = object : UltraResearchProvider {
             override val id = "primary-written"
