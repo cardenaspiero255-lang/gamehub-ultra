@@ -1540,7 +1540,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "general knowledge corroborates Wikipedia with independent Tavily sources from Vault",
   async () => {
@@ -1627,7 +1626,9 @@ Deno.test(
       result.displayText !==
         "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico."
     ) {
-      throw new Error("verified Wikipedia wording should remain the safe answer");
+      throw new Error(
+        "verified Wikipedia wording should remain the safe answer",
+      );
     }
   },
 );
@@ -1665,8 +1666,7 @@ Deno.test(
 
         throw new Error("unexpected URL " + url);
       },
-      env: (name) =>
-        name === "XAI_API_KEY" ? "xai-test-key" : undefined,
+      env: (name) => name === "XAI_API_KEY" ? "xai-test-key" : undefined,
     };
 
     const result = await routeResearchQuery(
@@ -1677,7 +1677,9 @@ Deno.test(
     );
 
     if (!xaiCalled) {
-      throw new Error("expected xAI fallback when verified sources and Gemini are unavailable");
+      throw new Error(
+        "expected xAI fallback when verified sources and Gemini are unavailable",
+      );
     }
     if (result.abstained) {
       throw new Error("expected xAI to keep stable knowledge answerable");
