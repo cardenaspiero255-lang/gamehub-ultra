@@ -123,7 +123,7 @@ def remove_build_always_condition(android: str, coverage: str):
 def remove_release_upload_research_key_guard(android: str, coverage: str):
     """Reject publishing installable release outputs without the research key guard."""
     needle = """      - name: Upload installable release outputs
-        if: env.SUPABASE_PUBLISHABLE_KEY != ''
+        if: env.RESEARCH_RELEASE_READY == 'true'
 """
     if needle not in android:
         raise SystemExit("Fixture drift: release upload research-key guard not found")
