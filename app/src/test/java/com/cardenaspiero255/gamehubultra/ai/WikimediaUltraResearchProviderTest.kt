@@ -1,6 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -856,6 +858,57 @@ class WikimediaUltraResearchProviderTest {
 
         assertIs<UltraProviderResult.Evidence>(result)
         assertEquals(2, calls)
+    }
+
+    @Test
+    fun httpTransportCancellationDisconnectsBlockedRequest() {
+        val server = ServerSocket(0)
+        val accepted = CountDownLatch(1)
+        val releaseServer = CountDownLatch(1)
+        val serverThread = Thread {
+            try {
+                server.accept().use {
+                    accepted.countDown()
+                    releaseServer.await(3, TimeUnit.SECONDS)
+                }
+            } catch (_: Throwable) {
+                // Cancellation or cleanup may close the socket/server.
+            }
+        }
+        serverThread.isDaemon = true
+        serverThread.start()
+
+        val worker = Thread {
+            runCatching {
+                HttpUrlConnectionUltraPublicKnowledgeTransport.get(
+                    "http://127.0.0.1:" + server.localPort + "/blocked",
+                    5_000L
+                )
+            }
+        }
+        worker.start()
+
+        try {
+            assertTrue(
+                accepted.await(1, TimeUnit.SECONDS),
+                "El servidor debe aceptar la conexión antes de cancelarla."
+            )
+
+            HttpUrlConnectionUltraPublicKnowledgeTransport
+                .cancelActiveRequest(worker)
+
+            worker.join(700L)
+            assertFalse(
+                worker.isAlive,
+                "Cancelar Wikimedia debe desconectar la petición HTTP bloqueada."
+            )
+        } finally {
+            releaseServer.countDown()
+            server.close()
+            worker.interrupt()
+            worker.join(2_000L)
+            serverThread.join(2_000L)
+        }
     }
 
     @Test
