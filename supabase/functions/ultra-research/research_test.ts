@@ -3241,7 +3241,6 @@ Deno.test(
   },
 );
 
-
 Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", async () => {
   let observedThinking: Record<string, unknown> | undefined;
   const deps = {
@@ -3250,9 +3249,18 @@ Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", asy
         generationConfig?: { thinkingConfig?: Record<string, unknown> };
       };
       observedThinking = request.generationConfig?.thinkingConfig;
-      return new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: "Un motor transforma energía en trabajo mecánico." }] } }],
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          candidates: [{
+            content: {
+              parts: [{
+                text: "Un motor transforma energía en trabajo mecánico.",
+              }],
+            },
+          }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     },
     env: (name: string) => {
       if (name === "GEMINI_API_KEY") return "gemini-test-key";
