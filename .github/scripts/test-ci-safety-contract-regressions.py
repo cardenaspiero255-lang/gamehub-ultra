@@ -132,6 +132,17 @@ def remove_release_upload_research_key_guard(android: str, coverage: str):
     return android.replace(needle, replacement, 1), coverage
 
 
+def weaken_release_research_key_whitespace_guard(android: str, coverage: str):
+    """Reject reverting the release gate to a raw non-empty secret check."""
+    needle = """          research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: whitespace-safe research-key guard not found")
+    replacement = """          research_key_compact="${SUPABASE_PUBLISHABLE_KEY:-}"
+"""
+    return android.replace(needle, replacement, 1), coverage
+
+
 def remove_device_validation_result_assertion(android: str, coverage: str):
     """Remove one blocking dependency-result assertion from the aggregate gate."""
     needle = '          test "${{ needs.device-validation.result }}" = "success"\n'
@@ -510,6 +521,7 @@ def main() -> None:
     run_mutation("aggregate build loses always() fan-in condition", remove_build_always_condition)
     run_mutation("aggregate build loses device-validation result assertion", remove_device_validation_result_assertion)
     run_mutation("release artifact upload loses research-key guard", remove_release_upload_research_key_guard)
+    run_mutation("release research key accepts whitespace-only secret", weaken_release_research_key_whitespace_guard)
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
