@@ -861,6 +861,28 @@ class WikimediaUltraResearchProviderTest {
     }
 
     @Test
+    fun providerCancellationDelegatesToPublicTransport() {
+        val cancelledWorker = AtomicReference<Thread?>(null)
+        val transport = object : UltraPublicKnowledgeTransport {
+            override fun get(
+                url: String,
+                timeoutMillis: Long
+            ): UltraResearchHttpResponse =
+                UltraResearchHttpResponse(200, "{}")
+
+            override fun cancelActiveRequest(worker: Thread) {
+                cancelledWorker.set(worker)
+            }
+        }
+        val provider = WikimediaUltraResearchProvider(transport)
+        val worker = Thread.currentThread()
+
+        provider.cancelActiveRequest(worker)
+
+        assertEquals(worker, cancelledWorker.get())
+    }
+
+    @Test
     fun httpTransportCancellationDisconnectsBlockedRequest() {
         val server = ServerSocket(0)
         val accepted = CountDownLatch(1)
