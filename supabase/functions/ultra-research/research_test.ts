@@ -1812,3 +1812,199 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "vault lookup failure does not discard available Wikipedia evidence",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Motor" }] },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract:
+              "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      secret: () => Promise.reject(new Error("vault unavailable")),
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("Wikipedia evidence must survive optional Vault failure");
+    }
+    if (result.sourceId !== "https://es.wikipedia.org/wiki/Motor") {
+      throw new Error("expected Wikipedia to remain the usable source");
+    }
+  },
+);
+
+Deno.test(
+  "unrelated Tavily pages do not count as corroboration for Wikipedia",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Motor" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract:
+              "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Pronóstico del tiempo",
+                url: "https://weather.example/hoy",
+                content:
+                  "El pronóstico anuncia lluvia y bajas temperaturas durante la tarde.",
+                score: 0.98,
+              },
+              {
+                title: "Cuidados para gatos",
+                url: "https://pets.example/gatos",
+                content:
+                  "Los gatos domésticos necesitan alimentación, agua y revisiones veterinarias.",
+                score: 0.97,
+              },
+            ],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("Wikipedia answer should remain usable");
+    }
+    if ((result.independentSourceCount ?? 0) !== 1) {
+      throw new Error("unrelated web pages must not increase corroboration");
+    }
+    if ((result.sourceIds ?? []).length !== 1) {
+      throw new Error("unrelated Tavily URLs must not be attached as sources");
+    }
+  },
+);
+
+Deno.test(
+  "slow optional Tavily corroboration cannot hold a ready Wikipedia answer",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Motor" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract:
+              "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return new Promise<Response>(() => {});
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    };
+
+    const result = await Promise.race([
+      routeResearchQuery(
+        "Ultra, ¿qué es un motor?",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+      new Promise<ResearchResult>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("optional Tavily blocked the ready answer")),
+          700,
+        )
+      ),
+    ]);
+
+    if (result.abstained) {
+      throw new Error("ready Wikipedia evidence should be returned");
+    }
+    if (result.sourceId !== "https://es.wikipedia.org/wiki/Motor") {
+      throw new Error("expected the ready Wikipedia answer");
+    }
+  },
+);
