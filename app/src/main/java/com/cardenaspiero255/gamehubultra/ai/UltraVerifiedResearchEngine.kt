@@ -320,6 +320,47 @@ class UltraVerifiedResearchEngine(
         val fallbackUsed = !primarySucceeded &&
             evidenceAttempts.any { (attempt, _) -> attempt.index > 0 }
 
+        if (
+            request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
+            request.verificationMode == UltraVerificationMode.OPTIONAL &&
+            evidenceAttempts.isNotEmpty()
+        ) {
+            val (selectedAttempt, selectedEvidence) = evidenceAttempts
+                .maxByOrNull { (attempt, evidence) ->
+                    stableKnowledgeEvidenceScore(
+                        providerIndex = attempt.index,
+                        evidence = evidence
+                    )
+                }
+                ?: error("Stable knowledge evidence unexpectedly disappeared")
+            val sources = selectedEvidence.allSourceIds()
+            val corroborationCount = maxOf(
+                selectedEvidence.independentSourceCount.coerceAtLeast(1),
+                sources.size.coerceAtLeast(1)
+            )
+            val confidence = when {
+                corroborationCount >= 2 -> UltraAnswerConfidence.HIGH
+                selectedEvidence.authoritative -> UltraAnswerConfidence.MEDIUM
+                else -> UltraAnswerConfidence.LOW
+            }
+            val result = UltraVerifiedResearchResult(
+                message = selectedEvidence.displayText,
+                confidence = confidence,
+                sources = sources,
+                abstained = false,
+                timedOut = timedOut,
+                fallbackUsed = selectedAttempt.index > 0
+            )
+
+            cache.put(
+                key = key,
+                result = result,
+                expiresAtMillis = nowMillis() + ttlMillis(request),
+                persist = usePersistentCache
+            )
+            return result
+        }
+
         if (evidenceAttempts.isEmpty()) {
             val structuredIssue = attempts
                 .sortedBy { it.index }
@@ -476,6 +517,20 @@ class UltraVerifiedResearchEngine(
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
+
+    private fun stableKnowledgeEvidenceScore(
+        providerIndex: Int,
+        evidence: UltraResearchEvidence
+    ): Int {
+        val qualityTier = when {
+            evidence.independentSourceCount >= 2 -> 3
+            evidence.authoritative -> 2
+            else -> 1
+        }
+        return qualityTier * 10_000 +
+            evidence.independentSourceCount.coerceAtLeast(1) * 100 -
+            providerIndex.coerceAtLeast(0)
+    }
 
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
