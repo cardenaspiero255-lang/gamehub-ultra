@@ -1636,6 +1636,168 @@ Deno.test(
 );
 
 Deno.test(
+  "stalled Gemini general fallback advances to xAI",
+  async () => {
+    let xaiCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          return new Promise<Response>(() => {});
+        }
+
+        if (url.hostname === "api.x.ai") {
+          xaiCalled = true;
+          return jsonResponse({
+            choices: [{
+              message: {
+                content:
+                  "Un motor es una máquina que convierte energía en movimiento o trabajo mecánico.",
+              },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        if (name === "XAI_API_KEY") return "xai-test-key";
+        if (name === "ULTRA_GENERAL_MODEL_TIMEOUT_MS") return "250";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!xaiCalled) {
+      throw new Error("xAI must run after the bounded Gemini fallback expires");
+    }
+    if (result.abstained || result.sourceId !== "xai-general-assistant") {
+      throw new Error("xAI should recover the general-knowledge answer");
+    }
+  },
+);
+
+Deno.test(
+  "stalled Gemini secret lookup advances to xAI",
+  async () => {
+    let xaiCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "api.x.ai") {
+          xaiCalled = true;
+          return jsonResponse({
+            choices: [{
+              message: {
+                content:
+                  "La fotosíntesis transforma energía luminosa en energía química.",
+              },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "XAI_API_KEY") return "xai-test-key";
+        if (name === "ULTRA_GENERAL_MODEL_TIMEOUT_MS") return "250";
+        return undefined;
+      },
+      secret: (name) => {
+        if (name === "GEMINI_API_KEY") {
+          return new Promise<string | undefined>(() => {});
+        }
+        return Promise.resolve(undefined);
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es la fotosíntesis?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!xaiCalled) {
+      throw new Error("xAI must run after a stalled Gemini secret lookup");
+    }
+    if (result.abstained || result.sourceId !== "xai-general-assistant") {
+      throw new Error("xAI should answer after the Gemini secret deadline");
+    }
+  },
+);
+
+Deno.test(
+  "stalled xAI general fallback returns a bounded abstention",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "api.x.ai") {
+          return new Promise<Response>(() => {});
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "XAI_API_KEY") return "xai-test-key";
+        if (name === "ULTRA_GENERAL_MODEL_TIMEOUT_MS") return "250";
+        return undefined;
+      },
+    };
+
+    const started = performance.now();
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    const elapsed = performance.now() - started;
+
+    if (!result.abstained) {
+      throw new Error("stalled final general model should abstain");
+    }
+    if (elapsed >= 1_000) {
+      throw new Error(
+        "general-model fallback exceeded its bounded timeout: " + elapsed,
+      );
+    }
+  },
+);
+
+Deno.test(
   "general knowledge falls back from unavailable Gemini to xAI Grok",
   async () => {
     let xaiCalled = false;
