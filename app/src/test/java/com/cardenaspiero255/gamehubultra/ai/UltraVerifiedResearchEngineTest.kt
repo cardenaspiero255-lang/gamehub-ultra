@@ -410,6 +410,49 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun optionalStableKnowledgeRejectsConflictingNumericFacts() {
+        val twoMoons = object : UltraResearchProvider {
+            override val id = "primary"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:marte",
+                    value = "marte tiene 2 lunas",
+                    displayText = "Marte tiene 2 lunas.",
+                    sourceId = "https://source-a.example/marte",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val threeMoons = object : UltraResearchProvider {
+            override val id = "fallback"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:marte",
+                    value = "marte tiene 3 lunas",
+                    displayText = "Marte tiene 3 lunas.",
+                    sourceId = "https://source-b.example/marte",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(twoMoons, threeMoons))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿cuántas lunas tiene Marte?")
+            )
+
+            assertTrue(result.abstained)
+            assertEquals("INSUFFICIENT_CORROBORATION", result.reasonCode)
+            assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun optionalStableKnowledgeRejectsNegatedContradictionDespiteTokenOverlap() {
         val positive = object : UltraResearchProvider {
             override val id = "positive"
