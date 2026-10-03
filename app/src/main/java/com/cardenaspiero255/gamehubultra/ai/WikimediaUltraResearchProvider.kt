@@ -6,6 +6,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.text.Normalizer
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 fun interface UltraPublicKnowledgeTransport {
@@ -13,14 +14,25 @@ fun interface UltraPublicKnowledgeTransport {
         url: String,
         timeoutMillis: Long
     ): UltraResearchHttpResponse
+
+    fun cancelActiveRequest(worker: Thread) = Unit
 }
 
 object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTransport {
+    private val activeConnections =
+        ConcurrentHashMap<Thread, HttpURLConnection>()
+
     override fun get(
         url: String,
         timeoutMillis: Long
     ): UltraResearchHttpResponse {
+        if (Thread.currentThread().isInterrupted) {
+            throw InterruptedException("Wikimedia request cancelled")
+        }
+
+        val worker = Thread.currentThread()
         val connection = URL(url).openConnection() as HttpURLConnection
+        activeConnections[worker] = connection
         val safeTimeout = timeoutMillis.coerceIn(
             MIN_NETWORK_TIMEOUT_MS,
             MAX_NETWORK_TIMEOUT_MS
@@ -90,8 +102,13 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
                 body = body
             )
         } finally {
+            activeConnections.remove(worker, connection)
             connection.disconnect()
         }
+    }
+
+    override fun cancelActiveRequest(worker: Thread) {
+        activeConnections.remove(worker)?.disconnect()
     }
 
     private const val MIN_NETWORK_TIMEOUT_MS = 250L
@@ -113,6 +130,10 @@ class WikimediaUltraResearchProvider(
 ) : UltraResearchProvider {
 
     override val id: String = "wikimedia-public"
+
+    override fun cancelActiveRequest(worker: Thread) {
+        transport.cancelActiveRequest(worker)
+    }
 
     override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
         when (val result = fetchResult(request)) {
