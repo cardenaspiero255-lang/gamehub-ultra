@@ -2174,6 +2174,7 @@ Deno.test(
       env: (name) => {
         if (name === "TAVILY_API_KEY") return "tvly-test-key";
         if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        if (name === "ULTRA_FALLBACK_SEARCH_TIMEOUT_MS") return "500";
         return undefined;
       },
     };
