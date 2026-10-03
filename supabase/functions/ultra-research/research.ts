@@ -1887,7 +1887,12 @@ export async function routeResearchQuery(
         deps,
       );
     } else {
-      webEvidence = await tavilyEvidence(query, deps);
+      const controller = new AbortController();
+      webEvidence = await settleOptionalCorroboration(
+        tavilyEvidence(query, deps, "", controller.signal),
+        controller,
+        deps,
+      );
     }
 
     const evidence = mergeGeneralKnowledgeEvidence(
