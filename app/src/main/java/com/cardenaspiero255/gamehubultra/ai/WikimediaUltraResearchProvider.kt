@@ -1,10 +1,12 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.text.Normalizer
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 fun interface UltraPublicKnowledgeTransport {
     fun get(
@@ -19,7 +21,12 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
         timeoutMillis: Long
     ): UltraResearchHttpResponse {
         val connection = URL(url).openConnection() as HttpURLConnection
-        val safeTimeout = timeoutMillis.coerceIn(250L, 5_000L).toInt()
+        val safeTimeout = timeoutMillis.coerceIn(
+            MIN_NETWORK_TIMEOUT_MS,
+            MAX_NETWORK_TIMEOUT_MS
+        ).toInt()
+        val deadlineNanos = System.nanoTime() +
+            TimeUnit.MILLISECONDS.toNanos(safeTimeout.toLong())
         connection.requestMethod = "GET"
         connection.connectTimeout = safeTimeout
         connection.readTimeout = safeTimeout
@@ -30,17 +37,57 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
         connection.setRequestProperty("Accept", "application/json")
         return try {
             val status = connection.responseCode
+            val contentLength = connection.contentLengthLong
+            if (contentLength > MAX_RESPONSE_BYTES) {
+                throw IllegalStateException(
+                    "Wikimedia response is too large: $contentLength bytes"
+                )
+            }
+
             val stream = if (status in 200..299) {
                 connection.inputStream
             } else {
                 connection.errorStream
             }
+            val body = stream?.use { input ->
+                val output = ByteArrayOutputStream(
+                    minOf(
+                        MAX_RESPONSE_BYTES,
+                        contentLength
+                            .takeIf { it > 0L }
+                            ?.coerceAtMost(MAX_RESPONSE_BYTES.toLong())
+                            ?.toInt()
+                            ?: DEFAULT_RESPONSE_BUFFER_BYTES
+                    )
+                )
+                val buffer = ByteArray(8_192)
+                while (true) {
+                    val remainingNanos = deadlineNanos - System.nanoTime()
+                    if (remainingNanos <= 0L) {
+                        throw IllegalStateException(
+                            "Wikimedia response read deadline exceeded"
+                        )
+                    }
+                    connection.readTimeout = TimeUnit.NANOSECONDS
+                        .toMillis(remainingNanos)
+                        .coerceIn(1L, safeTimeout.toLong())
+                        .toInt()
+
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (output.size() + read > MAX_RESPONSE_BYTES) {
+                        throw IllegalStateException(
+                            "Wikimedia response exceeded maximum size"
+                        )
+                    }
+                    output.write(buffer, 0, read)
+                }
+                output.toString(Charsets.UTF_8.name())
+            }.orEmpty()
+
             UltraResearchHttpResponse(
                 statusCode = status,
-                body = stream
-                    ?.bufferedReader(Charsets.UTF_8)
-                    ?.use { it.readText() }
-                    .orEmpty()
+                body = body
             )
         } finally {
             connection.disconnect()
@@ -304,7 +351,14 @@ class WikimediaUltraResearchProvider(
             .replace(Regex("""[^a-z0-9]+"""), " ")
             .trim()
 
-        if (normalized.isBlank()) return true
+        if (normalized.isBlank()) return false
+
+        val explicitSubjectAfterPronoun = Regex(
+            """\b(?:eso|esto|esa|ese|aquello)\s+(?:de|sobre)\s+(?:(?:el|la|los|las|un|una)\s+)?[a-z0-9]{2,}\b"""
+        )
+        if (explicitSubjectAfterPronoun.containsMatchIn(normalized)) {
+            return false
+        }
 
         val pronounLed = Regex(
             """^(?:y\s+)?(?:eso|esto|esa|ese|aquello|el|ella|ellos|ellas)\b"""
@@ -320,11 +374,26 @@ class WikimediaUltraResearchProvider(
         topic: String,
         title: String
     ): Boolean {
+        val normalizedTopic = normalizedTopicPhrase(topic)
+        val normalizedTitle = normalizedTopicPhrase(title)
+        if (
+            normalizedTopic.isNotBlank() &&
+            normalizedTopic == normalizedTitle
+        ) {
+            return true
+        }
+
         val topicTokens = meaningfulTokens(topic)
         val titleTokens = meaningfulTokens(title)
         if (topicTokens.isEmpty() || titleTokens.isEmpty()) return false
         return topicTokens.intersect(titleTokens).isNotEmpty()
     }
+
+    private fun normalizedTopicPhrase(value: String): String =
+        normalizeForComparison(value)
+            .replace(Regex("""[^a-z0-9]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
 
     private fun meaningfulTokens(value: String): Set<String> =
         normalizeForComparison(value)
@@ -481,6 +550,10 @@ class WikimediaUltraResearchProvider(
 
     private companion object {
         const val MAX_DISPLAY_CHARS = 1_800
+        const val MIN_NETWORK_TIMEOUT_MS = 250L
+        const val MAX_NETWORK_TIMEOUT_MS = 5_000L
+        const val MAX_RESPONSE_BYTES = 512 * 1024
+        const val DEFAULT_RESPONSE_BUFFER_BYTES = 16 * 1024
 
         val TOPIC_STOP_WORDS = setOf(
             "una", "uno", "unos", "unas", "que", "del", "las", "los",
