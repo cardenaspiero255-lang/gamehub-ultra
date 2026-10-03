@@ -1986,20 +1986,28 @@ Deno.test(
       },
     };
 
-    const result = await Promise.race([
-      routeResearchQuery(
-        "Ultra, ¿qué es la fotosíntesis?",
-        deps,
-        "",
-        "GENERAL_KNOWLEDGE",
-      ),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("stalled Tavily blocked Gemini fallback")),
-          1_000,
-        )
-      ),
-    ]);
+    let guardTimer: number | undefined;
+    const guard = new Promise<never>((_, reject) => {
+      guardTimer = setTimeout(
+        () => reject(new Error("stalled Tavily blocked Gemini fallback")),
+        1_000,
+      );
+    });
+
+    let result;
+    try {
+      result = await Promise.race([
+        routeResearchQuery(
+          "Ultra, ¿qué es la fotosíntesis?",
+          deps,
+          "",
+          "GENERAL_KNOWLEDGE",
+        ),
+        guard,
+      ]);
+    } finally {
+      if (guardTimer !== undefined) clearTimeout(guardTimer);
+    }
 
     if (result.abstained) {
       throw new Error(
