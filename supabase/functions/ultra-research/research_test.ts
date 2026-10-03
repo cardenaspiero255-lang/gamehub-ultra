@@ -1694,3 +1694,119 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "verified evidence uses xAI as grounded synthesizer when Gemini is unavailable",
+  async () => {
+    let xaiCalled = false;
+    const verifiedText =
+      "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.";
+
+    const deps: ResearchDependencies = {
+      fetcher: (input, init) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Motor" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract: verifiedText,
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Britannica motor",
+                url: "https://www.britannica.com/technology/motor",
+                content:
+                  "A motor converts energy into mechanical motion and useful work.",
+                score: 0.93,
+              },
+              {
+                title: "Engineering reference",
+                url: "https://engineering.example/motor",
+                content:
+                  "Los motores convierten distintas formas de energía en trabajo mecánico.",
+                score: 0.89,
+              },
+            ],
+          });
+        }
+
+        if (url.hostname === "api.x.ai") {
+          xaiCalled = true;
+          const headers = new Headers(init?.headers);
+          if (headers.get("Authorization") !== "Bearer xai-test-key") {
+            throw new Error("expected xAI bearer authentication");
+          }
+
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          if (body.model !== "grok-4.7") {
+            throw new Error("expected grok-4.7 grounded synthesis model");
+          }
+
+          const serialized = JSON.stringify(body);
+          if (!serialized.includes(verifiedText)) {
+            throw new Error("xAI synthesis must receive verified evidence");
+          }
+
+          return jsonResponse({
+            choices: [{
+              message: {
+                content: verifiedText,
+              },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "XAI_API_KEY") return "xai-test-key";
+        if (name === "TAVILY_API_KEY") return "tvly-test-key";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!xaiCalled) {
+      throw new Error(
+        "expected xAI grounded synthesis when Gemini is unavailable",
+      );
+    }
+    if (result.abstained) {
+      throw new Error("grounded xAI synthesis must preserve the answer");
+    }
+    if (result.displayText !== verifiedText) {
+      throw new Error("xAI must not add claims outside verified evidence");
+    }
+    if ((result.sourceIds ?? []).length < 3) {
+      throw new Error("grounded synthesis must preserve verified sources");
+    }
+  },
+);
