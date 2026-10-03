@@ -7,9 +7,44 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
+sealed interface UltraProviderResult {
+    data class Evidence(
+        val evidence: UltraResearchEvidence
+    ) : UltraProviderResult
+
+    data class Abstained(
+        val reasonCode: String,
+        val message: String? = null,
+        val retryable: Boolean = false,
+        val stage: String? = null,
+        val upstreamStatus: Int? = null,
+        val sources: List<String> = emptyList()
+    ) : UltraProviderResult
+
+    data class Failure(
+        val reasonCode: String,
+        val message: String? = null,
+        val retryable: Boolean = false,
+        val stage: String? = null,
+        val upstreamStatus: Int? = null
+    ) : UltraProviderResult
+}
+
 interface UltraResearchProvider {
     val id: String
+
     fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence
+
+    fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult =
+        try {
+            UltraProviderResult.Evidence(fetch(request))
+        } catch (error: Exception) {
+            UltraProviderResult.Failure(
+                reasonCode = "PROVIDER_FAILURE",
+                message = error.message,
+                retryable = true
+            )
+        }
 }
 
 data class UltraResearchEvidence(
@@ -36,14 +71,30 @@ data class UltraVerifiedResearchResult(
     val fromCache: Boolean = false,
     val timedOut: Boolean = false,
     val fallbackUsed: Boolean = false,
-    val sensitiveInputBlocked: Boolean = false
+    val sensitiveInputBlocked: Boolean = false,
+    val reasonCode: String? = null,
+    val retryable: Boolean = false,
+    val stage: String? = null,
+    val upstreamStatus: Int? = null
 )
+
+data class UltraResearchPersistentEntry(
+    val result: UltraVerifiedResearchResult,
+    val expiresAtMillis: Long
+)
+
+interface UltraResearchPersistentStore {
+    fun read(key: String): UltraResearchPersistentEntry?
+    fun write(key: String, entry: UltraResearchPersistentEntry)
+    fun remove(key: String)
+}
 
 class UltraResearchCache {
     companion object {
         const val CURRENT_DATA_TTL_MS = 5 * 60 * 1000L
         const val COMPARISON_TTL_MS = 60 * 60 * 1000L
         const val GENERAL_KNOWLEDGE_TTL_MS = 24 * 60 * 60 * 1000L
+        private const val MAX_ENTRIES = 256
     }
 
     private data class Entry(
@@ -53,27 +104,79 @@ class UltraResearchCache {
 
     private val entries = LinkedHashMap<String, Entry>()
 
+    @Volatile
+    private var persistentStore: UltraResearchPersistentStore? = null
+
     @Synchronized
-    fun get(key: String, nowMillis: Long): UltraVerifiedResearchResult? {
-        val entry = entries[key] ?: return null
-        if (nowMillis >= entry.expiresAtMillis) {
+    fun attachPersistentStore(store: UltraResearchPersistentStore) {
+        persistentStore = store
+    }
+
+    @Synchronized
+    fun get(
+        key: String,
+        nowMillis: Long,
+        allowPersistent: Boolean = false
+    ): UltraVerifiedResearchResult? {
+        entries[key]?.let { entry ->
+            if (nowMillis < entry.expiresAtMillis) {
+                return entry.result.copy(fromCache = true)
+            }
             entries.remove(key)
+        }
+
+        if (!allowPersistent) return null
+        val store = persistentStore ?: return null
+        val persisted = runCatching { store.read(key) }.getOrNull() ?: return null
+        if (nowMillis >= persisted.expiresAtMillis) {
+            runCatching { store.remove(key) }
             return null
         }
-        return entry.result.copy(fromCache = true)
+
+        entries[key] = Entry(
+            result = persisted.result.copy(fromCache = false),
+            expiresAtMillis = persisted.expiresAtMillis
+        )
+        trimMemoryEntries()
+        return persisted.result.copy(fromCache = true)
     }
 
     @Synchronized
     fun put(
         key: String,
         result: UltraVerifiedResearchResult,
-        expiresAtMillis: Long
+        expiresAtMillis: Long,
+        persist: Boolean = false
     ) {
+        val cacheable = result.copy(fromCache = false)
         entries[key] = Entry(
-            result = result.copy(fromCache = false),
+            result = cacheable,
             expiresAtMillis = expiresAtMillis
         )
-        while (entries.size > 64) {
+        trimMemoryEntries()
+
+        if (
+            persist &&
+            !cacheable.abstained &&
+            !cacheable.sensitiveInputBlocked
+        ) {
+            val store = persistentStore
+            if (store != null) {
+                runCatching {
+                    store.write(
+                        key = key,
+                        entry = UltraResearchPersistentEntry(
+                            result = cacheable,
+                            expiresAtMillis = expiresAtMillis
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun trimMemoryEntries() {
+        while (entries.size > MAX_ENTRIES) {
             val oldest = entries.entries.firstOrNull()?.key ?: break
             entries.remove(oldest)
         }
@@ -109,8 +212,7 @@ class UltraVerifiedResearchEngine(
     private data class ProviderAttempt(
         val index: Int,
         val providerId: String,
-        val evidence: UltraResearchEvidence?,
-        val failed: Boolean
+        val result: UltraProviderResult
     )
 
     override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
@@ -118,38 +220,44 @@ class UltraVerifiedResearchEngine(
             return abstention(
                 timedOut = false,
                 fallbackUsed = false,
-                sensitiveInputBlocked = true
+                sensitiveInputBlocked = true,
+                reasonCode = "SENSITIVE_INPUT"
             )
         }
 
         val key = cacheKey(request)
-        cache.get(key, nowMillis())?.let { return it }
+        val usePersistentCache = shouldUsePersistentCache(request)
+        cache.get(
+            key = key,
+            nowMillis = nowMillis(),
+            allowPersistent = usePersistentCache
+        )?.let { return it }
 
         if (providers.isEmpty()) {
             return abstention(
                 timedOut = false,
-                fallbackUsed = false
+                fallbackUsed = false,
+                reasonCode = "NO_PROVIDERS"
             )
         }
 
         val completion = ExecutorCompletionService<ProviderAttempt>(executor)
         val submitted = providers.mapIndexed { index, provider ->
             completion.submit {
-                runCatching {
-                    ProviderAttempt(
-                        index = index,
-                        providerId = provider.id,
-                        evidence = provider.fetch(request),
-                        failed = false
-                    )
-                }.getOrElse {
-                    ProviderAttempt(
-                        index = index,
-                        providerId = provider.id,
-                        evidence = null,
-                        failed = true
+                val result = try {
+                    provider.fetchResult(request)
+                } catch (error: Exception) {
+                    UltraProviderResult.Failure(
+                        reasonCode = "PROVIDER_FAILURE",
+                        message = error.message,
+                        retryable = true
                     )
                 }
+                ProviderAttempt(
+                    index = index,
+                    providerId = provider.id,
+                    result = result
+                )
             }
         }
 
@@ -180,8 +288,10 @@ class UltraVerifiedResearchEngine(
                     ProviderAttempt(
                         index = -1,
                         providerId = "unknown",
-                        evidence = null,
-                        failed = true
+                        result = UltraProviderResult.Failure(
+                            reasonCode = "PROVIDER_EXECUTION_FAILURE",
+                            retryable = true
+                        )
                     )
                 }
             }
@@ -199,28 +309,68 @@ class UltraVerifiedResearchEngine(
             }
         }
 
-        val evidenceAttempts = attempts.filter { it.evidence != null }
-        val primarySucceeded = attempts.any {
-            it.index == 0 && it.evidence != null
+        val evidenceAttempts = attempts.mapNotNull { attempt ->
+            val evidence = (attempt.result as? UltraProviderResult.Evidence)?.evidence
+                ?: return@mapNotNull null
+            attempt to evidence
+        }
+        val primarySucceeded = evidenceAttempts.any { (attempt, _) ->
+            attempt.index == 0
         }
         val fallbackUsed = !primarySucceeded &&
-            evidenceAttempts.any { it.index > 0 }
+            evidenceAttempts.any { (attempt, _) -> attempt.index > 0 }
 
         if (evidenceAttempts.isEmpty()) {
-            return abstention(
-                timedOut = timedOut,
-                fallbackUsed = fallbackUsed
-            )
+            val structuredIssue = attempts
+                .sortedBy { it.index }
+                .map { it.result }
+                .firstOrNull { it is UltraProviderResult.Abstained }
+                ?: attempts
+                    .sortedBy { it.index }
+                    .map { it.result }
+                    .firstOrNull { it is UltraProviderResult.Failure }
+
+            return when (structuredIssue) {
+                is UltraProviderResult.Abstained ->
+                    abstention(
+                        timedOut = timedOut,
+                        fallbackUsed = fallbackUsed,
+                        reasonCode = structuredIssue.reasonCode,
+                        retryable = structuredIssue.retryable,
+                        stage = structuredIssue.stage,
+                        upstreamStatus = structuredIssue.upstreamStatus,
+                        sources = structuredIssue.sources
+                    )
+
+                is UltraProviderResult.Failure ->
+                    abstention(
+                        timedOut = timedOut,
+                        fallbackUsed = fallbackUsed,
+                        reasonCode = structuredIssue.reasonCode,
+                        retryable = structuredIssue.retryable,
+                        stage = structuredIssue.stage,
+                        upstreamStatus = structuredIssue.upstreamStatus
+                    )
+
+                else ->
+                    abstention(
+                        timedOut = timedOut,
+                        fallbackUsed = fallbackUsed,
+                        reasonCode = if (timedOut) "UPSTREAM_TIMEOUT" else "NO_EVIDENCE"
+                    )
+            }
         }
 
         val dominantClaim = evidenceAttempts
-            .groupBy { it.evidence!!.claimKey.trim().lowercase(Locale.ROOT) }
+            .groupBy { (_, evidence) ->
+                evidence.claimKey.trim().lowercase(Locale.ROOT)
+            }
             .maxByOrNull { (_, group) -> group.size }
             ?.value
             .orEmpty()
 
-        val values = dominantClaim.groupBy {
-            it.evidence!!.value.trim().lowercase(Locale.ROOT)
+        val values = dominantClaim.groupBy { (_, evidence) ->
+            evidence.value.trim().lowercase(Locale.ROOT)
         }
 
         if (values.size != 1) {
@@ -228,20 +378,21 @@ class UltraVerifiedResearchEngine(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
                 sources = dominantClaim
-                    .flatMap { attempt -> attempt.evidence?.allSourceIds().orEmpty() }
-                    .distinct()
+                    .flatMap { (_, evidence) -> evidence.allSourceIds() }
+                    .distinct(),
+                reasonCode = "INSUFFICIENT_CORROBORATION"
             )
         }
 
         val agreeing = values.values.single()
-        val evidence = agreeing.first().evidence!!
+        val evidence = agreeing.first().second
         val sources = agreeing
-            .flatMap { attempt -> attempt.evidence?.allSourceIds().orEmpty() }
+            .flatMap { (_, itemEvidence) -> itemEvidence.allSourceIds() }
             .distinct()
         val corroborationCount = maxOf(
             agreeing.size,
-            agreeing.maxOfOrNull {
-                it.evidence?.independentSourceCount?.coerceAtLeast(1) ?: 1
+            agreeing.maxOfOrNull { (_, itemEvidence) ->
+                itemEvidence.independentSourceCount.coerceAtLeast(1)
             } ?: 1
         )
         val confidence = when {
@@ -257,7 +408,8 @@ class UltraVerifiedResearchEngine(
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
-                sources = sources
+                sources = sources,
+                reasonCode = "INSUFFICIENT_CORROBORATION"
             )
         }
 
@@ -273,7 +425,8 @@ class UltraVerifiedResearchEngine(
         cache.put(
             key = key,
             result = result,
-            expiresAtMillis = nowMillis() + ttlMillis(request)
+            expiresAtMillis = nowMillis() + ttlMillis(request),
+            persist = usePersistentCache
         )
         return result
     }
@@ -282,25 +435,40 @@ class UltraVerifiedResearchEngine(
         timedOut: Boolean,
         fallbackUsed: Boolean,
         sensitiveInputBlocked: Boolean = false,
-        sources: List<String> = emptyList()
+        sources: List<String> = emptyList(),
+        reasonCode: String? = null,
+        retryable: Boolean = false,
+        stage: String? = null,
+        upstreamStatus: Int? = null
     ): UltraVerifiedResearchResult =
         UltraVerifiedResearchResult(
             message = when {
                 sensitiveInputBlocked ->
                     "No enviaré secretos, tokens ni credenciales a proveedores externos."
-                timedOut ->
-                    "La búsqueda tardó demasiado y no alcanzó a reunir fuentes verificables. Inténtalo de nuevo."
+                timedOut || reasonCode == "UPSTREAM_TIMEOUT" ->
+                    "La búsqueda tardó demasiado. Reintenta."
+                reasonCode == "UPSTREAM_RATE_LIMIT" ->
+                    "El servicio está ocupado. Prueba de nuevo."
+                reasonCode == "UPSTREAM_UNAVAILABLE" ||
+                    reasonCode == "BACKEND_NETWORK_FAILURE" ||
+                    reasonCode == "PROVIDER_FAILURE" ||
+                    reasonCode == "PROVIDER_EXECUTION_FAILURE" ->
+                    "El servicio de consulta no está disponible ahora. Reintenta."
                 sources.isEmpty() ->
-                    "No encontré fuentes verificables disponibles para esa consulta."
+                    "No encontré fuentes suficientes para confirmar ese dato."
                 else ->
-                    "Encontré información, pero falta corroboración suficiente para presentarla como un dato seguro."
+                    "Encontré información, pero falta corroboración suficiente para confirmar ese dato."
             },
             confidence = UltraAnswerConfidence.LOW,
             sources = sources,
             abstained = true,
             timedOut = timedOut,
             fallbackUsed = fallbackUsed,
-            sensitiveInputBlocked = sensitiveInputBlocked
+            sensitiveInputBlocked = sensitiveInputBlocked,
+            reasonCode = reasonCode,
+            retryable = retryable,
+            stage = stage,
+            upstreamStatus = upstreamStatus
         )
 
     private fun UltraResearchEvidence.allSourceIds(): List<String> =
@@ -311,11 +479,19 @@ class UltraVerifiedResearchEngine(
 
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
+            request.verificationMode.name + ":" +
             (if (request.requiresFreshData) "fresh" else "stable") + ":" +
             request.originalText
                 .lowercase(Locale.ROOT)
                 .replace(Regex("""\s+"""), " ")
                 .trim()
+
+    private fun shouldUsePersistentCache(
+        request: UltraGeneralQueryRequest
+    ): Boolean =
+        request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
+            request.verificationMode == UltraVerificationMode.OPTIONAL &&
+            !request.requiresFreshData
 
     private fun ttlMillis(request: UltraGeneralQueryRequest): Long =
         if (request.requiresFreshData) {

@@ -31,7 +31,7 @@ object UltraContextualQueryPlanner {
                 direct.copy(originalText = contextualText)
 
             UltraGeneralQueryKind.GENERAL_KNOWLEDGE ->
-                if (direct.requiresInternet) {
+                if (direct.verificationMode != UltraVerificationMode.LOCAL) {
                     direct.copy(originalText = contextualText)
                 } else {
                     UltraGeneralQueryRouter.classify(contextualText)

@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraNetworkGamingRuntimeController
 import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
+import com.cardenaspiero255.gamehubultra.ai.persistence.SharedPreferencesUltraResearchPersistentStore
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
@@ -59,6 +60,7 @@ internal object GameHubProductionComposition {
             performanceController.apply(PerformanceProfile.BALANCED, activity.window)
         val device = DeviceInfoProvider.get(activity)
         val appContext = activity.applicationContext
+        configureUltraResearchPersistence(appContext)
         val preferencesRepository = GameHubPreferencesRepository(appContext)
         val sessionRepository = GameSessionStore(appContext)
         val connectedAccountsRepository = connectedAccountsRepository(appContext)
@@ -123,6 +125,12 @@ internal object GameHubProductionComposition {
             connectedAccountsRepository = connectedAccountsRepository,
             storeLibraryRepository = storeLibraryRepository,
             optimizationMemoryRepository = optimizationMemoryRepository
+        )
+    }
+
+    fun configureUltraResearchPersistence(appContext: Context) {
+        UltraProductionQueryExecutor.attachPersistentStore(
+            SharedPreferencesUltraResearchPersistentStore(appContext)
         )
     }
 

@@ -33,7 +33,7 @@ class UltraCar73ResearchCoordinatorTest {
     }
 
     @Test
-    fun stableGeneralKnowledgeWithoutResearchProviderAbstainsSafely() {
+    fun stableGeneralKnowledgeIsLeftForOptionalExecutionPath() {
         UltraVerifiedResearchEngine(emptyList()).use { engine ->
             val coordinator = UltraGeneralResearchCoordinator(
                 researchGateway = engine
@@ -45,8 +45,8 @@ class UltraCar73ResearchCoordinatorTest {
 
             val result = coordinator.answer(route)
 
-            assertTrue(result.handled)
-            assertTrue(result.result!!.abstained)
+            assertFalse(result.handled)
+            assertEquals(null, result.result)
         }
     }
 

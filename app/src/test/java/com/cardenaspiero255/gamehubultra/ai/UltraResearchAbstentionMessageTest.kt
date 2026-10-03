@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class UltraResearchAbstentionMessageTest {
@@ -12,7 +13,8 @@ class UltraResearchAbstentionMessageTest {
             )
 
             assertTrue(result.abstained)
-            assertTrue(result.message.contains("fuentes verificables", ignoreCase = true))
+            assertEquals("NO_PROVIDERS", result.reasonCode)
+            assertTrue(result.message.contains("fuentes", ignoreCase = true))
         }
     }
 

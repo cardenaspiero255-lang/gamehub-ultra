@@ -7,7 +7,9 @@ type ResearchRequest = {
   query?: string;
   context?: string;
   kind?: string;
+  verificationMode?: string;
   requiresFreshData?: boolean;
+  correlationId?: string;
 };
 
 const json = (body: unknown, status = 200) =>
@@ -76,23 +78,67 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid query" }, 400);
   }
 
+  const correlationId = (
+    typeof body.correlationId === "string" &&
+      /^[a-zA-Z0-9-]{8,80}$/.test(body.correlationId)
+  )
+    ? body.correlationId
+    : crypto.randomUUID();
+  const kind = body.kind ?? "";
+  const verificationMode = body.verificationMode ?? "";
+
+  console.info(JSON.stringify({
+    event: "ultra_research_started",
+    correlationId,
+    kind,
+    verificationMode,
+  }));
+
   try {
-    return json(
-      await routeResearchQuery(
-        query,
-        {
-          fetcher: fetch,
-          env: (name) => Deno.env.get(name),
-          secret: vaultSecret,
-        },
-        context,
-        body.kind ?? "",
-      ),
+    const result = await routeResearchQuery(
+      query,
+      {
+        fetcher: fetch,
+        env: (name) => Deno.env.get(name),
+        secret: vaultSecret,
+        sleep: (milliseconds) =>
+          new Promise((resolve) => setTimeout(resolve, milliseconds)),
+      },
+      context,
+      kind,
     );
-  } catch {
-    return json({
-      abstained: true,
-      message: "No pude verificar la consulta con las fuentes actuales.",
-    });
+
+    console.info(JSON.stringify({
+      event: "ultra_research_finished",
+      correlationId,
+      kind,
+      verificationMode,
+      abstained: result.abstained === true,
+      reasonCode: result.reasonCode ?? null,
+      stage: result.stage ?? null,
+      sourceCount: result.sourceIds?.length ?? (result.sourceId ? 1 : 0),
+    }));
+
+    return json(result);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: "ultra_research_failed",
+      correlationId,
+      kind,
+      verificationMode,
+      reasonCode: "BACKEND_FAILURE",
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    }));
+
+    return json(
+      {
+        abstained: true,
+        reasonCode: "BACKEND_FAILURE",
+        retryable: true,
+        stage: "edge",
+        message: "El servicio de consulta no está disponible ahora. Reintenta.",
+      },
+      502,
+    );
   }
 });

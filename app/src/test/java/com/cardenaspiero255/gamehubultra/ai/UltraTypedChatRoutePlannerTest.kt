@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 class UltraTypedChatRoutePlannerTest {
 
     @Test
-    fun typedFactualQuestionUsesVerifiedResearchRoute() {
+    fun typedStableFactualQuestionUsesOptionalKnowledgeRoute() {
         val route = UltraTypedChatRoutePlanner.route(
             message = "¿qué es Vulkan?",
             conversationHistory = listOf("Tú: hola", "Ultra: Hola.")
@@ -16,9 +16,11 @@ class UltraTypedChatRoutePlannerTest {
 
         assertTrue(route is UltraAgentRoute.Chat)
         route as UltraAgentRoute.Chat
+        val query = requireNotNull(route.query)
         assertEquals("¿qué es Vulkan?", route.message)
-        assertTrue(route.query?.requiresInternet == true)
-        assertFalse(route.query?.requiresFreshData == true)
+        assertEquals(UltraVerificationMode.OPTIONAL, query.verificationMode)
+        assertFalse(query.requiresInternet)
+        assertFalse(query.requiresFreshData)
     }
 
     @Test
@@ -30,7 +32,9 @@ class UltraTypedChatRoutePlannerTest {
 
         assertTrue(route is UltraAgentRoute.Chat)
         route as UltraAgentRoute.Chat
-        assertFalse(route.query?.requiresInternet == true)
+        val query = requireNotNull(route.query)
+        assertEquals(UltraVerificationMode.LOCAL, query.verificationMode)
+        assertFalse(query.requiresInternet)
     }
 
     @Test

@@ -59,30 +59,44 @@ class UltraQueryExecutorBoundaryTest {
         }
     }
     @Test
-    fun internetQueryWithoutStableFallbackUsesLocalChatWhenResearchIsUnavailable() {
-        val failingProvider = object : UltraResearchProvider {
-            override val id = "offline-provider"
+    fun optionalQueryWithoutStableFallbackUsesResearchBeforeGenericLocalChat() {
+        val provider = object : UltraResearchProvider {
+            override val id = "encyclopedia"
 
-            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
-                error("provider unavailable")
-            }
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "motor",
+                    value = "machine-energy-motion",
+                    displayText = "Un motor transforma energía en movimiento o trabajo mecánico.",
+                    sourceId = "encyclopedia",
+                    authoritative = true
+                )
         }
-        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
         val executor: UltraQueryExecutor = DefaultUltraQueryExecutor(
             coordinator = UltraQueryExecutionCoordinator(engine)
         )
         val route = UltraAgentRoute.Chat(
-            message = "Ultra, qué son los sentimientos",
-            query = UltraGeneralQueryRouter.classify("Ultra, qué son los sentimientos")
+            message = "Ultra, ¿qué es un motor?",
+            query = UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
         )
+        var genericLocalCalls = 0
 
         try {
             val answer = executor.answer(
                 route = route,
-                localChat = { "fallback local directo" }
+                stableKnowledgeFallback = { null },
+                localChat = {
+                    genericLocalCalls += 1
+                    "Soy Ultra. Puedo ayudarte con consultas generales."
+                }
             )
 
-            assertEquals("fallback local directo", answer)
+            assertEquals(
+                "Un motor transforma energía en movimiento o trabajo mecánico.",
+                answer
+            )
+            assertEquals(0, genericLocalCalls)
         } finally {
             engine.close()
         }

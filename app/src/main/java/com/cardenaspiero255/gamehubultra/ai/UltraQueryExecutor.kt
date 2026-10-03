@@ -26,16 +26,29 @@ class DefaultUltraQueryExecutor(
         localChat: () -> String
     ): String {
         val request = route.query ?: return localChat()
-        val fallback =
-            if (request.requiresInternet) {
-                stableKnowledgeFallback ?: { localChat() }
-            } else {
+
+        val localAnswer: () -> String? = when (request.verificationMode) {
+            UltraVerificationMode.LOCAL -> {
                 { localChat() }
             }
 
+            UltraVerificationMode.OPTIONAL -> {
+                {
+                    stableKnowledgeFallback
+                        ?.invoke()
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                }
+            }
+
+            UltraVerificationMode.REQUIRED -> {
+                { null }
+            }
+        }
+
         return coordinator.answer(
             request = request,
-            localChat = fallback
+            localChat = localAnswer
         ).message
     }
 }

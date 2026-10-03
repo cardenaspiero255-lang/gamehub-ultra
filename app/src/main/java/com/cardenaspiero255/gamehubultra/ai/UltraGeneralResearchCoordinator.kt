@@ -6,9 +6,9 @@ data class UltraGeneralResearchDecision(
 )
 
 /**
- * Decides whether a chat turn must be handled by verified online research.
- * Stable/offline-safe questions remain available to the local chat path.
- * The injected research gateway is borrowed; this coordinator never owns or closes it.
+ * Handles only queries whose correctness requires verified online data.
+ * OPTIONAL stable knowledge stays available to local chat and can be escalated
+ * by [DefaultUltraQueryExecutor] if local knowledge cannot answer.
  */
 class UltraGeneralResearchCoordinator(
     private val researchGateway: UltraResearchGateway
@@ -19,7 +19,7 @@ class UltraGeneralResearchCoordinator(
             handled = false
         )
 
-        if (!request.requiresInternet) {
+        if (request.verificationMode != UltraVerificationMode.REQUIRED) {
             return UltraGeneralResearchDecision(
                 handled = false
             )

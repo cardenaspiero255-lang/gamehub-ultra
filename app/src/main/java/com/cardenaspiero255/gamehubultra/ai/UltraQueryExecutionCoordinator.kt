@@ -8,20 +8,29 @@ data class UltraQueryExecutionAnswer(
     val fromCache: Boolean = false,
     val timedOut: Boolean = false,
     val fallbackUsed: Boolean = false,
-    val abstained: Boolean = false
+    val abstained: Boolean = false,
+    val reasonCode: String? = null,
+    val retryable: Boolean = false,
+    val stage: String? = null,
+    val upstreamStatus: Int? = null
 )
 
 /**
- * Keeps stable/general knowledge on the local path and routes changing data
- * through the verified research boundary. Online failures never fall back to an
- * unverified local answer that could present stale information as current.
+ * Separates answerability from verification.
+ *
+ * LOCAL queries never touch research. OPTIONAL queries prefer a useful local
+ * answer and use research only when local knowledge is unavailable. REQUIRED
+ * queries must use verified research and never fall back to potentially stale
+ * local knowledge.
  */
 class UltraQueryExecutionCoordinator(
     private val researchGateway: UltraResearchGateway
 ) {
     private fun safeLocalAnswer(localChat: () -> String?): String? =
         try {
-            localChat()?.takeIf(String::isNotBlank)
+            localChat()
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
         } catch (_: Exception) {
             null
         }
@@ -29,54 +38,60 @@ class UltraQueryExecutionCoordinator(
     fun answer(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
-    ): UltraQueryExecutionAnswer {
-        val requiresVerifiedResearch =
-            request.requiresInternet ||
-                request.requiresFreshData ||
-                request.kind == UltraGeneralQueryKind.CURRENT_DATA ||
-                request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH
+    ): UltraQueryExecutionAnswer =
+        when (request.verificationMode) {
+            UltraVerificationMode.LOCAL -> localOnly(localChat)
+            UltraVerificationMode.OPTIONAL -> optionalVerification(
+                request = request,
+                localChat = localChat
+            )
+            UltraVerificationMode.REQUIRED -> researchOnly(request)
+        }
 
-        if (!requiresVerifiedResearch) {
-            val localAnswer = safeLocalAnswer(localChat)
-            return if (localAnswer != null) {
-                UltraQueryExecutionAnswer(
-                    message = localAnswer,
-                    verified = false
-                )
-            } else {
-                UltraQueryExecutionAnswer(
-                    message = "No pude responder eso con una fuente local disponible.",
-                    verified = false,
-                    abstained = true
-                )
-            }
+    private fun localOnly(
+        localChat: () -> String?
+    ): UltraQueryExecutionAnswer {
+        val localAnswer = safeLocalAnswer(localChat)
+        return if (localAnswer != null) {
+            UltraQueryExecutionAnswer(
+                message = localAnswer,
+                verified = false
+            )
+        } else {
+            UltraQueryExecutionAnswer(
+                message = "No estoy seguro de esa respuesta.",
+                verified = false,
+                abstained = true
+            )
+        }
+    }
+
+    private fun optionalVerification(
+        request: UltraGeneralQueryRequest,
+        localChat: () -> String?
+    ): UltraQueryExecutionAnswer {
+        safeLocalAnswer(localChat)?.let { localAnswer ->
+            return UltraQueryExecutionAnswer(
+                message = localAnswer,
+                verified = false,
+                fallbackUsed = true,
+                abstained = false
+            )
         }
 
         val research = researchGateway.answer(request)
-        val canUseLocalStableFallback =
-            request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
-                !request.requiresFreshData &&
-                research.abstained &&
-                research.sources.isEmpty() &&
-                !research.sensitiveInputBlocked
+        return toExecutionAnswer(research)
+    }
 
-        if (canUseLocalStableFallback) {
-            val localAnswer = safeLocalAnswer(localChat)
-            if (localAnswer != null) {
-                return UltraQueryExecutionAnswer(
-                    message = localAnswer,
-                    verified = false,
-                    confidence = null,
-                    sources = research.sources,
-                    fromCache = research.fromCache,
-                    timedOut = research.timedOut,
-                    fallbackUsed = true,
-                    abstained = false
-                )
-            }
-        }
+    private fun researchOnly(
+        request: UltraGeneralQueryRequest
+    ): UltraQueryExecutionAnswer =
+        toExecutionAnswer(researchGateway.answer(request))
 
-        return UltraQueryExecutionAnswer(
+    private fun toExecutionAnswer(
+        research: UltraVerifiedResearchResult
+    ): UltraQueryExecutionAnswer =
+        UltraQueryExecutionAnswer(
             message = research.message,
             verified = !research.abstained &&
                 research.confidence != UltraAnswerConfidence.LOW,
@@ -85,7 +100,10 @@ class UltraQueryExecutionCoordinator(
             fromCache = research.fromCache,
             timedOut = research.timedOut,
             fallbackUsed = research.fallbackUsed,
-            abstained = research.abstained
+            abstained = research.abstained,
+            reasonCode = research.reasonCode,
+            retryable = research.retryable,
+            stage = research.stage,
+            upstreamStatus = research.upstreamStatus
         )
-    }
 }

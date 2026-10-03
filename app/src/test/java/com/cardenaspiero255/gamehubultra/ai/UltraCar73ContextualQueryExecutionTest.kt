@@ -95,7 +95,7 @@ class UltraCar73ContextualQueryExecutionTest {
     }
 
     @Test
-    fun stableGeneralKnowledgeUsesVerifiedResearchInsteadOfGamingFallback() {
+    fun stableGeneralKnowledgeUsesLocalAnswerWithoutMandatoryResearch() {
         val provider = object : UltraResearchProvider {
             override val id = "encyclopedia"
             override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
@@ -119,9 +119,10 @@ class UltraCar73ContextualQueryExecutionTest {
             }
         )
 
-        assertEquals("Vulkan es una API gráfica multiplataforma.", answer.message)
-        assertTrue(answer.verified)
-        assertEquals(0, localCalls)
+        assertEquals("fallback gaming", answer.message)
+        assertFalse(answer.verified)
+        assertTrue(answer.fallbackUsed)
+        assertEquals(1, localCalls)
         engine.close()
     }
 
@@ -136,7 +137,8 @@ class UltraCar73ContextualQueryExecutionTest {
         )
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, plan.kind)
-        assertTrue(plan.requiresInternet)
+        assertEquals(UltraVerificationMode.OPTIONAL, plan.verificationMode)
+        assertFalse(plan.requiresInternet)
         assertTrue(plan.originalText.contains("Vulkan"))
         assertTrue(plan.originalText.contains("para qué sirve"))
     }
@@ -195,7 +197,8 @@ class UltraCar73ContextualQueryExecutionTest {
         assertTrue(answer.abstained)
         assertFalse(answer.verified)
         assertFalse(answer.fallbackUsed)
-        assertTrue(answer.message.contains("fuentes verificables", ignoreCase = true))
+        assertEquals("PROVIDER_FAILURE", answer.reasonCode)
+        assertTrue(answer.message.isNotBlank())
         engine.close()
     }
 
@@ -221,6 +224,8 @@ class UltraCar73ContextualQueryExecutionTest {
             requiresFreshData = false,
             timeoutMillis = 5_000L
         )
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
+
         val engine = UltraVerifiedResearchEngine(
             listOf(
                 provider("source-one", "definition-a"),
@@ -268,7 +273,8 @@ class UltraCar73ContextualQueryExecutionTest {
             "clima posiblemente desactualizado"
         }
 
-        assertTrue(answer.contains("fuentes verificables", ignoreCase = true))
+        assertTrue(answer.isNotBlank())
+        assertFalse(answer.contains("clima posiblemente desactualizado"))
         assertEquals(0, localCalls)
     }
 
@@ -292,7 +298,8 @@ class UltraCar73ContextualQueryExecutionTest {
         assertTrue(answer.abstained)
         assertFalse(answer.verified)
         assertFalse(answer.fallbackUsed)
-        assertTrue(answer.message.contains("fuentes verificables", ignoreCase = true))
+        assertEquals("PROVIDER_FAILURE", answer.reasonCode)
+        assertTrue(answer.message.isNotBlank())
         engine.close()
     }
 
@@ -316,7 +323,8 @@ class UltraCar73ContextualQueryExecutionTest {
         assertTrue(answer.abstained)
         assertFalse(answer.verified)
         assertFalse(answer.fallbackUsed)
-        assertTrue(answer.message.contains("local", ignoreCase = true))
+        assertTrue(answer.message.isNotBlank())
+        assertFalse(answer.message.contains("verificar", ignoreCase = true))
         engine.close()
     }
 

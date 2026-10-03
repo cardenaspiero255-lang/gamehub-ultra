@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -93,7 +94,10 @@ class VoiceAssistantController(
                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
             )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, recognitionLanguageTag)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                putExtra(RecognizerIntent.EXTRA_REQUEST_WORD_CONFIDENCE, true)
+            }
         }
         onListeningChanged(true)
         speech.startListening(intent)
@@ -129,9 +133,16 @@ class VoiceAssistantController(
 
         override fun onResults(results: Bundle?) {
             onListeningChanged(false)
-            results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull { it.isNotBlank() }
-                ?.let(onTranscript)
+            val alternatives = results
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                .orEmpty()
+            val confidenceScores = results
+                ?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+
+            UltraSpeechCandidateRanker.select(
+                alternatives = alternatives,
+                confidenceScores = confidenceScores
+            )?.let(onTranscript)
         }
 
         override fun onPartialResults(partialResults: Bundle?) = Unit
