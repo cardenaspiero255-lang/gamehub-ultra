@@ -43,10 +43,8 @@ object UltraSpeechCandidateRanker {
         val commandBearing = if (prefer == null || preferred.isEmpty()) {
             emptyList()
         } else {
-            ranked.filter { candidate ->
-                candidate.text
-                    .replace(Regex("""(?i)^\s*(?:hey\s+)?(?:gamehub\s+)?ultra\b[\s,.:;!?-]*"""), "")
-                    .isNotBlank()
+            ranked.filterNot { candidate ->
+                UltraWakeWordMatcher.isWakeWordOnlyPrefix(candidate.text)
             }
         }
 
