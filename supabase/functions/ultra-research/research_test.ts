@@ -1445,8 +1445,7 @@ Deno.test(
         }
         throw new Error("unexpected URL " + url);
       },
-      env: (name) =>
-        name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+      env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
     };
 
     const result = await routeResearchQuery(
