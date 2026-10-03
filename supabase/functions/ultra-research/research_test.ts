@@ -1818,6 +1818,21 @@ Deno.test(
           if (headers.get("Authorization") !== "Bearer xai-test-key") {
             throw new Error("expected xAI bearer authentication");
           }
+          const body = JSON.parse(String(init?.body)) as Record<
+            string,
+            unknown
+          >;
+          if (body.reasoning_effort !== "low") {
+            throw new Error("xAI fallback must use low reasoning effort");
+          }
+          if (body.max_completion_tokens !== 1500) {
+            throw new Error(
+              "xAI fallback needs completion-token headroom for reasoning",
+            );
+          }
+          if ("max_tokens" in body) {
+            throw new Error("xAI fallback must not use legacy max_tokens");
+          }
           return jsonResponse({
             choices: [{
               message: {
@@ -1926,6 +1941,17 @@ Deno.test(
           >;
           if (body.model !== "grok-4.7") {
             throw new Error("expected grok-4.7 grounded synthesis model");
+          }
+          if (body.reasoning_effort !== "low") {
+            throw new Error("grounded xAI synthesis must use low reasoning effort");
+          }
+          if (body.max_completion_tokens !== 1500) {
+            throw new Error(
+              "grounded xAI synthesis needs completion-token headroom",
+            );
+          }
+          if ("max_tokens" in body) {
+            throw new Error("grounded xAI synthesis must not use legacy max_tokens");
           }
 
           const serialized = JSON.stringify(body);
@@ -2267,6 +2293,84 @@ Deno.test(
     if (result.sourceId !== "gemini-general-assistant") {
       throw new Error(
         "irrelevant Tavily evidence must not become the final source",
+      );
+    }
+  },
+);
+
+Deno.test(
+  "question phrasing alone cannot make unrelated Tavily fallback relevant",
+  async () => {
+    let geminiCalled = false;
+    const expected =
+      "La fotosíntesis transforma energía luminosa en energía química.";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Cómo funciona el clima",
+                url: "https://weather.example/funciona",
+                content:
+                  "El clima funciona mediante interacciones atmosféricas y oceánicas.",
+                score: 0.99,
+              },
+              {
+                title: "Cómo funciona la economía",
+                url: "https://economy.example/funciona",
+                content:
+                  "La economía funciona mediante producción, intercambio y consumo.",
+                score: 0.98,
+              },
+            ],
+          });
+        }
+
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalled = true;
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: { parts: [{ text: expected }] },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "TAVILY_API_KEY") return "tvly-test-key";
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿cómo funciona la fotosíntesis?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!geminiCalled) {
+      throw new Error(
+        "question phrasing must not make unrelated Tavily pages relevant",
+      );
+    }
+    if (result.abstained || result.sourceId !== "gemini-general-assistant") {
+      throw new Error(
+        "Gemini should answer after phrasing-only Tavily matches are rejected",
       );
     }
   },
