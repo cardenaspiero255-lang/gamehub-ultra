@@ -2001,6 +2001,7 @@ async function wikipediaActionExtract(
 
   const payload = await fetchJson(deps, url, {
     headers: { "User-Agent": USER_AGENT },
+    signal,
   });
   const query = payload?.query && typeof payload.query === "object"
     ? payload.query as JsonObject
