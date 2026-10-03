@@ -93,6 +93,11 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
             connection.disconnect()
         }
     }
+
+    private const val MIN_NETWORK_TIMEOUT_MS = 250L
+    private const val MAX_NETWORK_TIMEOUT_MS = 5_000L
+    private const val MAX_RESPONSE_BYTES = 512 * 1024
+    private const val DEFAULT_RESPONSE_BUFFER_BYTES = 16 * 1024
 }
 
 /**
@@ -550,10 +555,6 @@ class WikimediaUltraResearchProvider(
 
     private companion object {
         const val MAX_DISPLAY_CHARS = 1_800
-        const val MIN_NETWORK_TIMEOUT_MS = 250L
-        const val MAX_NETWORK_TIMEOUT_MS = 5_000L
-        const val MAX_RESPONSE_BYTES = 512 * 1024
-        const val DEFAULT_RESPONSE_BUFFER_BYTES = 16 * 1024
 
         val TOPIC_STOP_WORDS = setOf(
             "una", "uno", "unos", "unas", "que", "del", "las", "los",
