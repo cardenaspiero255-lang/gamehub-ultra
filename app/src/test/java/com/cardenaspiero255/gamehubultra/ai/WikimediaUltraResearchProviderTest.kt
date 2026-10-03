@@ -1,5 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -485,6 +488,139 @@ class WikimediaUltraResearchProviderTest {
             "la fotosintesis convierte energia.",
             evidence.value
         )
+    }
+
+
+    @Test
+    fun httpTransportReadsSuccessBodyAndSendsExpectedHeaders() {
+        val method = AtomicReference<String>()
+        val accept = AtomicReference<String>()
+        val userAgent = AtomicReference<String>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/ok") { exchange ->
+            method.set(exchange.requestMethod)
+            accept.set(exchange.requestHeaders.getFirst("Accept"))
+            userAgent.set(exchange.requestHeaders.getFirst("User-Agent"))
+            val body = """{"ok":true}""".toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+
+        try {
+            val response = HttpUrlConnectionUltraPublicKnowledgeTransport.get(
+                "http://127.0.0.1:" + server.address.port + "/ok",
+                10L
+            )
+
+            assertEquals(200, response.statusCode)
+            assertEquals("""{"ok":true}""", response.body)
+            assertEquals("GET", method.get())
+            assertEquals("application/json", accept.get())
+            assertTrue(userAgent.get().contains("GameHub-Ultra"))
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun httpTransportReadsErrorStreamBody() {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/error") { exchange ->
+            val body = "temporal".toByteArray(Charsets.UTF_8)
+            exchange.sendResponseHeaders(503, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.start()
+
+        try {
+            val response = HttpUrlConnectionUltraPublicKnowledgeTransport.get(
+                "http://127.0.0.1:" + server.address.port + "/error",
+                50_000L
+            )
+
+            assertEquals(503, response.statusCode)
+            assertEquals("temporal", response.body)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun parserSkipsMalformedTitleOccurrenceAndUsesNextValidString() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"title" "rota","title":"Motor","query":{"search":[]}}""",
+                extractBody =
+                    """{"extract":"Un motor transforma energía.","canonicalurl":"https://example.com/motor"}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertEquals("Un motor transforma energía.", evidence.displayText)
+    }
+
+    @Test
+    fun parserSkipsNonStringTitleAndUsesLaterValidTitle() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"title":123,"title":"Motor"}""",
+                extractBody =
+                    """{"extract":"Un motor transforma energía.","canonicalurl":"https://example.com/motor"}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+        )
+
+        assertIs<UltraProviderResult.Evidence>(result)
+    }
+
+    @Test
+    fun malformedUnicodeEscapeAbstainsSafelyInsteadOfThrowing() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody = """{"title":"Motor"}""",
+                extractBody = """{"extract":"Motor inválido \\uZZZZ"}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_NO_EVIDENCE", abstained.reasonCode)
+    }
+
+    @Test
+    fun allSupportedJsonEscapesDecodeWithoutLosingTheAnswer() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody = """{"title":"API"}""",
+                extractBody =
+                    """{"extract":"API\\tsegura\\rcon\\nsaltos\\b y barra \\\\ y cita \\" y slash \\/ y unicode \\u00f1.","canonicalurl":"https:\\/\\/example.com\\/api"}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es una API?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertTrue(evidence.displayText.contains("API segura con saltos"))
+        assertTrue(evidence.displayText.contains("\\"))
+        assertTrue(evidence.displayText.contains("""))
+        assertTrue(evidence.displayText.contains("/"))
+        assertTrue(evidence.displayText.contains("ñ"))
+        assertEquals("https://example.com/api", evidence.sourceId)
     }
 
     private fun scriptedTransport(
