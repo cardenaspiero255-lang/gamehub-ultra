@@ -2318,6 +2318,87 @@ Deno.test(
 );
 
 Deno.test(
+  "written quantity conflicts from Tavily do not corroborate Wikipedia",
+  async () => {
+    const wikiSource = "https://es.wikipedia.org/wiki/Marte";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Marte" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Marte",
+            type: "standard",
+            extract: "Marte tiene dos lunas conocidas, Fobos y Deimos.",
+            content_urls: { desktop: { page: wikiSource } },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Lunas de Marte",
+                url: "https://wrong-a.example/marte",
+                content: "Marte tiene tres lunas conocidas.",
+                score: 0.99,
+              },
+              {
+                title: "Satélites de Marte",
+                url: "https://wrong-b.example/marte",
+                content: "El planeta Marte posee tres lunas.",
+                score: 0.98,
+              },
+            ],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿cuántas lunas tiene Marte?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("verified Wikipedia evidence should remain usable");
+    }
+    if ((result.independentSourceCount ?? 0) !== 1) {
+      throw new Error(
+        "written quantity conflicts must not increase corroboration",
+      );
+    }
+    if (
+      result.sourceId !== wikiSource ||
+      result.sourceIds?.length !== 1 ||
+      result.sourceIds[0] !== wikiSource
+    ) {
+      throw new Error(
+        "conflicting Tavily sources with written quantities must be rejected",
+      );
+    }
+  },
+);
+
+Deno.test(
   "unrelated Tavily fallback is rejected so Gemini can answer the topic",
   async () => {
     let geminiCalled = false;
