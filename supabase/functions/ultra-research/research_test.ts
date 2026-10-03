@@ -1997,10 +1997,14 @@ Deno.test(
     );
 
     if (result.abstained) {
-      throw new Error("sole Tavily fallback should receive a full fallback budget");
+      throw new Error(
+        "sole Tavily fallback should receive a full fallback budget",
+      );
     }
     if (!result.sourceIds?.includes("https://engineering.example/motor")) {
-      throw new Error("expected Tavily evidence after the longer fallback wait");
+      throw new Error(
+        "expected Tavily evidence after the longer fallback wait",
+      );
     }
   },
 );
@@ -2046,7 +2050,10 @@ Deno.test(
     let guardTimer: number | undefined;
     const guard = new Promise<never>((_, reject) => {
       guardTimer = setTimeout(
-        () => reject(new Error("stalled Gemini synthesis blocked verified evidence")),
+        () =>
+          reject(
+            new Error("stalled Gemini synthesis blocked verified evidence"),
+          ),
         1_300,
       );
     });
@@ -2067,7 +2074,9 @@ Deno.test(
     }
 
     if (result.abstained || result.displayText !== verifiedText) {
-      throw new Error("verified Wikipedia evidence must survive stalled Gemini synthesis");
+      throw new Error(
+        "verified Wikipedia evidence must survive stalled Gemini synthesis",
+      );
     }
   },
 );
@@ -2113,7 +2122,8 @@ Deno.test(
     let guardTimer: number | undefined;
     const guard = new Promise<never>((_, reject) => {
       guardTimer = setTimeout(
-        () => reject(new Error("stalled xAI synthesis blocked verified evidence")),
+        () =>
+          reject(new Error("stalled xAI synthesis blocked verified evidence")),
         1_300,
       );
     });
@@ -2134,7 +2144,9 @@ Deno.test(
     }
 
     if (result.abstained || result.displayText !== verifiedText) {
-      throw new Error("verified Wikipedia evidence must survive stalled xAI synthesis");
+      throw new Error(
+        "verified Wikipedia evidence must survive stalled xAI synthesis",
+      );
     }
   },
 );
