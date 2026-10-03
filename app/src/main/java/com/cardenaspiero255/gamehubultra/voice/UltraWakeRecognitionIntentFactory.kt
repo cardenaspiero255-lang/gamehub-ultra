@@ -18,6 +18,9 @@ internal object UltraWakeRecognitionIntentFactory {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                putExtra(RecognizerIntent.EXTRA_REQUEST_WORD_CONFIDENCE, true)
+            }
 
             if (mode == UltraWakeRecognitionMode.LEGACY_RESTARTING) {
                 putExtra(
