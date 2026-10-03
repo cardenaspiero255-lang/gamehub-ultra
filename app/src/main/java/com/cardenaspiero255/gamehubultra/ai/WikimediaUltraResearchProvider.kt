@@ -245,6 +245,14 @@ class WikimediaUltraResearchProvider(
                 ""
             )
             .trim()
+            .replace(
+                Regex(
+                    """^(?:un|una|unos|unas|el|la|los|las|a|an|the)\s+""",
+                    RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+            .trim()
     }
 
     private fun conciseIntro(value: String): String {
@@ -285,56 +293,72 @@ class WikimediaUltraResearchProvider(
         json: String,
         key: String
     ): String? {
-        val pattern = Regex(
-            "\"" + Regex.escape(key) +
-                "\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\""
-        )
-        return pattern.find(json)
-            ?.groupValues
-            ?.get(1)
-            ?.let(::unescapeJsonString)
-    }
+        val keyToken = "\"$key\""
+        var searchFrom = 0
 
-    private fun unescapeJsonString(value: String): String =
-        buildString(value.length) {
-            var index = 0
-            while (index < value.length) {
-                val ch = value[index]
-                if (ch != '\\' || index + 1 >= value.length) {
-                    append(ch)
+        while (searchFrom < json.length) {
+            val keyIndex = json.indexOf(keyToken, searchFrom)
+            if (keyIndex < 0) return null
+
+            var index = keyIndex + keyToken.length
+            while (index < json.length && json[index].isWhitespace()) index++
+            if (index >= json.length || json[index] != ':') {
+                searchFrom = keyIndex + keyToken.length
+                continue
+            }
+
+            index++
+            while (index < json.length && json[index].isWhitespace()) index++
+            if (index >= json.length || json[index] != '"') {
+                searchFrom = index.coerceAtLeast(keyIndex + 1)
+                continue
+            }
+
+            index++
+            val decoded = StringBuilder()
+            while (index < json.length) {
+                val ch = json[index]
+                if (ch == '"') return decoded.toString()
+
+                if (ch != '\\') {
+                    decoded.append(ch)
                     index++
                     continue
                 }
 
-                when (val escaped = value[index + 1]) {
-                    '"' -> append('"')
-                    '\\' -> append('\\')
-                    '/' -> append('/')
-                    'b' -> append('\b')
-                    'f' -> append('\u000C')
-                    'n' -> append('\n')
-                    'r' -> append('\r')
-                    't' -> append('\t')
+                if (index + 1 >= json.length) return null
+                when (val escaped = json[index + 1]) {
+                    '"' -> decoded.append('"')
+                    '\\' -> decoded.append('\\')
+                    '/' -> decoded.append('/')
+                    'b' -> decoded.append('\b')
+                    'f' -> decoded.append('\u000C')
+                    'n' -> decoded.append('\n')
+                    'r' -> decoded.append('\r')
+                    't' -> decoded.append('\t')
                     'u' -> {
-                        val end = index + 6
-                        if (end <= value.length) {
-                            val code = value
-                                .substring(index + 2, end)
-                                .toIntOrNull(16)
-                            if (code != null) {
-                                append(code.toChar())
-                                index = end
-                                continue
-                            }
-                        }
-                        append('u')
+                        val hexStart = index + 2
+                        val hexEnd = hexStart + 4
+                        if (hexEnd > json.length) return null
+                        val codePoint = json
+                            .substring(hexStart, hexEnd)
+                            .toIntOrNull(16)
+                            ?: return null
+                        decoded.append(codePoint.toChar())
+                        index = hexEnd
+                        continue
                     }
 
-                    else -> append(escaped)
+                    else -> decoded.append(escaped)
                 }
                 index += 2
             }
+
+            return null
         }
+
+        return null
+    }
 
     private companion object {
         const val MAX_DISPLAY_CHARS = 1_800
