@@ -1943,7 +1943,9 @@ Deno.test(
             throw new Error("expected grok-4.7 grounded synthesis model");
           }
           if (body.reasoning_effort !== "low") {
-            throw new Error("grounded xAI synthesis must use low reasoning effort");
+            throw new Error(
+              "grounded xAI synthesis must use low reasoning effort",
+            );
           }
           if (body.max_completion_tokens !== 1500) {
             throw new Error(
@@ -1951,7 +1953,9 @@ Deno.test(
             );
           }
           if ("max_tokens" in body) {
-            throw new Error("grounded xAI synthesis must not use legacy max_tokens");
+            throw new Error(
+              "grounded xAI synthesis must not use legacy max_tokens",
+            );
           }
 
           const serialized = JSON.stringify(body);
