@@ -337,6 +337,38 @@ class WikimediaUltraResearchProviderTest {
     }
 
     @Test
+    fun englishDefinitionAcceptsTranslatedSpanishWikipediaTitle() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody = """
+                    {"query":{"search":[{"title":"Agujero negro"}]}}
+                """.trimIndent(),
+                extractBody = """
+                    {
+                      "query":{
+                        "pages":{
+                          "9":{
+                            "title":"Agujero negro",
+                            "extract":"Un agujero negro es una región del espacio con un campo gravitatorio extremo.",
+                            "canonicalurl":"https://es.wikipedia.org/wiki/Agujero_negro"
+                          }
+                        }
+                      }
+                    }
+                """.trimIndent()
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, what is a black hole?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertEquals("https://es.wikipedia.org/wiki/Agujero_negro", evidence.sourceId)
+        assertTrue(evidence.displayText.contains("agujero negro", ignoreCase = true))
+    }
+
+    @Test
     fun properNameDefiniteArticleIsPreservedInSearchTopic() {
         var searchUrl = ""
         val provider = WikimediaUltraResearchProvider(
