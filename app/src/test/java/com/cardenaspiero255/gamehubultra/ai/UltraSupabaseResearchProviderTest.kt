@@ -113,6 +113,69 @@ class UltraSupabaseResearchProviderTest {
     }
 
     @Test
+    fun cancelActiveRequestDelegatesToTransportWorker() {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val released = java.util.concurrent.CountDownLatch(1)
+        var cancelledThread: Thread? = null
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = error("unused")
+
+            override fun postResponse(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): UltraResearchHttpResponse {
+                entered.countDown()
+                while (released.count > 0L) {
+                    try {
+                        released.await()
+                    } catch (_: InterruptedException) {
+                        // Simula una lectura de red que no se libera con interrupt().
+                    }
+                }
+                return UltraResearchHttpResponse(
+                    503,
+                    """{"abstained":true,"reasonCode":"UPSTREAM_UNAVAILABLE"}"""
+                )
+            }
+
+            override fun cancelRequest(worker: Thread) {
+                cancelledThread = worker
+                released.countDown()
+            }
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport
+        )
+        val worker = Thread {
+            provider.fetchResult(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+            )
+        }
+
+        try {
+            worker.start()
+            assertTrue(entered.await(1, java.util.concurrent.TimeUnit.SECONDS))
+            provider.cancelActiveRequest()
+            worker.join(1_000L)
+
+            assertEquals(worker, cancelledThread)
+            assertTrue(!worker.isAlive)
+        } finally {
+            released.countDown()
+            worker.join(1_000L)
+        }
+    }
+
+    @Test
     fun backendEndpointUsesUltraResearchFunction() {
         var endpoint = ""
         val transport = object : UltraResearchBackendTransport {
