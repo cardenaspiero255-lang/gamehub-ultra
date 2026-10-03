@@ -3,6 +3,11 @@ package com.cardenaspiero255.gamehubultra.ai
 import java.net.HttpURLConnection
 import java.net.URL
 
+data class UltraResearchHttpResponse(
+    val statusCode: Int,
+    val body: String
+)
+
 interface UltraResearchBackendTransport {
     fun post(
         endpoint: String,
@@ -10,6 +15,22 @@ interface UltraResearchBackendTransport {
         body: String,
         timeoutMillis: Long
     ): String
+
+    fun postResponse(
+        endpoint: String,
+        apiKey: String,
+        body: String,
+        timeoutMillis: Long
+    ): UltraResearchHttpResponse =
+        UltraResearchHttpResponse(
+            statusCode = 200,
+            body = post(
+                endpoint = endpoint,
+                apiKey = apiKey,
+                body = body,
+                timeoutMillis = timeoutMillis
+            )
+        )
 }
 
 object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
@@ -19,6 +40,24 @@ object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
         body: String,
         timeoutMillis: Long
     ): String {
+        val httpResponse = postResponse(
+            endpoint = endpoint,
+            apiKey = apiKey,
+            body = body,
+            timeoutMillis = timeoutMillis
+        )
+        if (httpResponse.statusCode !in 200..299) {
+            error("Research backend HTTP ${httpResponse.statusCode}")
+        }
+        return httpResponse.body
+    }
+
+    override fun postResponse(
+        endpoint: String,
+        apiKey: String,
+        body: String,
+        timeoutMillis: Long
+    ): UltraResearchHttpResponse {
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         val safeTimeout = timeoutMillis.coerceIn(1_000L, 60_000L).toInt()
         connection.requestMethod = "POST"
@@ -39,12 +78,13 @@ object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
             } else {
                 connection.errorStream
             }
-            val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                .orEmpty()
-            if (status !in 200..299) {
-                error("Research backend HTTP $status")
-            }
-            response
+            UltraResearchHttpResponse(
+                statusCode = status,
+                body = stream
+                    ?.bufferedReader(Charsets.UTF_8)
+                    ?.use { it.readText() }
+                    .orEmpty()
+            )
         } finally {
             connection.disconnect()
         }
@@ -59,42 +99,110 @@ class SupabaseUltraResearchProvider(
 ) : UltraResearchProvider {
     override val id: String = "supabase-ultra-research"
 
-    override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
-        require(supabaseUrl.isNotBlank()) { "Supabase URL unavailable" }
-        require(publishableKey.isNotBlank()) { "Supabase publishable key unavailable" }
+    override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+        when (val result = fetchResult(request)) {
+            is UltraProviderResult.Evidence -> result.evidence
+            is UltraProviderResult.Abstained ->
+                error(result.message ?: "Research backend abstained: ${result.reasonCode}")
+            is UltraProviderResult.Failure ->
+                error(result.message ?: "Research backend failed: ${result.reasonCode}")
+        }
+
+    override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult {
+        if (supabaseUrl.isBlank() || publishableKey.isBlank()) {
+            return UltraProviderResult.Failure(
+                reasonCode = "BACKEND_NOT_CONFIGURED",
+                message = "El backend de investigación no está configurado.",
+                retryable = false
+            )
+        }
 
         val endpoint = supabaseUrl.trimEnd('/') + "/functions/v1/ultra-research"
-        val response = transport.post(
-            endpoint = endpoint,
-            apiKey = publishableKey,
-            body = UltraResearchJsonCodec.encodeRequest(request),
-            timeoutMillis = request.timeoutMillis
-        )
-        val decoded = UltraResearchJsonCodec.decodeResponse(response)
+        val httpResponse = try {
+            transport.postResponse(
+                endpoint = endpoint,
+                apiKey = publishableKey,
+                body = UltraResearchJsonCodec.encodeRequest(request),
+                timeoutMillis = request.timeoutMillis
+            )
+        } catch (error: Exception) {
+            return UltraProviderResult.Failure(
+                reasonCode = "BACKEND_NETWORK_FAILURE",
+                message = error.message,
+                retryable = true
+            )
+        }
+
+        val decoded = UltraResearchJsonCodec.decodeResponse(httpResponse.body)
+        val statusReason = reasonCodeForStatus(httpResponse.statusCode)
+
         if (decoded.abstained) {
-            error(decoded.message ?: "Research backend abstained")
+            return UltraProviderResult.Abstained(
+                reasonCode = decoded.reasonCode ?: statusReason ?: "BACKEND_ABSTAINED",
+                message = decoded.message,
+                retryable = decoded.retryable ||
+                    httpResponse.statusCode in RETRYABLE_HTTP_STATUSES,
+                stage = decoded.stage,
+                upstreamStatus = decoded.upstreamStatus
+                    ?: httpResponse.statusCode.takeIf { it !in 200..299 },
+                sources = decoded.sourceIds
+            )
+        }
+
+        if (httpResponse.statusCode !in 200..299) {
+            return UltraProviderResult.Failure(
+                reasonCode = decoded.reasonCode ?: statusReason ?: "BACKEND_HTTP_FAILURE",
+                message = decoded.message ?: "Research backend HTTP ${httpResponse.statusCode}",
+                retryable = decoded.retryable ||
+                    httpResponse.statusCode in RETRYABLE_HTTP_STATUSES,
+                stage = decoded.stage,
+                upstreamStatus = decoded.upstreamStatus ?: httpResponse.statusCode
+            )
         }
 
         val claimKey = decoded.claimKey.orEmpty().trim()
         val value = decoded.value.orEmpty().trim()
         val displayText = decoded.displayText.orEmpty().trim()
         val sourceId = decoded.sourceId.orEmpty().trim()
-        require(claimKey.isNotBlank()) { "Missing claimKey" }
-        require(value.isNotBlank()) { "Missing value" }
-        require(displayText.isNotBlank()) { "Missing displayText" }
-        require(sourceId.isNotBlank()) { "Missing sourceId" }
+        if (
+            claimKey.isBlank() ||
+            value.isBlank() ||
+            displayText.isBlank() ||
+            sourceId.isBlank()
+        ) {
+            return UltraProviderResult.Failure(
+                reasonCode = "INVALID_BACKEND_RESPONSE",
+                message = "La respuesta del backend está incompleta.",
+                retryable = false,
+                stage = decoded.stage
+            )
+        }
 
-        return UltraResearchEvidence(
-            claimKey = claimKey,
-            value = value,
-            displayText = displayText,
-            sourceId = sourceId,
-            supportingSourceIds = decoded.sourceIds
-                .map(String::trim)
-                .filter { it.isNotBlank() && it != sourceId }
-                .distinct(),
-            independentSourceCount = decoded.independentSourceCount.coerceAtLeast(1),
-            authoritative = decoded.authoritative
+        return UltraProviderResult.Evidence(
+            UltraResearchEvidence(
+                claimKey = claimKey,
+                value = value,
+                displayText = displayText,
+                sourceId = sourceId,
+                supportingSourceIds = decoded.sourceIds
+                    .map(String::trim)
+                    .filter { it.isNotBlank() && it != sourceId }
+                    .distinct(),
+                independentSourceCount = decoded.independentSourceCount.coerceAtLeast(1),
+                authoritative = decoded.authoritative
+            )
         )
+    }
+
+    private fun reasonCodeForStatus(status: Int): String? =
+        when (status) {
+            408, 504 -> "UPSTREAM_TIMEOUT"
+            429 -> "UPSTREAM_RATE_LIMIT"
+            500, 502, 503 -> "UPSTREAM_UNAVAILABLE"
+            else -> null
+        }
+
+    private companion object {
+        val RETRYABLE_HTTP_STATUSES = setOf(408, 429, 500, 502, 503, 504)
     }
 }
