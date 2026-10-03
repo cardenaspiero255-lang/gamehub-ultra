@@ -98,6 +98,102 @@ function independentDomains(urls: string[]): number {
   return unique(urls.map((url) => hostname(url) ?? "").filter(Boolean)).length;
 }
 
+const CORROBORATION_STOP_WORDS = new Set([
+  "una", "uno", "unos", "unas", "que", "del", "las", "los", "con",
+  "para", "por", "como", "the", "and", "with", "from", "into", "this",
+  "that", "are", "was", "were", "has", "have", "what", "who",
+]);
+
+function canonicalEvidenceToken(value: string): string {
+  let token = normalize(value).replace(/[^a-z0-9]/g, "");
+  if (token.length > 5 && token.endsWith("es")) {
+    token = token.slice(0, -2);
+  } else if (token.length > 4 && token.endsWith("s")) {
+    token = token.slice(0, -1);
+  }
+  return token;
+}
+
+function evidenceTokens(value: string): Set<string> {
+  return new Set(
+    normalize(value)
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .map(canonicalEvidenceToken)
+      .filter((token) =>
+        token.length >= 3 && !CORROBORATION_STOP_WORDS.has(token)
+      ),
+  );
+}
+
+function candidateSupportsPrimary(
+  query: string,
+  primaryText: string,
+  candidateText: string,
+): boolean {
+  const queryTokens = evidenceTokens(stripAssistantInvocation(query));
+  const primaryTokens = evidenceTokens(primaryText);
+  const candidateTokens = evidenceTokens(candidateText);
+
+  if (
+    queryTokens.size === 0 ||
+    primaryTokens.size === 0 ||
+    candidateTokens.size === 0
+  ) {
+    return false;
+  }
+
+  const queryOverlap = [...queryTokens].filter((token) =>
+    candidateTokens.has(token)
+  );
+  const evidenceOverlap = [...primaryTokens].filter((token) =>
+    candidateTokens.has(token)
+  );
+
+  return queryOverlap.length >= 1 && evidenceOverlap.length >= 2;
+}
+
+function optionalCorroborationTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_CORROBORATION_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(150, Math.min(2_000, Math.trunc(configured)));
+  }
+  return 350;
+}
+
+async function settleOptionalCorroboration(
+  promise: Promise<ResearchResult>,
+  controller: AbortController,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  let timer: number | undefined;
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "La corroboración web opcional tardó demasiado; conservaré la evidencia disponible.",
+          {
+            reasonCode: "OPTIONAL_CORROBORATION_TIMEOUT",
+            retryable: true,
+            stage: "tavily",
+          },
+        ),
+      );
+    }, optionalCorroborationTimeoutMs(deps));
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 async function providerSecret(
   deps: ResearchDependencies,
   name: string,
@@ -105,9 +201,13 @@ async function providerSecret(
   const envValue = deps.env(name)?.trim();
   if (envValue) return envValue;
 
-  const secretValue = await deps.secret?.(name);
-  const clean = secretValue?.trim();
-  return clean || undefined;
+  try {
+    const secretValue = await deps.secret?.(name);
+    const clean = secretValue?.trim();
+    return clean || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 
@@ -640,6 +740,8 @@ async function fetchWithRetry(
   const random = deps.random ?? Math.random;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (init?.signal?.aborted) return null;
+
     try {
       const response = await deps.fetcher(input, init);
       const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
@@ -647,9 +749,10 @@ async function fetchWithRetry(
         return response;
       }
     } catch {
-      if (attempt === maxAttempts) return null;
+      if (init?.signal?.aborted || attempt === maxAttempts) return null;
     }
 
+    if (init?.signal?.aborted) return null;
     const delay = 200 * 2 ** (attempt - 1) + Math.floor(random() * 100);
     await sleep(delay);
   }
@@ -1445,6 +1548,8 @@ async function stackOverflowSpanishEvidence(
 async function tavilyEvidence(
   query: string,
   deps: ResearchDependencies,
+  supportText = "",
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const apiKey = await providerSecret(deps, "TAVILY_API_KEY");
   if (!apiKey) {
@@ -1480,6 +1585,7 @@ async function tavilyEvidence(
         include_raw_content: false,
         include_images: false,
       }),
+      signal,
     },
   );
 
@@ -1536,11 +1642,24 @@ async function tavilyEvidence(
 
     const domain = hostname(url);
     if (!domain || usedDomains.has(domain)) continue;
+
+    const excerpt = conciseExcerpt(content, 700);
+    if (
+      supportText &&
+      !candidateSupportsPrimary(
+        query,
+        supportText,
+        title + " " + excerpt,
+      )
+    ) {
+      continue;
+    }
+
     usedDomains.add(domain);
     selected.push({
       title,
       url,
-      content: conciseExcerpt(content, 700),
+      content: excerpt,
       score,
     });
     if (selected.length >= 4) break;
@@ -1748,10 +1867,29 @@ export async function routeResearchQuery(
     /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
 
   if (kind === "GENERAL_KNOWLEDGE") {
-    const [primaryEvidence, webEvidence] = await Promise.all([
-      generalKnowledgeEvidence(query, deps, context),
-      tavilyEvidence(query, deps),
-    ]);
+    const primaryEvidence = await generalKnowledgeEvidence(
+      query,
+      deps,
+      context,
+    );
+
+    let webEvidence: ResearchResult;
+    if (!primaryEvidence.abstained) {
+      const controller = new AbortController();
+      webEvidence = await settleOptionalCorroboration(
+        tavilyEvidence(
+          query,
+          deps,
+          primaryEvidence.displayText ?? "",
+          controller.signal,
+        ),
+        controller,
+        deps,
+      );
+    } else {
+      webEvidence = await tavilyEvidence(query, deps);
+    }
+
     const evidence = mergeGeneralKnowledgeEvidence(
       primaryEvidence,
       webEvidence,
