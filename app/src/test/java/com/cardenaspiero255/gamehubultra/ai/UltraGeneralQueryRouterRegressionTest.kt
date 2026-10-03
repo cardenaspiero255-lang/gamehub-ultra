@@ -275,6 +275,37 @@ class UltraGeneralQueryRouterRegressionTest {
         assertTrue(request.requiresFreshData)
     }
 
+
+    @Test
+    fun tomorrowWeatherIsFreshButMorningExplanationIsStable() {
+        val tomorrow = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿cuál es el clima mañana en Santiago?"
+        )
+        val morning = UltraGeneralQueryRouter.classify(
+            "Ultra, ¿por qué el cielo es rojo en la mañana?"
+        )
+
+        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, tomorrow.kind)
+        assertEquals(UltraVerificationMode.REQUIRED, tomorrow.verificationMode)
+        assertTrue(tomorrow.requiresFreshData)
+        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, morning.kind)
+        assertEquals(UltraVerificationMode.OPTIONAL, morning.verificationMode)
+        assertFalse(morning.requiresFreshData)
+    }
+
+    @Test
+    fun forecastDefinitionIsStableWhileLocatedForecastIsFresh() {
+        val definition = UltraGeneralQueryRouter.classify("Ultra, what is a forecast?")
+        val located = UltraGeneralQueryRouter.classify(
+            "Ultra, forecast for London tomorrow"
+        )
+
+        assertEquals(UltraVerificationMode.OPTIONAL, definition.verificationMode)
+        assertFalse(definition.requiresFreshData)
+        assertEquals(UltraVerificationMode.REQUIRED, located.verificationMode)
+        assertTrue(located.requiresFreshData)
+    }
+
     @Test
     fun legacyExplicitInternetRequirementRemainsRequired() {
         val request = UltraGeneralQueryRequest(
