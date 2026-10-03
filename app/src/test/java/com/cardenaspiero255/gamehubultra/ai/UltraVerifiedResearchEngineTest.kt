@@ -453,6 +453,48 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun optionalStableKnowledgeAllowsNegationOnDifferentProposition() {
+        val concise = object : UltraResearchProvider {
+            override val id = "concise"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "un motor transforma energia",
+                    displayText = "Un motor transforma energía en movimiento.",
+                    sourceId = "https://source-a.example/motor",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val explanatory = object : UltraResearchProvider {
+            override val id = "explanatory"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "un motor no crea energia la transforma",
+                    displayText = "Un motor no crea energía; la transforma en movimiento.",
+                    sourceId = "https://source-b.example/motor",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(concise, explanatory))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+            )
+
+            assertFalse(result.abstained)
+            assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun authoritativePublicFallbackDoesNotWaitForStalledPrimaryUntilFullDeadline() {
         val primaryInterrupted = java.util.concurrent.atomic.AtomicBoolean(false)
         val primary = object : UltraResearchProvider {
