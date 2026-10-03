@@ -6,6 +6,6 @@ const val MAX_ULTRA_PLAYER_NAME_LENGTH = 32
 fun normalizeUltraPlayerName(rawName: String): String =
     rawName
         .trim()
-        .replace(Regex("""\\s+"""), " ")
+        .replace(Regex("""\s+"""), " ")
         .take(MAX_ULTRA_PLAYER_NAME_LENGTH)
         .ifBlank { DEFAULT_ULTRA_PLAYER_NAME }
