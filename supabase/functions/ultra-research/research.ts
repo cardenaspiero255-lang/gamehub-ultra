@@ -2383,7 +2383,7 @@ export async function routeResearchQuery(
   const cleanContext = normalize(context);
   const combinedSignals = `${clean} ${cleanContext}`.trim();
 
-  const weatherSignal = /\b(clima|tiempo de hoy|weather|pronostico|forecast)\b/;
+  const weatherSignal = /\b(clima|tiempo de hoy|weather|pronostico|forecast|temperatura|temperature)\b/;
   const newsSignal =
     /\b(noticias|news|salio nuevo|que salio nuevo|latest news|released)\b/;
   const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;
