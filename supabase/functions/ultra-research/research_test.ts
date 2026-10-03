@@ -2002,7 +2002,9 @@ Deno.test(
     ]);
 
     if (result.abstained) {
-      throw new Error("Gemini fallback should answer after bounded Tavily wait");
+      throw new Error(
+        "Gemini fallback should answer after bounded Tavily wait",
+      );
     }
     if (result.displayText !== expected) {
       throw new Error("expected Gemini fallback answer");
