@@ -413,7 +413,7 @@ function xaiSynthesisTimeoutMs(
   if (deps.env("ULTRA_SYNTHESIS_TIMEOUT_MS")?.trim()) {
     return optionalSynthesisTimeoutMs(deps);
   }
-  return 1_800;
+  return 1_200;
 }
 
 async function settleOptionalSynthesis(
