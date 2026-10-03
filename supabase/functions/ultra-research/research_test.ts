@@ -1419,43 +1419,55 @@ Deno.test("general knowledge falls back to Gemini when verified sources are unav
   }
 });
 
+Deno.test(
+  "general knowledge survives Wikipedia network failure via Gemini fallback",
+  async () => {
+    let geminiCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          throw new TypeError("simulated network failure");
+        }
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalled = true;
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: {
+                parts: [{
+                  text:
+                    "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.",
+                }],
+              },
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+    };
 
-Deno.test("general knowledge survives Wikipedia network failure via Gemini fallback", async () => {
-  let geminiCalled = false;
-  const deps: ResearchDependencies = {
-    fetcher: (input) => {
-      const url = new URL(String(input));
-      if (url.hostname === "es.wikipedia.org") {
-        throw new TypeError("simulated network failure");
-      }
-      if (url.hostname === "generativelanguage.googleapis.com") {
-        geminiCalled = true;
-        return jsonResponse({
-          candidates: [{
-            finishReason: "STOP",
-            content: {
-              parts: [{
-                text: "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.",
-              }],
-            },
-          }],
-        });
-      }
-      throw new Error("unexpected URL " + url);
-    },
-    env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
-  };
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
 
-  const result = await routeResearchQuery(
-    "Ultra, ¿qué es un motor?",
-    deps,
-    "",
-    "GENERAL_KNOWLEDGE",
-  );
-
-  if (!geminiCalled) throw new Error("expected Gemini fallback after Wikipedia failure");
-  if (result.abstained) throw new Error("stable general knowledge must remain answerable");
-  if (!result.displayText?.toLowerCase().includes("motor")) {
-    throw new Error("expected a useful motor definition");
-  }
-});
+    if (!geminiCalled) {
+      throw new Error(
+        "expected Gemini fallback after Wikipedia failure",
+      );
+    }
+    if (result.abstained) {
+      throw new Error(
+        "stable general knowledge must remain answerable",
+      );
+    }
+    if (!result.displayText?.toLowerCase().includes("motor")) {
+      throw new Error("expected a useful motor definition");
+    }
+  },
+);
