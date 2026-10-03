@@ -617,9 +617,28 @@ def main() -> None:
         "Verify release research configuration",
         shell="bash",
     )
+    research_env = research_config.get("env")
+    if not isinstance(research_env, dict):
+        fail("Release research configuration env is missing")
+    trusted_release_context = str(
+        research_env.get("TRUSTED_RELEASE_CONTEXT", "")
+    )
+    expected_trusted_release_context = (
+        "${{ github.event_name != 'pull_request' || "
+        "(github.actor != 'dependabot[bot]' && "
+        "github.event.pull_request.head.repo.full_name == github.repository) }}"
+    )
+    if trusted_release_context != expected_trusted_release_context:
+        fail(
+            "TRUSTED_RELEASE_CONTEXT must keep Dependabot pull requests "
+            "on the untrusted validation path"
+        )
+
     for fragment in (
         'RESEARCH_RELEASE_READY=false',
         'research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"',
+        'if [ "${TRUSTED_RELEASE_CONTEXT}" = "true" ]; then',
+        'exit 1',
         'RESEARCH_RELEASE_READY=true',
     ):
         require_run_fragment(
