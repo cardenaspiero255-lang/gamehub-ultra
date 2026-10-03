@@ -611,16 +611,21 @@ class UltraVerifiedResearchEngine(
         first: UltraResearchEvidence,
         second: UltraResearchEvidence
     ): Boolean {
+        val firstText = first.displayText + " " + first.value
+        val secondText = second.displayText + " " + second.value
         val firstValue = normalizeStableText(first.value)
         val secondValue = normalizeStableText(second.value)
         if (firstValue.isNotBlank() && firstValue == secondValue) return true
 
-        val firstTokens = stableKnowledgeTokens(
-            first.displayText + " " + first.value
-        )
-        val secondTokens = stableKnowledgeTokens(
-            second.displayText + " " + second.value
-        )
+        if (
+            stableKnowledgeHasExplicitNegation(firstText) !=
+            stableKnowledgeHasExplicitNegation(secondText)
+        ) {
+            return false
+        }
+
+        val firstTokens = stableKnowledgeTokens(firstText)
+        val secondTokens = stableKnowledgeTokens(secondText)
         if (firstTokens.isEmpty() || secondTokens.isEmpty()) return false
 
         val overlap = firstTokens.intersect(secondTokens)
@@ -632,6 +637,11 @@ class UltraVerifiedResearchEngine(
         ).coerceAtLeast(1)
         return overlap.size.toDouble() / smallerEvidence.toDouble() >= 0.30
     }
+
+    private fun stableKnowledgeHasExplicitNegation(value: String): Boolean =
+        STABLE_KNOWLEDGE_NEGATION_PATTERN.containsMatchIn(
+            normalizeStableText(value)
+        )
 
     private fun stableKnowledgeTokens(value: String): Set<String> =
         normalizeStableText(value)
@@ -682,6 +692,10 @@ class UltraVerifiedResearchEngine(
 
     private companion object {
         const val PRIMARY_PROVIDER_GRACE_MS = 350L
+
+        val STABLE_KNOWLEDGE_NEGATION_PATTERN = Regex(
+            """\b(?:no|nunca|jamas|tampoco|ni)\b"""
+        )
 
         val STABLE_KNOWLEDGE_STOP_WORDS = setOf(
             "una", "uno", "unos", "unas", "que", "del", "las", "los",
