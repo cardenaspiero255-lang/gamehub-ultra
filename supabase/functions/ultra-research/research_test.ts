@@ -1636,6 +1636,91 @@ Deno.test(
 );
 
 Deno.test(
+  "Tavily numeric disagreement does not corroborate Wikipedia",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Marte" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Marte",
+            type: "standard",
+            extract: "Marte tiene 2 lunas naturales.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Marte" },
+            },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Astronomía uno",
+                url: "https://astronomia-uno.example/marte",
+                content: "Marte tiene 3 lunas naturales.",
+                score: 0.95,
+              },
+              {
+                title: "Astronomía dos",
+                url: "https://astronomia-dos.example/marte",
+                content: "El planeta Marte posee 3 lunas naturales.",
+                score: 0.92,
+              },
+            ],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      secret: (name) =>
+        Promise.resolve(
+          name === "TAVILY_API_KEY" ? "vault-tvly-test-key" : undefined,
+        ),
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿cuántas lunas tiene Marte?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("Wikipedia evidence should remain usable");
+    }
+    if ((result.independentSourceCount ?? 0) !== 1) {
+      throw new Error(
+        "contradictory Tavily sources must not increase corroboration",
+      );
+    }
+    if ((result.sourceIds ?? []).length !== 1) {
+      throw new Error(
+        "contradictory Tavily sources must not be exposed as supporting sources",
+      );
+    }
+    if (!result.displayText?.includes("2 lunas")) {
+      throw new Error("expected the primary Wikipedia fact to be preserved");
+    }
+  },
+);
+
+Deno.test(
   "stalled Gemini general fallback advances to xAI",
   async () => {
     let xaiCalled = false;
