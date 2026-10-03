@@ -727,9 +727,11 @@ class UltraVerifiedResearchEngine(
         val sharedAnchors = firstFacts.keys.intersect(secondFacts.keys)
 
         return sharedAnchors.none { anchor ->
-            firstFacts.getValue(anchor)
-                .intersect(secondFacts.getValue(anchor))
-                .isEmpty()
+            val firstValues = firstFacts.getValue(anchor)
+            val secondValues = secondFacts.getValue(anchor)
+            val firstOnly = firstValues - secondValues
+            val secondOnly = secondValues - firstValues
+            firstOnly.isNotEmpty() && secondOnly.isNotEmpty()
         }
     }
 
@@ -767,7 +769,27 @@ class UltraVerifiedResearchEngine(
                 }
                 ?: return@forEachIndexed
 
-            facts.getOrPut(anchor) { linkedSetOf() }
+            val predicate = tokens
+                .take(index)
+                .asReversed()
+                .asSequence()
+                .map(::canonicalStableKnowledgeToken)
+                .firstOrNull { candidate ->
+                    candidate.length >= 3 &&
+                        candidate.none(Char::isDigit) &&
+                        candidate != anchor &&
+                        candidate !in STABLE_KNOWLEDGE_STOP_WORDS &&
+                        candidate !in STABLE_KNOWLEDGE_NEGATION_FILLERS &&
+                        candidate !in STABLE_KNOWLEDGE_ANCHOR_FUNCTION_WORDS &&
+                        candidate !in STABLE_KNOWLEDGE_EDITORIAL_DATE_MARKERS
+                }
+            val factKey = if (predicate == null) {
+                anchor
+            } else {
+                "$anchor|$predicate"
+            }
+
+            facts.getOrPut(factKey) { linkedSetOf() }
                 .add(number + percentSuffix)
         }
 
