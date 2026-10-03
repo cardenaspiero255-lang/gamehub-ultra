@@ -512,7 +512,7 @@ async function maybeSynthesizeWithGemini(
   deps: ResearchDependencies,
   signal?: AbortSignal,
 ): Promise<ResearchResult> {
-  const apiKey = await providerSecret(deps, "GEMINI_API_KEY");
+  const apiKey = await providerSecret(deps, "GEMINI_API_KEY", signal);
   const verifiedText = evidence.displayText?.trim();
   if (!apiKey || !verifiedText || evidence.abstained) return evidence;
 
@@ -712,8 +712,8 @@ async function maybeSynthesizeWithXai(
   signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const apiKey =
-    await providerSecret(deps, "XAI_API_KEY") ??
-    await providerSecret(deps, "GROK_API_KEY");
+    await providerSecret(deps, "XAI_API_KEY", signal) ??
+    await providerSecret(deps, "GROK_API_KEY", signal);
   const verifiedText = evidence.displayText?.trim();
   if (!apiKey || !verifiedText || evidence.abstained) return evidence;
 
