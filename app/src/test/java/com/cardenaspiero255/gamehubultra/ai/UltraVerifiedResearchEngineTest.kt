@@ -752,7 +752,7 @@ class UltraVerifiedResearchEngineTest {
             override val id = "supabase-ultra-research"
 
             override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
-                Thread.sleep(400L)
+                Thread.sleep(100L)
                 return UltraResearchEvidence(
                     claimKey = "general:motor",
                     value = "transforma-energia-trabajo-mecanico",
