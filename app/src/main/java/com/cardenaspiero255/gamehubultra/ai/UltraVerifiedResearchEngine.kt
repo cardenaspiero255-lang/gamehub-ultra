@@ -485,7 +485,8 @@ class UltraVerifiedResearchEngine(
                     key = key,
                     result = result,
                     expiresAtMillis = nowMillis() + ttlMillis(request),
-                    persist = usePersistentCache
+                    persist = usePersistentCache &&
+                        result.confidence != UltraAnswerConfidence.LOW
                 )
             }
             return result
@@ -614,7 +615,7 @@ class UltraVerifiedResearchEngine(
             key = key,
             result = result,
             expiresAtMillis = nowMillis() + ttlMillis(request),
-            persist = usePersistentCache
+            persist = usePersistentCache && confidence != UltraAnswerConfidence.LOW
         )
         return result
 
@@ -639,10 +640,17 @@ class UltraVerifiedResearchEngine(
                 reasonCode == "UPSTREAM_RATE_LIMIT" ->
                     "El servicio está ocupado. Prueba de nuevo."
                 reasonCode == "UPSTREAM_UNAVAILABLE" ||
+                    reasonCode == "BACKEND_FAILURE" ||
+                    reasonCode == "BACKEND_HTTP_FAILURE" ||
+                    reasonCode == "INVALID_BACKEND_RESPONSE" ||
+                    reasonCode == "UPSTREAM_HTTP_ERROR" ||
                     reasonCode == "BACKEND_NETWORK_FAILURE" ||
                     reasonCode == "PROVIDER_FAILURE" ||
                     reasonCode == "PROVIDER_EXECUTION_FAILURE" ->
                     "El servicio de consulta no está disponible ahora. Reintenta."
+                reasonCode == "BACKEND_NOT_CONFIGURED" ||
+                    reasonCode == "GENERAL_MODEL_NOT_CONFIGURED" ->
+                    "El servicio de consulta todavía no está configurado para esa búsqueda."
                 sources.isEmpty() ->
                     "No encontré fuentes suficientes para confirmar ese dato."
                 else ->
