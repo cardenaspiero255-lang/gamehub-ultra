@@ -10,11 +10,13 @@ internal data class HomeUiState(
     val localGameCount: Int = 0,
     val quickVoiceOpen: Boolean = false,
     val quickVoiceRevealRequest: Int = 0,
+    val quickVoiceStartRequest: Int = 0,
 )
 
 internal sealed interface HomeUiEvent {
     data class GameCountLoaded(val count: Int) : HomeUiEvent
     data object QuickVoiceToggled : HomeUiEvent
+    data object QuickVoiceStartRequested : HomeUiEvent
     data object QuickVoiceRevealed : HomeUiEvent
 }
 
@@ -32,6 +34,11 @@ internal fun HomeUiState.reduce(event: HomeUiEvent): HomeUiState =
                 )
             }
         }
+        HomeUiEvent.QuickVoiceStartRequested -> copy(
+            quickVoiceOpen = true,
+            quickVoiceRevealRequest = quickVoiceRevealRequest + 1,
+            quickVoiceStartRequest = quickVoiceStartRequest + 1,
+        )
         HomeUiEvent.QuickVoiceRevealed -> copy(
             quickVoiceOpen = true,
             quickVoiceRevealRequest = quickVoiceRevealRequest + 1,

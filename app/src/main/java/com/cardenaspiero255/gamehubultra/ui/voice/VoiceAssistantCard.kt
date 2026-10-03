@@ -41,7 +41,8 @@ internal fun VoiceAssistantCard(
     queryRunner: UltraAssistantQueryRunner,
     conversation: List<String>,
     onConversationChanged: (List<String>) -> Unit,
-    assistantInputEnabled: Boolean
+    assistantInputEnabled: Boolean,
+    startListeningRequest: Int = 0
 ) {
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -70,6 +71,8 @@ internal fun VoiceAssistantCard(
         mutableStateOf<UltraScopedProfileRecommendation?>(null)
     }
     var pendingContinuousListening by rememberSaveable { mutableStateOf(false) }
+    var pendingOneShotListening by rememberSaveable { mutableStateOf(false) }
+    var lastHandledStartRequest by remember { mutableIntStateOf(0) }
     var showTextChat by rememberSaveable { mutableStateOf(false) }
     var chatMessage by rememberSaveable { mutableStateOf("") }
     val chatSending by queryRunner.isRunning.collectAsStateWithLifecycle()
@@ -258,6 +261,7 @@ internal fun VoiceAssistantCard(
             }
         } else if (!granted) {
             pendingContinuousListening = false
+            pendingOneShotListening = false
             continuousListeningEnabled = continuousVoiceController.isEnabled()
             response = context.getString(R.string.voice_permission_required)
         }
@@ -455,6 +459,33 @@ applyNetworkProfile = networkGaming::applyProfile
         controller
     }
 
+    fun requestOneShotListening() {
+        if (!latestAssistantInputEnabled || listening) return
+        if (permissionGranted) {
+            voiceController.startListening()
+        } else {
+            pendingOneShotListening = true
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    LaunchedEffect(startListeningRequest, assistantInputEnabled) {
+        if (
+            assistantInputEnabled &&
+            startListeningRequest > lastHandledStartRequest
+        ) {
+            lastHandledStartRequest = startListeningRequest
+            requestOneShotListening()
+        }
+    }
+
+    LaunchedEffect(permissionGranted, pendingOneShotListening) {
+        if (permissionGranted && pendingOneShotListening) {
+            pendingOneShotListening = false
+            requestOneShotListening()
+        }
+    }
+
     DisposableEffect(voiceController) {
         onDispose { voiceController.release() }
     }
@@ -574,14 +605,10 @@ applyNetworkProfile = networkGaming::applyProfile
             }
             Button(
                 onClick = {
-                    if (permissionGranted) {
-                        if (listening) {
-                            voiceController.stopListening()
-                        } else {
-                            voiceController.startListening()
-                        }
+                    if (listening) {
+                        voiceController.stopListening()
                     } else {
-                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        requestOneShotListening()
                     }
                 },
                 enabled = assistantInputEnabled,

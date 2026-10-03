@@ -172,7 +172,7 @@ internal fun HomeScreen(
                 onProfileSelected = onProfileSelected,
                 onPlay = onPlaySelectedGame,
                 onVoiceClick = {
-                    homeStateHolder.onEvent(HomeUiEvent.QuickVoiceToggled)
+                    homeStateHolder.onEvent(HomeUiEvent.QuickVoiceStartRequested)
                 }
             )
         }
@@ -190,7 +190,8 @@ internal fun HomeScreen(
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
-                    assistantInputEnabled = assistantInputEnabled
+                    assistantInputEnabled = assistantInputEnabled,
+                    startListeningRequest = homeUiState.quickVoiceStartRequest
                 )
             }
         }
@@ -252,7 +253,8 @@ internal fun HomeScreen(
                     queryRunner = queryRunner,
                     conversation = conversation,
                     onConversationChanged = onConversationChanged,
-                    assistantInputEnabled = assistantInputEnabled
+                    assistantInputEnabled = assistantInputEnabled,
+                    startListeningRequest = homeUiState.quickVoiceStartRequest
                 )
             }
         }
