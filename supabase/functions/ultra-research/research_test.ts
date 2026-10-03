@@ -1498,7 +1498,7 @@ Deno.test(
         if (
           url.hostname === "es.wikipedia.org" &&
           url.pathname === "/w/api.php" &&
-          url.searchParams.get("prop") === "extracts"
+          (url.searchParams.get("prop") ?? "").includes("extracts")
         ) {
           actionExtractCalled = true;
           return jsonResponse({
