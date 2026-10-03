@@ -190,7 +190,7 @@ class WikimediaUltraResearchProvider(
                 stage = "wikimedia-search"
             )
 
-        if (!titleMatchesTopic(topic, title)) {
+        if (!titleMatchesTopic(topic, title, currentQuestion)) {
             return UltraProviderResult.Abstained(
                 reasonCode = "PUBLIC_FALLBACK_IRRELEVANT_RESULT",
                 message = "Wikimedia encontró una página que no coincide con el tema.",
@@ -386,7 +386,8 @@ class WikimediaUltraResearchProvider(
 
     private fun titleMatchesTopic(
         topic: String,
-        title: String
+        title: String,
+        currentQuestion: String
     ): Boolean {
         val normalizedTopic = normalizedTopicPhrase(topic)
         val normalizedTitle = normalizedTopicPhrase(title)
@@ -399,8 +400,36 @@ class WikimediaUltraResearchProvider(
 
         val topicTokens = meaningfulTokens(topic)
         val titleTokens = meaningfulTokens(title)
-        if (topicTokens.isEmpty() || titleTokens.isEmpty()) return false
-        return topicTokens.intersect(titleTokens).isNotEmpty()
+        if (
+            topicTokens.isNotEmpty() &&
+            titleTokens.isNotEmpty() &&
+            topicTokens.intersect(titleTokens).isNotEmpty()
+        ) {
+            return true
+        }
+
+        // Spanish Wikipedia may return the translated Spanish article title for
+        // a valid English definition query (for example "black hole" ->
+        // "Agujero negro"). In that case lexical overlap is impossible by
+        // design, so rely on Wikipedia's top search result only for an explicit
+        // English definition question; other query classes keep the strict
+        // lexical relevance guard.
+        return isEnglishDefinitionQuestion(currentQuestion)
+    }
+
+    private fun isEnglishDefinitionQuestion(value: String): Boolean {
+        val stripped = value.replace(
+            Regex(
+                """^\s*(?:gamehub\s+ultra|gamehub|ultra)\s*[,;:.-]?\s*""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        ).trimStart(' ', '¿', '¡')
+
+        return Regex(
+            """^(?:what\s+(?:is|are|was|were)|who\s+(?:is|was|are|were))\b""",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(stripped)
     }
 
     private fun normalizedTopicPhrase(value: String): String =
