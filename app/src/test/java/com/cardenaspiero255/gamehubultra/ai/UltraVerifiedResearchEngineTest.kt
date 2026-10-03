@@ -660,6 +660,42 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun timeoutIsNotHiddenByNonApplicablePublicFallback() {
+        val primary = object : UltraResearchProvider {
+            override val id = "supabase-ultra-research"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                Thread.sleep(5_000L)
+                error("La primaria bloqueada no debe completar")
+            }
+        }
+        val fallback = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                error("CURRENT_DATA no debe consultar Wikimedia")
+            }
+        )
+        val engine = UltraVerifiedResearchEngine(listOf(primary, fallback))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Ultra, ¿cuál es el clima actual en Rancagua?"
+                ).copy(timeoutMillis = 60L)
+            )
+
+            assertTrue(result.abstained)
+            assertTrue(result.timedOut)
+            assertEquals("UPSTREAM_TIMEOUT", result.reasonCode)
+            assertTrue(result.retryable)
+            assertTrue(
+                result.message.contains("tardó demasiado", ignoreCase = true)
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun irrelevantWikimediaAbstentionDoesNotHidePrimaryFailure() {
         val primary = object : UltraResearchProvider {
             override val id = "supabase-ultra-research"
