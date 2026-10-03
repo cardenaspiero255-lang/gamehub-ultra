@@ -350,12 +350,16 @@ jobs:
           TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+          echo "RESEARCH_RELEASE_READY=false" >> "$GITHUB_ENV"
+          research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"
+          if [ -z "$research_key_compact" ]; then
             if [ "${TRUSTED_RELEASE_CONTEXT}" = "true" ]; then
-              echo "::error::SUPABASE_PUBLISHABLE_KEY is empty; refusing to package a trusted release with online research disabled."
+              echo "::error::SUPABASE_PUBLISHABLE_KEY is empty or whitespace-only; refusing to package a trusted release with online research disabled."
               exit 1
             fi
             echo "::warning::SUPABASE_PUBLISHABLE_KEY is unavailable for this untrusted pull request; continuing validation without publishing a release artifact."
+          else
+            echo "RESEARCH_RELEASE_READY=true" >> "$GITHUB_ENV"
           fi
           if [ -z "${SUPABASE_URL:-}" ]; then
             echo "SUPABASE_URL is empty; Android will use the checked-in production URL fallback."
@@ -870,7 +874,7 @@ jobs:
             app/build/reports/**
 
       - name: Upload installable release outputs
-        if: env.SUPABASE_PUBLISHABLE_KEY != ''
+        if: env.RESEARCH_RELEASE_READY == 'true'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-release
