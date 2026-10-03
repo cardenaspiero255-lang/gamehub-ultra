@@ -687,6 +687,9 @@ class UltraVerifiedResearchEngine(
             predicate in firstTokens && predicate !in firstNegatedPredicates
         }
         if (firstContradictsSecond || secondContradictsFirst) return false
+        if (!stableKnowledgeNumericFactsCompatible(firstText, secondText)) {
+            return false
+        }
 
         val firstValue = normalizeStableText(first.value)
         val secondValue = normalizeStableText(second.value)
@@ -702,6 +705,67 @@ class UltraVerifiedResearchEngine(
             secondTokens.size
         ).coerceAtLeast(1)
         return overlap.size.toDouble() / smallerEvidence.toDouble() >= 0.30
+    }
+
+    private fun stableKnowledgeNumericFactsCompatible(
+        firstText: String,
+        secondText: String
+    ): Boolean {
+        val firstFacts = stableKnowledgeNumericFacts(firstText)
+        val secondFacts = stableKnowledgeNumericFacts(secondText)
+        val sharedAnchors = firstFacts.keys.intersect(secondFacts.keys)
+
+        return sharedAnchors.none { anchor ->
+            firstFacts.getValue(anchor)
+                .intersect(secondFacts.getValue(anchor))
+                .isEmpty()
+        }
+    }
+
+    private fun stableKnowledgeNumericFacts(
+        value: String
+    ): Map<String, Set<String>> {
+        val tokens = normalizeStableText(value)
+            .replace(Regex("""[^a-z0-9.,%]+"""), " ")
+            .split(' ')
+            .map(String::trim)
+            .filter(String::isNotBlank)
+        val facts = linkedMapOf<String, MutableSet<String>>()
+
+        tokens.forEachIndexed { index, token ->
+            val number = token
+                .removeSuffix("%")
+                .replace(',', '.')
+                .takeIf { it.matches(Regex("""\d+(?:\.\d+)?""")) }
+                ?: return@forEachIndexed
+            val percentSuffix = if (token.endsWith("%")) "%" else ""
+            val anchor = (
+                tokens.drop(index + 1).asSequence() +
+                    tokens.take(index).asReversed().asSequence()
+                )
+                .map(::canonicalStableKnowledgeToken)
+                .firstOrNull { candidate ->
+                    candidate.length >= 2 &&
+                        candidate.none(Char::isDigit) &&
+                        candidate !in STABLE_KNOWLEDGE_STOP_WORDS &&
+                        candidate !in STABLE_KNOWLEDGE_NEGATION_FILLERS
+                }
+                ?: return@forEachIndexed
+
+            facts.getOrPut(anchor) { linkedSetOf() }
+                .add(number + percentSuffix)
+        }
+
+        return facts.mapValues { (_, values) -> values.toSet() }
+    }
+
+    private fun canonicalStableKnowledgeToken(value: String): String {
+        val token = value.replace(Regex("""[^a-z0-9]+"""), "")
+        return when {
+            token.length > 5 && token.endsWith("es") -> token.dropLast(2)
+            token.length > 4 && token.endsWith("s") -> token.dropLast(1)
+            else -> token
+        }
     }
 
     private fun stableKnowledgeNegatedPredicates(value: String): Set<String> {
