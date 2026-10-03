@@ -1598,8 +1598,10 @@ Deno.test(
         throw new Error("unexpected URL " + url);
       },
       env: () => undefined,
-      secret: async (name) =>
-        name === "TAVILY_API_KEY" ? "vault-tvly-test-key" : undefined,
+      secret: (name) =>
+        Promise.resolve(
+          name === "TAVILY_API_KEY" ? "vault-tvly-test-key" : undefined,
+        ),
     };
 
     const result = await routeResearchQuery(
