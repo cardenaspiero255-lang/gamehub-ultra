@@ -1539,3 +1539,154 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "general knowledge corroborates Wikipedia with independent Tavily sources from Vault",
+  async () => {
+    let tavilyCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Motor" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract:
+              "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          tavilyCalled = true;
+          return jsonResponse({
+            results: [
+              {
+                title: "Britannica motor",
+                url: "https://www.britannica.com/technology/motor",
+                content:
+                  "A motor converts energy into mechanical motion and useful work.",
+                score: 0.93,
+              },
+              {
+                title: "Engineering reference",
+                url: "https://engineering.example/motor",
+                content:
+                  "Los motores convierten distintas formas de energía en trabajo mecánico.",
+                score: 0.89,
+              },
+            ],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      secret: async (name) =>
+        name === "TAVILY_API_KEY" ? "vault-tvly-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!tavilyCalled) {
+      throw new Error("expected Tavily corroboration for Wikipedia evidence");
+    }
+    if (result.abstained) {
+      throw new Error("expected corroborated stable knowledge answer");
+    }
+    const sources = result.sourceIds ?? [];
+    if (sources.length < 3) {
+      throw new Error("expected Wikipedia plus independent web sources");
+    }
+    if ((result.independentSourceCount ?? 0) < 3) {
+      throw new Error("expected three independent corroborating domains");
+    }
+    if (
+      result.displayText !==
+        "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico."
+    ) {
+      throw new Error("verified Wikipedia wording should remain the safe answer");
+    }
+  },
+);
+
+Deno.test(
+  "general knowledge falls back from unavailable Gemini to xAI Grok",
+  async () => {
+    let xaiCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input, init) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "api.x.ai") {
+          xaiCalled = true;
+          const headers = new Headers(init?.headers);
+          if (headers.get("Authorization") !== "Bearer xai-test-key") {
+            throw new Error("expected xAI bearer authentication");
+          }
+          return jsonResponse({
+            choices: [{
+              message: {
+                content:
+                  "Un motor es una máquina que convierte energía en movimiento o trabajo mecánico.",
+              },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "XAI_API_KEY" ? "xai-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!xaiCalled) {
+      throw new Error("expected xAI fallback when verified sources and Gemini are unavailable");
+    }
+    if (result.abstained) {
+      throw new Error("expected xAI to keep stable knowledge answerable");
+    }
+    if (result.sourceId !== "xai-general-assistant") {
+      throw new Error("expected xAI provenance");
+    }
+    if (!result.displayText?.toLowerCase().includes("motor")) {
+      throw new Error("expected a useful motor definition from xAI");
+    }
+  },
+);
