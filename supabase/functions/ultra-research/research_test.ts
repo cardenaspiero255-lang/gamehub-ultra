@@ -1876,6 +1876,7 @@ Deno.test(
   "verified evidence uses xAI as grounded synthesizer when Gemini is unavailable",
   async () => {
     let xaiCalled = false;
+    let xaiRequestBody: Record<string, unknown> | null = null;
     const verifiedText =
       "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.";
 
@@ -1942,21 +1943,7 @@ Deno.test(
           if (body.model !== "grok-4.7") {
             throw new Error("expected grok-4.7 grounded synthesis model");
           }
-          if (body.reasoning_effort !== "low") {
-            throw new Error(
-              "grounded xAI synthesis must use low reasoning effort",
-            );
-          }
-          if (body.max_completion_tokens !== 1500) {
-            throw new Error(
-              "grounded xAI synthesis needs completion-token headroom",
-            );
-          }
-          if ("max_tokens" in body) {
-            throw new Error(
-              "grounded xAI synthesis must not use legacy max_tokens",
-            );
-          }
+          xaiRequestBody = body;
 
           const serialized = JSON.stringify(body);
           if (!serialized.includes(verifiedText)) {
@@ -1991,6 +1978,22 @@ Deno.test(
     if (!xaiCalled) {
       throw new Error(
         "expected xAI grounded synthesis when Gemini is unavailable",
+      );
+    }
+    if (!xaiRequestBody) {
+      throw new Error("expected grounded xAI request body");
+    }
+    if (xaiRequestBody.reasoning_effort !== "low") {
+      throw new Error("grounded xAI synthesis must use low reasoning effort");
+    }
+    if (xaiRequestBody.max_completion_tokens !== 1500) {
+      throw new Error(
+        "grounded xAI synthesis needs completion-token headroom",
+      );
+    }
+    if ("max_tokens" in xaiRequestBody) {
+      throw new Error(
+        "grounded xAI synthesis must not use legacy max_tokens",
       );
     }
     if (result.abstained) {
