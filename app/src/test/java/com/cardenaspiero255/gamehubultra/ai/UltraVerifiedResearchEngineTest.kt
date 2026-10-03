@@ -578,7 +578,7 @@ class UltraVerifiedResearchEngineTest {
                 error("La llamada primaria cancelada no debe producir evidencia")
             }
 
-            override fun cancelActiveRequest() {
+            override fun cancelActiveRequest(worker: Thread) {
                 cancelCalls.incrementAndGet()
                 released.countDown()
             }
