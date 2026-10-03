@@ -2110,6 +2110,76 @@ Deno.test(
 );
 
 Deno.test(
+  "Wikipedia primary stage obeys shared route deadline and leaves time for Gemini",
+  async () => {
+    let wikipediaSawSignal = false;
+    let geminiCalled = false;
+    const expected =
+      "El ADN es la molécula que almacena información genética en los seres vivos.";
+    const deps: ResearchDependencies = {
+      fetcher: (input, init) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          wikipediaSawSignal = Boolean(init?.signal);
+          return new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          });
+        }
+
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalled = true;
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: { parts: [{ text: expected }] },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        if (name === "ULTRA_GENERAL_ROUTE_TIMEOUT_MS") return "900";
+        if (name === "ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS") return "200";
+        return undefined;
+      },
+    };
+
+    const started = performance.now();
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es el ADN?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    const elapsed = performance.now() - started;
+
+    if (!wikipediaSawSignal) {
+      throw new Error("Wikipedia requests must receive an abort signal");
+    }
+    if (!geminiCalled) {
+      throw new Error("Gemini should run with the remaining route budget");
+    }
+    if (result.abstained || result.displayText !== expected) {
+      throw new Error("Gemini should recover after the bounded Wikipedia stage");
+    }
+    if (elapsed >= 900) {
+      throw new Error("shared route deadline was exhausted before fallback");
+    }
+  },
+);
+
+Deno.test(
   "slow sole Tavily fallback gets more time than optional corroboration",
   async () => {
     const deps: ResearchDependencies = {
