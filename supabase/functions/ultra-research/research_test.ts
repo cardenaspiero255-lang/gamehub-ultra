@@ -2378,8 +2378,7 @@ Deno.test(
               {
                 title: "Referencia del agua",
                 url: "https://wrong-b.example/agua",
-                content:
-                  "El agua hierve a 90 grados y se congela a 0 grados.",
+                content: "El agua hierve a 90 grados y se congela a 0 grados.",
                 score: 0.98,
               },
             ],
