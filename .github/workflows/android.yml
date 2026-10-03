@@ -344,6 +344,18 @@ jobs:
           cache-disabled: false
           cache-read-only: false
 
+      - name: Verify release research configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+            echo "::error::SUPABASE_PUBLISHABLE_KEY is empty; refusing to package a release with online research disabled."
+            exit 1
+          fi
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "SUPABASE_URL is empty; Android will use the checked-in production URL fallback."
+          fi
+
       - name: Create ephemeral release signing key
         shell: bash
         run: |
