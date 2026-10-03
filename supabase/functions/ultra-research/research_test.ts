@@ -1695,7 +1695,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "verified evidence uses xAI as grounded synthesizer when Gemini is unavailable",
   async () => {
@@ -1759,7 +1758,10 @@ Deno.test(
             throw new Error("expected xAI bearer authentication");
           }
 
-          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          const body = JSON.parse(String(init?.body)) as Record<
+            string,
+            unknown
+          >;
           if (body.model !== "grok-4.7") {
             throw new Error("expected grok-4.7 grounded synthesis model");
           }
