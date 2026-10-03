@@ -35,6 +35,11 @@ suspend fun GameSelectionStateRepository.effectiveProfileForSelection(
     return gameProfile ?: selectedProfileFlow().first()
 }
 
+interface PlayerIdentityStateRepository {
+    fun playerNameFlow(): Flow<String>
+    suspend fun savePlayerName(rawName: String)
+}
+
 interface GameLibraryStateRepository {
     fun favoriteGamesFlow(): Flow<Set<String>>
     fun recentGamesFlow(): Flow<List<String>>

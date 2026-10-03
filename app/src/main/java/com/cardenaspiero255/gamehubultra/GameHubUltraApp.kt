@@ -496,16 +496,19 @@ internal fun GameHubUltraApp(
                 onStoreConnectionChanged = { storeRefreshToken += 1 },
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) { optimizationMemoryStore.clearAll() }
-                }
+                },
+                playerName = uiState.playerName,
+                onPlayerNameChanged = viewModel::updatePlayerName
             )
             wideLayout && profileOpen -> UltraProfileScreen(
                 modifier = contentModifier,
-                playerName = ULTRA_PLAYER_NAME,
+                playerName = uiState.playerName,
                 activeProfile = uiState.effectiveProfile,
                 favoriteCount = favoriteGames.size,
                 recentCount = recentGamePackages.distinct().size,
                 sessionCount = sessionHistory.size,
-                device = device
+                device = device,
+                onPlayerNameChanged = viewModel::updatePlayerName
             )
             selectedTab == 0 -> HomeScreen(
                 modifier = contentModifier,
@@ -656,7 +659,7 @@ internal fun GameHubUltraApp(
                         .fillMaxSize()
                 ) {
                     UltraShellHeader(
-                        playerName = ULTRA_PLAYER_NAME
+                        playerName = uiState.playerName
                     )
                     Box(
                         modifier = Modifier

@@ -5,6 +5,7 @@ import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinatorFactory
 import com.cardenaspiero255.gamehubultra.data.PerformanceHistoryStateRepository
+import com.cardenaspiero255.gamehubultra.data.PlayerIdentityStateRepository
 
 /**
  * Android-free composition boundary for dependencies consumed by [GameHubViewModel].
@@ -28,4 +29,5 @@ data class GameHubViewModelDependencies(
     val performanceHistoryRepository: PerformanceHistoryStateRepository,
     val sessionRepository: GameSessionStateRepository,
     val sessionCoordinatorFactory: GameSessionLifecycleCoordinatorFactory,
+    val playerIdentityRepository: PlayerIdentityStateRepository? = null,
 )

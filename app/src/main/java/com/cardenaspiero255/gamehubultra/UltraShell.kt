@@ -23,8 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
-
-internal const val ULTRA_PLAYER_NAME = "ejecutor3.0"
+import com.cardenaspiero255.gamehubultra.ui.components.PlayerNameEditor
 
 @Composable
 internal fun UltraShellHeader(
@@ -98,7 +97,8 @@ internal fun UltraProfileScreen(
     favoriteCount: Int,
     recentCount: Int,
     sessionCount: Int,
-    device: DeviceInfo
+    device: DeviceInfo,
+    onPlayerNameChanged: (String) -> Unit
 ) {
     Column(
         modifier = modifier
@@ -123,7 +123,11 @@ internal fun UltraProfileScreen(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(playerName, fontSize = 25.sp, fontWeight = FontWeight.Black)
+                PlayerNameEditor(
+                    playerName = playerName,
+                    onPlayerNameChanged = onPlayerNameChanged,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Text(
                     "GameHub Ultra Player",
                     color = Color(0xFFFF3048),

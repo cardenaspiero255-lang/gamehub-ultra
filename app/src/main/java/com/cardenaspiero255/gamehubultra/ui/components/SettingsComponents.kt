@@ -310,7 +310,9 @@ internal fun SettingsScreen(
     accountsRepository: ConnectedGameAccountsStateRepository,
     storeLibraryRepository: StoreLibraryStateRepository,
     onStoreConnectionChanged: () -> Unit,
-    onClearOptimizationMemory: () -> Unit
+    onClearOptimizationMemory: () -> Unit,
+    playerName: String,
+    onPlayerNameChanged: (String) -> Unit
 ) {
     Column(
         modifier = modifier
@@ -324,6 +326,19 @@ internal fun SettingsScreen(
             stringResource(R.string.settings_title),
             style = MaterialTheme.typography.headlineSmall
         )
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Perfil Ultra", style = MaterialTheme.typography.titleMedium)
+                PlayerNameEditor(
+                    playerName = playerName,
+                    onPlayerNameChanged = onPlayerNameChanged,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
         ConnectedAccountsCard(
             accountsRepository = accountsRepository,
             storeLibraryRepository = storeLibraryRepository,

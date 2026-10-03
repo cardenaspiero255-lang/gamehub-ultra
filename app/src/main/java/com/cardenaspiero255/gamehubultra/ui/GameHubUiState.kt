@@ -1,10 +1,12 @@
 package com.cardenaspiero255.gamehubultra.ui
 
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.DEFAULT_ULTRA_PLAYER_NAME
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
 data class GameHubUiState(
     val globalProfile: PerformanceProfile = PerformanceProfile.BALANCED,
+    val playerName: String = DEFAULT_ULTRA_PLAYER_NAME,
     val selectedGamePackage: String? = null,
     val selectedGameHydrated: Boolean = false,
     val selectedGameConfig: GameProfileConfig? = null,

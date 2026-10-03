@@ -11,6 +11,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.DEFAULT_ULTRA_PLAYER_NAME
+import com.cardenaspiero255.gamehubultra.domain.normalizeUltraPlayerName
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventCodec
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -32,7 +34,7 @@ private val Context.gameHubDataStore by preferencesDataStore(
 
 class GameHubPreferencesRepository(
     private val dataStore: DataStore<Preferences>
-) : GameSelectionStateRepository, GameLibraryStateRepository, PerformanceHistoryStateRepository {
+) : GameSelectionStateRepository, GameLibraryStateRepository, PerformanceHistoryStateRepository, PlayerIdentityStateRepository {
     constructor(context: Context) : this(context.applicationContext.gameHubDataStore)
 
     private val selectedProfileKey = stringPreferencesKey("selected_profile")
@@ -41,6 +43,14 @@ class GameHubPreferencesRepository(
     private val recentGamesKey = stringPreferencesKey("recent_games")
     private val manualGamesKey = stringSetPreferencesKey("manual_game_packages")
     private val performanceHistoryKey = stringPreferencesKey("performance_history")
+    private val playerNameKey = stringPreferencesKey("player_name")
+
+    override fun playerNameFlow(): Flow<String> =
+        dataStore.data.map { preferences ->
+            preferences[playerNameKey]
+                ?.let(::normalizeUltraPlayerName)
+                ?: DEFAULT_ULTRA_PLAYER_NAME
+        }
 
     override fun selectedProfileFlow(): Flow<PerformanceProfile> =
         dataStore.data.map { preferences ->
@@ -104,6 +114,12 @@ class GameHubPreferencesRepository(
                 .toList()
                 .takeLast(limit.coerceIn(1, 50))
         }
+
+    override suspend fun savePlayerName(rawName: String) {
+        dataStore.edit { preferences ->
+            preferences[playerNameKey] = normalizeUltraPlayerName(rawName)
+        }
+    }
 
     override suspend fun saveSelectedProfile(profile: PerformanceProfile) {
         dataStore.edit { preferences ->

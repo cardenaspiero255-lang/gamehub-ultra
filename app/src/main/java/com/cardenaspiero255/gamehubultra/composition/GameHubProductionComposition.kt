@@ -77,7 +77,8 @@ internal object GameHubProductionComposition {
                 libraryRepository = preferencesRepository,
                 performanceHistoryRepository = preferencesRepository,
                 sessionRepository = sessionRepository,
-                sessionCoordinatorFactory = sessionCoordinatorFactory
+                sessionCoordinatorFactory = sessionCoordinatorFactory,
+                playerIdentityRepository = preferencesRepository
             )
         }
         val memoryStore = UltraConversationMemoryStore.get(appContext)

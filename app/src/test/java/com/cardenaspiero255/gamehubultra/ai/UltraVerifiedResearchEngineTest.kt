@@ -24,7 +24,7 @@ class UltraVerifiedResearchEngineTest {
 
         assertTrue(result.timedOut)
         assertTrue(result.abstained)
-        assertTrue(result.message.contains("no pude verificar", ignoreCase = true))
+        assertTrue(result.message.contains("tardó demasiado", ignoreCase = true))
         engine.close()
     }
 
@@ -70,7 +70,7 @@ class UltraVerifiedResearchEngineTest {
 
         assertEquals(UltraAnswerConfidence.LOW, result.confidence)
         assertTrue(result.abstained)
-        assertTrue(result.message.contains("no pude verificar", ignoreCase = true))
+        assertTrue(result.message.contains("corroboración", ignoreCase = true))
         engine.close()
     }
 

@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -21,6 +23,21 @@ class VoiceAssistantController(
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val fallbackRetryGate = VoiceRecognitionRetryGate()
+    private val fallbackRetry = Runnable {
+        fallbackRetryGate.onRetryDispatched()
+        VoiceRecognitionStartGuard.run(
+            onListeningChanged = onListeningChanged,
+            onError = onError,
+            cleanup = {
+                runCatching { recognizer?.destroy() }
+                recognizer = null
+            }
+        ) {
+            startListeningWithCurrentLanguage()
+        }
+    }
 
     init {
         tts = TextToSpeech(appContext) { status ->
@@ -31,8 +48,19 @@ class VoiceAssistantController(
     }
 
     fun startListening() {
+        mainHandler.removeCallbacks(fallbackRetry)
+        fallbackRetryGate.reset()
         recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
-        VoiceRecognitionStartGuard.run(onListeningChanged, onError, { runCatching { recognizer?.destroy() }; recognizer = null }) { startListeningWithCurrentLanguage() }
+        VoiceRecognitionStartGuard.run(
+            onListeningChanged = onListeningChanged,
+            onError = onError,
+            cleanup = {
+                runCatching { recognizer?.destroy() }
+                recognizer = null
+            }
+        ) {
+            startListeningWithCurrentLanguage()
+        }
     }
 
     private fun startListeningWithCurrentLanguage() {
@@ -72,6 +100,8 @@ class VoiceAssistantController(
     }
 
     fun stopListening() {
+        mainHandler.removeCallbacks(fallbackRetry)
+        fallbackRetryGate.reset()
         recognizer?.cancel()
         onListeningChanged(false)
     }
@@ -81,6 +111,8 @@ class VoiceAssistantController(
     }
 
     fun release() {
+        mainHandler.removeCallbacks(fallbackRetry)
+        fallbackRetryGate.reset()
         recognizer?.destroy()
         recognizer = null
         tts?.stop()
@@ -112,7 +144,13 @@ class VoiceAssistantController(
             )
             if (fallback != null) {
                 recognitionLanguageTag = fallback
-                VoiceRecognitionStartGuard.run(onListeningChanged, this@VoiceAssistantController.onError, { runCatching { recognizer?.destroy() }; recognizer = null }) { startListeningWithCurrentLanguage() }
+                onListeningChanged(false)
+                if (fallbackRetryGate.trySchedule()) {
+                    if (!mainHandler.post(fallbackRetry)) {
+                        fallbackRetryGate.onRetryDispatched()
+                        this@VoiceAssistantController.onError(error)
+                    }
+                }
                 return
             }
             onListeningChanged(false)
