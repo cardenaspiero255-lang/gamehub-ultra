@@ -2335,6 +2335,90 @@ Deno.test(
 );
 
 Deno.test(
+  "partial numeric overlap does not corroborate Wikipedia",
+  async () => {
+    const wikiSource = "https://es.wikipedia.org/wiki/Agua";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Agua" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Agua",
+            type: "standard",
+            extract:
+              "El agua hierve a 100 grados y se congela a 0 grados en este ejemplo.",
+            content_urls: { desktop: { page: wikiSource } },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Propiedades del agua",
+                url: "https://wrong-a.example/agua",
+                content:
+                  "El agua hierve a 90 grados y se congela a 0 grados en este ejemplo.",
+                score: 0.99,
+              },
+              {
+                title: "Referencia del agua",
+                url: "https://wrong-b.example/agua",
+                content:
+                  "El agua hierve a 90 grados y se congela a 0 grados.",
+                score: 0.98,
+              },
+            ],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es el agua?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("Wikipedia evidence should remain usable");
+    }
+    if ((result.independentSourceCount ?? 0) !== 1) {
+      throw new Error(
+        "partial numeric overlap must not increase corroboration",
+      );
+    }
+    if (
+      result.sourceId !== wikiSource ||
+      result.sourceIds?.length !== 1 ||
+      result.sourceIds[0] !== wikiSource
+    ) {
+      throw new Error(
+        "partially conflicting Tavily sources must not be retained",
+      );
+    }
+  },
+);
+
+Deno.test(
   "opposite signed Tavily values do not corroborate Wikipedia",
   async () => {
     const wikiSource = "https://es.wikipedia.org/wiki/Marte";
