@@ -344,15 +344,24 @@ class WikimediaUltraResearchProvider(
             .trim()
 
     private fun isDependentFollowUpWithoutSubject(value: String): Boolean {
-        val normalized = normalizeForComparison(
-            value.replace(
-                Regex(
-                    """^\s*(?:gamehub\s+ultra|gamehub|ultra)\s*[,;:.-]?\s*""",
-                    RegexOption.IGNORE_CASE
-                ),
-                ""
-            )
-        )
+        val stripped = value.replace(
+            Regex(
+                """^\s*(?:gamehub\s+ultra|gamehub|ultra)\s*[,;:.-]?\s*""",
+                RegexOption.IGNORE_CASE
+            ),
+            ""
+        ).trimStart(' ', '¿', '¡')
+
+        if (
+            Regex(
+                """^(?:y\s+)?él\b""",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(stripped)
+        ) {
+            return true
+        }
+
+        val normalized = normalizeForComparison(stripped)
             .replace(Regex("""[^a-z0-9]+"""), " ")
             .trim()
 
@@ -366,7 +375,7 @@ class WikimediaUltraResearchProvider(
         }
 
         val pronounLed = Regex(
-            """^(?:y\s+)?(?:eso|esto|esa|ese|aquello|el|ella|ellos|ellas)\b"""
+            """^(?:y\s+)?(?:eso|esto|esa|ese|aquello|ella|ellos|ellas)\b"""
         )
         val questionWithPronoun = Regex(
             """^(?:y\s+)?(?:como|que|por que|cuando|donde)\b.*\b(?:eso|esto|esa|ese|aquello)\b"""
