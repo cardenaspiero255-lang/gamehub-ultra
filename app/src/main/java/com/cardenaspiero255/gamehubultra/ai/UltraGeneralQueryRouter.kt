@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
+import java.util.UUID
 
 enum class UltraGeneralQueryKind {
     GENERAL_KNOWLEDGE,
@@ -28,7 +29,8 @@ data class UltraGeneralQueryRequest(
             UltraVerificationMode.REQUIRED
         requiresInternet -> UltraVerificationMode.OPTIONAL
         else -> UltraVerificationMode.LOCAL
-    }
+    },
+    val correlationId: String = UUID.randomUUID().toString()
 )
 
 object UltraGeneralQueryRouter {
