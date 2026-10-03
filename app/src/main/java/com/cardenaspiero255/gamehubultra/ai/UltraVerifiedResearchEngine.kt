@@ -285,10 +285,15 @@ class UltraVerifiedResearchEngine(
         sources: List<String> = emptyList()
     ): UltraVerifiedResearchResult =
         UltraVerifiedResearchResult(
-            message = if (sensitiveInputBlocked) {
-                "No enviaré secretos, tokens ni credenciales a proveedores externos."
-            } else {
-                "No pude verificarlo con suficiente confianza."
+            message = when {
+                sensitiveInputBlocked ->
+                    "No enviaré secretos, tokens ni credenciales a proveedores externos."
+                timedOut ->
+                    "La búsqueda tardó demasiado y no alcanzó a reunir fuentes verificables. Inténtalo de nuevo."
+                sources.isEmpty() ->
+                    "No encontré fuentes verificables disponibles para esa consulta."
+                else ->
+                    "Encontré información, pero falta corroboración suficiente para presentarla como un dato seguro."
             },
             confidence = UltraAnswerConfidence.LOW,
             sources = sources,

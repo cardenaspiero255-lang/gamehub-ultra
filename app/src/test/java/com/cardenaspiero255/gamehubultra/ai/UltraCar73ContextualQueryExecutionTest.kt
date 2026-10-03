@@ -268,7 +268,7 @@ class UltraCar73ContextualQueryExecutionTest {
             "clima posiblemente desactualizado"
         }
 
-        assertTrue(answer.contains("no pude verificar", ignoreCase = true))
+        assertTrue(answer.contains("fuentes verificables", ignoreCase = true))
         assertEquals(0, localCalls)
     }
 
