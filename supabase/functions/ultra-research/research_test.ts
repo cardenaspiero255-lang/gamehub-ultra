@@ -1989,7 +1989,7 @@ Deno.test(
         "",
         "GENERAL_KNOWLEDGE",
       ),
-      new Promise<ResearchResult>((_, reject) =>
+      new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error("optional Tavily blocked the ready answer")),
           700,
