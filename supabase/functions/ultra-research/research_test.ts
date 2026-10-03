@@ -1948,6 +1948,198 @@ Deno.test(
 );
 
 Deno.test(
+  "slow sole Tavily fallback gets more time than optional corroboration",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: async (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          await new Promise((resolve) => setTimeout(resolve, 650));
+          return jsonResponse({
+            results: [
+              {
+                title: "Motor reference",
+                url: "https://engineering.example/motor",
+                content:
+                  "Un motor transforma energía en movimiento y trabajo mecánico.",
+                score: 0.94,
+              },
+              {
+                title: "Mechanical reference",
+                url: "https://physics.example/motor",
+                content:
+                  "Los motores convierten energía en trabajo mecánico y movimiento.",
+                score: 0.91,
+              },
+            ],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("sole Tavily fallback should receive a full fallback budget");
+    }
+    if (!result.sourceIds?.includes("https://engineering.example/motor")) {
+      throw new Error("expected Tavily evidence after the longer fallback wait");
+    }
+  },
+);
+
+Deno.test(
+  "stalled Gemini optional synthesis returns verified evidence promptly",
+  async () => {
+    const verifiedText =
+      "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({ query: { search: [{ title: "Motor" }] } });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract: verifiedText,
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          return new Promise<Response>(() => {});
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "GEMINI_API_KEY" ? "gemini-test-key" : undefined,
+    };
+
+    let guardTimer: number | undefined;
+    const guard = new Promise<never>((_, reject) => {
+      guardTimer = setTimeout(
+        () => reject(new Error("stalled Gemini synthesis blocked verified evidence")),
+        1_300,
+      );
+    });
+
+    let result;
+    try {
+      result = await Promise.race([
+        routeResearchQuery(
+          "Ultra, ¿qué es un motor?",
+          deps,
+          "",
+          "GENERAL_KNOWLEDGE",
+        ),
+        guard,
+      ]);
+    } finally {
+      if (guardTimer !== undefined) clearTimeout(guardTimer);
+    }
+
+    if (result.abstained || result.displayText !== verifiedText) {
+      throw new Error("verified Wikipedia evidence must survive stalled Gemini synthesis");
+    }
+  },
+);
+
+Deno.test(
+  "stalled xAI optional synthesis returns verified evidence promptly",
+  async () => {
+    const verifiedText =
+      "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({ query: { search: [{ title: "Motor" }] } });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract: verifiedText,
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+        if (url.hostname === "api.x.ai") {
+          return new Promise<Response>(() => {});
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "XAI_API_KEY" ? "xai-test-key" : undefined,
+    };
+
+    let guardTimer: number | undefined;
+    const guard = new Promise<never>((_, reject) => {
+      guardTimer = setTimeout(
+        () => reject(new Error("stalled xAI synthesis blocked verified evidence")),
+        1_300,
+      );
+    });
+
+    let result;
+    try {
+      result = await Promise.race([
+        routeResearchQuery(
+          "Ultra, ¿qué es un motor?",
+          deps,
+          "",
+          "GENERAL_KNOWLEDGE",
+        ),
+        guard,
+      ]);
+    } finally {
+      if (guardTimer !== undefined) clearTimeout(guardTimer);
+    }
+
+    if (result.abstained || result.displayText !== verifiedText) {
+      throw new Error("verified Wikipedia evidence must survive stalled xAI synthesis");
+    }
+  },
+);
+
+Deno.test(
   "stalled Tavily after Wikipedia abstention cannot block Gemini fallback",
   async () => {
     const expected =
