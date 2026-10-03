@@ -361,6 +361,118 @@ class UltraVerifiedResearchEngineTest {
     }
 
 
+    @Test
+    fun optionalStableKnowledgeAbstainsWhenProvidersGenuinelyConflict() {
+        val primary = object : UltraResearchProvider {
+            override val id = "primary-multi-source"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "maquina-que-transforma-energia",
+                    displayText = "Un motor es una máquina que transforma energía en trabajo mecánico.",
+                    sourceId = "https://fuente-uno.example/motor",
+                    supportingSourceIds = listOf("https://fuente-dos.example/motor"),
+                    independentSourceCount = 2,
+                    authoritative = false
+                )
+        }
+        val contradictoryFallback = object : UltraResearchProvider {
+            override val id = "wikimedia-public"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "animal-domestico",
+                    displayText = "Un motor es un animal doméstico de cuatro patas.",
+                    sourceId = "https://es.wikipedia.org/wiki/Motor",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(primary, contradictoryFallback)
+        )
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+            )
+
+            assertTrue(result.abstained)
+            assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+            assertTrue(
+                result.message.contains("corroboración", ignoreCase = true)
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun authoritativePublicFallbackDoesNotWaitForStalledPrimaryUntilFullDeadline() {
+        val primaryInterrupted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val primary = object : UltraResearchProvider {
+            override val id = "supabase-ultra-research"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                try {
+                    Thread.sleep(5_000L)
+                } catch (interrupted: InterruptedException) {
+                    primaryInterrupted.set(true)
+                    throw interrupted
+                }
+                return UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "primary",
+                    displayText = "Respuesta primaria tardía.",
+                    sourceId = "https://primary.example/motor",
+                    independentSourceCount = 2
+                )
+            }
+        }
+        val publicFallback = object : UltraResearchProvider {
+            override val id = "wikimedia-public"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "maquina-que-transforma-energia",
+                    displayText = "Un motor es una máquina que transforma energía en movimiento.",
+                    sourceId = "https://es.wikipedia.org/wiki/Motor",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(primary, publicFallback)
+        )
+        val request = UltraGeneralQueryRouter
+            .classify("Ultra, ¿qué es un motor?")
+            .copy(timeoutMillis = 2_000L)
+        val started = System.nanoTime()
+
+        try {
+            val result = engine.answer(request)
+            val elapsedMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - started
+            )
+
+            assertFalse(result.abstained)
+            assertTrue(result.fallbackUsed)
+            assertTrue(
+                elapsedMillis < 1_200L,
+                "El fallback tardó ${elapsedMillis}ms; no debe esperar el deadline completo."
+            )
+            assertEquals(UltraAnswerConfidence.MEDIUM, result.confidence)
+            Thread.sleep(50L)
+            assertTrue(primaryInterrupted.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+
     private fun fixedProvider(
         providerId: String,
         claimKey: String,
