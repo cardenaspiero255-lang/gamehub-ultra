@@ -8,35 +8,38 @@ import kotlin.test.assertTrue
 class UltraGeneralQueryRouterRegressionTest {
 
     @Test
-    fun stableDefinitionDoesNotRequireInternetToBeAnswerable() {
+    fun stableDefinitionIsOptionalInsteadOfInternetRequired() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, ¿qué es un motor?"
         )
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
+        assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
         assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
 
     @Test
-    fun generalKnowledgeUsesVerifiedResearchWithoutPretendingItIsFresh() {
+    fun generalKnowledgeUsesOptionalVerificationWithoutPretendingItIsFresh() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, por qué el cielo es azul"
         )
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
-        assertTrue(request.requiresInternet)
+        assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
+        assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
 
     @Test
-    fun generalScienceQuestionUsesVerifiedResearchInsteadOfGamingFallback() {
+    fun generalScienceQuestionUsesOptionalKnowledgeRoute() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, explícame qué es un agujero negro"
         )
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
-        assertTrue(request.requiresInternet)
+        assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
+        assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
 
@@ -46,6 +49,7 @@ class UltraGeneralQueryRouterRegressionTest {
             "GameHub Ultra, who are you?"
         )
 
+        assertEquals(UltraVerificationMode.LOCAL, request.verificationMode)
         assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
@@ -56,6 +60,7 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, who are you?"
         )
 
+        assertEquals(UltraVerificationMode.LOCAL, request.verificationMode)
         assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
@@ -67,6 +72,7 @@ class UltraGeneralQueryRouterRegressionTest {
         )
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
+        assertEquals(UltraVerificationMode.LOCAL, request.verificationMode)
         assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
@@ -77,7 +83,8 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, cuál es mi juego seleccionado y qué es Vulkan"
         )
 
-        assertTrue(request.requiresInternet)
+        assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
+        assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
 
@@ -87,7 +94,8 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, quién eres y qué es Vulkan"
         )
 
-        assertTrue(request.requiresInternet)
+        assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
+        assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
 
@@ -100,8 +108,10 @@ class UltraGeneralQueryRouterRegressionTest {
             "Gracias, ¿por qué el cielo es azul?"
         )
 
-        assertTrue(greetingQuestion.requiresInternet)
-        assertTrue(thanksQuestion.requiresInternet)
+        assertEquals(UltraVerificationMode.OPTIONAL, greetingQuestion.verificationMode)
+        assertEquals(UltraVerificationMode.OPTIONAL, thanksQuestion.verificationMode)
+        assertFalse(greetingQuestion.requiresInternet)
+        assertFalse(thanksQuestion.requiresInternet)
         assertFalse(greetingQuestion.requiresFreshData)
         assertFalse(thanksQuestion.requiresFreshData)
     }
@@ -115,23 +125,26 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, why is the sky blue?"
         )
 
+        assertEquals(UltraVerificationMode.LOCAL, title.verificationMode)
+        assertEquals(UltraVerificationMode.OPTIONAL, actualQuestion.verificationMode)
         assertFalse(title.requiresInternet)
-        assertTrue(actualQuestion.requiresInternet)
+        assertFalse(actualQuestion.requiresInternet)
     }
 
     @Test
-    fun technicalTroubleshootingUsesVerifiedResearch() {
+    fun technicalTroubleshootingUsesOptionalKnowledgeRoute() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, cómo soluciono un error de Gradle al compilar Android"
         )
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind)
-        assertTrue(request.requiresInternet)
+        assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
+        assertFalse(request.requiresInternet)
         assertFalse(request.requiresFreshData)
     }
 
     @Test
-    fun commonFactualInterrogativesUseVerifiedResearch() {
+    fun commonFactualInterrogativesUseOptionalKnowledgeRoute() {
         val spanishCount = UltraGeneralQueryRouter.classify(
             "Ultra, cuántos planetas hay en el sistema solar"
         )
@@ -142,12 +155,11 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, how many moons does Mars have?"
         )
 
-        assertTrue(spanishCount.requiresInternet)
-        assertTrue(spanishName.requiresInternet)
-        assertTrue(englishCount.requiresInternet)
-        assertFalse(spanishCount.requiresFreshData)
-        assertFalse(spanishName.requiresFreshData)
-        assertFalse(englishCount.requiresFreshData)
+        listOf(spanishCount, spanishName, englishCount).forEach { request ->
+            assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode)
+            assertFalse(request.requiresInternet)
+            assertFalse(request.requiresFreshData)
+        }
     }
 
     @Test
@@ -161,23 +173,26 @@ class UltraGeneralQueryRouterRegressionTest {
 
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, weatherDefinition.kind)
         assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, priceDefinition.kind)
+        assertEquals(UltraVerificationMode.OPTIONAL, weatherDefinition.verificationMode)
+        assertEquals(UltraVerificationMode.OPTIONAL, priceDefinition.verificationMode)
         assertFalse(weatherDefinition.requiresFreshData)
         assertFalse(priceDefinition.requiresFreshData)
     }
 
     @Test
-    fun explicitlyCurrentFactualQuestionIsMarkedFresh() {
+    fun explicitlyCurrentFactualQuestionIsMarkedFreshAndRequired() {
         val request = UltraGeneralQueryRouter.classify(
             "Ultra, cuál es la versión actual de Android"
         )
 
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
         assertTrue(request.requiresInternet)
         assertTrue(request.requiresFreshData)
         assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
     }
 
     @Test
-    fun definitionQuestionWithCurrentQualifierIsMarkedFresh() {
+    fun definitionQuestionWithCurrentQualifierIsMarkedFreshAndRequired() {
         val spanish = UltraGeneralQueryRouter.classify(
             "Ultra, qué es la versión actual de Android"
         )
@@ -186,6 +201,7 @@ class UltraGeneralQueryRouterRegressionTest {
         )
 
         listOf(spanish, english).forEach { request ->
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
             assertTrue(request.requiresInternet)
             assertTrue(request.requiresFreshData)
             assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
@@ -201,7 +217,8 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, hoy estoy aburrido"
         )
 
-        assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, greeting.kind)
+        assertEquals(UltraVerificationMode.LOCAL, greeting.verificationMode)
+        assertEquals(UltraVerificationMode.LOCAL, casual.verificationMode)
         assertFalse(greeting.requiresInternet)
         assertFalse(casual.requiresInternet)
     }
@@ -218,11 +235,24 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, qué salió nuevo de Resident Evil"
         )
 
-        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, weather.kind)
-        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, price.kind)
-        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, release.kind)
-        assertTrue(weather.requiresFreshData)
-        assertTrue(price.requiresFreshData)
-        assertTrue(release.requiresFreshData)
+        listOf(weather, price, release).forEach { request ->
+            assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
+            assertTrue(request.requiresInternet)
+            assertTrue(request.requiresFreshData)
+        }
+    }
+
+    @Test
+    fun legacyExplicitInternetRequirementRemainsRequired() {
+        val request = UltraGeneralQueryRequest(
+            originalText = "consulta externa explícita",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = true,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L
+        )
+
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
     }
 }

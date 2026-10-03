@@ -27,7 +27,7 @@ data class UltraGeneralQueryRequest(
             UltraVerificationMode.REQUIRED
         kind == UltraGeneralQueryKind.COMPARISON_RESEARCH ->
             UltraVerificationMode.REQUIRED
-        requiresInternet -> UltraVerificationMode.OPTIONAL
+        requiresInternet -> UltraVerificationMode.REQUIRED
         else -> UltraVerificationMode.LOCAL
     },
     val correlationId: String = UUID.randomUUID().toString()
