@@ -3240,3 +3240,37 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", async () => {
+  let observedThinking: Record<string, unknown> | undefined;
+  const deps = {
+    fetcher: async (_url: URL | Request | string, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body ?? "{}")) as {
+        generationConfig?: { thinkingConfig?: Record<string, unknown> };
+      };
+      observedThinking = request.generationConfig?.thinkingConfig;
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: "Un motor transforma energía en trabajo mecánico." }] } }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+    env: (name: string) => {
+      if (name === "GEMINI_API_KEY") return "gemini-test-key";
+      if (name === "GEMINI_MODEL") return "gemini-2.5-flash";
+      return undefined;
+    },
+  };
+
+  await routeResearchQuery(
+    "¿Qué es un motor?",
+    "",
+    deps,
+  );
+
+  if (!observedThinking || observedThinking.thinkingBudget === undefined) {
+    throw new Error("Gemini 2.5 must use thinkingBudget");
+  }
+  if ("thinkingLevel" in observedThinking) {
+    throw new Error("Gemini 2.5 must not send thinkingLevel");
+  }
+});
