@@ -259,10 +259,14 @@ class UltraWakeService : Service() {
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             .orEmpty()
 
-        val transcript = alternatives
-            .firstOrNull(::containsWakeWord)
-            ?: alternatives.firstOrNull { it.isNotBlank() }
-            .orEmpty()
+        val confidenceScores = results
+            ?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+
+        val transcript = UltraSpeechCandidateRanker.select(
+            alternatives = alternatives,
+            confidenceScores = confidenceScores,
+            prefer = ::containsWakeWord
+        ).orEmpty()
 
         when (
             UltraWakeBargeInPolicy.decide(
