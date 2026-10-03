@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 data class UltraResearchHttpResponse(
     val statusCode: Int,
@@ -31,9 +32,14 @@ interface UltraResearchBackendTransport {
                 timeoutMillis = timeoutMillis
             )
         )
+
+    fun cancelRequest(worker: Thread) = Unit
 }
 
 object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
+    private val activeConnections =
+        ConcurrentHashMap<Thread, HttpURLConnection>()
+
     override fun post(
         endpoint: String,
         apiKey: String,
@@ -59,6 +65,8 @@ object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
         timeoutMillis: Long
     ): UltraResearchHttpResponse {
         val connection = URL(endpoint).openConnection() as HttpURLConnection
+        val worker = Thread.currentThread()
+        activeConnections[worker] = connection
         val safeTimeout = timeoutMillis.coerceIn(1_000L, 60_000L).toInt()
         connection.requestMethod = "POST"
         connection.connectTimeout = safeTimeout
@@ -86,8 +94,13 @@ object HttpUrlConnectionUltraResearchTransport : UltraResearchBackendTransport {
                     .orEmpty()
             )
         } finally {
+            activeConnections.remove(worker, connection)
             connection.disconnect()
         }
+    }
+
+    override fun cancelRequest(worker: Thread) {
+        activeConnections.remove(worker)?.disconnect()
     }
 }
 
@@ -108,7 +121,13 @@ class SupabaseUltraResearchProvider(
                 error(result.message ?: "Research backend failed: ${result.reasonCode}")
         }
 
-    override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult {
+    override fun cancelActiveRequest(worker: Thread) {
+        transport.cancelRequest(worker)
+    }
+
+    override fun fetchResult(
+        request: UltraGeneralQueryRequest
+    ): UltraProviderResult {
         if (supabaseUrl.isBlank() || publishableKey.isBlank()) {
             return UltraProviderResult.Failure(
                 reasonCode = "BACKEND_NOT_CONFIGURED",

@@ -13,25 +13,35 @@ fun interface UltraResearchProviderSource {
 /**
  * Configurable provider source used by production composition and tests.
  *
- * Incomplete credentials intentionally expose no external provider so callers
- * fall back to Ultra's verified abstention/local-policy behavior.
+ * The private Supabase research backend remains the primary provider whenever
+ * its public client configuration is present. A keyless Wikimedia provider is
+ * always kept as a stable-knowledge fallback so ordinary definitions do not
+ * depend on a single backend.
  */
 class ConfiguredUltraResearchProviderSource(
     private val supabaseUrl: String,
     private val publishableKey: String,
     private val transport: UltraResearchBackendTransport =
-        HttpUrlConnectionUltraResearchTransport
+        HttpUrlConnectionUltraResearchTransport,
+    private val publicKnowledgeTransport: UltraPublicKnowledgeTransport =
+        HttpUrlConnectionUltraPublicKnowledgeTransport
 ) : UltraResearchProviderSource {
 
     override fun providers(): List<UltraResearchProvider> =
-        if (supabaseUrl.isBlank() || publishableKey.isBlank()) {
-            emptyList()
-        } else {
-            listOf(
-                SupabaseUltraResearchProvider(
-                    supabaseUrl = supabaseUrl,
-                    publishableKey = publishableKey,
-                    transport = transport
+        buildList {
+            if (supabaseUrl.isNotBlank() && publishableKey.isNotBlank()) {
+                add(
+                    SupabaseUltraResearchProvider(
+                        supabaseUrl = supabaseUrl,
+                        publishableKey = publishableKey,
+                        transport = transport
+                    )
+                )
+            }
+
+            add(
+                WikimediaUltraResearchProvider(
+                    transport = publicKnowledgeTransport
                 )
             )
         }

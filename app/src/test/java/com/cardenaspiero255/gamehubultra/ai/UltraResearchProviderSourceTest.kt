@@ -2,23 +2,25 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class UltraResearchProviderSourceTest {
 
     @Test
-    fun incompleteCredentialsExposeNoExternalResearchProvider() {
+    fun incompleteCredentialsKeepPublicStableKnowledgeProviderAvailable() {
         val source: UltraResearchProviderSource =
             ConfiguredUltraResearchProviderSource(
                 supabaseUrl = "https://example.supabase.co",
                 publishableKey = ""
             )
 
-        assertTrue(source.providers().isEmpty())
+        assertEquals(
+            listOf("wikimedia-public"),
+            source.providers().map { it.id }
+        )
     }
 
     @Test
-    fun completeCredentialsExposeProviderThroughGenericResearchBoundary() {
+    fun completeCredentialsKeepSupabasePrimaryAndPublicFallbackAvailable() {
         val source: UltraResearchProviderSource =
             ConfiguredUltraResearchProviderSource(
                 supabaseUrl = "https://example.supabase.co",
@@ -26,7 +28,7 @@ class UltraResearchProviderSourceTest {
             )
 
         assertEquals(
-            listOf("supabase-ultra-research"),
+            listOf("supabase-ultra-research", "wikimedia-public"),
             source.providers().map { it.id }
         )
     }
