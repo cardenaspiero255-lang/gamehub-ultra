@@ -8,13 +8,19 @@ package com.cardenaspiero255.gamehubultra.ai
  * [UltraProductionResearchProviderSource].
  */
 object UltraProductionQueryExecutor : UltraQueryExecutor {
+    private val researchCache = UltraResearchCache()
     private val delegate: UltraQueryExecutor = DefaultUltraQueryExecutor(
         coordinator = UltraQueryExecutionCoordinator(
             researchGateway = UltraVerifiedResearchEngine(
-                providers = UltraProductionResearchProviderSource.providers()
+                providers = UltraProductionResearchProviderSource.providers(),
+                cache = researchCache
             )
         )
     )
+
+    fun attachPersistentStore(store: UltraResearchPersistentStore) {
+        researchCache.attachPersistentStore(store)
+    }
 
     override fun answer(
         route: UltraAgentRoute.Chat,

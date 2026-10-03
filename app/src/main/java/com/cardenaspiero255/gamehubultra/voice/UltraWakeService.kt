@@ -103,6 +103,9 @@ class UltraWakeService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        GameHubProductionComposition.configureUltraResearchPersistence(
+            applicationContext
+        )
         foregroundController.ensureForeground()
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {

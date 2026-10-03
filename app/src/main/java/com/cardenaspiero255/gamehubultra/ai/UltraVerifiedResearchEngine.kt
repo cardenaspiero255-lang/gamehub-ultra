@@ -78,6 +78,17 @@ data class UltraVerifiedResearchResult(
     val upstreamStatus: Int? = null
 )
 
+data class UltraResearchPersistentEntry(
+    val result: UltraVerifiedResearchResult,
+    val expiresAtMillis: Long
+)
+
+interface UltraResearchPersistentStore {
+    fun read(key: String): UltraResearchPersistentEntry?
+    fun write(key: String, entry: UltraResearchPersistentEntry)
+    fun remove(key: String)
+}
+
 class UltraResearchCache {
     companion object {
         const val CURRENT_DATA_TTL_MS = 5 * 60 * 1000L
@@ -93,26 +104,78 @@ class UltraResearchCache {
 
     private val entries = LinkedHashMap<String, Entry>()
 
+    @Volatile
+    private var persistentStore: UltraResearchPersistentStore? = null
+
     @Synchronized
-    fun get(key: String, nowMillis: Long): UltraVerifiedResearchResult? {
-        val entry = entries[key] ?: return null
-        if (nowMillis >= entry.expiresAtMillis) {
+    fun attachPersistentStore(store: UltraResearchPersistentStore) {
+        persistentStore = store
+    }
+
+    @Synchronized
+    fun get(
+        key: String,
+        nowMillis: Long,
+        allowPersistent: Boolean = false
+    ): UltraVerifiedResearchResult? {
+        entries[key]?.let { entry ->
+            if (nowMillis < entry.expiresAtMillis) {
+                return entry.result.copy(fromCache = true)
+            }
             entries.remove(key)
+        }
+
+        if (!allowPersistent) return null
+        val store = persistentStore ?: return null
+        val persisted = runCatching { store.read(key) }.getOrNull() ?: return null
+        if (nowMillis >= persisted.expiresAtMillis) {
+            runCatching { store.remove(key) }
             return null
         }
-        return entry.result.copy(fromCache = true)
+
+        entries[key] = Entry(
+            result = persisted.result.copy(fromCache = false),
+            expiresAtMillis = persisted.expiresAtMillis
+        )
+        trimMemoryEntries()
+        return persisted.result.copy(fromCache = true)
     }
 
     @Synchronized
     fun put(
         key: String,
         result: UltraVerifiedResearchResult,
-        expiresAtMillis: Long
+        expiresAtMillis: Long,
+        persist: Boolean = false
     ) {
+        val cacheable = result.copy(fromCache = false)
         entries[key] = Entry(
-            result = result.copy(fromCache = false),
+            result = cacheable,
             expiresAtMillis = expiresAtMillis
         )
+        trimMemoryEntries()
+
+        if (
+            persist &&
+            !cacheable.abstained &&
+            !cacheable.sensitiveInputBlocked
+        ) {
+            val store = persistentStore
+            if (store != null) {
+                runCatching {
+                    store.write(
+                        key = key,
+                        entry = UltraResearchPersistentEntry(
+                            result = cacheable,
+                            expiresAtMillis = expiresAtMillis
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun trimMemoryEntries() {
         while (entries.size > MAX_ENTRIES) {
             val oldest = entries.entries.firstOrNull()?.key ?: break
             entries.remove(oldest)
@@ -163,7 +226,12 @@ class UltraVerifiedResearchEngine(
         }
 
         val key = cacheKey(request)
-        cache.get(key, nowMillis())?.let { return it }
+        val usePersistentCache = shouldUsePersistentCache(request)
+        cache.get(
+            key = key,
+            nowMillis = nowMillis(),
+            allowPersistent = usePersistentCache
+        )?.let { return it }
 
         if (providers.isEmpty()) {
             return abstention(
@@ -357,7 +425,8 @@ class UltraVerifiedResearchEngine(
         cache.put(
             key = key,
             result = result,
-            expiresAtMillis = nowMillis() + ttlMillis(request)
+            expiresAtMillis = nowMillis() + ttlMillis(request),
+            persist = usePersistentCache
         )
         return result
     }
@@ -416,6 +485,13 @@ class UltraVerifiedResearchEngine(
                 .lowercase(Locale.ROOT)
                 .replace(Regex("""\s+"""), " ")
                 .trim()
+
+    private fun shouldUsePersistentCache(
+        request: UltraGeneralQueryRequest
+    ): Boolean =
+        request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
+            request.verificationMode == UltraVerificationMode.OPTIONAL &&
+            !request.requiresFreshData
 
     private fun ttlMillis(request: UltraGeneralQueryRequest): Long =
         if (request.requiresFreshData) {
