@@ -1,7 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
-import com.sun.net.httpserver.HttpServer
-import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -493,56 +492,50 @@ class WikimediaUltraResearchProviderTest {
 
     @Test
     fun httpTransportReadsSuccessBodyAndSendsExpectedHeaders() {
-        val method = AtomicReference<String>()
-        val accept = AtomicReference<String>()
-        val userAgent = AtomicReference<String>()
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/ok") { exchange ->
-            method.set(exchange.requestMethod)
-            accept.set(exchange.requestHeaders.getFirst("Accept"))
-            userAgent.set(exchange.requestHeaders.getFirst("User-Agent"))
-            val body = """{"ok":true}""".toByteArray(Charsets.UTF_8)
-            exchange.sendResponseHeaders(200, body.size.toLong())
-            exchange.responseBody.use { it.write(body) }
-        }
-        server.start()
+        val requestLines = AtomicReference<List<String>>(emptyList())
 
-        try {
+        withRawHttpServer(
+            status = 200,
+            body = """{"ok":true}""",
+            capturedRequestLines = requestLines
+        ) { url ->
             val response = HttpUrlConnectionUltraPublicKnowledgeTransport.get(
-                "http://127.0.0.1:" + server.address.port + "/ok",
+                url,
                 10L
             )
 
             assertEquals(200, response.statusCode)
             assertEquals("""{"ok":true}""", response.body)
-            assertEquals("GET", method.get())
-            assertEquals("application/json", accept.get())
-            assertTrue(userAgent.get().contains("GameHub-Ultra"))
-        } finally {
-            server.stop(0)
         }
+
+        val lines = requestLines.get()
+        assertTrue(lines.firstOrNull()?.startsWith("GET ") == true)
+        assertTrue(
+            lines.any {
+                it.equals("Accept: application/json", ignoreCase = true)
+            }
+        )
+        assertTrue(
+            lines.any {
+                it.startsWith("User-Agent:", ignoreCase = true) &&
+                    it.contains("GameHub-Ultra")
+            }
+        )
     }
 
     @Test
     fun httpTransportReadsErrorStreamBody() {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/error") { exchange ->
-            val body = "temporal".toByteArray(Charsets.UTF_8)
-            exchange.sendResponseHeaders(503, body.size.toLong())
-            exchange.responseBody.use { it.write(body) }
-        }
-        server.start()
-
-        try {
+        withRawHttpServer(
+            status = 503,
+            body = "temporal"
+        ) { url ->
             val response = HttpUrlConnectionUltraPublicKnowledgeTransport.get(
-                "http://127.0.0.1:" + server.address.port + "/error",
+                url,
                 50_000L
             )
 
             assertEquals(503, response.statusCode)
             assertEquals("temporal", response.body)
-        } finally {
-            server.stop(0)
         }
     }
 
@@ -606,7 +599,7 @@ class WikimediaUltraResearchProviderTest {
             scriptedTransport(
                 searchBody = """{"title":"API"}""",
                 extractBody =
-                    """{"extract":"API\\tsegura\\rcon\\nsaltos\\b y barra \\\\ y cita \\" y slash \\/ y unicode \\u00f1.","canonicalurl":"https:\\/\\/example.com\\/api"}"""
+                    "{\"extract\":\"API\\\\tsegura\\\\rcon\\\\nsaltos y barra \\\\\\\\ y slash \\\\/ y unicode \\\\u00f1.\",\"canonicalurl\":\"https:\\\\/\\\\/example.com\\\\/api\"}"
             )
         )
 
@@ -617,10 +610,71 @@ class WikimediaUltraResearchProviderTest {
         val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
         assertTrue(evidence.displayText.contains("API segura con saltos"))
         assertTrue(evidence.displayText.contains("\\"))
-        assertTrue(evidence.displayText.contains("""))
         assertTrue(evidence.displayText.contains("/"))
         assertTrue(evidence.displayText.contains("ñ"))
         assertEquals("https://example.com/api", evidence.sourceId)
+    }
+
+    private fun withRawHttpServer(
+        status: Int,
+        body: String,
+        capturedRequestLines: AtomicReference<List<String>>? = null,
+        block: (String) -> Unit
+    ) {
+        val server = ServerSocket(0)
+        val serverFailure = AtomicReference<Throwable?>(null)
+        val thread = Thread {
+            try {
+                server.accept().use { socket ->
+                    val reader = socket.getInputStream()
+                        .bufferedReader(Charsets.UTF_8)
+                    val lines = mutableListOf<String>()
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        if (line.isEmpty()) break
+                        lines += line
+                    }
+                    capturedRequestLines?.set(lines)
+
+                    val bytes = body.toByteArray(Charsets.UTF_8)
+                    val reason = if (status in 200..299) "OK" else "Error"
+                    val headers = buildString {
+                        append("HTTP/1.1 ")
+                        append(status)
+                        append(' ')
+                        append(reason)
+                        append("\r\n")
+                        append("Content-Type: application/json\r\n")
+                        append("Content-Length: ")
+                        append(bytes.size)
+                        append("\r\n")
+                        append("Connection: close\r\n\r\n")
+                    }.toByteArray(Charsets.UTF_8)
+
+                    socket.getOutputStream().use { output ->
+                        output.write(headers)
+                        output.write(bytes)
+                        output.flush()
+                    }
+                }
+            } catch (error: Throwable) {
+                if (!server.isClosed) {
+                    serverFailure.set(error)
+                }
+            }
+        }
+        thread.isDaemon = true
+        thread.start()
+
+        try {
+            block("http://127.0.0.1:" + server.localPort + "/test")
+        } finally {
+            server.close()
+            thread.join(3_000L)
+        }
+
+        serverFailure.get()?.let { throw it }
+        assertFalse(thread.isAlive, "El servidor HTTP de prueba no terminó")
     }
 
     private fun scriptedTransport(
