@@ -217,13 +217,15 @@ const EVIDENCE_WRITTEN_QUANTITIES = new Map<string, string>([
 
 function evidenceQuantityValue(token: string): string | null {
   const normalized = token.replace(/%$/, "").replace(",", ".");
-  if (/^\d+(?:\.\d+)?$/.test(normalized)) return normalized;
+  if (/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) {
+    return normalized.startsWith("+") ? normalized.slice(1) : normalized;
+  }
   return EVIDENCE_WRITTEN_QUANTITIES.get(normalized) ?? null;
 }
 
 function evidenceNumericFacts(value: string): Map<string, Set<string>> {
   const rawTokens = normalize(value)
-    .replace(/[^a-z0-9.,%]+/g, " ")
+    .replace(/[^a-z0-9.,%+-]+/g, " ")
     .split(" ")
     .map((token) => token.trim())
     .filter(Boolean);
