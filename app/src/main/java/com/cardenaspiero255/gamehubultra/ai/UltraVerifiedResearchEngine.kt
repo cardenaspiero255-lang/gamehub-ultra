@@ -613,19 +613,23 @@ class UltraVerifiedResearchEngine(
     ): Boolean {
         val firstText = first.displayText + " " + first.value
         val secondText = second.displayText + " " + second.value
-        if (
-            stableKnowledgeHasExplicitNegation(firstText) !=
-            stableKnowledgeHasExplicitNegation(secondText)
-        ) {
-            return false
+        val firstTokens = stableKnowledgeTokens(firstText)
+        val secondTokens = stableKnowledgeTokens(secondText)
+        val firstNegatedPredicates = stableKnowledgeNegatedPredicates(firstText)
+        val secondNegatedPredicates = stableKnowledgeNegatedPredicates(secondText)
+
+        val firstContradictsSecond = firstNegatedPredicates.any { predicate ->
+            predicate in secondTokens && predicate !in secondNegatedPredicates
         }
+        val secondContradictsFirst = secondNegatedPredicates.any { predicate ->
+            predicate in firstTokens && predicate !in firstNegatedPredicates
+        }
+        if (firstContradictsSecond || secondContradictsFirst) return false
 
         val firstValue = normalizeStableText(first.value)
         val secondValue = normalizeStableText(second.value)
         if (firstValue.isNotBlank() && firstValue == secondValue) return true
 
-        val firstTokens = stableKnowledgeTokens(firstText)
-        val secondTokens = stableKnowledgeTokens(secondText)
         if (firstTokens.isEmpty() || secondTokens.isEmpty()) return false
 
         val overlap = firstTokens.intersect(secondTokens)
@@ -638,10 +642,35 @@ class UltraVerifiedResearchEngine(
         return overlap.size.toDouble() / smallerEvidence.toDouble() >= 0.30
     }
 
-    private fun stableKnowledgeHasExplicitNegation(value: String): Boolean =
-        STABLE_KNOWLEDGE_NEGATION_PATTERN.containsMatchIn(
-            normalizeStableText(value)
-        )
+    private fun stableKnowledgeNegatedPredicates(value: String): Set<String> {
+        val normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+            .replace(Regex("""\p{M}+"""), "")
+            .lowercase(Locale.ROOT)
+
+        return normalized
+            .split(Regex("""[.!?;,:]+"""))
+            .asSequence()
+            .flatMap { clause ->
+                val tokens = clause
+                    .replace(Regex("""[^a-z0-9]+"""), " ")
+                    .split(' ')
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+
+                tokens.indices.asSequence()
+                    .filter { index -> tokens[index] in STABLE_KNOWLEDGE_NEGATIONS }
+                    .mapNotNull { index ->
+                        tokens
+                            .drop(index + 1)
+                            .firstOrNull { token ->
+                                token.length >= 3 &&
+                                    token !in STABLE_KNOWLEDGE_STOP_WORDS &&
+                                    token !in STABLE_KNOWLEDGE_NEGATION_FILLERS
+                            }
+                    }
+            }
+            .toSet()
+    }
 
     private fun stableKnowledgeTokens(value: String): Set<String> =
         normalizeStableText(value)
@@ -693,8 +722,13 @@ class UltraVerifiedResearchEngine(
     private companion object {
         const val PRIMARY_PROVIDER_GRACE_MS = 350L
 
-        val STABLE_KNOWLEDGE_NEGATION_PATTERN = Regex(
-            """\b(?:no|nunca|jamas|tampoco|ni)\b"""
+        val STABLE_KNOWLEDGE_NEGATIONS = setOf(
+            "no", "nunca", "jamas", "tampoco", "ni"
+        )
+
+        val STABLE_KNOWLEDGE_NEGATION_FILLERS = setOf(
+            "esta", "estan", "este", "estos", "estas", "puede", "pueden",
+            "debe", "deben", "suele", "suelen", "solo", "solamente"
         )
 
         val STABLE_KNOWLEDGE_STOP_WORDS = setOf(
