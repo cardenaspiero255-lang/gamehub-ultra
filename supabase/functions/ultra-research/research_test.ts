@@ -3244,7 +3244,7 @@ Deno.test(
 Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", async () => {
   let observedThinking: Record<string, unknown> | undefined;
   const deps = {
-    fetcher: async (_url: URL | Request | string, init?: RequestInit) => {
+    fetcher: (_url: URL | Request | string, init?: RequestInit) => {
       const request = JSON.parse(String(init?.body ?? "{}")) as {
         generationConfig?: { thinkingConfig?: Record<string, unknown> };
       };
