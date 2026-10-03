@@ -151,6 +151,39 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun multipleUrlsFromOneIndependentSourceDoNotUpgradeConfidence() {
+        val provider = object : UltraResearchProvider {
+            override val id = "single-domain"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:recursion",
+                    value = "recursion-definition",
+                    displayText = "La recursión consiste en aplicar una definición sobre sí misma.",
+                    sourceId = "https://es.stackoverflow.com/questions/1",
+                    supportingSourceIds = listOf(
+                        "https://es.stackoverflow.com/a/2"
+                    ),
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es la recursión?")
+            )
+
+            assertFalse(result.abstained)
+            assertEquals(UltraAnswerConfidence.MEDIUM, result.confidence)
+            assertEquals(2, result.sources.size)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun lowConfidenceGeneralKnowledgeIsReturnedInsteadOfGenericAbstention() {
         val provider = fixedProvider(
             providerId = "general-assistant",
