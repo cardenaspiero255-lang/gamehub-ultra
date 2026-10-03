@@ -19,7 +19,7 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
         timeoutMillis: Long
     ): UltraResearchHttpResponse {
         val connection = URL(url).openConnection() as HttpURLConnection
-        val safeTimeout = timeoutMillis.coerceIn(1_000L, 20_000L).toInt()
+        val safeTimeout = timeoutMillis.coerceIn(250L, 5_000L).toInt()
         connection.requestMethod = "GET"
         connection.connectTimeout = safeTimeout
         connection.readTimeout = safeTimeout
@@ -83,6 +83,14 @@ class WikimediaUltraResearchProvider(
             )
         }
 
+        val currentQuestion = currentQuestionText(request.originalText)
+        if (isDependentFollowUpWithoutSubject(currentQuestion)) {
+            return UltraProviderResult.Abstained(
+                reasonCode = "PUBLIC_FALLBACK_CONTEXT_REQUIRED",
+                message = "Necesito el tema explícito para usar el fallback público."
+            )
+        }
+
         val topic = extractTopic(request.originalText)
         if (topic.isBlank()) {
             return UltraProviderResult.Abstained(
@@ -91,6 +99,13 @@ class WikimediaUltraResearchProvider(
             )
         }
 
+        val deadlineNanos = System.nanoTime() +
+            java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(
+                request.timeoutMillis.coerceAtLeast(1L)
+            )
+        val perCallBudgetMillis = (request.timeoutMillis / 4L)
+            .coerceIn(250L, 1_200L)
+
         val searchUrl = buildString {
             append("https://es.wikipedia.org/w/api.php")
             append("?action=query&list=search&srlimit=1&format=json&origin=*")
@@ -98,8 +113,13 @@ class WikimediaUltraResearchProvider(
             append(urlEncode(topic))
         }
 
+        val searchTimeout = remainingCallTimeoutMillis(
+            deadlineNanos = deadlineNanos,
+            perCallBudgetMillis = perCallBudgetMillis
+        ) ?: return timeoutFailure("wikimedia-search")
+
         val searchResponse = when (
-            val attempt = getSafely(searchUrl, request.timeoutMillis)
+            val attempt = getSafely(searchUrl, searchTimeout)
         ) {
             is TransportOutcome.Success -> attempt.response
             is TransportOutcome.Failure ->
@@ -118,16 +138,29 @@ class WikimediaUltraResearchProvider(
                 stage = "wikimedia-search"
             )
 
+        if (!titleMatchesTopic(topic, title)) {
+            return UltraProviderResult.Abstained(
+                reasonCode = "PUBLIC_FALLBACK_IRRELEVANT_RESULT",
+                message = "Wikimedia encontró una página que no coincide con el tema.",
+                stage = "wikimedia-search"
+            )
+        }
+
         val extractUrl = buildString {
             append("https://es.wikipedia.org/w/api.php")
-            append("?action=query&prop=extracts%7Cinfo&inprop=url")
+            append("?action=query&prop=extracts%7Cinfo%7Cpageprops&inprop=url")
             append("&exintro=1&explaintext=1&redirects=1&format=json&origin=*")
             append("&titles=")
             append(urlEncode(title))
         }
 
+        val extractTimeout = remainingCallTimeoutMillis(
+            deadlineNanos = deadlineNanos,
+            perCallBudgetMillis = perCallBudgetMillis
+        ) ?: return timeoutFailure("wikimedia-extract")
+
         val extractResponse = when (
-            val attempt = getSafely(extractUrl, request.timeoutMillis)
+            val attempt = getSafely(extractUrl, extractTimeout)
         ) {
             is TransportOutcome.Success -> attempt.response
             is TransportOutcome.Failure ->
@@ -137,6 +170,14 @@ class WikimediaUltraResearchProvider(
             return httpFailure(
                 extractResponse.statusCode,
                 "wikimedia-extract"
+            )
+        }
+
+        if (jsonHasKey(extractResponse.body, "disambiguation")) {
+            return UltraProviderResult.Abstained(
+                reasonCode = "PUBLIC_FALLBACK_DISAMBIGUATION",
+                message = "Wikimedia devolvió una página de desambiguación.",
+                stage = "wikimedia-extract"
             )
         }
 
@@ -217,6 +258,89 @@ class WikimediaUltraResearchProvider(
             stage = stage,
             upstreamStatus = status
         )
+
+    private fun remainingCallTimeoutMillis(
+        deadlineNanos: Long,
+        perCallBudgetMillis: Long
+    ): Long? {
+        val remainingNanos = deadlineNanos - System.nanoTime()
+        if (remainingNanos <= 0L) return null
+
+        val remainingMillis = java.util.concurrent.TimeUnit.NANOSECONDS
+            .toMillis(remainingNanos)
+        if (remainingMillis < 250L) return null
+
+        return minOf(
+            perCallBudgetMillis,
+            remainingMillis
+        ).coerceAtLeast(250L)
+    }
+
+    private fun timeoutFailure(
+        stage: String
+    ): UltraProviderResult.Failure =
+        UltraProviderResult.Failure(
+            reasonCode = "UPSTREAM_TIMEOUT",
+            message = "Wikimedia agotó el presupuesto de tiempo.",
+            retryable = true,
+            stage = stage
+        )
+
+    private fun currentQuestionText(originalText: String): String =
+        originalText
+            .substringAfterLast("Pregunta actual:", originalText)
+            .trim()
+
+    private fun isDependentFollowUpWithoutSubject(value: String): Boolean {
+        val normalized = normalizeForComparison(
+            value.replace(
+                Regex(
+                    """^\s*(?:gamehub\s+ultra|gamehub|ultra)\s*[,;:.-]?\s*""",
+                    RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+        )
+            .replace(Regex("""[^a-z0-9]+"""), " ")
+            .trim()
+
+        if (normalized.isBlank()) return true
+
+        val pronounLed = Regex(
+            """^(?:y\s+)?(?:eso|esto|esa|ese|aquello|el|ella|ellos|ellas)\b"""
+        )
+        val questionWithPronoun = Regex(
+            """^(?:y\s+)?(?:como|que|por que|cuando|donde)\b.*\b(?:eso|esto|esa|ese|aquello)\b"""
+        )
+        return pronounLed.containsMatchIn(normalized) ||
+            questionWithPronoun.containsMatchIn(normalized)
+    }
+
+    private fun titleMatchesTopic(
+        topic: String,
+        title: String
+    ): Boolean {
+        val topicTokens = meaningfulTokens(topic)
+        val titleTokens = meaningfulTokens(title)
+        if (topicTokens.isEmpty() || titleTokens.isEmpty()) return false
+        return topicTokens.intersect(titleTokens).isNotEmpty()
+    }
+
+    private fun meaningfulTokens(value: String): Set<String> =
+        normalizeForComparison(value)
+            .replace(Regex("""[^a-z0-9]+"""), " ")
+            .split(' ')
+            .asSequence()
+            .map(String::trim)
+            .filter { it.length >= 3 }
+            .filterNot(TOPIC_STOP_WORDS::contains)
+            .toSet()
+
+    private fun jsonHasKey(
+        json: String,
+        key: String
+    ): Boolean =
+        json.contains("\"$key\"")
 
     private fun extractTopic(originalText: String): String {
         val current = originalText
@@ -357,5 +481,10 @@ class WikimediaUltraResearchProvider(
 
     private companion object {
         const val MAX_DISPLAY_CHARS = 1_800
+
+        val TOPIC_STOP_WORDS = setOf(
+            "una", "uno", "unos", "unas", "que", "del", "las", "los",
+            "como", "para", "por", "con", "what", "who", "are", "the"
+        )
     }
 }
