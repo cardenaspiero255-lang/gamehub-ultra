@@ -337,6 +337,49 @@ class WikimediaUltraResearchProviderTest {
     }
 
     @Test
+    fun properNameDefiniteArticleIsPreservedInSearchTopic() {
+        var searchUrl = ""
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, _ ->
+                if (url.contains("list=search")) {
+                    searchUrl = url
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"search":[{"title":"El Niño"}]}}"""
+                    )
+                } else {
+                    UltraResearchHttpResponse(
+                        200,
+                        """
+                            {
+                              "query":{
+                                "pages":{
+                                  "1":{
+                                    "extract":"El Niño es un fenómeno climático del Pacífico tropical.",
+                                    "canonicalurl":"https://es.wikipedia.org/wiki/El_Ni%C3%B1o"
+                                  }
+                                }
+                              }
+                            }
+                        """.trimIndent()
+                    )
+                }
+            }
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es El Niño?")
+        )
+
+        assertIs<UltraProviderResult.Evidence>(result)
+        assertTrue(
+            searchUrl.contains("srsearch=El+Ni%C3%B1o") ||
+                searchUrl.contains("srsearch=El%20Ni%C3%B1o"),
+            "La búsqueda debe conservar el artículo del nombre propio: $searchUrl"
+        )
+    }
+
+    @Test
     fun currentQuestionSuffixAndInvocationAreRemovedBeforeSearch() {
         var searchUrl = ""
         val provider = WikimediaUltraResearchProvider(
