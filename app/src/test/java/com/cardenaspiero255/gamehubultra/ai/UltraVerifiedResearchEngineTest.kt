@@ -598,7 +598,6 @@ class UltraVerifiedResearchEngineTest {
         val engine = UltraVerifiedResearchEngine(listOf(primary, fallback))
 
         try {
-            assertTrue(entered.await(1, java.util.concurrent.TimeUnit.SECONDS))
             val result = engine.answer(
                 UltraGeneralQueryRouter
                     .classify("Ultra, ¿qué es un motor?")
@@ -607,6 +606,7 @@ class UltraVerifiedResearchEngineTest {
 
             assertFalse(result.abstained)
             assertTrue(result.fallbackUsed)
+            assertEquals(0L, entered.count)
             assertEquals(1, cancelCalls.get())
             assertTrue(released.await(1, java.util.concurrent.TimeUnit.SECONDS))
         } finally {
