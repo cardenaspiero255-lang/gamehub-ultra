@@ -611,12 +611,23 @@ def main() -> None:
         "register_sentry_release.py",
     )
 
-    require_step(
+    release_upload = require_step(
         android,
         "device-validation",
         "Upload installable release outputs",
         uses_prefix="actions/upload-artifact@",
+        allowed_if="env.SUPABASE_PUBLISHABLE_KEY != ''",
     )
+    release_upload_with = release_upload.get("with")
+    if not isinstance(release_upload_with, dict):
+        fail("Release artifact upload configuration is missing")
+    release_upload_paths = str(release_upload_with.get("path", ""))
+    for required_path in (
+        "app/build/outputs/apk/release/**/*.apk",
+        "app/build/outputs/bundle/release/**/*.aab",
+    ):
+        if required_path not in release_upload_paths:
+            fail(f"Release artifact upload lost required output: {required_path}")
 
     coverage_generate = require_step(
         coverage,
