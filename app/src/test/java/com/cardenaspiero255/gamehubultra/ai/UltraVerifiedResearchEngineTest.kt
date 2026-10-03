@@ -626,6 +626,57 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun fastFallbackStillAllowsHealthyPrimaryToFinish() {
+        val primary = object : UltraResearchProvider {
+            override val id = "supabase-ultra-research"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                Thread.sleep(600L)
+                return UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "primary-verified",
+                    displayText = "Un motor transforma energía en trabajo mecánico.",
+                    sourceId = "https://primary.example/motor",
+                    supportingSourceIds = listOf("https://primary-two.example/motor"),
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+            }
+        }
+        val fastFallback = object : UltraResearchProvider {
+            override val id = "wikimedia-public"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "public-fallback",
+                    displayText = "Un motor es una máquina que produce movimiento.",
+                    sourceId = "https://es.wikipedia.org/wiki/Motor",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(primary, fastFallback))
+        val request = UltraGeneralQueryRouter
+            .classify("Ultra, ¿qué es un motor?")
+            .copy(timeoutMillis = 2_000L)
+
+        try {
+            val result = engine.answer(request)
+
+            assertFalse(result.abstained)
+            assertFalse(result.fallbackUsed)
+            assertEquals(
+                "Un motor transforma energía en trabajo mecánico.",
+                result.message
+            )
+            assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun authoritativePublicFallbackDoesNotWaitForStalledPrimaryUntilFullDeadline() {
         val primaryInterrupted = java.util.concurrent.atomic.AtomicBoolean(false)
         val primary = object : UltraResearchProvider {
