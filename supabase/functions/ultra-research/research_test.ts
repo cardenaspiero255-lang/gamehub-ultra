@@ -1980,18 +1980,22 @@ Deno.test(
         "expected xAI grounded synthesis when Gemini is unavailable",
       );
     }
-    if (!xaiRequestBody) {
+    const capturedXaiRequest = xaiRequestBody as Record<
+      string,
+      unknown
+    > | null;
+    if (!capturedXaiRequest) {
       throw new Error("expected grounded xAI request body");
     }
-    if (xaiRequestBody.reasoning_effort !== "low") {
+    if (capturedXaiRequest.reasoning_effort !== "low") {
       throw new Error("grounded xAI synthesis must use low reasoning effort");
     }
-    if (xaiRequestBody.max_completion_tokens !== 1500) {
+    if (capturedXaiRequest.max_completion_tokens !== 1500) {
       throw new Error(
         "grounded xAI synthesis needs completion-token headroom",
       );
     }
-    if ("max_tokens" in xaiRequestBody) {
+    if ("max_tokens" in capturedXaiRequest) {
       throw new Error(
         "grounded xAI synthesis must not use legacy max_tokens",
       );
