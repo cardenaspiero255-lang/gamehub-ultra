@@ -581,7 +581,7 @@ class WikimediaUltraResearchProviderTest {
         val provider = WikimediaUltraResearchProvider(
             scriptedTransport(
                 searchBody = """{"title":"Motor"}""",
-                extractBody = """{"extract":"Motor inválido \\uZZZZ"}"""
+                extractBody = """{"extract":"Motor inválido \uZZZZ"}"""
             )
         )
 
@@ -598,8 +598,9 @@ class WikimediaUltraResearchProviderTest {
         val provider = WikimediaUltraResearchProvider(
             scriptedTransport(
                 searchBody = """{"title":"API"}""",
-                extractBody =
-                    "{\"extract\":\"API\\\\tsegura\\\\rcon\\\\nsaltos y barra \\\\\\\\ y slash \\\\/ y unicode \\\\u00f1.\",\"canonicalurl\":\"https:\\\\/\\\\/example.com\\\\/api\"}"
+                extractBody = """
+                    {"extract":"API\tsegura\rcon\nsaltos y barra \\ y slash \/ y unicode \u00f1.","canonicalurl":"https:\/\/example.com\/api"}
+                """.trimIndent()
             )
         )
 
