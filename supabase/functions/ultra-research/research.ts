@@ -153,6 +153,76 @@ function candidateSupportsPrimary(
   return queryOverlap.length >= 1 && evidenceOverlap.length >= 2;
 }
 
+function generalKnowledgeRouteTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_GENERAL_ROUTE_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(800, Math.min(10_000, Math.trunc(configured)));
+  }
+  return 4_500;
+}
+
+function primaryEvidenceTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(150, Math.min(3_000, Math.trunc(configured)));
+  }
+  return 1_000;
+}
+
+function remainingRouteBudgetMs(deadlineAt: number): number {
+  return Math.max(0, Math.trunc(deadlineAt - performance.now()));
+}
+
+function boundedTimeout(
+  configured: number,
+  remainingBudget?: number,
+): number {
+  if (remainingBudget === undefined) return configured;
+  return Math.max(1, Math.min(configured, remainingBudget));
+}
+
+async function settlePrimaryKnowledgeEvidence(
+  promise: Promise<ResearchResult>,
+  controller: AbortController,
+  deps: ResearchDependencies,
+  remainingBudget?: number,
+): Promise<ResearchResult> {
+  let timer: number | undefined;
+  const timeoutMs = boundedTimeout(
+    primaryEvidenceTimeoutMs(deps),
+    remainingBudget,
+  );
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "La fuente primaria tardó demasiado; probaré los respaldos disponibles.",
+          {
+            reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
+            retryable: true,
+            stage: "wikipedia",
+          },
+        ),
+      );
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function optionalCorroborationTimeoutMs(
   deps: ResearchDependencies,
 ): number {
@@ -169,6 +239,7 @@ async function settleOptionalCorroboration(
   promise: Promise<ResearchResult>,
   controller: AbortController,
   deps: ResearchDependencies,
+  remainingBudget?: number,
 ): Promise<ResearchResult> {
   let timer: number | undefined;
   const timeout = new Promise<ResearchResult>((resolve) => {
@@ -184,7 +255,7 @@ async function settleOptionalCorroboration(
           },
         ),
       );
-    }, optionalCorroborationTimeoutMs(deps));
+    }, boundedTimeout(optionalCorroborationTimeoutMs(deps), remainingBudget));
   });
 
   try {
@@ -210,6 +281,7 @@ async function settleFallbackEvidence(
   promise: Promise<ResearchResult>,
   controller: AbortController,
   deps: ResearchDependencies,
+  remainingBudget?: number,
 ): Promise<ResearchResult> {
   let timer: number | undefined;
   const timeout = new Promise<ResearchResult>((resolve) => {
@@ -225,7 +297,7 @@ async function settleFallbackEvidence(
           },
         ),
       );
-    }, fallbackEvidenceTimeoutMs(deps));
+    }, boundedTimeout(fallbackEvidenceTimeoutMs(deps), remainingBudget));
   });
 
   try {
@@ -252,13 +324,14 @@ async function settleOptionalSynthesis(
   controller: AbortController,
   evidence: ResearchResult,
   deps: ResearchDependencies,
+  remainingBudget?: number,
 ): Promise<ResearchResult> {
   let timer: number | undefined;
   const timeout = new Promise<ResearchResult>((resolve) => {
     timer = setTimeout(() => {
       controller.abort();
       resolve(evidence);
-    }, optionalSynthesisTimeoutMs(deps));
+    }, boundedTimeout(optionalSynthesisTimeoutMs(deps), remainingBudget));
   });
 
   try {
@@ -285,6 +358,7 @@ async function settleGeneralModelFallback(
   controller: AbortController,
   stage: string,
   deps: ResearchDependencies,
+  remainingBudget?: number,
 ): Promise<ResearchResult> {
   let timer: number | undefined;
   const timeout = new Promise<ResearchResult>((resolve) => {
@@ -300,7 +374,7 @@ async function settleGeneralModelFallback(
           },
         ),
       );
-    }, generalModelFallbackTimeoutMs(deps));
+    }, boundedTimeout(generalModelFallbackTimeoutMs(deps), remainingBudget));
   });
 
   try {
@@ -723,6 +797,7 @@ async function maybeSynthesizeWithAi(
   query: string,
   evidence: ResearchResult,
   deps: ResearchDependencies,
+  routeDeadlineAt?: number,
 ): Promise<ResearchResult> {
   const geminiController = new AbortController();
   const gemini = await settleOptionalSynthesis(
@@ -735,8 +810,17 @@ async function maybeSynthesizeWithAi(
     geminiController,
     evidence,
     deps,
+    routeDeadlineAt === undefined
+      ? undefined
+      : remainingRouteBudgetMs(routeDeadlineAt),
   );
   if (gemini !== evidence) return gemini;
+  if (
+    routeDeadlineAt !== undefined &&
+    remainingRouteBudgetMs(routeDeadlineAt) <= 0
+  ) {
+    return evidence;
+  }
 
   const xaiController = new AbortController();
   return await settleOptionalSynthesis(
@@ -749,6 +833,9 @@ async function maybeSynthesizeWithAi(
     xaiController,
     evidence,
     deps,
+    routeDeadlineAt === undefined
+      ? undefined
+      : remainingRouteBudgetMs(routeDeadlineAt),
   );
 }
 
@@ -872,6 +959,7 @@ async function generalKnowledgeAiFallback(
   query: string,
   context: string,
   deps: ResearchDependencies,
+  routeDeadlineAt?: number,
 ): Promise<ResearchResult> {
   const geminiController = new AbortController();
   const gemini = await settleGeneralModelFallback(
@@ -884,8 +972,17 @@ async function generalKnowledgeAiFallback(
     geminiController,
     "gemini_general",
     deps,
+    routeDeadlineAt === undefined
+      ? undefined
+      : remainingRouteBudgetMs(routeDeadlineAt),
   );
   if (!gemini.abstained) return gemini;
+  if (
+    routeDeadlineAt !== undefined &&
+    remainingRouteBudgetMs(routeDeadlineAt) <= 0
+  ) {
+    return gemini;
+  }
 
   const xaiController = new AbortController();
   const xai = await settleGeneralModelFallback(
@@ -898,6 +995,9 @@ async function generalKnowledgeAiFallback(
     xaiController,
     "xai_general",
     deps,
+    routeDeadlineAt === undefined
+      ? undefined
+      : remainingRouteBudgetMs(routeDeadlineAt),
   );
   if (!xai.abstained) return xai;
 
@@ -1146,6 +1246,7 @@ async function newsEvidence(
 
   const payload = await fetchJson(deps, url, {
     headers: { "User-Agent": USER_AGENT },
+    signal,
   });
   const rawArticles = Array.isArray(payload?.articles) ? payload.articles : [];
   const selected: Array<{
@@ -1645,6 +1746,7 @@ function conciseExcerpt(value: string, maxChars = 650): string {
 async function stackOverflowSpanishEvidence(
   query: string,
   deps: ResearchDependencies,
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const searchText = stripAssistantInvocation(query)
     .replace(/[¿?¡!]+/g, " ")
@@ -1667,6 +1769,7 @@ async function stackOverflowSpanishEvidence(
 
   const search = await fetchJson(deps, searchUrl, {
     headers: { "User-Agent": USER_AGENT },
+    signal,
   });
   const questions = Array.isArray(search?.items) ? search.items : [];
   const question = questions.find((item) =>
@@ -1688,6 +1791,7 @@ async function stackOverflowSpanishEvidence(
 
   const answerPayload = await fetchJson(deps, answerUrl, {
     headers: { "User-Agent": USER_AGENT },
+    signal,
   });
   const answers = Array.isArray(answerPayload?.items)
     ? answerPayload.items
@@ -1737,7 +1841,7 @@ async function tavilyEvidence(
   supportText = "",
   signal?: AbortSignal,
 ): Promise<ResearchResult> {
-  const apiKey = await providerSecret(deps, "TAVILY_API_KEY");
+  const apiKey = await providerSecret(deps, "TAVILY_API_KEY", signal);
   if (!apiKey) {
     return abstain("Tavily no está configurado para la búsqueda web.");
   }
@@ -1882,6 +1986,7 @@ async function tavilyEvidence(
 async function wikipediaActionExtract(
   title: string,
   deps: ResearchDependencies,
+  signal?: AbortSignal,
 ): Promise<{ extract: string; source: string } | null> {
   const url = new URL("https://es.wikipedia.org/w/api.php");
   url.searchParams.set("action", "query");
@@ -1924,6 +2029,7 @@ async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
   context = "",
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const previousTopic = contextKnowledgeTopic(context);
   const currentTopic = extractGeneralKnowledgeQuery(query);
@@ -1938,7 +2044,7 @@ async function generalKnowledgeEvidence(
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
   if (isTechnicalTroubleshootingQuery(query)) {
-    const technical = await stackOverflowSpanishEvidence(query, deps);
+    const technical = await stackOverflowSpanishEvidence(query, deps, signal);
     if (!technical.abstained) return technical;
   }
 
@@ -1953,6 +2059,7 @@ async function generalKnowledgeEvidence(
 
   const search = await fetchJson(deps, searchUrl, {
     headers: { "User-Agent": USER_AGENT },
+    signal,
   });
   const results = search?.query && typeof search.query === "object"
     ? (search.query as JsonObject).search
@@ -1970,6 +2077,7 @@ async function generalKnowledgeEvidence(
     encodeURIComponent(title.replace(/ /g, "_"));
   const summary = await fetchJson(deps, summaryUrl, {
     headers: { "User-Agent": USER_AGENT },
+    signal,
   });
   const summaryType = stringValue(summary?.type)?.toLowerCase();
   if (summaryType === "disambiguation") {
@@ -1977,7 +2085,7 @@ async function generalKnowledgeEvidence(
   }
   const extract = stringValue(summary?.extract);
   if (!extract) {
-    const actionFallback = await wikipediaActionExtract(title, deps);
+    const actionFallback = await wikipediaActionExtract(title, deps, signal);
     if (!actionFallback) {
       return abstain("Wikipedia no devolvió una explicación utilizable.");
     }
@@ -2053,14 +2161,34 @@ export async function routeResearchQuery(
     /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
 
   if (kind === "GENERAL_KNOWLEDGE") {
-    const primaryEvidence = await generalKnowledgeEvidence(
-      query,
+    const routeDeadlineAt =
+      performance.now() + generalKnowledgeRouteTimeoutMs(deps);
+    const remainingBudget = () => remainingRouteBudgetMs(routeDeadlineAt);
+
+    const primaryController = new AbortController();
+    const primaryEvidence = await settlePrimaryKnowledgeEvidence(
+      generalKnowledgeEvidence(
+        query,
+        deps,
+        context,
+        primaryController.signal,
+      ),
+      primaryController,
       deps,
-      context,
+      remainingBudget(),
     );
 
     let webEvidence: ResearchResult;
-    if (!primaryEvidence.abstained) {
+    if (remainingBudget() <= 0) {
+      webEvidence = abstain(
+        "La investigación agotó su presupuesto antes de consultar respaldos.",
+        {
+          reasonCode: "GENERAL_ROUTE_TIMEOUT",
+          retryable: true,
+          stage: "general_knowledge",
+        },
+      );
+    } else if (!primaryEvidence.abstained) {
       const controller = new AbortController();
       webEvidence = await settleOptionalCorroboration(
         tavilyEvidence(
@@ -2071,6 +2199,7 @@ export async function routeResearchQuery(
         ),
         controller,
         deps,
+        remainingBudget(),
       );
     } else {
       const controller = new AbortController();
@@ -2078,6 +2207,7 @@ export async function routeResearchQuery(
         tavilyEvidence(query, deps, "", controller.signal),
         controller,
         deps,
+        remainingBudget(),
       );
     }
 
@@ -2086,9 +2216,29 @@ export async function routeResearchQuery(
       webEvidence,
     );
     if (!evidence.abstained) {
-      return await maybeSynthesizeWithAi(query, evidence, deps);
+      return await maybeSynthesizeWithAi(
+        query,
+        evidence,
+        deps,
+        routeDeadlineAt,
+      );
     }
-    return await generalKnowledgeAiFallback(query, context, deps);
+    if (remainingBudget() <= 0) {
+      return abstain(
+        "La investigación general agotó su tiempo de respuesta.",
+        {
+          reasonCode: "GENERAL_ROUTE_TIMEOUT",
+          retryable: true,
+          stage: "general_knowledge",
+        },
+      );
+    }
+    return await generalKnowledgeAiFallback(
+      query,
+      context,
+      deps,
+      routeDeadlineAt,
+    );
   }
 
   if (
