@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.ExecutionException
@@ -241,6 +242,11 @@ class UltraVerifiedResearchEngine(
             )
         }
 
+        val optionalStableKnowledge =
+            request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
+                request.verificationMode == UltraVerificationMode.OPTIONAL &&
+                !request.requiresFreshData
+
         val completion = ExecutorCompletionService<ProviderAttempt>(executor)
         val submitted = providers.mapIndexed { index, provider ->
             completion.submit {
@@ -267,22 +273,49 @@ class UltraVerifiedResearchEngine(
         )
         val deadline = System.nanoTime() + timeoutNanos
         var timedOut = false
+        var graceDeadlineNanos: Long? = null
+        var stoppedAfterGrace = false
 
         try {
-            repeat(providers.size) {
-                val remaining = deadline - System.nanoTime()
+            while (attempts.size < providers.size) {
+                val now = System.nanoTime()
+                val effectiveDeadline = minOf(
+                    deadline,
+                    graceDeadlineNanos ?: deadline
+                )
+                val remaining = effectiveDeadline - now
+
                 if (remaining <= 0L) {
-                    timedOut = true
-                    return@repeat
+                    if (
+                        graceDeadlineNanos != null &&
+                        effectiveDeadline == graceDeadlineNanos &&
+                        effectiveDeadline < deadline
+                    ) {
+                        stoppedAfterGrace = true
+                    } else {
+                        timedOut = true
+                    }
+                    break
                 }
 
-                val completed = completion.poll(remaining, TimeUnit.NANOSECONDS)
+                val completed = completion.poll(
+                    remaining,
+                    TimeUnit.NANOSECONDS
+                )
                 if (completed == null) {
-                    timedOut = true
-                    return@repeat
+                    if (
+                        graceDeadlineNanos != null &&
+                        effectiveDeadline == graceDeadlineNanos &&
+                        effectiveDeadline < deadline
+                    ) {
+                        stoppedAfterGrace = true
+                    } else {
+                        timedOut = true
+                    }
+                    break
                 }
 
-                attempts += try {
+                val attempt = try {
                     completed.get()
                 } catch (_: ExecutionException) {
                     ProviderAttempt(
@@ -294,6 +327,24 @@ class UltraVerifiedResearchEngine(
                         )
                     )
                 }
+                attempts += attempt
+
+                if (
+                    optionalStableKnowledge &&
+                    attempt.result is UltraProviderResult.Evidence &&
+                    attempts.size < providers.size &&
+                    graceDeadlineNanos == null
+                ) {
+                    val graceMillis = minOf(
+                        PRIMARY_PROVIDER_GRACE_MS,
+                        (request.timeoutMillis / 4L).coerceAtLeast(1L)
+                    )
+                    graceDeadlineNanos = minOf(
+                        deadline,
+                        System.nanoTime() +
+                            TimeUnit.MILLISECONDS.toNanos(graceMillis)
+                    )
+                }
             }
         } catch (interrupted: InterruptedException) {
             submitted.forEach { future ->
@@ -303,7 +354,7 @@ class UltraVerifiedResearchEngine(
             throw interrupted
         }
 
-        if (timedOut) {
+        if (timedOut || stoppedAfterGrace) {
             submitted.forEach { future ->
                 if (!future.isDone) future.cancel(true)
             }
@@ -321,10 +372,30 @@ class UltraVerifiedResearchEngine(
             evidenceAttempts.any { (attempt, _) -> attempt.index > 0 }
 
         if (
-            request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
-            request.verificationMode == UltraVerificationMode.OPTIONAL &&
+            optionalStableKnowledge &&
             evidenceAttempts.isNotEmpty()
         ) {
+            val stableEvidence = evidenceAttempts.map { it.second }
+            val hasConflict = stableEvidence.indices.any { firstIndex ->
+                ((firstIndex + 1) until stableEvidence.size).any { secondIndex ->
+                    !stableKnowledgeEvidenceCompatible(
+                        stableEvidence[firstIndex],
+                        stableEvidence[secondIndex]
+                    )
+                }
+            }
+
+            if (hasConflict) {
+                return abstention(
+                    timedOut = false,
+                    fallbackUsed = fallbackUsed,
+                    sources = stableEvidence
+                        .flatMap { it.allSourceIds() }
+                        .distinct(),
+                    reasonCode = "INSUFFICIENT_CORROBORATION"
+                )
+            }
+
             val (selectedAttempt, selectedEvidence) = evidenceAttempts
                 .maxByOrNull { (attempt, evidence) ->
                     stableKnowledgeEvidenceScore(
@@ -333,6 +404,7 @@ class UltraVerifiedResearchEngine(
                     )
                 }
                 ?: error("Stable knowledge evidence unexpectedly disappeared")
+
             val sources = selectedEvidence.allSourceIds()
             val corroborationCount = maxOf(
                 selectedEvidence.independentSourceCount.coerceAtLeast(1),
@@ -348,16 +420,19 @@ class UltraVerifiedResearchEngine(
                 confidence = confidence,
                 sources = sources,
                 abstained = false,
-                timedOut = timedOut,
+                timedOut = false,
                 fallbackUsed = selectedAttempt.index > 0
             )
 
-            cache.put(
-                key = key,
-                result = result,
-                expiresAtMillis = nowMillis() + ttlMillis(request),
-                persist = usePersistentCache
-            )
+            val allProvidersSettled = attempts.size >= providers.size
+            if (allProvidersSettled) {
+                cache.put(
+                    key = key,
+                    result = result,
+                    expiresAtMillis = nowMillis() + ttlMillis(request),
+                    persist = usePersistentCache
+                )
+            }
             return result
         }
 
@@ -532,6 +607,49 @@ class UltraVerifiedResearchEngine(
             providerIndex.coerceAtLeast(0)
     }
 
+    private fun stableKnowledgeEvidenceCompatible(
+        first: UltraResearchEvidence,
+        second: UltraResearchEvidence
+    ): Boolean {
+        val firstValue = normalizeStableText(first.value)
+        val secondValue = normalizeStableText(second.value)
+        if (firstValue.isNotBlank() && firstValue == secondValue) return true
+
+        val firstTokens = stableKnowledgeTokens(
+            first.displayText + " " + first.value
+        )
+        val secondTokens = stableKnowledgeTokens(
+            second.displayText + " " + second.value
+        )
+        if (firstTokens.isEmpty() || secondTokens.isEmpty()) return false
+
+        val overlap = firstTokens.intersect(secondTokens)
+        if (overlap.size < 2) return false
+
+        val smallerEvidence = minOf(
+            firstTokens.size,
+            secondTokens.size
+        ).coerceAtLeast(1)
+        return overlap.size.toDouble() / smallerEvidence.toDouble() >= 0.30
+    }
+
+    private fun stableKnowledgeTokens(value: String): Set<String> =
+        normalizeStableText(value)
+            .replace(Regex("""[^a-z0-9]+"""), " ")
+            .split(' ')
+            .asSequence()
+            .map(String::trim)
+            .filter { it.length >= 3 }
+            .filterNot(STABLE_KNOWLEDGE_STOP_WORDS::contains)
+            .toSet()
+
+    private fun normalizeStableText(value: String): String =
+        Normalizer.normalize(value, Normalizer.Form.NFD)
+            .replace(Regex("""\p{M}+"""), "")
+            .lowercase(Locale.ROOT)
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
             request.verificationMode.name + ":" +
@@ -561,6 +679,17 @@ class UltraVerifiedResearchEngine(
                     UltraResearchCache.GENERAL_KNOWLEDGE_TTL_MS
             }
         }
+
+    private companion object {
+        const val PRIMARY_PROVIDER_GRACE_MS = 350L
+
+        val STABLE_KNOWLEDGE_STOP_WORDS = setOf(
+            "una", "uno", "unos", "unas", "que", "del", "las", "los",
+            "con", "para", "por", "como", "capaz", "puede", "ser",
+            "the", "and", "with", "that", "this", "from", "into",
+            "are", "was", "were", "has", "have"
+        )
+    }
 
     override fun close() {
         executor.shutdownNow()
