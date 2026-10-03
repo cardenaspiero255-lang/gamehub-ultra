@@ -194,6 +194,80 @@ async function settleOptionalCorroboration(
   }
 }
 
+function fallbackEvidenceTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_FALLBACK_SEARCH_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(500, Math.min(5_000, Math.trunc(configured)));
+  }
+  return 1_500;
+}
+
+async function settleFallbackEvidence(
+  promise: Promise<ResearchResult>,
+  controller: AbortController,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  let timer: number | undefined;
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "La búsqueda web de respaldo tardó demasiado; probaré el siguiente respaldo disponible.",
+          {
+            reasonCode: "FALLBACK_EVIDENCE_TIMEOUT",
+            retryable: true,
+            stage: "tavily",
+          },
+        ),
+      );
+    }, fallbackEvidenceTimeoutMs(deps));
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function optionalSynthesisTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_SYNTHESIS_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(200, Math.min(2_500, Math.trunc(configured)));
+  }
+  return 600;
+}
+
+async function settleOptionalSynthesis(
+  promise: Promise<ResearchResult>,
+  controller: AbortController,
+  evidence: ResearchResult,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  let timer: number | undefined;
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(evidence);
+    }, optionalSynthesisTimeoutMs(deps));
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 async function providerSecret(
   deps: ResearchDependencies,
   name: string,
@@ -303,6 +377,7 @@ async function maybeSynthesizeWithGemini(
   query: string,
   evidence: ResearchResult,
   deps: ResearchDependencies,
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const apiKey = await providerSecret(deps, "GEMINI_API_KEY");
   const verifiedText = evidence.displayText?.trim();
@@ -350,6 +425,7 @@ async function maybeSynthesizeWithGemini(
           maxOutputTokens: 700,
         },
       }),
+      signal,
     });
   } catch {
     return evidence;
@@ -498,6 +574,7 @@ async function maybeSynthesizeWithXai(
   query: string,
   evidence: ResearchResult,
   deps: ResearchDependencies,
+  signal?: AbortSignal,
 ): Promise<ResearchResult> {
   const apiKey =
     await providerSecret(deps, "XAI_API_KEY") ??
@@ -549,6 +626,7 @@ async function maybeSynthesizeWithXai(
         temperature: 0.1,
         max_tokens: 700,
       }),
+      signal,
     },
   );
 
@@ -585,9 +663,32 @@ async function maybeSynthesizeWithAi(
   evidence: ResearchResult,
   deps: ResearchDependencies,
 ): Promise<ResearchResult> {
-  const gemini = await maybeSynthesizeWithGemini(query, evidence, deps);
+  const geminiController = new AbortController();
+  const gemini = await settleOptionalSynthesis(
+    maybeSynthesizeWithGemini(
+      query,
+      evidence,
+      deps,
+      geminiController.signal,
+    ),
+    geminiController,
+    evidence,
+    deps,
+  );
   if (gemini !== evidence) return gemini;
-  return await maybeSynthesizeWithXai(query, evidence, deps);
+
+  const xaiController = new AbortController();
+  return await settleOptionalSynthesis(
+    maybeSynthesizeWithXai(
+      query,
+      evidence,
+      deps,
+      xaiController.signal,
+    ),
+    xaiController,
+    evidence,
+    deps,
+  );
 }
 
 async function generalKnowledgeXaiFallback(
@@ -1888,7 +1989,7 @@ export async function routeResearchQuery(
       );
     } else {
       const controller = new AbortController();
-      webEvidence = await settleOptionalCorroboration(
+      webEvidence = await settleFallbackEvidence(
         tavilyEvidence(query, deps, "", controller.signal),
         controller,
         deps,
