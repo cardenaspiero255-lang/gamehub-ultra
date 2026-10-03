@@ -16,10 +16,11 @@ class UltraTypedChatRoutePlannerTest {
 
         assertTrue(route is UltraAgentRoute.Chat)
         route as UltraAgentRoute.Chat
+        val query = requireNotNull(route.query)
         assertEquals("¿qué es Vulkan?", route.message)
-        assertEquals(UltraVerificationMode.OPTIONAL, route.query.verificationMode)
-        assertFalse(route.query.requiresInternet)
-        assertFalse(route.query.requiresFreshData)
+        assertEquals(UltraVerificationMode.OPTIONAL, query.verificationMode)
+        assertFalse(query.requiresInternet)
+        assertFalse(query.requiresFreshData)
     }
 
     @Test
@@ -31,8 +32,9 @@ class UltraTypedChatRoutePlannerTest {
 
         assertTrue(route is UltraAgentRoute.Chat)
         route as UltraAgentRoute.Chat
-        assertEquals(UltraVerificationMode.LOCAL, route.query.verificationMode)
-        assertFalse(route.query.requiresInternet)
+        val query = requireNotNull(route.query)
+        assertEquals(UltraVerificationMode.LOCAL, query.verificationMode)
+        assertFalse(query.requiresInternet)
     }
 
     @Test
