@@ -171,6 +171,24 @@ class VoiceCommandParserTest {
         )
     }
 
+
+    @Test
+    fun ambientTemperatureQuestionIsNotDeviceStatus() {
+        val command = VoiceCommandParser.parse(
+            "Ultra, ¿qué temperatura hace ahora en Rancagua?"
+        )
+
+        assertIs<VoiceCommand.Unknown>(command)
+    }
+
+    @Test
+    fun explicitDeviceTemperatureRemainsDeviceStatus() {
+        assertEquals(
+            VoiceCommand.DeviceStatus,
+            VoiceCommandParser.parse("Ultra, dime la temperatura del teléfono")
+        )
+    }
+
     @Test
     fun parsesWakeWordSpanishCommand() {
         val command = VoiceCommandParser.parse("Ultra, abre Resident Evil 4 Remake")
