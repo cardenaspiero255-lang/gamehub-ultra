@@ -1938,6 +1938,12 @@ Deno.test(
     if ((result.sourceIds ?? []).length !== 1) {
       throw new Error("unrelated Tavily URLs must not be attached as sources");
     }
+    if (
+      result.sourceId !== "https://es.wikipedia.org/wiki/Motor" ||
+      result.sourceIds?.[0] !== "https://es.wikipedia.org/wiki/Motor"
+    ) {
+      throw new Error("Wikipedia must remain the sole retained source");
+    }
   },
 );
 
