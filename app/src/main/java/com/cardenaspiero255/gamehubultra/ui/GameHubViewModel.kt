@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.data.RuntimeGameSession
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.SessionFinishHandle
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.DEFAULT_ULTRA_PLAYER_NAME
 import com.cardenaspiero255.gamehubultra.domain.OrientationPreference
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
 import com.cardenaspiero255.gamehubultra.domain.ResolutionTarget
@@ -35,6 +36,7 @@ class GameHubViewModel(
     private val repository = dependencies.selectionRepository
     private val libraryRepository: GameLibraryStateRepository = dependencies.libraryRepository
     private val performanceHistoryRepository = dependencies.performanceHistoryRepository
+    private val playerIdentityRepository = dependencies.playerIdentityRepository
     private val sessionStore: GameSessionStateRepository = dependencies.sessionRepository
     private val sessionCoordinator =
         dependencies.sessionCoordinatorFactory.create(viewModelScope)
@@ -56,6 +58,8 @@ class GameHubViewModel(
         sessionCoordinator.clearSessions()
 
     private val selectedGameFlow = repository.selectedGameFlow()
+    private val playerNameFlow = playerIdentityRepository?.playerNameFlow()
+        ?: flowOf(DEFAULT_ULTRA_PLAYER_NAME)
     private val selectedGameConfigFlow = selectedGameFlow.flatMapLatest { packageName ->
         packageName?.let(repository::gameProfileConfigFlow) ?: flowOf(null)
     }
@@ -64,14 +68,16 @@ class GameHubViewModel(
         repository.selectedProfileFlow(),
         selectedGameFlow,
         selectedGameConfigFlow,
-        libraryRepository.favoriteGamesFlow()
-    ) { globalProfile, selectedGamePackage, selectedGameConfig, favoriteGames ->
+        libraryRepository.favoriteGamesFlow(),
+        playerNameFlow
+    ) { globalProfile, selectedGamePackage, selectedGameConfig, favoriteGames, playerName ->
         BaseUiState(
             globalProfile = globalProfile,
             selectedGamePackage = selectedGamePackage,
             selectedGameHydrated = true,
             selectedGameConfig = selectedGameConfig,
-            favoriteGames = favoriteGames
+            favoriteGames = favoriteGames,
+            playerName = playerName
         )
     }
 
@@ -84,6 +90,7 @@ class GameHubViewModel(
     ) { base, recentGames, manualGames ->
         GameHubUiState(
             globalProfile = base.globalProfile,
+            playerName = base.playerName,
             selectedGamePackage = base.selectedGamePackage,
             selectedGameHydrated = base.selectedGameHydrated,
             selectedGameConfig = base.selectedGameConfig,
@@ -99,6 +106,11 @@ class GameHubViewModel(
 
     fun selectGlobalProfile(profile: PerformanceProfile) {
         viewModelScope.launch { repository.saveSelectedProfile(profile) }
+    }
+
+    fun updatePlayerName(rawName: String) {
+        val identityRepository = playerIdentityRepository ?: return
+        viewModelScope.launch { identityRepository.savePlayerName(rawName) }
     }
 
     fun selectGameProfile(packageName: String, profile: PerformanceProfile) {
@@ -246,6 +258,7 @@ class GameHubViewModel(
         val selectedGamePackage: String?,
         val selectedGameHydrated: Boolean,
         val selectedGameConfig: GameProfileConfig?,
-        val favoriteGames: Set<String>
+        val favoriteGames: Set<String>,
+        val playerName: String
     )
 }
