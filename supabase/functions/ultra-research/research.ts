@@ -126,6 +126,81 @@ function evidenceTokens(value: string): Set<string> {
   );
 }
 
+const EVIDENCE_NEGATIONS = new Set([
+  "no", "nunca", "jamas", "tampoco", "ni",
+]);
+
+const EVIDENCE_ADDITIVE_NEGATION_MARKERS = new Set([
+  "solo", "solamente", "unicamente",
+]);
+
+const EVIDENCE_NEGATION_FILLERS = new Set([
+  "esta", "estan", "este", "estos", "estas", "puede", "pueden",
+  "debe", "deben", "suele", "suelen", "solo", "solamente", "unicamente",
+  "es", "son", "ser", "fue", "fueron", "era", "eran", "hay",
+  "tiene", "tienen", "posee", "poseen",
+]);
+
+function evidenceNegatedPredicates(value: string): Set<string> {
+  const predicates = new Set<string>();
+  const clauses = normalize(value).split(/[.!?;,:]+/);
+
+  for (const clause of clauses) {
+    const tokens = clause
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(" ")
+      .map((token) => token.trim())
+      .filter(Boolean);
+
+    for (let index = 0; index < tokens.length; index++) {
+      if (!EVIDENCE_NEGATIONS.has(tokens[index])) continue;
+      if (EVIDENCE_ADDITIVE_NEGATION_MARKERS.has(tokens[index + 1] ?? "")) {
+        continue;
+      }
+
+      const predicate = tokens
+        .slice(index + 1)
+        .map(canonicalEvidenceToken)
+        .find((token) =>
+          token.length >= 3 &&
+          !CORROBORATION_STOP_WORDS.has(token) &&
+          !EVIDENCE_NEGATION_FILLERS.has(token)
+        );
+      if (predicate) predicates.add(predicate);
+    }
+  }
+
+  return predicates;
+}
+
+function evidencePolarityCompatible(
+  firstText: string,
+  secondText: string,
+): boolean {
+  const firstTokens = evidenceTokens(firstText);
+  const secondTokens = evidenceTokens(secondText);
+  const firstNegated = evidenceNegatedPredicates(firstText);
+  const secondNegated = evidenceNegatedPredicates(secondText);
+
+  const firstContradictsSecond = [...firstNegated].some((predicate) =>
+    secondTokens.has(predicate) && !secondNegated.has(predicate)
+  );
+  const secondContradictsFirst = [...secondNegated].some((predicate) =>
+    firstTokens.has(predicate) && !firstNegated.has(predicate)
+  );
+  return !firstContradictsSecond && !secondContradictsFirst;
+}
+
+function candidateMatchesQuery(
+  query: string,
+  candidateText: string,
+): boolean {
+  const queryTokens = evidenceTokens(stripAssistantInvocation(query));
+  if (queryTokens.size === 0) return true;
+  const candidateTokens = evidenceTokens(candidateText);
+  return [...queryTokens].some((token) => candidateTokens.has(token));
+}
+
 function candidateSupportsPrimary(
   query: string,
   primaryText: string,
@@ -150,7 +225,9 @@ function candidateSupportsPrimary(
     candidateTokens.has(token)
   );
 
-  return queryOverlap.length >= 1 && evidenceOverlap.length >= 2;
+  return queryOverlap.length >= 1 &&
+    evidenceOverlap.length >= 2 &&
+    evidencePolarityCompatible(primaryText, candidateText);
 }
 
 function generalKnowledgeRouteTimeoutMs(
@@ -1933,14 +2010,11 @@ async function tavilyEvidence(
     if (!domain || usedDomains.has(domain)) continue;
 
     const excerpt = conciseExcerpt(content, 700);
-    if (
-      supportText &&
-      !candidateSupportsPrimary(
-        query,
-        supportText,
-        title + " " + excerpt,
-      )
-    ) {
+    const candidateText = title + " " + excerpt;
+    const candidateRejected = supportText
+      ? !candidateSupportsPrimary(query, supportText, candidateText)
+      : !candidateMatchesQuery(query, candidateText);
+    if (candidateRejected) {
       continue;
     }
 
