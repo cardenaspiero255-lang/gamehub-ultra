@@ -3271,8 +3271,8 @@ Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", asy
 
   await routeResearchQuery(
     "¿Qué es un motor?",
-    "",
     deps,
+    "",
   );
 
   if (!observedThinking || observedThinking.thinkingBudget === undefined) {
