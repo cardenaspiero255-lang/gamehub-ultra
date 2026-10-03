@@ -8,7 +8,11 @@ data class UltraQueryExecutionAnswer(
     val fromCache: Boolean = false,
     val timedOut: Boolean = false,
     val fallbackUsed: Boolean = false,
-    val abstained: Boolean = false
+    val abstained: Boolean = false,
+    val reasonCode: String? = null,
+    val retryable: Boolean = false,
+    val stage: String? = null,
+    val upstreamStatus: Int? = null
 )
 
 /**
@@ -96,6 +100,10 @@ class UltraQueryExecutionCoordinator(
             fromCache = research.fromCache,
             timedOut = research.timedOut,
             fallbackUsed = research.fallbackUsed,
-            abstained = research.abstained
+            abstained = research.abstained,
+            reasonCode = research.reasonCode,
+            retryable = research.retryable,
+            stage = research.stage,
+            upstreamStatus = research.upstreamStatus
         )
 }
