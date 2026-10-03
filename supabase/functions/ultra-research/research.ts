@@ -1246,7 +1246,6 @@ async function newsEvidence(
 
   const payload = await fetchJson(deps, url, {
     headers: { "User-Agent": USER_AGENT },
-    signal,
   });
   const rawArticles = Array.isArray(payload?.articles) ? payload.articles : [];
   const selected: Array<{
