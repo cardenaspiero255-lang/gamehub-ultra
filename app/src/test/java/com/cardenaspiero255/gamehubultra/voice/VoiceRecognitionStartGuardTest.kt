@@ -66,4 +66,23 @@ class VoiceRecognitionStartGuardTest {
         assertTrue(listeningStates.isEmpty())
         assertEquals(null, error)
     }
+    @Test
+    fun terminalRecognitionErrorIsForwardedExactlyOnceWithoutRecursion() {
+        var calls = 0
+        var observedError: Int? = null
+        val listeningStates = mutableListOf<Boolean>()
+
+        VoiceRecognitionErrorForwarder.forward(
+            error = SpeechRecognizer.ERROR_CLIENT,
+            onListeningChanged = listeningStates::add,
+            onError = {
+                calls += 1
+                observedError = it
+            }
+        )
+
+        assertEquals(listOf(false), listeningStates)
+        assertEquals(1, calls)
+        assertEquals(SpeechRecognizer.ERROR_CLIENT, observedError)
+    }
 }
