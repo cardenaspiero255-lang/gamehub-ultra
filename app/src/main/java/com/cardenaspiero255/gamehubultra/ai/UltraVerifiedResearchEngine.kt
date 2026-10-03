@@ -498,8 +498,12 @@ class UltraVerifiedResearchEngine(
                     result is UltraProviderResult.Abstained &&
                         result.reasonCode !in NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS
                 }
-                ?: orderedResults.firstOrNull {
-                    it is UltraProviderResult.Abstained
+                ?: if (!timedOut) {
+                    orderedResults.firstOrNull {
+                        it is UltraProviderResult.Abstained
+                    }
+                } else {
+                    null
                 }
 
             return when (structuredIssue) {
@@ -528,7 +532,8 @@ class UltraVerifiedResearchEngine(
                     abstention(
                         timedOut = timedOut,
                         fallbackUsed = fallbackUsed,
-                        reasonCode = if (timedOut) "UPSTREAM_TIMEOUT" else "NO_EVIDENCE"
+                        reasonCode = if (timedOut) "UPSTREAM_TIMEOUT" else "NO_EVIDENCE",
+                        retryable = timedOut
                     )
             }
         }
