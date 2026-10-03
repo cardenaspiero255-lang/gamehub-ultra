@@ -410,6 +410,49 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun optionalStableKnowledgeRejectsNegatedContradictionDespiteTokenOverlap() {
+        val positive = object : UltraResearchProvider {
+            override val id = "positive"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:fotosintesis",
+                    value = "la fotosintesis produce oxigeno",
+                    displayText = "La fotosíntesis produce oxígeno durante el proceso.",
+                    sourceId = "https://source-a.example/fotosintesis",
+                    independentSourceCount = 2,
+                    authoritative = true
+                )
+        }
+        val negative = object : UltraResearchProvider {
+            override val id = "negative"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:fotosintesis",
+                    value = "la fotosintesis no produce oxigeno",
+                    displayText = "La fotosíntesis no produce oxígeno durante el proceso.",
+                    sourceId = "https://source-b.example/fotosintesis",
+                    independentSourceCount = 1,
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(positive, negative))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es la fotosíntesis?")
+            )
+
+            assertTrue(result.abstained)
+            assertEquals("INSUFFICIENT_CORROBORATION", result.reasonCode)
+            assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun authoritativePublicFallbackDoesNotWaitForStalledPrimaryUntilFullDeadline() {
         val primaryInterrupted = java.util.concurrent.atomic.AtomicBoolean(false)
         val primary = object : UltraResearchProvider {
