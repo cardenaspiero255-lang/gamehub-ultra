@@ -191,6 +191,36 @@ function evidencePolarityCompatible(
   return !firstContradictsSecond && !secondContradictsFirst;
 }
 
+const EVIDENCE_WRITTEN_QUANTITIES = new Map<string, string>([
+  ["cero", "0"], ["zero", "0"],
+  ["un", "1"], ["una", "1"], ["uno", "1"], ["one", "1"],
+  ["dos", "2"], ["two", "2"],
+  ["tres", "3"], ["three", "3"],
+  ["cuatro", "4"], ["four", "4"],
+  ["cinco", "5"], ["five", "5"],
+  ["seis", "6"], ["six", "6"],
+  ["siete", "7"], ["seven", "7"],
+  ["ocho", "8"], ["eight", "8"],
+  ["nueve", "9"], ["nine", "9"],
+  ["diez", "10"], ["ten", "10"],
+  ["once", "11"], ["eleven", "11"],
+  ["doce", "12"], ["twelve", "12"],
+  ["trece", "13"], ["thirteen", "13"],
+  ["catorce", "14"], ["fourteen", "14"],
+  ["quince", "15"], ["fifteen", "15"],
+  ["dieciseis", "16"], ["sixteen", "16"],
+  ["diecisiete", "17"], ["seventeen", "17"],
+  ["dieciocho", "18"], ["eighteen", "18"],
+  ["diecinueve", "19"], ["nineteen", "19"],
+  ["veinte", "20"], ["twenty", "20"],
+]);
+
+function evidenceQuantityValue(token: string): string | null {
+  const normalized = token.replace(/%$/, "").replace(",", ".");
+  if (/^\d+(?:\.\d+)?$/.test(normalized)) return normalized;
+  return EVIDENCE_WRITTEN_QUANTITIES.get(normalized) ?? null;
+}
+
 function evidenceNumericFacts(value: string): Map<string, Set<string>> {
   const rawTokens = normalize(value)
     .replace(/[^a-z0-9.,%]+/g, " ")
@@ -201,10 +231,8 @@ function evidenceNumericFacts(value: string): Map<string, Set<string>> {
 
   rawTokens.forEach((token, index) => {
     const percentSuffix = token.endsWith("%") ? "%" : "";
-    const number = token
-      .replace(/%$/, "")
-      .replace(",", ".");
-    if (!/^\d+(?:\.\d+)?$/.test(number)) return;
+    const number = evidenceQuantityValue(token);
+    if (number === null) return;
 
     const surrounding = [
       ...rawTokens.slice(index + 1),
