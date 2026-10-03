@@ -9,7 +9,11 @@ internal data class UltraResearchBackendResponse(
     val independentSourceCount: Int,
     val authoritative: Boolean,
     val abstained: Boolean,
-    val message: String?
+    val message: String?,
+    val reasonCode: String?,
+    val retryable: Boolean,
+    val stage: String?,
+    val upstreamStatus: Int?
 )
 
 /**
@@ -37,6 +41,8 @@ internal object UltraResearchJsonCodec {
             }
             append(",\"kind\":\"")
             append(request.kind.name)
+            append("\",\"verificationMode\":\"")
+            append(request.verificationMode.name)
             append("\",\"requiresFreshData\":")
             append(request.requiresFreshData)
             append('}')
@@ -73,7 +79,11 @@ internal object UltraResearchJsonCodec {
             independentSourceCount = intField(json, "independentSourceCount") ?: 1,
             authoritative = booleanField(json, "authoritative") ?: false,
             abstained = booleanField(json, "abstained") ?: false,
-            message = stringField(json, "message")
+            message = stringField(json, "message"),
+            reasonCode = stringField(json, "reasonCode"),
+            retryable = booleanField(json, "retryable") ?: false,
+            stage = stringField(json, "stage"),
+            upstreamStatus = intField(json, "upstreamStatus")
         )
 
     private fun stringField(json: String, key: String): String? {
