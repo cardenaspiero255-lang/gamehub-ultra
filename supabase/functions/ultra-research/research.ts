@@ -757,7 +757,8 @@ async function maybeSynthesizeWithGemini(
           parts: [{ text: prompt }],
         }],
         generationConfig: {
-          maxOutputTokens: 700,
+          maxOutputTokens: 1500,
+          thinkingConfig: { thinkingLevel: "minimal" },
         },
       }),
       signal,
@@ -843,7 +844,8 @@ async function generalKnowledgeGeminiFallback(
         parts: [{ text: prompt }],
       }],
       generationConfig: {
-        maxOutputTokens: 700,
+        maxOutputTokens: 1500,
+        thinkingConfig: { thinkingLevel: "minimal" },
       },
     }),
     signal,
