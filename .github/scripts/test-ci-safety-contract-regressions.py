@@ -143,6 +143,27 @@ def weaken_release_research_key_whitespace_guard(android: str, coverage: str):
     return android.replace(needle, replacement, 1), coverage
 
 
+def disable_trusted_release_empty_key_failure_branch(android: str, coverage: str):
+    """Reject turning the trusted empty-key failure branch into dead code."""
+    needle = """            if [ "${TRUSTED_RELEASE_CONTEXT}" = "true" ]; then
+"""
+    if needle not in android:
+        raise SystemExit("Fixture drift: trusted release failure branch not found")
+    replacement = """            if false; then
+"""
+    return android.replace(needle, replacement, 1), coverage
+
+
+def require_dependabot_prs_are_untrusted(android: str, coverage: str):
+    """Dependabot pull requests must not require Actions-only release secrets."""
+    expected = """TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}"""
+    if expected not in android:
+        raise SystemExit(
+            "Dependabot pull requests are not explicitly routed through untrusted release validation"
+        )
+    return android, coverage
+
+
 def remove_device_validation_result_assertion(android: str, coverage: str):
     """Remove one blocking dependency-result assertion from the aggregate gate."""
     needle = '          test "${{ needs.device-validation.result }}" = "success"\n'
@@ -522,6 +543,8 @@ def main() -> None:
     run_mutation("aggregate build loses device-validation result assertion", remove_device_validation_result_assertion)
     run_mutation("release artifact upload loses research-key guard", remove_release_upload_research_key_guard)
     run_mutation("release research key accepts whitespace-only secret", weaken_release_research_key_whitespace_guard)
+    run_mutation("trusted release empty-key branch disabled", disable_trusted_release_empty_key_failure_branch)
+    require_dependabot_prs_are_untrusted(android, coverage)
     run_mutation("Android unit tests removed but text left in a comment", remove_unit_test_but_leave_comment)
     run_mutation("quality gate made advisory with continue-on-error", make_quality_advisory)
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
