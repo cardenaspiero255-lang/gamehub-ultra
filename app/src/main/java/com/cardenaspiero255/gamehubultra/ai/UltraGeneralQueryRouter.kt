@@ -50,7 +50,7 @@ object UltraGeneralQueryRouter {
         """\b(actual|actualmente|ahora|hoy|esta noche|esta semana|current|currently|latest|newest|today|tomorrow|tonight|this week)\b"""
     )
     private val explicitWeatherValuePattern = Regex(
-        """\b(que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in)|clima (?:actual|ahora|hoy|en)|weather (?:now|today|in)|pronostico|forecast)\b"""
+        """\b(que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in)|clima (?:actual|ahora|hoy|manana|en)|weather (?:now|today|tomorrow|in)|pronostico (?:de|para|en|hoy|manana)|forecast (?:for|in|today|tomorrow))\b"""
     )
     private val explicitFreshUpdatePattern = Regex(
         """\b(?:novedades|updates?|latest|newest|security patch|parche de seguridad|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out)\b"""
