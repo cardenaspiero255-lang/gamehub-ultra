@@ -481,16 +481,22 @@ class UltraVerifiedResearchEngine(
         }
 
         if (evidenceAttempts.isEmpty()) {
-            val orderedResults = attempts
-                .sortedBy { it.index }
-                .map { it.result }
-            val structuredIssue = orderedResults
-                .firstOrNull { result ->
+            val orderedAttempts = attempts.sortedBy { it.index }
+            val orderedResults = orderedAttempts.map { it.result }
+            val primaryAbstention = orderedAttempts
+                .firstOrNull { it.index == 0 }
+                ?.result
+                ?.takeIf { result ->
                     result is UltraProviderResult.Abstained &&
                         result.reasonCode !in NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS
                 }
+            val structuredIssue = primaryAbstention
                 ?: orderedResults.firstOrNull {
                     it is UltraProviderResult.Failure
+                }
+                ?: orderedResults.firstOrNull { result ->
+                    result is UltraProviderResult.Abstained &&
+                        result.reasonCode !in NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS
                 }
                 ?: orderedResults.firstOrNull {
                     it is UltraProviderResult.Abstained
