@@ -301,7 +301,8 @@ class UltraVerifiedResearchEngine(
         val timeoutNanos = TimeUnit.MILLISECONDS.toNanos(
             request.timeoutMillis.coerceAtLeast(1L)
         )
-        val deadline = System.nanoTime() + timeoutNanos
+        val requestStartedNanos = System.nanoTime()
+        val deadline = requestStartedNanos + timeoutNanos
         var timedOut = false
         var graceDeadlineNanos: Long? = null
         var stoppedAfterGrace = false
@@ -365,18 +366,24 @@ class UltraVerifiedResearchEngine(
                     attempts.size < providers.size &&
                     graceDeadlineNanos == null
                 ) {
-                    val graceMillis = if (attempt.index == 0) {
-                        minOf(
+                    val graceDeadline = if (attempt.index == 0) {
+                        val graceMillis = minOf(
                             PRIMARY_PROVIDER_GRACE_MS,
                             (request.timeoutMillis / 4L).coerceAtLeast(1L)
                         )
+                        System.nanoTime() +
+                            TimeUnit.MILLISECONDS.toNanos(graceMillis)
                     } else {
-                        (request.timeoutMillis / 2L).coerceAtLeast(1L)
+                        val primaryWaitMillis = minOf(
+                            FALLBACK_FIRST_PRIMARY_WAIT_MS,
+                            (request.timeoutMillis / 2L).coerceAtLeast(1L)
+                        )
+                        requestStartedNanos +
+                            TimeUnit.MILLISECONDS.toNanos(primaryWaitMillis)
                     }
                     graceDeadlineNanos = minOf(
                         deadline,
-                        System.nanoTime() +
-                            TimeUnit.MILLISECONDS.toNanos(graceMillis)
+                        graceDeadline
                     )
                 }
             }
@@ -869,6 +876,7 @@ class UltraVerifiedResearchEngine(
 
     private companion object {
         const val PRIMARY_PROVIDER_GRACE_MS = 350L
+        const val FALLBACK_FIRST_PRIMARY_WAIT_MS = 500L
 
         val STABLE_KNOWLEDGE_NEGATIONS = setOf(
             "no", "nunca", "jamas", "tampoco", "ni"
