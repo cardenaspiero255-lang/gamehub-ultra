@@ -1470,3 +1470,73 @@ Deno.test(
     }
   },
 );
+
+Deno.test(
+  "general knowledge falls back to Wikipedia Action API when summary endpoint fails",
+  async () => {
+    let actionExtractCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              search: [{ title: "Motor" }],
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return new Response("unavailable", { status: 503 });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("prop") === "extracts"
+        ) {
+          actionExtractCalled = true;
+          return jsonResponse({
+            query: {
+              pages: {
+                "123": {
+                  title: "Motor",
+                  extract:
+                    "Un motor es una máquina que transforma energía en movimiento o trabajo mecánico.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Motor",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!actionExtractCalled) {
+      throw new Error("expected Wikipedia Action API fallback");
+    }
+    if (result.abstained) {
+      throw new Error("stable definition must remain answerable");
+    }
+    if (!result.displayText?.toLowerCase().includes("motor")) {
+      throw new Error("expected a motor definition from Action API");
+    }
+  },
+);
+
