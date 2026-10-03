@@ -595,7 +595,8 @@ class WikimediaUltraResearchProviderTest {
         assertTrue(
             lines.any {
                 it.startsWith("User-Agent:", ignoreCase = true) &&
-                    it.contains("GameHub-Ultra")
+                    it.contains("GameHub-Ultra") &&
+                    it.contains("github.com/cardenaspiero255-lang/gamehub-ultra")
             }
         )
     }
