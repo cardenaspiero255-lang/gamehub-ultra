@@ -2110,6 +2110,163 @@ Deno.test(
 );
 
 Deno.test(
+  "contradictory Tavily snippets do not corroborate Wikipedia",
+  async () => {
+    const wikiSource = "https://es.wikipedia.org/wiki/Plut%C3%B3n";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Plutón" }] },
+          });
+        }
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Plutón",
+            type: "standard",
+            extract:
+              "Plutón es un planeta enano del sistema solar situado más allá de Neptuno.",
+            content_urls: { desktop: { page: wikiSource } },
+          });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Clasificación de Plutón",
+                url: "https://negative-a.example/pluton",
+                content:
+                  "Plutón no es un planeta enano del sistema solar según esta página.",
+                score: 0.99,
+              },
+              {
+                title: "Debate sobre Plutón",
+                url: "https://negative-b.example/pluton",
+                content:
+                  "Esta fuente afirma que Plutón no es un planeta enano.",
+                score: 0.98,
+              },
+            ],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es Plutón?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("Wikipedia evidence should remain usable");
+    }
+    if ((result.independentSourceCount ?? 0) !== 1) {
+      throw new Error("contradictory snippets must not increase corroboration");
+    }
+    if (
+      result.sourceId !== wikiSource ||
+      result.sourceIds?.length !== 1 ||
+      result.sourceIds[0] !== wikiSource
+    ) {
+      throw new Error("contradictory Tavily sources must not be retained");
+    }
+  },
+);
+
+Deno.test(
+  "unrelated Tavily fallback is rejected so Gemini can answer the topic",
+  async () => {
+    let geminiCalled = false;
+    const expected =
+      "Un motor es una máquina que transforma energía en movimiento o trabajo.";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({
+            results: [
+              {
+                title: "Pronóstico del tiempo",
+                url: "https://weather.example/hoy",
+                content:
+                  "La lluvia continuará durante la tarde con temperaturas bajas.",
+                score: 0.99,
+              },
+              {
+                title: "Cuidados para gatos",
+                url: "https://pets.example/gatos",
+                content:
+                  "Los gatos necesitan agua, alimento y controles veterinarios.",
+                score: 0.98,
+              },
+            ],
+          });
+        }
+
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalled = true;
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: { parts: [{ text: expected }] },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "TAVILY_API_KEY") return "tvly-test-key";
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (!geminiCalled) {
+      throw new Error("Gemini general fallback should receive the rejected topic");
+    }
+    if (result.abstained || result.displayText !== expected) {
+      throw new Error("Gemini should answer after irrelevant Tavily results are rejected");
+    }
+    if (result.sourceId !== "gemini-general-assistant") {
+      throw new Error("irrelevant Tavily evidence must not become the final source");
+    }
+  },
+);
+
+Deno.test(
   "Wikipedia primary stage obeys shared route deadline and leaves time for Gemini",
   async () => {
     let wikipediaSawSignal = false;
