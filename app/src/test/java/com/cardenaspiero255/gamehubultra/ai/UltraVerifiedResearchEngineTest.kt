@@ -733,7 +733,7 @@ class UltraVerifiedResearchEngineTest {
         try {
             val result = engine.answer(
                 UltraGeneralQueryRouter.classify(
-                    "Ultra, ¿qué produce la fotosíntesis?"
+                    "Ultra, ¿qué es la fotosíntesis?"
                 )
             )
 
