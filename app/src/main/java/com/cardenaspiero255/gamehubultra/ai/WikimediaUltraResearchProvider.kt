@@ -109,6 +109,7 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
 
     override fun cancelActiveRequest(worker: Thread) {
         activeConnections.remove(worker)?.disconnect()
+        worker.interrupt()
     }
 
     private const val MIN_NETWORK_TIMEOUT_MS = 250L
