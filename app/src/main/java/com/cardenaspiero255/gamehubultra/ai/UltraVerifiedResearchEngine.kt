@@ -7,6 +7,7 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 sealed interface UltraProviderResult {
     data class Evidence(
@@ -36,7 +37,7 @@ interface UltraResearchProvider {
 
     fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence
 
-    fun cancelActiveRequest() = Unit
+    fun cancelActiveRequest(worker: Thread) = Unit
 
     fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult =
         try {
@@ -250,22 +251,31 @@ class UltraVerifiedResearchEngine(
                 !request.requiresFreshData
 
         val completion = ExecutorCompletionService<ProviderAttempt>(executor)
+        val providerWorkers = providers.map {
+            AtomicReference<Thread?>(null)
+        }
         val submitted = providers.mapIndexed { index, provider ->
             completion.submit {
-                val result = try {
-                    provider.fetchResult(request)
-                } catch (error: Exception) {
-                    UltraProviderResult.Failure(
-                        reasonCode = "PROVIDER_FAILURE",
-                        message = error.message,
-                        retryable = true
+                val worker = Thread.currentThread()
+                providerWorkers[index].set(worker)
+                try {
+                    val result = try {
+                        provider.fetchResult(request)
+                    } catch (error: Exception) {
+                        UltraProviderResult.Failure(
+                            reasonCode = "PROVIDER_FAILURE",
+                            message = error.message,
+                            retryable = true
+                        )
+                    }
+                    ProviderAttempt(
+                        index = index,
+                        providerId = provider.id,
+                        result = result
                     )
+                } finally {
+                    providerWorkers[index].compareAndSet(worker, null)
                 }
-                ProviderAttempt(
-                    index = index,
-                    providerId = provider.id,
-                    result = result
-                )
             }
         }
 
@@ -351,7 +361,11 @@ class UltraVerifiedResearchEngine(
         } catch (interrupted: InterruptedException) {
             submitted.forEachIndexed { index, future ->
                 if (!future.isDone) {
-                    runCatching { providers[index].cancelActiveRequest() }
+                    providerWorkers[index].get()?.let { worker ->
+                        runCatching {
+                            providers[index].cancelActiveRequest(worker)
+                        }
+                    }
                     future.cancel(true)
                 }
             }
@@ -362,7 +376,11 @@ class UltraVerifiedResearchEngine(
         if (timedOut || stoppedAfterGrace) {
             submitted.forEachIndexed { index, future ->
                 if (!future.isDone) {
-                    runCatching { providers[index].cancelActiveRequest() }
+                    providerWorkers[index].get()?.let { worker ->
+                        runCatching {
+                            providers[index].cancelActiveRequest(worker)
+                        }
+                    }
                     future.cancel(true)
                 }
             }
