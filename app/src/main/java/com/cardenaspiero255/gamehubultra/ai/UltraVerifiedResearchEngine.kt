@@ -748,7 +748,8 @@ class UltraVerifiedResearchEngine(
                     candidate.length >= 2 &&
                         candidate.none(Char::isDigit) &&
                         candidate !in STABLE_KNOWLEDGE_STOP_WORDS &&
-                        candidate !in STABLE_KNOWLEDGE_NEGATION_FILLERS
+                        candidate !in STABLE_KNOWLEDGE_NEGATION_FILLERS &&
+                        candidate !in STABLE_KNOWLEDGE_ANCHOR_FUNCTION_WORDS
                 }
                 ?: return@forEachIndexed
 
@@ -865,6 +866,11 @@ class UltraVerifiedResearchEngine(
             "debe", "deben", "suele", "suelen", "solo", "solamente",
             "son", "ser", "fue", "fueron", "era", "eran", "hay",
             "tiene", "tienen", "posee", "poseen"
+        )
+
+        val STABLE_KNOWLEDGE_ANCHOR_FUNCTION_WORDS = setOf(
+            "de", "del", "en", "el", "la", "lo", "le", "y", "e", "o", "u",
+            "a", "al", "es", "se", "su", "sus", "un", "mas", "entre", "hasta", "desde"
         )
 
         val NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS = setOf(
