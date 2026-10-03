@@ -2171,7 +2171,9 @@ Deno.test(
       throw new Error("Gemini should run with the remaining route budget");
     }
     if (result.abstained || result.displayText !== expected) {
-      throw new Error("Gemini should recover after the bounded Wikipedia stage");
+      throw new Error(
+        "Gemini should recover after the bounded Wikipedia stage",
+      );
     }
     if (elapsed >= 900) {
       throw new Error("shared route deadline was exhausted before fallback");
