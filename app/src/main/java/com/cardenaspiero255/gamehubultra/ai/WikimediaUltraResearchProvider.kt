@@ -98,15 +98,18 @@ class WikimediaUltraResearchProvider(
             append(urlEncode(topic))
         }
 
-        val search = getSafely(searchUrl, request.timeoutMillis)
-        if (search !is TransportOutcome.Success) {
-            return search.toProviderResult("wikimedia-search")
+        val searchResponse = when (
+            val attempt = getSafely(searchUrl, request.timeoutMillis)
+        ) {
+            is TransportOutcome.Success -> attempt.response
+            is TransportOutcome.Failure ->
+                return attempt.toProviderResult("wikimedia-search")
         }
-        if (search.response.statusCode !in 200..299) {
-            return httpFailure(search.response.statusCode, "wikimedia-search")
+        if (searchResponse.statusCode !in 200..299) {
+            return httpFailure(searchResponse.statusCode, "wikimedia-search")
         }
 
-        val title = jsonString(search.response.body, "title")
+        val title = jsonString(searchResponse.body, "title")
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?: return UltraProviderResult.Abstained(
@@ -123,18 +126,21 @@ class WikimediaUltraResearchProvider(
             append(urlEncode(title))
         }
 
-        val extractResponse = getSafely(extractUrl, request.timeoutMillis)
-        if (extractResponse !is TransportOutcome.Success) {
-            return extractResponse.toProviderResult("wikimedia-extract")
+        val extractResponse = when (
+            val attempt = getSafely(extractUrl, request.timeoutMillis)
+        ) {
+            is TransportOutcome.Success -> attempt.response
+            is TransportOutcome.Failure ->
+                return attempt.toProviderResult("wikimedia-extract")
         }
-        if (extractResponse.response.statusCode !in 200..299) {
+        if (extractResponse.statusCode !in 200..299) {
             return httpFailure(
-                extractResponse.response.statusCode,
+                extractResponse.statusCode,
                 "wikimedia-extract"
             )
         }
 
-        val extract = jsonString(extractResponse.response.body, "extract")
+        val extract = jsonString(extractResponse.body, "extract")
             ?.trim()
             ?.takeIf(String::isNotBlank)
             ?: return UltraProviderResult.Abstained(
@@ -144,7 +150,7 @@ class WikimediaUltraResearchProvider(
             )
 
         val canonicalUrl = jsonString(
-            extractResponse.response.body,
+            extractResponse.body,
             "canonicalurl"
         )
             ?.trim()
@@ -185,26 +191,15 @@ class WikimediaUltraResearchProvider(
             TransportOutcome.Failure(error.message)
         }
 
-    private fun TransportOutcome.toProviderResult(
+    private fun TransportOutcome.Failure.toProviderResult(
         stage: String
-    ): UltraProviderResult =
-        when (this) {
-            is TransportOutcome.Success ->
-                UltraProviderResult.Failure(
-                    reasonCode = "PUBLIC_FALLBACK_FAILURE",
-                    message = "Wikimedia no devolvió una respuesta utilizable.",
-                    retryable = true,
-                    stage = stage
-                )
-
-            is TransportOutcome.Failure ->
-                UltraProviderResult.Failure(
-                    reasonCode = "PUBLIC_FALLBACK_NETWORK_FAILURE",
-                    message = message,
-                    retryable = true,
-                    stage = stage
-                )
-        }
+    ): UltraProviderResult.Failure =
+        UltraProviderResult.Failure(
+            reasonCode = "PUBLIC_FALLBACK_NETWORK_FAILURE",
+            message = message,
+            retryable = true,
+            stage = stage
+        )
 
     private fun httpFailure(
         status: Int,
