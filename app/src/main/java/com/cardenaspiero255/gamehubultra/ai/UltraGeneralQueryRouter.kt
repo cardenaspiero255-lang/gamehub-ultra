@@ -8,12 +8,27 @@ enum class UltraGeneralQueryKind {
     COMPARISON_RESEARCH
 }
 
+enum class UltraVerificationMode {
+    LOCAL,
+    OPTIONAL,
+    REQUIRED
+}
+
 data class UltraGeneralQueryRequest(
     val originalText: String,
     val kind: UltraGeneralQueryKind,
     val requiresInternet: Boolean,
     val requiresFreshData: Boolean,
-    val timeoutMillis: Long
+    val timeoutMillis: Long,
+    val verificationMode: UltraVerificationMode = when {
+        requiresFreshData -> UltraVerificationMode.REQUIRED
+        kind == UltraGeneralQueryKind.CURRENT_DATA ->
+            UltraVerificationMode.REQUIRED
+        kind == UltraGeneralQueryKind.COMPARISON_RESEARCH ->
+            UltraVerificationMode.REQUIRED
+        requiresInternet -> UltraVerificationMode.OPTIONAL
+        else -> UltraVerificationMode.LOCAL
+    }
 )
 
 object UltraGeneralQueryRouter {
@@ -60,32 +75,40 @@ object UltraGeneralQueryRouter {
         """\b(hola|hello|buenas|buenos dias|buenas tardes|buenas noches|como estas|how are you|que tal|gracias|thanks|estoy aburrido|estoy aburrida|conversa conmigo|habla conmigo)\b"""
     )
 
+    private fun request(
+        transcript: String,
+        kind: UltraGeneralQueryKind,
+        verificationMode: UltraVerificationMode,
+        requiresFreshData: Boolean,
+        timeoutMillis: Long
+    ): UltraGeneralQueryRequest =
+        UltraGeneralQueryRequest(
+            originalText = transcript.trim(),
+            kind = kind,
+            requiresInternet = verificationMode == UltraVerificationMode.REQUIRED,
+            requiresFreshData = requiresFreshData,
+            timeoutMillis = timeoutMillis,
+            verificationMode = verificationMode
+        )
+
     fun classify(transcript: String): UltraGeneralQueryRequest {
         val clean = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
         return when {
             comparisonPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.COMPARISON_RESEARCH,
-                    requiresInternet = true,
+                    verificationMode = UltraVerificationMode.REQUIRED,
                     requiresFreshData = currentDataPattern.containsMatchIn(clean),
                     timeoutMillis = RESEARCH_TIMEOUT_MS
                 )
 
-            appContextOnlyPattern.matches(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+            appContextOnlyPattern.matches(clean) ||
+                assistantIdentityOnlyPattern.matches(clean) ->
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
-                    requiresFreshData = false,
-                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
-                )
-
-            assistantIdentityOnlyPattern.matches(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
-                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
+                    verificationMode = UltraVerificationMode.LOCAL,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
@@ -95,84 +118,70 @@ object UltraGeneralQueryRouter {
                     generalKnowledgePattern.containsMatchIn(clean) ||
                         broadFactualPattern.containsMatchIn(clean)
                     ) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
-                    requiresInternet = true,
+                    verificationMode = UltraVerificationMode.REQUIRED,
                     requiresFreshData = true,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
             explicitCurrentValuePattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
-                    requiresInternet = true,
+                    verificationMode = UltraVerificationMode.REQUIRED,
                     requiresFreshData = true,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
             definitionPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = true,
+                    verificationMode = UltraVerificationMode.OPTIONAL,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
             currentDataPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
-                    requiresInternet = true,
+                    verificationMode = UltraVerificationMode.REQUIRED,
                     requiresFreshData = true,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            englishWhyQuestionPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
-                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = true,
-                    requiresFreshData = false,
-                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
-                )
-
-            technicalProblemPattern.containsMatchIn(clean) &&
-                technicalSubjectPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
-                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = true,
-                    requiresFreshData = false,
-                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
-                )
-
-            generalKnowledgePattern.containsMatchIn(clean) ||
+            englishWhyQuestionPattern.containsMatchIn(clean) ||
+                (
+                    technicalProblemPattern.containsMatchIn(clean) &&
+                        technicalSubjectPattern.containsMatchIn(clean)
+                    ) ||
+                generalKnowledgePattern.containsMatchIn(clean) ||
                 broadFactualPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = true,
+                    verificationMode = UltraVerificationMode.OPTIONAL,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
             casualConversationPattern.containsMatchIn(clean) ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
+                    verificationMode = UltraVerificationMode.LOCAL,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
             else ->
-                UltraGeneralQueryRequest(
-                    originalText = transcript.trim(),
+                request(
+                    transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
-                    requiresInternet = false,
+                    verificationMode = UltraVerificationMode.LOCAL,
                     requiresFreshData = false,
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
