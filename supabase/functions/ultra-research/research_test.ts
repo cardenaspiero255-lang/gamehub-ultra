@@ -2255,13 +2255,19 @@ Deno.test(
     );
 
     if (!geminiCalled) {
-      throw new Error("Gemini general fallback should receive the rejected topic");
+      throw new Error(
+        "Gemini general fallback should receive the rejected topic",
+      );
     }
     if (result.abstained || result.displayText !== expected) {
-      throw new Error("Gemini should answer after irrelevant Tavily results are rejected");
+      throw new Error(
+        "Gemini should answer after irrelevant Tavily results are rejected",
+      );
     }
     if (result.sourceId !== "gemini-general-assistant") {
-      throw new Error("irrelevant Tavily evidence must not become the final source");
+      throw new Error(
+        "irrelevant Tavily evidence must not become the final source",
+      );
     }
   },
 );
