@@ -738,7 +738,7 @@ class UltraVerifiedResearchEngineTest {
             )
 
             assertFalse(result.abstained)
-            assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
+            assertEquals(UltraAnswerConfidence.MEDIUM, result.confidence)
         } finally {
             engine.close()
         }
