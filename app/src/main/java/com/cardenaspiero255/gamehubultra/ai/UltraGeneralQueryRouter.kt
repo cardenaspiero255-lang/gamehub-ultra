@@ -136,7 +136,10 @@ object UltraGeneralQueryRouter {
 
             explicitCurrentValuePattern.containsMatchIn(clean) ||
                 explicitWeatherValuePattern.containsMatchIn(clean) ||
-                explicitFreshUpdatePattern.containsMatchIn(clean) ->
+                (
+                    explicitFreshUpdatePattern.containsMatchIn(clean) &&
+                        !generalKnowledgePattern.containsMatchIn(clean)
+                    ) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
