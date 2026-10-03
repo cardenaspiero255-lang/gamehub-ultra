@@ -347,7 +347,7 @@ jobs:
       - name: Verify release research configuration
         shell: bash
         env:
-          TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
         run: |
           set -euo pipefail
           echo "RESEARCH_RELEASE_READY=false" >> "$GITHUB_ENV"
