@@ -688,6 +688,53 @@ class WikimediaUltraResearchProviderTest {
     }
 
     @Test
+    fun articleElWithExplicitSubjectDoesNotRequireContext() {
+        var calls = 0
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, _ ->
+                calls++
+                if (url.contains("list=search")) {
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"search":[{"title":"ADN"}]}}"""
+                    )
+                } else {
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"pages":{"1":{"extract":"El ADN contiene información genética.","canonicalurl":"https://es.wikipedia.org/wiki/ADN"}}}}"""
+                    )
+                }
+            }
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿El ADN qué es?")
+        )
+
+        assertIs<UltraProviderResult.Evidence>(result)
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun accentedPronounElStillRequiresConversationContext() {
+        var calls = 0
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                calls++
+                error("No debe consultar red sin sujeto explícito")
+            }
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿él qué es?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_CONTEXT_REQUIRED", abstained.reasonCode)
+        assertEquals(0, calls)
+    }
+
+    @Test
     fun exactShortTitleMatchesBeforeMinimumTokenLengthFilter() {
         val provider = WikimediaUltraResearchProvider(
             scriptedTransport(
