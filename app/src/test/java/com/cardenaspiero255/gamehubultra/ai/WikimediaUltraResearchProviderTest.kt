@@ -616,6 +616,112 @@ class WikimediaUltraResearchProviderTest {
         assertEquals("https://example.com/api", evidence.sourceId)
     }
 
+
+    @Test
+    fun offTopicSearchHitIsRejectedInsteadOfPresentedAsAuthoritative() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Gato doméstico"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"extract":"El gato doméstico es un mamífero.","canonicalurl":"https://es.wikipedia.org/wiki/Gato"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+    }
+
+    @Test
+    fun disambiguationPageIsRejected() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Mercurio"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"extract":"Mercurio puede referirse a varios conceptos.","canonicalurl":"https://es.wikipedia.org/wiki/Mercurio","pageprops":{"disambiguation":""}}}}}"""
+            )
+        )
+
+        val request = UltraGeneralQueryRequest(
+            originalText = "Ultra, ¿qué es Mercurio?",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = false,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L,
+            verificationMode = UltraVerificationMode.OPTIONAL
+        )
+
+        val result = provider.fetchResult(request)
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_DISAMBIGUATION", abstained.reasonCode)
+    }
+
+    @Test
+    fun dependentFollowUpWithoutExplicitSubjectDoesNotSearchWikipedia() {
+        var calls = 0
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                calls++
+                error("No debe consultar Wikimedia sin sujeto explícito")
+            }
+        )
+        val request = UltraGeneralQueryRequest(
+            originalText = "Ultra, ¿y cómo funciona eso?",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = false,
+            requiresFreshData = false,
+            timeoutMillis = 5_000L,
+            verificationMode = UltraVerificationMode.OPTIONAL
+        )
+
+        val result = provider.fetchResult(request)
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_CONTEXT_REQUIRED", abstained.reasonCode)
+        assertEquals(0, calls)
+    }
+
+    @Test
+    fun WikimediaCallsShareOneBoundedTimeoutBudget() {
+        val observed = mutableListOf<Long>()
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, timeoutMillis ->
+                observed += timeoutMillis
+                if (url.contains("list=search")) {
+                    Thread.sleep(80L)
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"search":[{"title":"Motor"}]}}"""
+                    )
+                } else {
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"pages":{"1":{"extract":"Un motor transforma energía en movimiento.","canonicalurl":"https://es.wikipedia.org/wiki/Motor"}}}}"""
+                    )
+                }
+            }
+        )
+        val request = UltraGeneralQueryRouter
+            .classify("Ultra, ¿qué es un motor?")
+            .copy(timeoutMillis = 4_000L)
+
+        val result = provider.fetchResult(request)
+
+        assertIs<UltraProviderResult.Evidence>(result)
+        assertEquals(2, observed.size)
+        assertTrue(observed.all { it in 250L..1_200L })
+        assertTrue(
+            observed.sum() <= 2_400L,
+            "Las dos llamadas no deben recibir el timeout completo: $observed"
+        )
+    }
+
     private fun withRawHttpServer(
         status: Int,
         body: String,
