@@ -1930,7 +1930,11 @@ Deno.test(
 
         throw new Error("unexpected URL " + url);
       },
-      env: (name) => name === "XAI_API_KEY" ? "xai-test-key" : undefined,
+      env: (name) => {
+        if (name === "XAI_API_KEY") return "xai-test-key";
+        if (name === "ULTRA_XAI_SYNTHESIS_TIMEOUT_MS") return "500";
+        return undefined;
+      },
     };
 
     const result = await routeResearchQuery(
