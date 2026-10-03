@@ -50,9 +50,13 @@ object VoiceCommandParser {
             return VoiceCommand.Network(request)
         }
 
+        val deviceTemperatureIntent =
+            Regex("""\b(temperatura|temperature)\b""").containsMatchIn(clean) &&
+                Regex("""\b(dispositivo|device|telefono|phone|movil|celular|cpu|soc|procesador|processor|bateria|battery|termica|thermal)\b""")
+                    .containsMatchIn(clean)
+
         if (
-            clean.contains("temperatura") ||
-            clean.contains("temperature") ||
+            deviceTemperatureIntent ||
             clean.contains("bateria") ||
             clean.contains("battery") ||
             clean.contains("estado del dispositivo") ||
