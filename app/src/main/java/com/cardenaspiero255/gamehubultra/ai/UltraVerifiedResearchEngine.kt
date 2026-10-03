@@ -207,10 +207,7 @@ object UltraSensitiveInputGuard {
 class UltraVerifiedResearchEngine(
     private val providers: List<UltraResearchProvider>,
     private val cache: UltraResearchCache = UltraResearchCache(),
-    private val nowMillis: () -> Long = System::currentTimeMillis,
-    private val executor: ExecutorService = Executors.newFixedThreadPool(
-        providers.size.coerceIn(1, 4)
-    )
+    private val nowMillis: () -> Long = System::currentTimeMillis
 ) : UltraResearchGateway {
 
     private data class ProviderAttempt(
@@ -245,12 +242,33 @@ class UltraVerifiedResearchEngine(
             )
         }
 
+        val requestExecutor = Executors.newFixedThreadPool(
+            providers.size.coerceIn(1, 4)
+        )
+        return try {
+            answerWithProviders(
+                request = request,
+                key = key,
+                usePersistentCache = usePersistentCache,
+                requestExecutor = requestExecutor
+            )
+        } finally {
+            requestExecutor.shutdownNow()
+        }
+    }
+
+    private fun answerWithProviders(
+        request: UltraGeneralQueryRequest,
+        key: String,
+        usePersistentCache: Boolean,
+        requestExecutor: ExecutorService
+    ): UltraVerifiedResearchResult {
         val optionalStableKnowledge =
             request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
                 request.verificationMode == UltraVerificationMode.OPTIONAL &&
                 !request.requiresFreshData
 
-        val completion = ExecutorCompletionService<ProviderAttempt>(executor)
+        val completion = ExecutorCompletionService<ProviderAttempt>(requestExecutor)
         val providerWorkers = providers.map {
             AtomicReference<Thread?>(null)
         }
@@ -577,6 +595,7 @@ class UltraVerifiedResearchEngine(
             persist = usePersistentCache
         )
         return result
+
     }
 
     private fun abstention(
@@ -690,7 +709,11 @@ class UltraVerifiedResearchEngine(
                     .filter(String::isNotBlank)
 
                 tokens.indices.asSequence()
-                    .filter { index -> tokens[index] in STABLE_KNOWLEDGE_NEGATIONS }
+                    .filter { index ->
+                        tokens[index] in STABLE_KNOWLEDGE_NEGATIONS &&
+                            tokens.getOrNull(index + 1) !in
+                            STABLE_KNOWLEDGE_ADDITIVE_MARKERS
+                    }
                     .mapNotNull { index ->
                         tokens
                             .drop(index + 1)
@@ -758,6 +781,10 @@ class UltraVerifiedResearchEngine(
             "no", "nunca", "jamas", "tampoco", "ni"
         )
 
+        val STABLE_KNOWLEDGE_ADDITIVE_MARKERS = setOf(
+            "solo", "solamente", "unicamente"
+        )
+
         val STABLE_KNOWLEDGE_NEGATION_FILLERS = setOf(
             "esta", "estan", "este", "estos", "estas", "puede", "pueden",
             "debe", "deben", "suele", "suelen", "solo", "solamente",
@@ -778,7 +805,5 @@ class UltraVerifiedResearchEngine(
         )
     }
 
-    override fun close() {
-        executor.shutdownNow()
-    }
+    override fun close() = Unit
 }
