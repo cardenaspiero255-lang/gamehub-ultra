@@ -1326,6 +1326,47 @@ async function tavilyEvidence(
   };
 }
 
+async function wikipediaActionExtract(
+  title: string,
+  deps: ResearchDependencies,
+): Promise<{ extract: string; source: string } | null> {
+  const url = new URL("https://es.wikipedia.org/w/api.php");
+  url.searchParams.set("action", "query");
+  url.searchParams.set("prop", "extracts|info");
+  url.searchParams.set("inprop", "url");
+  url.searchParams.set("exintro", "1");
+  url.searchParams.set("explaintext", "1");
+  url.searchParams.set("redirects", "1");
+  url.searchParams.set("titles", title);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const query = payload?.query && typeof payload.query === "object"
+    ? payload.query as JsonObject
+    : null;
+  const pages = query?.pages && typeof query.pages === "object"
+    ? query.pages as JsonObject
+    : null;
+  if (!pages) return null;
+
+  for (const pageValue of Object.values(pages)) {
+    if (!pageValue || typeof pageValue !== "object") continue;
+    const page = pageValue as JsonObject;
+    const extract = stringValue(page.extract);
+    if (!extract) continue;
+
+    const source = stringValue(page.canonicalurl) ??
+      ("https://es.wikipedia.org/wiki/" +
+        encodeURIComponent(title.replace(/ /g, "_")));
+    return { extract, source };
+  }
+
+  return null;
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -1381,7 +1422,20 @@ async function generalKnowledgeEvidence(
   }
   const extract = stringValue(summary?.extract);
   if (!extract) {
-    return await tavilyEvidence(query, deps);
+    const actionFallback = await wikipediaActionExtract(title, deps);
+    if (!actionFallback) {
+      return await tavilyEvidence(query, deps);
+    }
+
+    return {
+      claimKey: `general:${slug(title)}`,
+      value: normalize(actionFallback.extract),
+      displayText: actionFallback.extract,
+      sourceId: actionFallback.source,
+      sourceIds: [actionFallback.source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
   }
 
   const contentUrls = summary?.content_urls && typeof summary.content_urls === "object"
