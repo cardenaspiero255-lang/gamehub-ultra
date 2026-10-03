@@ -1980,10 +1980,12 @@ Deno.test(
         "expected xAI grounded synthesis when Gemini is unavailable",
       );
     }
-    const capturedXaiRequest = xaiRequestBody as Record<
-      string,
-      unknown
-    > | null;
+    const capturedXaiRequest = xaiRequestBody as
+      | Record<
+        string,
+        unknown
+      >
+      | null;
     if (!capturedXaiRequest) {
       throw new Error("expected grounded xAI request body");
     }
