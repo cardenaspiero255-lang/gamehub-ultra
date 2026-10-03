@@ -1389,13 +1389,17 @@ Deno.test("general knowledge falls back to Gemini when verified sources are unav
         };
         const generationConfig = body.generationConfig ?? {};
         if (generationConfig.maxOutputTokens !== 1500) {
-          throw new Error("Gemini general fallback needs output-token headroom");
+          throw new Error(
+            "Gemini general fallback needs output-token headroom",
+          );
         }
         const thinkingConfig = generationConfig.thinkingConfig as
           | Record<string, unknown>
           | undefined;
         if (thinkingConfig?.thinkingLevel !== "minimal") {
-          throw new Error("Gemini general fallback must use minimal thinking");
+          throw new Error(
+            "Gemini general fallback must use minimal thinking",
+          );
         }
         return jsonResponse({
           candidates: [{
@@ -2742,13 +2746,17 @@ Deno.test(
           };
           const generationConfig = body.generationConfig ?? {};
           if (generationConfig.maxOutputTokens !== 1500) {
-            throw new Error("Gemini synthesis needs output-token headroom");
+            throw new Error(
+              "Gemini synthesis needs output-token headroom",
+            );
           }
           const thinkingConfig = generationConfig.thinkingConfig as
             | Record<string, unknown>
             | undefined;
           if (thinkingConfig?.thinkingLevel !== "minimal") {
-            throw new Error("Gemini synthesis must use minimal thinking");
+            throw new Error(
+              "Gemini synthesis must use minimal thinking",
+            );
           }
           return jsonResponse({
             candidates: [{
