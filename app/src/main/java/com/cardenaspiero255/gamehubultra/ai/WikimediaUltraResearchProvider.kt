@@ -41,10 +41,13 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
             TimeUnit.MILLISECONDS.toNanos(safeTimeout.toLong())
         connection.requestMethod = "GET"
         connection.connectTimeout = safeTimeout
-        connection.readTimeout = safeTimeout
+        // Use bounded socket waits so cancellation can take effect promptly even
+        // while HttpURLConnection is blocked waiting for response headers.
+        connection.readTimeout = minOf(safeTimeout, CANCELLATION_POLL_TIMEOUT_MS)
         connection.setRequestProperty(
             "User-Agent",
-            "GameHub-Ultra/0.3 (Android; public knowledge fallback)"
+            "GameHub-Ultra/0.3 (Android; public knowledge fallback; " +
+                "github.com/cardenaspiero255-lang/gamehub-ultra)"
         )
         connection.setRequestProperty("Accept", "application/json")
         return try {
@@ -112,6 +115,7 @@ object HttpUrlConnectionUltraPublicKnowledgeTransport : UltraPublicKnowledgeTran
         worker.interrupt()
     }
 
+    private const val CANCELLATION_POLL_TIMEOUT_MS = 500
     private const val MIN_NETWORK_TIMEOUT_MS = 250L
     private const val MAX_NETWORK_TIMEOUT_MS = 5_000L
     private const val MAX_RESPONSE_BYTES = 512 * 1024
