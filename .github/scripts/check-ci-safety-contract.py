@@ -611,12 +611,29 @@ def main() -> None:
         "register_sentry_release.py",
     )
 
+    research_config = require_step(
+        android,
+        "device-validation",
+        "Verify release research configuration",
+        shell="bash",
+    )
+    for fragment in (
+        'RESEARCH_RELEASE_READY=false',
+        'research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"',
+        'RESEARCH_RELEASE_READY=true',
+    ):
+        require_run_fragment(
+            research_config,
+            "whitespace-safe release research configuration",
+            fragment,
+        )
+
     release_upload = require_step(
         android,
         "device-validation",
         "Upload installable release outputs",
         uses_prefix="actions/upload-artifact@",
-        allowed_if="env.SUPABASE_PUBLISHABLE_KEY != ''",
+        allowed_if="env.RESEARCH_RELEASE_READY == 'true'",
     )
     release_upload_with = release_upload.get("with")
     if not isinstance(release_upload_with, dict):
