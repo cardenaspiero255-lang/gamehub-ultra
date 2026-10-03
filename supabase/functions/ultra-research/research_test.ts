@@ -1942,6 +1942,69 @@ Deno.test(
 );
 
 Deno.test(
+  "stalled Tavily after Wikipedia abstention cannot block Gemini fallback",
+  async () => {
+    const expected =
+      "La fotosíntesis es el proceso por el que organismos convierten energía luminosa en energía química.";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+
+        if (url.hostname === "api.tavily.com") {
+          return new Promise<Response>(() => {});
+        }
+
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: { parts: [{ text: expected }] },
+            }],
+          });
+        }
+
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "TAVILY_API_KEY") return "tvly-test-key";
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        return undefined;
+      },
+    };
+
+    const result = await Promise.race([
+      routeResearchQuery(
+        "Ultra, ¿qué es la fotosíntesis?",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("stalled Tavily blocked Gemini fallback")),
+          1_000,
+        )
+      ),
+    ]);
+
+    if (result.abstained) {
+      throw new Error("Gemini fallback should answer after bounded Tavily wait");
+    }
+    if (result.displayText !== expected) {
+      throw new Error("expected Gemini fallback answer");
+    }
+  },
+);
+
+Deno.test(
   "slow optional Tavily corroboration cannot hold a ready Wikipedia answer",
   async () => {
     const deps: ResearchDependencies = {
