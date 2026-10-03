@@ -41,7 +41,7 @@ object UltraGeneralQueryRouter {
         """\b(compara|comparar|comparame|vs|versus|cual es mejor|cual tiene mejor|which is better|compare)\b"""
     )
     private val currentDataPattern = Regex(
-        """\b(clima|tiempo de hoy|weather|pronostico|forecast|noticias|news|precio|price|precios|prices|cuanto cuesta|cuanto cuestan|how much|cost|costs|salio nuevo|released|fecha de lanzamiento|release date)\b"""
+        """\b(clima|tiempo de hoy|weather|pronostico|forecast|temperatura|temperature|noticias|news|novedades|updates?|latest|newest|precio|price|precios|prices|cuanto cuesta|cuanto cuestan|how much|cost|costs|salio nuevo|released|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out|security patch|parche de seguridad)\b"""
     )
     private val explicitCurrentValuePattern = Regex(
         """\b(precio (?:de|del)|precios de|price of|prices of|cuanto cuesta|cuanto cuestan|how much|cost of|costs of|[a-z0-9]+\s+s\s+(?:price|cost))\b"""
