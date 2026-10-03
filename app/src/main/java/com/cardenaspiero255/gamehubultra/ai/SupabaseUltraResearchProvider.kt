@@ -3,7 +3,6 @@ package com.cardenaspiero255.gamehubultra.ai
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicReference
 
 data class UltraResearchHttpResponse(
     val statusCode: Int,
@@ -112,7 +111,6 @@ class SupabaseUltraResearchProvider(
         HttpUrlConnectionUltraResearchTransport
 ) : UltraResearchProvider {
     override val id: String = "supabase-ultra-research"
-    private val activeWorker = AtomicReference<Thread?>(null)
 
     override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
         when (val result = fetchResult(request)) {
@@ -123,21 +121,11 @@ class SupabaseUltraResearchProvider(
                 error(result.message ?: "Research backend failed: ${result.reasonCode}")
         }
 
-    override fun cancelActiveRequest() {
-        activeWorker.get()?.let(transport::cancelRequest)
+    override fun cancelActiveRequest(worker: Thread) {
+        transport.cancelRequest(worker)
     }
 
-    override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult {
-        val worker = Thread.currentThread()
-        activeWorker.set(worker)
-        return try {
-            fetchResultInternal(request)
-        } finally {
-            activeWorker.compareAndSet(worker, null)
-        }
-    }
-
-    private fun fetchResultInternal(
+    override fun fetchResult(
         request: UltraGeneralQueryRequest
     ): UltraProviderResult {
         if (supabaseUrl.isBlank() || publishableKey.isBlank()) {
