@@ -738,6 +738,12 @@ class UltraVerifiedResearchEngine(
                 .replace(',', '.')
                 .takeIf { it.matches(Regex("""\d+(?:\.\d+)?""")) }
                 ?: return@forEachIndexed
+            val precedingContext = tokens
+                .subList(maxOf(0, index - 4), index)
+                .map(::canonicalStableKnowledgeToken)
+            if (precedingContext.any(STABLE_KNOWLEDGE_EDITORIAL_DATE_MARKERS::contains)) {
+                return@forEachIndexed
+            }
             val percentSuffix = if (token.endsWith("%")) "%" else ""
             val anchor = (
                 tokens.drop(index + 1).asSequence() +
@@ -871,6 +877,11 @@ class UltraVerifiedResearchEngine(
         val STABLE_KNOWLEDGE_ANCHOR_FUNCTION_WORDS = setOf(
             "de", "del", "en", "el", "la", "lo", "le", "y", "e", "o", "u",
             "a", "al", "es", "se", "su", "sus", "un", "mas", "entre", "hasta", "desde"
+        )
+
+        val STABLE_KNOWLEDGE_EDITORIAL_DATE_MARKERS = setOf(
+            "actualizada", "actualizado", "revisada", "revisado", "publicada", "publicado",
+            "editada", "editado", "modificada", "modificado", "consultada", "consultado"
         )
 
         val NON_ACTIONABLE_PUBLIC_FALLBACK_REASONS = setOf(
