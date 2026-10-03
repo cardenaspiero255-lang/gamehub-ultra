@@ -461,10 +461,10 @@ class UltraVerifiedResearchEngine(
                 ?: error("Stable knowledge evidence unexpectedly disappeared")
 
             val sources = selectedEvidence.allSourceIds()
-            val corroborationCount = maxOf(
-                selectedEvidence.independentSourceCount.coerceAtLeast(1),
-                sources.size.coerceAtLeast(1)
-            )
+            // Multiple URLs can still belong to one underlying source. Confidence
+            // must follow the provider's independent-source count, not URL count.
+            val corroborationCount =
+                selectedEvidence.independentSourceCount.coerceAtLeast(1)
             val confidence = when {
                 corroborationCount >= 2 -> UltraAnswerConfidence.HIGH
                 selectedEvidence.authoritative -> UltraAnswerConfidence.MEDIUM
