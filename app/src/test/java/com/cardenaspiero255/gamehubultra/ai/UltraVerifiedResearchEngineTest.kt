@@ -631,10 +631,10 @@ class UltraVerifiedResearchEngineTest {
             override val id = "supabase-ultra-research"
 
             override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
-                Thread.sleep(600L)
+                Thread.sleep(400L)
                 return UltraResearchEvidence(
                     claimKey = "general:motor",
-                    value = "primary-verified",
+                    value = "transforma-energia-trabajo-mecanico",
                     displayText = "Un motor transforma energía en trabajo mecánico.",
                     sourceId = "https://primary.example/motor",
                     supportingSourceIds = listOf("https://primary-two.example/motor"),
@@ -649,8 +649,8 @@ class UltraVerifiedResearchEngineTest {
             override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
                 UltraResearchEvidence(
                     claimKey = "general:motor",
-                    value = "public-fallback",
-                    displayText = "Un motor es una máquina que produce movimiento.",
+                    value = "transforma-energia-trabajo-mecanico",
+                    displayText = "Un motor transforma energía en trabajo mecánico y movimiento.",
                     sourceId = "https://es.wikipedia.org/wiki/Motor",
                     independentSourceCount = 1,
                     authoritative = true
