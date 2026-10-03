@@ -45,6 +45,9 @@ internal object UltraResearchJsonCodec {
             append(request.verificationMode.name)
             append("\",\"requiresFreshData\":")
             append(request.requiresFreshData)
+            append(",\"correlationId\":\"")
+            append(escape(request.correlationId))
+            append('"')
             append('}')
         }
     }
