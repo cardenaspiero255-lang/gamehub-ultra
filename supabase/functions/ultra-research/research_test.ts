@@ -1982,20 +1982,28 @@ Deno.test(
       env: (name) => name === "TAVILY_API_KEY" ? "tvly-test-key" : undefined,
     };
 
-    const result = await Promise.race([
-      routeResearchQuery(
-        "Ultra, ¿qué es un motor?",
-        deps,
-        "",
-        "GENERAL_KNOWLEDGE",
-      ),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("optional Tavily blocked the ready answer")),
-          700,
-        )
-      ),
-    ]);
+    let guardTimer: number | undefined;
+    const guard = new Promise<never>((_, reject) => {
+      guardTimer = setTimeout(
+        () => reject(new Error("optional Tavily blocked the ready answer")),
+        700,
+      );
+    });
+
+    let result;
+    try {
+      result = await Promise.race([
+        routeResearchQuery(
+          "Ultra, ¿qué es un motor?",
+          deps,
+          "",
+          "GENERAL_KNOWLEDGE",
+        ),
+        guard,
+      ]);
+    } finally {
+      if (guardTimer !== undefined) clearTimeout(guardTimer);
+    }
 
     if (result.abstained) {
       throw new Error("ready Wikipedia evidence should be returned");
