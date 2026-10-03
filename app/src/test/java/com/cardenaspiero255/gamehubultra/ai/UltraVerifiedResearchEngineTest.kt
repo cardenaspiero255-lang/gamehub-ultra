@@ -660,6 +660,57 @@ class UltraVerifiedResearchEngineTest {
     }
 
     @Test
+    fun irrelevantWikimediaAbstentionDoesNotHidePrimaryFailure() {
+        val primary = object : UltraResearchProvider {
+            override val id = "supabase-ultra-research"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                error("unused")
+
+            override fun fetchResult(
+                request: UltraGeneralQueryRequest
+            ): UltraProviderResult =
+                UltraProviderResult.Failure(
+                    reasonCode = "BACKEND_NETWORK_FAILURE",
+                    message = "backend offline",
+                    retryable = true,
+                    stage = "supabase"
+                )
+        }
+        val fallback = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, _ ->
+                if (url.contains("list=search")) {
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"search":[{"title":"Motorola"}]}}"""
+                    )
+                } else {
+                    error("No debe consultar el extracto de un resultado irrelevante")
+                }
+            }
+        )
+        val engine = UltraVerifiedResearchEngine(listOf(primary, fallback))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Ultra, ¿qué es un motor?"
+                )
+            )
+
+            assertTrue(result.abstained)
+            assertEquals("BACKEND_NETWORK_FAILURE", result.reasonCode)
+            assertTrue(result.retryable)
+            assertEquals("supabase", result.stage)
+            assertTrue(
+                result.message.contains("no está disponible", ignoreCase = true)
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun copulaNegationDoesNotCreateFalseConflictForCompatibleFacts() {
         val first = object : UltraResearchProvider {
             override val id = "one"
