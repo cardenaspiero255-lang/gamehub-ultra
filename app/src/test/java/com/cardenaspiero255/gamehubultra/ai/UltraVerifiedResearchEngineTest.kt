@@ -700,6 +700,127 @@ class UltraVerifiedResearchEngineTest {
         }
     }
 
+    @Test
+    fun noSoloSinoDoesNotCreateFalseConflict() {
+        val expanded = object : UltraResearchProvider {
+            override val id = "expanded"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:fotosintesis",
+                    value = "la fotosintesis no solo produce oxigeno sino tambien glucosa",
+                    displayText =
+                        "La fotosíntesis no solo produce oxígeno, sino también glucosa.",
+                    sourceId = "https://source-a.example/fotosintesis",
+                    authoritative = true
+                )
+        }
+        val concise = object : UltraResearchProvider {
+            override val id = "concise"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:fotosintesis",
+                    value = "la fotosintesis produce oxigeno y glucosa",
+                    displayText =
+                        "La fotosíntesis produce oxígeno y glucosa.",
+                    sourceId = "https://source-b.example/fotosintesis",
+                    authoritative = true
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(expanded, concise))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Ultra, ¿qué produce la fotosíntesis?"
+                )
+            )
+
+            assertFalse(result.abstained)
+            assertEquals(UltraAnswerConfidence.HIGH, result.confidence)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun simultaneousRequestsDoNotStarveHealthyFallbacks() {
+        val firstFallbackCompleted = java.util.concurrent.CountDownLatch(1)
+        val primary = object : UltraResearchProvider {
+            override val id = "stalled-primary"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                Thread.sleep(5_000L)
+                error("La primaria bloqueada no debe ganar")
+            }
+        }
+        val fallback = object : UltraResearchProvider {
+            override val id = "wikimedia-public"
+
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence {
+                if (request.originalText.contains("primera", ignoreCase = true)) {
+                    firstFallbackCompleted.countDown()
+                }
+                return UltraResearchEvidence(
+                    claimKey = "general:motor",
+                    value = "motor transforma energia",
+                    displayText = "Un motor transforma energía en movimiento.",
+                    sourceId = "https://es.wikipedia.org/wiki/Motor",
+                    authoritative = true
+                )
+            }
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(primary, fallback))
+        val callers = java.util.concurrent.Executors.newFixedThreadPool(2)
+
+        try {
+            val first = callers.submit<UltraVerifiedResearchResult> {
+                engine.answer(
+                    UltraGeneralQueryRouter
+                        .classify("Ultra, ¿qué es un motor? primera")
+                        .copy(timeoutMillis = 2_000L)
+                )
+            }
+            assertTrue(
+                firstFallbackCompleted.await(
+                    1,
+                    java.util.concurrent.TimeUnit.SECONDS
+                )
+            )
+
+            val started = System.nanoTime()
+            val second = callers.submit<UltraVerifiedResearchResult> {
+                engine.answer(
+                    UltraGeneralQueryRouter
+                        .classify("Ultra, ¿qué es un motor? segunda")
+                        .copy(timeoutMillis = 2_000L)
+                )
+            }
+            val secondResult = second.get(
+                2,
+                java.util.concurrent.TimeUnit.SECONDS
+            )
+            val elapsedMillis =
+                java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - started
+                )
+
+            assertFalse(secondResult.abstained)
+            assertTrue(secondResult.fallbackUsed)
+            assertTrue(
+                elapsedMillis < 600L,
+                "La segunda consulta tardó ${elapsedMillis}ms; el fallback fue bloqueado por otra consulta."
+            )
+            assertFalse(
+                first.get(2, java.util.concurrent.TimeUnit.SECONDS).abstained
+            )
+        } finally {
+            callers.shutdownNow()
+            engine.close()
+        }
+    }
+
     private fun fixedProvider(
         providerId: String,
         claimKey: String,
