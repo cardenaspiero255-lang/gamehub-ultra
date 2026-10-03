@@ -737,7 +737,7 @@ class UltraVerifiedResearchEngine(
         value: String
     ): Map<String, Set<String>> {
         val tokens = normalizeStableText(value)
-            .replace(Regex("""[^a-z0-9.,%]+"""), " ")
+            .replace(Regex("""[^a-z0-9.,%+-]+"""), " ")
             .split(' ')
             .map(String::trim)
             .filter(String::isNotBlank)
@@ -778,8 +778,8 @@ class UltraVerifiedResearchEngine(
         val normalized = token
             .removeSuffix("%")
             .replace(',', '.')
-        if (normalized.matches(Regex("""\d+(?:\.\d+)?"""))) {
-            return normalized
+        if (normalized.matches(Regex("""[+-]?\d+(?:\.\d+)?"""))) {
+            return normalized.removePrefix("+")
         }
         return STABLE_KNOWLEDGE_WRITTEN_QUANTITIES[normalized]
     }
