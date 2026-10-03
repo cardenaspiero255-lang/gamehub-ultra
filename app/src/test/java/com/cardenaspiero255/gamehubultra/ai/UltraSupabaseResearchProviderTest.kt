@@ -164,7 +164,7 @@ class UltraSupabaseResearchProviderTest {
         try {
             worker.start()
             assertTrue(entered.await(1, java.util.concurrent.TimeUnit.SECONDS))
-            provider.cancelActiveRequest()
+            provider.cancelActiveRequest(worker)
             worker.join(1_000L)
 
             assertEquals(worker, cancelledThread)
