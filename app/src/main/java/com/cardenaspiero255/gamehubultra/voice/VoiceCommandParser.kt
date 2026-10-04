@@ -53,7 +53,7 @@ object VoiceCommandParser {
         val temperatureMention =
             Regex("""\b(temperatura|temperature)\b""").containsMatchIn(clean)
         val ambientTemperatureIntent =
-            Regex("""\b(que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in))\b""")
+            Regex("""\b(que temperatura hace|temperatura (?:actual|ahora|hoy|en|afuera|exterior)|temperature (?:now|today|in|outside|outdoors))\b""")
                 .containsMatchIn(clean)
         val deviceTemperatureIntent =
             temperatureMention &&
