@@ -167,25 +167,209 @@ class GameHubAiAdvisor(
 
     private fun deterministicStableKnowledgeOrNull(message: String): String? {
         val normalized = normalize(message)
-        val definitionQuery = normalized
+        val query = normalized
+            .removePrefix("gamehub ultra ")
+            .removePrefix("gamehub ")
             .removePrefix("ultra ")
             .trimStart()
-        val asksDefinition = listOf(
+
+        val asksStableQuestion = listOf(
             "que es ",
             "que son ",
             "que significa ",
             "define ",
-            "definicion de "
-        ).any(definitionQuery::startsWith)
-        if (!asksDefinition) return null
+            "definicion de ",
+            "por que ",
+            "para que sirve ",
+            "como funciona ",
+            "explicame ",
+            "explica ",
+            "cuantos ",
+            "como se llama ",
+            "donde esta ",
+            "cuando fue ",
+            "what is ",
+            "what are ",
+            "why ",
+            "how does ",
+            "explain ",
+            "how many ",
+            "where is ",
+            "when was "
+        ).any(query::startsWith)
+        if (!asksStableQuestion) return null
+
+        val requiresFreshData = listOf(
+            " actual ",
+            " actualmente ",
+            " ahora ",
+            " hoy ",
+            " precio ",
+            " precios ",
+            " noticias ",
+            " novedades ",
+            " latest ",
+            " current ",
+            " today ",
+            " price ",
+            " news ",
+            " release date ",
+            " fecha de lanzamiento "
+        ).any { signal -> " $query ".contains(signal) }
+        if (requiresFreshData) return null
 
         return when {
             Regex("""\btik\s*tok\b|\btiktok\b""").containsMatchIn(normalized) ->
                 "TikTok es una plataforma social centrada en videos cortos donde las personas pueden crear, descubrir y compartir contenido. También ofrece recomendaciones personalizadas según la interacción del usuario."
+
             Regex("""\bsentimientos?\b""").containsMatchIn(normalized) ->
                 "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones. Pueden influir en cómo percibimos, decidimos y actuamos, y suelen durar más que una reacción emocional instantánea."
+
             Regex("""\bemocion(?:es)?\b""").containsMatchIn(normalized) ->
                 "Las emociones son respuestas psicofisiológicas ante estímulos internos o externos. Suelen aparecer rápidamente, preparan al organismo para responder y pueden dar lugar a sentimientos cuando las interpretamos conscientemente."
+
+            normalized.contains("fotosintesis") || normalized.contains("photosynthesis") ->
+                "La fotosíntesis es el proceso mediante el cual plantas, algas y algunas bacterias usan la luz para transformar agua y dióxido de carbono en energía química almacenada en azúcares, liberando oxígeno como subproducto."
+
+            normalized.contains("agujero negro") || normalized.contains("black hole") ->
+                "Un agujero negro es una región del espacio donde la gravedad es tan intensa que, más allá de su horizonte de sucesos, ni siquiera la luz puede escapar."
+
+            Regex("""\badn\b|\bdna\b""").containsMatchIn(normalized) ->
+                "El ADN es la molécula que almacena la información genética usada por los seres vivos para desarrollarse, funcionar y transmitir rasgos hereditarios."
+
+            Regex("""\bcelulas?\b|\bcells?\b""").containsMatchIn(normalized) ->
+                "Una célula es la unidad básica de la vida: puede realizar funciones esenciales como obtener energía, mantener su estructura y reproducirse."
+
+            Regex("""\bvolcan(?:es)?\b|\bvolcano(?:es)?\b""").containsMatchIn(normalized) ->
+                "Un volcán es una abertura de la corteza terrestre por la que pueden salir magma, gases y materiales sólidos desde el interior del planeta."
+
+            normalized.contains("gravedad") || normalized.contains("gravity") ->
+                "La gravedad es la interacción por la que los cuerpos con masa se atraen; cerca de la Tierra hace que los objetos aceleren hacia el suelo."
+
+            normalized.contains("electricidad") || normalized.contains("electricity") ->
+                "La electricidad describe fenómenos asociados a las cargas eléctricas y a su movimiento; una corriente eléctrica es un flujo ordenado de carga."
+
+            normalized.contains("energia cinetica") || normalized.contains("kinetic energy") ->
+                "La energía cinética es la energía que posee un cuerpo debido a su movimiento."
+
+            normalized.contains("energia potencial") || normalized.contains("potential energy") ->
+                "La energía potencial es energía almacenada por la posición o configuración de un sistema, como un objeto elevado en un campo gravitatorio."
+
+            Regex("""\bmoleculas?\b|\bmolecules?\b""").containsMatchIn(normalized) ->
+                "Una molécula es un conjunto de dos o más átomos unidos mediante enlaces químicos que forman una unidad definida."
+
+            Regex("""\batomos?\b|\batoms?\b""").containsMatchIn(normalized) ->
+                "Un átomo es una unidad básica de la materia formada por un núcleo con protones y neutrones, rodeado por electrones."
+
+            normalized.contains("via lactea") || normalized.contains("milky way") ->
+                "La Vía Láctea es la galaxia espiral barrada en la que se encuentra el sistema solar."
+
+            normalized.contains("sistema solar") || normalized.contains("solar system") ->
+                "El sistema solar es el conjunto formado por el Sol y los cuerpos ligados gravitacionalmente a él, incluidos ocho planetas, lunas, asteroides y cometas."
+
+            Regex("""\bgalaxias?\b|\bgalax(?:y|ies)\b""").containsMatchIn(normalized) ->
+                "Una galaxia es un enorme sistema de estrellas, gas, polvo y materia oscura unido principalmente por la gravedad."
+
+            normalized.contains("eclipse") ->
+                "Un eclipse ocurre cuando un cuerpo celeste oculta total o parcialmente a otro desde la perspectiva de un observador."
+
+            normalized.contains("evaporacion") || normalized.contains("evaporation") ->
+                "La evaporación es el paso gradual de un líquido a gas desde su superficie cuando algunas moléculas adquieren suficiente energía."
+
+            normalized.contains("condensacion") || normalized.contains("condensation") ->
+                "La condensación es el cambio de estado por el que un gas pierde energía y se transforma en líquido."
+
+            normalized.contains("presion atmosferica") || normalized.contains("atmospheric pressure") ->
+                "La presión atmosférica es la fuerza por unidad de área ejercida por el peso del aire de la atmósfera."
+
+            normalized.contains("ecosistema") || normalized.contains("ecosystem") ->
+                "Un ecosistema es el conjunto de seres vivos de un lugar, el ambiente físico y las interacciones entre ambos."
+
+            normalized.contains("cadena alimentaria") || normalized.contains("food chain") ->
+                "Una cadena alimentaria representa cómo la energía y la materia pasan de unos organismos a otros cuando unos se alimentan de otros."
+
+            normalized.contains("seleccion natural") || normalized.contains("natural selection") ->
+                "La selección natural es el proceso evolutivo por el que rasgos heredables que favorecen supervivencia o reproducción tienden a hacerse más frecuentes."
+
+            Regex("""\bvacunas?\b|\bvaccines?\b""").containsMatchIn(normalized) ->
+                "Una vacuna entrena al sistema inmunitario para reconocer un agente o componente específico y responder con mayor rapidez frente a una exposición futura."
+
+            Regex("""\bbacterias?\b|\bbacteria\b""").containsMatchIn(normalized) ->
+                "Una bacteria es un microorganismo unicelular procariota; muchas son inofensivas o beneficiosas y algunas pueden causar enfermedades."
+
+            Regex("""\bvirus\b""").containsMatchIn(normalized) ->
+                "Un virus es una entidad infecciosa compuesta por material genético y una cubierta que necesita células huésped para replicarse."
+
+            Regex("""\balgoritmos?\b|\balgorithms?\b""").containsMatchIn(normalized) ->
+                "Un algoritmo es una secuencia finita y ordenada de pasos para resolver un problema o realizar una tarea."
+
+            Regex("""\bapi\b""").containsMatchIn(normalized) ->
+                "Una API es una interfaz que define cómo distintos componentes de software pueden comunicarse mediante operaciones y datos acordados."
+
+            normalized.contains("base de datos") || normalized.contains("database") ->
+                "Una base de datos es una colección organizada de información diseñada para almacenarse, consultarse y actualizarse de forma eficiente."
+
+            normalized.contains("memoria ram") ||
+                normalized.contains("random access memory") ||
+                Regex("""\bram\b""").containsMatchIn(normalized) ->
+                "La memoria RAM es la memoria de trabajo rápida que mantiene temporalmente datos y programas que el sistema está usando en ese momento."
+
+            Regex("""\bgpu\b""").containsMatchIn(normalized) ->
+                "Una GPU es un procesador especializado en realizar muchas operaciones en paralelo, originalmente para gráficos y también útil en cómputo e inteligencia artificial."
+
+            normalized.contains("vulkan") ->
+                "Vulkan es una API gráfica y de cómputo de bajo nivel y multiplataforma diseñada para dar a las aplicaciones un control explícito y eficiente de la GPU."
+
+            normalized.contains("compilador") || normalized.contains("compiler") ->
+                "Un compilador es un programa que traduce código escrito en un lenguaje fuente a otra representación ejecutable o intermedia."
+
+            normalized.contains("variable en programacion") || normalized.contains("programming variable") ->
+                "Una variable en programación es un nombre asociado a un valor o referencia que un programa puede consultar y, según el lenguaje, modificar."
+
+            normalized.contains("funcion en programacion") || normalized.contains("programming function") ->
+                "Una función en programación es un bloque reutilizable de código que realiza una tarea y puede recibir entradas y devolver un resultado."
+
+            normalized.contains("red neuronal") || normalized.contains("neural network") ->
+                "Una red neuronal artificial es un modelo de aprendizaje automático formado por capas de unidades conectadas que ajustan parámetros para aprender patrones a partir de datos."
+
+            normalized.contains("aprendizaje automatico") || normalized.contains("machine learning") ->
+                "El aprendizaje automático es una rama de la inteligencia artificial en la que los sistemas aprenden patrones a partir de datos para realizar predicciones o decisiones."
+
+            normalized.contains("inteligencia artificial") || normalized.contains("artificial intelligence") ->
+                "La inteligencia artificial es el campo que desarrolla sistemas capaces de realizar tareas asociadas al razonamiento, percepción, aprendizaje, lenguaje o toma de decisiones."
+
+            (normalized.contains("por que el cielo") || normalized.contains("why the sky")) &&
+                (normalized.contains("azul") || normalized.contains("blue")) ->
+                "El cielo se ve azul principalmente porque las moléculas del aire dispersan con más intensidad las longitudes de onda cortas de la luz solar, como el azul."
+
+            (normalized.contains("por que flotan") || normalized.contains("why do")) &&
+                (normalized.contains("barcos") || normalized.contains("boats")) ->
+                "Los barcos flotan cuando el empuje hacia arriba del agua iguala su peso; su forma hace que desplacen suficiente agua para lograrlo."
+
+            normalized.contains("motor electrico") || normalized.contains("electric motor") ->
+                "Un motor eléctrico convierte energía eléctrica en movimiento mediante fuerzas magnéticas entre corrientes eléctricas y campos magnéticos."
+
+            normalized.contains("panel solar") || normalized.contains("solar panel") ->
+                "Un panel solar fotovoltaico convierte parte de la energía de la luz en electricidad mediante celdas semiconductoras que generan corriente al recibir fotones."
+
+            normalized.contains("refrigerador") || normalized.contains("refrigerator") ->
+                "Un refrigerador extrae calor de su interior y lo expulsa al exterior mediante un ciclo de compresión, condensación, expansión y evaporación de un refrigerante."
+
+            normalized.contains("cuantos planetas") || normalized.contains("how many planets") ->
+                "Hay ocho planetas reconocidos en el sistema solar: Mercurio, Venus, Tierra, Marte, Júpiter, Saturno, Urano y Neptuno."
+
+            normalized.contains("capital de francia") || normalized.contains("capital of france") ->
+                "La capital de Francia es París."
+
+            normalized.contains("monte everest") || normalized.contains("mount everest") ->
+                "El monte Everest está en el Himalaya, en la frontera entre Nepal y la Región Autónoma del Tíbet de China."
+
+            normalized.contains("revolucion francesa") || normalized.contains("french revolution") ->
+                "La Revolución Francesa comenzó en 1789 y transformó profundamente el sistema político y social de Francia."
+
+            Regex("""\bmotor(?:es)?\b|\bengine(?:s)?\b""").containsMatchIn(normalized) ->
+                "Un motor es una máquina que transforma una forma de energía en movimiento o trabajo mecánico."
+
             else -> null
         }
     }
