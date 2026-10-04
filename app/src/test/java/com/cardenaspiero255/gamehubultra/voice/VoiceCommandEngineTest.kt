@@ -631,4 +631,25 @@ class VoiceCommandEngineTest {
         assertEquals("the crew", savedAlias)
     }
 
+    @Test
+    fun popularAliasBsOpensBrawlStars() {
+        val games = listOf(GameInfo("com.supercell.brawlstars", "Brawl Stars"))
+
+        assertEquals(
+            "com.supercell.brawlstars",
+            GameMatchFinder.find("BS", games)?.packageName
+        )
+    }
+
+    @Test
+    fun popularAliasBsFailsClosedWhenMultipleBrawlStarsCandidatesExist() {
+        val games = listOf(
+            GameInfo("com.supercell.brawlstars", "Brawl Stars"),
+            GameInfo("com.example.brawlstarsbeta", "Brawl Stars Beta")
+        )
+
+        assertEquals(null, GameMatchFinder.find("BS", games))
+    }
+
+
 }
