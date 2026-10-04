@@ -29,7 +29,8 @@ class VoiceAssistantController(
     context: Context,
     private val onListeningChanged: (Boolean) -> Unit,
     private val onTranscript: (String) -> Unit,
-    private val onError: (Int) -> Unit
+    private val onError: (Int) -> Unit,
+    private val onPartialTranscript: (String) -> Unit = {}
 ) {
     private val appContext = context.applicationContext
     private var recognizer: SpeechRecognizer? = null
@@ -156,7 +157,14 @@ class VoiceAssistantController(
             )?.let(onTranscript)
         }
 
-        override fun onPartialResults(partialResults: Bundle?) = Unit
+        override fun onPartialResults(partialResults: Bundle?) {
+            partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
+                ?.let(onPartialTranscript)
+        }
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onError(error: Int) {
