@@ -1096,6 +1096,25 @@ class WikimediaUltraResearchProviderTest {
         assertEquals("https://es.wikipedia.org/wiki/TikTok", evidence.sourceId)
     }
 
+    @Test
+    fun compactStringCollisionDoesNotBypassTopicRelevance() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Therapist"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"extract":"A therapist is a trained professional.","canonicalurl":"https://example.com/therapist"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es the rapist?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+    }
+
     private fun withRawHttpServer(
         status: Int,
         body: String,
