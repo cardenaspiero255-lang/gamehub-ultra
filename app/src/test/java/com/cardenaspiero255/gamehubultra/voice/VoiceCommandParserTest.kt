@@ -181,6 +181,17 @@ class VoiceCommandParserTest {
         assertIs<VoiceCommand.Unknown>(command)
     }
 
+
+    @Test
+    fun outdoorTemperatureQuestionsAreNotDeviceStatus() {
+        assertIs<VoiceCommand.Unknown>(
+            VoiceCommandParser.parse("Ultra, what's the temperature outside?")
+        )
+        assertIs<VoiceCommand.Unknown>(
+            VoiceCommandParser.parse("Ultra, ¿qué temperatura hace afuera?")
+        )
+    }
+
     @Test
     fun explicitDeviceTemperatureRemainsDeviceStatus() {
         assertEquals(
