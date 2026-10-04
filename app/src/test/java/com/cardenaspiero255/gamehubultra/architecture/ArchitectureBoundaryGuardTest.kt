@@ -1194,4 +1194,17 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun inSessionProfileSafetyIsWiredIntoVoiceRuntime() {
+        val runtime = sourceFile(
+            "com/cardenaspiero255/gamehubultra/voice/UltraWakeCommandRuntime.kt"
+        ).readText()
+
+        assertTrue(
+            runtime.contains("UltraSessionProfileSafety.canApply("),
+            "CAR-38 session profile safety must guard the real Ultra voice runtime"
+        )
+    }
+
+
 }
