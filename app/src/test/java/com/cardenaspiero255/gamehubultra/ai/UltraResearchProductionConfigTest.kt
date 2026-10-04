@@ -2,7 +2,6 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class UltraResearchProductionConfigTest {
     @Test
@@ -27,10 +26,11 @@ class UltraResearchProductionConfigTest {
         )
     }
     @Test
-    fun blankPublishableKeyUsesPackagedPublicClientFallback() {
-        val key = UltraResearchProductionConfig.resolvePublishableKey("")
-        assertTrue(key.startsWith("sb_publishable_"))
-        assertTrue(key.length > "sb_publishable_".length)
+    fun blankPublishableKeyUsesCanonicalPackagedPublicClientFallback() {
+        assertEquals(
+            "sb_publishable_ApYyZYZoVTV1-UwO2ts5Iw_H_TAUCMB",
+            UltraResearchProductionConfig.resolvePublishableKey("")
+        )
     }
 
     @Test
