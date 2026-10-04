@@ -1947,6 +1947,7 @@ Deno.test("xAI general caller timeout can exceed the default fetch attempt timeo
       "default fetch timeout must not preempt the xAI caller timeout",
     );
   }
+  if (result.abstained || result.sourceId !== "xai-general-assistant") {
     throw new Error(
       "xAI should be allowed to answer within the caller timeout",
     );
