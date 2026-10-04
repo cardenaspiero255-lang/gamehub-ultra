@@ -46,4 +46,49 @@ class UltraVoicePersonalizationCar39CompletionTest {
             )
         )
     }
+
+    @Test
+    fun explicitPreferredCommandUsesOnlySelectedGamePreference() {
+        val preferences = UltraVoicePreferenceBundle(
+            perGamePreferredActions = mapOf(
+                "com.supercell.brawlstars" to UltraSafeVoiceAction.SelectBalancedProfile
+            )
+        )
+
+        assertEquals(
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED),
+            UltraVoicePersonalizationResolver.resolve(
+                transcript = "Ultra usa mi comando preferido",
+                selectedGamePackage = "com.supercell.brawlstars",
+                preferences = preferences
+            )
+        )
+        assertEquals(
+            null,
+            UltraVoicePersonalizationResolver.resolve(
+                transcript = "Ultra usa mi comando preferido",
+                selectedGamePackage = "com.other.game",
+                preferences = preferences
+            )
+        )
+    }
+
+    @Test
+    fun repositoryExportsAndImportsOnlyValidatedVoicePreferences() {
+        var stored: String? = null
+        val repository = CodecBackedUltraVoicePreferenceRepository(
+            read = { stored },
+            write = { stored = it }
+        )
+        val bundle = UltraVoicePreferenceBundle(
+            phrases = mapOf("modo tranquilo" to UltraSafeVoiceAction.SelectBalancedProfile)
+        )
+        repository.save(bundle)
+
+        val exported = repository.exportPreferences()
+        assertEquals(true, repository.importPreferences(exported))
+        assertEquals(bundle, repository.load())
+        assertEquals(false, repository.importPreferences("v1|phrase|hack|DELETE_DATA"))
+        assertEquals(bundle, repository.load())
+    }
 }
