@@ -424,6 +424,15 @@ class WikimediaUltraResearchProvider(
             return true
         }
 
+        val compactTopic = normalizedTopic.replace(" ", "")
+        val compactTitle = normalizedTitle.replace(" ", "")
+        if (
+            compactTopic.length >= 3 &&
+            compactTopic == compactTitle
+        ) {
+            return true
+        }
+
         val topicTokens = meaningfulTokens(topic)
         val titleTokens = meaningfulTokens(title)
         if (
