@@ -181,8 +181,8 @@ class WikimediaUltraResearchProvider(
             java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(
                 request.timeoutMillis.coerceAtLeast(1L)
             )
-        val perCallBudgetMillis = (request.timeoutMillis / 4L)
-            .coerceIn(250L, 1_200L)
+        val perCallBudgetMillis = (request.timeoutMillis / 3L)
+            .coerceIn(500L, 3_000L)
 
         val searchUrl = buildString {
             append("https://es.wikipedia.org/w/api.php")
