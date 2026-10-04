@@ -7,7 +7,7 @@ internal data class UltraSessionMetrics(
     val batteryPercent: Int? = null,
     val thermalLabel: String? = null,
     val ramMb: Long? = null,
-    val latencyMs: Int? = null
+    val latencyMs: Long? = null
 )
 
 internal sealed interface UltraInSessionVoiceResponse {
@@ -32,7 +32,7 @@ internal object UltraSessionMetricsFactory {
         batteryPercent: Int?,
         thermalLabel: String?,
         totalRamMb: Long?,
-        networkLatencyMs: Int?
+        networkLatencyMs: Long?
     ): UltraSessionMetrics = UltraSessionMetrics(
         sessionActive = selectedGamePackage != null,
         fps = null,
