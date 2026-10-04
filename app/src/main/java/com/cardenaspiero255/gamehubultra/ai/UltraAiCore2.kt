@@ -66,8 +66,18 @@ data class UltraAiCoreResult(
     val requiresCloud: Boolean
 )
 
-class UltraAiCore2(private val recommender: UltraAiRecommender?) {
+interface UltraAiCoreGateway {
     fun evaluate(
+        observation: UltraAiObservation,
+        feedback: UltraAiFeedbackSnapshot,
+        memories: List<UltraAiMemorySignal>
+    ): UltraAiCoreResult
+}
+
+class UltraAiCore2(
+    private val recommender: UltraAiRecommender? = null
+) : UltraAiCoreGateway {
+    override fun evaluate(
         observation: UltraAiObservation,
         feedback: UltraAiFeedbackSnapshot,
         memories: List<UltraAiMemorySignal>
