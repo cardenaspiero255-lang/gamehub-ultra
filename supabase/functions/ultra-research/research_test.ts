@@ -3469,7 +3469,8 @@ Deno.test("weather falls back to independently sourced web evidence when Open-Me
       throw new Error("unexpected URL " + url);
     },
     env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
-    secret: (name) => Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
   };
 
   const result = await routeResearchQuery(
@@ -3517,7 +3518,8 @@ Deno.test("news falls back to independently sourced web evidence when GDELT is i
       throw new Error("unexpected URL " + url);
     },
     env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
-    secret: (name) => Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
   };
 
   const result = await routeResearchQuery(
