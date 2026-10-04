@@ -3930,3 +3930,57 @@ Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic"
     throw new Error("expected Wikipedia evidence");
   }
 });
+
+
+Deno.test("stable definition mislabeled as current data recovers through general knowledge", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        if (url.searchParams.get("srsearch") !== "motor") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        return jsonResponse({
+          query: { search: [{ title: "Motor" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          extract:
+            "Un motor es una máquina que transforma energía en trabajo mecánico.",
+          content_urls: {
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Motor",
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return new Response("bad request", { status: 400 });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+  };
+
+  const result = await routeResearchQuery(
+    "Qué es un motor",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) {
+    throw new Error("stable definition should recover from a stale client kind");
+  }
+  if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
+    throw new Error("expected general-knowledge evidence from Wikipedia");
+  }
+});
