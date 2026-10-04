@@ -3439,7 +3439,6 @@ Deno.test("retrying upstream requests respect a bounded attempt timeout", async 
   }
 });
 
-
 Deno.test("weather falls back to independently sourced web evidence when Open-Meteo fails", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -3450,8 +3449,20 @@ Deno.test("weather falls back to independently sourced web evidence when Open-Me
       if (url.hostname === "api.tavily.com") {
         return jsonResponse({
           results: [
-            { title: "Clima en Talca hoy", url: "https://weather-one.example/talca", content: "El clima en Talca hoy registra 18 grados y cielo despejado.", score: 0.9 },
-            { title: "Tiempo actual en Talca", url: "https://weather-two.example/talca", content: "Talca registra hoy 18 grados con condiciones despejadas.", score: 0.8 },
+            {
+              title: "Clima en Talca hoy",
+              url: "https://weather-one.example/talca",
+              content:
+                "El clima en Talca hoy registra 18 grados y cielo despejado.",
+              score: 0.9,
+            },
+            {
+              title: "Tiempo actual en Talca",
+              url: "https://weather-two.example/talca",
+              content:
+                "Talca registra hoy 18 grados con condiciones despejadas.",
+              score: 0.8,
+            },
           ],
         });
       }
@@ -3486,8 +3497,20 @@ Deno.test("news falls back to independently sourced web evidence when GDELT is i
       if (url.hostname === "api.tavily.com") {
         return jsonResponse({
           results: [
-            { title: "Novedades de Android", url: "https://news-one.example/android", content: "Android recibe hoy una nueva actualización con mejoras de seguridad.", score: 0.9 },
-            { title: "Actualización de Android", url: "https://news-two.example/android", content: "La actualización de Android añade nuevas mejoras de seguridad.", score: 0.8 },
+            {
+              title: "Novedades de Android",
+              url: "https://news-one.example/android",
+              content:
+                "Android recibe hoy una nueva actualización con mejoras de seguridad.",
+              score: 0.9,
+            },
+            {
+              title: "Actualización de Android",
+              url: "https://news-two.example/android",
+              content:
+                "La actualización de Android añade nuevas mejoras de seguridad.",
+              score: 0.8,
+            },
           ],
         });
       }
