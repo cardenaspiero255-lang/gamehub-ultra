@@ -149,3 +149,31 @@ internal object UltraVoicePreferenceCodec {
     private inline fun <reified T : Enum<T>> enumValueOrNull(value: String): T? =
         enumValues<T>().singleOrNull { it.name == value }
 }
+
+
+internal object UltraVoicePersonalizationResolver {
+    fun resolve(
+        transcript: String,
+        selectedGamePackage: String?,
+        preferences: UltraVoicePreferenceBundle
+    ): VoiceCommand? {
+        val action = UltraVoicePhrasePreferences(preferences.phrases).resolve(transcript)
+            ?: return null
+        return action.toVoiceCommand()
+    }
+
+    fun resolvePreferredForGame(
+        selectedGamePackage: String?,
+        preferences: UltraVoicePreferenceBundle
+    ): VoiceCommand? {
+        val packageName = selectedGamePackage ?: return null
+        return UltraPerGameVoicePreferences(preferences.perGamePreferredActions)
+            .preferredAction(packageName)
+            ?.toVoiceCommand()
+    }
+
+    private fun UltraSafeVoiceAction.toVoiceCommand(): VoiceCommand = when (this) {
+        UltraSafeVoiceAction.SelectBalancedProfile ->
+            VoiceCommand.SelectProfile(PerformanceProfile.BALANCED)
+    }
+}
