@@ -1415,6 +1415,123 @@ function weatherDescription(code: number): string {
   return "con condiciones variables";
 }
 
+async function nominatimCoordinates(
+  location: string,
+  deps: ResearchDependencies,
+): Promise<{ latitude: number; longitude: number; label: string } | null> {
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("q", location);
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("limit", "1");
+  url.searchParams.set("accept-language", "es");
+
+  const response = await fetchWithRetry(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  if (!response?.ok) return null;
+
+  try {
+    const payload = await response.json();
+    if (!Array.isArray(payload) || !payload.length) return null;
+    const first = payload[0] as JsonObject;
+    const latitude = Number(stringValue(first.lat) ?? first.lat);
+    const longitude = Number(stringValue(first.lon) ?? first.lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    return {
+      latitude,
+      longitude,
+      label: stringValue(first.display_name) ?? location,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function metNorwayDescription(symbol: string): string {
+  const clean = normalize(symbol);
+  if (clean.includes("clearsky") || clean.includes("fair")) return "despejado";
+  if (clean.includes("partlycloudy")) return "parcialmente nublado";
+  if (clean.includes("cloudy")) return "nublado";
+  if (clean.includes("fog")) return "con niebla";
+  if (clean.includes("thunder")) return "con tormenta";
+  if (clean.includes("snow")) return "con nieve";
+  if (clean.includes("sleet")) return "con aguanieve";
+  if (clean.includes("rain") || clean.includes("showers")) return "con lluvia";
+  return "con condiciones variables";
+}
+
+async function metNorwayWeatherEvidence(
+  latitude: number,
+  longitude: number,
+  placeLabel: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const url = new URL(
+    "https://api.met.no/weatherapi/locationforecast/2.0/compact",
+  );
+  url.searchParams.set("lat", latitude.toFixed(4));
+  url.searchParams.set("lon", longitude.toFixed(4));
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const properties = payload?.properties &&
+      typeof payload.properties === "object"
+    ? payload.properties as JsonObject
+    : null;
+  const timeseries = Array.isArray(properties?.timeseries)
+    ? properties.timeseries
+    : [];
+  const first = timeseries[0] && typeof timeseries[0] === "object"
+    ? timeseries[0] as JsonObject
+    : null;
+  const data = first?.data && typeof first.data === "object"
+    ? first.data as JsonObject
+    : null;
+  const instant = data?.instant && typeof data.instant === "object"
+    ? data.instant as JsonObject
+    : null;
+  const details = instant?.details && typeof instant.details === "object"
+    ? instant.details as JsonObject
+    : null;
+  const temperature = numberValue(details?.air_temperature);
+  if (temperature == null) {
+    return abstain(
+      "La fuente meteorológica secundaria no devolvió datos verificables.",
+      {
+        reasonCode: "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "met_norway",
+      },
+    );
+  }
+
+  const nextHour = data?.next_1_hours && typeof data.next_1_hours === "object"
+    ? data.next_1_hours as JsonObject
+    : null;
+  const nextSixHours = data?.next_6_hours && typeof data.next_6_hours === "object"
+    ? data.next_6_hours as JsonObject
+    : null;
+  const period = nextHour ?? nextSixHours;
+  const summary = period?.summary && typeof period.summary === "object"
+    ? period.summary as JsonObject
+    : null;
+  const symbol = stringValue(summary?.symbol_code) ?? "";
+  const description = metNorwayDescription(symbol);
+  const observedAt = stringValue(first?.time);
+
+  return {
+    claimKey: `weather:${latitude.toFixed(3)},${longitude.toFixed(3)}`,
+    value: `${temperature}|${symbol}|${observedAt ?? ""}`,
+    displayText: `En ${placeLabel}: ${temperature} °C, ${description}.`,
+    sourceId: url.toString(),
+    sourceIds: [url.toString()],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt,
+  };
+}
+
 async function weatherEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -1437,10 +1554,26 @@ async function weatherEvidence(
   });
   const places = Array.isArray(geo?.results) ? geo.results : [];
   const place = places[0] as JsonObject | undefined;
-  const latitude = numberValue(place?.latitude);
-  const longitude = numberValue(place?.longitude);
-  if (!place || latitude == null || longitude == null) {
-    return abstain("No pude encontrar esa ubicación.");
+  let latitude = numberValue(place?.latitude);
+  let longitude = numberValue(place?.longitude);
+  let placeLabel = [
+    stringValue(place?.name),
+    stringValue(place?.admin1),
+    stringValue(place?.country),
+  ].filter(Boolean).join(", ");
+
+  if (latitude == null || longitude == null) {
+    const fallbackLocation = await nominatimCoordinates(location, deps);
+    if (!fallbackLocation) {
+      return abstain("No pude encontrar esa ubicación.", {
+        reasonCode: "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "weather_geocoding",
+      });
+    }
+    latitude = fallbackLocation.latitude;
+    longitude = fallbackLocation.longitude;
+    placeLabel = fallbackLocation.label;
   }
 
   const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
@@ -1459,32 +1592,33 @@ async function weatherEvidence(
   const temperature = numberValue(current?.temperature_2m);
   const apparent = numberValue(current?.apparent_temperature);
   const weatherCode = numberValue(current?.weather_code);
-  if (temperature == null || weatherCode == null) {
-    return abstain("La fuente climática no devolvió datos verificables.");
+
+  if (temperature != null && weatherCode != null) {
+    const description = weatherDescription(weatherCode);
+    const feelsLike = apparent != null && Math.abs(apparent - temperature) >= 1
+      ? `, sensación térmica de ${apparent} °C`
+      : "";
+    const observedAt = stringValue(current?.time);
+
+    return {
+      claimKey: `weather:${latitude.toFixed(3)},${longitude.toFixed(3)}`,
+      value: `${temperature}|${weatherCode}|${observedAt ?? ""}`,
+      displayText:
+        `En ${placeLabel || location}: ${temperature} °C, ${description}${feelsLike}.`,
+      sourceId: forecastUrl.toString(),
+      sourceIds: [forecastUrl.toString()],
+      independentSourceCount: 1,
+      authoritative: true,
+      observedAt,
+    };
   }
 
-  const description = weatherDescription(weatherCode);
-  const placeLabel = [
-    stringValue(place.name),
-    stringValue(place.admin1),
-    stringValue(place.country),
-  ].filter(Boolean).join(", ");
-  const feelsLike = apparent != null && Math.abs(apparent - temperature) >= 1
-    ? `, sensación térmica de ${apparent} °C`
-    : "";
-  const observedAt = stringValue(current?.time);
-
-  return {
-    claimKey: `weather:${latitude.toFixed(3)},${longitude.toFixed(3)}`,
-    value: `${temperature}|${weatherCode}|${observedAt ?? ""}`,
-    displayText:
-      `En ${placeLabel}: ${temperature} °C, ${description}${feelsLike}.`,
-    sourceId: forecastUrl.toString(),
-    sourceIds: [forecastUrl.toString()],
-    independentSourceCount: 1,
-    authoritative: true,
-    observedAt,
-  };
+  return await metNorwayWeatherEvidence(
+    latitude,
+    longitude,
+    placeLabel || location,
+    deps,
+  );
 }
 
 function extractNewsTopic(query: string): string {
@@ -1616,6 +1750,111 @@ async function newsEvidence(
     independentSourceCount: independentDomains(sourceIds),
     authoritative: false,
     observedAt: selected[0].seen || null,
+  };
+}
+
+
+function xmlText(value: string): string {
+  return htmlToPlainText(
+    value
+      .replace(/^<!\[CDATA\[/, "")
+      .replace(/\]\]>$/, ""),
+  );
+}
+
+async function googleNewsEvidence(
+  query: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const topic = extractNewsTopic(query);
+  if (!topic) return abstain("Necesito un tema para buscar noticias actuales.");
+
+  const url = new URL("https://news.google.com/rss/search");
+  url.searchParams.set("q", topic);
+  url.searchParams.set("hl", "es-419");
+  url.searchParams.set("gl", "CL");
+  url.searchParams.set("ceid", "CL:es-419");
+
+  const response = await fetchWithRetry(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  if (!response?.ok) {
+    return abstain("Google News no respondió con noticias utilizables.", {
+      reasonCode: response
+        ? upstreamReasonCode(response.status)
+        : "UPSTREAM_UNAVAILABLE",
+      retryable: !response || RETRYABLE_HTTP_STATUSES.has(response.status),
+      stage: "google_news",
+      upstreamStatus: response?.status,
+    });
+  }
+
+  let xml = "";
+  try {
+    xml = await response.text();
+  } catch {
+    return abstain("Google News devolvió una respuesta ilegible.");
+  }
+
+  const selected: Array<{
+    title: string;
+    link: string;
+    publisher: string;
+    publisherUrl: string;
+    publishedAt: string;
+  }> = [];
+  const usedPublishers = new Set<string>();
+
+  for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
+    const item = match[1];
+    const titleMatch = item.match(/<title>([\s\S]*?)<\/title>/i);
+    const linkMatch = item.match(/<link>([\s\S]*?)<\/link>/i);
+    const dateMatch = item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+    const sourceMatch = item.match(
+      /<source(?:\s+url="([^"]+)")?[^>]*>([\s\S]*?)<\/source>/i,
+    );
+    const title = titleMatch?.[1] ? xmlText(titleMatch[1]) : "";
+    const link = linkMatch?.[1] ? xmlText(linkMatch[1]) : "";
+    const publisherUrl = sourceMatch?.[1] ? xmlText(sourceMatch[1]) : "";
+    const publisher = sourceMatch?.[2] ? xmlText(sourceMatch[2]) : "";
+    const publisherDomain = publisherUrl ? hostname(publisherUrl) : null;
+    if (!title || !link || !publisher || !publisherDomain) continue;
+    if (usedPublishers.has(publisherDomain)) continue;
+
+    usedPublishers.add(publisherDomain);
+    selected.push({
+      title,
+      link,
+      publisher,
+      publisherUrl,
+      publishedAt: dateMatch?.[1] ? xmlText(dateMatch[1]) : "",
+    });
+    if (selected.length >= 4) break;
+  }
+
+  if (selected.length < 2) {
+    return abstain(
+      "Google News no encontró dos medios independientes suficientes para verificar esas noticias.",
+    );
+  }
+
+  const sourceIds = selected.map((item) => item.link);
+  const observedAt = selected[0].publishedAt
+    ? new Date(selected[0].publishedAt).toISOString()
+    : null;
+
+  return {
+    claimKey: `news:google:${slug(topic)}`,
+    value: selected
+      .map((item) => `${normalize(item.title)}|${item.publishedAt}`)
+      .join("||"),
+    displayText:
+      `Noticias verificadas sobre ${topic}: ${selected[0].title} (${selected[0].publisher}). También: ${selected[1].title} (${selected[1].publisher}).`,
+    sourceId: sourceIds[0],
+    sourceIds,
+    independentSourceCount: usedPublishers.size,
+    authoritative: false,
+    observedAt,
   };
 }
 
@@ -1977,6 +2216,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
       /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
       "",
     )
+    .replace(/^(?:(?:el|la|los|las|un|una|unos|unas|the|a|an)\s+)+/i, "")
     .trim();
 }
 
@@ -2176,7 +2416,19 @@ async function tavilyEvidence(
     return abstain("Necesito una consulta concreta para buscar en la web.");
   }
 
-  const response = await fetchWithRetry(
+  const preferredBody = {
+    query: searchText,
+    search_depth: "basic",
+    max_results: 5,
+    topic: "general",
+    language: "es",
+    filter_by_language: true,
+    include_answer: false,
+    include_raw_content: false,
+    include_images: false,
+  };
+
+  let response = await fetchWithRetry(
     deps,
     "https://api.tavily.com/search",
     {
@@ -2186,20 +2438,35 @@ async function tavilyEvidence(
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
       },
-      body: JSON.stringify({
-        query: searchText,
-        search_depth: "basic",
-        max_results: 5,
-        topic: "general",
-        language: "es",
-        filter_by_language: true,
-        include_answer: false,
-        include_raw_content: false,
-        include_images: false,
-      }),
+      body: JSON.stringify(preferredBody),
       signal,
     },
   );
+
+  if (response && (response.status === 400 || response.status === 422)) {
+    response = await fetchWithRetry(
+      deps,
+      "https://api.tavily.com/search",
+      {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + apiKey,
+          "Content-Type": "application/json",
+          "User-Agent": USER_AGENT,
+        },
+        body: JSON.stringify({
+          query: searchText,
+          search_depth: "basic",
+          max_results: 5,
+          topic: "general",
+          include_answer: false,
+          include_raw_content: false,
+          include_images: false,
+        }),
+        signal,
+      },
+    );
+  }
 
   if (!response) {
     return abstain(
@@ -2577,6 +2844,8 @@ export async function routeResearchQuery(
   ) {
     const news = await newsEvidence(query, deps);
     if (!news.abstained) return news;
+    const googleNews = await googleNewsEvidence(query, deps);
+    if (!googleNews.abstained) return googleNews;
     const newsFallback = await tavilyEvidence(query, deps);
     if (!newsFallback.abstained) return newsFallback;
     return news;
