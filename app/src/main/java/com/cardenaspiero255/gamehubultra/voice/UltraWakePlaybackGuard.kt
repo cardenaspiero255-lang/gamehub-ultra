@@ -12,18 +12,28 @@ internal enum class UltraWakeRecognitionDisposition {
     INTERRUPT_TTS
 }
 
+internal enum class UltraWakeSensitivity {
+    STRICT,
+    BALANCED
+}
+
 internal object UltraWakeWordMatcher {
-    fun contains(transcript: String): Boolean {
+    fun contains(
+        transcript: String,
+        sensitivity: UltraWakeSensitivity = UltraWakeSensitivity.BALANCED
+    ): Boolean {
         val normalized = VoiceCommandParser.normalize(transcript)
-        return normalized.split(" ").any(::isWakeToken)
+        return normalized.split(" ").any { token -> isWakeToken(token, sensitivity) }
     }
 
     fun isExplicitInvocation(transcript: String): Boolean {
         val tokens = VoiceCommandParser.normalize(transcript)
             .split(" ")
             .filter { it.isNotBlank() }
-        val wakeIndex = tokens.indexOfFirst(::isWakeToken)
-        return wakeIndex in 0..1 && tokens.size > wakeIndex + 1
+        val wakeIndex = tokens.indexOfFirst { token ->
+            isWakeToken(token, UltraWakeSensitivity.BALANCED)
+        }
+        return wakeIndex == 0 && tokens.size > 1
     }
 
     fun isWakeWordOnlyPrefix(transcript: String): Boolean {
@@ -36,11 +46,21 @@ internal object UltraWakeWordMatcher {
             else -> 0
         }
         return tokens.size == wakeIndex + 1 &&
-            tokens.getOrNull(wakeIndex)?.let(::isWakeToken) == true
+            tokens.getOrNull(wakeIndex)?.let { token ->
+                isWakeToken(token, UltraWakeSensitivity.BALANCED)
+            } == true
     }
 
-    private fun isWakeToken(token: String): Boolean =
-        token == "ultra" || (token.length >= 4 && levenshtein(token, "ultra") <= 1)
+    private fun isWakeToken(
+        token: String,
+        sensitivity: UltraWakeSensitivity
+    ): Boolean =
+        token == "ultra" ||
+            (
+                sensitivity == UltraWakeSensitivity.BALANCED &&
+                    token.length >= 4 &&
+                    levenshtein(token, "ultra") <= 1
+            )
 
     private fun levenshtein(a: String, b: String): Int {
         if (a.isEmpty()) return b.length
@@ -62,6 +82,48 @@ internal object UltraWakeWordMatcher {
             current = swap
         }
         return previous[b.length]
+    }
+}
+
+
+/**
+ * Suppresses duplicate recognizer deliveries without blocking a genuinely new
+ * command. State is local to the wake service and contains no user data beyond
+ * the last normalized command.
+ */
+internal class UltraWakeRepeatGate(
+    private val cooldownMillis: Long = 1_500L
+) {
+    private var lastCommand: String = ""
+    private var lastAcceptedAtMillis: Long = Long.MIN_VALUE
+
+    init {
+        require(cooldownMillis >= 0L)
+    }
+
+    @Synchronized
+    fun shouldAccept(transcript: String, nowMillis: Long): Boolean {
+        val normalized = VoiceCommandParser.normalize(transcript)
+        if (normalized.isBlank()) return false
+
+        val elapsed = if (lastAcceptedAtMillis == Long.MIN_VALUE) {
+            Long.MAX_VALUE
+        } else {
+            nowMillis - lastAcceptedAtMillis
+        }
+        if (normalized == lastCommand && elapsed in 0..cooldownMillis) {
+            return false
+        }
+
+        lastCommand = normalized
+        lastAcceptedAtMillis = nowMillis
+        return true
+    }
+
+    @Synchronized
+    fun clear() {
+        lastCommand = ""
+        lastAcceptedAtMillis = Long.MIN_VALUE
     }
 }
 
