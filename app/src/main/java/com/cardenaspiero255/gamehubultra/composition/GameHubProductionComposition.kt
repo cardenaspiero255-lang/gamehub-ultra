@@ -39,6 +39,8 @@ import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.voice.AndroidContinuousVoiceGateway
 import com.cardenaspiero255.gamehubultra.voice.ContinuousVoiceController
 import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesGameAliasStateRepository
+import com.cardenaspiero255.gamehubultra.voice.SharedPreferencesUltraVoicePreferenceRepository
+import com.cardenaspiero255.gamehubultra.voice.UltraVoicePreferenceRepository
 
 internal data class GameHubProductionBootstrap(
     val initialState: PerformanceState,
@@ -139,6 +141,9 @@ internal object GameHubProductionComposition {
 
     fun aliasRepository(appContext: Context): GameAliasStateRepository =
         SharedPreferencesGameAliasStateRepository(appContext)
+
+    fun voicePreferenceRepository(appContext: Context): UltraVoicePreferenceRepository =
+        SharedPreferencesUltraVoicePreferenceRepository(appContext)
 
     fun selectionRepository(appContext: Context): GameSelectionStateRepository =
         GameHubPreferencesRepository(appContext)

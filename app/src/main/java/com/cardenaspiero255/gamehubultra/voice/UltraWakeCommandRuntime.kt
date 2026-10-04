@@ -85,6 +85,12 @@ internal class UltraWakeCommandRuntime(
         if (inSessionResponse.handled) return inSessionResponse.message
 
         val intentResolver = aiAdvisor.intentResolver()
+        val voicePreferences = GameHubProductionComposition.voicePreferenceRepository(context.applicationContext).load()
+        val personalizedCommand = UltraVoicePersonalizationResolver.resolve(
+            transcript = transcript,
+            selectedGamePackage = selectedGamePackage,
+            preferences = voicePreferences
+        )
         conversationLedger.bindScope(selectedGamePackage)
         val conversationBefore = conversationLedger.snapshot()
         val contextualCommand = UltraContextualVoiceResolver.resolve(
@@ -96,9 +102,10 @@ internal class UltraWakeCommandRuntime(
             optionalResolver = intentResolver,
             knownGameAliases = aliasRepository.aliases().keys
         )
-        val route = if (contextualCommand !is VoiceCommand.Unknown) {
-            UltraAgentRoute.Command(contextualCommand)
-        } else UltraUnifiedAgentRouter.route(
+        val route = when {
+            personalizedCommand != null -> UltraAgentRoute.Command(personalizedCommand)
+            contextualCommand !is VoiceCommand.Unknown -> UltraAgentRoute.Command(contextualCommand)
+            else -> UltraUnifiedAgentRouter.route(
             transcript = transcript,
             optionalResolver = intentResolver,
             telemetry = UltraRuntimeTelemetry(
@@ -109,6 +116,7 @@ internal class UltraWakeCommandRuntime(
             knownGameAliases = aliasRepository.aliases().keys,
             conversationHistory = conversationBefore
         )
+        }
 
         return when (route) {
             is UltraAgentRoute.Utility -> {
