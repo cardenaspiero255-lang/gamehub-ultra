@@ -2775,6 +2775,20 @@ function mergeGeneralKnowledgeEvidence(
   return primary.reasonCode ? primary : web;
 }
 
+function isStableGeneralKnowledgeIntent(query: string): boolean {
+  const clean = normalize(stripAssistantInvocation(query));
+  const stableQuestion =
+    /^(?:que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue)\b/.test(
+      clean,
+    );
+  if (!stableQuestion) return false;
+
+  const freshSignal =
+    /\b(?:actual|actualmente|ahora|hoy|esta noche|esta semana|current|currently|latest|newest|today|tonight|this week|noticias|news|novedades|updates?|precio|precios|price|prices|cuanto cuesta|cuanto cuestan|how much|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|security patch|parche de seguridad)\b/;
+
+  return !freshSignal.test(clean);
+}
+
 export async function routeResearchQuery(
   query: string,
   deps: ResearchDependencies,
@@ -2794,7 +2808,10 @@ export async function routeResearchQuery(
   const specsSignal =
     /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
 
-  if (kind === "GENERAL_KNOWLEDGE") {
+  if (
+    kind === "GENERAL_KNOWLEDGE" ||
+    isStableGeneralKnowledgeIntent(query)
+  ) {
     const routeDeadlineAt =
       performance.now() + generalKnowledgeRouteTimeoutMs(deps);
     const remainingBudget = () => remainingRouteBudgetMs(routeDeadlineAt);

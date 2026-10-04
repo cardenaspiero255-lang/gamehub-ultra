@@ -67,7 +67,7 @@ jobs:
           rng = random.Random(seed)
 
           fixed = [
-              ("general", "Qué es un motor", "GENERAL_KNOWLEDGE", False),
+              ("general", "Qué es un motor", "CURRENT_DATA", True),
               ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True),
               ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True),
           ]
