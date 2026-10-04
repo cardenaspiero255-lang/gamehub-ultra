@@ -1643,11 +1643,30 @@ async function weatherEvidence(
 
 function extractNewsTopic(query: string): string {
   return stripAssistantInvocation(query)
+    .replace(/[?¿!¡]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
     .replace(
-      /^(?:noticias(?:\s+actuales)?(?:\s+de|\s+sobre)?|news(?:\s+about|\s+on)?|que\s+salio\s+nuevo\s+de|salio\s+nuevo\s+de|latest\s+news(?:\s+about|\s+on)?)\s*/i,
+      /^(?:dame|muestrame|muéstrame|cuentame|cuéntame|quiero)\s+/i,
       "",
     )
-    .replace(/[?¿!¡]+/g, " ")
+    .replace(
+      /^(?:que|qué)\s+noticias(?:\s+(?:actuales|recientes))?(?:\s+hay)?(?:\s+(?:de|sobre))?\s*/i,
+      "",
+    )
+    .replace(
+      /^(?:que|qué)\s+novedades(?:\s+hay)?(?:\s+hoy)?(?:\s+(?:de|sobre))?\s*/i,
+      "",
+    )
+    .replace(
+      /^(?:que|qué)\s+ha\s+pasado\s+recientemente\s+(?:en|sobre|con)\s+/i,
+      "",
+    )
+    .replace(
+      /^(?:noticias(?:\s+(?:actuales|recientes))?(?:\s+(?:de|sobre))?|news(?:\s+about|\s+on)?|que\s+salio\s+nuevo\s+de|salio\s+nuevo\s+de|latest\s+news(?:\s+about|\s+on)?)\s*/i,
+      "",
+    )
+    .replace(/\s+(?:de\s+hoy|hoy)$/i, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -2231,13 +2250,13 @@ function extractGeneralKnowledgeQuery(query: string): string {
   const clean = stripAssistantInvocation(stripConversationSpeaker(query))
     .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
   const purposeForm =
-    /^(?:(?:hola|por favor|y)\s+)*(?:para que sirve|para qué sirve)\b/i.test(
+    /^(?:(?:hola|por favor|y|explicame|explícame|dime)\s+)*(?:para que sirve|para qué sirve|que hace|qué hace)\b/i.test(
       clean,
     );
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -2767,9 +2786,9 @@ export async function routeResearchQuery(
   const combinedSignals = `${clean} ${cleanContext}`.trim();
 
   const weatherSignal =
-    /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|pronostico|forecast|que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
+    /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|pronostico|forecast|que temperatura hace|temperatura (?:de hoy|actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
   const newsSignal =
-    /\b(noticias|news|salio nuevo|que salio nuevo|latest news|released)\b/;
+    /\b(?:noticias|news|novedades|que ha pasado recientemente|ha pasado recientemente|salio nuevo|que salio nuevo|latest news|released)\b/;
   const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;
   const comparisonSignal = /\b(compara|compare|versus|vs)\b/;
   const specsSignal =
