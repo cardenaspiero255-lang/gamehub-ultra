@@ -129,6 +129,7 @@ class VoiceAssistantController(
     fun release() {
         mainHandler.removeCallbacks(fallbackRetry)
         fallbackRetryGate.reset()
+        onListeningChanged(false)
         recognizer?.destroy()
         recognizer = null
         tts?.stop()
