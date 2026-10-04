@@ -18,6 +18,11 @@ internal class SharedPreferencesUltraVoicePreferenceRepository(
 
     override fun save(bundle: UltraVoicePreferenceBundle) = delegate.save(bundle)
 
+    override fun exportPreferences(): String = delegate.exportPreferences()
+
+    override fun importPreferences(serialized: String): Boolean =
+        delegate.importPreferences(serialized)
+
     private companion object {
         const val PREFS_NAME = "ultra_voice_personalization"
         const val KEY_BUNDLE = "voice_preferences_v1"
