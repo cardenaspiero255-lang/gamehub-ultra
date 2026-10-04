@@ -677,7 +677,7 @@ class UltraVerifiedResearchEngine(
                     reasonCode == "BACKEND_NETWORK_FAILURE" ||
                     reasonCode == "PROVIDER_FAILURE" ||
                     reasonCode == "PROVIDER_EXECUTION_FAILURE" ->
-                    "No pude conectar con las fuentes de consulta. Revisa tu conexión e inténtalo de nuevo."
+                    "No pude verificar la respuesta porque la conexión con las fuentes no está disponible. Revisa tu conexión e inténtalo de nuevo."
                 reasonCode == "BACKEND_NOT_CONFIGURED" ||
                     reasonCode == "GENERAL_MODEL_NOT_CONFIGURED" ->
                     "El servicio de consulta todavía no está configurado para esa búsqueda."
