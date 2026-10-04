@@ -82,15 +82,15 @@ class UltraSupabaseResearchProviderTest {
 
     @Test
     fun requestContractCarriesOptionalVerificationMode() {
-        var body = ""
+        var capturedBody = ""
         val transport = object : UltraResearchBackendTransport {
             override fun post(
                 endpoint: String,
                 apiKey: String,
-                bodyValue: String,
+                body: String,
                 timeoutMillis: Long
             ): String {
-                body = bodyValue
+                capturedBody = body
                 return """
                     {
                       "claimKey":"general:motor",
@@ -109,7 +109,7 @@ class UltraSupabaseResearchProviderTest {
             transport = transport
         ).fetch(UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?"))
 
-        assertTrue(body.contains("\"verificationMode\":\"OPTIONAL\""))
+        assertTrue(capturedBody.contains("\"verificationMode\":\"OPTIONAL\""))
     }
 
     @Test
@@ -177,15 +177,15 @@ class UltraSupabaseResearchProviderTest {
 
     @Test
     fun backendEndpointUsesUltraResearchFunction() {
-        var endpoint = ""
+        var capturedEndpoint = ""
         val transport = object : UltraResearchBackendTransport {
             override fun post(
-                endpointValue: String,
+                endpoint: String,
                 apiKey: String,
                 body: String,
                 timeoutMillis: Long
             ): String {
-                endpoint = endpointValue
+                capturedEndpoint = endpoint
                 return """
                     {
                       "claimKey":"weather",
@@ -206,7 +206,103 @@ class UltraSupabaseResearchProviderTest {
 
         assertEquals(
             "https://example.supabase.co/functions/v1/ultra-research",
-            endpoint
+            capturedEndpoint
         )
     }
+
+    @Test
+    fun transientClientNetworkFailureRetriesOnceAndRecovers() {
+        var calls = 0
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = error("unused")
+
+            override fun postResponse(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): UltraResearchHttpResponse {
+                calls += 1
+                if (calls == 1) {
+                    throw java.io.IOException("temporary client network failure")
+                }
+                return UltraResearchHttpResponse(
+                    statusCode = 200,
+                    body = """
+                        {
+                          "claimKey":"general:photosynthesis",
+                          "value":"photosynthesis",
+                          "displayText":"La fotosíntesis transforma energía de la luz en energía química.",
+                          "sourceId":"https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
+                          "authoritative":true
+                        }
+                    """.trimIndent()
+                )
+            }
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport
+        )
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es la fotosíntesis?")
+            )
+
+            assertFalse(result.abstained)
+            assertEquals(2, calls)
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun nonRetryableClientHttpFailureIsNotRetried() {
+        var calls = 0
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = error("unused")
+
+            override fun postResponse(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): UltraResearchHttpResponse {
+                calls += 1
+                return UltraResearchHttpResponse(
+                    statusCode = 400,
+                    body = """{"abstained":true,"reasonCode":"BAD_REQUEST"}"""
+                )
+            }
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport
+        )
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+
+        try {
+            engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es la fotosíntesis?")
+            )
+            assertEquals(1, calls)
+        } finally {
+            engine.close()
+        }
+    }
+
 }

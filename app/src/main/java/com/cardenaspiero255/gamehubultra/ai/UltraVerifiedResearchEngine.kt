@@ -97,7 +97,7 @@ class UltraResearchCache {
     companion object {
         const val CURRENT_DATA_TTL_MS = 5 * 60 * 1000L
         const val COMPARISON_TTL_MS = 60 * 60 * 1000L
-        const val GENERAL_KNOWLEDGE_TTL_MS = 24 * 60 * 60 * 1000L
+        const val GENERAL_KNOWLEDGE_TTL_MS = 30L * 24 * 60 * 60 * 1000L
         private const val MAX_ENTRIES = 256
     }
 
@@ -258,6 +258,40 @@ class UltraVerifiedResearchEngine(
         }
     }
 
+    private fun fetchProviderWithRetry(
+        provider: UltraResearchProvider,
+        request: UltraGeneralQueryRequest
+    ): UltraProviderResult {
+        var lastResult: UltraProviderResult = UltraProviderResult.Failure(
+            reasonCode = "PROVIDER_FAILURE",
+            retryable = true
+        )
+
+        repeat(MAX_PROVIDER_ATTEMPTS) { attemptIndex ->
+            val result = try {
+                provider.fetchResult(request)
+            } catch (error: Exception) {
+                UltraProviderResult.Failure(
+                    reasonCode = "PROVIDER_FAILURE",
+                    message = error.message,
+                    retryable = true
+                )
+            }
+            lastResult = result
+
+            val retryable = when (result) {
+                is UltraProviderResult.Failure -> result.retryable
+                is UltraProviderResult.Abstained -> result.retryable
+                is UltraProviderResult.Evidence -> false
+            }
+            if (!retryable || attemptIndex + 1 >= MAX_PROVIDER_ATTEMPTS) {
+                return result
+            }
+        }
+
+        return lastResult
+    }
+
     private fun answerWithProviders(
         request: UltraGeneralQueryRequest,
         key: String,
@@ -278,15 +312,10 @@ class UltraVerifiedResearchEngine(
                 val worker = Thread.currentThread()
                 providerWorkers[index].set(worker)
                 try {
-                    val result = try {
-                        provider.fetchResult(request)
-                    } catch (error: Exception) {
-                        UltraProviderResult.Failure(
-                            reasonCode = "PROVIDER_FAILURE",
-                            message = error.message,
-                            retryable = true
-                        )
-                    }
+                    val result = fetchProviderWithRetry(
+                        provider = provider,
+                        request = request
+                    )
                     ProviderAttempt(
                         index = index,
                         providerId = provider.id,
@@ -648,7 +677,7 @@ class UltraVerifiedResearchEngine(
                     reasonCode == "BACKEND_NETWORK_FAILURE" ||
                     reasonCode == "PROVIDER_FAILURE" ||
                     reasonCode == "PROVIDER_EXECUTION_FAILURE" ->
-                    "El servicio de consulta no está disponible ahora. Reintenta."
+                    "No pude verificar la respuesta porque la conexión con las fuentes no está disponible. Revisa tu conexión e inténtalo de nuevo."
                 reasonCode == "BACKEND_NOT_CONFIGURED" ||
                     reasonCode == "GENERAL_MODEL_NOT_CONFIGURED" ->
                     "El servicio de consulta todavía no está configurado para esa búsqueda."
@@ -906,6 +935,7 @@ class UltraVerifiedResearchEngine(
         }
 
     private companion object {
+        const val MAX_PROVIDER_ATTEMPTS = 2
         const val PRIMARY_PROVIDER_GRACE_MS = 350L
         const val FALLBACK_FIRST_PRIMARY_WAIT_MS = 500L
 

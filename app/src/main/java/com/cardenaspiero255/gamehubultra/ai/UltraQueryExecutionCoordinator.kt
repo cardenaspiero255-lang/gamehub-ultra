@@ -80,7 +80,15 @@ class UltraQueryExecutionCoordinator(
         }
 
         val research = researchGateway.answer(request)
-        return toExecutionAnswer(research)
+        val answer = toExecutionAnswer(research)
+        if (!answer.abstained) return answer
+
+        return answer.copy(
+            message =
+                "No pude verificar esa respuesta con fuentes fiables disponibles ahora. " +
+                    "No voy a inventarla; revisa tu conexión o inténtalo de nuevo.",
+            fallbackUsed = answer.fallbackUsed
+        )
     }
 
     private fun researchOnly(
