@@ -3284,7 +3284,6 @@ Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", asy
   }
 });
 
-
 Deno.test("retrying upstream requests respect a bounded attempt timeout", async () => {
   let attempts = 0;
   const deps: ResearchDependencies = {
@@ -3316,8 +3315,12 @@ Deno.test("retrying upstream requests respect a bounded attempt timeout", async 
   );
   const elapsed = performance.now() - startedAt;
 
-  if (!result.abstained) throw new Error("timed out weather lookup must abstain");
-  if (attempts > 3) throw new Error("retry attempts exceeded the configured cap");
+  if (!result.abstained) {
+    throw new Error("timed out weather lookup must abstain");
+  }
+  if (attempts > 3) {
+    throw new Error("retry attempts exceeded the configured cap");
+  }
   if (elapsed > 350) {
     throw new Error("retry budget did not bound the stalled upstream request");
   }
