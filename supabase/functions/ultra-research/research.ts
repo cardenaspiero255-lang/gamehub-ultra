@@ -1293,21 +1293,34 @@ async function fetchWithRetry(
       1,
       Math.min(fetchAttemptTimeoutMs(deps), remainingBudget),
     );
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timer: number | undefined;
+    const attemptTimeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, timeoutMs);
+    });
 
     try {
-      const response = await deps.fetcher(input, {
-        ...init,
-        signal: controller.signal,
-      });
-      const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
-      if (!shouldRetry || attempt === maxAttempts) {
-        return response;
+      const response = await Promise.race([
+        Promise.resolve(deps.fetcher(input, {
+          ...init,
+          signal: controller.signal,
+        })),
+        attemptTimeout,
+      ]);
+      if (response === null) {
+        if (externalSignal?.aborted || attempt === maxAttempts) return null;
+      } else {
+        const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
+        if (!shouldRetry || attempt === maxAttempts) {
+          return response;
+        }
       }
     } catch {
       if (externalSignal?.aborted || attempt === maxAttempts) return null;
     } finally {
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
       externalSignal?.removeEventListener("abort", abortFromExternal);
     }
 
