@@ -85,7 +85,7 @@ internal class UltraWakeCommandRuntime(
         if (inSessionResponse.handled) return inSessionResponse.message
 
         val intentResolver = aiAdvisor.intentResolver()
-        val voicePreferences = UltraVoicePreferenceBundle()
+        val voicePreferences = GameHubProductionComposition.voicePreferenceRepository(context.applicationContext).load()
         val personalizedCommand = UltraVoicePersonalizationResolver.resolve(
             transcript = transcript,
             selectedGamePackage = selectedGamePackage,
