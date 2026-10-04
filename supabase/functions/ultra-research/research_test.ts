@@ -3938,7 +3938,7 @@ Deno.test("stable definition mislabeled as current data recovers through general
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        if (url.searchParams.get("srsearch") !== "motor") {
+        if (url.searchParams.get("srsearch") !== "un motor") {
           return jsonResponse({ query: { search: [] } });
         }
         return jsonResponse({
