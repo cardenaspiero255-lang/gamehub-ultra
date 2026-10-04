@@ -1,8 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 enum class UltraAiRecommendationSource { MODEL, DETERMINISTIC_LOCAL }
-enum class UltraMemoryProvenance { REMEMBERED_FACT, CURRENT_SESSION, USER_FEEDBACK }
-
 data class UltraAiObservation(
     val gamePackage: String,
     val activeProfileId: String,
