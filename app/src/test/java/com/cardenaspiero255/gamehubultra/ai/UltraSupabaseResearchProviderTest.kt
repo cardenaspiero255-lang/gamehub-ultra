@@ -82,15 +82,15 @@ class UltraSupabaseResearchProviderTest {
 
     @Test
     fun requestContractCarriesOptionalVerificationMode() {
-        var body = ""
+        var capturedBody = ""
         val transport = object : UltraResearchBackendTransport {
             override fun post(
                 endpoint: String,
                 apiKey: String,
-                bodyValue: String,
+                body: String,
                 timeoutMillis: Long
             ): String {
-                body = bodyValue
+                capturedBody = body
                 return """
                     {
                       "claimKey":"general:motor",
@@ -109,7 +109,7 @@ class UltraSupabaseResearchProviderTest {
             transport = transport
         ).fetch(UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?"))
 
-        assertTrue(body.contains("\"verificationMode\":\"OPTIONAL\""))
+        assertTrue(capturedBody.contains("\"verificationMode\":\"OPTIONAL\""))
     }
 
     @Test
@@ -177,15 +177,15 @@ class UltraSupabaseResearchProviderTest {
 
     @Test
     fun backendEndpointUsesUltraResearchFunction() {
-        var endpoint = ""
+        var capturedEndpoint = ""
         val transport = object : UltraResearchBackendTransport {
             override fun post(
-                endpointValue: String,
+                endpoint: String,
                 apiKey: String,
                 body: String,
                 timeoutMillis: Long
             ): String {
-                endpoint = endpointValue
+                capturedEndpoint = endpoint
                 return """
                     {
                       "claimKey":"weather",
@@ -206,7 +206,7 @@ class UltraSupabaseResearchProviderTest {
 
         assertEquals(
             "https://example.supabase.co/functions/v1/ultra-research",
-            endpoint
+            capturedEndpoint
         )
     }
 
