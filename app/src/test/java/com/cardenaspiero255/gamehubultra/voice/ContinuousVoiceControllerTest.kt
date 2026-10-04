@@ -127,6 +127,8 @@ class ContinuousVoiceControllerTest {
         override fun hasRecordAudioPermission(): Boolean =
             permissionGranted
 
+        override fun canRunContinuousVoice(): Boolean = true
+
         override fun startWakeService() {
             startCalls += 1
         }
