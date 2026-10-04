@@ -157,10 +157,14 @@ internal object UltraVoicePersonalizationResolver {
         selectedGamePackage: String?,
         preferences: UltraVoicePreferenceBundle
     ): VoiceCommand? {
+        val normalized = VoiceCommandParser.stripLeadingAssistantInvocation(transcript).trim()
+        if (normalized == "usa mi comando preferido" || normalized == "aplica mi comando preferido") {
+            return resolvePreferredForGame(selectedGamePackage, preferences)
+        }
+
         val action = UltraVoicePhrasePreferences(preferences.phrases).resolve(transcript)
         if (action != null) return action.toVoiceCommand()
 
-        val normalized = VoiceCommandParser.stripLeadingAssistantInvocation(transcript).trim()
         val profileAlias = normalized
             .removePrefix("pon ")
             .removePrefix("perfil ")
