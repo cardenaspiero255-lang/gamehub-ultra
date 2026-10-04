@@ -3770,7 +3770,6 @@ Deno.test("Tavily retries a compatibility payload after a request-shape rejectio
   }
 });
 
-
 Deno.test("temperature de hoy phrasing routes to the authoritative weather provider", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -3818,8 +3817,7 @@ Deno.test("temperature de hoy phrasing routes to the authoritative weather provi
 });
 
 Deno.test("conversational news recency phrases use compact news topics without Tavily", async () => {
-  const rss =
-    '<?xml version="1.0"?><rss><channel>' +
+  const rss = '<?xml version="1.0"?><rss><channel>' +
     '<item><title>Novedad tecnológica uno</title><link>https://news.google.com/rss/articles/one</link><pubDate>Sun, 04 Oct 2026 18:00:00 GMT</pubDate><source url="https://medio-uno.example">Medio Uno</source></item>' +
     '<item><title>Novedad tecnológica dos</title><link>https://news.google.com/rss/articles/two</link><pubDate>Sun, 04 Oct 2026 17:00:00 GMT</pubDate><source url="https://medio-dos.example">Medio Dos</source></item>' +
     "</channel></rss>";
@@ -3844,7 +3842,9 @@ Deno.test("conversational news recency phrases use compact news topics without T
         });
       }
       if (url.hostname === "api.tavily.com") {
-        throw new Error("news recency phrasing must not fall through to Tavily");
+        throw new Error(
+          "news recency phrasing must not fall through to Tavily",
+        );
       }
       throw new Error("unexpected URL " + url);
     },
@@ -3853,7 +3853,10 @@ Deno.test("conversational news recency phrases use compact news topics without T
 
   for (
     const [query, topic] of [
-      ["¿Qué novedades hay hoy sobre inteligencia artificial?", "inteligencia artificial"],
+      [
+        "¿Qué novedades hay hoy sobre inteligencia artificial?",
+        "inteligencia artificial",
+      ],
       ["¿Qué ha pasado recientemente en tecnología?", "tecnología"],
     ]
   ) {
@@ -3865,7 +3868,9 @@ Deno.test("conversational news recency phrases use compact news topics without T
       "CURRENT_DATA",
     );
     if (result.abstained) {
-      throw new Error("expected news answer for conversational recency phrasing");
+      throw new Error(
+        "expected news answer for conversational recency phrasing",
+      );
     }
     if ((result.independentSourceCount ?? 0) < 2) {
       throw new Error("expected two independent news publishers");
@@ -3882,7 +3887,9 @@ Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic"
       ) {
         const search = url.searchParams.get("srsearch");
         return search === "procesador"
-          ? jsonResponse({ query: { search: [{ title: "Unidad central de procesamiento" }] } })
+          ? jsonResponse({
+            query: { search: [{ title: "Unidad central de procesamiento" }] },
+          })
           : jsonResponse({ query: { search: [] } });
       }
       if (
@@ -3890,10 +3897,12 @@ Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic"
         url.pathname.includes("/api/rest_v1/page/summary/")
       ) {
         return jsonResponse({
-          extract: "La unidad central de procesamiento ejecuta instrucciones y procesa datos.",
+          extract:
+            "La unidad central de procesamiento ejecuta instrucciones y procesa datos.",
           content_urls: {
             desktop: {
-              page: "https://es.wikipedia.org/wiki/Unidad_central_de_procesamiento",
+              page:
+                "https://es.wikipedia.org/wiki/Unidad_central_de_procesamiento",
             },
           },
         });
