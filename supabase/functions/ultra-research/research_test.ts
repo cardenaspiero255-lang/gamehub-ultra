@@ -1899,6 +1899,59 @@ Deno.test(
   },
 );
 
+Deno.test("xAI general caller timeout can exceed the default fetch attempt timeout", async () => {
+  let aborted = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "es.wikipedia.org") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "api.x.ai") {
+        return new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            resolve(jsonResponse({
+              choices: [{
+                message: {
+                  content: "Un motor convierte energía en trabajo mecánico.",
+                },
+              }],
+            }));
+          }, 2_600);
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            clearTimeout(timer);
+            reject(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => {
+      if (name === "XAI_API_KEY") return "xai-test-key";
+      if (name === "ULTRA_XAI_GENERAL_TIMEOUT_MS") return "3000";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "4000";
+      return undefined;
+    },
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, ¿qué es un motor?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (aborted) {
+    throw new Error(
+      "default fetch timeout must not preempt the xAI caller timeout",
+    );
+  }
+  if (result.abstained || result.sourceId !== "xai-general-assistant") {
+    throw new Error("xAI should be allowed to answer within the caller timeout");
+  }
+});
+
 Deno.test(
   "general knowledge falls back from unavailable Gemini to xAI Grok",
   async () => {
