@@ -158,14 +158,11 @@ class VoiceAssistantController(
             )?.let(onTranscript)
         }
 
-        override fun onPartialResults(partialResults: Bundle?) {
-            partialResults
-                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull()
-                ?.trim()
-                ?.takeIf(String::isNotEmpty)
-                ?.let(onPartialTranscript)
-        }
+        override fun onPartialResults(partialResults: Bundle?) =
+            VoicePartialTranscriptForwarder.forward(
+                partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION),
+                onPartialTranscript
+            )
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onError(error: Int) {
