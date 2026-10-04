@@ -24,6 +24,26 @@ internal sealed interface UltraInSessionVoiceResponse {
     }
 }
 
+
+internal object UltraSessionMetricsFactory {
+    fun fromRuntime(
+        selectedGamePackage: String?,
+        refreshRateHz: Float?,
+        batteryPercent: Int?,
+        thermalLabel: String?,
+        totalRamMb: Long?,
+        networkLatencyMs: Int?
+    ): UltraSessionMetrics = UltraSessionMetrics(
+        sessionActive = selectedGamePackage != null,
+        fps = null,
+        refreshRateHz = refreshRateHz,
+        batteryPercent = batteryPercent,
+        thermalLabel = thermalLabel,
+        ramMb = totalRamMb,
+        latencyMs = networkLatencyMs
+    )
+}
+
 internal object UltraInSessionVoiceResponder {
     fun respond(query: String, metrics: UltraSessionMetrics): UltraInSessionVoiceResponse {
         if (!metrics.sessionActive) return UltraInSessionVoiceResponse.NotHandled
