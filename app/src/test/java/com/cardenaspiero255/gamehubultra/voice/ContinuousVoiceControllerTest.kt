@@ -23,7 +23,7 @@ class ContinuousVoiceControllerTest {
     }
 
     @Test
-    fun resumeDoesNothingWithoutPermission() {
+    fun resumeRevokesPersistedContinuousModeWhenPermissionWasRemoved() {
         val gateway = FakeContinuousVoiceGateway(
             storedEnabled = true,
             permissionGranted = false
@@ -34,7 +34,8 @@ class ContinuousVoiceControllerTest {
 
         assertFalse(resumed)
         assertEquals(0, gateway.startCalls)
-        assertTrue(gateway.storedEnabled)
+        assertFalse(gateway.storedEnabled)
+        assertEquals(1, gateway.stopCalls)
     }
 
     @Test
