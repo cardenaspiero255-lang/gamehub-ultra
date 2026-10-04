@@ -37,8 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           config_file="app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraResearchProviderSource.kt"
-          supabase_url="$(python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1]).read_text(); m=re.search(r"DEFAULT_SUPABASE_URL\\s*=\\s*[\"\\s]*([^\"]+)\"", t); print(m.group(1) if m else "")' "$config_file")"
-          publishable_key="$(python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1]).read_text(); m=re.search(r"DEFAULT_SUPABASE_PUBLISHABLE_KEY\\s*=\\s*[\"\\s]*(sb_publishable_[^\"]+)\"", t); print(m.group(1) if m else "")' "$config_file")"
+          supabase_url="$(grep -A1 'DEFAULT_SUPABASE_URL' "$config_file" | grep -o 'https://[^"]*' | head -n 1)"
+          publishable_key="$(grep -A1 'DEFAULT_SUPABASE_PUBLISHABLE_KEY' "$config_file" | grep -o 'sb_publishable_[^"]*' | head -n 1)"
 
           case "$supabase_url" in
             https://*.supabase.co) ;;
