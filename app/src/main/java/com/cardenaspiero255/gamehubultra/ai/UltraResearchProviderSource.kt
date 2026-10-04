@@ -55,9 +55,14 @@ class ConfiguredUltraResearchProviderSource(
 internal object UltraResearchProductionConfig {
     const val DEFAULT_SUPABASE_URL =
         "https://upkmszocqiqslrxuxevx.supabase.co"
+    private const val DEFAULT_SUPABASE_PUBLISHABLE_KEY =
+        "sb_publishable_ApYyZYZoVTV1-UwO2ts5Iw_H_TAUCMB"
 
     fun resolveSupabaseUrl(configuredUrl: String): String =
         configuredUrl.trim().ifBlank { DEFAULT_SUPABASE_URL }
+
+    fun resolvePublishableKey(configuredKey: String): String =
+        configuredKey.trim().ifBlank { DEFAULT_SUPABASE_PUBLISHABLE_KEY }
 }
 
 object UltraProductionResearchProviderSource : UltraResearchProviderSource {
@@ -66,7 +71,9 @@ object UltraProductionResearchProviderSource : UltraResearchProviderSource {
             supabaseUrl = UltraResearchProductionConfig.resolveSupabaseUrl(
                 BuildConfig.SUPABASE_URL
             ),
-            publishableKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
+            publishableKey = UltraResearchProductionConfig.resolvePublishableKey(
+                BuildConfig.SUPABASE_PUBLISHABLE_KEY
+            )
         )
 
     override fun providers(): List<UltraResearchProvider> =

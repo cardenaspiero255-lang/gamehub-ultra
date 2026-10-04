@@ -25,4 +25,19 @@ class UltraResearchProductionConfigTest {
             )
         )
     }
+    @Test
+    fun blankPublishableKeyUsesCanonicalPackagedPublicClientFallback() {
+        assertEquals(
+            "sb_publishable_ApYyZYZoVTV1-UwO2ts5Iw_H_TAUCMB",
+            UltraResearchProductionConfig.resolvePublishableKey("")
+        )
+    }
+
+    @Test
+    fun explicitPublishableKeyIsPreserved() {
+        assertEquals(
+            "sb_publishable_test-key",
+            UltraResearchProductionConfig.resolvePublishableKey("  sb_publishable_test-key  ")
+        )
+    }
 }

@@ -3438,3 +3438,495 @@ Deno.test("retrying upstream requests respect a bounded attempt timeout", async 
     throw new Error("retry budget did not bound the stalled upstream request");
   }
 });
+
+Deno.test("weather falls back to independently sourced web evidence when Open-Meteo fails", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname.includes("open-meteo.com")) {
+        return new Response("upstream failure", { status: 400 });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({
+          results: [
+            {
+              title: "Clima en Talca hoy",
+              url: "https://weather-one.example/talca",
+              content:
+                "El clima en Talca hoy registra 18 grados y cielo despejado.",
+              score: 0.9,
+            },
+            {
+              title: "Tiempo actual en Talca",
+              url: "https://weather-two.example/talca",
+              content:
+                "Talca registra hoy 18 grados con condiciones despejadas.",
+              score: 0.8,
+            },
+          ],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+  };
+
+  const result = await routeResearchQuery(
+    "Temperatura de hoy en Talca",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected verified weather fallback");
+  if ((result.independentSourceCount ?? 0) < 2) {
+    throw new Error(
+      "weather fallback must retain independent-source verification",
+    );
+  }
+});
+
+Deno.test("news falls back to independently sourced web evidence when GDELT is insufficient", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.gdeltproject.org") {
+        return jsonResponse({ articles: [] });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({
+          results: [
+            {
+              title: "Novedades de Android",
+              url: "https://news-one.example/android",
+              content:
+                "Android recibe hoy una nueva actualización con mejoras de seguridad.",
+              score: 0.9,
+            },
+            {
+              title: "Actualización de Android",
+              url: "https://news-two.example/android",
+              content:
+                "La actualización de Android añade nuevas mejoras de seguridad.",
+              score: 0.8,
+            },
+          ],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+  };
+
+  const result = await routeResearchQuery(
+    "Noticias actuales sobre Android",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected verified news fallback");
+  if ((result.independentSourceCount ?? 0) < 2) {
+    throw new Error(
+      "news fallback must retain independent-source verification",
+    );
+  }
+});
+
+Deno.test("purpose-form general knowledge queries normalize leading articles before Wikipedia search", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        const search = url.searchParams.get("srsearch");
+        if (search !== "sistema operativo") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        return jsonResponse({
+          query: { search: [{ title: "Sistema operativo" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          extract:
+            "Un sistema operativo administra el hardware y los recursos de un dispositivo.",
+          content_urls: {
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Sistema_operativo",
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({ results: [] });
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        throw new Error(
+          "Gemini must not be needed for this stable knowledge query",
+        );
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+  };
+
+  const result = await routeResearchQuery(
+    "¿Para qué sirve un sistema operativo?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error(
+      "expected Wikipedia-backed answer for normalized purpose query",
+    );
+  }
+  if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
+    throw new Error("expected Wikipedia evidence without model fallback");
+  }
+});
+
+Deno.test("weather uses a second authoritative provider when Open-Meteo is unavailable", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname.includes("open-meteo.com")) {
+        return new Response("upstream failure", { status: 503 });
+      }
+      if (url.hostname === "nominatim.openstreetmap.org") {
+        return jsonResponse([
+          {
+            lat: "-33.0472",
+            lon: "-71.6127",
+            display_name: "Valparaíso, Chile",
+          },
+        ]);
+      }
+      if (url.hostname === "api.met.no") {
+        return jsonResponse({
+          properties: {
+            timeseries: [{
+              time: "2026-10-04T20:00:00Z",
+              data: {
+                instant: { details: { air_temperature: 14.2 } },
+                next_1_hours: { summary: { symbol_code: "partlycloudy_day" } },
+              },
+            }],
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué tiempo hace ahora en Valparaíso?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected authoritative weather fallback");
+  }
+  if (result.authoritative !== true) {
+    throw new Error("secondary weather provider must remain authoritative");
+  }
+  if (!result.sourceIds?.some((source) => source.includes("api.met.no"))) {
+    throw new Error("expected MET Norway as weather fallback source");
+  }
+});
+
+Deno.test("news uses independent Google News publishers when GDELT and Tavily are unavailable", async () => {
+  const rss = '<?xml version="1.0"?><rss><channel>' +
+    '<item><title>Android recibe una actualización importante</title><link>https://news.google.com/rss/articles/android-one</link><pubDate>Sun, 04 Oct 2026 18:00:00 GMT</pubDate><source url="https://tecnologia.example">Tecnología Uno</source></item>' +
+    '<item><title>Nuevas funciones llegan a Android</title><link>https://news.google.com/rss/articles/android-two</link><pubDate>Sun, 04 Oct 2026 17:30:00 GMT</pubDate><source url="https://moviles.example">Móviles Dos</source></item>' +
+    "</channel></rss>";
+
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.gdeltproject.org") {
+        return jsonResponse({ articles: [] });
+      }
+      if (url.hostname === "news.google.com") {
+        return new Response(rss, {
+          status: 200,
+          headers: { "Content-Type": "application/rss+xml" },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return new Response("plan unavailable", { status: 432 });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué noticias recientes hay sobre Android?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected Google News fallback");
+  if ((result.independentSourceCount ?? 0) < 2) {
+    throw new Error("news fallback must keep two independent publishers");
+  }
+  if (
+    !result.sourceIds?.every((source) => source.includes("news.google.com"))
+  ) {
+    throw new Error("expected article-level Google News links as citations");
+  }
+});
+
+Deno.test("Tavily retries a compatibility payload after a request-shape rejection", async () => {
+  let tavilyCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "api.tavily.com") {
+        tavilyCalls += 1;
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        if (tavilyCalls === 1) {
+          if (body.filter_by_language !== true) {
+            throw new Error(
+              "first Tavily request should use the preferred payload",
+            );
+          }
+          return new Response("bad request", { status: 400 });
+        }
+        if ("filter_by_language" in body || "language" in body) {
+          throw new Error(
+            "compatibility retry must remove language-only fields",
+          );
+        }
+        return jsonResponse({
+          results: [
+            {
+              title: "Motor eléctrico explicado",
+              url: "https://source-one.example/motor",
+              content:
+                "Un motor eléctrico convierte energía eléctrica en movimiento mecánico.",
+              score: 0.9,
+            },
+            {
+              title: "Cómo funciona un motor eléctrico",
+              url: "https://source-two.example/motor",
+              content:
+                "El motor eléctrico transforma energía eléctrica en energía mecánica.",
+              score: 0.8,
+            },
+          ],
+        });
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        throw new Error(
+          "Gemini must not be needed after Tavily compatibility retry",
+        );
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es un motor eléctrico?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected compatible Tavily fallback after 400");
+  }
+  if (tavilyCalls !== 2) {
+    throw new Error(
+      "expected one preferred request and one compatibility retry",
+    );
+  }
+});
+
+Deno.test("temperature de hoy phrasing routes to the authoritative weather provider", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "geocoding-api.open-meteo.com") {
+        return jsonResponse({
+          results: [{
+            name: "Talca",
+            admin1: "Maule",
+            country: "Chile",
+            latitude: -35.4264,
+            longitude: -71.6554,
+          }],
+        });
+      }
+      if (url.hostname === "api.open-meteo.com") {
+        return jsonResponse({
+          current: {
+            temperature_2m: 18,
+            apparent_temperature: 18,
+            weather_code: 0,
+            time: "2026-10-04T17:00",
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        throw new Error("weather phrasing must not fall through to Tavily");
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Temperatura de hoy en Talca",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected weather answer");
+  if (!result.sourceIds?.some((source) => source.includes("open-meteo.com"))) {
+    throw new Error("expected authoritative Open-Meteo evidence");
+  }
+});
+
+Deno.test("conversational news recency phrases use compact news topics without Tavily", async () => {
+  const rss = '<?xml version="1.0"?><rss><channel>' +
+    '<item><title>Novedad tecnológica uno</title><link>https://news.google.com/rss/articles/one</link><pubDate>Sun, 04 Oct 2026 18:00:00 GMT</pubDate><source url="https://medio-uno.example">Medio Uno</source></item>' +
+    '<item><title>Novedad tecnológica dos</title><link>https://news.google.com/rss/articles/two</link><pubDate>Sun, 04 Oct 2026 17:00:00 GMT</pubDate><source url="https://medio-dos.example">Medio Dos</source></item>' +
+    "</channel></rss>";
+  let expectedTopic = "";
+
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.gdeltproject.org") {
+        if (url.searchParams.get("query") !== expectedTopic) {
+          return jsonResponse({ articles: [] });
+        }
+        return jsonResponse({ articles: [] });
+      }
+      if (url.hostname === "news.google.com") {
+        if (url.searchParams.get("q") !== expectedTopic) {
+          throw new Error("news provider received an unnormalized topic");
+        }
+        return new Response(rss, {
+          status: 200,
+          headers: { "Content-Type": "application/rss+xml" },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        throw new Error(
+          "news recency phrasing must not fall through to Tavily",
+        );
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  for (
+    const [query, topic] of [
+      [
+        "¿Qué novedades hay hoy sobre inteligencia artificial?",
+        "inteligencia artificial",
+      ],
+      ["¿Qué ha pasado recientemente en tecnología?", "tecnología"],
+    ]
+  ) {
+    expectedTopic = topic;
+    const result = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "CURRENT_DATA",
+    );
+    if (result.abstained) {
+      throw new Error(
+        "expected news answer for conversational recency phrasing",
+      );
+    }
+    if ((result.independentSourceCount ?? 0) < 2) {
+      throw new Error("expected two independent news publishers");
+    }
+  }
+});
+
+Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        const search = url.searchParams.get("srsearch");
+        return search === "procesador"
+          ? jsonResponse({
+            query: { search: [{ title: "Unidad central de procesamiento" }] },
+          })
+          : jsonResponse({ query: { search: [] } });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          extract:
+            "La unidad central de procesamiento ejecuta instrucciones y procesa datos.",
+          content_urls: {
+            desktop: {
+              page:
+                "https://es.wikipedia.org/wiki/Unidad_central_de_procesamiento",
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        throw new Error("stable encyclopedia topic must not require Tavily");
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        throw new Error("stable encyclopedia topic must not require Gemini");
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Explícame qué hace un procesador",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected encyclopedia answer");
+  if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
+    throw new Error("expected Wikipedia evidence");
+  }
+});

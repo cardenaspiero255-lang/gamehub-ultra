@@ -1,0 +1,180 @@
+name: Supabase research smoke test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/functions/ultra-research/**"
+      - "app/src/main/java/com/cardenaspiero255/gamehubultra/ai/**"
+      - "app/src/test/java/com/cardenaspiero255/gamehubultra/ai/**"
+      - ".github/workflows/supabase-research-smoke.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/ultra-research/**"
+      - "app/src/main/java/com/cardenaspiero255/gamehubultra/ai/**"
+      - ".github/workflows/supabase-research-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SMOKE_SEED: ${{ github.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Resolve canonical Supabase public client configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          config_file="app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraResearchProviderSource.kt"
+          supabase_url="$(grep -A1 'DEFAULT_SUPABASE_URL' "$config_file" | grep -o 'https://[^"]*' | head -n 1)"
+          publishable_key="$(grep -A1 'DEFAULT_SUPABASE_PUBLISHABLE_KEY' "$config_file" | grep -o 'sb_publishable_[^"]*' | head -n 1)"
+
+          case "$supabase_url" in
+            https://*.supabase.co) ;;
+            *) echo "::error::Canonical Supabase URL is missing or malformed"; exit 1 ;;
+          esac
+          case "$publishable_key" in
+            sb_publishable_*) ;;
+            *) echo "::error::Canonical Supabase publishable key is missing or malformed"; exit 1 ;;
+          esac
+
+          echo "::add-mask::$publishable_key"
+          echo "SUPABASE_URL=$supabase_url" >> "$GITHUB_ENV"
+          echo "SUPABASE_PUBLISHABLE_KEY=$publishable_key" >> "$GITHUB_ENV"
+          echo "Using canonical Supabase project host from Android production config."
+
+      - name: Build reproducible smoke plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > "$RUNNER_TEMP/smoke-cases.jsonl"
+          import json
+          import os
+          import random
+
+          seed = int(os.environ["SMOKE_SEED"])
+          rng = random.Random(seed)
+
+          fixed = [
+              ("general", "Qué es un motor", "GENERAL_KNOWLEDGE", False),
+              ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True),
+              ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True),
+          ]
+
+          pools = {
+              "general": [
+                  "¿Qué es la fotosíntesis?",
+                  "Explícame qué hace un procesador",
+                  "¿Por qué el cielo se ve azul?",
+                  "¿Qué diferencia hay entre RAM y almacenamiento?",
+                  "¿Qué es una red neuronal?",
+                  "¿Para qué sirve un sistema operativo?",
+                  "¿Qué significa latencia en internet?",
+                  "¿Cómo funciona un motor eléctrico?",
+              ],
+              "weather": [
+                  "¿Cómo está el clima hoy en Rancagua?",
+                  "Temperatura actual en Santiago",
+                  "¿Qué tiempo hace ahora en Valparaíso?",
+                  "Clima actual en Concepción",
+                  "¿Cómo está el tiempo hoy en Puerto Montt?",
+                  "Temperatura de hoy en Talca",
+              ],
+              "news": [
+                  "Noticias de tecnología de hoy",
+                  "¿Qué novedades hay hoy sobre inteligencia artificial?",
+                  "Dame noticias actuales de videojuegos",
+                  "¿Qué noticias recientes hay sobre Android?",
+                  "Noticias actuales sobre smartphones",
+                  "¿Qué ha pasado recientemente en tecnología?",
+              ],
+          }
+
+          cases = list(fixed)
+          for label, questions in pools.items():
+              kind = "GENERAL_KNOWLEDGE" if label == "general" else "CURRENT_DATA"
+              fresh = label != "general"
+              for question in rng.sample(questions, 3):
+                  cases.append((label, question, kind, fresh))
+
+          print(json.dumps({"meta": {"seed": seed, "caseCount": len(cases)}}, ensure_ascii=False))
+          for index, (label, query, kind, fresh) in enumerate(cases):
+              print(json.dumps({
+                  "label": label,
+                  "query": query,
+                  "kind": kind,
+                  "fresh": fresh,
+                  "correlationId": f"smoke-{seed}-{index}",
+              }, ensure_ascii=False))
+          PY
+
+          head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "12"
+
+      - name: Exercise fixed controls and varied questions
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="${SUPABASE_URL%/}/functions/v1/ultra-research"
+          failures=0
+          abstentions=0
+          executed=0
+
+          while IFS= read -r case_json; do
+            executed=$((executed + 1))
+            label="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["label"])' "$case_json")"
+            query="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["query"])' "$case_json")"
+            kind="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["kind"])' "$case_json")"
+            fresh="$(python3 -c 'import json,sys; print(str(json.loads(sys.argv[1])["fresh"]).lower())' "$case_json")"
+            correlation="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["correlationId"])' "$case_json")"
+            body="$(python3 -c 'import json,sys; print(json.dumps({"query":sys.argv[1],"kind":sys.argv[2],"verificationMode":"STRICT","requiresFreshData":sys.argv[3]=="true","correlationId":sys.argv[4]}, ensure_ascii=False))' "$query" "$kind" "$fresh" "$correlation")"
+            out="$(mktemp)"
+
+            echo "Testing [$label] correlation=$correlation: $query"
+
+            set +e
+            code="$(curl --silent --show-error --connect-timeout 10 --max-time 45 -o "$out" -w '%{http_code}' -X POST "$endpoint" -H "Content-Type: application/json" -H "apikey: $SUPABASE_PUBLISHABLE_KEY" --data "$body")"
+            curl_status=$?
+            set -e
+
+            if [ "$curl_status" -ne 0 ] || [ "$code" != "200" ]; then
+              echo "::error::[$label] infrastructure failure curl=$curl_status HTTP=$code correlation=$correlation query=$query"
+              cat "$out" || true
+              failures=$((failures + 1))
+              rm -f "$out"
+              continue
+            fi
+
+            verdict="$(python3 -c 'import json,sys; p=json.load(open(sys.argv[2], encoding="utf-8")); label=sys.argv[1]; print("ABSTAIN|" + str(p.get("reasonCode") or p.get("message") or "unspecified") if p.get("abstained") is True else "FAIL|missing displayText" if not str(p.get("displayText") or "").strip() else "FAIL|fresh answer missing source evidence" if label in {"weather","news"} and not (p.get("sourceIds") or p.get("sourceId")) else "PASS|ok")' "$label" "$out")"
+
+            case "$verdict" in
+              PASS*)
+                echo "PASS [$label] correlation=$correlation"
+                ;;
+              ABSTAIN*)
+                abstentions=$((abstentions + 1))
+                echo "::warning::[$label] safe abstention correlation=$correlation query=$query reason=${verdict#ABSTAIN|}"
+                ;;
+              *)
+                failures=$((failures + 1))
+                echo "::error::[$label] response contract failure correlation=$correlation query=$query detail=${verdict#FAIL|}"
+                ;;
+            esac
+
+            rm -f "$out"
+          done < <(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl")
+
+          echo "Smoke summary: seed=$SMOKE_SEED executed=$executed abstentions=$abstentions failures=$failures"
+          test "$executed" -eq 12
+          test "$failures" -eq 0

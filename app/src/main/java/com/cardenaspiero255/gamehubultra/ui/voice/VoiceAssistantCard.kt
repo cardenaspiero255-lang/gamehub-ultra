@@ -263,6 +263,10 @@ internal fun VoiceAssistantCard(
                     continuousListeningEnabled = false
                     response = context.getString(R.string.voice_permission_required)
                 }
+                ContinuousVoiceChange.SYSTEM_RESTRICTED -> {
+                    continuousListeningEnabled = false
+                    response = "La escucha continua no está disponible con las restricciones actuales del sistema."
+                }
                 ContinuousVoiceChange.DISABLED -> Unit
             }
         } else if (!granted) {
@@ -629,6 +633,11 @@ applyNetworkProfile = networkGaming::applyProfile
                                 pendingContinuousListening = false
                                 continuousListeningEnabled = true
                                 response = "Escucha continua activada."
+                            }
+                            ContinuousVoiceChange.SYSTEM_RESTRICTED -> {
+                                pendingContinuousListening = false
+                                continuousListeningEnabled = false
+                                response = "La escucha continua no está disponible con las restricciones actuales del sistema."
                             }
                             ContinuousVoiceChange.DISABLED -> {
                                 pendingContinuousListening = false

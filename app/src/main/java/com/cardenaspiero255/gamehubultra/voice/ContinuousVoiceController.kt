@@ -5,17 +5,20 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import android.speech.SpeechRecognizer
 
 internal enum class ContinuousVoiceChange {
     ENABLED,
     DISABLED,
-    PERMISSION_REQUIRED
+    PERMISSION_REQUIRED,
+    SYSTEM_RESTRICTED
 }
 
 internal interface ContinuousVoiceGateway {
     fun isEnabled(): Boolean
     fun setEnabled(enabled: Boolean)
     fun hasRecordAudioPermission(): Boolean
+    fun canRunContinuousVoice(): Boolean
     fun startWakeService()
     fun stopWakeService()
 }
@@ -26,7 +29,10 @@ internal class ContinuousVoiceController(
     fun isEnabled(): Boolean = gateway.isEnabled()
 
     fun resumeIfEnabled(): Boolean {
-        if (!gateway.isEnabled() || !gateway.hasRecordAudioPermission()) {
+        if (!gateway.isEnabled()) return false
+        if (!gateway.hasRecordAudioPermission() || !gateway.canRunContinuousVoice()) {
+            gateway.setEnabled(false)
+            gateway.stopWakeService()
             return false
         }
         gateway.startWakeService()
@@ -42,6 +48,11 @@ internal class ContinuousVoiceController(
 
         if (!gateway.hasRecordAudioPermission()) {
             return ContinuousVoiceChange.PERMISSION_REQUIRED
+        }
+        if (!gateway.canRunContinuousVoice()) {
+            gateway.setEnabled(false)
+            gateway.stopWakeService()
+            return ContinuousVoiceChange.SYSTEM_RESTRICTED
         }
 
         gateway.setEnabled(true)
@@ -74,6 +85,9 @@ internal class AndroidContinuousVoiceGateway(
             .putBoolean(VOICE_CONTINUOUS_KEY, enabled)
             .apply()
     }
+
+    override fun canRunContinuousVoice(): Boolean =
+        SpeechRecognizer.isRecognitionAvailable(appContext)
 
     override fun hasRecordAudioPermission(): Boolean =
         ContextCompat.checkSelfPermission(
