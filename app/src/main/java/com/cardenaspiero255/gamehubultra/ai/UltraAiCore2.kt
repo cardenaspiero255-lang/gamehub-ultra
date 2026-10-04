@@ -7,14 +7,46 @@ data class UltraAiObservation(
     val batteryPercent: Int? = null,
     val thermalLabel: String? = null,
     val refreshRateHz: Float? = null,
-    val latencyMs: Int? = null,\n    val thermalStatus: Int? = null,\n    val thermalHeadroom: Float? = null,\n    val sessionActive: Boolean = false\n) {\n    fun sanitized(): UltraAiObservation = copy(\n        batteryPercent = batteryPercent?.takeIf { it in 0..100 },\n        refreshRateHz = refreshRateHz?.takeIf { it.isFinite() && it > 0f },\n        latencyMs = latencyMs?.takeIf { it >= 0 },\n        thermalStatus = thermalStatus?.takeIf { it >= 0 },\n        thermalHeadroom = thermalHeadroom?.takeIf { it.isFinite() && it >= 0f }\n    )\n\n    companion object {\n        fun from(context: GameHubAiContext): UltraAiObservation = UltraAiObservation(\n            gamePackage = context.selectedGamePackage.orEmpty(),\n            activeProfileId = context.selectedProfile.name,\n            batteryPercent = context.batteryPercent,\n            thermalStatus = context.thermalStatus,\n            thermalHeadroom = context.thermalHeadroom,\n            refreshRateHz = context.refreshRateHz,\n            latencyMs = context.networkLatencyMs?.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt(),\n            sessionActive = context.sessionActive\n        ).sanitized()\n    }\n}
+    val latencyMs: Int? = null,
+    val thermalStatus: Int? = null,
+    val thermalHeadroom: Float? = null,
+    val sessionActive: Boolean = false
+) {
+    fun sanitized(): UltraAiObservation = copy(
+        batteryPercent = batteryPercent?.takeIf { it in 0..100 },
+        refreshRateHz = refreshRateHz?.takeIf { it.isFinite() && it > 0f },
+        latencyMs = latencyMs?.takeIf { it >= 0 },
+        thermalStatus = thermalStatus?.takeIf { it >= 0 },
+        thermalHeadroom = thermalHeadroom?.takeIf { it.isFinite() && it >= 0f }
+    )
+
+    companion object {
+        fun from(context: GameHubAiContext): UltraAiObservation = UltraAiObservation(
+            gamePackage = context.selectedGamePackage.orEmpty(),
+            activeProfileId = context.selectedProfile.name,
+            batteryPercent = context.batteryPercent,
+            thermalStatus = context.thermalStatus,
+            thermalHeadroom = context.thermalHeadroom,
+            refreshRateHz = context.refreshRateHz,
+            latencyMs = context.networkLatencyMs?.takeIf { it in 0..Int.MAX_VALUE.toLong() }?.toInt(),
+            sessionActive = context.sessionActive
+        ).sanitized()
+    }
+}
 
 data class UltraAiFeedbackSnapshot(
     val acceptedProfileIds: Set<String> = emptySet(),
     val rejectedProfileIds: Set<String> = emptySet()
 )
 
-data class UltraAiMemorySignal(val text: String, val provenance: UltraMemoryProvenance) {\n    companion object {\n        fun from(recall: UltraMemoryRecall): UltraAiMemorySignal = UltraAiMemorySignal(\n            text = recall.record.text,\n            provenance = recall.provenance\n        )\n    }\n}
+data class UltraAiMemorySignal(val text: String, val provenance: UltraMemoryProvenance) {
+    companion object {
+        fun from(recall: UltraMemoryRecall): UltraAiMemorySignal = UltraAiMemorySignal(
+            text = recall.record.text,
+            provenance = recall.provenance
+        )
+    }
+}
 
 data class UltraAiRecommendation(
     val profileId: String,
@@ -40,8 +72,9 @@ class UltraAiCore2(private val recommender: UltraAiRecommender?) {
         feedback: UltraAiFeedbackSnapshot,
         memories: List<UltraAiMemorySignal>
     ): UltraAiCoreResult {
-        val recommendation = recommender?.recommend(observation, feedback)
-            ?: deterministicRecommendation(observation, feedback)
+        val safeObservation = observation.sanitized()
+        val recommendation = recommender?.recommend(safeObservation, feedback)
+            ?: deterministicRecommendation(safeObservation, feedback)
         return UltraAiCoreResult(
             recommendation = recommendation,
             explanation = buildExplanation(safeObservation, recommendation),
