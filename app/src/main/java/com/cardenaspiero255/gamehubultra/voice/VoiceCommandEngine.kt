@@ -303,7 +303,8 @@ internal object GameMatchFinder {
     private val popularAliases = mapOf(
         "re8" to listOf("resident evil village"),
         "cp2077" to listOf("cyberpunk 2077"),
-        "pubg" to listOf("playerunknown s battlegrounds", "pubg")
+        "pubg" to listOf("playerunknown s battlegrounds", "pubg"),
+        "bs" to listOf("brawl stars")
     )
 
     fun find(
