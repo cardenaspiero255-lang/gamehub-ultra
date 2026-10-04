@@ -176,7 +176,17 @@ internal class UltraWakeCommandRuntime(
                             onFailure = ::reportSelectionPersistenceFailure
                         ) { selectionRepository.saveSelectedGameAndProfile(packageName, profile) }
                     },
-                    isProfileAvailable = { true },
+                    isProfileAvailable = { profile ->
+                        if (selectedGamePackage == null) {
+                            true
+                        } else {
+                            UltraSessionProfileSafety.canApply(
+                                command = VoiceCommand.SelectProfile(profile),
+                                sessionActive = true,
+                                safelySupported = capabilities.sustainedPerformanceSupported
+                            )
+                        }
+                    },
                     statusProvider = { status },
                     deferProfileApplication = true,
                     aiAdvisor = { question -> aiAdvisor.advise(question, aiContext) },
