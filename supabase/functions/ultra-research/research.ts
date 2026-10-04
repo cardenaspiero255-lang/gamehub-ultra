@@ -1549,9 +1549,29 @@ async function weatherEvidence(
   geoUrl.searchParams.set("language", "es");
   geoUrl.searchParams.set("format", "json");
 
-  const geo = await fetchJson(deps, geoUrl, {
+  const geoResponse = await fetchWithRetry(deps, geoUrl, {
     headers: { "User-Agent": USER_AGENT },
   });
+  if (!geoResponse) {
+    return abstain("La fuente de ubicación no respondió a tiempo.", {
+      reasonCode: "UPSTREAM_UNAVAILABLE",
+      retryable: true,
+      stage: "weather_geocoding",
+    });
+  }
+
+  let geo: JsonObject | null = null;
+  if (geoResponse.ok) {
+    try {
+      const parsed = await geoResponse.json();
+      geo = parsed && typeof parsed === "object"
+        ? parsed as JsonObject
+        : null;
+    } catch {
+      geo = null;
+    }
+  }
+
   const places = Array.isArray(geo?.results) ? geo.results : [];
   const place = places[0] as JsonObject | undefined;
   let latitude = numberValue(place?.latitude);
@@ -2210,14 +2230,21 @@ function stripConversationSpeaker(value: string): string {
 function extractGeneralKnowledgeQuery(query: string): string {
   const clean = stripAssistantInvocation(stripConversationSpeaker(query))
     .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
+  const purposeForm =
+    /^(?:(?:hola|por favor|y)\s+)*(?:para que sirve|para qué sirve)\b/i.test(
+      clean,
+    );
 
-  return clean
+  const topic = clean
     .replace(
       /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
       "",
     )
-    .replace(/^(?:(?:el|la|los|las|un|una|unos|unas|the|a|an)\s+)+/i, "")
     .trim();
+
+  return purposeForm
+    ? topic.replace(/^(?:(?:el|la|los|las|un|una|unos|unas)\s+)+/i, "")
+    : topic;
 }
 
 function contextKnowledgeTopic(context: string): string {
@@ -2739,7 +2766,8 @@ export async function routeResearchQuery(
   const cleanContext = normalize(context);
   const combinedSignals = `${clean} ${cleanContext}`.trim();
 
-  const weatherSignal = /\b(?:clima|tiempo de hoy|weather|pronostico|forecast|que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
+  const weatherSignal =
+    /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|pronostico|forecast|que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
   const newsSignal =
     /\b(noticias|news|salio nuevo|que salio nuevo|latest news|released)\b/;
   const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;
