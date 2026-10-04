@@ -3284,6 +3284,53 @@ Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", asy
   }
 });
 
+Deno.test("general model caller timeout can exceed the default fetch attempt timeout", async () => {
+  let aborted = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "es.wikipedia.org") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        return new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            resolve(jsonResponse({
+              candidates: [{
+                content: { parts: [{ text: "Un motor convierte energía en trabajo mecánico." }] },
+              }],
+            }));
+          }, 2_600);
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            clearTimeout(timer);
+            reject(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => {
+      if (name === "GEMINI_API_KEY") return "gemini-test-key";
+      if (name === "ULTRA_GENERAL_MODEL_TIMEOUT_MS") return "3000";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "4000";
+      return undefined;
+    },
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, ¿qué es un motor?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (aborted) throw new Error("default fetch timeout must not preempt the caller timeout");
+  if (result.abstained || result.sourceId !== "gemini-general-assistant") {
+    throw new Error("Gemini should be allowed to answer within the caller timeout");
+  }
+});
+
 Deno.test("retrying upstream requests respect a bounded attempt timeout", async () => {
   let attempts = 0;
   const deps: ResearchDependencies = {
