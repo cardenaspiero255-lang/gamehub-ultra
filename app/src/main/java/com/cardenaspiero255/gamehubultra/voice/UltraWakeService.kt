@@ -67,6 +67,7 @@ class UltraWakeService : Service() {
     private val voiceConversationLedger = UltraVoiceConversationLedger(maxEntries = 8)
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
+    private val repeatGate = UltraWakeRepeatGate()
     private val lifecycleGate = UltraWakeLifecycleGate()
     private val speechPlayback by lazy {
         UltraWakeSpeechPlaybackController(
@@ -307,7 +308,10 @@ class UltraWakeService : Service() {
         var commandStarted = false
         if (transcript.isNotBlank() && containsWakeWord(transcript)) {
             val now = System.currentTimeMillis()
-            if (now - lastTranscriptAt > WAKE_DEBOUNCE_MS) {
+            if (
+                now - lastTranscriptAt > WAKE_DEBOUNCE_MS &&
+                repeatGate.shouldAccept(transcript, now)
+            ) {
                 lastTranscriptAt = now
                 commandStarted = commandCoordinator.tryBeginCommand(
                     keepRecognitionActive = keepRecognitionActive
@@ -425,6 +429,7 @@ class UltraWakeService : Service() {
         voiceConversationLedger.clear()
         speechGeneration.clear()
         playbackGuard.clear()
+        repeatGate.clear()
         closePersistentSpeechSource()
         commandCoordinator.onRecognitionFinished()
         commandCoordinator.finishCommand()
