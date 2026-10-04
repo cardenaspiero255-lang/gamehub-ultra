@@ -590,7 +590,7 @@ applyNetworkProfile = networkGaming::applyProfile
                             requestOneShotListening()
                         }
                     },
-                    enabled = assistantInputEnabled,
+                    enabled = assistantInputEnabled || listening,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 40.dp),
