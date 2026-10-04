@@ -2565,13 +2565,21 @@ export async function routeResearchQuery(
     weatherSignal.test(clean) ||
     (kind === "CURRENT_DATA" && weatherSignal.test(cleanContext))
   ) {
-    return await weatherEvidence(query, deps);
+    const weather = await weatherEvidence(query, deps);
+    if (!weather.abstained) return weather;
+    const weatherFallback = await tavilyEvidence(query, deps);
+    if (!weatherFallback.abstained) return weatherFallback;
+    return weather;
   }
   if (
     newsSignal.test(clean) ||
     (kind === "CURRENT_DATA" && newsSignal.test(cleanContext))
   ) {
-    return await newsEvidence(query, deps);
+    const news = await newsEvidence(query, deps);
+    if (!news.abstained) return news;
+    const newsFallback = await tavilyEvidence(query, deps);
+    if (!newsFallback.abstained) return newsFallback;
+    return news;
   }
   if (
     priceSignal.test(clean) ||
