@@ -3931,7 +3931,6 @@ Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic"
   }
 });
 
-
 Deno.test("stable definition mislabeled as current data recovers through general knowledge", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -3978,7 +3977,9 @@ Deno.test("stable definition mislabeled as current data recovers through general
   );
 
   if (result.abstained) {
-    throw new Error("stable definition should recover from a stale client kind");
+    throw new Error(
+      "stable definition should recover from a stale client kind",
+    );
   }
   if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
     throw new Error("expected general-knowledge evidence from Wikipedia");
