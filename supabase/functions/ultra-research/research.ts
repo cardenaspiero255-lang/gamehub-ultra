@@ -1287,8 +1287,18 @@ async function fetchWithRetry(
 
     const controller = new AbortController();
     const externalSignal = init?.signal;
-    const abortFromExternal = () => controller.abort(externalSignal?.reason);
-    externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
+    let settleExternalAbort: (() => void) | undefined;
+    const externalAbort = externalSignal
+      ? new Promise<null>((resolve) => {
+        settleExternalAbort = () => {
+          controller.abort(externalSignal.reason);
+          resolve(null);
+        };
+        externalSignal.addEventListener("abort", settleExternalAbort, {
+          once: true,
+        });
+      })
+      : null;
     const timeoutMs = Math.max(
       1,
       Math.min(fetchAttemptTimeoutMs(deps), remainingBudget),
@@ -1302,13 +1312,15 @@ async function fetchWithRetry(
     });
 
     try {
-      const response = await Promise.race([
+      const pending = [
         Promise.resolve(deps.fetcher(input, {
           ...init,
           signal: controller.signal,
         })),
         attemptTimeout,
-      ]);
+      ];
+      if (externalAbort) pending.push(externalAbort);
+      const response = await Promise.race(pending);
       if (response === null) {
         if (externalSignal?.aborted || attempt === maxAttempts) return null;
       } else {
@@ -1321,7 +1333,9 @@ async function fetchWithRetry(
       if (externalSignal?.aborted || attempt === maxAttempts) return null;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
-      externalSignal?.removeEventListener("abort", abortFromExternal);
+      if (externalSignal && settleExternalAbort) {
+        externalSignal.removeEventListener("abort", settleExternalAbort);
+      }
     }
 
     const remainingAfterAttempt = Math.trunc(deadlineAt - performance.now());
