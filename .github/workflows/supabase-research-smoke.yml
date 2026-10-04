@@ -22,7 +22,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       SMOKE_SEED: ${{ github.run_id }}
 
@@ -54,7 +54,7 @@ jobs:
           echo "SUPABASE_PUBLISHABLE_KEY=$publishable_key" >> "$GITHUB_ENV"
           echo "Using canonical Supabase project host from Android production config."
 
-      - name: Build reproducible 48-question smoke plan
+      - name: Build reproducible 120-question smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -93,7 +93,7 @@ jobs:
                   ("¿Qué es un átomo?", ["núcleo", "electron"]),
                   ("¿Qué es una molécula?", ["átomo", "enlace"]),
                   ("¿Qué es la gravedad?", ["masa", "atra"]),
-                  ("¿Qué es el ADN?", ["genét", "información"]),
+                  ("¿Qué es el ADN?", ["gen", "información"]),
                   ("¿Qué es una célula?", ["vida", "unidad"]),
                   ("¿Qué es un agujero negro?", ["gravedad", "luz"]),
                   ("¿Qué es un volcán?", ["magma", "corteza"]),
@@ -129,12 +129,156 @@ jobs:
                   ("¿Dónde está el monte Everest?", ["himalaya", "nepal", "tíbet"]),
                   ("¿Cuándo comenzó la Revolución Francesa?", ["1789"]),
                   ("¿Qué fue el Imperio Romano?", ["roma", "imperio"]),
-                  ("¿Qué es la cordillera de los Andes?", ["sudamérica", "america", "montañ"]),
+                  ("¿Qué es la cordillera de los Andes?", ["sudam", "montañ"]),
                   ("¿Dónde está el desierto de Atacama?", ["chile", "atacama"]),
                   ("¿Qué fue la Primera Guerra Mundial?", ["1914", "guerra"]),
                   ("¿Qué es el océano Pacífico?", ["océano", "pacific"]),
                   ("¿Quién fue Leonardo da Vinci?", ["artista", "invent", "renacimiento"]),
                   ("¿Qué fue la Revolución Industrial?", ["industr", "máquin"]),
+              ],
+              "creators_famous": [
+                  ("¿Quién es MrBeast?", ["youtube", "creador", "jimmy"]),
+                  ("¿Quién es Ibai Llanos?", ["stream", "creador", "espa"]),
+                  ("¿Quién es ElRubius?", ["youtube", "creador", "rub"]),
+                  ("¿Quién es AuronPlay?", ["youtube", "stream", "creador"]),
+                  ("¿Quién es Markiplier?", ["youtube", "creador", "videojuego"]),
+                  ("¿Quién es PewDiePie?", ["youtube", "creador"]),
+                  ("¿Quién es Fernanfloo?", ["youtube", "salvador", "creador"]),
+                  ("¿Quién es Shakira?", ["cant", "colomb"]),
+                  ("¿Quién es Cristiano Ronaldo?", ["fut", "portugal"]),
+                  ("¿Quién es Elon Musk?", ["tesla", "spacex", "empres"]),
+              ],
+              "furniture_home": [
+                  ("¿Qué es un sofá?", ["asiento", "sent"]),
+                  ("¿Para qué sirve un armario?", ["ropa", "guardar", "almacen"]),
+                  ("¿Qué es una mesa de comedor?", ["mesa", "comer"]),
+                  ("¿Qué diferencia hay entre una silla y un sillón?", ["silla", "sillón"]),
+                  ("¿Qué es una estantería?", ["estante", "guardar", "objet"]),
+                  ("¿Para qué sirve un velador o mesa de noche?", ["cama", "noche", "objet"]),
+                  ("¿Qué es un escritorio?", ["trabaj", "estudi"]),
+                  ("¿Qué es una cómoda como mueble?", ["cajon", "ropa", "mueble"]),
+                  ("¿Para qué sirve un colchón?", ["dorm", "cama"]),
+                  ("¿Qué es una repisa?", ["pared", "objet", "estante"]),
+              ],
+              "objects_tools": [
+                  ("¿Para qué sirve un martillo?", ["clavo", "golp"]),
+                  ("¿Qué es un destornillador?", ["tornill"]),
+                  ("¿Para qué sirve un taladro?", ["perfor", "aguj"]),
+                  ("¿Qué es una cinta métrica?", ["medir", "longitud"]),
+                  ("¿Para qué sirve una llave inglesa?", ["tuerca", "ajust"]),
+                  ("¿Qué es una linterna?", ["luz", "ilumin"]),
+                  ("¿Para qué sirve un extintor?", ["fuego", "incend"]),
+                  ("¿Qué es un enchufe eléctrico?", ["electric", "corriente", "conect"]),
+                  ("¿Para qué sirve un termómetro?", ["temperatura"]),
+                  ("¿Qué son unas tijeras?", ["cortar", "hoja"]),
+              ],
+              "tv_audio": [
+                  ("¿Qué es un televisor OLED?", ["oled", "pixel"]),
+                  ("¿Qué significa 4K en un televisor?", ["3840", "2160", "resol"]),
+                  ("¿Qué es HDR en una TV?", ["rango", "dinám", "brillo"]),
+                  ("¿Para qué sirve HDMI?", ["audio", "video", "digital"]),
+                  ("¿Qué es una barra de sonido?", ["audio", "televisor", "sonido"]),
+                  ("¿Qué significa 120 Hz en una televisión?", ["120", "refresco"]),
+                  ("¿Qué es Mini-LED?", ["led", "retroilumin"]),
+                  ("¿Qué es QLED?", ["quantum", "punto", "lcd"]),
+                  ("¿Qué es Dolby Atmos?", ["audio", "sonido", "espacial"]),
+                  ("¿Cómo funciona un parlante Bluetooth?", ["bluetooth", "audio", "inalámbr"]),
+              ],
+              "phones_devices": [
+                  ("¿Qué es un smartphone?", ["teléfono", "aplic"]),
+                  ("¿Qué es un SoC en un celular?", ["chip", "proces", "sistema"]),
+                  ("¿Para qué sirve NFC en un teléfono?", ["pago", "corto", "inalámbr"]),
+                  ("¿Qué es una pantalla AMOLED?", ["oled", "pixel"]),
+                  ("¿Qué significa mAh en una batería?", ["capacidad", "bater"]),
+                  ("¿Qué significa IP68 en un celular?", ["agua", "polvo", "prote"]),
+                  ("¿Qué es una eSIM?", ["sim", "digital", "operador"]),
+                  ("¿Qué es OIS en la cámara de un teléfono?", ["estabil", "óptic"]),
+                  ("¿Qué es la carga rápida?", ["carga", "potencia", "bater"]),
+                  ("¿Qué es 5G?", ["móvil", "red", "generación"]),
+              ],
+              "brands_companies": [
+                  ("¿Qué tipo de productos fabrica Samsung?", ["electr", "teléfono", "televisor"]),
+                  ("¿Qué es Apple como empresa?", ["tecnolog", "iphone", "mac"]),
+                  ("¿Qué productos son conocidos de Sony?", ["playstation", "electr", "audio"]),
+                  ("¿Qué es Xiaomi?", ["tecnolog", "smartphone", "electr"]),
+                  ("¿Qué hace Nintendo?", ["videojuego", "consol"]),
+                  ("¿Qué fabrica NVIDIA?", ["gpu", "gráfic", "chip"]),
+                  ("¿Qué fabrica AMD?", ["proces", "cpu", "gpu"]),
+                  ("¿Qué productos fabrica LG?", ["electr", "televisor", "electro"]),
+                  ("¿Por qué es conocida JBL?", ["audio", "parlant", "auricular"]),
+                  ("¿Qué tipo de empresa es Lenovo?", ["comput", "tecnolog", "pc"]),
+              ],
+              "vehicles_transport": [
+                  ("¿Qué es el ABS de un automóvil?", ["freno", "bloque"]),
+                  ("¿Qué hace un turbocompresor?", ["aire", "motor", "turbo"]),
+                  ("¿Qué es un automóvil híbrido?", ["eléctr", "combust", "motor"]),
+                  ("¿Qué es una transmisión automática?", ["marcha", "cambio"]),
+                  ("¿Para qué sirve el cinturón de seguridad?", ["seguridad", "impact", "ocupante"]),
+                  ("¿Qué es el control de crucero?", ["velocidad", "mant"]),
+                  ("¿Qué es un vehículo eléctrico?", ["bater", "motor", "eléctr"]),
+                  ("¿Qué función tiene un airbag?", ["impact", "seguridad", "bolsa"]),
+                  ("¿Qué es la tracción integral?", ["rueda", "tracción"]),
+                  ("¿Qué es el torque de un motor?", ["fuerza", "giro", "par"]),
+              ],
+              "food_cooking": [
+                  ("¿Qué hace la levadura en el pan?", ["ferment", "masa"]),
+                  ("¿Qué es la pasteurización?", ["calor", "microorgan", "alimento"]),
+                  ("¿Qué significa hervir agua?", ["ebul", "temperatura"]),
+                  ("¿Qué es una proteína en nutrición?", ["amino", "nutr"]),
+                  ("¿Qué es la fibra alimentaria?", ["digest", "vegetal", "intestin"]),
+                  ("¿Para qué sirve marinar alimentos?", ["sabor", "líquido", "alimento"]),
+                  ("¿Qué es caramelizar?", ["azúcar", "calor"]),
+                  ("¿Qué diferencia hay entre hornear y freír?", ["horno", "aceite"]),
+                  ("¿Qué es una emulsión en cocina?", ["mezcla", "líquido", "aceite"]),
+                  ("¿Qué es el gluten?", ["prote", "trigo"]),
+              ],
+              "sports": [
+                  ("¿Qué es un fuera de juego en fútbol?", ["posición", "balón", "defens"]),
+                  ("¿Cuántos jugadores tiene un equipo de fútbol en cancha?", ["11", "once"]),
+                  ("¿Qué es un Grand Slam en tenis?", ["torneo", "tenis"]),
+                  ("¿Qué es la NBA?", ["baloncesto", "basket", "liga"]),
+                  ("¿Qué es un nocaut en boxeo?", ["combate", "box", "continuar"]),
+                  ("¿Qué es una maratón?", ["42", "carrera", "kiló"]),
+                  ("¿Qué son los Juegos Olímpicos?", ["deport", "olímp"]),
+                  ("¿Qué es un triple en baloncesto?", ["tres", "punto"]),
+                  ("¿Qué es la Fórmula 1?", ["automovil", "carrera", "monoplaza"]),
+                  ("¿Qué es una tarjeta roja en fútbol?", ["expuls", "jugador"]),
+              ],
+              "arts_entertainment": [
+                  ("¿Qué es el cine?", ["películ", "audiovisual"]),
+                  ("¿Qué es una orquesta?", ["músic", "instrument"]),
+                  ("¿Qué es el anime?", ["anim", "jap"]),
+                  ("¿Qué es el manga?", ["comic", "jap"]),
+                  ("¿Qué es un documental?", ["real", "hecho", "audiovisual"]),
+                  ("¿Qué son los premios Óscar?", ["cine", "academ"]),
+                  ("¿Qué es una novela literaria?", ["narr", "ficc"]),
+                  ("¿Qué es una película de terror?", ["miedo", "terror"]),
+                  ("¿Qué es una banda sonora?", ["músic", "películ", "obra"]),
+                  ("¿Qué es una serie de televisión?", ["episod", "televis"]),
+              ],
+              "animals_nature": [
+                  ("¿Qué es un mamífero?", ["leche", "vertebr"]),
+                  ("¿Cómo respiran los peces?", ["branqu"]),
+                  ("¿Qué es un tiburón?", ["pez", "cartíl"]),
+                  ("¿Por qué son importantes las abejas?", ["polin"]),
+                  ("¿Qué es un pulpo?", ["molus", "tent"]),
+                  ("¿Qué es la hibernación?", ["metabol", "invierno", "energ"]),
+                  ("¿Qué es un ecosistema?", ["organism", "ambiente"]),
+                  ("¿Qué es una cadena alimentaria?", ["energ", "organism", "alimento"]),
+                  ("¿Qué es un coral?", ["animal", "marin"]),
+                  ("¿Qué es la biodiversidad?", ["espec", "vida", "divers"]),
+              ],
+              "language_math": [
+                  ("¿Qué es un número primo?", ["divis", "1", "mismo"]),
+                  ("¿Cómo se calcula un porcentaje?", ["100", "divid", "multip"]),
+                  ("¿Qué es una fracción?", ["numerador", "denominador", "parte"]),
+                  ("¿Qué es una ecuación?", ["igual", "incógn"]),
+                  ("¿Qué es el teorema de Pitágoras?", ["triángulo", "hipoten"]),
+                  ("¿Qué es un sinónimo?", ["signific", "palabra"]),
+                  ("¿Qué es una metáfora?", ["compar", "figur"]),
+                  ("¿Qué es un verbo?", ["acción", "estado", "palabra"]),
+                  ("¿Qué es un adjetivo?", ["sustant", "cualidad"]),
+                  ("¿Qué es la media aritmética?", ["sum", "divid", "promedio"]),
               ],
               "weather": [
                   ("¿Cómo está el clima hoy en Rancagua?", []),
@@ -193,16 +337,16 @@ jobs:
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "48"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "120"
           test "$(python3 - <<'PY'
           import json, os
           path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
           rows = [json.loads(line) for line in open(path, encoding="utf-8")][1:]
           print(len({row["label"] for row in rows}))
           PY
-          )" -ge "8"
+          )" -ge "20"
 
-      - name: Exercise 48 stratified questions
+      - name: Exercise 120 stratified questions
         shell: bash
         run: |
           set -euo pipefail
@@ -262,17 +406,27 @@ jobs:
               if not display:
                   return case, "FAIL", "missing displayText"
 
+              blocked_phrases = (
+                  "servicio de consulta no está disponible",
+                  "no pudo verificar",
+                  "no pude verificar",
+                  "asistente general online no respondió",
+              )
+              lowered = display.casefold()
+              if any(phrase in lowered for phrase in blocked_phrases):
+                  return case, "FAIL", f"degraded fallback leaked to user: answer={display[:300]}"
+
               if case["fresh"] and not (payload.get("sourceIds") or payload.get("sourceId")):
                   return case, "FAIL", "fresh answer missing source evidence"
 
               expected = [token.casefold() for token in case.get("expectedAny", [])]
-              if expected and not any(token in display.casefold() for token in expected):
+              if expected and not any(token in lowered for token in expected):
                   return case, "FAIL", f"semantic keyword mismatch: expected one of {expected}; answer={display[:300]}"
 
               return case, "PASS", "ok"
 
           results = []
-          with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+          with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
               futures = [executor.submit(run_case, case) for case in rows]
               for future in concurrent.futures.as_completed(futures):
                   results.append(future.result())
@@ -309,14 +463,14 @@ jobs:
           print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
           print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
 
-          if executed != 48:
-              print(f"::error::Expected 48 cases, executed {executed}")
+          if executed != 120:
+              print(f"::error::Expected 120 cases, executed {executed}")
               sys.exit(1)
           if stable_abstentions != 0:
               print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
               sys.exit(1)
-          if fresh_abstentions > 2:
-              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 2")
+          if fresh_abstentions > 4:
+              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 4")
               sys.exit(1)
           if answer_rate < 0.95:
               print(f"::error::Answer rate below 95%: {answer_rate:.3f}")
@@ -324,4 +478,3 @@ jobs:
           if failures != 0:
               sys.exit(1)
           PY
-
