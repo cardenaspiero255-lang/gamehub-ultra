@@ -8,7 +8,8 @@ import java.util.Locale
 
 class GameHubAiAdvisor(
     private val modelAdapter: LocalAiModelAdapter? = null,
-    private val memoryGateway: UltraLongTermMemoryGateway? = null
+    private val memoryGateway: UltraLongTermMemoryGateway? = null,
+    private val aiCore: UltraAiCoreGateway = UltraAiCore2()
 ) : UltraAssistantGateway {
 
     override fun hasLocalModelProvider(): Boolean = modelAdapter != null
@@ -371,6 +372,15 @@ class GameHubAiAdvisor(
             normalized.contains("revolucion francesa") || normalized.contains("french revolution") ->
                 "La Revolución Francesa comenzó en 1789 y transformó profundamente el sistema político y social de Francia."
 
+            Regex("""\bavion(?:es)?\b|\bairplane(?:s)?\b|\baircraft\b""").containsMatchIn(normalized) ->
+                "Un avión es una aeronave de ala fija diseñada para volar gracias a la sustentación generada por sus alas y al empuje de uno o más motores."
+
+            Regex("""\bpsicopata(?:s)?\b|\bpsychopath(?:s)?\b""").containsMatchIn(normalized) ->
+                "Psicópata es un término de uso común para describir a una persona con ciertos rasgos persistentes, como baja empatía, manipulación o escaso remordimiento. No es por sí solo un diagnóstico clínico independiente y su evaluación corresponde a profesionales de salud mental."
+
+            Regex("""\blapiz(?:es)?\b|\bpencil(?:s)?\b""").containsMatchIn(normalized) ->
+                "Un lápiz es un instrumento para escribir o dibujar que suele tener una mina de grafito u otro material encerrada en madera o en un cuerpo mecánico."
+
             Regex("""\bmotor(?:es)?\b|\bengine(?:s)?\b""").containsMatchIn(normalized) ->
                 "Un motor es una máquina que transforma una forma de energía en movimiento o trabajo mecánico."
 
@@ -503,12 +513,48 @@ class GameHubAiAdvisor(
             else -> AiAdviceReason.BALANCED_GENERAL
         }
 
-        return GameHubAiAdvice(
+        val baseAdvice = GameHubAiAdvice(
             readiness = readiness,
             suggestedProfile = suggested,
             reason = reason,
             localModelUsed = false,
             fallbackUsed = true
+        )
+
+        val coreResult = runCatching {
+            aiCore.evaluate(
+                observation = UltraAiObservation.from(context).copy(
+                    activeProfileId = baseAdvice.suggestedProfile.name
+                ),
+                feedback = UltraAiFeedbackSnapshot(),
+                memories = emptyList()
+            )
+        }.getOrNull()
+
+        val coreProfile = coreResult
+            ?.takeIf { !it.requiresCloud }
+            ?.recommendation
+            ?.profileId
+            ?.let { profileId ->
+                PerformanceProfile.entries.firstOrNull {
+                    it.name.equals(profileId, ignoreCase = true)
+                }
+            }
+
+        val finalProfile = coreProfile ?: baseAdvice.suggestedProfile
+        val finalReason = if (finalProfile == baseAdvice.suggestedProfile) {
+            baseAdvice.reason
+        } else {
+            when (finalProfile) {
+                PerformanceProfile.BALANCED -> AiAdviceReason.BALANCED_GENERAL
+                PerformanceProfile.FRAME_INTERPOLATION -> AiAdviceReason.INTERPOLATION
+                PerformanceProfile.X4 -> AiAdviceReason.X4_READY
+            }
+        }
+
+        return baseAdvice.copy(
+            suggestedProfile = finalProfile,
+            reason = finalReason
         )
     }
 
