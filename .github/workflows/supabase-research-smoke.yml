@@ -22,7 +22,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     env:
       SMOKE_SEED: ${{ github.run_id }}
 
@@ -54,7 +54,7 @@ jobs:
           echo "SUPABASE_PUBLISHABLE_KEY=$publishable_key" >> "$GITHUB_ENV"
           echo "Using canonical Supabase project host from Android production config."
 
-      - name: Build reproducible smoke plan
+      - name: Build reproducible 48-question smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -67,114 +67,261 @@ jobs:
           rng = random.Random(seed)
 
           fixed = [
-              ("general", "Qué es un motor", "CURRENT_DATA", True),
-              ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True),
-              ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True),
+              ("routing", "Qué es un motor", "CURRENT_DATA", True, ["motor", "energ"]),
+              ("general", "¿Qué es un avión?", "GENERAL_KNOWLEDGE", False, ["aeronave", "volar", "vuelo"]),
+              ("general", "¿Qué es un psicópata?", "GENERAL_KNOWLEDGE", False, ["rasgo", "empat", "remord"]),
+              ("general", "¿Qué es un lápiz?", "GENERAL_KNOWLEDGE", False, ["escribir", "dibujar", "grafito"]),
+              ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True, []),
+              ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True, []),
           ]
 
           pools = {
-              "general": [
-                  "¿Qué es la fotosíntesis?",
-                  "Explícame qué hace un procesador",
-                  "¿Por qué el cielo se ve azul?",
-                  "¿Qué diferencia hay entre RAM y almacenamiento?",
-                  "¿Qué es una red neuronal?",
-                  "¿Para qué sirve un sistema operativo?",
-                  "¿Qué significa latencia en internet?",
-                  "¿Cómo funciona un motor eléctrico?",
+              "everyday": [
+                  ("¿Cómo funciona un refrigerador?", ["calor", "refriger"]),
+                  ("¿Qué es una bicicleta?", ["rueda", "pedal"]),
+                  ("¿Cómo funciona un microondas?", ["microondas", "alimento"]),
+                  ("¿Qué es un termostato?", ["temperatura"]),
+                  ("¿Cómo funciona una cámara fotográfica?", ["imagen", "luz"]),
+                  ("¿Qué es una batería eléctrica?", ["energ", "electric"]),
+                  ("¿Para qué sirve una brújula?", ["norte", "orient"]),
+                  ("¿Cómo funciona un reloj?", ["tiempo", "hora"]),
+                  ("¿Qué es un ascensor?", ["eleva", "piso", "vertical"]),
+                  ("¿Cómo funciona un ventilador?", ["aire", "aspas"]),
+              ],
+              "science": [
+                  ("¿Qué es la fotosíntesis?", ["luz", "plant"]),
+                  ("¿Qué es un átomo?", ["núcleo", "electron"]),
+                  ("¿Qué es una molécula?", ["átomo", "enlace"]),
+                  ("¿Qué es la gravedad?", ["masa", "atra"]),
+                  ("¿Qué es el ADN?", ["genét", "información"]),
+                  ("¿Qué es una célula?", ["vida", "unidad"]),
+                  ("¿Qué es un agujero negro?", ["gravedad", "luz"]),
+                  ("¿Qué es un volcán?", ["magma", "corteza"]),
+                  ("¿Qué es la electricidad?", ["carga", "corriente"]),
+                  ("¿Qué es la energía cinética?", ["movimiento"]),
+              ],
+              "technology": [
+                  ("¿Qué es una API?", ["interfaz", "software"]),
+                  ("¿Qué diferencia hay entre RAM y almacenamiento?", ["ram", "almacen"]),
+                  ("¿Qué es una GPU?", ["gráfic", "proces"]),
+                  ("¿Para qué sirve un sistema operativo?", ["hardware", "software", "recursos"]),
+                  ("¿Qué es una base de datos?", ["información", "datos"]),
+                  ("¿Qué hace un compilador?", ["código", "traduc"]),
+                  ("¿Qué es un algoritmo?", ["pasos", "problema"]),
+                  ("¿Qué es una VPN?", ["red", "conexión", "cif"]),
+                  ("¿Qué es Wi-Fi?", ["inalámbr", "red"]),
+                  ("¿Qué es Bluetooth?", ["inalámbr", "disposit"]),
+              ],
+              "gaming": [
+                  ("¿Qué significa FPS en videojuegos?", ["fotogram", "segundo"]),
+                  ("¿Qué es un survival horror?", ["terror", "superviv"]),
+                  ("¿Qué es un NPC?", ["personaje", "jugador"]),
+                  ("¿Qué es ray tracing?", ["luz", "traz"]),
+                  ("¿Qué es un roguelike?", ["proced", "muerte", "reinic"]),
+                  ("¿Qué es un speedrun?", ["rápid", "tiempo"]),
+                  ("¿Qué significa latencia en juegos online?", ["retardo", "miliseg", "latencia"]),
+                  ("¿Qué es una tasa de refresco de 120 Hz?", ["120", "segundo", "pantalla"]),
+                  ("¿Qué es el input lag?", ["entrada", "retardo"]),
+                  ("¿Qué es el matchmaking?", ["jugador", "partida"]),
+              ],
+              "history_geo": [
+                  ("¿Cuál es la capital de Francia?", ["parís", "paris"]),
+                  ("¿Dónde está el monte Everest?", ["himalaya", "nepal", "tíbet"]),
+                  ("¿Cuándo comenzó la Revolución Francesa?", ["1789"]),
+                  ("¿Qué fue el Imperio Romano?", ["roma", "imperio"]),
+                  ("¿Qué es la cordillera de los Andes?", ["sudamérica", "america", "montañ"]),
+                  ("¿Dónde está el desierto de Atacama?", ["chile", "atacama"]),
+                  ("¿Qué fue la Primera Guerra Mundial?", ["1914", "guerra"]),
+                  ("¿Qué es el océano Pacífico?", ["océano", "pacific"]),
+                  ("¿Quién fue Leonardo da Vinci?", ["artista", "invent", "renacimiento"]),
+                  ("¿Qué fue la Revolución Industrial?", ["industr", "máquin"]),
               ],
               "weather": [
-                  "¿Cómo está el clima hoy en Rancagua?",
-                  "Temperatura actual en Santiago",
-                  "¿Qué tiempo hace ahora en Valparaíso?",
-                  "Clima actual en Concepción",
-                  "¿Cómo está el tiempo hoy en Puerto Montt?",
-                  "Temperatura de hoy en Talca",
+                  ("¿Cómo está el clima hoy en Rancagua?", []),
+                  ("Temperatura actual en Santiago", []),
+                  ("¿Qué tiempo hace ahora en Valparaíso?", []),
+                  ("Clima actual en Concepción", []),
+                  ("¿Cómo está el tiempo hoy en Puerto Montt?", []),
+                  ("Temperatura de hoy en Talca", []),
+                  ("¿Va a llover hoy en Temuco?", []),
+                  ("Clima actual en Antofagasta", []),
+                  ("Temperatura ahora en Iquique", []),
+                  ("¿Cómo está el clima hoy en La Serena?", []),
               ],
               "news": [
-                  "Noticias de tecnología de hoy",
-                  "¿Qué novedades hay hoy sobre inteligencia artificial?",
-                  "Dame noticias actuales de videojuegos",
-                  "¿Qué noticias recientes hay sobre Android?",
-                  "Noticias actuales sobre smartphones",
-                  "¿Qué ha pasado recientemente en tecnología?",
+                  ("¿Qué novedades hay hoy sobre inteligencia artificial?", []),
+                  ("Dame noticias actuales de videojuegos", []),
+                  ("¿Qué noticias recientes hay sobre Android?", []),
+                  ("Noticias actuales sobre smartphones", []),
+                  ("¿Qué ha pasado recientemente en tecnología?", []),
+                  ("Últimas noticias de ciberseguridad", []),
+                  ("Noticias recientes sobre procesadores", []),
+                  ("Novedades actuales sobre PlayStation", []),
+                  ("Noticias recientes sobre inteligencia artificial móvil", []),
+                  ("Últimas noticias sobre realidad virtual", []),
               ],
           }
 
           cases = list(fixed)
           for label, questions in pools.items():
-              kind = "GENERAL_KNOWLEDGE" if label == "general" else "CURRENT_DATA"
-              fresh = label != "general"
-              for question in rng.sample(questions, 3):
-                  cases.append((label, question, kind, fresh))
+              kind = "CURRENT_DATA" if label in {"weather", "news"} else "GENERAL_KNOWLEDGE"
+              fresh = label in {"weather", "news"}
+              for question, expected in rng.sample(questions, 6):
+                  cases.append((label, question, kind, fresh, expected))
 
-          print(json.dumps({"meta": {"seed": seed, "caseCount": len(cases)}}, ensure_ascii=False))
-          for index, (label, query, kind, fresh) in enumerate(cases):
+          rng.shuffle(cases)
+          label_counts = {}
+          for label, *_ in cases:
+              label_counts[label] = label_counts.get(label, 0) + 1
+
+          print(json.dumps({
+              "meta": {
+                  "seed": seed,
+                  "caseCount": len(cases),
+                  "labels": label_counts,
+              }
+          }, ensure_ascii=False))
+          for index, (label, query, kind, fresh, expected_any) in enumerate(cases):
               print(json.dumps({
                   "label": label,
                   "query": query,
                   "kind": kind,
                   "fresh": fresh,
+                  "expectedAny": expected_any,
                   "correlationId": f"smoke-{seed}-{index}",
               }, ensure_ascii=False))
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "12"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "48"
+          test "$(python3 - <<'PY'
+          import json, os
+          path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
+          rows = [json.loads(line) for line in open(path, encoding="utf-8")][1:]
+          print(len({row["label"] for row in rows}))
+          PY
+          )" -ge "8"
 
-      - name: Exercise fixed controls and varied questions
+      - name: Exercise 48 stratified questions
         shell: bash
         run: |
           set -euo pipefail
-          endpoint="${SUPABASE_URL%/}/functions/v1/ultra-research"
-          failures=0
-          abstentions=0
-          executed=0
+          python3 - <<'PY'
+          import concurrent.futures
+          import json
+          import os
+          import socket
+          import sys
+          import urllib.error
+          import urllib.request
 
-          while IFS= read -r case_json; do
-            executed=$((executed + 1))
-            label="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["label"])' "$case_json")"
-            query="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["query"])' "$case_json")"
-            kind="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["kind"])' "$case_json")"
-            fresh="$(python3 -c 'import json,sys; print(str(json.loads(sys.argv[1])["fresh"]).lower())' "$case_json")"
-            correlation="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["correlationId"])' "$case_json")"
-            body="$(python3 -c 'import json,sys; print(json.dumps({"query":sys.argv[1],"kind":sys.argv[2],"verificationMode":"STRICT","requiresFreshData":sys.argv[3]=="true","correlationId":sys.argv[4]}, ensure_ascii=False))' "$query" "$kind" "$fresh" "$correlation")"
-            out="$(mktemp)"
+          endpoint = os.environ["SUPABASE_URL"].rstrip("/") + "/functions/v1/ultra-research"
+          api_key = os.environ["SUPABASE_PUBLISHABLE_KEY"]
+          seed = os.environ["SMOKE_SEED"]
+          plan_path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
+          rows = [json.loads(line) for line in open(plan_path, encoding="utf-8")][1:]
 
-            echo "Testing [$label] correlation=$correlation: $query"
+          def run_case(case):
+              body = json.dumps({
+                  "query": case["query"],
+                  "kind": case["kind"],
+                  "verificationMode": "STRICT",
+                  "requiresFreshData": case["fresh"],
+                  "correlationId": case["correlationId"],
+              }, ensure_ascii=False).encode("utf-8")
+              request = urllib.request.Request(
+                  endpoint,
+                  data=body,
+                  headers={
+                      "Content-Type": "application/json",
+                      "apikey": api_key,
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      status = response.status
+                      raw = response.read().decode("utf-8", errors="replace")
+              except urllib.error.HTTPError as exc:
+                  return case, "FAIL", f"HTTP={exc.code} {exc.read().decode('utf-8', errors='replace')[:500]}"
+              except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+                  return case, "FAIL", f"network={exc}"
 
-            set +e
-            code="$(curl --silent --show-error --connect-timeout 10 --max-time 45 -o "$out" -w '%{http_code}' -X POST "$endpoint" -H "Content-Type: application/json" -H "apikey: $SUPABASE_PUBLISHABLE_KEY" --data "$body")"
-            curl_status=$?
-            set -e
+              if status != 200:
+                  return case, "FAIL", f"HTTP={status}"
+              try:
+                  payload = json.loads(raw)
+              except json.JSONDecodeError:
+                  return case, "FAIL", "invalid JSON"
 
-            if [ "$curl_status" -ne 0 ] || [ "$code" != "200" ]; then
-              echo "::error::[$label] infrastructure failure curl=$curl_status HTTP=$code correlation=$correlation query=$query"
-              cat "$out" || true
-              failures=$((failures + 1))
-              rm -f "$out"
-              continue
-            fi
+              if payload.get("abstained") is True:
+                  reason = payload.get("reasonCode") or payload.get("message") or "unspecified"
+                  return case, "ABSTAIN", str(reason)
 
-            verdict="$(python3 -c 'import json,sys; p=json.load(open(sys.argv[2], encoding="utf-8")); label=sys.argv[1]; print("ABSTAIN|" + str(p.get("reasonCode") or p.get("message") or "unspecified") if p.get("abstained") is True else "FAIL|missing displayText" if not str(p.get("displayText") or "").strip() else "FAIL|fresh answer missing source evidence" if label in {"weather","news"} and not (p.get("sourceIds") or p.get("sourceId")) else "PASS|ok")' "$label" "$out")"
+              display = str(payload.get("displayText") or "").strip()
+              if not display:
+                  return case, "FAIL", "missing displayText"
 
-            case "$verdict" in
-              PASS*)
-                echo "PASS [$label] correlation=$correlation"
-                ;;
-              ABSTAIN*)
-                abstentions=$((abstentions + 1))
-                echo "::warning::[$label] safe abstention correlation=$correlation query=$query reason=${verdict#ABSTAIN|}"
-                ;;
-              *)
-                failures=$((failures + 1))
-                echo "::error::[$label] response contract failure correlation=$correlation query=$query detail=${verdict#FAIL|}"
-                ;;
-            esac
+              if case["fresh"] and not (payload.get("sourceIds") or payload.get("sourceId")):
+                  return case, "FAIL", "fresh answer missing source evidence"
 
-            rm -f "$out"
-          done < <(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl")
+              expected = [token.casefold() for token in case.get("expectedAny", [])]
+              if expected and not any(token in display.casefold() for token in expected):
+                  return case, "FAIL", f"semantic keyword mismatch: expected one of {expected}; answer={display[:300]}"
 
-          echo "Smoke summary: seed=$SMOKE_SEED executed=$executed abstentions=$abstentions failures=$failures"
-          test "$executed" -eq 12
-          test "$failures" -eq 0
+              return case, "PASS", "ok"
+
+          results = []
+          with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+              futures = [executor.submit(run_case, case) for case in rows]
+              for future in concurrent.futures.as_completed(futures):
+                  results.append(future.result())
+
+          failures = 0
+          stable_abstentions = 0
+          fresh_abstentions = 0
+          per_label = {}
+
+          for case, verdict, detail in sorted(results, key=lambda item: item[0]["correlationId"]):
+              label = case["label"]
+              stats = per_label.setdefault(label, {"PASS": 0, "ABSTAIN": 0, "FAIL": 0})
+              stats[verdict] += 1
+              prefix = f"[{label}] correlation={case['correlationId']} query={case['query']}"
+              if verdict == "PASS":
+                  print(f"PASS {prefix}")
+              elif verdict == "ABSTAIN":
+                  if case["fresh"]:
+                      fresh_abstentions += 1
+                      print(f"::warning::{prefix} safe abstention reason={detail}")
+                  else:
+                      stable_abstentions += 1
+                      failures += 1
+                      print(f"::error::{prefix} unexpected stable-knowledge abstention reason={detail}")
+              else:
+                  failures += 1
+                  print(f"::error::{prefix} {detail}")
+
+          executed = len(results)
+          passed = sum(1 for _, verdict, _ in results if verdict == "PASS")
+          answered = passed + fresh_abstentions
+          answer_rate = answered / executed if executed else 0.0
+
+          print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
+          print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
+
+          if executed != 48:
+              print(f"::error::Expected 48 cases, executed {executed}")
+              sys.exit(1)
+          if stable_abstentions != 0:
+              print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
+              sys.exit(1)
+          if fresh_abstentions > 2:
+              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 2")
+              sys.exit(1)
+          if answer_rate < 0.95:
+              print(f"::error::Answer rate below 95%: {answer_rate:.3f}")
+              sys.exit(1)
+          if failures != 0:
+              sys.exit(1)
+          PY
+
