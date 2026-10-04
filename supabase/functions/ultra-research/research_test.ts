@@ -3537,23 +3537,32 @@ Deno.test("news falls back to independently sourced web evidence when GDELT is i
   }
 });
 
-
 Deno.test("purpose-form general knowledge queries normalize leading articles before Wikipedia search", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
       const url = new URL(String(input));
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         const search = url.searchParams.get("srsearch");
         if (search !== "sistema operativo") {
           return jsonResponse({ query: { search: [] } });
         }
-        return jsonResponse({ query: { search: [{ title: "Sistema operativo" }] } });
-      }
-      if (url.hostname === "es.wikipedia.org" && url.pathname.includes("/api/rest_v1/page/summary/")) {
         return jsonResponse({
-          extract: "Un sistema operativo administra el hardware y los recursos de un dispositivo.",
+          query: { search: [{ title: "Sistema operativo" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          extract:
+            "Un sistema operativo administra el hardware y los recursos de un dispositivo.",
           content_urls: {
-            desktop: { page: "https://es.wikipedia.org/wiki/Sistema_operativo" },
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Sistema_operativo",
+            },
           },
         });
       }
@@ -3561,7 +3570,9 @@ Deno.test("purpose-form general knowledge queries normalize leading articles bef
         return jsonResponse({ results: [] });
       }
       if (url.hostname === "generativelanguage.googleapis.com") {
-        throw new Error("Gemini must not be needed for this stable knowledge query");
+        throw new Error(
+          "Gemini must not be needed for this stable knowledge query",
+        );
       }
       throw new Error("unexpected URL " + url);
     },
@@ -3578,7 +3589,9 @@ Deno.test("purpose-form general knowledge queries normalize leading articles bef
   );
 
   if (result.abstained) {
-    throw new Error("expected Wikipedia-backed answer for normalized purpose query");
+    throw new Error(
+      "expected Wikipedia-backed answer for normalized purpose query",
+    );
   }
   if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
     throw new Error("expected Wikipedia evidence without model fallback");
@@ -3638,8 +3651,7 @@ Deno.test("weather uses a second authoritative provider when Open-Meteo is unava
 });
 
 Deno.test("news uses independent Google News publishers when GDELT and Tavily are unavailable", async () => {
-  const rss =
-    '<?xml version="1.0"?><rss><channel>' +
+  const rss = '<?xml version="1.0"?><rss><channel>' +
     '<item><title>Android recibe una actualización importante</title><link>https://news.google.com/rss/articles/android-one</link><pubDate>Sun, 04 Oct 2026 18:00:00 GMT</pubDate><source url="https://tecnologia.example">Tecnología Uno</source></item>' +
     '<item><title>Nuevas funciones llegan a Android</title><link>https://news.google.com/rss/articles/android-two</link><pubDate>Sun, 04 Oct 2026 17:30:00 GMT</pubDate><source url="https://moviles.example">Móviles Dos</source></item>' +
     "</channel></rss>";
@@ -3677,7 +3689,9 @@ Deno.test("news uses independent Google News publishers when GDELT and Tavily ar
   if ((result.independentSourceCount ?? 0) < 2) {
     throw new Error("news fallback must keep two independent publishers");
   }
-  if (!result.sourceIds?.every((source) => source.includes("news.google.com"))) {
+  if (
+    !result.sourceIds?.every((source) => source.includes("news.google.com"))
+  ) {
     throw new Error("expected article-level Google News links as citations");
   }
 });
@@ -3687,7 +3701,9 @@ Deno.test("Tavily retries a compatibility payload after a request-shape rejectio
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
       const url = new URL(String(input));
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         return jsonResponse({ query: { search: [] } });
       }
       if (url.hostname === "api.tavily.com") {
@@ -3695,32 +3711,40 @@ Deno.test("Tavily retries a compatibility payload after a request-shape rejectio
         const body = JSON.parse(String(init?.body ?? "{}"));
         if (tavilyCalls === 1) {
           if (body.filter_by_language !== true) {
-            throw new Error("first Tavily request should use the preferred payload");
+            throw new Error(
+              "first Tavily request should use the preferred payload",
+            );
           }
           return new Response("bad request", { status: 400 });
         }
         if ("filter_by_language" in body || "language" in body) {
-          throw new Error("compatibility retry must remove language-only fields");
+          throw new Error(
+            "compatibility retry must remove language-only fields",
+          );
         }
         return jsonResponse({
           results: [
             {
               title: "Motor eléctrico explicado",
               url: "https://source-one.example/motor",
-              content: "Un motor eléctrico convierte energía eléctrica en movimiento mecánico.",
+              content:
+                "Un motor eléctrico convierte energía eléctrica en movimiento mecánico.",
               score: 0.9,
             },
             {
               title: "Cómo funciona un motor eléctrico",
               url: "https://source-two.example/motor",
-              content: "El motor eléctrico transforma energía eléctrica en energía mecánica.",
+              content:
+                "El motor eléctrico transforma energía eléctrica en energía mecánica.",
               score: 0.8,
             },
           ],
         });
       }
       if (url.hostname === "generativelanguage.googleapis.com") {
-        throw new Error("Gemini must not be needed after Tavily compatibility retry");
+        throw new Error(
+          "Gemini must not be needed after Tavily compatibility retry",
+        );
       }
       throw new Error("unexpected URL " + url);
     },
@@ -3740,6 +3764,8 @@ Deno.test("Tavily retries a compatibility payload after a request-shape rejectio
     throw new Error("expected compatible Tavily fallback after 400");
   }
   if (tavilyCalls !== 2) {
-    throw new Error("expected one preferred request and one compatibility retry");
+    throw new Error(
+      "expected one preferred request and one compatibility retry",
+    );
   }
 });
