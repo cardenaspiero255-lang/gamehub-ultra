@@ -875,7 +875,7 @@ async function generalKnowledgeGeminiFallback(
       },
     }),
     signal,
-  });
+  }, 3, generalModelFallbackTimeoutMs(deps));
 
   if (!response) {
     return abstain(
@@ -994,6 +994,8 @@ async function maybeSynthesizeWithXai(
       }),
       signal,
     },
+    3,
+    xaiSynthesisTimeoutMs(deps),
   );
 
   if (!response?.ok) return evidence;
@@ -1250,14 +1252,20 @@ function upstreamReasonCode(status: number): string {
   return "UPSTREAM_HTTP_ERROR";
 }
 
-function fetchAttemptTimeoutMs(deps: ResearchDependencies): number {
+function configuredFetchAttemptTimeoutMs(
+  deps: ResearchDependencies,
+): number | undefined {
   const configured = Number(
     deps.env("ULTRA_FETCH_ATTEMPT_TIMEOUT_MS")?.trim() ?? "",
   );
   if (Number.isFinite(configured) && configured > 0) {
     return Math.max(25, Math.min(5_000, Math.trunc(configured)));
   }
-  return 2_500;
+  return undefined;
+}
+
+function fetchAttemptTimeoutMs(deps: ResearchDependencies): number {
+  return configuredFetchAttemptTimeoutMs(deps) ?? 2_500;
 }
 
 function fetchRetryBudgetMs(deps: ResearchDependencies): number {
@@ -1275,6 +1283,7 @@ async function fetchWithRetry(
   input: string | URL,
   init?: RequestInit,
   maxAttempts = 3,
+  attemptTimeoutOverrideMs?: number,
 ): Promise<Response | null> {
   const sleep = deps.sleep ?? (() => Promise.resolve());
   const random = deps.random ?? Math.random;
@@ -1299,9 +1308,17 @@ async function fetchWithRetry(
         });
       })
       : null;
+    const configuredAttemptTimeoutMs =
+      configuredFetchAttemptTimeoutMs(deps);
+    const attemptTimeoutMs = attemptTimeoutOverrideMs === undefined
+      ? fetchAttemptTimeoutMs(deps)
+      : Math.min(
+        attemptTimeoutOverrideMs,
+        configuredAttemptTimeoutMs ?? attemptTimeoutOverrideMs,
+      );
     const timeoutMs = Math.max(
       1,
-      Math.min(fetchAttemptTimeoutMs(deps), remainingBudget),
+      Math.min(attemptTimeoutMs, remainingBudget),
     );
     let timer: number | undefined;
     const attemptTimeout = new Promise<null>((resolve) => {
