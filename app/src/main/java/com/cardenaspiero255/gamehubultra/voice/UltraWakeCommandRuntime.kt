@@ -71,6 +71,19 @@ internal class UltraWakeCommandRuntime(
             batteryPercent = diagnostics.battery.percent,
             thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
         )
+        val inSessionResponse = UltraInSessionVoiceResponder.respond(
+            query = transcript,
+            metrics = UltraSessionMetricsFactory.fromRuntime(
+                selectedGamePackage = selectedGamePackage,
+                refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
+                batteryPercent = diagnostics.battery.percent,
+                thermalLabel = status.thermalLabel,
+                totalRamMb = device.totalRamMb,
+                networkLatencyMs = diagnostics.connectivity.latencyMs
+            )
+        )
+        if (inSessionResponse.handled) return inSessionResponse.message
+
         val intentResolver = aiAdvisor.intentResolver()
         conversationLedger.bindScope(selectedGamePackage)
         val conversationBefore = conversationLedger.snapshot()
