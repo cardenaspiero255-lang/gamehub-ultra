@@ -24,23 +24,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
       SMOKE_SEED: ${{ github.run_id }}
 
     steps:
-      - name: Verify configuration
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Resolve canonical Supabase public client configuration
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ]; then
-            echo "::error::SUPABASE_URL is unavailable"
-            exit 1
-          fi
-          if [ -z "${SUPABASE_PUBLISHABLE_KEY:-}" ]; then
-            echo "::error::SUPABASE_PUBLISHABLE_KEY is unavailable"
-            exit 1
-          fi
+          config_file="app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraResearchProviderSource.kt"
+          supabase_url="$(python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1]).read_text(); m=re.search(r"DEFAULT_SUPABASE_URL\\s*=\\s*[\"\\s]*([^\"]+)\"", t); print(m.group(1) if m else "")' "$config_file")"
+          publishable_key="$(python3 -c 'import pathlib,re,sys; t=pathlib.Path(sys.argv[1]).read_text(); m=re.search(r"DEFAULT_SUPABASE_PUBLISHABLE_KEY\\s*=\\s*[\"\\s]*(sb_publishable_[^\"]+)\"", t); print(m.group(1) if m else "")' "$config_file")"
+
+          case "$supabase_url" in
+            https://*.supabase.co) ;;
+            *) echo "::error::Canonical Supabase URL is missing or malformed"; exit 1 ;;
+          esac
+          case "$publishable_key" in
+            sb_publishable_*) ;;
+            *) echo "::error::Canonical Supabase publishable key is missing or malformed"; exit 1 ;;
+          esac
+
+          echo "::add-mask::$publishable_key"
+          echo "SUPABASE_URL=$supabase_url" >> "$GITHUB_ENV"
+          echo "SUPABASE_PUBLISHABLE_KEY=$publishable_key" >> "$GITHUB_ENV"
+          echo "Using canonical Supabase project host from Android production config."
 
       - name: Build reproducible smoke plan
         shell: bash
