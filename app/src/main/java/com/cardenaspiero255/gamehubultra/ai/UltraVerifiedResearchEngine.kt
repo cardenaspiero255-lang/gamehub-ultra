@@ -162,7 +162,8 @@ class UltraResearchCache {
         if (
             persist &&
             !cacheable.abstained &&
-            !cacheable.sensitiveInputBlocked
+            !cacheable.sensitiveInputBlocked &&
+            cacheable.confidence != UltraAnswerConfidence.LOW
         ) {
             val store = persistentStore
             if (store != null) {
