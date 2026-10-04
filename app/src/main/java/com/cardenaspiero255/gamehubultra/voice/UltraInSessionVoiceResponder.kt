@@ -44,6 +44,15 @@ internal object UltraSessionMetricsFactory {
     )
 }
 
+
+internal object UltraSessionProfileSafety {
+    fun canApply(
+        command: VoiceCommand,
+        sessionActive: Boolean,
+        safelySupported: Boolean
+    ): Boolean = sessionActive && safelySupported && command is VoiceCommand.SelectProfile
+}
+
 internal object UltraInSessionVoiceResponder {
     fun respond(query: String, metrics: UltraSessionMetrics): UltraInSessionVoiceResponse {
         if (!metrics.sessionActive) return UltraInSessionVoiceResponse.NotHandled
