@@ -87,7 +87,7 @@ class UltraQueryExecutionCoordinator(
             message =
                 "No pude verificar esa respuesta con fuentes fiables disponibles ahora. " +
                     "No voy a inventarla; revisa tu conexión o inténtalo de nuevo.",
-            fallbackUsed = true
+            fallbackUsed = answer.fallbackUsed
         )
     }
 
