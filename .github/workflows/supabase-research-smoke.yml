@@ -3,6 +3,7 @@ name: Supabase research smoke test
 on:
   workflow_dispatch:
   pull_request:
+    branches: [main]
     paths:
       - "supabase/functions/ultra-research/**"
       - "app/src/main/java/com/cardenaspiero255/gamehubultra/ai/**"
@@ -26,59 +27,94 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
       SMOKE_SEED: ${{ github.run_id }}
+
     steps:
       - name: Verify configuration
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${SUPABASE_URL:-}" || { echo "::error::SUPABASE_URL is unavailable"; exit 1; }
-          test -n "${SUPABASE_PUBLISHABLE_KEY:-}" || { echo "::error::SUPABASE_PUBLISHABLE_KEY is unavailable"; exit 1; }
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "::error::SUPABASE_URL is unavailable"
+            exit 1
+          fi
+          if [ -z "${SUPABASE_PUBLISHABLE_KEY:-}" ]; then
+            echo "::error::SUPABASE_PUBLISHABLE_KEY is unavailable"
+            exit 1
+          fi
 
-      - name: Exercise fixed controls and reproducible varied questions
+      - name: Build reproducible smoke plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > "$RUNNER_TEMP/smoke-cases.jsonl"
+          import json
+          import os
+          import random
+
+          seed = int(os.environ["SMOKE_SEED"])
+          rng = random.Random(seed)
+
+          fixed = [
+              ("general", "Qué es un motor", "GENERAL_KNOWLEDGE", False),
+              ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True),
+              ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True),
+          ]
+
+          pools = {
+              "general": [
+                  "¿Qué es la fotosíntesis?",
+                  "Explícame qué hace un procesador",
+                  "¿Por qué el cielo se ve azul?",
+                  "¿Qué diferencia hay entre RAM y almacenamiento?",
+                  "¿Qué es una red neuronal?",
+                  "¿Para qué sirve un sistema operativo?",
+                  "¿Qué significa latencia en internet?",
+                  "¿Cómo funciona un motor eléctrico?",
+              ],
+              "weather": [
+                  "¿Cómo está el clima hoy en Rancagua?",
+                  "Temperatura actual en Santiago",
+                  "¿Qué tiempo hace ahora en Valparaíso?",
+                  "Clima actual en Concepción",
+                  "¿Cómo está el tiempo hoy en Puerto Montt?",
+                  "Temperatura de hoy en Talca",
+              ],
+              "news": [
+                  "Noticias de tecnología de hoy",
+                  "¿Qué novedades hay hoy sobre inteligencia artificial?",
+                  "Dame noticias actuales de videojuegos",
+                  "¿Qué noticias recientes hay sobre Android?",
+                  "Noticias actuales sobre smartphones",
+                  "¿Qué ha pasado recientemente en tecnología?",
+              ],
+          }
+
+          cases = list(fixed)
+          for label, questions in pools.items():
+              kind = "GENERAL_KNOWLEDGE" if label == "general" else "CURRENT_DATA"
+              fresh = label != "general"
+              for question in rng.sample(questions, 3):
+                  cases.append((label, question, kind, fresh))
+
+          print(json.dumps({"meta": {"seed": seed, "caseCount": len(cases)}}, ensure_ascii=False))
+          for index, (label, query, kind, fresh) in enumerate(cases):
+              print(json.dumps({
+                  "label": label,
+                  "query": query,
+                  "kind": kind,
+                  "fresh": fresh,
+                  "correlationId": f"smoke-{seed}-{index}",
+              }, ensure_ascii=False))
+          PY
+
+          head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "12"
+
+      - name: Exercise fixed controls and varied questions
         shell: bash
         run: |
           set -euo pipefail
           endpoint="${SUPABASE_URL%/}/functions/v1/ultra-research"
-
-          python3 - <<'PY' > "$RUNNER_TEMP/smoke-cases.jsonl"
-import json, os, random
-seed = int(os.environ["SMOKE_SEED"])
-rng = random.Random(seed)
-fixed = [
-    ("general", "Qué es un motor", "GENERAL_KNOWLEDGE", False),
-    ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True),
-    ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True),
-]
-pools = {
-    "general": [
-        "¿Qué es la fotosíntesis?", "Explícame qué hace un procesador",
-        "¿Por qué el cielo se ve azul?", "¿Qué diferencia hay entre RAM y almacenamiento?",
-        "¿Qué es una red neuronal?", "¿Para qué sirve un sistema operativo?",
-        "¿Qué significa latencia en internet?", "¿Cómo funciona un motor eléctrico?",
-    ],
-    "weather": [
-        "¿Cómo está el clima hoy en Rancagua?", "Temperatura actual en Santiago",
-        "¿Qué tiempo hace ahora en Valparaíso?", "Clima actual en Concepción",
-        "¿Cómo está el tiempo hoy en Puerto Montt?", "Temperatura de hoy en Talca",
-    ],
-    "news": [
-        "Noticias de tecnología de hoy", "¿Qué novedades hay hoy sobre inteligencia artificial?",
-        "Dame noticias actuales de videojuegos", "¿Qué noticias recientes hay sobre Android?",
-        "Noticias actuales sobre smartphones", "¿Qué ha pasado recientemente en tecnología?",
-    ],
-}
-cases = list(fixed)
-for label, questions in pools.items():
-    for question in rng.sample(questions, 3):
-        cases.append((label, question, "GENERAL_KNOWLEDGE" if label == "general" else "CURRENT_DATA", label != "general"))
-print(json.dumps({"meta": {"seed": seed, "caseCount": len(cases)}}, ensure_ascii=False))
-for i, (label, query, kind, fresh) in enumerate(cases):
-    print(json.dumps({"label": label, "query": query, "kind": kind, "fresh": fresh,
-                      "correlationId": f"smoke-{seed}-{i}"}, ensure_ascii=False))
-PY
-
-          meta="$(head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl")"
-          echo "Smoke plan: $meta"
           failures=0
           abstentions=0
           executed=0
@@ -87,42 +123,33 @@ PY
             executed=$((executed + 1))
             label="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["label"])' "$case_json")"
             query="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["query"])' "$case_json")"
+            kind="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["kind"])' "$case_json")"
+            fresh="$(python3 -c 'import json,sys; print(str(json.loads(sys.argv[1])["fresh"]).lower())' "$case_json")"
             correlation="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["correlationId"])' "$case_json")"
-            body="$(python3 -c 'import json,sys; c=json.loads(sys.argv[1]); print(json.dumps({"query":c["query"],"kind":c["kind"],"verificationMode":"STRICT","requiresFreshData":c["fresh"],"correlationId":c["correlationId"]}, ensure_ascii=False))' "$case_json")"
+            body="$(python3 -c 'import json,sys; print(json.dumps({"query":sys.argv[1],"kind":sys.argv[2],"verificationMode":"STRICT","requiresFreshData":sys.argv[3]=="true","correlationId":sys.argv[4]}, ensure_ascii=False))' "$query" "$kind" "$fresh" "$correlation")"
             out="$(mktemp)"
+
             echo "Testing [$label] correlation=$correlation: $query"
 
-            code="$(curl --silent --show-error --connect-timeout 10 --max-time 45 -o "$out" -w '%{http_code}' -X POST "$endpoint" -H "Content-Type: application/json" -H "apikey: $SUPABASE_PUBLISHABLE_KEY" --data "$body" || printf '000')"
-            if [ "$code" != "200" ]; then
-              echo "::error::[$label] infrastructure failure HTTP=$code correlation=$correlation query=$query"
+            set +e
+            code="$(curl --silent --show-error --connect-timeout 10 --max-time 45 -o "$out" -w '%{http_code}' -X POST "$endpoint" -H "Content-Type: application/json" -H "apikey: $SUPABASE_PUBLISHABLE_KEY" --data "$body")"
+            curl_status=$?
+            set -e
+
+            if [ "$curl_status" -ne 0 ] || [ "$code" != "200" ]; then
+              echo "::error::[$label] infrastructure failure curl=$curl_status HTTP=$code correlation=$correlation query=$query"
               cat "$out" || true
               failures=$((failures + 1))
               rm -f "$out"
               continue
             fi
 
-            verdict="$(python3 - "$label" "$out" <<'PY'
-import json, sys
-label, path = sys.argv[1:3]
-try:
-    with open(path, encoding="utf-8") as f:
-        payload = json.load(f)
-except Exception as exc:
-    print(f"FAIL|invalid JSON: {exc}")
-    raise SystemExit
-if payload.get("abstained") is True:
-    reason = payload.get("reasonCode") or payload.get("message") or "unspecified"
-    print(f"ABSTAIN|{reason}")
-elif not str(payload.get("displayText") or "").strip():
-    print("FAIL|missing displayText")
-elif label in {"weather", "news"} and not (payload.get("sourceIds") or payload.get("sourceId")):
-    print("FAIL|fresh answer missing source evidence")
-else:
-    print("PASS|ok")
-PY
-)"
+            verdict="$(python3 -c 'import json,sys; p=json.load(open(sys.argv[2], encoding="utf-8")); label=sys.argv[1]; print("ABSTAIN|" + str(p.get("reasonCode") or p.get("message") or "unspecified") if p.get("abstained") is True else "FAIL|missing displayText" if not str(p.get("displayText") or "").strip() else "FAIL|fresh answer missing source evidence" if label in {"weather","news"} and not (p.get("sourceIds") or p.get("sourceId")) else "PASS|ok")' "$label" "$out")"
+
             case "$verdict" in
-              PASS*) echo "PASS [$label] correlation=$correlation" ;;
+              PASS*)
+                echo "PASS [$label] correlation=$correlation"
+                ;;
               ABSTAIN*)
                 abstentions=$((abstentions + 1))
                 echo "::warning::[$label] safe abstention correlation=$correlation query=$query reason=${verdict#ABSTAIN|}"
@@ -132,6 +159,7 @@ PY
                 echo "::error::[$label] response contract failure correlation=$correlation query=$query detail=${verdict#FAIL|}"
                 ;;
             esac
+
             rm -f "$out"
           done < <(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl")
 
