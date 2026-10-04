@@ -230,8 +230,9 @@ class GameHubAiAdvisorTest {
             conversation = emptyList()
         )
 
-        assertTrue(answer?.contains("emociones", ignoreCase = true) == true)
-        assertTrue(answer?.contains("respuestas psicofisiológicas", ignoreCase = true) == true)
+        assertNotNull(answer)
+        assertTrue(answer.contains("emociones", ignoreCase = true))
+        assertTrue(answer.contains("respuestas psicofisiológicas", ignoreCase = true))
     }
 
     @Test
