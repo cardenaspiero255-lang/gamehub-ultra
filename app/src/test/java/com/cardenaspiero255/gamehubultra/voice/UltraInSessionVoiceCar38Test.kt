@@ -68,4 +68,15 @@ class UltraInSessionVoiceCar38Test {
         assertEquals(null, metrics.latencyMs)
     }
 
+    @Test
+    fun sessionProfileChangeIsAllowedOnlyWhenRuntimeMarksItSafe() {
+        val command = VoiceCommand.SelectProfile(
+            com.cardenaspiero255.gamehubultra.domain.PerformanceProfile.BALANCED
+        )
+
+        assertTrue(UltraSessionProfileSafety.canApply(command, sessionActive = true, safelySupported = true))
+        assertFalse(UltraSessionProfileSafety.canApply(command, sessionActive = true, safelySupported = false))
+        assertFalse(UltraSessionProfileSafety.canApply(command, sessionActive = false, safelySupported = true))
+    }
+
 }
