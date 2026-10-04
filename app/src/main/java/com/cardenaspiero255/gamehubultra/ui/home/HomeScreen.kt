@@ -221,6 +221,8 @@ internal fun HomeScreen(
         item {
             PerformanceTimelineCard(
                 timeline = performanceTimeline,
+                telemetryTrend = telemetryTrend,
+                sessionActive = aiContext.sessionActive,
                 onShare = {
                     sharePerformanceTimeline(
                         context = timelineContext,
