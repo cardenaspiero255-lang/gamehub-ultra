@@ -20,8 +20,6 @@ permissions:
 
 jobs:
   smoke:
-    # Repository secrets are unavailable to fork PRs. Skip those instead of reporting a false failure.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
