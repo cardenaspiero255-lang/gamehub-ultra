@@ -609,6 +609,67 @@ class GameHubAiAdvisorTest {
         assertTrue(receivedConversation.any { it.contains("prefiero X4") })
     }
 
+
+    @Test
+    fun reportedStableDefinitionsHaveOfflineFallbacks() {
+        val cases = listOf(
+            "¿Qué es un avión?" to "aeronave",
+            "¿Qué es un psicópata?" to "rasgos",
+            "¿Qué es un lápiz?" to "escribir"
+        )
+
+        cases.forEach { (question, expectedKeyword) ->
+            val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+                message = question,
+                context = healthyContext,
+                conversation = emptyList()
+            )
+
+            assertNotNull(answer, question)
+            assertTrue(
+                answer.contains(expectedKeyword, ignoreCase = true),
+                "$question -> $answer"
+            )
+        }
+    }
+
+    @Test
+    fun deterministicAdviceUsesUltraAiCoreProductionPath() {
+        var receivedObservation: UltraAiObservation? = null
+        val forcingCore = object : UltraAiCoreGateway {
+            override fun evaluate(
+                observation: UltraAiObservation,
+                feedback: UltraAiFeedbackSnapshot,
+                memories: List<UltraAiMemorySignal>
+            ): UltraAiCoreResult {
+                receivedObservation = observation
+                return UltraAiCoreResult(
+                    recommendation = UltraAiRecommendation(
+                        profileId = "BALANCED",
+                        confidence = 1.0,
+                        evidence = listOf("test-core"),
+                        source = UltraAiRecommendationSource.DETERMINISTIC_LOCAL
+                    ),
+                    explanation = "test",
+                    memorySignals = memories,
+                    requiresCloud = false
+                )
+            }
+        }
+
+        val result = GameHubAiAdvisor(
+            modelAdapter = null,
+            memoryGateway = null,
+            aiCore = forcingCore
+        ).advise("qué modo me recomiendas", healthyContext)
+
+        assertNotNull(receivedObservation)
+        assertEquals("com.example.game", receivedObservation?.gamePackage)
+        assertEquals(PerformanceProfile.BALANCED, result.suggestedProfile)
+        assertFalse(result.localModelUsed)
+        assertTrue(result.fallbackUsed)
+    }
+
     private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =
         object : UltraLongTermMemoryGateway {
             override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
