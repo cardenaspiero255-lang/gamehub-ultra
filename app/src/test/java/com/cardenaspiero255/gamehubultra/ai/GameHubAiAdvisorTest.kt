@@ -664,7 +664,7 @@ class GameHubAiAdvisorTest {
         ).advise("qué modo me recomiendas", healthyContext)
 
         assertNotNull(receivedObservation)
-        assertEquals("com.example.game", receivedObservation?.gamePackage)
+        assertEquals("com.example.game", receivedObservation.gamePackage)
         assertEquals(PerformanceProfile.BALANCED, result.suggestedProfile)
         assertFalse(result.localModelUsed)
         assertTrue(result.fallbackUsed)
