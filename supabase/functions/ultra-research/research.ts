@@ -1250,6 +1250,26 @@ function upstreamReasonCode(status: number): string {
   return "UPSTREAM_HTTP_ERROR";
 }
 
+function fetchAttemptTimeoutMs(deps: ResearchDependencies): number {
+  const configured = Number(
+    deps.env("ULTRA_FETCH_ATTEMPT_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(25, Math.min(5_000, Math.trunc(configured)));
+  }
+  return 2_500;
+}
+
+function fetchRetryBudgetMs(deps: ResearchDependencies): number {
+  const configured = Number(
+    deps.env("ULTRA_FETCH_RETRY_BUDGET_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(50, Math.min(8_000, Math.trunc(configured)));
+  }
+  return 6_000;
+}
+
 async function fetchWithRetry(
   deps: ResearchDependencies,
   input: string | URL,
@@ -1258,23 +1278,46 @@ async function fetchWithRetry(
 ): Promise<Response | null> {
   const sleep = deps.sleep ?? (() => Promise.resolve());
   const random = deps.random ?? Math.random;
+  const deadlineAt = performance.now() + fetchRetryBudgetMs(deps);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (init?.signal?.aborted) return null;
+    const remainingBudget = Math.trunc(deadlineAt - performance.now());
+    if (remainingBudget <= 0) return null;
+
+    const controller = new AbortController();
+    const externalSignal = init?.signal;
+    const abortFromExternal = () => controller.abort(externalSignal?.reason);
+    externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
+    const timeoutMs = Math.max(
+      1,
+      Math.min(fetchAttemptTimeoutMs(deps), remainingBudget),
+    );
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await deps.fetcher(input, init);
+      const response = await deps.fetcher(input, {
+        ...init,
+        signal: controller.signal,
+      });
       const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
       if (!shouldRetry || attempt === maxAttempts) {
         return response;
       }
     } catch {
-      if (init?.signal?.aborted || attempt === maxAttempts) return null;
+      if (externalSignal?.aborted || attempt === maxAttempts) return null;
+    } finally {
+      clearTimeout(timer);
+      externalSignal?.removeEventListener("abort", abortFromExternal);
     }
 
-    if (init?.signal?.aborted) return null;
-    const delay = 200 * 2 ** (attempt - 1) + Math.floor(random() * 100);
-    await sleep(delay);
+    const remainingAfterAttempt = Math.trunc(deadlineAt - performance.now());
+    if (remainingAfterAttempt <= 0) return null;
+    const delay = Math.min(
+      200 * 2 ** (attempt - 1) + Math.floor(random() * 100),
+      remainingAfterAttempt,
+    );
+    if (delay > 0) await sleep(delay);
   }
 
   return null;
