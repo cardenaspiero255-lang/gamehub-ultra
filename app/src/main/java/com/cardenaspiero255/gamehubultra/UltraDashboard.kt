@@ -201,8 +201,6 @@ fun UltraDashboard(
                 }
             }
             LiveStatsRow(device, diagnostics, latency)
-            TelemetryTrendCard(telemetryTrend)
-            ThermalHeadroomCard(thermalHeadroom)
             adaptiveDecision?.let {
                 Surface(color = UltraPanel2, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
