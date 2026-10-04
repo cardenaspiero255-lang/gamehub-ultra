@@ -162,12 +162,12 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
-    fun generalKnowledgeFallbackReturnsNullWithoutSubstantiveLocalModel() {
+    fun freshKnowledgeRequestDoesNotUseDeterministicOfflineFallback() {
         val advisor = GameHubAiAdvisor(modelAdapter = null)
 
         assertNull(
             advisor.generalKnowledgeChatOrNull(
-                message = "Ultra, ¿qué es Vulkan?",
+                message = "Ultra, ¿cuál es el precio actual de Bitcoin?",
                 context = healthyContext
             )
         )
