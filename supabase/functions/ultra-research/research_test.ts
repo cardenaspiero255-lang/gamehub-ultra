@@ -3283,3 +3283,42 @@ Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", asy
     throw new Error("Gemini 2.5 must not send thinkingLevel");
   }
 });
+
+
+Deno.test("retrying upstream requests respect a bounded attempt timeout", async () => {
+  let attempts = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (_input, init) => {
+      attempts += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    },
+    env: (name) => {
+      if (name === "ULTRA_FETCH_ATTEMPT_TIMEOUT_MS") return "40";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "90";
+      return undefined;
+    },
+    sleep: () => Promise.resolve(),
+    random: () => 0,
+  };
+
+  const startedAt = performance.now();
+  const result = await routeResearchQuery(
+    "Ultra, clima de hoy en Santiago",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+  const elapsed = performance.now() - startedAt;
+
+  if (!result.abstained) throw new Error("timed out weather lookup must abstain");
+  if (attempts > 3) throw new Error("retry attempts exceeded the configured cap");
+  if (elapsed > 350) {
+    throw new Error("retry budget did not bound the stalled upstream request");
+  }
+});
