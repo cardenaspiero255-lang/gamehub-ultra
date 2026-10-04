@@ -48,4 +48,24 @@ class UltraInSessionVoiceCar38Test {
 
         assertEquals(UltraInSessionVoiceResponse.NotHandled, answer)
     }
+    @Test
+    fun runtimeMetricsAdapterUsesOnlyAvailableDiagnostics() {
+        val metrics = UltraSessionMetricsFactory.fromRuntime(
+            selectedGamePackage = "com.example.game",
+            refreshRateHz = 120f,
+            batteryPercent = 70,
+            thermalLabel = "normal",
+            totalRamMb = 8192,
+            networkLatencyMs = null
+        )
+
+        assertTrue(metrics.sessionActive)
+        assertEquals(120f, metrics.refreshRateHz)
+        assertEquals(70, metrics.batteryPercent)
+        assertEquals("normal", metrics.thermalLabel)
+        assertEquals(8192L, metrics.ramMb)
+        assertEquals(null, metrics.fps)
+        assertEquals(null, metrics.latencyMs)
+    }
+
 }
