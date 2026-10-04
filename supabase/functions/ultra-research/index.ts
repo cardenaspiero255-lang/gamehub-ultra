@@ -128,6 +128,8 @@ Deno.serve(async (req: Request) => {
       verificationMode,
       reasonCode: "BACKEND_FAILURE",
       errorType: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack ?? null : null,
     }));
 
     return json(

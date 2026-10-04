@@ -128,6 +128,28 @@ class UltraPersistentResearchCacheTest {
         assertTrue(persistent.entries.isEmpty())
     }
 
+    @Test
+    fun lowConfidenceResultCannotBePersistedByCacheDirectly() {
+        val persistent = RecordingPersistentStore()
+        val cache = UltraResearchCache().also {
+            it.attachPersistentStore(persistent)
+        }
+
+        cache.put(
+            key = "low-confidence",
+            result = UltraVerifiedResearchResult(
+                message = "Respuesta no corroborada",
+                confidence = UltraAnswerConfidence.LOW,
+                abstained = false
+            ),
+            expiresAtMillis = Long.MAX_VALUE,
+            persist = true
+        )
+
+        assertEquals(0, persistent.writeCount)
+        assertTrue(persistent.entries.isEmpty())
+    }
+
     private fun fixedProvider(
         calls: AtomicInteger,
         answer: String

@@ -1899,6 +1899,61 @@ Deno.test(
   },
 );
 
+Deno.test("xAI general caller timeout can exceed the default fetch attempt timeout", async () => {
+  let aborted = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "es.wikipedia.org") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "api.x.ai") {
+        return new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            resolve(jsonResponse({
+              choices: [{
+                message: {
+                  content: "Un motor convierte energía en trabajo mecánico.",
+                },
+              }],
+            }));
+          }, 2_600);
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            clearTimeout(timer);
+            reject(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => {
+      if (name === "XAI_API_KEY") return "xai-test-key";
+      if (name === "ULTRA_XAI_GENERAL_TIMEOUT_MS") return "3000";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "4000";
+      return undefined;
+    },
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, ¿qué es un motor?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (aborted) {
+    throw new Error(
+      "default fetch timeout must not preempt the xAI caller timeout",
+    );
+  }
+  if (result.abstained || result.sourceId !== "xai-general-assistant") {
+    throw new Error(
+      "xAI should be allowed to answer within the caller timeout",
+    );
+  }
+});
+
 Deno.test(
   "general knowledge falls back from unavailable Gemini to xAI Grok",
   async () => {
@@ -3281,5 +3336,105 @@ Deno.test("Gemini 2.5 requests use thinkingBudget instead of thinkingLevel", asy
   }
   if ("thinkingLevel" in observedThinking) {
     throw new Error("Gemini 2.5 must not send thinkingLevel");
+  }
+});
+
+Deno.test("general model caller timeout can exceed the default fetch attempt timeout", async () => {
+  let aborted = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "es.wikipedia.org") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        return new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            resolve(jsonResponse({
+              candidates: [{
+                finishReason: "STOP",
+                content: {
+                  parts: [{
+                    text: "Un motor convierte energía en trabajo mecánico.",
+                  }],
+                },
+              }],
+            }));
+          }, 2_600);
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            clearTimeout(timer);
+            reject(new DOMException("aborted", "AbortError"));
+          }, { once: true });
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => {
+      if (name === "GEMINI_API_KEY") return "gemini-test-key";
+      if (name === "ULTRA_GENERAL_MODEL_TIMEOUT_MS") return "3000";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "4000";
+      return undefined;
+    },
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, ¿qué es un motor?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (aborted) {
+    throw new Error(
+      "default fetch timeout must not preempt the caller timeout",
+    );
+  }
+  if (result.abstained || result.sourceId !== "gemini-general-assistant") {
+    throw new Error(
+      "Gemini should be allowed to answer within the caller timeout",
+    );
+  }
+});
+
+Deno.test("retrying upstream requests respect a bounded attempt timeout", async () => {
+  let attempts = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (_input, init) => {
+      attempts += 1;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    },
+    env: (name) => {
+      if (name === "ULTRA_FETCH_ATTEMPT_TIMEOUT_MS") return "40";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "90";
+      return undefined;
+    },
+    sleep: () => Promise.resolve(),
+    random: () => 0,
+  };
+
+  const startedAt = performance.now();
+  const result = await routeResearchQuery(
+    "Ultra, clima de hoy en Santiago",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+  const elapsed = performance.now() - startedAt;
+
+  if (!result.abstained) {
+    throw new Error("timed out weather lookup must abstain");
+  }
+  if (attempts > 3) {
+    throw new Error("retry attempts exceeded the configured cap");
+  }
+  if (elapsed > 350) {
+    throw new Error("retry budget did not bound the stalled upstream request");
   }
 });

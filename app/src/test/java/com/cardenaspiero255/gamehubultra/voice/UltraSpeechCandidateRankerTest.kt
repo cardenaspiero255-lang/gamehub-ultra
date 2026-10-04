@@ -33,6 +33,32 @@ class UltraSpeechCandidateRankerTest {
     }
 
     @Test
+    fun wakeCommandBeatsHigherConfidenceWakeOnlyAlternative() {
+        val result = UltraSpeechCandidateRanker.select(
+            alternatives = listOf(
+                "Ultra",
+                "Ultra abre Steam"
+            ),
+            confidenceScores = floatArrayOf(0.96f, 0.74f),
+            prefer = UltraWakeWordMatcher::contains
+        )
+
+        assertEquals("Ultra abre Steam", result)
+    }
+
+
+    @Test
+    fun fuzzyWakeCommandBeatsHigherConfidenceFuzzyWakeOnlyAlternative() {
+        val result = UltraSpeechCandidateRanker.select(
+            alternatives = listOf("ultr", "ultr abre Steam"),
+            confidenceScores = floatArrayOf(0.96f, 0.74f),
+            prefer = UltraWakeWordMatcher::contains
+        )
+
+        assertEquals("ultr abre Steam", result)
+    }
+
+    @Test
     fun blankAndInvalidConfidenceCandidatesAreIgnoredSafely() {
         val result = UltraSpeechCandidateRanker.select(
             alternatives = listOf("", "   ", "Ultra abre RE4"),

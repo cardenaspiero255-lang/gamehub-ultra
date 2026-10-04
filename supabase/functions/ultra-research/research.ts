@@ -875,7 +875,7 @@ async function generalKnowledgeGeminiFallback(
       },
     }),
     signal,
-  });
+  }, 3, generalModelFallbackTimeoutMs(deps));
 
   if (!response) {
     return abstain(
@@ -994,6 +994,8 @@ async function maybeSynthesizeWithXai(
       }),
       signal,
     },
+    3,
+    xaiSynthesisTimeoutMs(deps),
   );
 
   if (!response?.ok) return evidence;
@@ -1130,6 +1132,8 @@ async function generalKnowledgeXaiFallback(
       }),
       signal,
     },
+    3,
+    xaiGeneralModelTimeoutMs(deps),
   );
 
   if (!response) {
@@ -1250,31 +1254,116 @@ function upstreamReasonCode(status: number): string {
   return "UPSTREAM_HTTP_ERROR";
 }
 
+function configuredFetchAttemptTimeoutMs(
+  deps: ResearchDependencies,
+): number | undefined {
+  const configured = Number(
+    deps.env("ULTRA_FETCH_ATTEMPT_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(25, Math.min(5_000, Math.trunc(configured)));
+  }
+  return undefined;
+}
+
+function fetchAttemptTimeoutMs(deps: ResearchDependencies): number {
+  return configuredFetchAttemptTimeoutMs(deps) ?? 2_500;
+}
+
+function fetchRetryBudgetMs(deps: ResearchDependencies): number {
+  const configured = Number(
+    deps.env("ULTRA_FETCH_RETRY_BUDGET_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(50, Math.min(8_000, Math.trunc(configured)));
+  }
+  return 6_000;
+}
+
 async function fetchWithRetry(
   deps: ResearchDependencies,
   input: string | URL,
   init?: RequestInit,
   maxAttempts = 3,
+  attemptTimeoutOverrideMs?: number,
 ): Promise<Response | null> {
   const sleep = deps.sleep ?? (() => Promise.resolve());
   const random = deps.random ?? Math.random;
+  const deadlineAt = performance.now() + fetchRetryBudgetMs(deps);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (init?.signal?.aborted) return null;
+    const remainingBudget = Math.trunc(deadlineAt - performance.now());
+    if (remainingBudget <= 0) return null;
+
+    const controller = new AbortController();
+    const externalSignal = init?.signal;
+    let settleExternalAbort: (() => void) | undefined;
+    const externalAbort = externalSignal
+      ? new Promise<null>((resolve) => {
+        settleExternalAbort = () => {
+          controller.abort(externalSignal.reason);
+          resolve(null);
+        };
+        externalSignal.addEventListener("abort", settleExternalAbort, {
+          once: true,
+        });
+      })
+      : null;
+    const configuredAttemptTimeoutMs =
+      configuredFetchAttemptTimeoutMs(deps);
+    const attemptTimeoutMs = attemptTimeoutOverrideMs === undefined
+      ? fetchAttemptTimeoutMs(deps)
+      : Math.min(
+        attemptTimeoutOverrideMs,
+        configuredAttemptTimeoutMs ?? attemptTimeoutOverrideMs,
+      );
+    const timeoutMs = Math.max(
+      1,
+      Math.min(attemptTimeoutMs, remainingBudget),
+    );
+    let timer: number | undefined;
+    const attemptTimeout = new Promise<null>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(null);
+      }, timeoutMs);
+    });
 
     try {
-      const response = await deps.fetcher(input, init);
-      const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
-      if (!shouldRetry || attempt === maxAttempts) {
-        return response;
+      const pending = [
+        Promise.resolve(deps.fetcher(input, {
+          ...init,
+          signal: controller.signal,
+        })),
+        attemptTimeout,
+      ];
+      if (externalAbort) pending.push(externalAbort);
+      const response = await Promise.race(pending);
+      if (response === null) {
+        if (externalSignal?.aborted || attempt === maxAttempts) return null;
+      } else {
+        const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
+        if (!shouldRetry || attempt === maxAttempts) {
+          return response;
+        }
       }
     } catch {
-      if (init?.signal?.aborted || attempt === maxAttempts) return null;
+      if (externalSignal?.aborted || attempt === maxAttempts) return null;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      if (externalSignal && settleExternalAbort) {
+        externalSignal.removeEventListener("abort", settleExternalAbort);
+      }
     }
 
-    if (init?.signal?.aborted) return null;
-    const delay = 200 * 2 ** (attempt - 1) + Math.floor(random() * 100);
-    await sleep(delay);
+    const remainingAfterAttempt = Math.trunc(deadlineAt - performance.now());
+    if (remainingAfterAttempt <= 0) return null;
+    const delay = Math.min(
+      200 * 2 ** (attempt - 1) + Math.floor(random() * 100),
+      remainingAfterAttempt,
+    );
+    if (delay > 0) await sleep(delay);
   }
 
   return null;
@@ -1299,8 +1388,8 @@ async function fetchJson(
 function extractWeatherLocation(query: string): string | null {
   const clean = query.replace(/[?¿!¡]/g, " ").replace(/\s+/g, " ").trim();
   const patterns = [
-    /(?:clima|tiempo|weather|pronostico|forecast)(?:\s+de\s+hoy|\s+hoy)?\s+(?:en|de|para)\s+(.+)$/i,
-    /(?:en|de|para)\s+([\p{L}][\p{L}\s.'-]{1,80})$/iu,
+    /(?:clima|tiempo|weather|pronostico|forecast|temperatura|temperature)(?:\s+de\s+hoy|\s+hoy|\s+today)?\s+(?:en|de|para|in|for)\s+(.+)$/i,
+    /(?:en|de|para|in|for)\s+([\p{L}][\p{L}\s.'-]{1,80})$/iu,
   ];
   for (const pattern of patterns) {
     const match = clean.match(pattern);
@@ -2383,7 +2472,7 @@ export async function routeResearchQuery(
   const cleanContext = normalize(context);
   const combinedSignals = `${clean} ${cleanContext}`.trim();
 
-  const weatherSignal = /\b(clima|tiempo de hoy|weather|pronostico|forecast)\b/;
+  const weatherSignal = /\b(?:clima|tiempo de hoy|weather|pronostico|forecast|que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
   const newsSignal =
     /\b(noticias|news|salio nuevo|que salio nuevo|latest news|released)\b/;
   const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;

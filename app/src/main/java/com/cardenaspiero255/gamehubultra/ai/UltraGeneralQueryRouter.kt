@@ -47,7 +47,13 @@ object UltraGeneralQueryRouter {
         """\b(precio (?:de|del)|precios de|price of|prices of|cuanto cuesta|cuanto cuestan|how much|cost of|costs of|[a-z0-9]+\s+s\s+(?:price|cost))\b"""
     )
     private val currentQualifierPattern = Regex(
-        """\b(actual|actualmente|ahora|hoy|manana|esta noche|esta semana|current|currently|latest|newest|today|tomorrow|tonight|this week)\b"""
+        """\b(actual|actualmente|ahora|hoy|esta noche|esta semana|current|currently|latest|newest|today|tomorrow|tonight|this week)\b"""
+    )
+    private val explicitWeatherValuePattern = Regex(
+        """\b(que temperatura hace|temperatura (?:actual|ahora|hoy|en)|temperature (?:now|today|in)|clima (?:actual|ahora|hoy|manana|en)|weather (?:now|today|tomorrow|in)|pronostico (?:de|para|en|hoy|manana)|forecast (?:for|in|today|tomorrow))\b"""
+    )
+    private val explicitFreshUpdatePattern = Regex(
+        """\b(?:novedades|updates?|latest|newest|security patch|parche de seguridad|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out)\b"""
     )
     private val definitionPattern = Regex(
         """\b(que es|que son|what is|what are|define)\b"""
@@ -128,7 +134,12 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            explicitCurrentValuePattern.containsMatchIn(clean) ->
+            explicitCurrentValuePattern.containsMatchIn(clean) ||
+                explicitWeatherValuePattern.containsMatchIn(clean) ||
+                (
+                    explicitFreshUpdatePattern.containsMatchIn(clean) &&
+                        !generalKnowledgePattern.containsMatchIn(clean)
+                    ) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
@@ -146,7 +157,8 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            currentDataPattern.containsMatchIn(clean) ->
+            currentDataPattern.containsMatchIn(clean) &&
+                !generalKnowledgePattern.containsMatchIn(clean) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,

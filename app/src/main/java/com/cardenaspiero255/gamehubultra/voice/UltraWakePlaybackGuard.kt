@@ -26,6 +26,19 @@ internal object UltraWakeWordMatcher {
         return wakeIndex in 0..1 && tokens.size > wakeIndex + 1
     }
 
+    fun isWakeWordOnlyPrefix(transcript: String): Boolean {
+        val tokens = VoiceCommandParser.normalize(transcript)
+            .split(" ")
+            .filter { it.isNotBlank() }
+        val wakeIndex = when {
+            tokens.getOrNull(0) == "hey" && tokens.getOrNull(1) == "gamehub" -> 2
+            tokens.getOrNull(0) == "hey" || tokens.getOrNull(0) == "gamehub" -> 1
+            else -> 0
+        }
+        return tokens.size == wakeIndex + 1 &&
+            tokens.getOrNull(wakeIndex)?.let(::isWakeToken) == true
+    }
+
     private fun isWakeToken(token: String): Boolean =
         token == "ultra" || (token.length >= 4 && levenshtein(token, "ultra") <= 1)
 

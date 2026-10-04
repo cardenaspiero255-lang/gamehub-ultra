@@ -39,8 +39,17 @@ object UltraSpeechCandidateRanker {
             candidates.filter { prefer(it.text) }
         }
 
+        val ranked = if (preferred.isNotEmpty()) preferred else candidates
+        val commandBearing = if (prefer == null || preferred.isEmpty()) {
+            emptyList()
+        } else {
+            ranked.filterNot { candidate ->
+                UltraWakeWordMatcher.isWakeWordOnlyPrefix(candidate.text)
+            }
+        }
+
         return bestCandidate(
-            if (preferred.isNotEmpty()) preferred else candidates
+            if (commandBearing.isNotEmpty()) commandBearing else ranked
         ).text
     }
 

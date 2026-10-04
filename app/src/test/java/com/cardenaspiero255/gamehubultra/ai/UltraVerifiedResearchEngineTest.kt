@@ -1223,6 +1223,74 @@ class UltraVerifiedResearchEngineTest {
                 evidence(claimKey, value, text).copy(sourceId = providerId)
         }
 
+    @Test
+    fun backendFailureUsesServiceUnavailableMessage() {
+        val provider = object : UltraResearchProvider {
+            override val id = "backend"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                error("unused")
+            override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult =
+                UltraProviderResult.Failure(
+                    reasonCode = "BACKEND_FAILURE",
+                    retryable = true,
+                    stage = "edge"
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, precio actual del producto")
+            )
+            assertTrue(result.abstained)
+            assertEquals("BACKEND_FAILURE", result.reasonCode)
+            assertTrue(result.message.contains("no está disponible", ignoreCase = true))
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun lowConfidenceGeneralKnowledgeIsNotPersistedAcrossEngineRestart() {
+        var now = 1_000L
+        val writes = AtomicInteger(0)
+        var persisted: UltraResearchPersistentEntry? = null
+        val store = object : UltraResearchPersistentStore {
+            override fun read(key: String) = persisted
+            override fun write(key: String, entry: UltraResearchPersistentEntry) {
+                writes.incrementAndGet()
+                persisted = entry
+            }
+            override fun remove(key: String) {
+                persisted = null
+            }
+        }
+        val cache = UltraResearchCache().also { it.attachPersistentStore(store) }
+        val provider = fixedProvider(
+            providerId = "gemini-general-assistant",
+            claimKey = "general:motor",
+            value = "respuesta-modelo",
+            text = "Un motor convierte energía en movimiento."
+        )
+        val engine = UltraVerifiedResearchEngine(
+            providers = listOf(provider),
+            cache = cache,
+            nowMillis = { now }
+        )
+
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+            )
+            assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+            assertEquals(0, writes.get())
+            assertEquals(null, persisted)
+        } finally {
+            engine.close()
+        }
+    }
+
+
     private fun evidence(
         claimKey: String,
         value: String,
