@@ -268,9 +268,50 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
-    fun unrelatedUnknownGeneralQuestionDoesNotPretendHardcodedKnowledge() {
+    fun photosynthesisHasOfflineStableFallbackWithoutNetworkOrLocalModel() {
         val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
             message = "¿Qué es la fotosíntesis?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertNotNull(answer)
+        assertTrue(answer.contains("fotosíntesis", ignoreCase = true))
+        assertTrue(answer.contains("luz", ignoreCase = true))
+    }
+
+    @Test
+    fun commonStableKnowledgeCorpusHasOfflineFallbacks() {
+        val cases = listOf(
+            "¿Qué es un motor?" to "energía",
+            "¿Qué es el ADN?" to "genética",
+            "¿Qué es una célula?" to "vida",
+            "¿Qué es un agujero negro?" to "gravedad",
+            "¿Qué es un algoritmo?" to "pasos",
+            "¿Qué es una API?" to "software",
+            "¿Qué es la memoria RAM?" to "memoria",
+            "¿Qué es una GPU?" to "gráficos",
+            "¿Qué es inteligencia artificial?" to "tareas"
+        )
+
+        cases.forEach { (question, expectedKeyword) ->
+            val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+                message = question,
+                context = healthyContext,
+                conversation = emptyList()
+            )
+            assertNotNull(answer, question)
+            assertTrue(
+                answer.contains(expectedKeyword, ignoreCase = true),
+                "$question -> $answer"
+            )
+        }
+    }
+
+    @Test
+    fun unknownStableQuestionStillRefusesToInventOfflineKnowledge() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "¿Qué es el frobnizador cuántico doméstico?",
             context = healthyContext,
             conversation = emptyList()
         )
