@@ -132,4 +132,59 @@ class UltraQueryExecutorBoundaryTest {
         }
     }
 
+
+    @Test
+    fun stableKnowledgeNetworkFailureNeverLeaksGenericServiceUnavailableMessage() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-network"
+
+            override fun fetch(
+                request: UltraGeneralQueryRequest
+            ): UltraResearchEvidence = error("network unavailable")
+
+            override fun fetchResult(
+                request: UltraGeneralQueryRequest
+            ): UltraProviderResult =
+                UltraProviderResult.Failure(
+                    reasonCode = "BACKEND_NETWORK_FAILURE",
+                    message = "network unavailable",
+                    retryable = true,
+                    stage = "client-network"
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val executor: UltraQueryExecutor = DefaultUltraQueryExecutor(
+            coordinator = UltraQueryExecutionCoordinator(engine)
+        )
+        val route = UltraAgentRoute.Chat(
+            message = "Ultra, ¿qué es la fotosíntesis?",
+            query = UltraGeneralQueryRouter.classify(
+                "Ultra, ¿qué es la fotosíntesis?"
+            )
+        )
+
+        try {
+            val answer = executor.answer(
+                route = route,
+                stableKnowledgeFallback = { null },
+                localChat = { "chat local genérico" }
+            )
+
+            kotlin.test.assertFalse(
+                answer.contains(
+                    "El servicio de consulta no está disponible ahora",
+                    ignoreCase = true
+                ),
+                answer
+            )
+            kotlin.test.assertTrue(
+                answer.contains("verificar", ignoreCase = true) ||
+                    answer.contains("fiable", ignoreCase = true),
+                answer
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
 }
