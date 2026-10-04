@@ -250,13 +250,18 @@ class UltraSupabaseResearchProviderTest {
             publishableKey = "sb_publishable_test",
             transport = transport
         )
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
 
-        val result = provider.fetchResult(
-            UltraGeneralQueryRouter.classify("Ultra, ¿qué es la fotosíntesis?")
-        )
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es la fotosíntesis?")
+            )
 
-        assertIs<UltraProviderResult.Evidence>(result)
-        assertEquals(2, calls)
+            assertFalse(result.abstained)
+            assertEquals(2, calls)
+        } finally {
+            engine.close()
+        }
     }
 
     @Test
@@ -288,12 +293,16 @@ class UltraSupabaseResearchProviderTest {
             publishableKey = "sb_publishable_test",
             transport = transport
         )
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
 
-        provider.fetchResult(
-            UltraGeneralQueryRouter.classify("Ultra, ¿qué es la fotosíntesis?")
-        )
-
-        assertEquals(1, calls)
+        try {
+            engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es la fotosíntesis?")
+            )
+            assertEquals(1, calls)
+        } finally {
+            engine.close()
+        }
     }
 
 }
