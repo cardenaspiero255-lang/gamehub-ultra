@@ -3769,3 +3769,155 @@ Deno.test("Tavily retries a compatibility payload after a request-shape rejectio
     );
   }
 });
+
+
+Deno.test("temperature de hoy phrasing routes to the authoritative weather provider", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "geocoding-api.open-meteo.com") {
+        return jsonResponse({
+          results: [{
+            name: "Talca",
+            admin1: "Maule",
+            country: "Chile",
+            latitude: -35.4264,
+            longitude: -71.6554,
+          }],
+        });
+      }
+      if (url.hostname === "api.open-meteo.com") {
+        return jsonResponse({
+          current: {
+            temperature_2m: 18,
+            apparent_temperature: 18,
+            weather_code: 0,
+            time: "2026-10-04T17:00",
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        throw new Error("weather phrasing must not fall through to Tavily");
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Temperatura de hoy en Talca",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected weather answer");
+  if (!result.sourceIds?.some((source) => source.includes("open-meteo.com"))) {
+    throw new Error("expected authoritative Open-Meteo evidence");
+  }
+});
+
+Deno.test("conversational news recency phrases use compact news topics without Tavily", async () => {
+  const rss =
+    '<?xml version="1.0"?><rss><channel>' +
+    '<item><title>Novedad tecnológica uno</title><link>https://news.google.com/rss/articles/one</link><pubDate>Sun, 04 Oct 2026 18:00:00 GMT</pubDate><source url="https://medio-uno.example">Medio Uno</source></item>' +
+    '<item><title>Novedad tecnológica dos</title><link>https://news.google.com/rss/articles/two</link><pubDate>Sun, 04 Oct 2026 17:00:00 GMT</pubDate><source url="https://medio-dos.example">Medio Dos</source></item>' +
+    "</channel></rss>";
+  let expectedTopic = "";
+
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.gdeltproject.org") {
+        if (url.searchParams.get("query") !== expectedTopic) {
+          return jsonResponse({ articles: [] });
+        }
+        return jsonResponse({ articles: [] });
+      }
+      if (url.hostname === "news.google.com") {
+        if (url.searchParams.get("q") !== expectedTopic) {
+          throw new Error("news provider received an unnormalized topic");
+        }
+        return new Response(rss, {
+          status: 200,
+          headers: { "Content-Type": "application/rss+xml" },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        throw new Error("news recency phrasing must not fall through to Tavily");
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  for (
+    const [query, topic] of [
+      ["¿Qué novedades hay hoy sobre inteligencia artificial?", "inteligencia artificial"],
+      ["¿Qué ha pasado recientemente en tecnología?", "tecnología"],
+    ]
+  ) {
+    expectedTopic = topic;
+    const result = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "CURRENT_DATA",
+    );
+    if (result.abstained) {
+      throw new Error("expected news answer for conversational recency phrasing");
+    }
+    if ((result.independentSourceCount ?? 0) < 2) {
+      throw new Error("expected two independent news publishers");
+    }
+  }
+});
+
+Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        const search = url.searchParams.get("srsearch");
+        return search === "procesador"
+          ? jsonResponse({ query: { search: [{ title: "Unidad central de procesamiento" }] } })
+          : jsonResponse({ query: { search: [] } });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          extract: "La unidad central de procesamiento ejecuta instrucciones y procesa datos.",
+          content_urls: {
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Unidad_central_de_procesamiento",
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        throw new Error("stable encyclopedia topic must not require Tavily");
+      }
+      if (url.hostname === "generativelanguage.googleapis.com") {
+        throw new Error("stable encyclopedia topic must not require Gemini");
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Explícame qué hace un procesador",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected encyclopedia answer");
+  if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
+    throw new Error("expected Wikipedia evidence");
+  }
+});
