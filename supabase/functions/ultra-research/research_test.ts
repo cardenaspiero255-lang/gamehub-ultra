@@ -3325,9 +3325,15 @@ Deno.test("general model caller timeout can exceed the default fetch attempt tim
     "GENERAL_KNOWLEDGE",
   );
 
-  if (aborted) throw new Error("default fetch timeout must not preempt the caller timeout");
+  if (aborted) {
+    throw new Error(
+      "default fetch timeout must not preempt the caller timeout",
+    );
+  }
   if (result.abstained || result.sourceId !== "gemini-general-assistant") {
-    throw new Error("Gemini should be allowed to answer within the caller timeout");
+    throw new Error(
+      "Gemini should be allowed to answer within the caller timeout",
+    );
   }
 });
 
