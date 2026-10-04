@@ -28,6 +28,12 @@ import kotlinx.coroutines.withContext
 
 private const val MAX_CHAT_HISTORY = 20
 
+internal fun presentVoiceTranscript(value: String): String =
+    value
+        .replace(Regex("""(?i)\btik\s*tok\b"""), "TikTok")
+        .replace(Regex("""(?i)\byou\s*tube\b"""), "YouTube")
+        .replace(Regex("""(?i)\bwhats\s*app\b"""), "WhatsApp")
+
 @Composable
 internal fun VoiceAssistantCard(
     selectedProfileName: String,
@@ -562,12 +568,42 @@ applyNetworkProfile = networkGaming::applyProfile
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            Button(
-                onClick = { showTextChat = true },
-                enabled = assistantInputEnabled,
-                modifier = Modifier.fillMaxWidth()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(stringResource(R.string.ai_chat_input_label))
+                Button(
+                    onClick = { showTextChat = true },
+                    enabled = assistantInputEnabled,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text("Escribir")
+                }
+                Button(
+                    onClick = {
+                        if (listening) {
+                            voiceController.stopListening()
+                        } else {
+                            requestOneShotListening()
+                        }
+                    },
+                    enabled = assistantInputEnabled || listening,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        when {
+                            listening -> "Detener"
+                            permissionGranted -> "Hablar"
+                            else -> "Micrófono"
+                        }
+                    )
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -603,25 +639,6 @@ applyNetworkProfile = networkGaming::applyProfile
                     }
                 )
             }
-            Button(
-                onClick = {
-                    if (listening) {
-                        voiceController.stopListening()
-                    } else {
-                        requestOneShotListening()
-                    }
-                },
-                enabled = assistantInputEnabled,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    when {
-                        listening -> stringResource(R.string.voice_stop)
-                        permissionGranted -> stringResource(R.string.voice_start)
-                        else -> stringResource(R.string.voice_permission_button)
-                    }
-                )
-            }
             Text(
                 stringResource(
                     R.string.voice_selected_profile,
@@ -629,9 +646,27 @@ applyNetworkProfile = networkGaming::applyProfile
                 )
             )
             if (transcript.isNotBlank()) {
-                Text(stringResource(R.string.voice_transcript, transcript))
+                Text(
+                    stringResource(
+                        R.string.voice_transcript,
+                        presentVoiceTranscript(transcript)
+                    ),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
-            response?.let { Text(it) }
+            response?.let {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        it,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
             UltraCommandUiEffectPolicy.profileForCurrentGame(
                 recommendation = recommendedProfile,
                 currentGamePackage = aiContext.selectedGamePackage

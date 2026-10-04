@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -170,6 +171,19 @@ class GameHubAiAdvisorTest {
                 context = healthyContext
             )
         )
+    }
+
+    @Test
+    fun tikTokDefinitionHasOfflineStableFallback() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "Ultra, ¿Qué es tik Tok?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertNotNull(answer)
+        assertTrue(answer.contains("TikTok"))
+        assertTrue(answer.contains("videos", ignoreCase = true))
     }
 
     @Test

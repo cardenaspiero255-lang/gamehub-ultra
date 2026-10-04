@@ -180,6 +180,8 @@ class GameHubAiAdvisor(
         if (!asksDefinition) return null
 
         return when {
+            Regex("""\btik\s*tok\b|\btiktok\b""").containsMatchIn(normalized) ->
+                "TikTok es una plataforma social centrada en videos cortos donde las personas pueden crear, descubrir y compartir contenido. También ofrece recomendaciones personalizadas según la interacción del usuario."
             Regex("""\bsentimientos?\b""").containsMatchIn(normalized) ->
                 "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones. Pueden influir en cómo percibimos, decidimos y actuamos, y suelen durar más que una reacción emocional instantánea."
             Regex("""\bemocion(?:es)?\b""").containsMatchIn(normalized) ->

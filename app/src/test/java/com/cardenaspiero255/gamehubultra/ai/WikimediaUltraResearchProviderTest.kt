@@ -1076,6 +1076,45 @@ class WikimediaUltraResearchProviderTest {
         )
     }
 
+    @Test
+    fun spacedBrandQueryAcceptsCompactCanonicalTitle() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"TikTok"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"extract":"TikTok es una plataforma de videos cortos.","canonicalurl":"https://es.wikipedia.org/wiki/TikTok"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿Qué es tik Tok?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertTrue(evidence.displayText.contains("TikTok"))
+        assertEquals("https://es.wikipedia.org/wiki/TikTok", evidence.sourceId)
+    }
+
+    @Test
+    fun compactStringCollisionDoesNotBypassTopicRelevance() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Therapist"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"extract":"A therapist is a trained professional.","canonicalurl":"https://example.com/therapist"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es the rapist?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+    }
+
     private fun withRawHttpServer(
         status: Int,
         body: String,
