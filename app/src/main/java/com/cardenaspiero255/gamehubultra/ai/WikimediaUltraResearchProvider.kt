@@ -424,11 +424,20 @@ class WikimediaUltraResearchProvider(
             return true
         }
 
+        val compactAliases = setOf(
+            "tiktok",
+            "youtube",
+            "whatsapp",
+            "instagram",
+            "facebook",
+            "snapchat",
+            "telegram"
+        )
         val compactTopic = normalizedTopic.replace(" ", "")
         val compactTitle = normalizedTitle.replace(" ", "")
         if (
-            compactTopic.length >= 3 &&
-            compactTopic == compactTitle
+            compactTopic == compactTitle &&
+            compactTopic in compactAliases
         ) {
             return true
         }
