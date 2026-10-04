@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -224,9 +225,10 @@ class DashboardTelemetryControllerTest {
         )
 
         assertEquals(PerformanceProfile.X4, update.adaptiveDecision.profile)
-        assertTrue(adaptiveSnapshot?.sessionActive == true)
-        assertTrue(adaptiveSnapshot?.sustainedPerformanceSupported == true)
-        assertFalse(adaptiveSnapshot?.performanceHintsAvailable == true)
+        assertNotNull(adaptiveSnapshot)
+        assertTrue(adaptiveSnapshot.sessionActive)
+        assertTrue(adaptiveSnapshot.sustainedPerformanceSupported)
+        assertFalse(adaptiveSnapshot.performanceHintsAvailable)
 
         val policy = events.single { it.type == PerformanceEventType.POLICY_CHANGED }
         assertEquals("session-a", policy.sessionId)
