@@ -1132,6 +1132,8 @@ async function generalKnowledgeXaiFallback(
       }),
       signal,
     },
+    3,
+    xaiGeneralModelTimeoutMs(deps),
   );
 
   if (!response) {
