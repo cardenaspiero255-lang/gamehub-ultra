@@ -3297,7 +3297,11 @@ Deno.test("general model caller timeout can exceed the default fetch attempt tim
           const timer = setTimeout(() => {
             resolve(jsonResponse({
               candidates: [{
-                content: { parts: [{ text: "Un motor convierte energía en trabajo mecánico." }] },
+                content: {
+                  parts: [{
+                    text: "Un motor convierte energía en trabajo mecánico.",
+                  }],
+                },
               }],
             }));
           }, 2_600);
