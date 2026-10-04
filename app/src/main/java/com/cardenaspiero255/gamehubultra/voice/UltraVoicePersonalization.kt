@@ -158,8 +158,18 @@ internal object UltraVoicePersonalizationResolver {
         preferences: UltraVoicePreferenceBundle
     ): VoiceCommand? {
         val action = UltraVoicePhrasePreferences(preferences.phrases).resolve(transcript)
-            ?: return null
-        return action.toVoiceCommand()
+        if (action != null) return action.toVoiceCommand()
+
+        val normalized = VoiceCommandParser.stripLeadingAssistantInvocation(transcript).trim()
+        val profileAlias = normalized
+            .removePrefix("pon ")
+            .removePrefix("perfil ")
+            .trim()
+        if (profileAlias.isEmpty()) return null
+
+        return UltraVoiceProfileAliasIndex(preferences.profileAliases)
+            .resolveProfile(profileAlias)
+            ?.let(VoiceCommand::SelectProfile)
     }
 
     fun resolvePreferredForGame(
