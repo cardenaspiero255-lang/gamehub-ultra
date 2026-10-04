@@ -3470,7 +3470,9 @@ Deno.test("weather falls back to independently sourced web evidence when Open-Me
 
   if (result.abstained) throw new Error("expected verified weather fallback");
   if ((result.independentSourceCount ?? 0) < 2) {
-    throw new Error(\n      "weather fallback must retain independent-source verification",\n    );
+    throw new Error(
+      "weather fallback must retain independent-source verification",
+    );
   }
 });
 
@@ -3504,6 +3506,8 @@ Deno.test("news falls back to independently sourced web evidence when GDELT is i
 
   if (result.abstained) throw new Error("expected verified news fallback");
   if ((result.independentSourceCount ?? 0) < 2) {
-    throw new Error(\n      "news fallback must retain independent-source verification",\n    );
+    throw new Error(
+      "news fallback must retain independent-source verification",
+    );
   }
 });
