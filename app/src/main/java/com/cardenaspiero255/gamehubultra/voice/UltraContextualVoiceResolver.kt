@@ -31,6 +31,13 @@ internal object UltraContextualVoiceResolver {
             }
         }
 
+        if (
+            Regex("""\\b(estado termico|thermal status|thermal)\\b""")
+                .containsMatchIn(clean)
+        ) {
+            return VoiceCommand.DeviceStatus
+        }
+
         return VoiceCommandParser.parse(
             transcript = transcript,
             optionalResolver = optionalResolver,
