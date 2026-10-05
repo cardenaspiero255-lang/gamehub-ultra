@@ -6399,10 +6399,10 @@ Deno.test("stable cache keeps dependent follow-up qualifiers isolated", async ()
               "1": {
                 pageid: 1,
                 index: 1,
-                title: "Ursidae",
+                title: "Oso",
                 extract:
-                  "Los osos son mamíferos de la familia Ursidae distribuidos en varias especies.",
-                canonicalurl: "https://es.wikipedia.org/wiki/Ursidae",
+                  "Un oso es un mamífero de la familia Ursidae distribuido en varias especies.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Oso",
               },
             },
           },
