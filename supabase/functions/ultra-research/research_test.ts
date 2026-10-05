@@ -613,6 +613,22 @@ Deno.test("English general knowledge still returns Spanish encyclopedia content"
       const url = new URL(String(input));
       hosts.push(url.hostname);
       if (url.pathname === "/w/api.php") {
+        if (url.searchParams.get("generator") === "search") {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Fotosíntesis",
+                  extract:
+                    "La fotosíntesis convierte energía luminosa en energía química.",
+                  fullurl: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
+                },
+              },
+            },
+          });
+        }
         return jsonResponse({
           query: { search: [{ title: "Fotosíntesis" }] },
         });
@@ -725,6 +741,21 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
         searchQuery = wikipediaSearchParam(url);
+        if (url.searchParams.get("generator") === "search") {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Fotosíntesis",
+                  extract: "La fotosíntesis convierte energía luminosa en energía química.",
+                  fullurl: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
+                },
+              },
+            },
+          });
+        }
         return jsonResponse({
           query: { search: [{ title: "Fotosíntesis" }] },
         });
