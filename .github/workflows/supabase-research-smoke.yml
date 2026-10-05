@@ -26,7 +26,9 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # 440 cases intentionally run sequentially to avoid throttling public sources.
+    # Allow the full bounded-retry budget to finish and always emit its summary.
+    timeout-minutes: 240
     env:
       SMOKE_SEED: ${{ github.run_id }}
 
