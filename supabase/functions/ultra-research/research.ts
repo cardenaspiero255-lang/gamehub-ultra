@@ -914,7 +914,7 @@ async function generalKnowledgeGeminiFallback(
       },
     }),
     signal,
-  }, 3, generalModelFallbackTimeoutMs(deps));
+  }, 1, generalModelFallbackTimeoutMs(deps));
 
   if (!response) {
     return abstain(
