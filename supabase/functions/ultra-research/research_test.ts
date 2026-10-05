@@ -4418,3 +4418,170 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "general knowledge resolves ranked Wikipedia candidates in one primary request",
+  async () => {
+    let wikipediaCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          wikipediaCalls += 1;
+          if (
+            url.pathname !== "/w/api.php" ||
+            url.searchParams.get("generator") !== "search"
+          ) {
+            throw new Error(
+              "expected single generator-search request before any fallback",
+            );
+          }
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Crucifixión de Jesús",
+                  extract:
+                    "La crucifixión de Jesús ocurrió en Judea durante el siglo I.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Crucifixi%C3%B3n_de_Jes%C3%BAs",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "Yeso",
+                  extract:
+                    "El yeso es un material empleado en construcción para revestimientos y acabados.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Yeso",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Si alguien me pregunta por el yeso en construcción, ¿cómo lo explicarías en pocas frases?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected Wikipedia answer");
+    if (wikipediaCalls !== 1) {
+      throw new Error(
+        "primary Wikipedia resolution should use one request; calls=" +
+          wikipediaCalls,
+      );
+    }
+    if (!result.displayText?.toLowerCase().includes("yeso")) {
+      throw new Error("expected the relevant ranked candidate");
+    }
+  },
+);
+
+Deno.test(
+  "ambiguous short knowledge entities receive domain disambiguation hints",
+  async () => {
+    const observedSearches: string[] = [];
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          const search = url.searchParams.get("gsrsearch") ?? "";
+          observedSearches.push(search);
+          const isNpc = search.toLowerCase().includes("npc");
+          return jsonResponse({
+            query: {
+              pages: isNpc
+                ? {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: "NPC Rieti",
+                    extract: "NPC Rieti es un equipo de baloncesto italiano.",
+                    canonicalurl: "https://es.wikipedia.org/wiki/NPC_Rieti",
+                  },
+                  "2": {
+                    pageid: 2,
+                    index: 2,
+                    title: "Personaje no jugador",
+                    extract:
+                      "Un personaje no jugador o NPC es un personaje de videojuego que no controla directamente un jugador.",
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Personaje_no_jugador",
+                  },
+                }
+                : {
+                  "3": {
+                    pageid: 3,
+                    index: 1,
+                    title: "Sinónimo (taxonomía)",
+                    extract:
+                      "En taxonomía, sinonimia es la existencia de más de un nombre científico para un taxón.",
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Sin%C3%B3nimo_(taxonom%C3%ADa)",
+                  },
+                  "4": {
+                    pageid: 4,
+                    index: 2,
+                    title: "Sinonimia (semántica)",
+                    extract:
+                      "En lingüística, un sinónimo es una palabra con significado igual o semejante al de otra palabra.",
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Sinonimia_(sem%C3%A1ntica)",
+                  },
+                },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const npc = await routeResearchQuery(
+      "¿Qué es un NPC?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (npc.abstained || !npc.displayText?.toLowerCase().includes("videojuego")) {
+      throw new Error("NPC must resolve to the gaming meaning");
+    }
+
+    const synonym = await routeResearchQuery(
+      "¿Qué es un sinónimo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (
+      synonym.abstained ||
+      !synonym.displayText?.toLowerCase().includes("palabra")
+    ) {
+      throw new Error("sinónimo must resolve to the linguistic meaning");
+    }
+
+    if (
+      !observedSearches.some((value) =>
+        value.toLowerCase().includes("videojuegos")
+      ) ||
+      !observedSearches.some((value) =>
+        value.toLowerCase().includes("linguistica")
+      )
+    ) {
+      throw new Error("expected domain-specific search hints");
+    }
+  },
+);
