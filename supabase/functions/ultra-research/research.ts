@@ -2329,7 +2329,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -2364,11 +2364,20 @@ function isDependentKnowledgeFollowUp(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  if (!/^(?:y|and)\b/.test(clean)) return false;
   if (isExplicitNewKnowledgeTopic(query)) return false;
-  return /\b(?:lo|la|los|las|eso|esto|ese|esa|sirve|funciona|creo|crearon|inventaron|usa|usar)\b/.test(
-    clean,
-  );
+
+  const referential =
+    /\b(?:lo|la|los|las|eso|esto|ese|esa|ellos|ellas)\b/.test(clean);
+  const followUpShape =
+    /^(?:(?:y|and)\s+)?(?:cual es (?:el|la|los|las)?\s*(?:mas|menos)|cuanto pesa|cuanto mide|donde vive|donde viven|que come|que comen|como se reproduce|como se reproducen|cuanto dura|cuanto viven|para que sirve|como funciona|quien lo creo|quien la creo|donde se usa|que hace)\b/.test(
+      clean,
+    );
+
+  return referential || followUpShape ||
+    (
+      /^(?:y|and)\b/.test(clean) &&
+      /\b(?:sirve|funciona|creo|crearon|inventaron|usa|usar)\b/.test(clean)
+    );
 }
 
 function dependentKnowledgeQualifier(query: string): string {
@@ -2379,6 +2388,7 @@ function dependentKnowledgeQualifier(query: string): string {
       /^(?:quien lo creo|quién lo creó|quien la creo|quién la creó|para que sirve|para qué sirve|como funciona|cómo funciona|donde se usa|dónde se usa|que hace|qué hace)(?:\s+|$)/i,
       "",
     )
+    .replace(/^(?:cual|cuál)\s+es\s+(?:(?:el|la|los|las)\s+)?/i, "")
     .replace(/^(?:en|con|sobre|para|de|del)\s+/i, "")
     .trim();
 }
