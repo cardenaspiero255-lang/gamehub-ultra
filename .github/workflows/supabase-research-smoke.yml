@@ -43,9 +43,6 @@ jobs:
 
       - name: Start branch-local Ultra research server
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
           SUPABASE_PUBLISHABLE_KEYS: '{"ci":"ci-smoke-key"}'
           SUPABASE_ANON_KEY: ci-smoke-key
           ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
