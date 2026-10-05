@@ -3985,3 +3985,141 @@ Deno.test("stable definition mislabeled as current data recovers through general
     throw new Error("expected general-knowledge evidence from Wikipedia");
   }
 });
+
+
+Deno.test("runtime-generated knowledge phrasing is normalized to the actual topic", async () => {
+  const observedSearches: string[] = [];
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        const search = url.searchParams.get("srsearch") ?? "";
+        observedSearches.push(search);
+        if (search !== "la erosión") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        return jsonResponse({
+          query: { search: [{ title: "Erosión" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          extract:
+            "La erosión es el desgaste y transporte de suelo y roca por agentes naturales.",
+          content_urls: {
+            desktop: {
+              page: "https://es.wikipedia.org/wiki/Erosi%C3%B3n",
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({ results: [] });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Dame una explicación clara de la erosión y su función principal.",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected correctly normalized encyclopedia result");
+  }
+  if (observedSearches[0] !== "la erosión") {
+    throw new Error(
+      "dynamic prompt wrapper leaked into Wikipedia search: " +
+        observedSearches[0],
+    );
+  }
+  if (!result.displayText?.toLowerCase().includes("erosión")) {
+    throw new Error("expected erosion answer");
+  }
+});
+
+Deno.test("irrelevant Wikipedia candidate is rejected before it can answer the user", async () => {
+  let tavilyCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({
+          query: { search: [{ title: "Primer viaje de James Cook" }] },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname.includes("/api/rest_v1/page/summary/")
+      ) {
+        return jsonResponse({
+          extract:
+            "El primer viaje de James Cook fue una expedición por el océano Pacífico.",
+          content_urls: {
+            desktop: {
+              page:
+                "https://es.wikipedia.org/wiki/Primer_viaje_de_James_Cook",
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        tavilyCalls += 1;
+        return jsonResponse({
+          results: [
+            {
+              title: "Erosión del suelo",
+              url: "https://science-one.example/erosion",
+              content:
+                "La erosión desgasta y transporta partículas de suelo y roca mediante agua, viento u otros agentes.",
+              score: 0.95,
+            },
+            {
+              title: "Qué es la erosión",
+              url: "https://science-two.example/erosion",
+              content:
+                "La erosión es un proceso de desgaste del suelo y las rocas y su posterior transporte.",
+              score: 0.9,
+            },
+          ],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    secret: (name) =>
+      Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+  };
+
+  const result = await routeResearchQuery(
+    "Dame una explicación clara de la erosión y su función principal.",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected relevant Tavily fallback");
+  }
+  if (tavilyCalls === 0) {
+    throw new Error("irrelevant Wikipedia result must force a fallback");
+  }
+  const answer = result.displayText?.toLowerCase() ?? "";
+  if (!answer.includes("eros")) {
+    throw new Error("expected answer about erosion");
+  }
+  if (answer.includes("james cook")) {
+    throw new Error("irrelevant Wikipedia answer leaked to the user");
+  }
+});
