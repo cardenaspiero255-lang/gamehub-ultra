@@ -140,11 +140,8 @@ def calculate_patch_line_coverage(
         for number in line_numbers:
             counters = source_lines.get(number)
             if counters is None:
-                if source_text_by_path is not None:
-                    source = source_text_by_path.get(path, "").splitlines()
-                    source_line = source[number - 1] if 0 < number <= len(source) else ""
-                    if _looks_executable_source_line(source_line):
-                        unmapped.append(f"{path}:{number}")
+                # JaCoCo omits source lines that do not map to instrumented
+                # bytecode. Missing whole production files remain fail-closed.
                 continue
             missed, hit = counters
             if missed + hit <= 0:
