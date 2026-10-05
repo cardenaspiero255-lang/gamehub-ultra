@@ -25,7 +25,7 @@ internal object SmartRecommendationRevertPolicy {
         recommendedProfile: PerformanceProfile
     ): Boolean = currentProfile != recommendedProfile
 
-    fun shouldRecordRejected(alreadyRejected: Boolean): Boolean = true
+    fun shouldRecordRejected(alreadyRejected: Boolean): Boolean = !alreadyRejected
 
     fun canRevert(
         target: SmartRecommendationRevertTarget?,
