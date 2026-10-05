@@ -4747,6 +4747,23 @@ Deno.test(
           "Fernanfloo es un youtuber y creador de contenido salvadoreño conocido por videos de videojuegos y entretenimiento.",
         expected: "youtuber",
       },
+      {
+        query: "¿Qué significa 120 Hz en una televisión?",
+        searchMustContain: ["120", "refresco"],
+        title: "Tasa de refresco",
+        extract:
+          "Una tasa de refresco de 120 Hz indica que una pantalla puede actualizar la imagen hasta 120 veces por segundo.",
+        expected: "120",
+      },
+      {
+        query:
+          "Resume qué es la higiene dental de una mascota sin asumir conocimientos técnicos.",
+        searchMustContain: ["higiene", "dental", "mascota"],
+        title: "Higiene dental veterinaria",
+        extract:
+          "La higiene dental de una mascota incluye cuidados de dientes y encías para prevenir placa, enfermedad periodontal y otros problemas bucales.",
+        expected: "dental",
+      },
     ];
 
     for (const testCase of cases) {
