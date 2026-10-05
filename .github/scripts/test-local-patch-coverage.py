@@ -90,6 +90,21 @@ private companion object {
         self.assertEqual(stats.unmapped_files, ())
 
 
+    def test_jacoco_omitted_line_in_mapped_file_is_not_assumed_executable(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="9" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {9, 10}},
+            {"app/src/main/java/com/example/Foo.kt": "\n" * 8 + "val covered = 1\nval declarationOnly = 2\n"},
+        )
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+        self.assertEqual(stats.unmapped_files, ())
+
+
     def test_threshold_is_blocking_below_minimum(self) -> None:
         stats = gate.PatchCoverage(executable=10, covered=8)
         self.assertFalse(gate.meets_threshold(stats, 90.0))
