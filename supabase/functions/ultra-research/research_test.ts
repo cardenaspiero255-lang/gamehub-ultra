@@ -4468,6 +4468,70 @@ Deno.test(
 );
 
 Deno.test(
+  "Wikipedia tolerates a short 429 burst before stable knowledge abstains",
+  async () => {
+    let wikipediaGeneratorCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaGeneratorCalls += 1;
+          if (wikipediaGeneratorCalls <= 4) {
+            return new Response("rate limited", { status: 429 });
+          }
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Mitología griega",
+                  extract:
+                    "La mitología griega reúne relatos sobre dioses y héroes de la antigua Grecia.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Mitolog%C3%ADa_griega",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué debería saber una persona sobre la mitología griega?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("short Wikipedia throttling must recover");
+    }
+    if (wikipediaGeneratorCalls !== 5) {
+      throw new Error(
+        "expected five bounded Wikipedia attempts; calls=" +
+          wikipediaGeneratorCalls,
+      );
+    }
+  },
+);
+
+Deno.test(
   "rate-limited Gemini falls through to xAI without retrying the same 429",
   async () => {
     let geminiCalls = 0;
