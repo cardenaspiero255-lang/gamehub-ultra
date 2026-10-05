@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import sys
+import unittest
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import local_patch_coverage as gate
+
+
+class LocalPatchCoverageTest(unittest.TestCase):
+    def test_parse_added_lines_tracks_only_new_side_lines(self) -> None:
+        diff = """diff --git a/app/src/main/java/com/example/Foo.kt b/app/src/main/java/com/example/Foo.kt
+--- a/app/src/main/java/com/example/Foo.kt
++++ b/app/src/main/java/com/example/Foo.kt
+@@ -8,2 +8,3 @@
+ old
++newA
++newB
+ keep
+"""
+        self.assertEqual(
+            gate.parse_added_lines(diff),
+            {"app/src/main/java/com/example/Foo.kt": {9, 10}},
+        )
+
+    def test_patch_coverage_ignores_non_executable_added_lines(self) -> None:
+        report = ET.fromstring(
+            """<report>
+              <package name="com/example">
+                <sourcefile name="Foo.kt">
+                  <line nr="9" mi="0" ci="4" mb="0" cb="0"/>
+                  <line nr="10" mi="3" ci="0" mb="0" cb="0"/>
+                </sourcefile>
+              </package>
+            </report>"""
+        )
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {
+                "app/src/main/java/com/example/Foo.kt": {9, 10, 11},
+                ".github/workflows/coverage.yml": {1},
+            },
+        )
+        self.assertEqual(stats.executable, 2)
+        self.assertEqual(stats.covered, 1)
+        self.assertAlmostEqual(stats.percent, 50.0)
+
+    def test_threshold_is_blocking_below_minimum(self) -> None:
+        stats = gate.PatchCoverage(executable=10, covered=8)
+        self.assertFalse(gate.meets_threshold(stats, 90.0))
+        self.assertTrue(gate.meets_threshold(gate.PatchCoverage(10, 9), 90.0))
+
+    def test_no_executable_patch_lines_passes(self) -> None:
+        stats = gate.PatchCoverage(executable=0, covered=0)
+        self.assertTrue(gate.meets_threshold(stats, 90.0))
+
+
+if __name__ == "__main__":
+    unittest.main()
