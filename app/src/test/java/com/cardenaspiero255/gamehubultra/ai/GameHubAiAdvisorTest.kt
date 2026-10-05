@@ -774,6 +774,106 @@ class GameHubAiAdvisorTest {
         assertEquals(baseline.reason, failed.reason)
     }
 
+
+    @Test
+    fun advicePassesRelevantLongTermMemoryIntoCore() {
+        var receivedMemories: List<UltraAiMemorySignal> = emptyList()
+        val capturingCore = object : UltraAiCoreGateway {
+            override fun evaluate(
+                observation: UltraAiObservation,
+                feedback: UltraAiFeedbackSnapshot,
+                memories: List<UltraAiMemorySignal>
+            ): UltraAiCoreResult {
+                receivedMemories = memories
+                return UltraAiCoreResult(
+                    recommendation = UltraAiRecommendation(
+                        profileId = observation.activeProfileId,
+                        confidence = 0.9,
+                        evidence = listOf("memory-aware")
+                    ),
+                    explanation = "test",
+                    memorySignals = memories,
+                    requiresCloud = false
+                )
+            }
+        }
+
+        GameHubAiAdvisor(
+            memoryGateway = fixedMemoryGateway("Prefiero estabilidad antes que FPS"),
+            aiCore = capturingCore
+        ).advise("qué modo me recomiendas", healthyContext)
+
+        assertEquals(1, receivedMemories.size)
+        assertEquals("Prefiero estabilidad antes que FPS", receivedMemories.single().text)
+        assertEquals(
+            UltraMemoryProvenance.REMEMBERED_FACT,
+            receivedMemories.single().provenance
+        )
+    }
+
+    @Test
+    fun chatReusesSingleRecallWhenPassingMemoryIntoCoreAdvice() {
+        var recallCalls = 0
+        var receivedMemories: List<UltraAiMemorySignal> = emptyList()
+        val gateway = object : UltraLongTermMemoryGateway {
+            override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
+
+            override fun recallContext(
+                message: String,
+                scope: UltraMemoryScope,
+                limit: Int
+            ): List<UltraMemoryRecall> {
+                recallCalls += 1
+                return listOf(
+                    UltraMemoryRecall(
+                        record = UltraStoredMemory(
+                            id = "memory-sss",
+                            kind = UltraMemoryKind.FACT,
+                            role = UltraMemoryRole.USER,
+                            text = "Prefiero perfiles estables",
+                            timestampMillis = 1L,
+                            scope = scope
+                        ),
+                        score = 0.95,
+                        provenance = UltraMemoryProvenance.REMEMBERED_FACT
+                    )
+                )
+            }
+        }
+        val capturingCore = object : UltraAiCoreGateway {
+            override fun evaluate(
+                observation: UltraAiObservation,
+                feedback: UltraAiFeedbackSnapshot,
+                memories: List<UltraAiMemorySignal>
+            ): UltraAiCoreResult {
+                receivedMemories = memories
+                return UltraAiCoreResult(
+                    recommendation = UltraAiRecommendation(
+                        profileId = observation.activeProfileId,
+                        confidence = 0.9,
+                        evidence = listOf("memory-aware")
+                    ),
+                    explanation = "test",
+                    memorySignals = memories,
+                    requiresCloud = false
+                )
+            }
+        }
+
+        GameHubAiAdvisor(
+            memoryGateway = gateway,
+            aiCore = capturingCore
+        ).chat(
+            message = "qué modo me recomiendas",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertEquals(1, recallCalls)
+        assertEquals(1, receivedMemories.size)
+        assertEquals("Prefiero perfiles estables", receivedMemories.single().text)
+    }
+
     private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =
         object : UltraLongTermMemoryGateway {
             override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
