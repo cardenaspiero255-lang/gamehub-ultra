@@ -6303,3 +6303,63 @@ Deno.test("stable machine-learning wrapper survives provider outage without a mo
     throw new Error("expected grounded local machine-learning explanation");
   }
 });
+
+
+Deno.test("stable knowledge reuses verified topic evidence across wrapper variants", async () => {
+  let networkAvailable = true;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      if (!networkAvailable) {
+        throw new Error("simulated transient outage after verified evidence");
+      }
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Centro de distribución",
+                extract:
+                  "Un centro de distribución almacena productos y organiza su despacho dentro de una cadena logística.",
+                canonicalurl:
+                  "https://es.wikipedia.org/wiki/Centro_de_distribucion",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const first = await routeResearchQuery(
+    "Explícame de forma sencilla qué es un centro de distribución.",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+  if (first.abstained) throw new Error("expected initial verified evidence");
+
+  networkAvailable = false;
+  const second = await routeResearchQuery(
+    "¿Qué debería saber una persona sobre un centro de distribución?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (second.abstained) {
+    throw new Error("verified stable topic should survive a later provider outage");
+  }
+  if (!(second.displayText ?? "").toLowerCase().includes("distribución")) {
+    throw new Error("expected cached distribution-center evidence");
+  }
+});
