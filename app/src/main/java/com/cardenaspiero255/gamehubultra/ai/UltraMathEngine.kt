@@ -540,7 +540,7 @@ object UltraMathEngine {
         val numberWord =
             """(?:cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"""
         val magnitude =
-            """(?:mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)"""
+            """(?:mil\s+millones|mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)"""
         val operand =
             """(?:(?:menos|minus)\s+)?(?:(?:-?\d+(?:[.,]\d+)?|$numberWord)(?:\s*$magnitude)?|$magnitude)"""
         val patterns = listOf(
@@ -584,7 +584,7 @@ object UltraMathEngine {
         clean.toDecimalOrNull()?.let { return it }
 
         val match = Regex(
-            """^(?:(menos|minus)\s+)?(?:(-?\d+(?:[.,]\d+)?|cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*)?(mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
+            """^(?:(menos|minus)\s+)?(?:(-?\d+(?:[.,]\d+)?|cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*)?(mil\s+millones|mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
         ).matchEntire(clean) ?: return null
 
         val writtenNegative = match.groupValues[1].isNotBlank()
@@ -601,6 +601,7 @@ object UltraMathEngine {
         val factor = when (magnitudeToken) {
             "" -> BigDecimal.ONE
             "mil" -> BigDecimal("1000")
+            "mil millones" -> BigDecimal("1000000000")
             "millon", "millones", "million", "millions" -> BigDecimal("1000000")
             "billon", "billones" -> BigDecimal("1000000000000")
             "billion", "billions" -> BigDecimal("1000000000")
