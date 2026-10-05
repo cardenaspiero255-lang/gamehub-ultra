@@ -708,10 +708,19 @@ def main() -> None:
         )
 
     local_patch_run = local_patch_coverage.get("run")
-    if not isinstance(local_patch_run, str) or re.search(
-        r"(?m)^\\s*python3\\s+\\.github/scripts/local_patch_coverage\\.py(?:\\s|\\\\$)",
-        local_patch_run,
-    ) is None:
+    executable_lines = (
+        [
+            line.strip()
+            for line in local_patch_run.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if isinstance(local_patch_run, str)
+        else []
+    )
+    if not any(
+        line.startswith("python3 .github/scripts/local_patch_coverage.py")
+        for line in executable_lines
+    ):
         fail("blocking local patch coverage gate must execute the Python coverage checker")
 
     codecov_probe = require_step(
