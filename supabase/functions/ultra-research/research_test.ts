@@ -4593,7 +4593,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "ambiguous VPN query prefers the networking concept over a branded VPN product",
   async () => {
@@ -4615,8 +4614,7 @@ Deno.test(
                   title: "Mozilla VPN",
                   extract:
                     "Mozilla VPN es una aplicación y servicio de red privada virtual desarrollado por Mozilla.",
-                  canonicalurl:
-                    "https://es.wikipedia.org/wiki/Mozilla_VPN",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Mozilla_VPN",
                 },
                 "2": {
                   pageid: 2,
@@ -4747,8 +4745,7 @@ Deno.test(
                     index: 1,
                     title: testCase.title,
                     extract: testCase.extract,
-                    canonicalurl:
-                      "https://es.wikipedia.org/wiki/" +
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
                       encodeURIComponent(testCase.title.replaceAll(" ", "_")),
                   },
                 },
@@ -4829,8 +4826,7 @@ Deno.test(
                   title: "Oso polar",
                   extract:
                     "El oso polar es una especie de mamífero carnívoro de la familia de los osos y se encuentra entre los osos actuales de mayor tamaño.",
-                  canonicalurl:
-                    "https://es.wikipedia.org/wiki/Ursus_maritimus",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursus_maritimus",
                 },
               },
             },
