@@ -4921,7 +4921,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "generic synonym query rejects unrelated linguistics evidence before fallback",
   async () => {
