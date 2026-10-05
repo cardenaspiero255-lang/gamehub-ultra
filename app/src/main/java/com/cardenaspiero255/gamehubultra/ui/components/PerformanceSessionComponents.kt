@@ -125,7 +125,10 @@ internal fun ActiveProfileCard(state: PerformanceState) {
 internal fun SmartPerformanceCard(
     recommendation: com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation,
     observations: List<OptimizationObservation>,
+    canRevert: Boolean,
     onApply: () -> Unit,
+    onReject: () -> Unit,
+    onRevert: () -> Unit,
     onClearMemory: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -176,6 +179,21 @@ internal fun SmartPerformanceCard(
             ) {
                 Button(onClick = onApply, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.smart_performance_apply))
+                }
+                TextButton(onClick = onReject, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.smart_performance_reject))
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(
+                    onClick = onRevert,
+                    enabled = canRevert,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(stringResource(R.string.smart_performance_revert))
                 }
                 TextButton(onClick = onClearMemory, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.smart_performance_reset))
