@@ -60,10 +60,11 @@ class GameHubAiAdvisor(
             ?.takeIf(AiActionAllowlist::validate)
 
         if (modelCandidate != null) {
-            return adviceFromAllowlistedAction(
+            val modelAdvice = adviceFromAllowlistedAction(
                 candidate = modelCandidate,
                 context = context
             )
+            return recoverAdviceWithFeedback(modelAdvice, context)
         }
 
         return deterministicAdvice(question, context, memories)
@@ -561,7 +562,7 @@ class GameHubAiAdvisor(
                 observation = UltraAiObservation.from(context).copy(
                     activeProfileId = baseAdvice.suggestedProfile.name
                 ),
-                feedback = UltraAiFeedbackSnapshot(),
+                feedback = feedbackSnapshot(context),
                 memories = memories
             )
         }.getOrNull()
@@ -644,6 +645,60 @@ class GameHubAiAdvisor(
             else ->
                 deterministicAdvice("invalid local action", context)
         }
+    }
+
+    private fun feedbackSnapshot(
+        context: GameHubAiContext
+    ): UltraAiFeedbackSnapshot =
+        UltraAiFeedbackSnapshot.fromObservations(context.optimizationObservations)
+
+    private fun recoverAdviceWithFeedback(
+        advice: GameHubAiAdvice,
+        context: GameHubAiContext
+    ): GameHubAiAdvice {
+        val feedback = feedbackSnapshot(context)
+        val hasFeedback =
+            feedback.acceptedProfileIds.isNotEmpty() ||
+                feedback.rejectedProfileIds.isNotEmpty() ||
+                feedback.revertedProfileIds.isNotEmpty()
+        if (!hasFeedback) return advice
+
+        val coreResult = runCatching {
+            aiCore.evaluate(
+                observation = UltraAiObservation.from(context).copy(
+                    activeProfileId = advice.suggestedProfile.name
+                ),
+                feedback = feedback,
+                memories = emptyList()
+            )
+        }.getOrNull()
+            ?.takeIf { !it.requiresCloud }
+            ?: return advice
+
+        val recoveredProfile = PerformanceProfile.entries.firstOrNull { profile ->
+            profile.name.equals(
+                coreResult.recommendation.profileId,
+                ignoreCase = true
+            )
+        } ?: return advice
+
+        if (
+            recoveredProfile == PerformanceProfile.X4 &&
+            !context.sustainedPerformanceSupported
+        ) {
+            return advice
+        }
+        if (recoveredProfile == advice.suggestedProfile) return advice
+
+        return advice.copy(
+            suggestedProfile = recoveredProfile,
+            reason = when (recoveredProfile) {
+                PerformanceProfile.BALANCED -> AiAdviceReason.BALANCED_GENERAL
+                PerformanceProfile.FRAME_INTERPOLATION -> AiAdviceReason.INTERPOLATION
+                PerformanceProfile.X4 -> AiAdviceReason.X4_READY
+            },
+            fallbackUsed = true
+        )
     }
 
     private fun readinessScore(context: GameHubAiContext): Int {
