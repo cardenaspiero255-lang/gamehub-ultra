@@ -85,4 +85,17 @@ class GameHubAiAdvisor43Test {
         assertEquals(1, snapshot.revertedCount("FRAME_INTERPOLATION"))
         assertTrue(snapshot.isAccepted("BALANCED"))
     }
+
+    @Test
+    fun `chat explains why Ultra changed a repeatedly poor recommendation`() {
+        val answer = GameHubAiAdvisor().chat(
+            "¿qué perfil me recomiendas?",
+            contextWithPoorX4History,
+            emptyList()
+        )
+
+        assertTrue(answer.contains("Ajusté", ignoreCase = true))
+        assertTrue(answer.contains("rendimiento previo", ignoreCase = true))
+    }
+
 }
