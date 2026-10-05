@@ -99,6 +99,8 @@ jobs:
           flags: unit-tests
           name: gamehub-ultra-unit-tests-warmup
           fail_ci_if_error: true
+          use_pypi: true
+          version: "11.3.1"
           verbose: true
 
       - name: Upload coverage to Codecov
@@ -112,6 +114,8 @@ jobs:
           flags: unit-tests
           name: gamehub-ultra-unit-tests
           fail_ci_if_error: true
+          use_pypi: true
+          version: "11.3.1"
           verbose: true
 
       - name: Preserve coverage report
