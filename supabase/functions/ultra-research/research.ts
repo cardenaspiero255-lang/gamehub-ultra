@@ -1386,6 +1386,17 @@ async function fetchWithRetry(
       if (response === null) {
         if (externalSignal?.aborted || attempt === maxAttempts) return null;
       } else {
+        if (response.status === 429) {
+          let hostname = "";
+          try {
+            hostname = new URL(String(input)).hostname;
+          } catch {
+            hostname = "";
+          }
+          if (!hostname.endsWith("wikipedia.org")) {
+            return response;
+          }
+        }
         const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
         if (!shouldRetry || attempt === maxAttempts) {
           return response;
