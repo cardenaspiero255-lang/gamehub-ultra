@@ -102,4 +102,31 @@ class UltraAiCore43Test {
         assertTrue(result.recommendation.evidence.contains("feedback=contradiction"))
         assertTrue(result.recommendation.confidence < 0.72)
     }
+
+    @Test
+    fun `rejection never increases an already low confidence`() {
+        val result = UltraAiCore2(
+            recommender = UltraAiRecommender { _, _, _ ->
+                UltraAiRecommendation(
+                    profileId = "X4",
+                    confidence = 0.04,
+                    evidence = listOf("model=low-confidence")
+                )
+            }
+        ).evaluate(
+            observation = UltraAiObservation(
+                gamePackage = "com.example.game",
+                activeProfileId = "X4",
+                batteryPercent = 80,
+                thermalLabel = "normal"
+            ),
+            feedback = UltraAiFeedbackSnapshot(
+                rejectedProfileIds = setOf("X4")
+            ),
+            memories = emptyList()
+        )
+
+        assertTrue(result.recommendation.confidence <= 0.04)
+    }
+
 }
