@@ -30,6 +30,16 @@ export type ResearchDependencies = {
 
 type JsonObject = Record<string, unknown>;
 
+type StableKnowledgeCacheEntry = {
+  result: ResearchResult;
+  storedAt: number;
+};
+
+const stableKnowledgeCaches =
+  new WeakMap<object, Map<string, StableKnowledgeCacheEntry>>();
+const STABLE_KNOWLEDGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 256;
+
 const USER_AGENT =
   "GameHub-Ultra-CAR73/1.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
 
@@ -96,6 +106,75 @@ function hostname(value: string): string | null {
 
 function independentDomains(urls: string[]): number {
   return unique(urls.map((url) => hostname(url) ?? "").filter(Boolean)).length;
+}
+
+function stableKnowledgeCacheKey(topic: string): string {
+  return normalize(topic)
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cloneResearchResult(result: ResearchResult): ResearchResult {
+  return {
+    ...result,
+    sourceIds: result.sourceIds ? [...result.sourceIds] : undefined,
+  };
+}
+
+function cachedStableKnowledge(
+  fetcher: ResearchFetcher,
+  topic: string,
+): ResearchResult | null {
+  const key = stableKnowledgeCacheKey(topic);
+  if (!key) return null;
+
+  const cache = stableKnowledgeCaches.get(fetcher as object);
+  const entry = cache?.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.storedAt > STABLE_KNOWLEDGE_CACHE_TTL_MS) {
+    cache?.delete(key);
+    return null;
+  }
+
+  return cloneResearchResult(entry.result);
+}
+
+function rememberStableKnowledge(
+  fetcher: ResearchFetcher,
+  topic: string,
+  result: ResearchResult,
+): ResearchResult {
+  if (
+    result.abstained ||
+    result.authoritative !== true ||
+    !result.displayText?.trim()
+  ) {
+    return result;
+  }
+
+  const key = stableKnowledgeCacheKey(topic);
+  if (!key) return result;
+
+  let cache = stableKnowledgeCaches.get(fetcher as object);
+  if (!cache) {
+    cache = new Map<string, StableKnowledgeCacheEntry>();
+    stableKnowledgeCaches.set(fetcher as object, cache);
+  }
+  if (
+    !cache.has(key) &&
+    cache.size >= STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES
+  ) {
+    const oldestKey = cache.keys().next().value;
+    if (typeof oldestKey === "string") cache.delete(oldestKey);
+  }
+
+  cache.set(key, {
+    result: cloneResearchResult(result),
+    storedAt: Date.now(),
+  });
+  return result;
 }
 
 const CORROBORATION_STOP_WORDS = new Set([
@@ -2914,6 +2993,18 @@ function generalKnowledgeSearchTopic(
   ) {
     canonicalTopic = "altavoz Bluetooth";
     hints.push("audio");
+  } else if (/\bexoplanetas?\b/.test(clean)) {
+    canonicalTopic = "planeta extrasolar";
+    hints.push("exoplaneta", "astronomia");
+  } else if (
+    /\bmacro\s*verso\b/.test(clean) &&
+    /\bstephen king\b/.test(clean)
+  ) {
+    canonicalTopic = "Multiverso de Stephen King";
+    hints.push("Torre Oscura", "ficcion");
+  } else if (/\bmacro\s*verso\b/.test(clean)) {
+    canonicalTopic = "macroverso";
+    hints.push("ficcion", "cosmologia");
   } else if (/\bsistema operativo\b/.test(clean)) {
     canonicalTopic = "sistema operativo";
   } else if (/\bnavegacion autonoma\b/.test(clean)) {
@@ -3346,6 +3437,57 @@ async function wikidataKnowledgeEvidence(
   );
 }
 
+function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
+  const clean = normalize(topic)
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
+    .trim();
+
+  if (
+    clean === "aprendizaje automatico" ||
+    clean === "machine learning"
+  ) {
+    const displayText =
+      "El aprendizaje automático es una rama de la inteligencia artificial " +
+      "en la que un modelo aprende patrones a partir de datos para realizar " +
+      "predicciones, clasificaciones u otras tareas sin programar cada regla de forma explícita.";
+    return {
+      claimKey: "local-stable:machine-learning",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  return null;
+}
+
+function stableTerminologyEvidence(query: string): ResearchResult | null {
+  const clean = normalize(stripAssistantInvocation(query))
+    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
+
+  const generalMacroverseDefinition =
+    /^(?:que es|que significa|define|explicame(?: que es)?|explica(?: que es)?|what is)\s+(?:(?:el|un)\s+)?macro\s*verso$/.test(
+      clean,
+    );
+  if (generalMacroverseDefinition) {
+    const displayText =
+      "«Macroverso» no es un término científico estandarizado. " +
+      "Se usa de forma variable en ficción y otros marcos conceptuales para " +
+      "describir una realidad o estructura de escala superior que puede abarcar " +
+      "uno o varios universos; el significado exacto depende de la obra o contexto.";
+    return {
+      claimKey: "terminology:macroverso",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  return null;
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -3364,7 +3506,16 @@ async function generalKnowledgeEvidence(
     : (currentTopic || previousTopic);
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
-  if (isTechnicalTroubleshootingQuery(query)) {
+  const terminology = stableTerminologyEvidence(query);
+  if (terminology) return terminology;
+
+  const localStableKnowledge = dependentFollowUp
+    ? null
+    : stableCoreKnowledgeEvidence(topic);
+  if (localStableKnowledge) return localStableKnowledge;
+
+  const technicalTroubleshooting = isTechnicalTroubleshootingQuery(query);
+  if (technicalTroubleshooting) {
     const technical = await stackOverflowSpanishEvidence(query, deps, signal);
     if (!technical.abstained) return technical;
   }
@@ -3374,6 +3525,11 @@ async function generalKnowledgeEvidence(
   const relevanceTopic = dependentFollowUp
     ? previousTopic
     : topicPlan.relevanceTopic;
+  const cacheTopic = dependentFollowUp ? topic : relevanceTopic;
+  if (!technicalTroubleshooting) {
+    const cached = cachedStableKnowledge(deps.fetcher, cacheTopic);
+    if (cached) return cached;
+  }
   const generatorEvidence = await wikipediaGeneratorEvidence(
     searchTopic,
     relevanceTopic,
@@ -3381,7 +3537,13 @@ async function generalKnowledgeEvidence(
     deps,
     signal,
   );
-  if (generatorEvidence) return generatorEvidence;
+  if (generatorEvidence) {
+    return rememberStableKnowledge(
+      deps.fetcher,
+      cacheTopic,
+      generatorEvidence,
+    );
+  }
 
   const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
@@ -3415,7 +3577,9 @@ async function generalKnowledgeEvidence(
       deps,
       signal,
     );
-    if (!wikidata.abstained) return wikidata;
+    if (!wikidata.abstained) {
+      return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
+    }
     return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
   }
 
@@ -3478,15 +3642,19 @@ async function generalKnowledgeEvidence(
     }
 
     const resolvedSource = source ?? summaryUrl;
-    return {
-      claimKey: `general:${slug(title)}`,
-      value: normalize(extract),
-      displayText: extract,
-      sourceId: resolvedSource,
-      sourceIds: [resolvedSource],
-      independentSourceCount: 1,
-      authoritative: true,
-    };
+    return rememberStableKnowledge(
+      deps.fetcher,
+      cacheTopic,
+      {
+        claimKey: `general:${slug(title)}`,
+        value: normalize(extract),
+        displayText: extract,
+        sourceId: resolvedSource,
+        sourceIds: [resolvedSource],
+        independentSourceCount: 1,
+        authoritative: true,
+      },
+    );
   }
 
   const wikidata = await wikidataKnowledgeEvidence(
@@ -3496,7 +3664,9 @@ async function generalKnowledgeEvidence(
     deps,
     signal,
   );
-  if (!wikidata.abstained) return wikidata;
+  if (!wikidata.abstained) {
+    return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
+  }
 
   return abstain(
     sawUsableCandidate
@@ -3596,7 +3766,7 @@ export async function routeResearchQuery(
   const combinedSignals = `${clean} ${cleanContext}`.trim();
 
   const weatherSignal =
-    /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|pronostico|forecast|que temperatura hace|temperatura (?:de hoy|actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
+    /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|llover|llovera|llueve|lluvias?|rain|raining|pronostico|forecast|que temperatura hace|temperatura (?:de hoy|actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
   const newsSignal =
     /\b(?:noticias|news|novedades|que ha pasado recientemente|ha pasado recientemente|salio nuevo|que salio nuevo|latest news|released)\b/;
   const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;

@@ -6119,3 +6119,427 @@ Deno.test("English queries reject unrelated encyclopedia evidence", async () => 
     throw new Error("unrelated evidence must be rejected");
   }
 });
+
+Deno.test("exoplanet query accepts extrasolar-planet semantic evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Planeta extrasolar",
+                extract:
+                  "Un planeta extrasolar es un planeta que orbita una estrella distinta del Sol.",
+                canonicalurl:
+                  "https://es.wikipedia.org/wiki/Planeta_extrasolar",
+              },
+            },
+          },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "www.wikidata.org") {
+        return jsonResponse({ search: [] });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es un exoplaneta?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("extrasolar synonym evidence must answer exoplanet query");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("planeta") || !answer.includes("estrella")) {
+    throw new Error("expected a relevant exoplanet explanation");
+  }
+});
+
+Deno.test("macroverse gets a transparent nonstandard-term answer instead of generic abstention", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({ query: { pages: {} } });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "www.wikidata.org") {
+        return jsonResponse({ search: [] });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es un macroverso?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error(
+      "nonstandard terminology must not degrade to generic abstention",
+    );
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("macroverso") || !answer.includes("univers")) {
+    throw new Error("expected a transparent macroverse explanation");
+  }
+  if (!answer.includes("no es un término científico estandarizado")) {
+    throw new Error("expected ambiguity caveat for macroverse");
+  }
+});
+
+Deno.test("qualified macroverse question continues to researched evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Multiverso de Stephen King",
+                extract:
+                  "El multiverso de Stephen King conecta mundos y realidades de su ficción, incluida la Torre Oscura.",
+                canonicalurl:
+                  "https://es.wikipedia.org/wiki/Multiverso_de_Stephen_King",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({ results: [] });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es el macroverso de Stephen King?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected researched qualified answer");
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("stephen king") || !answer.includes("torre oscura")) {
+    throw new Error(
+      "qualified macroverse question did not use researched evidence",
+    );
+  }
+  if (answer.includes("no es un término científico estandarizado")) {
+    throw new Error("generic terminology answer overrode qualified research");
+  }
+});
+
+Deno.test("stable machine-learning wrapper survives provider outage without a model", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      throw new Error("simulated provider outage");
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Si alguien me pregunta por el aprendizaje automático, ¿cómo lo explicarías en pocas frases?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error(
+      "stable machine-learning knowledge must have a local fallback",
+    );
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (
+    !answer.includes("aprendizaje") ||
+    !answer.includes("datos") ||
+    !answer.includes("modelo")
+  ) {
+    throw new Error("expected grounded local machine-learning explanation");
+  }
+});
+
+Deno.test("stable knowledge reuses verified topic evidence across wrapper variants", async () => {
+  let networkAvailable = true;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      if (!networkAvailable) {
+        throw new Error("simulated transient outage after verified evidence");
+      }
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Centro de distribución",
+                extract:
+                  "Un centro de distribución almacena productos y organiza su despacho dentro de una cadena logística.",
+                canonicalurl:
+                  "https://es.wikipedia.org/wiki/Centro_de_distribucion",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const first = await routeResearchQuery(
+    "Explícame de forma sencilla qué es un centro de distribución.",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+  if (first.abstained) throw new Error("expected initial verified evidence");
+
+  networkAvailable = false;
+  const second = await routeResearchQuery(
+    "¿Qué debería saber una persona sobre un centro de distribución?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (second.abstained) {
+    throw new Error(
+      "verified stable topic should survive a later provider outage",
+    );
+  }
+  if (!(second.displayText ?? "").toLowerCase().includes("distribución")) {
+    throw new Error("expected cached distribution-center evidence");
+  }
+});
+
+Deno.test("stable cache keeps dependent follow-up qualifiers isolated", async () => {
+  let specificSearches = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        const search = url.searchParams.get("gsrsearch") ?? "";
+        if (/grande|mayor tamaño/i.test(search)) {
+          specificSearches += 1;
+          return jsonResponse({
+            query: {
+              pages: {
+                "2": {
+                  pageid: 2,
+                  index: 1,
+                  title: "Oso polar",
+                  extract:
+                    "El oso polar está entre las especies de osos de mayor tamaño.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursus_maritimus",
+                },
+              },
+            },
+          });
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Oso",
+                extract:
+                  "Un oso es un mamífero de la familia Ursidae distribuido en varias especies.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Oso",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const first = await routeResearchQuery(
+    "¿Qué es un oso?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+  if (first.abstained) throw new Error("expected initial bear evidence");
+
+  const followUp = await routeResearchQuery(
+    "¿Cuál es el más grande?",
+    deps,
+    "Tú: ¿Qué es un oso?",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (followUp.abstained) {
+    throw new Error("expected qualified follow-up evidence");
+  }
+  if (specificSearches !== 1) {
+    throw new Error(
+      "dependent qualifier must not reuse the generic topic cache",
+    );
+  }
+  if (!(followUp.displayText ?? "").toLowerCase().includes("polar")) {
+    throw new Error("expected the qualified bear result");
+  }
+});
+
+Deno.test("rain-today phrasing routes through verified weather evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = String(input);
+      if (url.includes("geocoding-api.open-meteo.com")) {
+        return jsonResponse({
+          results: [{
+            name: "Temuco",
+            admin1: "La Araucanía",
+            country: "Chile",
+            latitude: -38.7359,
+            longitude: -72.5904,
+          }],
+        });
+      }
+      if (url.includes("api.open-meteo.com/v1/forecast")) {
+        return jsonResponse({
+          current: {
+            temperature_2m: 12,
+            apparent_temperature: 11,
+            weather_code: 61,
+            time: "2026-10-05T14:00",
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Va a llover hoy en Temuco?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) {
+    throw new Error("rain-today phrasing must use the weather provider");
+  }
+  if (!result.authoritative || !result.displayText?.includes("Temuco")) {
+    throw new Error("expected authoritative Temuco weather evidence");
+  }
+});
+
+Deno.test(
+  "dependent ML creator follow-up bypasses generic local definition",
+  async () => {
+    let searches = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          searches += 1;
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Arthur Samuel",
+                  extract:
+                    "Arthur Samuel fue un pionero estadounidense de la inteligencia artificial y popularizó el término aprendizaje automático.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Arthur_Samuel",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿y quién lo creó?",
+      deps,
+      "Tú: ¿Qué es el aprendizaje automático?",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected creator follow-up evidence");
+    }
+    if (searches !== 1) {
+      throw new Error(
+        "dependent follow-up must bypass the generic local definition",
+      );
+    }
+    if (!(result.displayText ?? "").toLowerCase().includes("arthur samuel")) {
+      throw new Error(
+        "expected creator-specific evidence instead of the base definition",
+      );
+    }
+  },
+);

@@ -26,9 +26,9 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    # 440 cases intentionally run sequentially to avoid throttling public sources.
+    # 1000 cases intentionally run sequentially to avoid throttling public sources.
     # Allow the full bounded-retry budget to finish and always emit its summary.
-    timeout-minutes: 240
+    timeout-minutes: 360
     env:
       SMOKE_SEED: ${{ github.run_id }}
 
@@ -73,7 +73,7 @@ jobs:
           cat "$log" || true
           exit 1
 
-      - name: Build reproducible 440-question broad-spectrum smoke plan
+      - name: Build reproducible 1000-question broad-spectrum smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -90,6 +90,8 @@ jobs:
               ("general", "¿Qué es un avión?", "GENERAL_KNOWLEDGE", False, ["aeronave", "volar", "vuelo"]),
               ("general", "¿Qué es un psicópata?", "GENERAL_KNOWLEDGE", False, ["rasgo", "empat", "remord"]),
               ("general", "¿Qué es un lápiz?", "GENERAL_KNOWLEDGE", False, ["escribir", "dibujar", "grafito"]),
+              ("astronomy_regression", "¿Qué es un exoplaneta?", "GENERAL_KNOWLEDGE", False, ["planeta", "estrella", "solar"]),
+              ("cosmology_regression", "¿Qué es un macroverso?", "GENERAL_KNOWLEDGE", False, ["univers", "cosmos", "macro"]),
               ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True, []),
               ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True, []),
           ]
@@ -614,6 +616,30 @@ jobs:
                   ("una estación espacial", ["órbita", "astronaut", "estación"]),
                   ("un rover planetario", ["robot", "planeta", "rover"]),
               ],
+              "universe_cosmology": [
+                  ("un exoplaneta", ["planeta", "estrella", "solar"]),
+                  ("el universo observable", ["univers", "observable", "luz"]),
+                  ("una nebulosa", ["gas", "polvo", "estrella"]),
+                  ("la materia oscura", ["materia", "gravedad", "univers"]),
+                  ("la expansión del universo", ["univers", "expans"]),
+                  ("el fondo cósmico de microondas", ["radiación", "cosm", "microondas"]),
+              ],
+              "fitness_training": [
+                  ("el entrenamiento de fuerza", ["fuerza", "músculo", "entren"]),
+                  ("la resistencia cardiovascular", ["corazón", "resistencia", "ejercicio"]),
+                  ("una sentadilla", ["pierna", "cadera", "ejercicio"]),
+                  ("una flexión de brazos", ["pecho", "brazo", "ejercicio"]),
+                  ("el calentamiento antes de entrenar", ["calent", "ejercicio", "movilidad"]),
+                  ("la recuperación después del ejercicio", ["recuper", "músculo", "descanso"]),
+              ],
+              "watches_wearables": [
+                  ("un reloj mecánico", ["mecán", "movimiento", "reloj"]),
+                  ("un reloj de cuarzo", ["cuarzo", "reloj", "tiempo"]),
+                  ("un smartwatch", ["reloj", "inteligente", "sensor"]),
+                  ("un sensor óptico de frecuencia cardíaca", ["sensor", "luz", "pulso"]),
+                  ("el GPS de un reloj deportivo", ["gps", "posición", "reloj"]),
+                  ("la resistencia al agua de un reloj", ["agua", "reloj", "resisten"]),
+              ],
           }
 
           used_queries = set()
@@ -648,7 +674,7 @@ jobs:
                       f"Pool {label} only produced {added}/8 unique smoke questions"
                   )
 
-          # Generate six unique runtime-composed variants per domain. Complete
+          # Generate sixteen unique runtime-composed variants per domain. Complete
           # question strings change with the run seed but remain reproducible.
           remaining_dynamic = []
           for domain, topics in dynamic_domains.items():
@@ -668,26 +694,26 @@ jobs:
               for case in candidates:
                   if add_unique_case(case):
                       added += 1
-                  if added == 6:
+                  if added == 16:
                       break
-              if added != 6:
+              if added != 16:
                   raise RuntimeError(
-                      f"Dynamic domain {domain} only produced {added}/6 unique questions"
+                      f"Dynamic domain {domain} only produced {added}/16 unique questions"
                   )
               remaining_dynamic.extend(candidates)
 
-          # 6 fixed + (19 pools * 8) + (46 domains * 6) = 434.
-          # Fill the remaining six slots from unused runtime combinations so the
-          # gate always exercises exactly 440 unique questions.
+          # 8 fixed + (19 pools * 8) + (49 domains * 16) = 944.
+          # Fill the remaining 56 slots from unused runtime combinations so the
+          # gate always exercises exactly 1000 unique questions across 70+ labels.
           rng.shuffle(remaining_dynamic)
           for case in remaining_dynamic:
-              if len(cases) >= 440:
+              if len(cases) >= 1000:
                   break
               add_unique_case(case)
 
-          if len(cases) != 440:
+          if len(cases) != 1000:
               raise RuntimeError(
-                  f"Smoke plan produced {len(cases)}/440 unique questions"
+                  f"Smoke plan produced {len(cases)}/1000 unique questions"
               )
           if len(used_queries) != len(cases):
               raise RuntimeError("Smoke plan contains duplicate questions")
@@ -716,16 +742,16 @@ jobs:
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "440"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "1000"
           test "$(python3 - <<'PY'
           import json, os
           path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
           rows = [json.loads(line) for line in open(path, encoding="utf-8")][1:]
           print(len({row["label"] for row in rows}))
           PY
-          )" -ge "60"
+          )" -ge "70"
 
-      - name: Exercise 440 stratified and runtime-generated questions
+      - name: Exercise 1000 stratified and runtime-generated questions
         shell: bash
         run: |
           set -euo pipefail
@@ -894,23 +920,23 @@ jobs:
 
           executed = len(results)
           passed = sum(1 for _, verdict, _ in results if verdict == "PASS")
-          answered = passed + fresh_abstentions
+          answered = passed
           answer_rate = answered / executed if executed else 0.0
 
           print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
           print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
 
-          if executed != 440:
-              print(f"::error::Expected 440 cases, executed {executed}")
+          if executed != 1000:
+              print(f"::error::Expected 1000 cases, executed {executed}")
               sys.exit(1)
           if stable_abstentions != 0:
               print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
               sys.exit(1)
-          if fresh_abstentions > 4:
-              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 4")
+          if fresh_abstentions > 2:
+              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 2")
               sys.exit(1)
-          if answer_rate < 0.95:
-              print(f"::error::Answer rate below 95%: {answer_rate:.3f}")
+          if answer_rate < 0.998:
+              print(f"::error::Answer rate below SSS target 99.8%: {answer_rate:.3f}")
               sys.exit(1)
           if failures != 0:
               sys.exit(1)
