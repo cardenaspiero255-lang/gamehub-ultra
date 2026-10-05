@@ -438,7 +438,7 @@ Deno.test("explicit general-knowledge kind wins over incidental price words", as
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "";
         return jsonResponse({
           query: { search: [{ title: "Valor esperado" }] },
         });
@@ -487,7 +487,7 @@ Deno.test("general-knowledge follow-up searches with previous topic context", as
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "";
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -648,7 +648,7 @@ Deno.test("Spanish factual prefixes are removed before encyclopedia search", asy
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        queries.push(url.searchParams.get("srsearch") ?? "");
+        queries.push((url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "");
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -718,7 +718,7 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "";
         return jsonResponse({
           query: { search: [{ title: "Fotosíntesis" }] },
         });
@@ -902,7 +902,7 @@ Deno.test("dependent knowledge follow-up keeps the previous subject", async () =
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        queries.push(url.searchParams.get("srsearch") ?? "");
+        queries.push((url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "");
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -937,7 +937,7 @@ Deno.test("dependent follow-up may add a qualifier without replacing its subject
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "";
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -972,7 +972,7 @@ Deno.test("complete new subject in a follow-up does not keep prior context", asy
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "";
         return jsonResponse({
           query: { search: [{ title: "Android" }] },
         });
@@ -1007,7 +1007,7 @@ Deno.test("speaker labels are stripped before assistant invocation in context", 
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "";
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -3544,7 +3544,7 @@ Deno.test("purpose-form general knowledge queries normalize leading articles bef
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        const search = url.searchParams.get("srsearch");
+        const search = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch"));
         if (search !== "sistema operativo") {
           return jsonResponse({ query: { search: [] } });
         }
@@ -3885,7 +3885,7 @@ Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic"
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        const search = url.searchParams.get("srsearch");
+        const search = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch"));
         return search === "procesador"
           ? jsonResponse({
             query: { search: [{ title: "Unidad central de procesamiento" }] },
@@ -3938,7 +3938,7 @@ Deno.test("stable definition mislabeled as current data recovers through general
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        if (url.searchParams.get("srsearch") !== "un motor") {
+        if ((url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) !== "un motor") {
           return jsonResponse({ query: { search: [] } });
         }
         return jsonResponse({
@@ -3996,7 +3996,7 @@ Deno.test(
         if (
           url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
         ) {
-          const search = url.searchParams.get("srsearch") ?? "";
+          const search = (url.searchParams.get("gsrsearch") ?? url.searchParams.get("srsearch")) ?? "";
           observedSearches.push(search);
           if (search !== "la erosión") {
             return jsonResponse({ query: { search: [] } });
