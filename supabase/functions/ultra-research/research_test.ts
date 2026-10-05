@@ -6221,7 +6221,6 @@ Deno.test("macroverse gets a transparent nonstandard-term answer instead of gene
   }
 });
 
-
 Deno.test("qualified macroverse question continues to researched evidence", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -6266,7 +6265,9 @@ Deno.test("qualified macroverse question continues to researched evidence", asyn
   if (result.abstained) throw new Error("expected researched qualified answer");
   const answer = (result.displayText ?? "").toLowerCase();
   if (!answer.includes("stephen king") || !answer.includes("torre oscura")) {
-    throw new Error("qualified macroverse question did not use researched evidence");
+    throw new Error(
+      "qualified macroverse question did not use researched evidence",
+    );
   }
   if (answer.includes("no es un término científico estandarizado")) {
     throw new Error("generic terminology answer overrode qualified research");
