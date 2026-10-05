@@ -59,6 +59,7 @@ import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
+import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceAdvisor
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistant
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantInput
@@ -530,7 +531,32 @@ internal fun GameHubUltraApp(
                 adaptiveDecision = adaptiveDecision,
                 smartRecommendation = smartRecommendation,
                 onApplySmartRecommendation = {
+                    runtimeCoordinator.recordRecommendationFeedback(
+                        runtimeSnapshot(),
+                        smartRecommendation.profile,
+                        OptimizationFeedbackDecision.ACCEPTED
+                    )
                     selectProfile(smartRecommendation.profile)
+                },
+                onRejectSmartRecommendation = {
+                    runtimeCoordinator.recordRecommendationFeedback(
+                        runtimeSnapshot(),
+                        smartRecommendation.profile,
+                        OptimizationFeedbackDecision.REJECTED
+                    )
+                },
+                onRevertSmartRecommendation = {
+                    if (
+                        uiState.effectiveProfile == smartRecommendation.profile &&
+                        smartRecommendation.safeFallback != smartRecommendation.profile
+                    ) {
+                        runtimeCoordinator.recordRecommendationFeedback(
+                            runtimeSnapshot(),
+                            smartRecommendation.profile,
+                            OptimizationFeedbackDecision.REVERTED
+                        )
+                        selectProfile(smartRecommendation.safeFallback)
+                    }
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
                 onApplySmartGameAssistant = ::applySmartGameAssistantSuggestion,
