@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -705,6 +706,13 @@ def main() -> None:
             "blocking local patch coverage gate",
             fragment,
         )
+
+    local_patch_run = local_patch_coverage.get("run")
+    if not isinstance(local_patch_run, str) or re.search(
+        r"(?m)^\\s*python3\\s+\\.github/scripts/local_patch_coverage\\.py(?:\\s|\\\\$)",
+        local_patch_run,
+    ) is None:
+        fail("blocking local patch coverage gate must execute the Python coverage checker")
 
     codecov_probe = require_step(
         coverage,
