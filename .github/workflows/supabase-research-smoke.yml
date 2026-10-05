@@ -728,7 +728,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import concurrent.futures
           import json
           import os
           import socket
@@ -862,11 +861,10 @@ jobs:
                   time.sleep(0.25 * attempt)
               return last_result
 
+          # Run sequentially to avoid throttling the public evidence sources.
           results = []
-          with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-              futures = [executor.submit(run_case, case) for case in rows]
-              for future in concurrent.futures.as_completed(futures):
-                  results.append(future.result())
+          for case in rows:
+              results.append(run_case(case))
 
           failures = 0
           stable_abstentions = 0
