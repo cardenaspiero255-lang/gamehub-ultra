@@ -48,6 +48,8 @@ object SmartPerformanceAdvisor {
         val lowBattery = runtime?.battery?.percent?.let { it < 20 } == true
         val memoryPressure = runtime?.memory?.usedPercent?.let { it >= 90 } == true
         val storagePressure = runtime?.storage?.freePercent?.let { it < 10 } == true
+        val safetyConstrained =
+            thermalHot || lowBattery || memoryPressure || storagePressure
         val gpuFamily = detectGpuFamily(input.device.gpuVendor, input.device.gpuRenderer)
 
         val knownBad = input.historicalObservations
@@ -137,11 +139,15 @@ object SmartPerformanceAdvisor {
                     (input.device.cpuCores >= 4 && input.device.totalRamMb >= 4096)
             }
 
-        val best = supportedProfiles.maxWithOrNull(
-            compareBy<PerformanceProfile> { baseScores.getValue(it) }
-                .thenBy { if (it == input.currentProfile) 1 else 0 }
-                .thenBy { it.ordinal * -1 }
-        ) ?: PerformanceProfile.BALANCED
+        val best = if (safetyConstrained) {
+            PerformanceProfile.BALANCED
+        } else {
+            supportedProfiles.maxWithOrNull(
+                compareBy<PerformanceProfile> { baseScores.getValue(it) }
+                    .thenBy { if (it == input.currentProfile) 1 else 0 }
+                    .thenBy { it.ordinal * -1 }
+            ) ?: PerformanceProfile.BALANCED
+        }
 
         val evidence = buildList {
             add(input.device.cpuCores.toString() + " núcleos CPU")
@@ -191,7 +197,10 @@ object SmartPerformanceAdvisor {
         return SmartPerformanceRecommendation(
             profile = best,
             reason = reason,
-            safeFallback = knownGood.entries
+            safeFallback = measuredGood.entries
+                .asSequence()
+                .filter { it.key != best }
+                .filter { knownBad.getOrDefault(it.key, 0) < 2 }
                 .maxWithOrNull(
                     compareBy<Map.Entry<PerformanceProfile, Int>> { it.value }
                         .thenBy { if (it.key == PerformanceProfile.BALANCED) 1 else 0 }
