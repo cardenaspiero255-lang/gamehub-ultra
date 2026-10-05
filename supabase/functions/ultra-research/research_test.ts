@@ -4736,7 +4736,10 @@ Deno.test(
             url.pathname === "/w/api.php" &&
             url.searchParams.get("generator") === "search"
           ) {
-            observedSearch = wikipediaSearchParam(url).toLowerCase();
+            observedSearch = wikipediaSearchParam(url)
+              .normalize("NFD")
+              .replace(/\p{Diacritic}/gu, "")
+              .toLowerCase();
             return jsonResponse({
               query: {
                 pages: {
