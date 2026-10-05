@@ -1,0 +1,79 @@
+package com.cardenaspiero255.gamehubultra.voice
+
+import android.content.Context
+import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
+import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
+import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
+import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
+import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
+import kotlinx.coroutines.flow.first
+
+internal object VoiceOptimizationFeedbackContext {
+    suspend fun enrich(
+        base: GameHubAiContext,
+        repository: GameOptimizationMemoryStateRepository,
+        contextKey: OptimizationContextKey
+    ): GameHubAiContext =
+        base.copy(
+            optimizationObservations = repository
+                .observationsFlow(contextKey)
+                .first()
+        )
+
+    suspend fun enrich(
+        base: GameHubAiContext,
+        context: Context,
+        device: DeviceInfo
+    ): GameHubAiContext {
+        val appContext = context.applicationContext
+        val repository: GameOptimizationMemoryStateRepository =
+            GameOptimizationMemoryStore(appContext)
+        return enrich(
+            base = base,
+            repository = repository,
+            contextKey = contextKey(
+                context = appContext,
+                device = device,
+                gamePackage = base.selectedGamePackage
+            )
+        )
+    }
+
+    private fun contextKey(
+        context: Context,
+        device: DeviceInfo,
+        gamePackage: String?
+    ): OptimizationContextKey {
+        val gameVersion = gamePackage
+            ?.takeIf(String::isNotBlank)
+            ?.let { packageName ->
+                @Suppress("DEPRECATION")
+                runCatching {
+                    context.packageManager
+                        .getPackageInfo(packageName, 0)
+                        .versionName
+                }.getOrNull()
+            }
+        val emulatorBackend = EmulatorBackendDetector.detect()
+        val driverFingerprint = listOf(
+            device.gpuVendor.orEmpty(),
+            device.gpuRenderer.orEmpty()
+        ).joinToString("|").takeIf(String::isNotBlank)
+
+        return OptimizationContextKey(
+            deviceFingerprint = OptimizationFingerprint.from(
+                device = device,
+                gamePackage = gamePackage,
+                gameVersion = gameVersion,
+                emulatorBackend = emulatorBackend,
+                driverFingerprint = driverFingerprint
+            ),
+            gamePackage = gamePackage.orEmpty(),
+            gameVersion = gameVersion,
+            emulatorBackend = emulatorBackend,
+            driverFingerprint = driverFingerprint
+        )
+    }
+}
