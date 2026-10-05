@@ -2836,7 +2836,7 @@ function generalKnowledgeSearchTopic(
     hints.push("television", "brillo", "contraste");
   } else if (
     /\b120\s*hz\b/.test(clean) &&
-    /\b(?:tv|television|televisor|pantalla)\b/.test(clean)
+    /\b(?:tv|television|televisor|pantalla|tasa de refresco|frecuencia de actualizacion)\b/.test(clean)
   ) {
     canonicalTopic = "tasa de refresco 120 Hz";
     hints.push("pantalla", "television", "refresco");
@@ -2889,30 +2889,33 @@ function generalKnowledgeSearchTopic(
     hints.push("mayor tamaño");
   }
 
-  const brand =
-    /\b(?:samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/;
+  const brandMatch = clean.match(
+    /\b(samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/,
+  );
   const companyIntent =
     /\b(?:empresa|productos?|fabrica|fabricar|conocid[oa]|tipo de empresa)\b/;
-  if (brand.test(clean) && companyIntent.test(clean)) {
+  if (brandMatch && companyIntent.test(clean)) {
+    canonicalTopic = brandMatch[1];
     hints.push("empresa", "tecnologia");
-  }
-
-  if (
+  } else if (
     /\blenovo\b/.test(clean) &&
-    (companyIntent.test(clean) || normalizedTopic.includes("lenovo"))
+    normalizedTopic.includes("lenovo")
   ) {
     canonicalTopic = "Lenovo";
     hints.push("empresa", "tecnologia");
   }
 
   const canonicalRelevanceTopic = canonicalTopic.trim();
-  const relevanceTopic = /\b120\s*hz\b/.test(clean)
+  const isRefreshRateQuery = /\b120\s*hz\b/.test(clean);
+  const relevanceTopic = isRefreshRateQuery
     ? "120 pantalla"
     : canonicalRelevanceTopic;
   return {
     searchTopic: [canonicalRelevanceTopic, ...hints].filter(Boolean).join(" ").trim(),
     relevanceTopic,
-    wikidataTopic: wikidataEntitySearchTopic(canonicalRelevanceTopic),
+    wikidataTopic: isRefreshRateQuery
+      ? "frecuencia de actualización"
+      : wikidataEntitySearchTopic(canonicalRelevanceTopic),
   };
 }
 
@@ -2933,6 +2936,36 @@ function candidateMatchesKnownMeaning(
   }
 
   return true;
+}
+
+function candidateMatchesKnowledgeTopic(
+  query: string,
+  topic: string,
+  candidateText: string,
+): boolean {
+  const cleanQuery = normalize(query);
+  const candidate = normalize(candidateText);
+
+  if (/\b120\s*hz\b/.test(cleanQuery)) {
+    const semanticRefreshRate =
+      /\b(?:tasa|frecuencia) de (?:refresco|actualizacion)\b/.test(candidate) ||
+      (
+        /\bhz\b/.test(candidate) &&
+        /\b(?:pantalla|television|refresco|actualizacion)\b/.test(candidate)
+      );
+    if (semanticRefreshRate) return true;
+  }
+
+  const brandMatch = cleanQuery.match(
+    /\b(samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/,
+  );
+  const companyIntent =
+    /\b(?:empresa|productos?|fabrica|fabricar|conocid[oa]|tipo de empresa)\b/;
+  if (brandMatch && companyIntent.test(cleanQuery)) {
+    return candidate.split(/[^a-z0-9]+/).includes(brandMatch[1]);
+  }
+
+  return candidateMatchesTopic(topic, candidateText);
 }
 
 function candidateRelevanceScore(
@@ -3138,7 +3171,8 @@ async function wikipediaGeneratorEvidence(
 
   for (const candidate of ranked) {
     if (
-      !candidateMatchesTopic(
+      !candidateMatchesKnowledgeTopic(
+        query,
         relevanceTopic,
         candidate.title + " " + candidate.extract,
       )
@@ -3234,7 +3268,9 @@ async function wikidataKnowledgeEvidence(
       .filter(Boolean)
       .join(" ");
     if (!candidateMatchesKnownMeaning(query, label, description)) continue;
-    if (!candidateMatchesTopic(relevanceTopic, candidateText)) continue;
+    if (!candidateMatchesKnowledgeTopic(query, relevanceTopic, candidateText)) {
+      continue;
+    }
 
     const source = stringValue(item.concepturi) ??
       `https://www.wikidata.org/wiki/${encodeURIComponent(id)}`;
@@ -3386,7 +3422,7 @@ async function generalKnowledgeEvidence(
     }
 
     if (
-      !candidateMatchesTopic(relevanceTopic, title + " " + extract)
+      !candidateMatchesKnowledgeTopic(query, relevanceTopic, title + " " + extract)
     ) {
       continue;
     }

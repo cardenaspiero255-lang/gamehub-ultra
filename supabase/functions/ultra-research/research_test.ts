@@ -4589,6 +4589,92 @@ Deno.test(
 );
 
 Deno.test(
+  "refresh-rate aliases and matching brand evidence remain valid primary knowledge",
+  async () => {
+    const cases = [
+      {
+        query: "¿Qué significa 120 Hz en una televisión?",
+        title: "Frecuencia de actualización",
+        extract:
+          "La frecuencia de actualización de una pantalla indica cuántas veces se renueva la imagen por segundo.",
+        expected: "frecuencia",
+      },
+      {
+        query: "¿Qué es una tasa de refresco de 120 Hz?",
+        title: "Tasa de refresco",
+        extract:
+          "La tasa de refresco describe cuántas veces por segundo una pantalla actualiza la imagen mostrada.",
+        expected: "refresco",
+      },
+      {
+        query: "¿Qué fabrica NVIDIA?",
+        title: "Nvidia",
+        extract:
+          "Nvidia es una empresa tecnológica que diseña unidades de procesamiento gráfico y otros productos de computación.",
+        expected: "nvidia",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let modelCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php" &&
+            url.searchParams.get("generator") === "search"
+          ) {
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replace(/ /g, "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (
+            url.hostname === "generativelanguage.googleapis.com" ||
+            url.hostname === "api.x.ai"
+          ) {
+            modelCalls += 1;
+            throw new Error("primary evidence should avoid model fallback");
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: () => undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+      if (result.abstained) {
+        throw new Error(
+          "expected semantic primary evidence for " + testCase.query,
+        );
+      }
+      if (!(result.displayText ?? "").toLowerCase().includes(testCase.expected)) {
+        throw new Error("unexpected answer for " + testCase.query);
+      }
+      if (modelCalls !== 0) {
+        throw new Error("primary knowledge unexpectedly used a model");
+      }
+    }
+  },
+);
+
+Deno.test(
   "stable common concepts use bare Wikidata labels when Wikipedia is unavailable",
   async () => {
     const cases = [

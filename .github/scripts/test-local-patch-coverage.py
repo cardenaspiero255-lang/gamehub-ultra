@@ -107,6 +107,24 @@ private companion object {
         self.assertEqual(stats.unmapped_files, ())
 
 
+    def test_bare_kotlin_when_else_arrow_is_not_executable(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2}},
+            {
+                "app/src/main/java/com/example/Foo.kt":
+                    "val covered = expensiveCall()\nelse ->\n"
+            },
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
     def test_threshold_is_blocking_below_minimum(self) -> None:
         stats = gate.PatchCoverage(executable=10, covered=8)
         self.assertFalse(gate.meets_threshold(stats, 90.0))
