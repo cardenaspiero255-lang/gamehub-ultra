@@ -4532,6 +4532,60 @@ Deno.test(
 );
 
 Deno.test(
+  "stable knowledge falls back to Spanish Wikidata when Wikipedia is unavailable",
+  async () => {
+    let wikidataCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          return new Response("temporarily unavailable", { status: 503 });
+        }
+        if (
+          url.hostname === "www.wikidata.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          wikidataCalls += 1;
+          return jsonResponse({
+            search: [{
+              id: "Q100001",
+              label: "Germinación",
+              description:
+                "proceso por el que una semilla inicia su desarrollo y produce un brote",
+              concepturi: "https://www.wikidata.org/entity/Q100001",
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Para qué sirve o por qué es importante la germinación de una semilla?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected Wikidata stable-knowledge fallback");
+    }
+    if (wikidataCalls < 1) {
+      throw new Error("expected Wikidata to be consulted");
+    }
+    if (!result.displayText?.toLowerCase().includes("germin")) {
+      throw new Error("expected germination answer from Wikidata");
+    }
+    if (!result.sourceIds?.some((source) => source.includes("wikidata.org"))) {
+      throw new Error("expected visible Wikidata source");
+    }
+  },
+);
+
+Deno.test(
   "rate-limited Gemini falls through to xAI without retrying the same 429",
   async () => {
     let geminiCalls = 0;
