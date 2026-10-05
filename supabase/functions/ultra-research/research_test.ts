@@ -4338,7 +4338,7 @@ Deno.test(
           url.hostname === "api.x.ai"
         ) {
           modelCalls += 1;
-          throw new Error("model fallback must not be needed after Wikipedia retry");
+          throw new Error(\n            "model fallback must not be needed after Wikipedia retry",\n          );
         }
         if (url.hostname === "api.tavily.com") {
           return jsonResponse({ results: [] });
