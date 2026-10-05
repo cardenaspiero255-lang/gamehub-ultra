@@ -183,7 +183,8 @@ class GameHubAiAdvisor(
             normalized.contains("fps") || normalized.contains("modo") || normalized.contains("perfil") ||
                 normalized.contains("mode") || normalized.contains("profile") ->
                 "Con los datos actuales, mi recomendación es " + profile +
-                    ". Preparación gaming estimada: " + advice.readiness + "/100."
+                    ". Preparación gaming estimada: " + advice.readiness + "/100." +
+                    advice.recoveryExplanation?.let { " " + it }.orEmpty()
 
             normalized.contains("red") || normalized.contains("latencia") || normalized.contains("internet") ||
                 normalized.contains("network") || normalized.contains("latency") ->
@@ -595,7 +596,8 @@ class GameHubAiAdvisor(
 
         return baseAdvice.copy(
             suggestedProfile = finalProfile,
-            reason = finalReason
+            reason = finalReason,
+            recoveryExplanation = coreResult?.recoveryExplanation
         )
     }
 
@@ -688,7 +690,11 @@ class GameHubAiAdvisor(
         ) {
             return advice
         }
-        if (recoveredProfile == advice.suggestedProfile) return advice
+        if (recoveredProfile == advice.suggestedProfile) {
+            return advice.copy(
+                recoveryExplanation = coreResult.recoveryExplanation
+            )
+        }
 
         return advice.copy(
             suggestedProfile = recoveredProfile,
@@ -697,7 +703,8 @@ class GameHubAiAdvisor(
                 PerformanceProfile.FRAME_INTERPOLATION -> AiAdviceReason.INTERPOLATION
                 PerformanceProfile.X4 -> AiAdviceReason.X4_READY
             },
-            fallbackUsed = true
+            fallbackUsed = true,
+            recoveryExplanation = coreResult.recoveryExplanation
         )
     }
 
