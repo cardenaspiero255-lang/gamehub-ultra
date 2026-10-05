@@ -6441,3 +6441,49 @@ Deno.test("stable cache keeps dependent follow-up qualifiers isolated", async ()
     throw new Error("expected the qualified bear result");
   }
 });
+
+
+Deno.test("rain-today phrasing routes through verified weather evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = String(input);
+      if (url.includes("geocoding-api.open-meteo.com")) {
+        return jsonResponse({
+          results: [{
+            name: "Temuco",
+            admin1: "La Araucanía",
+            country: "Chile",
+            latitude: -38.7359,
+            longitude: -72.5904,
+          }],
+        });
+      }
+      if (url.includes("api.open-meteo.com/v1/forecast")) {
+        return jsonResponse({
+          current: {
+            temperature_2m: 12,
+            apparent_temperature: 11,
+            weather_code: 61,
+            time: "2026-10-05T14:00",
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Va a llover hoy en Temuco?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) {
+    throw new Error("rain-today phrasing must use the weather provider");
+  }
+  if (!result.authoritative || !result.displayText?.includes("Temuco")) {
+    throw new Error("expected authoritative Temuco weather evidence");
+  }
+});
