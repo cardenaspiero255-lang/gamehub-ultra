@@ -4633,8 +4633,7 @@ Deno.test(
                     index: 1,
                     title: testCase.title,
                     extract: testCase.extract,
-                    canonicalurl:
-                      "https://es.wikipedia.org/wiki/" +
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
                       encodeURIComponent(testCase.title.replace(/ /g, "_")),
                   },
                 },
@@ -4664,7 +4663,9 @@ Deno.test(
           "expected semantic primary evidence for " + testCase.query,
         );
       }
-      if (!(result.displayText ?? "").toLowerCase().includes(testCase.expected)) {
+      if (
+        !(result.displayText ?? "").toLowerCase().includes(testCase.expected)
+      ) {
         throw new Error("unexpected answer for " + testCase.query);
       }
       if (modelCalls !== 0) {
