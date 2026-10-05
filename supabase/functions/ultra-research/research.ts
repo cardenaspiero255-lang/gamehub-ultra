@@ -2793,7 +2793,7 @@ async function generalKnowledgeEvidence(
     if (!title) continue;
 
     const summaryUrl =
-      \`https://\${wikipediaHost}/api/rest_v1/page/summary/\` +
+      `https://${wikipediaHost}/api/rest_v1/page/summary/` +
       encodeURIComponent(title.replace(/ /g, "_"));
     const summary = await fetchJson(deps, summaryUrl, {
       headers: { "User-Agent": USER_AGENT },
@@ -2833,7 +2833,7 @@ async function generalKnowledgeEvidence(
 
     const resolvedSource = source ?? summaryUrl;
     return {
-      claimKey: \`general:\${slug(title)}\`,
+      claimKey: `general:${slug(title)}`,
       value: normalize(extract),
       displayText: extract,
       sourceId: resolvedSource,
