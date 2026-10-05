@@ -2764,6 +2764,15 @@ function generalKnowledgeSearchTopic(
   } else if (/\bqled\b/.test(clean)) {
     canonicalTopic = "QLED";
     hints.push("television");
+  } else if (
+    /\bhdr\b/.test(clean) &&
+    /\b(?:tv|television|televisor)\b/.test(clean)
+  ) {
+    canonicalTopic = "HDR alto rango dinámico";
+    hints.push("television", "brillo", "contraste");
+  } else if (/\bip68\b/.test(clean)) {
+    canonicalTopic = "IP68 grado de protección IP";
+    hints.push("polvo", "agua", "dispositivo");
   } else if (/\bnfc\b/.test(clean)) {
     canonicalTopic = "NFC comunicación de campo cercano";
     hints.push("telefono", "tecnologia");
@@ -2793,6 +2802,9 @@ function generalKnowledgeSearchTopic(
     hints.push("robotica");
   } else if (/\b(?:elrubius|el rubius)\b/.test(clean)) {
     canonicalTopic = "El Rubius";
+    hints.push("youtuber", "creador contenido");
+  } else if (/\bfernanfloo\b/.test(clean)) {
+    canonicalTopic = "Fernanfloo";
     hints.push("youtuber", "creador contenido");
   } else if (/\brespir/.test(clean) && /\bpeces?\b/.test(clean)) {
     canonicalTopic = "respiración de los peces";
@@ -2888,6 +2900,25 @@ function candidateRelevanceScore(
       normalizedExtract.includes("altavoz"))
   ) {
     score += 24;
+  }
+  if (
+    /\bhdr\b/.test(cleanQuery) &&
+    normalizedTitle.includes("alto rango dinamico")
+  ) {
+    score += 30;
+  }
+  if (
+    /\bip68\b/.test(cleanQuery) &&
+    (normalizedTitle.includes("grado de proteccion") ||
+      normalizedExtract.includes("grado de proteccion"))
+  ) {
+    score += 28;
+  }
+  if (
+    /\bfernanfloo\b/.test(cleanQuery) &&
+    normalizedTitle === "fernanfloo"
+  ) {
+    score += 30;
   }
 
   return score;
