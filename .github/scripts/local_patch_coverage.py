@@ -82,9 +82,39 @@ def _report_lines(report: ET.Element) -> dict[str, dict[int, tuple[int, int]]]:
     return result
 
 
-def _obviously_non_executable_source_line(line: str) -> bool:
+def _looks_executable_source_line(line: str) -> bool:
     stripped = line.strip()
-    return not stripped or stripped.startswith(("//", "/*", "*", "*/", "package ", "import ", "@")) or stripped in {"{", "}", "(", ")", ")", "}"}
+    if not stripped:
+        return False
+    if stripped.startswith(("//", "/*", "*", "*/", "package ", "import ", "@")):
+        return False
+    if stripped in {"{", "}", "(", ")", ")", "}", "},", ");"}:
+        return False
+    if re.match(
+        r"^(?:(?:public|private|protected|internal|override|abstract|open|final|"
+        r"suspend|inline|tailrec|operator|infix|external|expect|actual)\s+)*"
+        r"(?:fun|class|data\s+class|sealed\s+class|enum\s+class|interface|"
+        r"fun\s+interface|object)\b",
+        stripped,
+    ):
+        return False
+    if re.match(
+        r"^(?:(?:public|private|protected|internal)\s+)?companion\s+object\b",
+        stripped,
+    ):
+        return False
+    if re.match(
+        r"^(?:(?:public|private|protected|internal)\s+)?const\s+val\b",
+        stripped,
+    ):
+        return False
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+,?$", stripped):
+        return False
+    if re.match(r"^\)\s*(?::\s*[^=]+)?\s*\{?$", stripped):
+        return False
+    if re.match(r"^(?:else\s*->\s*\{|\}\s*else\s*\{)$", stripped):
+        return False
+    return True
 
 
 def calculate_patch_line_coverage(
@@ -113,7 +143,7 @@ def calculate_patch_line_coverage(
                 if source_text_by_path is not None:
                     source = source_text_by_path.get(path, "").splitlines()
                     source_line = source[number - 1] if 0 < number <= len(source) else ""
-                    if not _obviously_non_executable_source_line(source_line):
+                    if _looks_executable_source_line(source_line):
                         unmapped.append(f"{path}:{number}")
                 continue
             missed, hit = counters
