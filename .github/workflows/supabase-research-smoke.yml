@@ -696,7 +696,7 @@ jobs:
                       added += 1
                   if added == 16:
                       break
-              if added != 6:
+              if added != 16:
                   raise RuntimeError(
                       f"Dynamic domain {domain} only produced {added}/16 unique questions"
                   )
