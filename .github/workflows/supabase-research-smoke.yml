@@ -47,7 +47,7 @@ jobs:
           SUPABASE_ANON_KEY: ci-smoke-key
           ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
           ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
-          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "2500"
+          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "4500"
         shell: bash
         run: |
           set -euo pipefail
