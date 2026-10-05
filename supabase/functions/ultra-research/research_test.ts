@@ -5415,6 +5415,37 @@ Deno.test("complete purpose question stays independent of previous context", asy
   }
 });
 
+Deno.test("English knowledge accepts a valid Spanish cognate topic", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Fotosíntesis" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Fotosíntesis",
+        type: "standard",
+        extract:
+          "La fotosíntesis convierte energía luminosa en energía química.",
+      });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "what is photosynthesis?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("valid cross-language cognate evidence was rejected");
+  }
+});
+
 Deno.test("English queries reject unrelated encyclopedia evidence", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
