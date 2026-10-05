@@ -687,16 +687,63 @@ def main() -> None:
     for fragment in ("report.xml", "test -s"):
         require_run_fragment(coverage_verify, "coverage XML verification", fragment)
 
+    codecov_warmup = require_step(
+        coverage,
+        "coverage",
+        "Warm up Codecov upload after transient transport errors",
+        uses_prefix="codecov/codecov-action@",
+        allowed_if="steps.codecov_token.outputs.available == 'true'",
+        best_effort=True,
+    )
+    warmup_with = codecov_warmup.get("with")
+    if not isinstance(warmup_with, dict) or warmup_with.get("fail_ci_if_error") is not True:
+        fail("Codecov warmup no longer reports upload failures")
+
+    codecov_retry = require_step(
+        coverage,
+        "coverage",
+        "Retry Codecov through legacy endpoint",
+        uses_prefix="codecov/codecov-action@",
+        allowed_if=(
+            "steps.codecov_token.outputs.available == 'true' && "
+            "steps.codecov_warmup.outcome != 'success'"
+        ),
+        best_effort=True,
+    )
+    retry_with = codecov_retry.get("with")
+    if not isinstance(retry_with, dict) or retry_with.get("fail_ci_if_error") is not True:
+        fail("Codecov retry no longer reports upload failures")
+
     codecov = require_step(
         coverage,
         "coverage",
         "Upload coverage to Codecov",
         uses_prefix="codecov/codecov-action@",
-        allowed_if="steps.codecov_token.outputs.available == 'true'",
+        allowed_if=(
+            "steps.codecov_token.outputs.available == 'true' && "
+            "steps.codecov_warmup.outcome != 'success' && "
+            "steps.codecov_retry.outcome != 'success'"
+        ),
     )
     with_values = codecov.get("with")
     if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
-        fail("Codecov upload no longer has fail_ci_if_error: true")
+        fail("Required Codecov upload no longer has fail_ci_if_error: true")
+
+    codecov_gate = require_step(
+        coverage,
+        "coverage",
+        "Verify Codecov upload gate",
+        shell="bash",
+        allowed_if="steps.codecov_token.outputs.available == 'true'",
+    )
+    for fragment in (
+        "$WARMUP_OUTCOME",
+        "$RETRY_OUTCOME",
+        "$REQUIRED_OUTCOME",
+        "All Codecov upload attempts failed.",
+        "exit 1",
+    ):
+        require_run_fragment(codecov_gate, "Codecov upload verification gate", fragment)
 
     android_jobs = android.get("jobs")
     if not isinstance(android_jobs, dict):
