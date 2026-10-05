@@ -32,4 +32,11 @@ class UltraMathMagnitudeRegressionTest {
         assertEquals("999999999998000000000001", solution?.resultText)
     }
 
+    @Test
+    fun `decimal magnitudes keep all entered precision`() {
+        val solution = UltraMathEngine.solve("1,234567890123 millones x 1")
+
+        assertEquals("1234567.890123", solution?.resultText)
+    }
+
 }
