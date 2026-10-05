@@ -338,4 +338,19 @@ class UltraAiCore41Test {
         assertFalse(result.recommendation.evidence.any { it.startsWith("memoryPreference=") })
     }
 
+
+    @Test
+    fun `production thermal status triggers safety fallback`() {
+        val result = UltraAiCore2().evaluate(UltraAiObservation("com.example.game", "X4", 80, thermalStatus = 3, thermalHeadroom = 0.40f), UltraAiFeedbackSnapshot(), emptyList())
+        assertEquals("BALANCED", result.recommendation.profileId)
+        assertTrue(result.recommendation.evidence.any { it.startsWith("thermal=") })
+    }
+
+    @Test
+    fun `battery at exactly 20 percent does not trigger low battery override`() {
+        val result = UltraAiCore2().evaluate(UltraAiObservation("com.example.game", "X4", 20, "normal"), UltraAiFeedbackSnapshot(), emptyList())
+        assertEquals("X4", result.recommendation.profileId)
+        assertFalse(result.recommendation.evidence.any { it.startsWith("battery=") })
+    }
+
 }
