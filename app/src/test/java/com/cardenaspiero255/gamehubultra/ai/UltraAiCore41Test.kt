@@ -239,4 +239,35 @@ class UltraAiCore41Test {
         assertEquals(null, invalid.thermalStatus)
         assertEquals(null, invalid.thermalHeadroom)
     }
+
+    @Test
+    fun `model recommender receives provenance aware memory signals`() {
+        var receivedMemories: List<UltraAiMemorySignal> = emptyList()
+        val core = UltraAiCore2(
+            recommender = UltraAiRecommender { observation, _, memories ->
+                receivedMemories = memories
+                UltraAiRecommendation(
+                    profileId = observation.activeProfileId,
+                    confidence = 0.88,
+                    evidence = listOf("memory-aware")
+                )
+            }
+        )
+        val memory = UltraAiMemorySignal(
+            text = "Prefiero estabilidad",
+            provenance = UltraMemoryProvenance.REMEMBERED_FACT
+        )
+
+        core.evaluate(
+            observation = UltraAiObservation(
+                gamePackage = "com.example.game",
+                activeProfileId = "BALANCED"
+            ),
+            feedback = UltraAiFeedbackSnapshot(),
+            memories = listOf(memory)
+        )
+
+        assertEquals(listOf(memory), receivedMemories)
+    }
+
 }
