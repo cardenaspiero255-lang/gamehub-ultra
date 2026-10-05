@@ -36,27 +36,43 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve canonical Supabase public client configuration
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.1.x
+
+      - name: Start branch-local Ultra research server
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          SUPABASE_PUBLISHABLE_KEYS: '{"ci":"ci-smoke-key"}'
+          SUPABASE_ANON_KEY: ci-smoke-key
+          ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
+          ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
+          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "2500"
         shell: bash
         run: |
           set -euo pipefail
-          config_file="app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraResearchProviderSource.kt"
-          supabase_url="$(grep -A1 'DEFAULT_SUPABASE_URL' "$config_file" | grep -o 'https://[^"]*' | head -n 1)"
-          publishable_key="$(grep -A1 'DEFAULT_SUPABASE_PUBLISHABLE_KEY' "$config_file" | grep -o 'sb_publishable_[^"]*' | head -n 1)"
+          log="$RUNNER_TEMP/ultra-research-local.log"
+          nohup deno run --allow-env --allow-net             supabase/functions/ultra-research/index.ts             >"$log" 2>&1 &
+          pid=$!
+          echo "ULTRA_RESEARCH_PID=$pid" >> "$GITHUB_ENV"
+          echo "ULTRA_RESEARCH_ENDPOINT=http://127.0.0.1:8000" >> "$GITHUB_ENV"
+          echo "ULTRA_RESEARCH_API_KEY=ci-smoke-key" >> "$GITHUB_ENV"
 
-          case "$supabase_url" in
-            https://*.supabase.co) ;;
-            *) echo "::error::Canonical Supabase URL is missing or malformed"; exit 1 ;;
-          esac
-          case "$publishable_key" in
-            sb_publishable_*) ;;
-            *) echo "::error::Canonical Supabase publishable key is missing or malformed"; exit 1 ;;
-          esac
+          for attempt in $(seq 1 60); do
+            status="$(curl -sS -o /dev/null -w '%{http_code}'               http://127.0.0.1:8000 || true)"
+            if [ "$status" = "405" ]; then
+              echo "Branch-local Ultra research server is ready."
+              exit 0
+            fi
+            sleep 0.5
+          done
 
-          echo "::add-mask::$publishable_key"
-          echo "SUPABASE_URL=$supabase_url" >> "$GITHUB_ENV"
-          echo "SUPABASE_PUBLISHABLE_KEY=$publishable_key" >> "$GITHUB_ENV"
-          echo "Using canonical Supabase project host from Android production config."
+          echo "::error::Branch-local Ultra research server did not become ready"
+          cat "$log" || true
+          exit 1
 
       - name: Build reproducible 220-question broad-spectrum smoke plan
         shell: bash
@@ -671,8 +687,8 @@ jobs:
           import urllib.error
           import urllib.request
 
-          endpoint = os.environ["SUPABASE_URL"].rstrip("/") + "/functions/v1/ultra-research"
-          api_key = os.environ["SUPABASE_PUBLISHABLE_KEY"]
+          endpoint = os.environ["ULTRA_RESEARCH_ENDPOINT"]
+          api_key = os.environ["ULTRA_RESEARCH_API_KEY"]
           seed = os.environ["SMOKE_SEED"]
           plan_path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
           rows = [json.loads(line) for line in open(plan_path, encoding="utf-8")][1:]
@@ -777,7 +793,7 @@ jobs:
               return case, "PASS", "ok"
 
           results = []
-          with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+          with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
               futures = [executor.submit(run_case, case) for case in rows]
               for future in concurrent.futures.as_completed(futures):
                   results.append(future.result())
@@ -829,3 +845,16 @@ jobs:
           if failures != 0:
               sys.exit(1)
           PY
+
+      - name: Stop branch-local Ultra research server
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${ULTRA_RESEARCH_PID:-}" ]; then
+            kill "$ULTRA_RESEARCH_PID" 2>/dev/null || true
+          fi
+          if [ -f "$RUNNER_TEMP/ultra-research-local.log" ]; then
+            echo "---- branch-local Ultra research log tail ----"
+            tail -n 120 "$RUNNER_TEMP/ultra-research-local.log" || true
+          fi
+
