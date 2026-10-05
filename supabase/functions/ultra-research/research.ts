@@ -2846,6 +2846,25 @@ function generalKnowledgeSearchTopic(
   return [canonicalTopic, ...hints].filter(Boolean).join(" ").trim();
 }
 
+function candidateMatchesKnownMeaning(
+  query: string,
+  title: string,
+  extract: string,
+): boolean {
+  const cleanQuery = normalize(query);
+  const candidate = normalize(title + " " + extract);
+
+  if (/\bsinonim/.test(cleanQuery)) {
+    const namesSynonymConcept = /\bsinonim/.test(candidate);
+    const explainsWordMeaning =
+      /\bsemant/.test(candidate) ||
+      (/\bpalabra/.test(candidate) && /\bsignific/.test(candidate));
+    return namesSynonymConcept && explainsWordMeaning;
+  }
+
+  return true;
+}
+
 function candidateRelevanceScore(
   searchTopic: string,
   query: string,
@@ -3002,6 +3021,7 @@ async function wikipediaGeneratorEvidence(
       const title = stringValue(page.title);
       const extract = stringValue(page.extract);
       if (!title || !extract) return null;
+      if (!candidateMatchesKnownMeaning(query, title, extract)) return null;
 
       return {
         page,
@@ -3159,6 +3179,10 @@ async function generalKnowledgeEvidence(
 
     if (!extract) continue;
     sawUsableCandidate = true;
+
+    if (!candidateMatchesKnownMeaning(query, title, extract)) {
+      continue;
+    }
 
     if (
       !isExplicitEnglishKnowledgeQuery(query) &&
