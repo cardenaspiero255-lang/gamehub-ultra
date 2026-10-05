@@ -9,7 +9,7 @@ class UltraAiCore41Test {
     @Test
     fun `core separates observation recommendation explanation feedback and memory layers`() {
         val core = UltraAiCore2(
-            recommender = UltraAiRecommender { observation, _ ->
+            recommender = UltraAiRecommender { observation, _, _ ->
                 UltraAiRecommendation(
                     profileId = "BALANCED",
                     confidence = 0.80,
@@ -195,7 +195,7 @@ class UltraAiCore41Test {
     @Test
     fun `explanation exposes only sanitized available metrics and handles empty model evidence`() {
         val result = UltraAiCore2(
-            recommender = UltraAiRecommender { _, _ ->
+            recommender = UltraAiRecommender { _, _, _ ->
                 UltraAiRecommendation(
                     profileId = "X4",
                     confidence = 0.91,
