@@ -324,14 +324,16 @@ function candidateMatchesTopic(
   topic: string,
   candidateText: string,
 ): boolean {
-  const topicTokens = evidenceTokens(topic);
-  if (topicTokens.size === 0) return true;
-  const candidateTokens = evidenceTokens(candidateText);
-  return [...topicTokens].some((topicToken) =>
-    [...candidateTokens].some((candidateToken) =>
+  const topicTokens = [...evidenceTokens(topic)];
+  if (topicTokens.length === 0) return true;
+  const candidateTokens = [...evidenceTokens(candidateText)];
+  const matchedTopics = topicTokens.filter((topicToken) =>
+    candidateTokens.some((candidateToken) =>
       evidenceTokensRelated(topicToken, candidateToken)
     )
   );
+  const requiredMatches = topicTokens.length >= 2 ? 2 : 1;
+  return matchedTopics.length >= requiredMatches;
 }
 
 function candidateMatchesQuery(
@@ -394,7 +396,7 @@ function primaryEvidenceTimeoutMs(
   if (Number.isFinite(configured) && configured > 0) {
     return Math.max(150, Math.min(3_000, Math.trunc(configured)));
   }
-  return 1_000;
+  return 1_800;
 }
 
 function remainingRouteBudgetMs(deadlineAt: number): number {
@@ -1380,6 +1382,9 @@ async function fetchWithRetry(
       if (response === null) {
         if (externalSignal?.aborted || attempt === maxAttempts) return null;
       } else {
+        if (response.status === 429) {
+          return response;
+        }
         const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
         if (!shouldRetry || attempt === maxAttempts) {
           return response;
@@ -2291,6 +2296,12 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^resume qu[eé] es\s+(.+?)\s+sin asumir conocimientos t[eé]cnicos\.?$/i,
     /^expl[ií]came de forma sencilla qu[eé] es\s+(.+?)\.?$/i,
     /^para qu[eé] sirve o por qu[eé] es importante\s+(.+?)\.?$/i,
+    /^qu[eé] significa\s+(.+?)\.?$/i,
+    /^qu[eé] diferencia hay entre\s+(.+?)\.?$/i,
+    /^qu[eé] productos fabrica\s+(.+?)\.?$/i,
+    /^cu[aá]ndo comenz[oó]\s+(.+?)\.?$/i,
+    /^qui[eé]n fue\s+(.+?)\.?$/i,
+    /^qu[eé] fue\s+(.+?)\.?$/i,
   ];
 
   for (const wrapper of wrappers) {
@@ -2742,7 +2753,7 @@ async function generalKnowledgeEvidence(
   searchUrl.searchParams.set("action", "query");
   searchUrl.searchParams.set("list", "search");
   searchUrl.searchParams.set("srsearch", topic);
-  searchUrl.searchParams.set("srlimit", "1");
+  searchUrl.searchParams.set("srlimit", "5");
   searchUrl.searchParams.set("format", "json");
   searchUrl.searchParams.set("origin", "*");
 
@@ -2753,91 +2764,97 @@ async function generalKnowledgeEvidence(
   const results = search?.query && typeof search.query === "object"
     ? (search.query as JsonObject).search
     : null;
-  const first = Array.isArray(results) && results[0] && typeof results[0] === "object"
-    ? results[0] as JsonObject
-    : null;
-  const title = stringValue(first?.title);
-  if (!title) {
+  const candidates = Array.isArray(results)
+    ? results
+      .filter((item): item is JsonObject =>
+        Boolean(item) && typeof item === "object"
+      )
+      .slice(0, 5)
+    : [];
+
+  if (candidates.length === 0) {
     return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
   }
 
-  const summaryUrl =
-    `https://${wikipediaHost}/api/rest_v1/page/summary/` +
-    encodeURIComponent(title.replace(/ /g, "_"));
-  const summary = await fetchJson(deps, summaryUrl, {
-    headers: { "User-Agent": USER_AGENT },
-    signal,
-  });
-  const summaryType = stringValue(summary?.type)?.toLowerCase();
-  if (summaryType === "disambiguation") {
-    return abstain("Wikipedia devolvió una desambiguación sin evidencia suficiente.");
-  }
-  const extract = stringValue(summary?.extract);
-  if (!extract) {
-    const actionFallback = await wikipediaActionExtract(title, deps, signal);
-    if (!actionFallback) {
-      return abstain("Wikipedia no devolvió una explicación utilizable.");
-    }
-
-    if (
-      !isExplicitEnglishKnowledgeQuery(query) &&
-      !candidateMatchesTopic(
-        topic,
-        title + " " + actionFallback.extract,
-      )
-    ) {
+  let sawUsableCandidate = false;
+  for (const candidate of candidates) {
+    if (signal?.aborted) {
       return abstain(
-        "Wikipedia devolvió una entrada que no coincide con el tema consultado.",
+        "La búsqueda principal fue cancelada antes de resolver el tema.",
         {
-          reasonCode: "IRRELEVANT_PRIMARY_EVIDENCE",
-          retryable: false,
+          reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
+          retryable: true,
           stage: "wikipedia",
         },
       );
     }
 
+    const title = stringValue(candidate.title);
+    if (!title) continue;
+
+    const summaryUrl =
+      \`https://\${wikipediaHost}/api/rest_v1/page/summary/\` +
+      encodeURIComponent(title.replace(/ /g, "_"));
+    const summary = await fetchJson(deps, summaryUrl, {
+      headers: { "User-Agent": USER_AGENT },
+      signal,
+    });
+    const summaryType = stringValue(summary?.type)?.toLowerCase();
+    if (summaryType === "disambiguation") continue;
+
+    let extract = stringValue(summary?.extract);
+    let source: string | undefined;
+
+    if (!extract) {
+      const actionFallback = await wikipediaActionExtract(title, deps, signal);
+      if (!actionFallback) continue;
+      extract = actionFallback.extract;
+      source = actionFallback.source;
+    } else {
+      const contentUrls = summary?.content_urls &&
+          typeof summary.content_urls === "object"
+        ? summary.content_urls as JsonObject
+        : null;
+      const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
+        ? contentUrls.desktop as JsonObject
+        : null;
+      source = stringValue(desktop?.page) ?? summaryUrl;
+    }
+
+    if (!extract) continue;
+    sawUsableCandidate = true;
+
+    if (
+      !isExplicitEnglishKnowledgeQuery(query) &&
+      !candidateMatchesTopic(topic, title + " " + extract)
+    ) {
+      continue;
+    }
+
+    const resolvedSource = source ?? summaryUrl;
     return {
-      claimKey: `general:${slug(title)}`,
-      value: normalize(actionFallback.extract),
-      displayText: actionFallback.extract,
-      sourceId: actionFallback.source,
-      sourceIds: [actionFallback.source],
+      claimKey: \`general:\${slug(title)}\`,
+      value: normalize(extract),
+      displayText: extract,
+      sourceId: resolvedSource,
+      sourceIds: [resolvedSource],
       independentSourceCount: 1,
       authoritative: true,
     };
   }
 
-  if (
-    !isExplicitEnglishKnowledgeQuery(query) &&
-    !candidateMatchesTopic(topic, title + " " + extract)
-  ) {
-    return abstain(
-      "Wikipedia devolvió una entrada que no coincide con el tema consultado.",
-      {
-        reasonCode: "IRRELEVANT_PRIMARY_EVIDENCE",
-        retryable: false,
-        stage: "wikipedia",
-      },
-    );
-  }
-
-  const contentUrls = summary?.content_urls && typeof summary.content_urls === "object"
-    ? summary.content_urls as JsonObject
-    : null;
-  const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
-    ? contentUrls.desktop as JsonObject
-    : null;
-  const source = stringValue(desktop?.page) ?? summaryUrl;
-
-  return {
-    claimKey: `general:${slug(title)}`,
-    value: normalize(extract),
-    displayText: extract,
-    sourceId: source,
-    sourceIds: [source],
-    independentSourceCount: 1,
-    authoritative: true,
-  };
+  return abstain(
+    sawUsableCandidate
+      ? "Wikipedia devolvió entradas que no coinciden con el tema consultado."
+      : "Wikipedia no devolvió una explicación utilizable.",
+    {
+      reasonCode: sawUsableCandidate
+        ? "IRRELEVANT_PRIMARY_EVIDENCE"
+        : "UPSTREAM_UNAVAILABLE",
+      retryable: !sawUsableCandidate,
+      stage: "wikipedia",
+    },
+  );
 }
 
 function mergeGeneralKnowledgeEvidence(
