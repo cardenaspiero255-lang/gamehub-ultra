@@ -2770,6 +2770,12 @@ function generalKnowledgeSearchTopic(
   ) {
     canonicalTopic = "HDR alto rango dinámico";
     hints.push("television", "brillo", "contraste");
+  } else if (
+    /\b120\s*hz\b/.test(clean) &&
+    /\b(?:tv|television|televisor|pantalla)\b/.test(clean)
+  ) {
+    canonicalTopic = "tasa de refresco 120 Hz";
+    hints.push("pantalla", "television", "refresco");
   } else if (/\bip68\b/.test(clean)) {
     canonicalTopic = "IP68 grado de protección IP";
     hints.push("polvo", "agua", "dispositivo");
@@ -2809,6 +2815,12 @@ function generalKnowledgeSearchTopic(
   } else if (/\brespir/.test(clean) && /\bpeces?\b/.test(clean)) {
     canonicalTopic = "respiración de los peces";
     hints.push("branquias");
+  } else if (
+    /\bhigiene dental\b/.test(clean) &&
+    /\b(?:mascota|perro|gato|veterinari)\b/.test(clean)
+  ) {
+    canonicalTopic = "higiene dental veterinaria";
+    hints.push("mascota", "dientes", "encias");
   }
 
   if (/\bmas grande\b/.test(clean) || /\bmayor tamano\b/.test(clean)) {
@@ -2919,6 +2931,19 @@ function candidateRelevanceScore(
     normalizedTitle === "fernanfloo"
   ) {
     score += 30;
+  }
+  if (
+    /\b120\s*hz\b/.test(cleanQuery) &&
+    normalizedTitle.includes("tasa de refresco")
+  ) {
+    score += 28;
+  }
+  if (
+    /\bhigiene dental\b/.test(cleanQuery) &&
+    (normalizedTitle.includes("higiene dental") ||
+      normalizedExtract.includes("dientes"))
+  ) {
+    score += 28;
   }
 
   return score;
