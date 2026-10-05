@@ -80,7 +80,11 @@ private companion object {
 """
         stats = gate.calculate_patch_line_coverage(
             report,
-            {"app/src/main/java/com/example/Foo.kt": set(range(1, 15))},
+            {
+                "app/src/main/java/com/example/Foo.kt": {
+                    1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15
+                }
+            },
             {"app/src/main/java/com/example/Foo.kt": source},
         )
         self.assertEqual(stats.unmapped_files, ())
