@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
 enum class AiAdviceReason {
@@ -32,7 +33,8 @@ data class GameHubAiContext(
     val storageFreePercent: Int,
     val inputDeviceCount: Int,
     val selectedProfile: PerformanceProfile,
-    val sessionActive: Boolean
+    val sessionActive: Boolean,
+    val optimizationObservations: List<OptimizationObservation> = emptyList()
 )
 
 data class GameHubAiAdvice(
