@@ -4128,3 +4128,225 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "general knowledge skips an irrelevant Wikipedia result and uses a later relevant candidate",
+  async () => {
+    const summaries: string[] = [];
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              search: [
+                { title: "Crucifixión de Jesús" },
+                { title: "Yeso" },
+              ],
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          const title = decodeURIComponent(
+            url.pathname.split("/").pop() ?? "",
+          ).replaceAll("_", " ");
+          summaries.push(title);
+          if (title.includes("Crucifixión")) {
+            return jsonResponse({
+              title: "Crucifixión de Jesús",
+              type: "standard",
+              extract:
+                "La crucifixión de Jesús ocurrió en Judea durante el siglo I.",
+              content_urls: {
+                desktop: {
+                  page:
+                    "https://es.wikipedia.org/wiki/Crucifixi%C3%B3n_de_Jes%C3%BAs",
+                },
+              },
+            });
+          }
+          return jsonResponse({
+            title: "Yeso",
+            type: "standard",
+            extract:
+              "El yeso es un material usado en construcción para revestimientos, tabiques y acabados.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Yeso" },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Si alguien me pregunta por el yeso en construcción, ¿cómo lo explicarías en pocas frases?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected relevant Wikipedia answer");
+    if (!result.displayText?.toLowerCase().includes("yeso")) {
+      throw new Error("expected answer about yeso");
+    }
+    if (result.displayText?.toLowerCase().includes("crucifix")) {
+      throw new Error("irrelevant first search result leaked");
+    }
+    if (summaries.length < 2) {
+      throw new Error("expected the resolver to inspect a later candidate");
+    }
+  },
+);
+
+Deno.test(
+  "multi-token knowledge topics require strong relevance instead of one generic overlap",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              search: [
+                { title: "High Frame Rate" },
+                { title: "Frecuencia de imagen en videojuegos" },
+              ],
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          const title = decodeURIComponent(
+            url.pathname.split("/").pop() ?? "",
+          ).replaceAll("_", " ");
+          if (title.includes("High Frame Rate")) {
+            return jsonResponse({
+              title: "High Frame Rate",
+              type: "standard",
+              extract:
+                "High Frame Rate es una técnica de proyección cinematográfica a más de 24 fps.",
+              content_urls: {
+                desktop: {
+                  page: "https://es.wikipedia.org/wiki/High_Frame_Rate",
+                },
+              },
+            });
+          }
+          return jsonResponse({
+            title: "Frecuencia de imagen en videojuegos",
+            type: "standard",
+            extract:
+              "En videojuegos, FPS suele referirse a fotogramas por segundo y mide cuántas imágenes se muestran cada segundo.",
+            content_urls: {
+              desktop: {
+                page:
+                  "https://es.wikipedia.org/wiki/Frecuencia_de_imagen_en_videojuegos",
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué significa FPS en videojuegos?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected relevant FPS answer");
+    const text = result.displayText?.toLowerCase() ?? "";
+    if (!text.includes("videojuegos") || !text.includes("fotogram")) {
+      throw new Error("expected gaming FPS meaning, not generic cinema HFR");
+    }
+  },
+);
+
+Deno.test(
+  "rate-limited Gemini falls through to xAI without retrying the same 429",
+  async () => {
+    let geminiCalls = 0;
+    let xaiCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalls += 1;
+          return new Response("quota", { status: 429 });
+        }
+        if (url.hostname === "api.x.ai") {
+          xaiCalls += 1;
+          return jsonResponse({
+            choices: [{
+              message: {
+                content:
+                  "Un catalizador acelera una reacción química sin consumirse de forma permanente en ella.",
+              },
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        if (name === "XAI_API_KEY") return "xai-test-key";
+        return undefined;
+      },
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un catalizador?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (geminiCalls !== 1) {
+      throw new Error(
+        "429 must not hammer the same provider; calls=" + geminiCalls,
+      );
+    }
+    if (xaiCalls !== 1 || result.abstained) {
+      throw new Error("expected immediate cross-provider fallback");
+    }
+    if (!result.displayText?.toLowerCase().includes("catalizador")) {
+      throw new Error("expected useful xAI fallback");
+    }
+  },
+);
