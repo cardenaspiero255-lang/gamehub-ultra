@@ -296,9 +296,20 @@ function queryTopicTokens(query: string): Set<string> {
   return evidenceTokens(topic || stripAssistantInvocation(query));
 }
 
+function crossLanguageEvidenceToken(value: string): string {
+  return value
+    .replaceAll("ph", "f")
+    .replaceAll("th", "t")
+    .replaceAll("y", "i");
+}
+
 function evidenceTokensRelated(first: string, second: string): boolean {
   if (first === second) return true;
   if (Math.min(first.length, second.length) < 6) return false;
+
+  const crossFirst = crossLanguageEvidenceToken(first);
+  const crossSecond = crossLanguageEvidenceToken(second);
+  if (crossFirst === crossSecond) return true;
 
   let commonPrefix = 0;
   const limit = Math.min(first.length, second.length);
@@ -2324,6 +2335,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^resume qu[eé] es\s+(.+?)\s+sin asumir conocimientos t[eé]cnicos\.?$/i,
     /^expl[ií]came de forma sencilla qu[eé] es\s+(.+?)\.?$/i,
     /^para qu[eé] sirve o por qu[eé] es importante\s+(.+?)\.?$/i,
+    /^por qu[eé] es importante\s+(?:(?:el|la|los|las|un|una)\s+)?(.+?)\.?$/i,
     /^qu[eé] significa\s+(.+?)\.?$/i,
     /^qu[eé] diferencia hay entre\s+(.+?)\.?$/i,
     /^qu[eé] productos fabrica\s+(.+?)\.?$/i,
