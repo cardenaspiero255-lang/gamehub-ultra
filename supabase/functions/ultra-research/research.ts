@@ -3527,8 +3527,9 @@ async function generalKnowledgeEvidence(
   const relevanceTopic = dependentFollowUp
     ? previousTopic
     : topicPlan.relevanceTopic;
+  const cacheTopic = dependentFollowUp ? topic : relevanceTopic;
   if (!technicalTroubleshooting) {
-    const cached = cachedStableKnowledge(deps.fetcher, relevanceTopic);
+    const cached = cachedStableKnowledge(deps.fetcher, cacheTopic);
     if (cached) return cached;
   }
   const generatorEvidence = await wikipediaGeneratorEvidence(
@@ -3541,7 +3542,7 @@ async function generalKnowledgeEvidence(
   if (generatorEvidence) {
     return rememberStableKnowledge(
       deps.fetcher,
-      relevanceTopic,
+      cacheTopic,
       generatorEvidence,
     );
   }
@@ -3579,7 +3580,7 @@ async function generalKnowledgeEvidence(
       signal,
     );
     if (!wikidata.abstained) {
-      return rememberStableKnowledge(deps.fetcher, relevanceTopic, wikidata);
+      return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
     }
     return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
   }
@@ -3645,7 +3646,7 @@ async function generalKnowledgeEvidence(
     const resolvedSource = source ?? summaryUrl;
     return rememberStableKnowledge(
       deps.fetcher,
-      relevanceTopic,
+      cacheTopic,
       {
         claimKey: `general:${slug(title)}`,
         value: normalize(extract),
@@ -3666,7 +3667,7 @@ async function generalKnowledgeEvidence(
     signal,
   );
   if (!wikidata.abstained) {
-    return rememberStableKnowledge(deps.fetcher, relevanceTopic, wikidata);
+    return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
   }
 
   return abstain(
