@@ -4723,6 +4723,30 @@ Deno.test(
           "El Rubius es un youtuber y creador de contenido español conocido por sus videos de entretenimiento y videojuegos.",
         expected: "youtuber",
       },
+      {
+        query: "¿Qué es HDR en una TV?",
+        searchMustContain: ["hdr", "rango"],
+        title: "Alto rango dinámico",
+        extract:
+          "El alto rango dinámico o HDR en televisión amplía el rango de luminancia y contraste para representar más detalle entre zonas oscuras y brillantes.",
+        expected: "rango",
+      },
+      {
+        query: "¿Qué significa IP68 en un celular?",
+        searchMustContain: ["ip68", "proteccion"],
+        title: "Grado de protección IP",
+        extract:
+          "IP68 es una clasificación del grado de protección frente a polvo y agua usada en dispositivos electrónicos.",
+        expected: "proteccion",
+      },
+      {
+        query: "¿Quién es Fernanfloo?",
+        searchMustContain: ["fernanfloo", "youtuber"],
+        title: "Fernanfloo",
+        extract:
+          "Fernanfloo es un youtuber y creador de contenido salvadoreño conocido por videos de videojuegos y entretenimiento.",
+        expected: "youtuber",
+      },
     ];
 
     for (const testCase of cases) {
