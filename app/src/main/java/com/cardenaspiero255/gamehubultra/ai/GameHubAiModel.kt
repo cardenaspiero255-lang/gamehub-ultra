@@ -42,7 +42,8 @@ data class GameHubAiAdvice(
     val suggestedProfile: PerformanceProfile,
     val reason: AiAdviceReason,
     val localModelUsed: Boolean,
-    val fallbackUsed: Boolean
+    val fallbackUsed: Boolean,
+    val recoveryExplanation: String? = null
 )
 
 data class LocalAiActionCandidate(
