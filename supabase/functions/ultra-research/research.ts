@@ -311,6 +311,15 @@ function evidenceTokensRelated(first: string, second: string): boolean {
   return commonPrefix >= 6;
 }
 
+function isExplicitEnglishKnowledgeQuery(query: string): boolean {
+  const clean = normalize(
+    stripAssistantInvocation(stripConversationSpeaker(query)),
+  ).replace(/^[?!\s]+|[?!\s]+$/g, "");
+  return /^(?:what is|what are|who is|who are|why|how does|how do|where is|when was|define|explain)\b/.test(
+    clean,
+  );
+}
+
 function candidateMatchesTopic(
   topic: string,
   candidateText: string,
@@ -2771,6 +2780,7 @@ async function generalKnowledgeEvidence(
     }
 
     if (
+      !isExplicitEnglishKnowledgeQuery(query) &&
       !candidateMatchesTopic(
         topic,
         title + " " + actionFallback.extract,
@@ -2797,7 +2807,10 @@ async function generalKnowledgeEvidence(
     };
   }
 
-  if (!candidateMatchesTopic(topic, title + " " + extract)) {
+  if (
+    !isExplicitEnglishKnowledgeQuery(query) &&
+    !candidateMatchesTopic(topic, title + " " + extract)
+  ) {
     return abstain(
       "Wikipedia devolvió una entrada que no coincide con el tema consultado.",
       {
