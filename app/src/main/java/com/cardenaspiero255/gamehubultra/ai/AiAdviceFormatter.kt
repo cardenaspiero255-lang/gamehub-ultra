@@ -15,7 +15,17 @@ object AiAdviceFormatter {
         )
 
     fun fullResponse(context: Context, advice: GameHubAiAdvice): String =
-        title(context, advice) + ". " + explanation(context, advice)
+        buildString {
+            append(title(context, advice))
+            append(". ")
+            append(explanation(context, advice))
+            advice.recoveryExplanation
+                ?.takeIf(String::isNotBlank)
+                ?.let {
+                    append(" ")
+                    append(it)
+                }
+        }
 
     private fun profileTitleRes(profile: com.cardenaspiero255.gamehubultra.domain.PerformanceProfile): Int =
         when (profile) {
