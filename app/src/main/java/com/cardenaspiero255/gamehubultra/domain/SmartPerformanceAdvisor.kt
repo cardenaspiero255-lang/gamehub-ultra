@@ -51,13 +51,33 @@ object SmartPerformanceAdvisor {
         val gpuFamily = detectGpuFamily(input.device.gpuVendor, input.device.gpuRenderer)
 
         val knownBad = input.historicalObservations
-            .filter { it.failed || it.highTemperature }
+            .filter {
+                it.failed ||
+                    it.highTemperature ||
+                    it.feedbackDecision == OptimizationFeedbackDecision.REJECTED ||
+                    it.feedbackDecision == OptimizationFeedbackDecision.REVERTED
+            }
             .groupingBy { it.profile }
             .eachCount()
-        val knownGood = input.historicalObservations
+        val measuredGood = input.historicalObservations
             .filter { it.stable && !it.failed && !it.highTemperature }
             .groupingBy { it.profile }
             .eachCount()
+        val acceptedFeedback = input.historicalObservations
+            .filter {
+                it.feedbackDecision == OptimizationFeedbackDecision.ACCEPTED &&
+                    !it.failed &&
+                    !it.highTemperature
+            }
+            .groupingBy { it.profile }
+            .eachCount()
+        val knownGood = buildMap {
+            PerformanceProfile.entries.forEach { profile ->
+                val count = measuredGood.getOrDefault(profile, 0) +
+                    acceptedFeedback.getOrDefault(profile, 0)
+                if (count > 0) put(profile, count)
+            }
+        }
 
         val baseScores = linkedMapOf(
             PerformanceProfile.BALANCED to 60,
@@ -131,8 +151,27 @@ object SmartPerformanceAdvisor {
             runtime?.refresh?.currentRefreshRateHz?.let { add("Refresco actual: " + it.toInt() + " Hz") }
             runtime?.thermal?.status?.let { add("Estado térmico: " + it) }
             runtime?.battery?.percent?.let { add("Batería: " + it + "%") }
-            if (knownGood.isNotEmpty()) add("Usa resultados estables guardados localmente")
-            if (knownBad.isNotEmpty()) add("Evita configuraciones con fallos/temperatura excesiva")
+            if (measuredGood.isNotEmpty()) {
+                add("Usa resultados estables guardados localmente")
+            }
+            if (acceptedFeedback.isNotEmpty()) {
+                add("Considera recomendaciones aceptadas previamente")
+            }
+            if (
+                input.historicalObservations.any {
+                    it.feedbackDecision == OptimizationFeedbackDecision.REJECTED ||
+                        it.feedbackDecision == OptimizationFeedbackDecision.REVERTED
+                }
+            ) {
+                add("Evita recomendaciones rechazadas o revertidas repetidamente")
+            }
+            if (
+                input.historicalObservations.any {
+                    it.failed || it.highTemperature
+                }
+            ) {
+                add("Evita configuraciones con fallos/temperatura excesiva")
+            }
         }
 
         val reason = when {
@@ -140,7 +179,10 @@ object SmartPerformanceAdvisor {
             lowBattery -> "Batería baja: se prioriza estabilidad y consumo."
             memoryPressure -> "Presión de memoria alta: se reduce el riesgo de inestabilidad."
             storagePressure -> "Almacenamiento libre bajo: se evita una configuración agresiva."
-            knownGood.containsKey(best) -> "Existe evidencia local de estabilidad para este perfil."
+            measuredGood.containsKey(best) ->
+                "Existe evidencia local de estabilidad para este perfil."
+            acceptedFeedback.containsKey(best) ->
+                "Este perfil fue aceptado previamente en este dispositivo y juego."
             best == PerformanceProfile.X4 -> "El dispositivo expone suficiente capacidad para probar X4 de forma conservadora."
             best == PerformanceProfile.FRAME_INTERPOLATION -> "El perfil encaja con un refresco alto y sin presión térmica relevante."
             else -> "Se conserva un perfil equilibrado con la evidencia disponible."
