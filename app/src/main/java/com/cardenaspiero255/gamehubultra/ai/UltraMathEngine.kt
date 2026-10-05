@@ -624,9 +624,10 @@ object UltraMathEngine {
         val magnitudeToken = match.groupValues[3]
         if (baseToken.isBlank() && magnitudeToken.isBlank()) return null
 
+        val numericBase = baseToken.toDecimalOrNull()
         val base = when {
             baseToken.isBlank() -> BigDecimal.ONE
-            baseToken.toDecimalOrNull() != null -> baseToken.toDecimalOrNull()!!
+            numericBase != null -> numericBase
             else -> BigDecimal.valueOf(
                 writtenArithmeticNumbers.getValue(baseToken).toLong()
             )
