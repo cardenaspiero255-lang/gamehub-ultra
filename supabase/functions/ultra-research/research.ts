@@ -2905,11 +2905,14 @@ function generalKnowledgeSearchTopic(
     hints.push("empresa", "tecnologia");
   }
 
-  const relevanceTopic = canonicalTopic.trim();
+  const canonicalRelevanceTopic = canonicalTopic.trim();
+  const relevanceTopic = /\b120\s*hz\b/.test(clean)
+    ? "120 pantalla"
+    : canonicalRelevanceTopic;
   return {
-    searchTopic: [relevanceTopic, ...hints].filter(Boolean).join(" ").trim(),
+    searchTopic: [canonicalRelevanceTopic, ...hints].filter(Boolean).join(" ").trim(),
     relevanceTopic,
-    wikidataTopic: wikidataEntitySearchTopic(relevanceTopic),
+    wikidataTopic: wikidataEntitySearchTopic(canonicalRelevanceTopic),
   };
 }
 
@@ -3282,9 +3285,12 @@ async function generalKnowledgeEvidence(
 
   const topicPlan = generalKnowledgeSearchTopic(query, topic);
   const searchTopic = topicPlan.searchTopic;
+  const relevanceTopic = dependentFollowUp
+    ? previousTopic
+    : topicPlan.relevanceTopic;
   const generatorEvidence = await wikipediaGeneratorEvidence(
     searchTopic,
-    topicPlan.relevanceTopic,
+    relevanceTopic,
     query,
     deps,
     signal,
@@ -3318,7 +3324,7 @@ async function generalKnowledgeEvidence(
   if (candidates.length === 0) {
     const wikidata = await wikidataKnowledgeEvidence(
       topicPlan.wikidataTopic,
-      topicPlan.relevanceTopic,
+      relevanceTopic,
       query,
       deps,
       signal,
@@ -3380,7 +3386,7 @@ async function generalKnowledgeEvidence(
     }
 
     if (
-      !candidateMatchesTopic(topicPlan.relevanceTopic, title + " " + extract)
+      !candidateMatchesTopic(relevanceTopic, title + " " + extract)
     ) {
       continue;
     }
@@ -3399,7 +3405,7 @@ async function generalKnowledgeEvidence(
 
   const wikidata = await wikidataKnowledgeEvidence(
     topicPlan.wikidataTopic,
-    topicPlan.relevanceTopic,
+    relevanceTopic,
     query,
     deps,
     signal,
