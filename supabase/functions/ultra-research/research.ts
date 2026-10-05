@@ -3145,6 +3145,100 @@ async function wikipediaGeneratorEvidence(
   return null;
 }
 
+async function wikidataKnowledgeEvidence(
+  searchTopic: string,
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const url = new URL("https://www.wikidata.org/w/api.php");
+  url.searchParams.set("action", "wbsearchentities");
+  url.searchParams.set("search", searchTopic);
+  url.searchParams.set("language", "es");
+  url.searchParams.set("uselang", "es");
+  url.searchParams.set("type", "item");
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const response = await fetchWithRetry(
+    deps,
+    url,
+    {
+      headers: { "User-Agent": USER_AGENT },
+      signal,
+    },
+    3,
+  );
+  if (!response?.ok) {
+    return abstain(
+      "Wikidata no está disponible para respaldar esta consulta.",
+      {
+        reasonCode: response
+          ? upstreamReasonCode(response.status)
+          : "UPSTREAM_UNAVAILABLE",
+        retryable: !response || RETRYABLE_HTTP_STATUSES.has(response.status),
+        stage: "wikidata",
+        upstreamStatus: response?.status,
+      },
+    );
+  }
+
+  let payload: JsonObject | null = null;
+  try {
+    const parsed = await response.json();
+    payload = parsed && typeof parsed === "object"
+      ? parsed as JsonObject
+      : null;
+  } catch {
+    payload = null;
+  }
+
+  const raw = Array.isArray(payload?.search) ? payload.search : [];
+  for (const entry of raw.slice(0, 5)) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry as JsonObject;
+    const id = stringValue(item.id);
+    const label = stringValue(item.label);
+    const description = stringValue(item.description);
+    const aliases = Array.isArray(item.aliases)
+      ? item.aliases
+        .map((alias) => typeof alias === "string" ? alias : "")
+        .filter(Boolean)
+        .join(" ")
+      : "";
+    if (!id || !label || !description) continue;
+
+    const candidateText = [label, description, aliases]
+      .filter(Boolean)
+      .join(" ");
+    if (!candidateMatchesKnownMeaning(query, label, description)) continue;
+    if (!candidateMatchesTopic(searchTopic, candidateText)) continue;
+
+    const source = stringValue(item.concepturi) ??
+      `https://www.wikidata.org/wiki/${encodeURIComponent(id)}`;
+    const displayText = `${label}: ${description}.`;
+    return {
+      claimKey: `wikidata:${slug(id)}:${slug(label)}`,
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "Wikidata no encontró una descripción suficientemente relacionada con la consulta.",
+    {
+      reasonCode: "IRRELEVANT_PRIMARY_EVIDENCE",
+      retryable: false,
+      stage: "wikidata",
+    },
+  );
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -3169,13 +3263,35 @@ async function generalKnowledgeEvidence(
   }
 
   const searchTopic = generalKnowledgeSearchTopic(query, topic);
-  const generatorEvidence = await wikipediaGeneratorEvidence(
+  const wikipediaPromise = wikipediaGeneratorEvidence(
     searchTopic,
     query,
     deps,
     signal,
   );
-  if (generatorEvidence) return generatorEvidence;
+  const wikidataPromise = wikidataKnowledgeEvidence(
+    searchTopic,
+    query,
+    deps,
+    signal,
+  ).then((result) => result.abstained ? null : result);
+
+  const firstPrimary = await Promise.race([
+    wikipediaPromise.then((value) => ({
+      provider: "wikipedia" as const,
+      value,
+    })),
+    wikidataPromise.then((value) => ({
+      provider: "wikidata" as const,
+      value,
+    })),
+  ]);
+  if (firstPrimary.value) return firstPrimary.value;
+
+  const secondPrimary = firstPrimary.provider === "wikipedia"
+    ? await wikidataPromise
+    : await wikipediaPromise;
+  if (secondPrimary) return secondPrimary;
 
   const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
