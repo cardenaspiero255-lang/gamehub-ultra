@@ -608,7 +608,7 @@ object UltraMathEngine {
             "trillion", "trillions" -> BigDecimal("1000000000000")
             else -> return null
         }
-        return base.multiply(factor, mathContext)
+        return base.multiply(factor)
     }
 
     private data class ArithmeticPattern(
