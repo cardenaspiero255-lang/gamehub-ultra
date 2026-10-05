@@ -687,32 +687,38 @@ def main() -> None:
     for fragment in ("report.xml", "test -s"):
         require_run_fragment(coverage_verify, "coverage XML verification", fragment)
 
-    codecov_warmup = require_step(
+    local_patch_coverage = require_step(
         coverage,
         "coverage",
-        "Warm up Codecov upload after transient transport errors",
-        uses_prefix="codecov/codecov-action@",
-        allowed_if="steps.codecov_token.outputs.available == 'true'",
-        best_effort=True,
+        "Enforce local patch coverage",
+        shell="bash",
     )
-    warmup_with = codecov_warmup.get("with")
-    if not isinstance(warmup_with, dict) or warmup_with.get("fail_ci_if_error") is not True:
-        fail("Codecov warmup no longer reports upload failures")
+    for fragment in (
+        ".github/scripts/local_patch_coverage.py",
+        "report.xml",
+        "--base",
+        "--head",
+        "--min-patch-line 90",
+    ):
+        require_run_fragment(
+            local_patch_coverage,
+            "blocking local patch coverage gate",
+            fragment,
+        )
 
-    codecov_retry = require_step(
+    codecov_probe = require_step(
         coverage,
         "coverage",
-        "Retry Codecov through legacy endpoint",
-        uses_prefix="codecov/codecov-action@",
-        allowed_if=(
-            "steps.codecov_token.outputs.available == 'true' && "
-            "steps.codecov_warmup.outcome != 'success'"
-        ),
-        best_effort=True,
+        "Probe Codecov ingest availability",
+        shell="bash",
+        allowed_if="steps.codecov_token.outputs.available == 'true'",
     )
-    retry_with = codecov_retry.get("with")
-    if not isinstance(retry_with, dict) or retry_with.get("fail_ci_if_error") is not True:
-        fail("Codecov retry no longer reports upload failures")
+    for fragment in (
+        "https://ingest.codecov.io/",
+        "reachable=false",
+        "reachable=true",
+    ):
+        require_run_fragment(codecov_probe, "Codecov availability probe", fragment)
 
     codecov = require_step(
         coverage,
@@ -721,29 +727,46 @@ def main() -> None:
         uses_prefix="codecov/codecov-action@",
         allowed_if=(
             "steps.codecov_token.outputs.available == 'true' && "
-            "steps.codecov_warmup.outcome != 'success' && "
-            "steps.codecov_retry.outcome != 'success'"
+            "steps.codecov_probe.outputs.reachable == 'true'"
         ),
+        best_effort=True,
     )
     with_values = codecov.get("with")
     if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
-        fail("Required Codecov upload no longer has fail_ci_if_error: true")
+        fail("Codecov upload no longer reports upload failures")
 
-    codecov_gate = require_step(
+    codecov_retry = require_step(
         coverage,
         "coverage",
-        "Verify Codecov upload gate",
+        "Retry Codecov through legacy endpoint",
+        uses_prefix="codecov/codecov-action@",
+        allowed_if=(
+            "steps.codecov_token.outputs.available == 'true' && "
+            "steps.codecov_probe.outputs.reachable == 'true' && "
+            "steps.codecov_upload.outcome != 'success'"
+        ),
+        best_effort=True,
+    )
+    retry_with = codecov_retry.get("with")
+    if not isinstance(retry_with, dict) or retry_with.get("fail_ci_if_error") is not True:
+        fail("Codecov retry no longer reports upload failures")
+    if retry_with.get("use_legacy_upload_endpoint") is not True:
+        fail("Codecov retry must preserve the independent legacy endpoint")
+
+    codecov_status = require_step(
+        coverage,
+        "coverage",
+        "Report Codecov upload status",
         shell="bash",
-        allowed_if="steps.codecov_token.outputs.available == 'true'",
+        allowed_if="always() && steps.codecov_token.outputs.available == 'true'",
     )
     for fragment in (
-        "$WARMUP_OUTCOME",
+        "$PROBE_REACHABLE",
+        "$UPLOAD_OUTCOME",
         "$RETRY_OUTCOME",
-        "$REQUIRED_OUTCOME",
-        "All Codecov upload attempts failed.",
-        "exit 1",
+        "local patch coverage",
     ):
-        require_run_fragment(codecov_gate, "Codecov upload verification gate", fragment)
+        require_run_fragment(codecov_status, "Codecov status reporting", fragment)
 
     android_jobs = android.get("jobs")
     if not isinstance(android_jobs, dict):
