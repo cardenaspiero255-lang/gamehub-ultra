@@ -88,7 +88,7 @@ def _looks_executable_source_line(line: str) -> bool:
         return False
     if stripped.startswith(("//", "/*", "*", "*/", "package ", "import ", "@")):
         return False
-    if stripped in {"{", "}", "(", ")", ")", "}", "},", ");", "),", "else ->"}:
+    if stripped in {"{", "}", "(", ")", "},", ");", "),", "else ->"}:
         return False
     if re.match(
         r"^(?:(?:public|private|protected|internal|override|abstract|open|final|"
