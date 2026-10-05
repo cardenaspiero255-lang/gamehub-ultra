@@ -71,4 +71,11 @@ class UltraMathMagnitudeRegressionTest {
         assertEquals("2000000000", UltraMathEngine.solve("1 mil millones por 2")?.resultText)
         assertEquals("-6000000000", UltraMathEngine.solve("menos dos mil millones por 3")?.resultText)
     }
+    @Test
+    fun `written operands without magnitude remain exact and offline`() {
+        assertEquals("-6", UltraMathEngine.solve("menos dos por 3")?.resultText)
+        assertEquals("2", UltraMathEngine.solve("uno x 2")?.resultText)
+        assertEquals("6", UltraMathEngine.solve("two times 3")?.resultText)
+    }
+
 }
