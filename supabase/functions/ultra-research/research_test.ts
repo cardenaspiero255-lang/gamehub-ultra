@@ -6220,3 +6220,55 @@ Deno.test("macroverse gets a transparent nonstandard-term answer instead of gene
     throw new Error("expected ambiguity caveat for macroverse");
   }
 });
+
+
+Deno.test("qualified macroverse question continues to researched evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Multiverso de Stephen King",
+                extract:
+                  "El multiverso de Stephen King conecta mundos y realidades de su ficción, incluida la Torre Oscura.",
+                canonicalurl:
+                  "https://es.wikipedia.org/wiki/Multiverso_de_Stephen_King",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({ results: [] });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es el macroverso de Stephen King?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected researched qualified answer");
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("stephen king") || !answer.includes("torre oscura")) {
+    throw new Error("qualified macroverse question did not use researched evidence");
+  }
+  if (answer.includes("no es un término científico estandarizado")) {
+    throw new Error("generic terminology answer overrode qualified research");
+  }
+});
