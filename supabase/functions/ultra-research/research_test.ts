@@ -6274,7 +6274,6 @@ Deno.test("qualified macroverse question continues to researched evidence", asyn
   }
 });
 
-
 Deno.test("stable machine-learning wrapper survives provider outage without a model", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
@@ -6291,7 +6290,9 @@ Deno.test("stable machine-learning wrapper survives provider outage without a mo
   );
 
   if (result.abstained) {
-    throw new Error("stable machine-learning knowledge must have a local fallback");
+    throw new Error(
+      "stable machine-learning knowledge must have a local fallback",
+    );
   }
   const answer = (result.displayText ?? "").toLowerCase();
   if (
