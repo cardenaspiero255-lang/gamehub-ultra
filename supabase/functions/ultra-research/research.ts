@@ -1071,6 +1071,10 @@ async function maybeSynthesizeWithAi(
   deps: ResearchDependencies,
   routeDeadlineAt?: number,
 ): Promise<ResearchResult> {
+  if (deps.env("ULTRA_DISABLE_OPTIONAL_SYNTHESIS")?.trim() === "1") {
+    return evidence;
+  }
+
   const geminiController = new AbortController();
   const gemini = await settleOptionalSynthesis(
     maybeSynthesizeWithGemini(
