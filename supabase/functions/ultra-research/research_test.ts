@@ -4349,3 +4349,73 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "optional grounded synthesis can be disabled without disabling model fallback",
+  async () => {
+    let geminiCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Motor" }] },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract:
+              "Un motor es una máquina que transforma energía en trabajo mecánico.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalls += 1;
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: {
+                parts: [{
+                  text:
+                    "Un motor es una máquina que transforma energía en trabajo mecánico.",
+                }],
+              },
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected verified answer");
+    if (geminiCalls !== 0) {
+      throw new Error("disabled optional synthesis must preserve model quota");
+    }
+    if (!result.displayText?.toLowerCase().includes("motor")) {
+      throw new Error("verified evidence must still be returned");
+    }
+  },
+);
