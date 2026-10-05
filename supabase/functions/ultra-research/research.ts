@@ -2914,6 +2914,12 @@ function generalKnowledgeSearchTopic(
   ) {
     canonicalTopic = "altavoz Bluetooth";
     hints.push("audio");
+  } else if (/\bexoplanetas?\b/.test(clean)) {
+    canonicalTopic = "planeta extrasolar";
+    hints.push("exoplaneta", "astronomia");
+  } else if (/\bmacro\s*verso\b/.test(clean)) {
+    canonicalTopic = "macroverso";
+    hints.push("ficcion", "cosmologia");
   } else if (/\bsistema operativo\b/.test(clean)) {
     canonicalTopic = "sistema operativo";
   } else if (/\bnavegacion autonoma\b/.test(clean)) {
@@ -3346,6 +3352,27 @@ async function wikidataKnowledgeEvidence(
   );
 }
 
+function stableTerminologyEvidence(query: string): ResearchResult | null {
+  const clean = normalize(stripAssistantInvocation(query));
+
+  if (/\bmacro\s*verso\b/.test(clean)) {
+    const displayText =
+      "«Macroverso» no es un término científico estandarizado. " +
+      "Se usa de forma variable en ficción y otros marcos conceptuales para " +
+      "describir una realidad o estructura de escala superior que puede abarcar " +
+      "uno o varios universos; el significado exacto depende de la obra o contexto.";
+    return {
+      claimKey: "terminology:macroverso",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  return null;
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -3363,6 +3390,9 @@ async function generalKnowledgeEvidence(
     ? [previousTopic, qualifier].filter(Boolean).join(" ").trim()
     : (currentTopic || previousTopic);
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
+
+  const terminology = stableTerminologyEvidence(query);
+  if (terminology) return terminology;
 
   if (isTechnicalTroubleshootingQuery(query)) {
     const technical = await stackOverflowSpanishEvidence(query, deps, signal);
