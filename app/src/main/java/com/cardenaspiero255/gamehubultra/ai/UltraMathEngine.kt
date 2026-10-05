@@ -542,7 +542,7 @@ object UltraMathEngine {
         val patterns = listOf(
             ArithmeticPattern(
                 regex = Regex("""($operand)\s*(?:x|\*|por|times)\s*($operand)"""),
-                operation = { a, b -> a.multiply(b, mathContext) },
+                operation = { a, b -> a.multiply(b) },
                 symbol = "×"
             ),
             ArithmeticPattern(
@@ -558,12 +558,12 @@ object UltraMathEngine {
             ),
             ArithmeticPattern(
                 regex = Regex("""($operand)\s*(?:\+|mas|plus)\s*($operand)"""),
-                operation = { a, b -> a.add(b, mathContext) },
+                operation = { a, b -> a.add(b) },
                 symbol = "+"
             ),
             ArithmeticPattern(
                 regex = Regex("""($operand)\s*(?:-|menos|minus)\s*($operand)"""),
-                operation = { a, b -> a.subtract(b, mathContext) },
+                operation = { a, b -> a.subtract(b) },
                 symbol = "−"
             )
         )
