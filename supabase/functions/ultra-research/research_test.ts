@@ -4664,7 +4664,8 @@ Deno.test(
                   pageid: 1,
                   index: 1,
                   title: "Samsung",
-                  extract: "Samsung es una empresa tecnológica que fabrica productos electrónicos.",
+                  extract:
+                    "Samsung es una empresa tecnológica que fabrica productos electrónicos.",
                   canonicalurl: "https://es.wikipedia.org/wiki/Samsung",
                 },
               },
@@ -4694,7 +4695,9 @@ Deno.test(
       "GENERAL_KNOWLEDGE",
     );
     if (!result.abstained) {
-      throw new Error("generic search hints must not validate an unrelated brand");
+      throw new Error(
+        "generic search hints must not validate an unrelated brand",
+      );
     }
   },
 );
