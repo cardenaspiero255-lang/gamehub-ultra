@@ -2762,8 +2762,8 @@ function generalKnowledgeSearchTopic(
     canonicalTopic = "JBL";
     hints.push("empresa", "audio");
   } else if (/\bqled\b/.test(clean)) {
-    canonicalTopic = "QLED";
-    hints.push("television");
+    canonicalTopic = "QLED pantalla puntos cuánticos";
+    hints.push("television", "tecnologia");
   } else if (
     /\bhdr\b/.test(clean) &&
     /\b(?:tv|television|televisor)\b/.test(clean)
@@ -2819,8 +2819,8 @@ function generalKnowledgeSearchTopic(
     /\bhigiene dental\b/.test(clean) &&
     /\b(?:mascota|perro|gato|veterinari)\b/.test(clean)
   ) {
-    canonicalTopic = "higiene dental veterinaria";
-    hints.push("mascota", "dientes", "encias");
+    canonicalTopic = "higiene dental veterinaria mascota";
+    hints.push("dientes", "encias", "salud oral");
   }
 
   if (/\bmas grande\b/.test(clean) || /\bmayor tamano\b/.test(clean)) {
@@ -2940,6 +2940,16 @@ function candidateRelevanceScore(
       normalizedExtract.includes("altavoz"))
   ) {
     score += 24;
+  }
+  if (
+    /\bqled\b/.test(cleanQuery) &&
+    (
+      normalizedTitle.includes("qled") ||
+      normalizedExtract.includes("punto cuantico") ||
+      normalizedExtract.includes("puntos cuanticos")
+    )
+  ) {
+    score += 30;
   }
   if (
     /\bhdr\b/.test(cleanQuery) &&
