@@ -41,6 +41,16 @@ class GameHubAiAdvisor(
     override fun advise(
         question: String,
         context: GameHubAiContext
+    ): GameHubAiAdvice = adviseInternal(
+        question = question,
+        context = context,
+        memories = recallMemorySignals(question, context)
+    )
+
+    private fun adviseInternal(
+        question: String,
+        context: GameHubAiContext,
+        memories: List<UltraAiMemorySignal>
     ): GameHubAiAdvice {
         val modelCandidate = runCatching {
             modelAdapter
@@ -56,7 +66,27 @@ class GameHubAiAdvisor(
             )
         }
 
-        return deterministicAdvice(question, context)
+        return deterministicAdvice(question, context, memories)
+    }
+
+    private fun recallMemorySignals(
+        question: String,
+        context: GameHubAiContext
+    ): List<UltraAiMemorySignal> {
+        val scope = UltraMemoryScope(
+            userId = "local",
+            gamePackage = context.selectedGamePackage
+        )
+        return runCatching {
+            memoryGateway
+                ?.recallContext(question, scope, limit = MEMORY_RECALL_LIMIT)
+                .orEmpty()
+                .asSequence()
+                .filter { it.record.text.isNotBlank() }
+                .take(MEMORY_RECALL_LIMIT)
+                .map(UltraAiMemorySignal::from)
+                .toList()
+        }.getOrDefault(emptyList())
     }
 
     override fun chat(
@@ -127,7 +157,11 @@ class GameHubAiAdvisor(
 
         deterministicStableKnowledgeOrNull(message)?.let { return it }
 
-        val advice = advise(message, context)
+        val advice = adviseInternal(
+            question = message,
+            context = context,
+            memories = recalled.map(UltraAiMemorySignal::from)
+        )
         val profile = profileLabel(advice.suggestedProfile)
 
         return when {
@@ -477,7 +511,8 @@ class GameHubAiAdvisor(
 
     private fun deterministicAdvice(
         question: String,
-        context: GameHubAiContext
+        context: GameHubAiContext,
+        memories: List<UltraAiMemorySignal> = emptyList()
     ): GameHubAiAdvice {
         val readiness = readinessScore(context)
         val hot = context.thermalHeadroom?.let { it >= 0.80f } == true ||
@@ -527,7 +562,7 @@ class GameHubAiAdvisor(
                     activeProfileId = baseAdvice.suggestedProfile.name
                 ),
                 feedback = UltraAiFeedbackSnapshot(),
-                memories = emptyList()
+                memories = memories
             )
         }.getOrNull()
 
@@ -625,6 +660,10 @@ class GameHubAiAdvisor(
 
     private fun containsAny(value: String, vararg patterns: String): Boolean =
         patterns.any(value::contains)
+
+    private companion object {
+        const val MEMORY_RECALL_LIMIT = 6
+    }
 
     private fun normalize(value: String): String =
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
