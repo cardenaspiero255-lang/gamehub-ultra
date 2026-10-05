@@ -3427,7 +3427,9 @@ async function generalKnowledgeEvidence(
   const terminology = stableTerminologyEvidence(query);
   if (terminology) return terminology;
 
-  const localStableKnowledge = stableCoreKnowledgeEvidence(topic);
+  const localStableKnowledge =
+    stableCoreKnowledgeEvidence(topic) ??
+    stableCoreKnowledgeEvidence(query);
   if (localStableKnowledge) return localStableKnowledge;
 
   if (isTechnicalTroubleshootingQuery(query)) {
