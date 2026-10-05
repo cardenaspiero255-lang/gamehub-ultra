@@ -6486,3 +6486,54 @@ Deno.test("rain-today phrasing routes through verified weather evidence", async 
     throw new Error("expected authoritative Temuco weather evidence");
   }
 });
+
+
+Deno.test("dependent ML creator follow-up bypasses generic local definition", async () => {
+  let searches = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        searches += 1;
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Arthur Samuel",
+                extract:
+                  "Arthur Samuel fue un pionero estadounidense de la inteligencia artificial y popularizó el término aprendizaje automático.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Arthur_Samuel",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿y quién lo creó?",
+    deps,
+    "Tú: ¿Qué es el aprendizaje automático?",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected creator follow-up evidence");
+  }
+  if (searches !== 1) {
+    throw new Error("dependent follow-up must bypass the generic local definition");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("arthur samuel")) {
+    throw new Error("expected creator-specific evidence instead of the base definition");
+  }
+});
