@@ -4868,6 +4868,108 @@ Deno.test(
 );
 
 Deno.test(
+  "QLED and pet dental variants stay on stable primary evidence without models",
+  async () => {
+    const cases = [
+      {
+        query: "¿Qué es QLED?",
+        title: "QLED",
+        extract:
+          "QLED es una tecnología de pantalla basada en puntos cuánticos usada en televisores para reproducir color y brillo.",
+        expectedSearch: ["qled", "television"],
+        expectedAnswer: "pantalla",
+      },
+      {
+        query:
+          "Si alguien me pregunta por la higiene dental de una mascota, ¿cómo lo explicarías en pocas frases?",
+        title: "Higiene dental veterinaria",
+        extract:
+          "La higiene dental veterinaria comprende el cuidado de dientes y encías de mascotas para prevenir problemas de salud oral.",
+        expectedSearch: ["higiene", "dental", "mascota"],
+        expectedAnswer: "dientes",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let observedSearch = "";
+      let modelCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php" &&
+            url.searchParams.get("generator") === "search"
+          ) {
+            observedSearch = wikipediaSearchParam(url)
+              .normalize("NFD")
+              .replace(/\p{Diacritic}/gu, "")
+              .toLowerCase();
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replaceAll(" ", "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
+          if (
+            url.hostname === "generativelanguage.googleapis.com" ||
+            url.hostname === "api.x.ai"
+          ) {
+            modelCalls += 1;
+            return new Response("not configured", { status: 503 });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: (name) =>
+          name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error("unexpected abstention for " + testCase.query);
+      }
+      for (const token of testCase.expectedSearch) {
+        if (!observedSearch.includes(token)) {
+          throw new Error(
+            "missing stable search hint " + token + ": " + observedSearch,
+          );
+        }
+      }
+      if (
+        !(result.displayText ?? "")
+          .normalize("NFD")
+          .replace(/\p{Diacritic}/gu, "")
+          .toLowerCase()
+          .includes(testCase.expectedAnswer)
+      ) {
+        throw new Error("unexpected stable answer for " + testCase.query);
+      }
+      if (modelCalls !== 0) {
+        throw new Error("stable answer unexpectedly used a model");
+      }
+    }
+  },
+);
+
+Deno.test(
   "dependent bear follow-up keeps the previous subject and resolves the intended comparison",
   async () => {
     let observedSearch = "";
