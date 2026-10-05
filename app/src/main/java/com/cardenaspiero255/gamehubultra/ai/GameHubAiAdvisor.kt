@@ -131,6 +131,14 @@ class GameHubAiAdvisor(
             recalledConversation + conversation.takeLast(12)
         ).takeLast(18)
 
+        val normalized = normalize(message)
+        val feedbackAwareProfileQuestion =
+            isProfileRecommendationQuestion(normalized) &&
+                context.optimizationObservations.any {
+                    it.feedbackDecision == com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision.REJECTED ||
+                        it.feedbackDecision == com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision.REVERTED
+                }
+
         val local = runCatching {
             modelAdapter
                 ?.takeIf { it.isAvailable() }
@@ -139,9 +147,7 @@ class GameHubAiAdvisor(
             ?.takeIf { it.isNotBlank() }
             ?.let { AiChatSafetyFilter.sanitize(it, message) }
             ?.takeUnless(::looksPredominantlyEnglish)
-        if (local != null) return local
-
-        val normalized = normalize(message)
+        if (local != null && !feedbackAwareProfileQuestion) return local
         val memoryRecallQuestion = listOf(
             "que recuerdas",
             "que sabes de mi",
@@ -560,9 +566,7 @@ class GameHubAiAdvisor(
 
         val coreResult = runCatching {
             aiCore.evaluate(
-                observation = UltraAiObservation.from(context).copy(
-                    activeProfileId = baseAdvice.suggestedProfile.name
-                ),
+                observation = UltraAiObservation.from(context),
                 feedback = feedbackSnapshot(context),
                 memories = memories
             )
@@ -594,10 +598,17 @@ class GameHubAiAdvisor(
             }
         }
 
+        val recoveryApplied =
+            safeCoreProfile != null &&
+                coreProfile != null &&
+                finalProfile == coreProfile &&
+                finalProfile != baseAdvice.suggestedProfile
+
         return baseAdvice.copy(
             suggestedProfile = finalProfile,
             reason = finalReason,
             recoveryExplanation = coreResult?.recoveryExplanation
+                ?.takeIf { recoveryApplied }
         )
     }
 
@@ -658,6 +669,17 @@ class GameHubAiAdvisor(
         advice: GameHubAiAdvice,
         context: GameHubAiContext
     ): GameHubAiAdvice {
+        if (isSafetyConstrained(context)) {
+            return deterministicAdvice(
+                question = "safety constrained feedback recovery",
+                context = context
+            ).copy(
+                localModelUsed = advice.localModelUsed,
+                fallbackUsed = true,
+                recoveryExplanation = null
+            )
+        }
+
         val feedback = feedbackSnapshot(context)
         val hasFeedback =
             feedback.acceptedProfileIds.isNotEmpty() ||
@@ -667,9 +689,7 @@ class GameHubAiAdvisor(
 
         val coreResult = runCatching {
             aiCore.evaluate(
-                observation = UltraAiObservation.from(context).copy(
-                    activeProfileId = advice.suggestedProfile.name
-                ),
+                observation = UltraAiObservation.from(context),
                 feedback = feedback,
                 memories = emptyList()
             )
@@ -707,6 +727,19 @@ class GameHubAiAdvisor(
             recoveryExplanation = coreResult.recoveryExplanation
         )
     }
+
+    private fun isProfileRecommendationQuestion(normalized: String): Boolean =
+        normalized.contains("fps") ||
+            normalized.contains("modo") ||
+            normalized.contains("perfil") ||
+            normalized.contains("mode") ||
+            normalized.contains("profile")
+
+    private fun isSafetyConstrained(context: GameHubAiContext): Boolean =
+        context.thermalStatus?.let { it >= 3 } == true ||
+            context.thermalHeadroom?.let { it >= 0.80f } == true ||
+            context.batteryPercent?.let { it < 20 } == true ||
+            context.storageFreePercent < 10
 
     private fun readinessScore(context: GameHubAiContext): Int {
         var score = 50
