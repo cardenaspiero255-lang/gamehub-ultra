@@ -542,7 +542,7 @@ object UltraMathEngine {
         val magnitude =
             """(?:mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)"""
         val operand =
-            """(?:(?:-?\d+(?:[.,]\d+)?|$numberWord)(?:\s*$magnitude)?|$magnitude)"""
+            """(?:(?:menos|minus)\s+)?(?:(?:-?\d+(?:[.,]\d+)?|$numberWord)(?:\s*$magnitude)?|$magnitude)"""
         val patterns = listOf(
             ArithmeticPattern(
                 regex = Regex("""($operand)\s*(?:x|\*|por|times)\s*($operand)"""),
@@ -584,11 +584,12 @@ object UltraMathEngine {
         clean.toDecimalOrNull()?.let { return it }
 
         val match = Regex(
-            """^(?:(-?\d+(?:[.,]\d+)?|cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*)?(mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
+            """^(?:(menos|minus)\s+)?(?:(-?\d+(?:[.,]\d+)?|cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*)?(mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
         ).matchEntire(clean) ?: return null
 
-        val baseToken = match.groupValues[1]
-        val magnitudeToken = match.groupValues[2]
+        val writtenNegative = match.groupValues[1].isNotBlank()
+        val baseToken = match.groupValues[2]
+        val magnitudeToken = match.groupValues[3]
         if (baseToken.isBlank() && magnitudeToken.isBlank()) return null
 
         val base = when (baseToken) {
@@ -607,7 +608,8 @@ object UltraMathEngine {
             "trillion", "trillions" -> BigDecimal("1000000000000")
             else -> return null
         }
-        return base.multiply(factor)
+        val value = base.multiply(factor)
+        return if (writtenNegative) value.negate() else value
     }
 
     private fun writtenArithmeticNumber(token: String): BigDecimal? {
