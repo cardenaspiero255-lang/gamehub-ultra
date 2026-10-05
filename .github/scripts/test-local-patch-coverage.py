@@ -77,12 +77,14 @@ fun interface Recommender {
 private companion object {
     const val LIMIT = 6
 }
+),
+): String? =
 """
         stats = gate.calculate_patch_line_coverage(
             report,
             {
                 "app/src/main/java/com/example/Foo.kt": {
-                    1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15
+                    1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
                 }
             },
             {"app/src/main/java/com/example/Foo.kt": source},
