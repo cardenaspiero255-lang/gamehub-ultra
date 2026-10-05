@@ -879,8 +879,8 @@ jobs:
           print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
           print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
 
-          if executed != 220:
-              print(f"::error::Expected 220 cases, executed {executed}")
+          if executed != 440:
+              print(f"::error::Expected 440 cases, executed {executed}")
               sys.exit(1)
           if stable_abstentions != 0:
               print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
