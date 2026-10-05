@@ -3444,9 +3444,7 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
 
   if (
     clean === "aprendizaje automatico" ||
-    clean === "machine learning" ||
-    /\\baprendizaje automatico\\b/.test(clean) ||
-    /\\bmachine learning\\b/.test(clean)
+    clean === "machine learning"
   ) {
     const displayText =
       "El aprendizaje automático es una rama de la inteligencia artificial " +
@@ -3511,9 +3509,9 @@ async function generalKnowledgeEvidence(
   const terminology = stableTerminologyEvidence(query);
   if (terminology) return terminology;
 
-  const localStableKnowledge =
-    stableCoreKnowledgeEvidence(topic) ??
-    stableCoreKnowledgeEvidence(query);
+  const localStableKnowledge = dependentFollowUp
+    ? null
+    : stableCoreKnowledgeEvidence(topic);
   if (localStableKnowledge) return localStableKnowledge;
 
   const technicalTroubleshooting = isTechnicalTroubleshootingQuery(query);
@@ -3768,7 +3766,7 @@ export async function routeResearchQuery(
   const combinedSignals = `${clean} ${cleanContext}`.trim();
 
   const weatherSignal =
-    /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|pronostico|forecast|que temperatura hace|temperatura (?:de hoy|actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
+    /\b(?:clima|tiempo (?:de hoy|hoy|ahora|actual|en)|que tiempo hace|weather|llover|llovera|llueve|lluvias?|rain|raining|pronostico|forecast|que temperatura hace|temperatura (?:de hoy|actual|ahora|hoy|en)|temperature (?:now|today|in))\b/;
   const newsSignal =
     /\b(?:noticias|news|novedades|que ha pasado recientemente|ha pasado recientemente|salio nuevo|que salio nuevo|latest news|released)\b/;
   const priceSignal = /\b(precio|price|cuanto cuesta|valor)\b/;
