@@ -2857,7 +2857,13 @@ function generalKnowledgeSearchTopic(
   const hints: string[] = [];
   let canonicalTopic = topic.trim();
 
-  if (/\bvpn\b/.test(clean)) {
+  if (/\bemulsion\b/.test(clean) && /\bcocina\b/.test(clean)) {
+    canonicalTopic = "emulsión";
+  } else if (/\bmatchmaking\b/.test(clean)) {
+    canonicalTopic = "matchmaking";
+  } else if (/\bpresion arterial\b/.test(clean)) {
+    canonicalTopic = "presión arterial";
+  } else if (/\bvpn\b/.test(clean)) {
     canonicalTopic = "VPN red privada virtual";
   } else if (/\bnpc\b/.test(clean)) {
     canonicalTopic = "NPC personaje no jugador";
