@@ -56,7 +56,11 @@ data class UltraAiRecommendation(
 )
 
 fun interface UltraAiRecommender {
-    fun recommend(observation: UltraAiObservation, feedback: UltraAiFeedbackSnapshot): UltraAiRecommendation
+    fun recommend(
+        observation: UltraAiObservation,
+        feedback: UltraAiFeedbackSnapshot,
+        memories: List<UltraAiMemorySignal>
+    ): UltraAiRecommendation
 }
 
 data class UltraAiCoreResult(
@@ -83,8 +87,11 @@ class UltraAiCore2(
         memories: List<UltraAiMemorySignal>
     ): UltraAiCoreResult {
         val safeObservation = observation.sanitized()
-        val recommendation = recommender?.recommend(safeObservation, feedback)
-            ?: deterministicRecommendation(safeObservation, feedback)
+        val recommendation = recommender?.recommend(
+            safeObservation,
+            feedback,
+            memories
+        ) ?: deterministicRecommendation(safeObservation, feedback)
         return UltraAiCoreResult(
             recommendation = recommendation,
             explanation = buildExplanation(safeObservation, recommendation),
