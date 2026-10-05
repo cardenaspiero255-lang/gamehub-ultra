@@ -121,8 +121,7 @@ class UltraAiCore2(
                 evidence += when {
                     thermal in HOT_THERMAL_LABELS ->
                         "thermal=" + observation.thermalLabel
-                    observation.thermalStatus?.let { it >= 3 } == true ->
-                        "thermalStatus=" + observation.thermalStatus
+                    observation.thermalStatus?.let { it >= 3 } == true -> "thermalStatus=" + observation.thermalStatus
                     else ->
                         "thermalHeadroom=" + observation.thermalHeadroom
                 }
