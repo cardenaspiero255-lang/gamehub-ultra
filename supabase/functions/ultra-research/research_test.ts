@@ -4129,7 +4129,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "general knowledge skips an irrelevant Wikipedia result and uses a later relevant candidate",
   async () => {
