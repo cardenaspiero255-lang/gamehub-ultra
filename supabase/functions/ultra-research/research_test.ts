@@ -4748,6 +4748,23 @@ Deno.test(
         expected: "youtuber",
       },
       {
+        query:
+          "Resume qué es la higiene dental de una mascota sin asumir conocimientos técnicos.",
+        searchMustContain: ["higiene", "mascota"],
+        title: "Higiene dental de mascotas",
+        extract:
+          "La higiene dental de las mascotas ayuda a mantener dientes y encías limpios y a prevenir problemas de salud oral.",
+        expected: "dental",
+      },
+      {
+        query: "¿Qué significa 120 Hz en una televisión?",
+        searchMustContain: ["120", "television"],
+        title: "Frecuencia de actualización",
+        extract:
+          "En una televisión, 120 Hz significa que la pantalla puede actualizar la imagen hasta 120 veces por segundo.",
+        expected: "120",
+      },
+      {
         query: "¿Qué significa 120 Hz en una televisión?",
         searchMustContain: ["120", "refresco"],
         title: "Tasa de refresco",
