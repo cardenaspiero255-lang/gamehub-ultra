@@ -71,7 +71,7 @@ jobs:
           cat "$log" || true
           exit 1
 
-      - name: Build reproducible 220-question broad-spectrum smoke plan
+      - name: Build reproducible 440-question broad-spectrum smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -616,12 +616,23 @@ jobs:
 
           dynamic_cases = []
           for domain, topics in dynamic_domains.items():
-              chosen_topics = rng.sample(topics, 3)
-              chosen_templates = rng.sample(dynamic_templates, 3)
-              for (topic, expected), template in zip(chosen_topics, chosen_templates):
+              # Generate six runtime-composed variants per domain. Templates are
+              # selected independently from the seed so complete question strings
+              # vary between runs while remaining reproducible for a failing seed.
+              for index in range(6):
+                  topic, expected = rng.choice(topics)
+                  template = rng.choice(dynamic_templates)
+                  query = template.format(topic=topic)
+                  # Avoid accidental duplicates inside the same domain/run.
+                  attempts = 0
+                  while any(item[1] == query for item in dynamic_cases) and attempts < 24:
+                      topic, expected = rng.choice(topics)
+                      template = rng.choice(dynamic_templates)
+                      query = template.format(topic=topic)
+                      attempts += 1
                   dynamic_cases.append((
                       f"dyn_{domain}",
-                      template.format(topic=topic),
+                      query,
                       "GENERAL_KNOWLEDGE",
                       False,
                       expected,
@@ -631,7 +642,7 @@ jobs:
           for label, questions in pools.items():
               kind = "CURRENT_DATA" if label in {"weather", "news"} else "GENERAL_KNOWLEDGE"
               fresh = label in {"weather", "news"}
-              for question, expected in rng.sample(questions, 4):
+              for question, expected in rng.sample(questions, 8):
                   cases.append((label, question, kind, fresh, expected))
 
           cases.extend(dynamic_cases)
@@ -662,7 +673,7 @@ jobs:
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "220"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "440"
           test "$(python3 - <<'PY'
           import json, os
           path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
@@ -671,7 +682,7 @@ jobs:
           PY
           )" -ge "60"
 
-      - name: Exercise 220 stratified and runtime-generated questions
+      - name: Exercise 440 stratified and runtime-generated questions
         shell: bash
         run: |
           set -euo pipefail
