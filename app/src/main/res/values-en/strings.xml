@@ -129,6 +129,8 @@
     <string name="driver_native_candidate">native/vendor options; no Turnip on unsupported GPUs</string>
     <string name="smart_performance_observation_count">%1$d local observations</string>
     <string name="smart_performance_apply">Apply profile</string>
+    <string name="smart_performance_reject">Don’t use</string>
+    <string name="smart_performance_revert">Revert to safe profile</string>
     <string name="smart_performance_reset">Reset memory</string>
     <string name="session_center_title">Gaming sessions</string>
     <string name="session_center_empty">No saved sessions yet.</string>
