@@ -4920,3 +4920,86 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "generic synonym query rejects unrelated linguistics evidence before fallback",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Lingüística antropológica",
+                  extract:
+                    "La lingüística antropológica estudia el lenguaje, las palabras y su contexto social y cultural.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Ling%C3%BC%C3%ADstica_antropol%C3%B3gica",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              search: [{ title: "Sinonimia (semántica)" }],
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Sinonimia (semántica)",
+            type: "standard",
+            extract:
+              "Un sinónimo es una palabra que tiene un significado igual o semejante al de otra.",
+            content_urls: {
+              desktop: {
+                page:
+                  "https://es.wikipedia.org/wiki/Sinonimia_(sem%C3%A1ntica)",
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un sinónimo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected semantic synonym answer");
+    const answer = result.displayText?.toLowerCase() ?? "";
+    if (!answer.includes("sinónimo") || !answer.includes("palabra")) {
+      throw new Error("expected a real synonym definition");
+    }
+    if (answer.includes("antropol")) {
+      throw new Error("unrelated linguistics evidence leaked");
+    }
+  },
+);
