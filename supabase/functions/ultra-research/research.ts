@@ -311,18 +311,27 @@ function evidenceTokensRelated(first: string, second: string): boolean {
   return commonPrefix >= 6;
 }
 
+function candidateMatchesTopic(
+  topic: string,
+  candidateText: string,
+): boolean {
+  const topicTokens = evidenceTokens(topic);
+  if (topicTokens.size === 0) return true;
+  const candidateTokens = evidenceTokens(candidateText);
+  return [...topicTokens].some((topicToken) =>
+    [...candidateTokens].some((candidateToken) =>
+      evidenceTokensRelated(topicToken, candidateToken)
+    )
+  );
+}
+
 function candidateMatchesQuery(
   query: string,
   candidateText: string,
 ): boolean {
-  const queryTokens = queryTopicTokens(query);
-  if (queryTokens.size === 0) return true;
-  const candidateTokens = evidenceTokens(candidateText);
-  return [...queryTokens].some((queryToken) =>
-    [...candidateTokens].some((candidateToken) =>
-      evidenceTokensRelated(queryToken, candidateToken)
-    )
-  );
+  const topic = extractGeneralKnowledgeQuery(query) ||
+    stripAssistantInvocation(query);
+  return candidateMatchesTopic(topic, candidateText);
 }
 
 function candidateSupportsPrimary(
@@ -2762,8 +2771,8 @@ async function generalKnowledgeEvidence(
     }
 
     if (
-      !candidateMatchesQuery(
-        query,
+      !candidateMatchesTopic(
+        topic,
         title + " " + actionFallback.extract,
       )
     ) {
@@ -2788,7 +2797,7 @@ async function generalKnowledgeEvidence(
     };
   }
 
-  if (!candidateMatchesQuery(query, title + " " + extract)) {
+  if (!candidateMatchesTopic(topic, title + " " + extract)) {
     return abstain(
       "Wikipedia devolvió una entrada que no coincide con el tema consultado.",
       {
