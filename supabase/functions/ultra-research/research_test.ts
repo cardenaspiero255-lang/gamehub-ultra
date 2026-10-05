@@ -6364,3 +6364,77 @@ Deno.test("stable knowledge reuses verified topic evidence across wrapper varian
     throw new Error("expected cached distribution-center evidence");
   }
 });
+
+
+Deno.test("stable cache keeps dependent follow-up qualifiers isolated", async () => {
+  let specificSearches = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        const search = url.searchParams.get("gsrsearch") ?? "";
+        if (/grande|mayor tamaño/i.test(search)) {
+          specificSearches += 1;
+          return jsonResponse({
+            query: {
+              pages: {
+                "2": {
+                  pageid: 2,
+                  index: 1,
+                  title: "Oso polar",
+                  extract:
+                    "El oso polar está entre las especies de osos de mayor tamaño.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursus_maritimus",
+                },
+              },
+            },
+          });
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Ursidae",
+                extract:
+                  "Los osos son mamíferos de la familia Ursidae distribuidos en varias especies.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Ursidae",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const first = await routeResearchQuery(
+    "¿Qué es un oso?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+  if (first.abstained) throw new Error("expected initial bear evidence");
+
+  const followUp = await routeResearchQuery(
+    "¿Cuál es el más grande?",
+    deps,
+    "Tú: ¿Qué es un oso?",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (followUp.abstained) throw new Error("expected qualified follow-up evidence");
+  if (specificSearches !== 1) {
+    throw new Error("dependent qualifier must not reuse the generic topic cache");
+  }
+  if (!(followUp.displayText ?? "").toLowerCase().includes("polar")) {
+    throw new Error("expected the qualified bear result");
+  }
+});
