@@ -2983,6 +2983,78 @@ Deno.test(
 );
 
 Deno.test(
+  "primary source abstention gets one fresh Wikidata retry before models",
+  async () => {
+    let wikidataCalls = 0;
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          wikidataCalls += 1;
+          if (wikidataCalls <= 3) {
+            return new Response("temporarily unavailable", { status: 503 });
+          }
+          return jsonResponse({
+            search: [{
+              id: "Q9135",
+              label: "Sistema operativo",
+              description:
+                "software que administra los recursos de un sistema informático",
+              concepturi: "https://www.wikidata.org/entity/Q9135",
+            }],
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          throw new Error("fresh stable-source retry must run before models");
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "ULTRA_GENERAL_ROUTE_TIMEOUT_MS") return "1800";
+        if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+        return undefined;
+      },
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Para qué sirve un sistema operativo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("fresh Wikidata retry should recover source abstention");
+    }
+    if (wikidataCalls !== 4) {
+      throw new Error(
+        "expected three primary Wikidata attempts plus one fresh retry; calls=" +
+          wikidataCalls,
+      );
+    }
+    if (modelCalls !== 0) {
+      throw new Error("stable source recovery should avoid model calls");
+    }
+    if (!result.displayText?.toLowerCase().includes("sistema operativo")) {
+      throw new Error("expected operating-system answer from fresh Wikidata");
+    }
+  },
+);
+
+Deno.test(
   "slow sole Tavily fallback gets more time than optional corroboration",
   async () => {
     const deps: ResearchDependencies = {

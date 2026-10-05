@@ -3621,7 +3621,6 @@ export async function routeResearchQuery(
 
     if (
       primaryEvidence.abstained &&
-      primaryEvidence.reasonCode === "PRIMARY_EVIDENCE_TIMEOUT" &&
       remainingBudget() > 0
     ) {
       const wikidataController = new AbortController();
