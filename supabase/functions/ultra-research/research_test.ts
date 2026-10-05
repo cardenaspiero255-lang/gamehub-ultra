@@ -4873,19 +4873,19 @@ Deno.test(
     const cases = [
       {
         query: "¿Qué es un sinónimo?",
-        title: "Sinonimia",
+        title: "Sinonimia (semántica)",
         extract:
-          "La sinonimia es una relación semántica entre palabras con significados iguales o semejantes; esas palabras se denominan sinónimos.",
-        expectedSearch: ["sinonimo", "linguistica"],
+          "La sinonimia es una relación semántica de identidad o semejanza de significados entre expresiones o palabras llamadas sinónimos.",
+        expectedSearch: ["sinonimia", "semantica"],
         expectedAnswer: "palabras",
       },
       {
         query:
           "¿Qué debería saber una persona sobre la higiene dental de una mascota?",
-        title: "Higiene dental veterinaria",
+        title: "Higiene bucodental",
         extract:
-          "La higiene dental veterinaria comprende el cuidado de dientes y encías de mascotas para prevenir problemas de salud oral.",
-        expectedSearch: ["higiene", "dental", "mascota"],
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expectedSearch: ["higiene", "bucodental"],
         expectedAnswer: "dientes",
       },
     ];
@@ -4979,10 +4979,10 @@ Deno.test(
       {
         query:
           "Si alguien me pregunta por la higiene dental de una mascota, ¿cómo lo explicarías en pocas frases?",
-        title: "Higiene dental veterinaria",
+        title: "Higiene bucodental",
         extract:
-          "La higiene dental veterinaria comprende el cuidado de dientes y encías de mascotas para prevenir problemas de salud oral.",
-        expectedSearch: ["higiene", "dental", "mascota"],
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expectedSearch: ["higiene", "bucodental"],
         expectedAnswer: "dientes",
       },
     ];
