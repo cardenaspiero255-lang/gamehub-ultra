@@ -6304,7 +6304,6 @@ Deno.test("stable machine-learning wrapper survives provider outage without a mo
   }
 });
 
-
 Deno.test("stable knowledge reuses verified topic evidence across wrapper variants", async () => {
   let networkAvailable = true;
   const deps: ResearchDependencies = {
@@ -6357,7 +6356,9 @@ Deno.test("stable knowledge reuses verified topic evidence across wrapper varian
   );
 
   if (second.abstained) {
-    throw new Error("verified stable topic should survive a later provider outage");
+    throw new Error(
+      "verified stable topic should survive a later provider outage",
+    );
   }
   if (!(second.displayText ?? "").toLowerCase().includes("distribución")) {
     throw new Error("expected cached distribution-center evidence");
