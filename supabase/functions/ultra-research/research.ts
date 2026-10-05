@@ -296,6 +296,21 @@ function queryTopicTokens(query: string): Set<string> {
   return evidenceTokens(topic || stripAssistantInvocation(query));
 }
 
+function evidenceTokensRelated(first: string, second: string): boolean {
+  if (first === second) return true;
+  if (Math.min(first.length, second.length) < 6) return false;
+
+  let commonPrefix = 0;
+  const limit = Math.min(first.length, second.length);
+  while (
+    commonPrefix < limit &&
+    first.charCodeAt(commonPrefix) === second.charCodeAt(commonPrefix)
+  ) {
+    commonPrefix += 1;
+  }
+  return commonPrefix >= 6;
+}
+
 function candidateMatchesQuery(
   query: string,
   candidateText: string,
@@ -303,7 +318,11 @@ function candidateMatchesQuery(
   const queryTokens = queryTopicTokens(query);
   if (queryTokens.size === 0) return true;
   const candidateTokens = evidenceTokens(candidateText);
-  return [...queryTokens].some((token) => candidateTokens.has(token));
+  return [...queryTokens].some((queryToken) =>
+    [...candidateTokens].some((candidateToken) =>
+      evidenceTokensRelated(queryToken, candidateToken)
+    )
+  );
 }
 
 function candidateSupportsPrimary(
@@ -2246,9 +2265,28 @@ function stripConversationSpeaker(value: string): string {
     .replace(/^(?:tú|tu|you|usuario|user)\s*:\s*/i, "");
 }
 
+function unwrapGeneralKnowledgePrompt(value: string): string {
+  const wrappers: RegExp[] = [
+    /^dame una explicaci[oó]n clara de\s+(.+?)\s+y su funci[oó]n principal\.?$/i,
+    /^qu[eé] deber[ií]a saber una persona sobre\s+(.+?)\.?$/i,
+    /^si alguien me pregunta por\s+(.+?),?\s*[¿?]?c[oó]mo lo explicar[ií]as en pocas frases\.?$/i,
+    /^resume qu[eé] es\s+(.+?)\s+sin asumir conocimientos t[eé]cnicos\.?$/i,
+    /^expl[ií]came de forma sencilla qu[eé] es\s+(.+?)\.?$/i,
+    /^para qu[eé] sirve o por qu[eé] es importante\s+(.+?)\.?$/i,
+  ];
+
+  for (const wrapper of wrappers) {
+    const match = value.match(wrapper);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return value;
+}
+
 function extractGeneralKnowledgeQuery(query: string): string {
-  const clean = stripAssistantInvocation(stripConversationSpeaker(query))
-    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
+  const clean = unwrapGeneralKnowledgePrompt(
+    stripAssistantInvocation(stripConversationSpeaker(query))
+      .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, ""),
+  );
   const purposeForm =
     /^(?:(?:hola|por favor|y|explicame|explícame|dime)\s+)*(?:para que sirve|para qué sirve|que hace|qué hace)\b/i.test(
       clean,
@@ -2723,6 +2761,22 @@ async function generalKnowledgeEvidence(
       return abstain("Wikipedia no devolvió una explicación utilizable.");
     }
 
+    if (
+      !candidateMatchesQuery(
+        query,
+        title + " " + actionFallback.extract,
+      )
+    ) {
+      return abstain(
+        "Wikipedia devolvió una entrada que no coincide con el tema consultado.",
+        {
+          reasonCode: "IRRELEVANT_PRIMARY_EVIDENCE",
+          retryable: false,
+          stage: "wikipedia",
+        },
+      );
+    }
+
     return {
       claimKey: `general:${slug(title)}`,
       value: normalize(actionFallback.extract),
@@ -2732,6 +2786,17 @@ async function generalKnowledgeEvidence(
       independentSourceCount: 1,
       authoritative: true,
     };
+  }
+
+  if (!candidateMatchesQuery(query, title + " " + extract)) {
+    return abstain(
+      "Wikipedia devolvió una entrada que no coincide con el tema consultado.",
+      {
+        reasonCode: "IRRELEVANT_PRIMARY_EVIDENCE",
+        retryable: false,
+        stage: "wikipedia",
+      },
+    );
   }
 
   const contentUrls = summary?.content_urls && typeof summary.content_urls === "object"
