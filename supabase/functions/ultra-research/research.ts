@@ -2756,7 +2756,7 @@ function generalKnowledgeSearchTopic(
     canonicalTopic = "NPC personaje no jugador";
     hints.push("videojuegos");
   } else if (/\bsinonim/.test(clean)) {
-    canonicalTopic = "sinonimia semántica";
+    canonicalTopic = "sinonimia sinónimo semántica";
     hints.push("linguistica", "palabra", "significado");
   } else if (/\bjbl\b/.test(clean)) {
     canonicalTopic = "JBL";
@@ -2933,6 +2933,16 @@ function candidateRelevanceScore(
     ) {
       score -= 20;
     }
+  }
+  if (
+    /\bsinonim/.test(cleanQuery) &&
+    (
+      normalizedTitle.includes("sinonim") ||
+      normalizedExtract.includes("relacion semantica") ||
+      normalizedExtract.includes("significado")
+    )
+  ) {
+    score += 30;
   }
   if (
     /\bjbl\b/.test(cleanQuery) &&
