@@ -6537,3 +6537,55 @@ Deno.test("dependent ML creator follow-up bypasses generic local definition", as
     throw new Error("expected creator-specific evidence instead of the base definition");
   }
 });
+
+
+Deno.test("dependent ML follow-up bypasses local definition and researches qualifier", async () => {
+  let searches = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        searches += 1;
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Aprendizaje automático",
+                extract:
+                  "El aprendizaje automático es un campo de la inteligencia artificial; Arthur Samuel popularizó el término en 1959.",
+                canonicalurl:
+                  "https://es.wikipedia.org/wiki/Aprendizaje_automático",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿y quién lo creó?",
+    deps,
+    "Tú: ¿Qué es el aprendizaje automático?",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("dependent follow-up should research the requested qualifier");
+  }
+  if (searches !== 1) {
+    throw new Error("dependent follow-up must bypass the local ML definition");
+  }
+  if (!(result.displayText ?? "").includes("Arthur Samuel")) {
+    throw new Error("expected creator evidence for the dependent follow-up");
+  }
+});
