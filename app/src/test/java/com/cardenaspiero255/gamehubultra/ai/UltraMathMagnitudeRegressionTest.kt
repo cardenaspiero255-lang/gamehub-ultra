@@ -39,4 +39,18 @@ class UltraMathMagnitudeRegressionTest {
         assertEquals("1234567.890123", solution?.resultText)
     }
 
+
+    @Test
+    fun `magnitude division handles valid and zero divisors safely`() {
+        assertEquals("500000", UltraMathEngine.solve("2 millones / 4")?.resultText)
+        assertEquals(null, UltraMathEngine.solve("2 millones / 0"))
+    }
+
+    @Test
+    fun `Spanish and English large magnitude factors stay exact`() {
+        assertEquals("1000000000000", UltraMathEngine.solve("1 billón x 1")?.resultText)
+        assertEquals("1000000000000000000", UltraMathEngine.solve("1 trillón x 1")?.resultText)
+        assertEquals("1000000000000", UltraMathEngine.solve("1 trillion x 1")?.resultText)
+        assertEquals("2000000", UltraMathEngine.solve("millón x 2")?.resultText)
+    }
 }
