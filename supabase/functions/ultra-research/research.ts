@@ -557,6 +557,48 @@ async function settleFallbackEvidence(
   }
 }
 
+function wikidataFallbackTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_WIKIDATA_FALLBACK_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(200, Math.min(2_500, Math.trunc(configured)));
+  }
+  return 1_200;
+}
+
+async function settleWikidataFallback(
+  promise: Promise<ResearchResult>,
+  controller: AbortController,
+  deps: ResearchDependencies,
+  remainingBudget?: number,
+): Promise<ResearchResult> {
+  let timer: number | undefined;
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "Wikidata tardó demasiado en el respaldo de conocimiento estable.",
+          {
+            reasonCode: "WIKIDATA_FALLBACK_TIMEOUT",
+            retryable: true,
+            stage: "wikidata",
+          },
+        ),
+      );
+    }, boundedTimeout(wikidataFallbackTimeoutMs(deps), remainingBudget));
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function optionalSynthesisTimeoutMs(
   deps: ResearchDependencies,
 ): number {
@@ -2868,7 +2910,6 @@ function generalKnowledgeSearchTopic(
     hints.push("audio");
   } else if (/\bsistema operativo\b/.test(clean)) {
     canonicalTopic = "sistema operativo";
-    hints.push("software", "computacion");
   } else if (/\bnavegacion autonoma\b/.test(clean)) {
     canonicalTopic = "navegación autónoma";
     hints.push("robotica");
@@ -3465,6 +3506,43 @@ async function generalKnowledgeEvidence(
   );
 }
 
+async function freshWikidataGeneralKnowledgeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  context = "",
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const previousTopic = contextKnowledgeTopic(context);
+  const currentTopic = extractGeneralKnowledgeQuery(query);
+  const dependentFollowUp =
+    previousTopic.length > 0 && isDependentKnowledgeFollowUp(query);
+  const qualifier = dependentFollowUp
+    ? dependentKnowledgeQualifier(query)
+    : "";
+  const topic = dependentFollowUp
+    ? [previousTopic, qualifier].filter(Boolean).join(" ").trim()
+    : (currentTopic || previousTopic);
+  if (!topic) {
+    return abstain("Necesito una pregunta concreta para investigarla.");
+  }
+
+  const topicPlan = generalKnowledgeSearchTopic(query, topic);
+  const relevanceTopic = dependentFollowUp
+    ? previousTopic
+    : topicPlan.relevanceTopic;
+  const wikidataTopic = dependentFollowUp
+    ? wikidataEntitySearchTopic(previousTopic)
+    : topicPlan.wikidataTopic;
+
+  return await wikidataKnowledgeEvidence(
+    wikidataTopic,
+    relevanceTopic,
+    query,
+    deps,
+    signal,
+  );
+}
+
 function mergeGeneralKnowledgeEvidence(
   primary: ResearchResult,
   web: ResearchResult,
@@ -3529,7 +3607,7 @@ export async function routeResearchQuery(
     const remainingBudget = () => remainingRouteBudgetMs(routeDeadlineAt);
 
     const primaryController = new AbortController();
-    const primaryEvidence = await settlePrimaryKnowledgeEvidence(
+    let primaryEvidence = await settlePrimaryKnowledgeEvidence(
       generalKnowledgeEvidence(
         query,
         deps,
@@ -3540,6 +3618,28 @@ export async function routeResearchQuery(
       deps,
       remainingBudget(),
     );
+
+    if (
+      primaryEvidence.abstained &&
+      primaryEvidence.reasonCode === "PRIMARY_EVIDENCE_TIMEOUT" &&
+      remainingBudget() > 0
+    ) {
+      const wikidataController = new AbortController();
+      const wikidataFallback = await settleWikidataFallback(
+        freshWikidataGeneralKnowledgeEvidence(
+          query,
+          deps,
+          context,
+          wikidataController.signal,
+        ),
+        wikidataController,
+        deps,
+        remainingBudget(),
+      );
+      if (!wikidataFallback.abstained) {
+        primaryEvidence = wikidataFallback;
+      }
+    }
 
     let webEvidence: ResearchResult;
     if (remainingBudget() <= 0) {
