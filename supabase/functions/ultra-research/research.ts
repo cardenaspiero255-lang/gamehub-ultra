@@ -308,7 +308,23 @@ function evidenceTokensRelated(first: string, second: string): boolean {
   ) {
     commonPrefix += 1;
   }
-  return commonPrefix >= 6;
+  if (commonPrefix >= 6) return true;
+  if (Math.min(first.length, second.length) < 7) return false;
+  const distance = levenshteinDistance(first, second);
+  return 1 - distance / Math.max(first.length, second.length) >= 0.72;
+}
+
+function levenshteinDistance(first: string, second: string): number {
+  const row = Array.from({ length: second.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= first.length; i++) {
+    let diagonal = row[0]; row[0] = i;
+    for (let j = 1; j <= second.length; j++) {
+      const above = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (first[i - 1] === second[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[second.length];
 }
 
 function isExplicitEnglishKnowledgeQuery(query: string): boolean {
@@ -2363,7 +2379,7 @@ function isExplicitNewKnowledgeTopic(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  return /^(?:y |and )?(?:que es|que son|quien es|quienes son|define|explicame que es|explica que es|what is|what are|who is|who are|define)\s+\S+/.test(
+  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|que significa|por que es|define|explicame que es|explica que es|what is|what are|who is|who was|who are|why is|define|explain)\s+\S+/.test(
     clean,
   );
 }
@@ -2375,7 +2391,8 @@ function isDependentKnowledgeFollowUp(query: string): boolean {
   if (isExplicitNewKnowledgeTopic(query)) return false;
 
   const referential =
-    /\b(?:lo|la|los|las|eso|esto|ese|esa|ellos|ellas)\b/.test(clean);
+    /\b(?:eso|esto|ese|esa|ellos|ellas)\b/.test(clean) ||
+    /\b(?:quien|para que|como|donde)\s+(?:lo|la|los|las)\b/.test(clean);
   const followUpShape =
     /^(?:(?:y|and)\s+)?(?:cual es (?:el|la|los|las)?\s*(?:mas|menos)|cuanto pesa|cuanto mide|donde vive|donde viven|que come|que comen|como se reproduce|como se reproducen|cuanto dura|cuanto viven|para que sirve|como funciona|quien lo creo|quien la creo|donde se usa|que hace)\b/.test(
       clean,
@@ -3072,7 +3089,6 @@ async function wikipediaGeneratorEvidence(
 
   for (const candidate of ranked) {
     if (
-      !isExplicitEnglishKnowledgeQuery(query) &&
       !candidateMatchesTopic(
         searchTopic,
         candidate.title + " " + candidate.extract,
@@ -3213,7 +3229,6 @@ async function generalKnowledgeEvidence(
     }
 
     if (
-      !isExplicitEnglishKnowledgeQuery(query) &&
       !candidateMatchesTopic(searchTopic, title + " " + extract)
     ) {
       continue;
