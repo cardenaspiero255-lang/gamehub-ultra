@@ -30,6 +30,16 @@ export type ResearchDependencies = {
 
 type JsonObject = Record<string, unknown>;
 
+type StableKnowledgeCacheEntry = {
+  result: ResearchResult;
+  storedAt: number;
+};
+
+const stableKnowledgeCaches =
+  new WeakMap<object, Map<string, StableKnowledgeCacheEntry>>();
+const STABLE_KNOWLEDGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 256;
+
 const USER_AGENT =
   "GameHub-Ultra-CAR73/1.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
 
@@ -96,6 +106,75 @@ function hostname(value: string): string | null {
 
 function independentDomains(urls: string[]): number {
   return unique(urls.map((url) => hostname(url) ?? "").filter(Boolean)).length;
+}
+
+function stableKnowledgeCacheKey(topic: string): string {
+  return normalize(topic)
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cloneResearchResult(result: ResearchResult): ResearchResult {
+  return {
+    ...result,
+    sourceIds: result.sourceIds ? [...result.sourceIds] : undefined,
+  };
+}
+
+function cachedStableKnowledge(
+  fetcher: ResearchFetcher,
+  topic: string,
+): ResearchResult | null {
+  const key = stableKnowledgeCacheKey(topic);
+  if (!key) return null;
+
+  const cache = stableKnowledgeCaches.get(fetcher as object);
+  const entry = cache?.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.storedAt > STABLE_KNOWLEDGE_CACHE_TTL_MS) {
+    cache?.delete(key);
+    return null;
+  }
+
+  return cloneResearchResult(entry.result);
+}
+
+function rememberStableKnowledge(
+  fetcher: ResearchFetcher,
+  topic: string,
+  result: ResearchResult,
+): ResearchResult {
+  if (
+    result.abstained ||
+    result.authoritative !== true ||
+    !result.displayText?.trim()
+  ) {
+    return result;
+  }
+
+  const key = stableKnowledgeCacheKey(topic);
+  if (!key) return result;
+
+  let cache = stableKnowledgeCaches.get(fetcher as object);
+  if (!cache) {
+    cache = new Map<string, StableKnowledgeCacheEntry>();
+    stableKnowledgeCaches.set(fetcher as object, cache);
+  }
+  if (
+    !cache.has(key) &&
+    cache.size >= STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES
+  ) {
+    const oldestKey = cache.keys().next().value;
+    if (typeof oldestKey === "string") cache.delete(oldestKey);
+  }
+
+  cache.set(key, {
+    result: cloneResearchResult(result),
+    storedAt: Date.now(),
+  });
+  return result;
 }
 
 const CORROBORATION_STOP_WORDS = new Set([
@@ -3437,7 +3516,8 @@ async function generalKnowledgeEvidence(
     stableCoreKnowledgeEvidence(query);
   if (localStableKnowledge) return localStableKnowledge;
 
-  if (isTechnicalTroubleshootingQuery(query)) {
+  const technicalTroubleshooting = isTechnicalTroubleshootingQuery(query);
+  if (technicalTroubleshooting) {
     const technical = await stackOverflowSpanishEvidence(query, deps, signal);
     if (!technical.abstained) return technical;
   }
@@ -3447,6 +3527,10 @@ async function generalKnowledgeEvidence(
   const relevanceTopic = dependentFollowUp
     ? previousTopic
     : topicPlan.relevanceTopic;
+  if (!technicalTroubleshooting) {
+    const cached = cachedStableKnowledge(deps.fetcher, relevanceTopic);
+    if (cached) return cached;
+  }
   const generatorEvidence = await wikipediaGeneratorEvidence(
     searchTopic,
     relevanceTopic,
@@ -3454,7 +3538,13 @@ async function generalKnowledgeEvidence(
     deps,
     signal,
   );
-  if (generatorEvidence) return generatorEvidence;
+  if (generatorEvidence) {
+    return rememberStableKnowledge(
+      deps.fetcher,
+      relevanceTopic,
+      generatorEvidence,
+    );
+  }
 
   const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
@@ -3488,7 +3578,9 @@ async function generalKnowledgeEvidence(
       deps,
       signal,
     );
-    if (!wikidata.abstained) return wikidata;
+    if (!wikidata.abstained) {
+      return rememberStableKnowledge(deps.fetcher, relevanceTopic, wikidata);
+    }
     return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
   }
 
@@ -3551,15 +3643,19 @@ async function generalKnowledgeEvidence(
     }
 
     const resolvedSource = source ?? summaryUrl;
-    return {
-      claimKey: `general:${slug(title)}`,
-      value: normalize(extract),
-      displayText: extract,
-      sourceId: resolvedSource,
-      sourceIds: [resolvedSource],
-      independentSourceCount: 1,
-      authoritative: true,
-    };
+    return rememberStableKnowledge(
+      deps.fetcher,
+      relevanceTopic,
+      {
+        claimKey: `general:${slug(title)}`,
+        value: normalize(extract),
+        displayText: extract,
+        sourceId: resolvedSource,
+        sourceIds: [resolvedSource],
+        independentSourceCount: 1,
+        authoritative: true,
+      },
+    );
   }
 
   const wikidata = await wikidataKnowledgeEvidence(
@@ -3569,7 +3665,9 @@ async function generalKnowledgeEvidence(
     deps,
     signal,
   );
-  if (!wikidata.abstained) return wikidata;
+  if (!wikidata.abstained) {
+    return rememberStableKnowledge(deps.fetcher, relevanceTopic, wikidata);
+  }
 
   return abstain(
     sawUsableCandidate
