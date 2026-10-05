@@ -3604,6 +3604,64 @@ Deno.test("purpose-form general knowledge queries normalize leading articles bef
   }
 });
 
+Deno.test("mAh stable knowledge resolves through the canonical ampere-hour topic without model keys", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php"
+      ) {
+        const search = wikipediaSearchParam(url);
+        if (search !== "Amperio-hora") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Amperio-hora",
+                extract:
+                  "El amperio-hora es una unidad de carga eléctrica. El miliamperio-hora, mAh, equivale a una milésima de amperio-hora y se usa habitualmente para expresar la capacidad de baterías.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Amperio-hora",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({ results: [] });
+      }
+      if (
+        url.hostname === "generativelanguage.googleapis.com" ||
+        url.hostname === "api.x.ai"
+      ) {
+        throw new Error("model fallback must not be needed for mAh");
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué significa mAh en una batería?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error(
+      "expected stable mAh knowledge to resolve without a configured model",
+    );
+  }
+  if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
+    throw new Error("expected canonical Wikipedia evidence for mAh");
+  }
+});
+
 Deno.test("weather uses a second authoritative provider when Open-Meteo is unavailable", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
