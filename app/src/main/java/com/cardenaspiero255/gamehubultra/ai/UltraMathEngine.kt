@@ -537,8 +537,12 @@ object UltraMathEngine {
         }
 
     private fun solveArithmetic(clean: String): UltraMathSolution? {
+        val numberWord =
+            """(?:cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"""
+        val magnitude =
+            """(?:mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)"""
         val operand =
-            """(?:(?:-?\d+(?:[.,]\d+)?|un|uno|una|one)(?:\s*(?:mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?))?|(?:mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?))"""
+            """(?:(?:-?\d+(?:[.,]\d+)?|$numberWord)(?:\s*$magnitude)?|$magnitude)"""
         val patterns = listOf(
             ArithmeticPattern(
                 regex = Regex("""($operand)\s*(?:x|\*|por|times)\s*($operand)"""),
@@ -582,7 +586,7 @@ object UltraMathEngine {
         clean.toDecimalOrNull()?.let { return it }
 
         val match = Regex(
-            """^(?:(-?\d+(?:[.,]\d+)?|un|uno|una|one)\s*)?(mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
+            """^(?:(-?\d+(?:[.,]\d+)?|cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*)?(mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
         ).matchEntire(clean) ?: return null
 
         val baseToken = match.groupValues[1]
@@ -590,8 +594,10 @@ object UltraMathEngine {
         if (baseToken.isBlank() && magnitudeToken.isBlank()) return null
 
         val base = when (baseToken) {
-            "", "un", "uno", "una", "one" -> BigDecimal.ONE
-            else -> baseToken.toDecimalOrNull() ?: return null
+            "" -> BigDecimal.ONE
+            else -> baseToken.toDecimalOrNull()
+                ?: writtenArithmeticNumber(baseToken)
+                ?: return null
         }
         val factor = when (magnitudeToken) {
             "" -> BigDecimal.ONE
@@ -605,6 +611,32 @@ object UltraMathEngine {
         }
         return base.multiply(factor)
     }
+
+    private fun writtenArithmeticNumber(token: String): BigDecimal? =
+        when (token) {
+            "cero", "zero" -> BigDecimal.ZERO
+            "un", "uno", "una", "one" -> BigDecimal.ONE
+            "dos", "two" -> BigDecimal("2")
+            "tres", "three" -> BigDecimal("3")
+            "cuatro", "four" -> BigDecimal("4")
+            "cinco", "five" -> BigDecimal("5")
+            "seis", "six" -> BigDecimal("6")
+            "siete", "seven" -> BigDecimal("7")
+            "ocho", "eight" -> BigDecimal("8")
+            "nueve", "nine" -> BigDecimal("9")
+            "diez", "ten" -> BigDecimal("10")
+            "once", "eleven" -> BigDecimal("11")
+            "doce", "twelve" -> BigDecimal("12")
+            "trece", "thirteen" -> BigDecimal("13")
+            "catorce", "fourteen" -> BigDecimal("14")
+            "quince", "fifteen" -> BigDecimal("15")
+            "dieciseis", "sixteen" -> BigDecimal("16")
+            "diecisiete", "seventeen" -> BigDecimal("17")
+            "dieciocho", "eighteen" -> BigDecimal("18")
+            "diecinueve", "nineteen" -> BigDecimal("19")
+            "veinte", "twenty" -> BigDecimal("20")
+            else -> null
+        }
 
     private data class ArithmeticPattern(
         val regex: Regex,
