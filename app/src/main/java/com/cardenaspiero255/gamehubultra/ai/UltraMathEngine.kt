@@ -548,11 +548,7 @@ object UltraMathEngine {
             ArithmeticPattern(
                 regex = Regex("""($operand)\s*(?:/|dividido\s+por|divided\s+by)\s*($operand)"""),
                 operation = { a, b ->
-                    if (b.compareTo(BigDecimal.ZERO) == 0) {
-                        null
-                    } else {
-                        a.divide(b, mathContext)
-                    }
+                    if (b.compareTo(BigDecimal.ZERO) == 0) null else a.divide(b, mathContext)
                 },
                 symbol = "÷"
             ),
@@ -575,8 +571,7 @@ object UltraMathEngine {
             val result = pattern.operation(left, right) ?: continue
             return UltraMathSolution(
                 resultText = formatNumber(result),
-                explanation =
-                    "${formatNumber(left)} ${pattern.symbol} ${formatNumber(right)} = ${formatNumber(result)}."
+                explanation = "${formatNumber(left)} ${pattern.symbol} ${formatNumber(right)} = ${formatNumber(result)}."
             )
         }
         return null
