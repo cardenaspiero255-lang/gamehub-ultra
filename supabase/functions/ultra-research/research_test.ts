@@ -4592,3 +4592,272 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "ambiguous VPN query prefers the networking concept over a branded VPN product",
+  async () => {
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Mozilla VPN",
+                  extract:
+                    "Mozilla VPN es una aplicación y servicio de red privada virtual desarrollado por Mozilla.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Mozilla_VPN",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "Red privada virtual",
+                  extract:
+                    "Una red privada virtual o VPN extiende una red privada sobre una red pública y permite una conexión protegida entre dispositivos.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Red_privada_virtual",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          return new Response("quota", { status: 429 });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "test-gemini";
+        if (name === "XAI_API_KEY") return "test-xai";
+        if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es una VPN?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected stable VPN answer");
+    const answer = result.displayText?.toLowerCase() ?? "";
+    if (!answer.includes("red privada virtual")) {
+      throw new Error("expected the general networking concept");
+    }
+    if (answer.includes("mozilla vpn")) {
+      throw new Error("branded VPN product must not win generic concept query");
+    }
+    if (modelCalls !== 0) {
+      throw new Error("verified primary evidence must avoid model quota");
+    }
+  },
+);
+
+Deno.test(
+  "stable smoke topics resolve from primary knowledge without consuming model quota",
+  async () => {
+    const cases = [
+      {
+        query: "¿Para qué sirve o por qué es importante el ISO en fotografía?",
+        searchMustContain: ["iso", "fotografia"],
+        title: "Sensibilidad ISO",
+        extract:
+          "La sensibilidad ISO en fotografía describe la sensibilidad usada para determinar la exposición de una imagen.",
+        expected: "fotograf",
+      },
+      {
+        query: "¿Cómo respiran los peces?",
+        searchMustContain: ["peces", "respir"],
+        title: "Respiración de los peces",
+        extract:
+          "La mayoría de los peces respira mediante branquias, que intercambian gases con el agua.",
+        expected: "branquias",
+      },
+      {
+        query: "¿Cómo funciona un parlante Bluetooth?",
+        searchMustContain: ["bluetooth", "altavoz"],
+        title: "Altavoz Bluetooth",
+        extract:
+          "Un altavoz Bluetooth recibe audio digital por Bluetooth y lo convierte en sonido mediante sus transductores.",
+        expected: "bluetooth",
+      },
+      {
+        query:
+          "Si alguien me pregunta por la navegación autónoma, ¿cómo lo explicarías en pocas frases?",
+        searchMustContain: ["navegacion", "robotica"],
+        title: "Navegación autónoma",
+        extract:
+          "La navegación autónoma permite que un robot determine su posición, planifique una ruta y se desplace sin control humano continuo.",
+        expected: "robot",
+      },
+      {
+        query: "¿Qué tipo de empresa es Lenovo?",
+        searchMustContain: ["lenovo", "empresa"],
+        title: "Lenovo",
+        extract:
+          "Lenovo es una empresa tecnológica multinacional que fabrica computadoras personales, dispositivos y otros productos electrónicos.",
+        expected: "empresa",
+      },
+      {
+        query: "¿Quién es ElRubius?",
+        searchMustContain: ["rubius", "youtuber"],
+        title: "El Rubius",
+        extract:
+          "El Rubius es un youtuber y creador de contenido español conocido por sus videos de entretenimiento y videojuegos.",
+        expected: "youtuber",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let modelCalls = 0;
+      let observedSearch = "";
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php" &&
+            url.searchParams.get("generator") === "search"
+          ) {
+            observedSearch = wikipediaSearchParam(url).toLowerCase();
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replaceAll(" ", "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
+          if (
+            url.hostname === "generativelanguage.googleapis.com" ||
+            url.hostname === "api.x.ai"
+          ) {
+            modelCalls += 1;
+            return new Response("quota", { status: 429 });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: (name) => {
+          if (name === "GEMINI_API_KEY") return "test-gemini";
+          if (name === "XAI_API_KEY") return "test-xai";
+          if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+          return undefined;
+        },
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error("unexpected abstention for " + testCase.query);
+      }
+      for (const token of testCase.searchMustContain) {
+        if (!observedSearch.includes(token)) {
+          throw new Error(
+            "missing search hint " + token + " for " + testCase.query +
+              ": " + observedSearch,
+          );
+        }
+      }
+      if (
+        !result.displayText?.toLowerCase().includes(testCase.expected)
+      ) {
+        throw new Error("unexpected answer for " + testCase.query);
+      }
+      if (modelCalls !== 0) {
+        throw new Error(
+          "stable primary answer consumed model quota for " + testCase.query,
+        );
+      }
+    }
+  },
+);
+
+Deno.test(
+  "dependent bear follow-up keeps the previous subject and resolves the intended comparison",
+  async () => {
+    let observedSearch = "";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          observedSearch = wikipediaSearchParam(url).toLowerCase();
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Oso polar",
+                  extract:
+                    "El oso polar es una especie de mamífero carnívoro de la familia de los osos y se encuentra entre los osos actuales de mayor tamaño.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Ursus_maritimus",
+                },
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Cuál es el más grande?",
+      deps,
+      "Tú: Háblame de los osos.\nUltra: Los osos son mamíferos de la familia Ursidae.",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected contextual bear answer");
+    if (!observedSearch.includes("oso")) {
+      throw new Error("previous bear topic was lost: " + observedSearch);
+    }
+    if (!result.displayText?.toLowerCase().includes("oso polar")) {
+      throw new Error("expected contextual answer about the largest bear");
+    }
+  },
+);
