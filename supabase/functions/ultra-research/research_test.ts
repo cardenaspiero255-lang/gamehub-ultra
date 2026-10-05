@@ -6120,7 +6120,6 @@ Deno.test("English queries reject unrelated encyclopedia evidence", async () => 
   }
 });
 
-
 Deno.test("exoplanet query accepts extrasolar-planet semantic evidence", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -6139,13 +6138,16 @@ Deno.test("exoplanet query accepts extrasolar-planet semantic evidence", async (
                 title: "Planeta extrasolar",
                 extract:
                   "Un planeta extrasolar es un planeta que orbita una estrella distinta del Sol.",
-                canonicalurl: "https://es.wikipedia.org/wiki/Planeta_extrasolar",
+                canonicalurl:
+                  "https://es.wikipedia.org/wiki/Planeta_extrasolar",
               },
             },
           },
         });
       }
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         return jsonResponse({ query: { search: [] } });
       }
       if (url.hostname === "www.wikidata.org") {
@@ -6184,7 +6186,9 @@ Deno.test("macroverse gets a transparent nonstandard-term answer instead of gene
       ) {
         return jsonResponse({ query: { pages: {} } });
       }
-      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+      if (
+        url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+      ) {
         return jsonResponse({ query: { search: [] } });
       }
       if (url.hostname === "www.wikidata.org") {
@@ -6204,7 +6208,9 @@ Deno.test("macroverse gets a transparent nonstandard-term answer instead of gene
   );
 
   if (result.abstained) {
-    throw new Error("nonstandard terminology must not degrade to generic abstention");
+    throw new Error(
+      "nonstandard terminology must not degrade to generic abstention",
+    );
   }
   const answer = (result.displayText ?? "").toLowerCase();
   if (!answer.includes("macroverso") || !answer.includes("univers")) {
