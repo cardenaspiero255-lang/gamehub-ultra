@@ -2746,32 +2746,151 @@ function generalKnowledgeSearchTopic(
   topic: string,
 ): string {
   const clean = normalize(query);
+  const normalizedTopic = normalize(topic);
   const hints: string[] = [];
+  let canonicalTopic = topic.trim();
 
-  if (/\bnpc\b/.test(clean)) hints.push("videojuegos");
-  if (/\bsinonim/.test(clean)) hints.push("linguistica", "palabra");
-  if (/\bjbl\b/.test(clean)) hints.push("audio", "empresa");
-  if (/\bqled\b/.test(clean)) hints.push("television");
-  if (/\bnfc\b/.test(clean)) hints.push("telefono", "tecnologia");
-  if (/\bmah\b/.test(clean)) hints.push("bateria");
-  if (/\biso\b/.test(clean) && /\bfotograf/.test(clean)) {
-    hints.push("fotografia");
-  }
-  if (/\bfps\b/.test(clean) && /\bvideoj/.test(clean)) {
+  if (/\bvpn\b/.test(clean)) {
+    canonicalTopic = "VPN red privada virtual";
+  } else if (/\bnpc\b/.test(clean)) {
+    canonicalTopic = "NPC personaje no jugador";
     hints.push("videojuegos");
-  }
-  if (/\bray tracing\b/.test(clean)) hints.push("graficos");
-  if (/\blatencia\b/.test(clean) && /\bjuego/.test(clean)) {
+  } else if (/\bsinonim/.test(clean)) {
+    canonicalTopic = "sinónimo";
+    hints.push("linguistica", "palabra");
+  } else if (/\bjbl\b/.test(clean)) {
+    canonicalTopic = "JBL";
+    hints.push("empresa", "audio");
+  } else if (/\bqled\b/.test(clean)) {
+    canonicalTopic = "QLED";
+    hints.push("television");
+  } else if (/\bnfc\b/.test(clean)) {
+    canonicalTopic = "NFC comunicación de campo cercano";
+    hints.push("telefono", "tecnologia");
+  } else if (/\bmah\b/.test(clean)) {
+    canonicalTopic = "mAh miliamperio hora";
+    hints.push("bateria", "capacidad");
+  } else if (/\biso\b/.test(clean) && /\bfotograf/.test(clean)) {
+    canonicalTopic = "sensibilidad ISO";
+    hints.push("fotografia", "exposicion");
+  } else if (/\bfps\b/.test(clean) && /\bvideoj/.test(clean)) {
+    canonicalTopic = "FPS fotogramas por segundo";
     hints.push("videojuegos");
+  } else if (/\bray tracing\b/.test(clean)) {
+    canonicalTopic = "ray tracing trazado de rayos";
+    hints.push("graficos");
+  } else if (/\blatencia\b/.test(clean) && /\bjuego/.test(clean)) {
+    canonicalTopic = "latencia";
+    hints.push("videojuegos", "red");
+  } else if (
+    /\b(?:parlante|altavoz)\b/.test(clean) &&
+    /\bbluetooth\b/.test(clean)
+  ) {
+    canonicalTopic = "altavoz Bluetooth";
+    hints.push("audio");
+  } else if (/\bnavegacion autonoma\b/.test(clean)) {
+    canonicalTopic = "navegación autónoma";
+    hints.push("robotica");
+  } else if (/\b(?:elrubius|el rubius)\b/.test(clean)) {
+    canonicalTopic = "El Rubius";
+    hints.push("youtuber", "creador contenido");
+  } else if (/\brespir/.test(clean) && /\bpeces?\b/.test(clean)) {
+    canonicalTopic = "respiración de los peces";
+    hints.push("branquias");
   }
 
-  const brand = /\b(?:samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/;
-  const companyIntent = /\b(?:empresa|productos?|fabrica|fabricar|conocid[oa])\b/;
+  if (/\bmas grande\b/.test(clean) || /\bmayor tamano\b/.test(clean)) {
+    hints.push("mayor tamaño");
+  }
+
+  const brand =
+    /\b(?:samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/;
+  const companyIntent =
+    /\b(?:empresa|productos?|fabrica|fabricar|conocid[oa]|tipo de empresa)\b/;
   if (brand.test(clean) && companyIntent.test(clean)) {
-    hints.push("empresa");
+    hints.push("empresa", "tecnologia");
   }
 
-  return [topic, ...hints].filter(Boolean).join(" ").trim();
+  if (
+    /\blenovo\b/.test(clean) &&
+    (companyIntent.test(clean) || normalizedTopic.includes("lenovo"))
+  ) {
+    canonicalTopic = "Lenovo";
+    hints.push("empresa", "tecnologia");
+  }
+
+  return [canonicalTopic, ...hints].filter(Boolean).join(" ").trim();
+}
+
+function candidateRelevanceScore(
+  searchTopic: string,
+  query: string,
+  title: string,
+  extract: string,
+): number {
+  const normalizedTitle = normalize(title);
+  const normalizedExtract = normalize(extract);
+  const normalizedSearch = normalize(searchTopic);
+  const titleTokens = [...evidenceTokens(title)];
+  const candidateTokens = [...evidenceTokens(title + " " + extract)];
+  const searchTokens = [...evidenceTokens(searchTopic)];
+
+  let score = 0;
+  if (normalizedTitle === normalizedSearch) score += 40;
+  if (
+    normalizedSearch.length >= 4 &&
+    normalizedTitle.includes(normalizedSearch)
+  ) {
+    score += 18;
+  }
+
+  for (const token of searchTokens) {
+    if (
+      titleTokens.some((candidateToken) =>
+        evidenceTokensRelated(token, candidateToken)
+      )
+    ) {
+      score += 6;
+      continue;
+    }
+    if (
+      candidateTokens.some((candidateToken) =>
+        evidenceTokensRelated(token, candidateToken)
+      )
+    ) {
+      score += 2;
+    }
+  }
+
+  const cleanQuery = normalize(query);
+  if (
+    /\bvpn\b/.test(cleanQuery) &&
+    normalizedTitle.includes("red privada virtual")
+  ) {
+    score += 30;
+  }
+  if (
+    /\bnpc\b/.test(cleanQuery) &&
+    normalizedTitle.includes("personaje no jugador")
+  ) {
+    score += 30;
+  }
+  if (
+    /\bsinonim/.test(cleanQuery) &&
+    (normalizedTitle.includes("semant") ||
+      normalizedExtract.includes("linguistic"))
+  ) {
+    score += 24;
+  }
+  if (
+    /\bjbl\b/.test(cleanQuery) &&
+    (normalizedExtract.includes("audio") ||
+      normalizedExtract.includes("altavoz"))
+  ) {
+    score += 24;
+  }
+
+  return score;
 }
 
 async function wikipediaGeneratorEvidence(
