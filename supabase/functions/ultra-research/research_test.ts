@@ -6119,3 +6119,98 @@ Deno.test("English queries reject unrelated encyclopedia evidence", async () => 
     throw new Error("unrelated evidence must be rejected");
   }
 });
+
+
+Deno.test("exoplanet query accepts extrasolar-planet semantic evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Planeta extrasolar",
+                extract:
+                  "Un planeta extrasolar es un planeta que orbita una estrella distinta del Sol.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Planeta_extrasolar",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "www.wikidata.org") {
+        return jsonResponse({ search: [] });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es un exoplaneta?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("extrasolar synonym evidence must answer exoplanet query");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("planeta") || !answer.includes("estrella")) {
+    throw new Error("expected a relevant exoplanet explanation");
+  }
+});
+
+Deno.test("macroverse gets a transparent nonstandard-term answer instead of generic abstention", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({ query: { pages: {} } });
+      }
+      if (url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "www.wikidata.org") {
+        return jsonResponse({ search: [] });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es un macroverso?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("nonstandard terminology must not degrade to generic abstention");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("macroverso") || !answer.includes("univers")) {
+    throw new Error("expected a transparent macroverse explanation");
+  }
+  if (!answer.includes("no es un término científico estandarizado")) {
+    throw new Error("expected ambiguity caveat for macroverse");
+  }
+});
