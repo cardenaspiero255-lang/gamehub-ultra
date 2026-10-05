@@ -100,7 +100,7 @@ jobs:
           name: gamehub-ultra-unit-tests-warmup
           fail_ci_if_error: true
           use_pypi: true
-          version: "11.3.1"
+          version: "v11.3.1"
           verbose: true
 
       - name: Upload coverage to Codecov
@@ -115,7 +115,8 @@ jobs:
           name: gamehub-ultra-unit-tests
           fail_ci_if_error: true
           use_pypi: true
-          version: "11.3.1"
+          version: "v11.3.1"
+          use_legacy_upload_endpoint: true
           verbose: true
 
       - name: Preserve coverage report
