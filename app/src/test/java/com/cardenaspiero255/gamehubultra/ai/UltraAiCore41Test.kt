@@ -146,7 +146,7 @@ class UltraAiCore41Test {
     }
 
     @Test
-    fun \`deterministic fallback covers thermal feedback active profile and safe default branches\`() {
+    fun `deterministic fallback covers thermal feedback active profile and safe default branches`() {
         val core = UltraAiCore2()
 
         val thermal = core.evaluate(
@@ -193,7 +193,7 @@ class UltraAiCore41Test {
     }
 
     @Test
-    fun \`explanation exposes only sanitized available metrics and handles empty model evidence\`() {
+    fun `explanation exposes only sanitized available metrics and handles empty model evidence`() {
         val result = UltraAiCore2(
             recommender = UltraAiRecommender { _, _ ->
                 UltraAiRecommendation(
@@ -239,5 +239,4 @@ class UltraAiCore41Test {
         assertEquals(null, invalid.thermalStatus)
         assertEquals(null, invalid.thermalHeadroom)
     }
-
 }
