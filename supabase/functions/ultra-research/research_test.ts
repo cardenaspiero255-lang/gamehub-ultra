@@ -4676,6 +4676,63 @@ Deno.test(
 );
 
 Deno.test(
+  "operating system smoke question resolves from canonical primary knowledge",
+  async () => {
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Sistema operativo",
+                  extract:
+                    "Un sistema operativo es el software principal que administra los recursos de un dispositivo y permite ejecutar aplicaciones.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Sistema_operativo",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          throw new Error("primary evidence should avoid model fallback");
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Para qué sirve un sistema operativo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (result.abstained) {
+      throw new Error("expected operating-system primary evidence");
+    }
+    if (!result.displayText?.toLowerCase().includes("sistema operativo")) {
+      throw new Error("expected operating-system answer");
+    }
+    if (modelCalls !== 0) {
+      throw new Error("operating-system knowledge unexpectedly used a model");
+    }
+  },
+);
+
+Deno.test(
   "stable common concepts use bare Wikidata labels when Wikipedia is unavailable",
   async () => {
     const cases = [

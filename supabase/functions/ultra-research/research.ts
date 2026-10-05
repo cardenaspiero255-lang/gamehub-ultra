@@ -2866,6 +2866,9 @@ function generalKnowledgeSearchTopic(
   ) {
     canonicalTopic = "altavoz Bluetooth";
     hints.push("audio");
+  } else if (/\bsistema operativo\b/.test(clean)) {
+    canonicalTopic = "sistema operativo";
+    hints.push("software", "computacion");
   } else if (/\bnavegacion autonoma\b/.test(clean)) {
     canonicalTopic = "navegación autónoma";
     hints.push("robotica");
