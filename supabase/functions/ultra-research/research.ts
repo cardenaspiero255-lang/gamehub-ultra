@@ -2900,7 +2900,7 @@ async function wikipediaGeneratorEvidence(
   signal?: AbortSignal,
 ): Promise<ResearchResult | null> {
   const wikipediaHost = "es.wikipedia.org";
-  const url = new URL(`https://${wikipediaHost}/w/api.php`);
+  const url = new URL("https://" + wikipediaHost + "/w/api.php");
   url.searchParams.set("action", "query");
   url.searchParams.set("generator", "search");
   url.searchParams.set("gsrsearch", searchTopic);
@@ -2925,38 +2925,58 @@ async function wikipediaGeneratorEvidence(
       .filter((page): page is JsonObject =>
         Boolean(page) && typeof page === "object"
       )
-      .sort((first, second) =>
-        (numberValue(first.index) ?? Number.MAX_SAFE_INTEGER) -
-        (numberValue(second.index) ?? Number.MAX_SAFE_INTEGER)
-      )
     : [];
 
-  for (const page of pages.slice(0, 5)) {
-    const pageProps = page.pageprops && typeof page.pageprops === "object"
-      ? page.pageprops as JsonObject
-      : null;
-    if (pageProps && "disambiguation" in pageProps) continue;
+  const ranked = pages
+    .map((page) => {
+      const pageProps = page.pageprops && typeof page.pageprops === "object"
+        ? page.pageprops as JsonObject
+        : null;
+      if (pageProps && "disambiguation" in pageProps) return null;
 
-    const title = stringValue(page.title);
-    const extract = stringValue(page.extract);
-    if (!title || !extract) continue;
+      const title = stringValue(page.title);
+      const extract = stringValue(page.extract);
+      if (!title || !extract) return null;
 
+      return {
+        page,
+        title,
+        extract,
+        score: candidateRelevanceScore(searchTopic, query, title, extract),
+        index: numberValue(page.index) ?? Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .filter((candidate): candidate is {
+      page: JsonObject;
+      title: string;
+      extract: string;
+      score: number;
+      index: number;
+    } => candidate !== null)
+    .sort((first, second) =>
+      second.score - first.score || first.index - second.index
+    );
+
+  for (const candidate of ranked) {
     if (
       !isExplicitEnglishKnowledgeQuery(query) &&
-      !candidateMatchesTopic(searchTopic, title + " " + extract)
+      !candidateMatchesTopic(
+        searchTopic,
+        candidate.title + " " + candidate.extract,
+      )
     ) {
       continue;
     }
 
-    const source = stringValue(page.canonicalurl) ??
-      stringValue(page.fullurl) ??
+    const source = stringValue(candidate.page.canonicalurl) ??
+      stringValue(candidate.page.fullurl) ??
       ("https://es.wikipedia.org/wiki/" +
-        encodeURIComponent(title.replace(/ /g, "_")));
+        encodeURIComponent(candidate.title.replace(/ /g, "_")));
 
     return {
-      claimKey: `general:${slug(title)}`,
-      value: normalize(extract),
-      displayText: extract,
+      claimKey: "general:" + slug(candidate.title),
+      value: normalize(candidate.extract),
+      displayText: candidate.extract,
       sourceId: source,
       sourceIds: [source],
       independentSourceCount: 1,
