@@ -25,4 +25,11 @@ class UltraMathMagnitudeRegressionTest {
         assertEquals("2000000", UltraMathEngine.solve("one million x 2")?.resultText)
         assertEquals("2000000000", UltraMathEngine.solve("1 billion x 2")?.resultText)
     }
+    @Test
+    fun `large integer arithmetic does not lose precision`() {
+        val solution = UltraMathEngine.solve("999999999999 x 999999999999")
+
+        assertEquals("999999999998000000000001", solution?.resultText)
+    }
+
 }
