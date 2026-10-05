@@ -4881,6 +4881,91 @@ Deno.test(
 );
 
 Deno.test(
+  "stable Spanish wrappers search the canonical subject without grammatical noise",
+  async () => {
+    const cases = [
+      {
+        query: "¿Qué es una emulsión en cocina?",
+        expectedSearch: "emulsión",
+        title: "Emulsión",
+        extract:
+          "Una emulsión es una mezcla de dos líquidos que normalmente no se mezclan.",
+      },
+      {
+        query: "¿Qué es el matchmaking?",
+        expectedSearch: "matchmaking",
+        title: "Matchmaking",
+        extract: "El matchmaking empareja jugadores para formar partidas.",
+      },
+      {
+        query: "Explícame de forma sencilla qué es la presión arterial.",
+        expectedSearch: "presión arterial",
+        title: "Presión arterial",
+        extract:
+          "La presión arterial es la presión que ejerce la sangre sobre las arterias.",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let observedSearch = "";
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php"
+          ) {
+            observedSearch = wikipediaSearchParam(url);
+            if (observedSearch !== testCase.expectedSearch) {
+              return jsonResponse({ query: { search: [] } });
+            }
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replace(/ /g, "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (url.hostname === "www.wikidata.org") {
+            return jsonResponse({ search: [] });
+          }
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: () => undefined,
+        sleep: () => Promise.resolve(),
+        random: () => 0,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+      if (result.abstained) {
+        throw new Error(
+          "canonical stable subject was not resolved: " + testCase.query,
+        );
+      }
+      if (observedSearch !== testCase.expectedSearch) {
+        throw new Error("unexpected canonical search: " + observedSearch);
+      }
+    }
+  },
+);
+
+Deno.test(
   "stable common concepts use bare Wikidata labels when Wikipedia is unavailable",
   async () => {
     const cases = [
