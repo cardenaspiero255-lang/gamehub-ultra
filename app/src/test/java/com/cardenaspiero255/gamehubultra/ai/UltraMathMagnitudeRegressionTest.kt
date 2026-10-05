@@ -53,4 +53,10 @@ class UltraMathMagnitudeRegressionTest {
         assertEquals("1000000000000", UltraMathEngine.solve("1 trillion x 1")?.resultText)
         assertEquals("2000000", UltraMathEngine.solve("millón x 2")?.resultText)
     }
+
+    @Test
+    fun `Spanish written number before magnitude keeps its value`() {
+        assertEquals("6000000", UltraMathEngine.solve("dos millones por 3")?.resultText)
+        assertEquals("12000000", UltraMathEngine.solve("doce millones x 1")?.resultText)
+    }
 }
