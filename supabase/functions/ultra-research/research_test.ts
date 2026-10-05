@@ -749,7 +749,8 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
                   pageid: 1,
                   index: 1,
                   title: "Fotosíntesis",
-                  extract:\n                    "La fotosíntesis convierte energía luminosa en energía química.",
+                  extract:
+                    "La fotosíntesis convierte energía luminosa en energía química.",
                   fullurl: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
                 },
               },
