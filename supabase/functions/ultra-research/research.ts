@@ -3263,35 +3263,13 @@ async function generalKnowledgeEvidence(
   }
 
   const searchTopic = generalKnowledgeSearchTopic(query, topic);
-  const wikipediaPromise = wikipediaGeneratorEvidence(
+  const generatorEvidence = await wikipediaGeneratorEvidence(
     searchTopic,
     query,
     deps,
     signal,
   );
-  const wikidataPromise = wikidataKnowledgeEvidence(
-    searchTopic,
-    query,
-    deps,
-    signal,
-  ).then((result) => result.abstained ? null : result);
-
-  const firstPrimary = await Promise.race([
-    wikipediaPromise.then((value) => ({
-      provider: "wikipedia" as const,
-      value,
-    })),
-    wikidataPromise.then((value) => ({
-      provider: "wikidata" as const,
-      value,
-    })),
-  ]);
-  if (firstPrimary.value) return firstPrimary.value;
-
-  const secondPrimary = firstPrimary.provider === "wikipedia"
-    ? await wikidataPromise
-    : await wikipediaPromise;
-  if (secondPrimary) return secondPrimary;
+  if (generatorEvidence) return generatorEvidence;
 
   const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
@@ -3318,6 +3296,13 @@ async function generalKnowledgeEvidence(
     : [];
 
   if (candidates.length === 0) {
+    const wikidata = await wikidataKnowledgeEvidence(
+      searchTopic,
+      query,
+      deps,
+      signal,
+    );
+    if (!wikidata.abstained) return wikidata;
     return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
   }
 
@@ -3390,6 +3375,14 @@ async function generalKnowledgeEvidence(
       authoritative: true,
     };
   }
+
+  const wikidata = await wikidataKnowledgeEvidence(
+    searchTopic,
+    query,
+    deps,
+    signal,
+  );
+  if (!wikidata.abstained) return wikidata;
 
   return abstain(
     sawUsableCandidate
