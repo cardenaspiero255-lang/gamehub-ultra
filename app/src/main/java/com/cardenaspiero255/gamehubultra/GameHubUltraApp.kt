@@ -89,6 +89,8 @@ import com.cardenaspiero255.gamehubultra.ui.theme.GameHubUiTokens
 import com.cardenaspiero255.gamehubultra.ui.layout.ResponsiveLayoutPolicy
 import com.cardenaspiero255.gamehubultra.ui.layout.UltraLayoutMode
 import com.cardenaspiero255.gamehubultra.ui.home.HomeScreen
+import com.cardenaspiero255.gamehubultra.ui.home.SmartRecommendationRevertPolicy
+import com.cardenaspiero255.gamehubultra.ui.home.SmartRecommendationRevertTarget
 import com.cardenaspiero255.gamehubultra.ui.library.LibraryScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -426,6 +428,10 @@ internal fun GameHubUltraApp(
         activeSessionId = activeSessionId
     )
 
+    var smartRecommendationRevertTarget by remember(selectedGamePackage) {
+        mutableStateOf<SmartRecommendationRevertTarget?>(null)
+    }
+
     val smartRecommendation = SmartPerformanceAdvisor.recommend(
         SmartPerformanceInput(
             device = device,
@@ -437,6 +443,13 @@ internal fun GameHubUltraApp(
             historicalObservations = optimizationObservations
         )
     )
+    val canRevertSmartRecommendation =
+        SmartRecommendationRevertPolicy.canRevert(
+            target = smartRecommendationRevertTarget,
+            gamePackage = selectedGamePackage,
+            currentProfile = uiState.effectiveProfile
+        )
+
     val smartGameAssistantSuggestions = SmartGameAssistant.suggestAll(
         SmartGameAssistantInput(
             device = device,
@@ -530,12 +543,27 @@ internal fun GameHubUltraApp(
                 onShareSessions = { shareSessionHistory(context, sessionHistory) },
                 adaptiveDecision = adaptiveDecision,
                 smartRecommendation = smartRecommendation,
+                canRevertSmartRecommendation = canRevertSmartRecommendation,
                 onApplySmartRecommendation = {
-                    runtimeCoordinator.recordRecommendationFeedback(
-                        runtimeSnapshot(),
-                        smartRecommendation.profile,
-                        OptimizationFeedbackDecision.ACCEPTED
-                    )
+                    val currentProfile = uiState.effectiveProfile
+                    if (
+                        SmartRecommendationRevertPolicy.shouldRecordAccepted(
+                            currentProfile = currentProfile,
+                            recommendedProfile = smartRecommendation.profile
+                        )
+                    ) {
+                        smartRecommendationRevertTarget =
+                            SmartRecommendationRevertPolicy.capture(
+                                gamePackage = selectedGamePackage,
+                                previousProfile = currentProfile,
+                                appliedProfile = smartRecommendation.profile
+                            )
+                        runtimeCoordinator.recordRecommendationFeedback(
+                            runtimeSnapshot(),
+                            smartRecommendation.profile,
+                            OptimizationFeedbackDecision.ACCEPTED
+                        )
+                    }
                     selectProfile(smartRecommendation.profile)
                 },
                 onRejectSmartRecommendation = {
@@ -546,16 +574,22 @@ internal fun GameHubUltraApp(
                     )
                 },
                 onRevertSmartRecommendation = {
+                    val target = smartRecommendationRevertTarget
                     if (
-                        uiState.effectiveProfile == smartRecommendation.profile &&
-                        smartRecommendation.safeFallback != smartRecommendation.profile
+                        SmartRecommendationRevertPolicy.canRevert(
+                            target = target,
+                            gamePackage = selectedGamePackage,
+                            currentProfile = uiState.effectiveProfile
+                        ) &&
+                        target != null
                     ) {
                         runtimeCoordinator.recordRecommendationFeedback(
                             runtimeSnapshot(),
-                            smartRecommendation.profile,
+                            target.appliedProfile,
                             OptimizationFeedbackDecision.REVERTED
                         )
-                        selectProfile(smartRecommendation.safeFallback)
+                        selectProfile(target.previousProfile)
+                        smartRecommendationRevertTarget = null
                     }
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
