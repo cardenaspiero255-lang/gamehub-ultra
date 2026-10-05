@@ -134,7 +134,8 @@ data class UltraAiCoreResult(
     val recommendation: UltraAiRecommendation,
     val explanation: String,
     val memorySignals: List<UltraAiMemorySignal>,
-    val requiresCloud: Boolean
+    val requiresCloud: Boolean,
+    val recoveryExplanation: String? = null
 )
 
 interface UltraAiCoreGateway {
@@ -168,7 +169,8 @@ class UltraAiCore2(
             recommendation = recommendation,
             explanation = buildExplanation(safeObservation, recommendation),
             memorySignals = memories,
-            requiresCloud = false
+            requiresCloud = false,
+            recoveryExplanation = buildRecoveryExplanation(recommendation)
         )
     }
 
@@ -362,27 +364,24 @@ class UltraAiCore2(
                 append(". Datos disponibles: ")
                 append(metrics.joinToString(", "))
             }
-            when {
-                "recovery=poor-history" in recommendation.evidence -> {
-                    append(
-                        ". Ajusté la recomendación porque el rendimiento previo " +
-                            "de una sugerencia fue desfavorable o se revirtió repetidamente."
-                    )
-                }
-                "feedback=contradiction" in recommendation.evidence -> {
-                    append(
-                        ". Ajusté la confianza porque detecté feedback contradictorio " +
-                            "sobre esta recomendación."
-                    )
-                }
-                "recovery=confidence-reduced" in recommendation.evidence -> {
-                    append(
-                        ". Ajusté la confianza porque una recomendación previa fue " +
-                            "rechazada o revertida."
-                    )
-                }
+            buildRecoveryExplanation(recommendation)?.let { recovery ->
+                append(". ")
+                append(recovery)
             }
         }
+    }
+
+    private fun buildRecoveryExplanation(
+        recommendation: UltraAiRecommendation
+    ): String? = when {
+        "recovery=poor-history" in recommendation.evidence ->
+            "Ajusté la recomendación porque el rendimiento previo de una sugerencia " +
+                "fue desfavorable o se revirtió repetidamente."
+        "feedback=contradiction" in recommendation.evidence ->
+            "Ajusté la confianza porque detecté feedback contradictorio sobre esta recomendación."
+        "recovery=confidence-reduced" in recommendation.evidence ->
+            "Ajusté la confianza porque una recomendación previa fue rechazada o revertida."
+        else -> null
     }
 
     private companion object {
