@@ -2969,7 +2969,9 @@ Deno.test(
       throw new Error("fresh Wikidata retry should recover stable knowledge");
     }
     if (wikidataCalls !== 1) {
-      throw new Error("expected one fresh Wikidata retry; calls=" + wikidataCalls);
+      throw new Error(
+        "expected one fresh Wikidata retry; calls=" + wikidataCalls,
+      );
     }
     if (modelCalls !== 0) {
       throw new Error("stable Wikidata fallback should avoid model calls");
@@ -4769,7 +4771,8 @@ Deno.test(
                   title: "Sistema operativo",
                   extract:
                     "Un sistema operativo es el software principal que administra los recursos de un dispositivo y permite ejecutar aplicaciones.",
-                  canonicalurl: "https://es.wikipedia.org/wiki/Sistema_operativo",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Sistema_operativo",
                 },
               },
             },
