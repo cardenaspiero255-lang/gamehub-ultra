@@ -717,10 +717,15 @@ def main() -> None:
         if isinstance(local_patch_run, str)
         else []
     )
-    if not any(
-        line.startswith("python3 .github/scripts/local_patch_coverage.py")
-        for line in executable_lines
-    ):
+    coverage_command = next(
+        (
+            line
+            for line in executable_lines
+            if line.startswith("python3 .github/scripts/local_patch_coverage.py")
+        ),
+        None,
+    )
+    if coverage_command is None:
         fail("blocking local patch coverage gate must execute the Python coverage checker")
 
     codecov_probe = require_step(
