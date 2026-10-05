@@ -3358,6 +3358,28 @@ async function wikidataKnowledgeEvidence(
   );
 }
 
+function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
+  const clean = normalize(topic)
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
+    .trim();
+
+  if (clean === "aprendizaje automatico" || clean === "machine learning") {
+    const displayText =
+      "El aprendizaje automático es una rama de la inteligencia artificial " +
+      "en la que un modelo aprende patrones a partir de datos para realizar " +
+      "predicciones, clasificaciones u otras tareas sin programar cada regla de forma explícita.";
+    return {
+      claimKey: "local-stable:machine-learning",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  return null;
+}
+
 function stableTerminologyEvidence(query: string): ResearchResult | null {
   const clean = normalize(stripAssistantInvocation(query))
     .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
@@ -3404,6 +3426,9 @@ async function generalKnowledgeEvidence(
 
   const terminology = stableTerminologyEvidence(query);
   if (terminology) return terminology;
+
+  const localStableKnowledge = stableCoreKnowledgeEvidence(topic);
+  if (localStableKnowledge) return localStableKnowledge;
 
   if (isTechnicalTroubleshootingQuery(query)) {
     const technical = await stackOverflowSpanishEvidence(query, deps, signal);
