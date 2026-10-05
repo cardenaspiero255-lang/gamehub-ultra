@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlinx.coroutines.flow.Flow
@@ -111,14 +112,15 @@ class GameOptimizationMemoryStore(
             observation.thermalStatus?.toString().orEmpty(),
             observation.batteryPercent?.toString().orEmpty(),
             observation.errorReason.orEmpty(),
-            observation.timestampMillis.toString()
+            observation.timestampMillis.toString(),
+            observation.feedbackDecision.name
         ).joinToString("|") {
             Base64.getEncoder().encodeToString(it.toByteArray(StandardCharsets.UTF_8))
         }
 
     private fun decode(line: String): OptimizationObservation? = runCatching {
         val fields = line.split("|")
-        if (fields.size != 11) return null
+        if (fields.size != 11 && fields.size != 12) return null
         OptimizationObservation(
             id = decodeField(fields[0]),
             contextKey = decodeField(fields[1]),
@@ -130,7 +132,14 @@ class GameOptimizationMemoryStore(
             thermalStatus = decodeField(fields[7]).toIntOrNull(),
             batteryPercent = decodeField(fields[8]).toIntOrNull()?.takeIf { it in 0..100 },
             errorReason = decodeField(fields[9]).takeIf(String::isNotBlank),
-            timestampMillis = decodeField(fields[10]).toLongOrNull() ?: return null
+            timestampMillis = decodeField(fields[10]).toLongOrNull() ?: return null,
+            feedbackDecision = fields.getOrNull(11)
+                ?.let(::decodeField)
+                ?.let { encoded ->
+                    runCatching { OptimizationFeedbackDecision.valueOf(encoded) }
+                        .getOrDefault(OptimizationFeedbackDecision.NONE)
+                }
+                ?: OptimizationFeedbackDecision.NONE
         )
     }.getOrNull()
 
