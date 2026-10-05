@@ -4920,7 +4920,9 @@ Deno.test(
               },
             });
           }
-          if (url.hostname === "api.tavily.com") return jsonResponse({ results: [] });
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
           if (
             url.hostname === "generativelanguage.googleapis.com" ||
             url.hostname === "api.x.ai"
@@ -4940,10 +4942,14 @@ Deno.test(
         "",
         "GENERAL_KNOWLEDGE",
       );
-      if (result.abstained) throw new Error("unexpected abstention for " + testCase.query);
+      if (result.abstained) {
+        throw new Error("unexpected abstention for " + testCase.query);
+      }
       for (const token of testCase.expectedSearch) {
         if (!observedSearch.includes(token)) {
-          throw new Error("missing stable search hint " + token + ": " + observedSearch);
+          throw new Error(
+            "missing stable search hint " + token + ": " + observedSearch,
+          );
         }
       }
       const answer = (result.displayText ?? "").normalize("NFD")
@@ -4951,7 +4957,9 @@ Deno.test(
       if (!answer.includes(testCase.expectedAnswer)) {
         throw new Error("unexpected stable answer for " + testCase.query);
       }
-      if (modelCalls !== 0) throw new Error("stable answer unexpectedly used a model");
+      if (modelCalls !== 0) {
+        throw new Error("stable answer unexpectedly used a model");
+      }
     }
   },
 );
