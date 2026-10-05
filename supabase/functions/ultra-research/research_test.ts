@@ -6273,3 +6273,32 @@ Deno.test("qualified macroverse question continues to researched evidence", asyn
     throw new Error("generic terminology answer overrode qualified research");
   }
 });
+
+
+Deno.test("stable machine-learning wrapper survives provider outage without a model", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      throw new Error("simulated provider outage");
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Si alguien me pregunta por el aprendizaje automático, ¿cómo lo explicarías en pocas frases?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("stable machine-learning knowledge must have a local fallback");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (
+    !answer.includes("aprendizaje") ||
+    !answer.includes("datos") ||
+    !answer.includes("modelo")
+  ) {
+    throw new Error("expected grounded local machine-learning explanation");
+  }
+});
