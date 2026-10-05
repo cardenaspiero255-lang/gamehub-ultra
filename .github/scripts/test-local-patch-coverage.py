@@ -56,6 +56,36 @@ class LocalPatchCoverageTest(unittest.TestCase):
         self.assertEqual(stats.unmapped_files, ("app/src/main/java/com/example/Foo.kt:10",))
         self.assertFalse(gate.meets_threshold(stats, 90.0))
 
+
+    def test_unmapped_kotlin_declarations_are_not_treated_as_executable(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = 1
+private fun adviseInternal(
+    question: String,
+    context: Context,
+): Result {
+    return Result()
+}
+fun interface Recommender {
+    fun recommend(
+        observation: Observation,
+    ): Recommendation
+}
+private companion object {
+    const val LIMIT = 6
+}
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 15))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+
+
     def test_threshold_is_blocking_below_minimum(self) -> None:
         stats = gate.PatchCoverage(executable=10, covered=8)
         self.assertFalse(gate.meets_threshold(stats, 90.0))
