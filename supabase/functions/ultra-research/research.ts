@@ -422,7 +422,7 @@ function primaryEvidenceTimeoutMs(
     deps.env("ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS")?.trim() ?? "",
   );
   if (Number.isFinite(configured) && configured > 0) {
-    return Math.max(150, Math.min(3_000, Math.trunc(configured)));
+    return Math.max(150, Math.min(6_000, Math.trunc(configured)));
   }
   return 4_500;
 }
@@ -2795,10 +2795,21 @@ async function wikipediaActionExtract(
   return null;
 }
 
+function wikidataEntitySearchTopic(canonicalTopic: string): string {
+  const withoutArticle = canonicalTopic
+    .trim()
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/i, "");
+  const compactEntity = withoutArticle.replace(
+    /\s+de\s+(?:el|la|los|las|un|una|unos|unas)\b.*$/i,
+    "",
+  ).trim();
+  return compactEntity || withoutArticle;
+}
+
 function generalKnowledgeSearchTopic(
   query: string,
   topic: string,
-): string {
+): { searchTopic: string; relevanceTopic: string; wikidataTopic: string } {
   const clean = normalize(query);
   const normalizedTopic = normalize(topic);
   const hints: string[] = [];
@@ -2894,7 +2905,12 @@ function generalKnowledgeSearchTopic(
     hints.push("empresa", "tecnologia");
   }
 
-  return [canonicalTopic, ...hints].filter(Boolean).join(" ").trim();
+  const relevanceTopic = canonicalTopic.trim();
+  return {
+    searchTopic: [relevanceTopic, ...hints].filter(Boolean).join(" ").trim(),
+    relevanceTopic,
+    wikidataTopic: wikidataEntitySearchTopic(relevanceTopic),
+  };
 }
 
 function candidateMatchesKnownMeaning(
@@ -3053,6 +3069,7 @@ function candidateRelevanceScore(
 
 async function wikipediaGeneratorEvidence(
   searchTopic: string,
+  relevanceTopic: string,
   query: string,
   deps: ResearchDependencies,
   signal?: AbortSignal,
@@ -3119,7 +3136,7 @@ async function wikipediaGeneratorEvidence(
   for (const candidate of ranked) {
     if (
       !candidateMatchesTopic(
-        searchTopic,
+        relevanceTopic,
         candidate.title + " " + candidate.extract,
       )
     ) {
@@ -3147,6 +3164,7 @@ async function wikipediaGeneratorEvidence(
 
 async function wikidataKnowledgeEvidence(
   searchTopic: string,
+  relevanceTopic: string,
   query: string,
   deps: ResearchDependencies,
   signal?: AbortSignal,
@@ -3213,7 +3231,7 @@ async function wikidataKnowledgeEvidence(
       .filter(Boolean)
       .join(" ");
     if (!candidateMatchesKnownMeaning(query, label, description)) continue;
-    if (!candidateMatchesTopic(searchTopic, candidateText)) continue;
+    if (!candidateMatchesTopic(relevanceTopic, candidateText)) continue;
 
     const source = stringValue(item.concepturi) ??
       `https://www.wikidata.org/wiki/${encodeURIComponent(id)}`;
@@ -3262,9 +3280,11 @@ async function generalKnowledgeEvidence(
     if (!technical.abstained) return technical;
   }
 
-  const searchTopic = generalKnowledgeSearchTopic(query, topic);
+  const topicPlan = generalKnowledgeSearchTopic(query, topic);
+  const searchTopic = topicPlan.searchTopic;
   const generatorEvidence = await wikipediaGeneratorEvidence(
     searchTopic,
+    topicPlan.relevanceTopic,
     query,
     deps,
     signal,
@@ -3297,7 +3317,8 @@ async function generalKnowledgeEvidence(
 
   if (candidates.length === 0) {
     const wikidata = await wikidataKnowledgeEvidence(
-      searchTopic,
+      topicPlan.wikidataTopic,
+      topicPlan.relevanceTopic,
       query,
       deps,
       signal,
@@ -3359,7 +3380,7 @@ async function generalKnowledgeEvidence(
     }
 
     if (
-      !candidateMatchesTopic(searchTopic, title + " " + extract)
+      !candidateMatchesTopic(topicPlan.relevanceTopic, title + " " + extract)
     ) {
       continue;
     }
@@ -3377,7 +3398,8 @@ async function generalKnowledgeEvidence(
   }
 
   const wikidata = await wikidataKnowledgeEvidence(
-    searchTopic,
+    topicPlan.wikidataTopic,
+    topicPlan.relevanceTopic,
     query,
     deps,
     signal,

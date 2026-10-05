@@ -343,7 +343,16 @@ class UltraAiCore41Test {
     fun `production thermal status triggers safety fallback`() {
         val result = UltraAiCore2().evaluate(UltraAiObservation("com.example.game", "X4", 80, thermalStatus = 3, thermalHeadroom = 0.40f), UltraAiFeedbackSnapshot(), emptyList())
         assertEquals("BALANCED", result.recommendation.profileId)
-        assertTrue(result.recommendation.evidence.any { it.startsWith("thermal=") })
+        assertTrue(result.recommendation.evidence.contains("thermalStatus=3"))
+        assertFalse(result.recommendation.evidence.contains("thermal=null"))
+    }
+
+    @Test
+    fun `thermal headroom evidence records the signal that triggered safety`() {
+        val result = UltraAiCore2().evaluate(UltraAiObservation("com.example.game", "X4", 80, thermalStatus = 1, thermalHeadroom = 0.90f), UltraAiFeedbackSnapshot(), emptyList())
+        assertEquals("BALANCED", result.recommendation.profileId)
+        assertTrue(result.recommendation.evidence.contains("thermalHeadroom=0.9"))
+        assertFalse(result.recommendation.evidence.contains("thermal=null"))
     }
 
     @Test

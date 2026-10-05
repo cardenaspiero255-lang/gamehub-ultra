@@ -4546,6 +4546,9 @@ Deno.test(
           url.pathname === "/w/api.php"
         ) {
           wikidataCalls += 1;
+          if (url.searchParams.get("search") !== "germinación") {
+            return jsonResponse({ search: [] });
+          }
           return jsonResponse({
             search: [{
               id: "Q100001",
@@ -4581,6 +4584,117 @@ Deno.test(
     }
     if (!result.sourceIds?.some((source) => source.includes("wikidata.org"))) {
       throw new Error("expected visible Wikidata source");
+    }
+  },
+);
+
+Deno.test(
+  "stable common concepts use bare Wikidata labels when Wikipedia is unavailable",
+  async () => {
+    const cases = [
+      {
+        query: "¿Cómo funciona un ventilador?",
+        expectedSearch: "ventilador",
+        label: "Ventilador",
+        description: "máquina que mueve aire mediante aspas giratorias",
+      },
+      {
+        query: "¿Para qué sirve o por qué es importante la ética?",
+        expectedSearch: "ética",
+        label: "Ética",
+        description: "rama de la filosofía que estudia la conducta moral",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (url.hostname === "es.wikipedia.org") {
+            return new Response("temporarily unavailable", { status: 503 });
+          }
+          if (url.hostname === "www.wikidata.org") {
+            if (url.searchParams.get("search") !== testCase.expectedSearch) {
+              return jsonResponse({ search: [] });
+            }
+            return jsonResponse({
+              search: [{
+                id: "Q-test",
+                label: testCase.label,
+                description: testCase.description,
+                concepturi: "https://www.wikidata.org/entity/Q-test",
+              }],
+            });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: () => undefined,
+        sleep: () => Promise.resolve(),
+        random: () => 0,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+      if (result.abstained) {
+        throw new Error("stable concept should resolve without model keys");
+      }
+    }
+  },
+);
+
+Deno.test(
+  "search hints cannot validate an unrelated brand as authoritative",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Samsung",
+                  extract: "Samsung es una empresa tecnológica que fabrica productos electrónicos.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Samsung",
+                },
+              },
+            },
+          });
+        }
+        if (url.hostname === "es.wikipedia.org") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          return jsonResponse({ search: [] });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué productos fabrica Sony?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (!result.abstained) {
+      throw new Error("generic search hints must not validate an unrelated brand");
     }
   },
 );

@@ -118,7 +118,14 @@ class UltraAiCore2(
                 "BALANCED"
             }
             hotThermal -> {
-                evidence += "thermal=" + observation.thermalLabel
+                evidence += when {
+                    thermal in HOT_THERMAL_LABELS ->
+                        "thermal=" + observation.thermalLabel
+                    observation.thermalStatus?.let { it >= 3 } == true ->
+                        "thermalStatus=" + observation.thermalStatus
+                    else ->
+                        "thermalHeadroom=" + observation.thermalHeadroom
+                }
                 "BALANCED"
             }
             safeMemoryPreference != null -> {

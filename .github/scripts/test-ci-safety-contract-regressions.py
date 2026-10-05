@@ -243,6 +243,18 @@ def replace_local_patch_gate_with_echo(android: str, coverage: str):
     return android, coverage.replace(needle, replacement, 1)
 
 
+def mask_local_patch_coverage_with_or_true(android: str, coverage: str):
+    """Reject masking the authoritative local patch coverage command."""
+    needle = "            --min-patch-line 90\n"
+    if needle not in coverage:
+        raise SystemExit("Fixture drift: local patch coverage terminator not found")
+    return android, coverage.replace(
+        needle,
+        "            --min-patch-line 90 || true\n",
+        1,
+    )
+
+
 def comment_out_coverage_command(android: str, coverage: str):
     """Comment out the authoritative coverage command while preserving its text."""
     needle = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
@@ -585,6 +597,7 @@ def main() -> None:
     run_mutation("coverage gate made advisory with continue-on-error", make_coverage_advisory)
     run_mutation("local patch coverage gate made advisory", make_local_patch_coverage_advisory)
     run_mutation("local patch coverage replaced by inert echo", replace_local_patch_gate_with_echo)
+    run_mutation("local patch coverage failure masked with || true", mask_local_patch_coverage_with_or_true)
     run_mutation("coverage command commented out", comment_out_coverage_command)
     run_mutation("fake quality step hidden inside run heredoc", hide_quality_step_inside_run_heredoc)
     run_mutation("unit test removed from Gradle but echoed later", remove_unit_test_but_echo_name)

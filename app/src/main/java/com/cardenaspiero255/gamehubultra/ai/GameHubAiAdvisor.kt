@@ -576,7 +576,12 @@ class GameHubAiAdvisor(
                 }
             }
 
-        val finalProfile = coreProfile ?: baseAdvice.suggestedProfile
+        val safetyConstrained = hot || lowBattery || lowStorage
+        val safeCoreProfile = coreProfile?.takeIf { candidate ->
+            !safetyConstrained &&
+                (candidate != PerformanceProfile.X4 || context.sustainedPerformanceSupported)
+        }
+        val finalProfile = safeCoreProfile ?: baseAdvice.suggestedProfile
         val finalReason = if (finalProfile == baseAdvice.suggestedProfile) {
             baseAdvice.reason
         } else {

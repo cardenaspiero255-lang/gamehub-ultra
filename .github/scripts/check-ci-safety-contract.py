@@ -708,24 +708,25 @@ def main() -> None:
         )
 
     local_patch_run = local_patch_coverage.get("run")
-    executable_lines = (
-        [
-            line.strip()
-            for line in local_patch_run.splitlines()
-            if line.strip() and not line.lstrip().startswith("#")
-        ]
-        if isinstance(local_patch_run, str)
-        else []
-    )
-    coverage_command = next(
-        (
-            line
-            for line in executable_lines
-            if line.startswith("python3 .github/scripts/local_patch_coverage.py")
-        ),
-        None,
-    )
-    if coverage_command is None:
+    if not isinstance(local_patch_run, str):
+        fail("blocking local patch coverage gate must execute the Python coverage checker")
+
+    coverage_tokens: list[str] | None = None
+    for command in logical_shell_commands(local_patch_run):
+        lexer = shlex.shlex(command, posix=True, punctuation_chars="|;&")
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError as exc:
+            fail(f"Unable to parse local patch coverage command: {exc}: {command!r}")
+        if tokens[:2] != ["python3", ".github/scripts/local_patch_coverage.py"]:
+            continue
+        if any(token in {"|", "||", ";", "&", "&&"} for token in tokens):
+            fail(f"blocking local patch coverage gate masks or redirects failure: {command!r}")
+        coverage_tokens = tokens
+        break
+
+    if coverage_tokens is None:
         fail("blocking local patch coverage gate must execute the Python coverage checker")
 
     codecov_probe = require_step(

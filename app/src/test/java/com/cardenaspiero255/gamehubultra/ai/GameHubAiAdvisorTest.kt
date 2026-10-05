@@ -699,22 +699,40 @@ class GameHubAiAdvisorTest {
             thermalHeadroom = 0.90f
         )
 
-        val x4 = advisorReturning("X4").advise(
+        val constrainedX4 = advisorReturning("X4").advise(
             "qué modo me recomiendas",
             constrainedContext
+        )
+        assertEquals(PerformanceProfile.BALANCED, constrainedX4.suggestedProfile)
+        assertEquals(AiAdviceReason.THERMAL, constrainedX4.reason)
+
+        val constrainedInterpolation = advisorReturning("FRAME_INTERPOLATION").advise(
+            "qué modo me recomiendas",
+            constrainedContext
+        )
+        assertEquals(PerformanceProfile.BALANCED, constrainedInterpolation.suggestedProfile)
+        assertEquals(AiAdviceReason.THERMAL, constrainedInterpolation.reason)
+
+        val x4 = advisorReturning("X4").advise(
+            "qué modo me recomiendas",
+            healthyContext
         )
         assertEquals(PerformanceProfile.X4, x4.suggestedProfile)
         assertEquals(AiAdviceReason.X4_READY, x4.reason)
 
         val interpolation = advisorReturning("FRAME_INTERPOLATION").advise(
             "qué modo me recomiendas",
-            constrainedContext
+            healthyContext
         )
-        assertEquals(
-            PerformanceProfile.FRAME_INTERPOLATION,
-            interpolation.suggestedProfile
-        )
+        assertEquals(PerformanceProfile.FRAME_INTERPOLATION, interpolation.suggestedProfile)
         assertEquals(AiAdviceReason.INTERPOLATION, interpolation.reason)
+
+        val unsupportedX4 = advisorReturning("X4").advise(
+            "qué modo me recomiendas",
+            healthyContext.copy(sustainedPerformanceSupported = false)
+        )
+        assertEquals(PerformanceProfile.BALANCED, unsupportedX4.suggestedProfile)
+        assertFalse(unsupportedX4.reason == AiAdviceReason.X4_READY)
     }
 
     @Test
