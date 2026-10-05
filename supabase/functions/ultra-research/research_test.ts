@@ -4584,9 +4584,11 @@ Deno.test(
       !observedSearches.some((value) =>
         value.toLowerCase().includes("videojuegos")
       ) ||
-      !observedSearches.some((value) =>
-        value.toLowerCase().includes("linguistica")
-      )
+      !observedSearches.some((value) => {
+        const normalized = value.toLowerCase();
+        return normalized.includes("sinonimia") &&
+          normalized.includes("semántica");
+      })
     ) {
       throw new Error("expected domain-specific search hints");
     }
@@ -4750,11 +4752,11 @@ Deno.test(
       {
         query:
           "Resume qué es la higiene dental de una mascota sin asumir conocimientos técnicos.",
-        searchMustContain: ["higiene", "mascota"],
-        title: "Higiene dental de mascotas",
+        searchMustContain: ["higiene", "bucodental"],
+        title: "Higiene bucodental",
         extract:
-          "La higiene dental de las mascotas ayuda a mantener dientes y encías limpios y a prevenir problemas de salud oral.",
-        expected: "dental",
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expected: "dientes",
       },
       {
         query: "¿Qué significa 120 Hz en una televisión?",
@@ -4775,11 +4777,11 @@ Deno.test(
       {
         query:
           "Resume qué es la higiene dental de una mascota sin asumir conocimientos técnicos.",
-        searchMustContain: ["higiene", "dental", "mascota"],
-        title: "Higiene dental veterinaria",
+        searchMustContain: ["higiene", "bucodental"],
+        title: "Higiene bucodental",
         extract:
-          "La higiene dental de una mascota incluye cuidados de dientes y encías para prevenir placa, enfermedad periodontal y otros problemas bucales.",
-        expected: "dental",
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expected: "dientes",
       },
     ];
 
