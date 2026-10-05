@@ -5346,3 +5346,18 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test("new Spanish topic is not merged into previous context", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = { fetcher: (input) => { const url = new URL(String(input)); if (url.pathname === "/w/api.php") { searchQuery = wikipediaSearchParam(url); return jsonResponse({ query: { search: [{ title: "Fotosíntesis" }] } }); } return jsonResponse({ title: "Fotosíntesis", type: "standard", extract: "La fotosíntesis convierte energía luminosa en energía química." }); }, env: () => undefined };
+  const result = await routeResearchQuery("¿Por qué es importante la fotosíntesis?", deps, "Ultra, explícame qué es Vulkan", "GENERAL_KNOWLEDGE");
+  if (result.abstained) throw new Error("expected independent new topic");
+  if (searchQuery.toLowerCase().includes("vulkan")) throw new Error("new topic merged with previous context");
+});
+
+Deno.test("English queries reject unrelated encyclopedia evidence", async () => {
+  const deps: ResearchDependencies = { fetcher: (input) => { const url = new URL(String(input)); if (url.pathname === "/w/api.php") return jsonResponse({ query: { search: [{ title: "Motor de combustión interna" }] } }); return jsonResponse({ title: "Motor de combustión interna", type: "standard", extract: "Un motor transforma energía en movimiento." }); }, env: () => undefined };
+  const result = await routeResearchQuery("what is photosynthesis?", deps, "", "GENERAL_KNOWLEDGE");
+  if (!result.abstained) throw new Error("unrelated evidence must be rejected");
+});
