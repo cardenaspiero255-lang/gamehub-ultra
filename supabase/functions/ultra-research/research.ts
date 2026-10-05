@@ -2394,7 +2394,7 @@ function isDependentKnowledgeFollowUp(query: string): boolean {
     /\b(?:eso|esto|ese|esa|ellos|ellas)\b/.test(clean) ||
     /\b(?:quien|para que|como|donde)\s+(?:lo|la|los|las)\b/.test(clean);
   const followUpShape =
-    /^(?:(?:y|and)\s+)?(?:cual es (?:el|la|los|las)?\s*(?:mas|menos)|cuanto pesa|cuanto mide|donde vive|donde viven|que come|que comen|como se reproduce|como se reproducen|cuanto dura|cuanto viven|para que sirve|como funciona|quien lo creo|quien la creo|donde se usa|que hace)\b/.test(
+    /^(?:(?:y|and)\s+)?(?:cual es (?:el|la|los|las)?\s*(?:mas|menos)(?:\s+\S+){0,3}|cuanto pesa|cuanto mide|donde vive|donde viven|que come|que comen|como se reproduce|como se reproducen|cuanto dura|cuanto viven|para que sirve|como funciona|quien lo creo|quien la creo|donde se usa|que hace)\s*$/.test(
       clean,
     );
 
