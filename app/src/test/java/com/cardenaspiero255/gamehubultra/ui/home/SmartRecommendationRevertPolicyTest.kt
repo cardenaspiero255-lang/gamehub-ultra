@@ -54,4 +54,10 @@ class SmartRecommendationRevertPolicyTest {
             )
         )
     }
+    @Test
+    fun `same contextual recommendation records at most one rejection`() {
+        assertTrue(SmartRecommendationRevertPolicy.shouldRecordRejected(alreadyRejected = false))
+        assertFalse(SmartRecommendationRevertPolicy.shouldRecordRejected(alreadyRejected = true))
+    }
+
 }
