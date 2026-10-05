@@ -6442,7 +6442,6 @@ Deno.test("stable cache keeps dependent follow-up qualifiers isolated", async ()
   }
 });
 
-
 Deno.test("rain-today phrasing routes through verified weather evidence", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
