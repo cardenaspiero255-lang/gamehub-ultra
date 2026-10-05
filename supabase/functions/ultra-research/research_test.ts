@@ -4419,7 +4419,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "general knowledge resolves ranked Wikipedia candidates in one primary request",
   async () => {
@@ -4556,7 +4555,9 @@ Deno.test(
       "",
       "GENERAL_KNOWLEDGE",
     );
-    if (npc.abstained || !npc.displayText?.toLowerCase().includes("videojuego")) {
+    if (
+      npc.abstained || !npc.displayText?.toLowerCase().includes("videojuego")
+    ) {
       throw new Error("NPC must resolve to the gaming meaning");
     }
 
