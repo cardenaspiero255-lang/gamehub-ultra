@@ -2756,8 +2756,8 @@ function generalKnowledgeSearchTopic(
     canonicalTopic = "NPC personaje no jugador";
     hints.push("videojuegos");
   } else if (/\bsinonim/.test(clean)) {
-    canonicalTopic = "sinónimo";
-    hints.push("linguistica", "palabra");
+    canonicalTopic = "sinonimia semántica";
+    hints.push("linguistica", "palabra", "significado");
   } else if (/\bjbl\b/.test(clean)) {
     canonicalTopic = "JBL";
     hints.push("empresa", "audio");
@@ -2899,12 +2899,21 @@ function candidateRelevanceScore(
   ) {
     score += 30;
   }
-  if (
-    /\bsinonim/.test(cleanQuery) &&
-    (normalizedTitle.includes("semant") ||
-      normalizedExtract.includes("linguistic"))
-  ) {
-    score += 24;
+  if (/\bsinonim/.test(cleanQuery)) {
+    if (normalizedTitle.includes("sinonim")) score += 36;
+    if (normalizedTitle.includes("semant")) score += 18;
+    if (
+      normalizedExtract.includes("palabra") &&
+      normalizedExtract.includes("signific")
+    ) {
+      score += 20;
+    }
+    if (
+      !normalizedTitle.includes("sinonim") &&
+      normalizedTitle.includes("linguistic")
+    ) {
+      score -= 20;
+    }
   }
   if (
     /\bjbl\b/.test(cleanQuery) &&
