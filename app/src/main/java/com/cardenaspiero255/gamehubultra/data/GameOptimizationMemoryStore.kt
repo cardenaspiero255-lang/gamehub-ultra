@@ -40,7 +40,8 @@ data class OptimizationContextKey(
 
 class GameOptimizationMemoryStore(
     private val dataStore: DataStore<Preferences>,
-    private val maxObservations: Int = 120
+    private val maxObservations: Int = 120,
+    private val maxContexts: Int = 16
 ) : GameOptimizationMemoryStateRepository {
     constructor(context: Context) : this(context.applicationContext.optimizationMemoryDataStore)
 
@@ -67,9 +68,22 @@ class GameOptimizationMemoryStore(
                 .filterNot { it.id == observation.id }
                 .toMutableList()
             all += observation.copy(contextKey = contextKey.serialized)
-            preferences[observationsKey] = all
+            val retainedByContext = all
+                .groupBy { it.contextKey }
+                .values
+                .map { observations ->
+                    observations
+                        .sortedByDescending { it.timestampMillis }
+                        .take(maxObservations)
+                }
+                .sortedByDescending { observations ->
+                    observations.maxOfOrNull { it.timestampMillis } ?: Long.MIN_VALUE
+                }
+                .take(maxContexts)
+                .flatten()
                 .sortedByDescending { it.timestampMillis }
-                .take(maxObservations)
+
+            preferences[observationsKey] = retainedByContext
                 .joinToString("\n", transform = ::encode)
         }
     }
