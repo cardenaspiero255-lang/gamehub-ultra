@@ -537,24 +537,32 @@ object UltraMathEngine {
         }
 
     private fun solveArithmetic(clean: String): UltraMathSolution? {
+        val operand =
+            """(?:(?:-?\d+(?:[.,]\d+)?|un|uno|una|one)(?:\s*(?:mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?))?|(?:mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?))"""
         val patterns = listOf(
             ArithmeticPattern(
-                regex = Regex("""(-?\d+(?:[.,]\d+)?)\s*(?:x|\*|por|times)\s*(-?\d+(?:[.,]\d+)?)"""),
+                regex = Regex("""($operand)\s*(?:x|\*|por|times)\s*($operand)"""),
                 operation = { a, b -> a.multiply(b, mathContext) },
                 symbol = "×"
             ),
             ArithmeticPattern(
-                regex = Regex("""(-?\d+(?:[.,]\d+)?)\s*(?:/|dividido\s+por|divided\s+by)\s*(-?\d+(?:[.,]\d+)?)"""),
-                operation = { a, b -> if (b.compareTo(BigDecimal.ZERO) == 0) null else a.divide(b, mathContext) },
+                regex = Regex("""($operand)\s*(?:/|dividido\s+por|divided\s+by)\s*($operand)"""),
+                operation = { a, b ->
+                    if (b.compareTo(BigDecimal.ZERO) == 0) {
+                        null
+                    } else {
+                        a.divide(b, mathContext)
+                    }
+                },
                 symbol = "÷"
             ),
             ArithmeticPattern(
-                regex = Regex("""(-?\d+(?:[.,]\d+)?)\s*(?:\+|mas|plus)\s*(-?\d+(?:[.,]\d+)?)"""),
+                regex = Regex("""($operand)\s*(?:\+|mas|plus)\s*($operand)"""),
                 operation = { a, b -> a.add(b, mathContext) },
                 symbol = "+"
             ),
             ArithmeticPattern(
-                regex = Regex("""(-?\d+(?:[.,]\d+)?)\s*(?:-|menos|minus)\s*(-?\d+(?:[.,]\d+)?)"""),
+                regex = Regex("""($operand)\s*(?:-|menos|minus)\s*($operand)"""),
                 operation = { a, b -> a.subtract(b, mathContext) },
                 symbol = "−"
             )
@@ -562,15 +570,45 @@ object UltraMathEngine {
 
         for (pattern in patterns) {
             val match = pattern.regex.find(clean) ?: continue
-            val left = match.groupValues[1].toDecimalOrNull() ?: continue
-            val right = match.groupValues[2].toDecimalOrNull() ?: continue
+            val left = parseArithmeticOperand(match.groupValues[1]) ?: continue
+            val right = parseArithmeticOperand(match.groupValues[2]) ?: continue
             val result = pattern.operation(left, right) ?: continue
             return UltraMathSolution(
                 resultText = formatNumber(result),
-                explanation = "${formatNumber(left)} ${pattern.symbol} ${formatNumber(right)} = ${formatNumber(result)}."
+                explanation =
+                    "${formatNumber(left)} ${pattern.symbol} ${formatNumber(right)} = ${formatNumber(result)}."
             )
         }
         return null
+    }
+
+    private fun parseArithmeticOperand(raw: String): BigDecimal? {
+        val clean = raw.trim()
+        clean.toDecimalOrNull()?.let { return it }
+
+        val match = Regex(
+            """^(?:(-?\d+(?:[.,]\d+)?|un|uno|una|one)\s*)?(mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
+        ).matchEntire(clean) ?: return null
+
+        val baseToken = match.groupValues[1]
+        val magnitudeToken = match.groupValues[2]
+        if (baseToken.isBlank() && magnitudeToken.isBlank()) return null
+
+        val base = when (baseToken) {
+            "", "un", "uno", "una", "one" -> BigDecimal.ONE
+            else -> baseToken.toDecimalOrNull() ?: return null
+        }
+        val factor = when (magnitudeToken) {
+            "" -> BigDecimal.ONE
+            "mil" -> BigDecimal("1000")
+            "millon", "millones", "million", "millions" -> BigDecimal("1000000")
+            "billon", "billones" -> BigDecimal("1000000000000")
+            "billion", "billions" -> BigDecimal("1000000000")
+            "trillon", "trillones" -> BigDecimal("1000000000000000000")
+            "trillion", "trillions" -> BigDecimal("1000000000000")
+            else -> return null
+        }
+        return base.multiply(factor, mathContext)
     }
 
     private data class ArithmeticPattern(
