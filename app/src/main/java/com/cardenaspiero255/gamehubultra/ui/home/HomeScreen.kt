@@ -63,6 +63,8 @@ internal fun HomeScreen(
     adaptiveDecision: AdaptiveDecision?,
     smartRecommendation: com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation,
     onApplySmartRecommendation: () -> Unit,
+    onRejectSmartRecommendation: () -> Unit,
+    onRevertSmartRecommendation: () -> Unit,
     smartGameAssistantSuggestions: List<SmartGameAssistantSuggestion>,
     onApplySmartGameAssistant: (SmartGameAssistantSuggestion) -> Unit,
     optimizationObservations: List<OptimizationObservation>,
@@ -200,7 +202,11 @@ internal fun HomeScreen(
             SmartPerformanceCard(
                 recommendation = smartRecommendation,
                 observations = optimizationObservations,
+                canRevert = state.selectedProfile == smartRecommendation.profile &&
+                    smartRecommendation.safeFallback != smartRecommendation.profile,
                 onApply = onApplySmartRecommendation,
+                onReject = onRejectSmartRecommendation,
+                onRevert = onRevertSmartRecommendation,
                 onClearMemory = onClearOptimizationMemory
             )
         }
