@@ -2303,6 +2303,8 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^qu[eé] significa\s+(.+?)\.?$/i,
     /^qu[eé] diferencia hay entre\s+(.+?)\.?$/i,
     /^qu[eé] productos fabrica\s+(.+?)\.?$/i,
+    /^qu[eé] tipo de productos fabrica\s+(.+?)\.?$/i,
+    /^por qu[eé] es (?:conocida|conocido)\s+(.+?)\.?$/i,
     /^cu[aá]ndo comenz[oó]\s+(.+?)\.?$/i,
     /^qui[eé]n fue\s+(.+?)\.?$/i,
     /^qu[eé] fue\s+(.+?)\.?$/i,
@@ -2729,6 +2731,113 @@ async function wikipediaActionExtract(
   return null;
 }
 
+function generalKnowledgeSearchTopic(
+  query: string,
+  topic: string,
+): string {
+  const clean = normalize(query);
+  const hints: string[] = [];
+
+  if (/\bnpc\b/.test(clean)) hints.push("videojuegos");
+  if (/\bsinonim/.test(clean)) hints.push("linguistica", "palabra");
+  if (/\bjbl\b/.test(clean)) hints.push("audio", "empresa");
+  if (/\bqled\b/.test(clean)) hints.push("television");
+  if (/\bnfc\b/.test(clean)) hints.push("telefono", "tecnologia");
+  if (/\bmah\b/.test(clean)) hints.push("bateria");
+  if (/\biso\b/.test(clean) && /\bfotograf/.test(clean)) {
+    hints.push("fotografia");
+  }
+  if (/\bfps\b/.test(clean) && /\bvideoj/.test(clean)) {
+    hints.push("videojuegos");
+  }
+  if (/\bray tracing\b/.test(clean)) hints.push("graficos");
+  if (/\blatencia\b/.test(clean) && /\bjuego/.test(clean)) {
+    hints.push("videojuegos");
+  }
+
+  const brand = /\b(?:samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/;
+  const companyIntent = /\b(?:empresa|productos?|fabrica|fabricar|conocid[oa])\b/;
+  if (brand.test(clean) && companyIntent.test(clean)) {
+    hints.push("empresa");
+  }
+
+  return [topic, ...hints].filter(Boolean).join(" ").trim();
+}
+
+async function wikipediaGeneratorEvidence(
+  searchTopic: string,
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult | null> {
+  const wikipediaHost = "es.wikipedia.org";
+  const url = new URL(\`https://\${wikipediaHost}/w/api.php\`);
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", searchTopic);
+  url.searchParams.set("gsrlimit", "5");
+  url.searchParams.set("prop", "extracts|info|pageprops");
+  url.searchParams.set("inprop", "url");
+  url.searchParams.set("exintro", "1");
+  url.searchParams.set("explaintext", "1");
+  url.searchParams.set("redirects", "1");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const queryPayload = payload?.query && typeof payload.query === "object"
+    ? payload.query as JsonObject
+    : null;
+  const pages = queryPayload?.pages && typeof queryPayload.pages === "object"
+    ? Object.values(queryPayload.pages as JsonObject)
+      .filter((page): page is JsonObject =>
+        Boolean(page) && typeof page === "object"
+      )
+      .sort((first, second) =>
+        (numberValue(first.index) ?? Number.MAX_SAFE_INTEGER) -
+        (numberValue(second.index) ?? Number.MAX_SAFE_INTEGER)
+      )
+    : [];
+
+  for (const page of pages.slice(0, 5)) {
+    const pageProps = page.pageprops && typeof page.pageprops === "object"
+      ? page.pageprops as JsonObject
+      : null;
+    if (pageProps && "disambiguation" in pageProps) continue;
+
+    const title = stringValue(page.title);
+    const extract = stringValue(page.extract);
+    if (!title || !extract) continue;
+
+    if (
+      !isExplicitEnglishKnowledgeQuery(query) &&
+      !candidateMatchesTopic(searchTopic, title + " " + extract)
+    ) {
+      continue;
+    }
+
+    const source = stringValue(page.canonicalurl) ??
+      stringValue(page.fullurl) ??
+      ("https://es.wikipedia.org/wiki/" +
+        encodeURIComponent(title.replace(/ /g, "_")));
+
+    return {
+      claimKey: \`general:\${slug(title)}\`,
+      value: normalize(extract),
+      displayText: extract,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return null;
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -2752,11 +2861,20 @@ async function generalKnowledgeEvidence(
     if (!technical.abstained) return technical;
   }
 
+  const searchTopic = generalKnowledgeSearchTopic(query, topic);
+  const generatorEvidence = await wikipediaGeneratorEvidence(
+    searchTopic,
+    query,
+    deps,
+    signal,
+  );
+  if (generatorEvidence) return generatorEvidence;
+
   const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
   searchUrl.searchParams.set("action", "query");
   searchUrl.searchParams.set("list", "search");
-  searchUrl.searchParams.set("srsearch", topic);
+  searchUrl.searchParams.set("srsearch", searchTopic);
   searchUrl.searchParams.set("srlimit", "5");
   searchUrl.searchParams.set("format", "json");
   searchUrl.searchParams.set("origin", "*");
@@ -2830,7 +2948,7 @@ async function generalKnowledgeEvidence(
 
     if (
       !isExplicitEnglishKnowledgeQuery(query) &&
-      !candidateMatchesTopic(topic, title + " " + extract)
+      !candidateMatchesTopic(searchTopic, title + " " + extract)
     ) {
       continue;
     }
