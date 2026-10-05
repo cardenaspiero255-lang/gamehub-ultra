@@ -108,13 +108,16 @@ class UltraAiCore2(
         val evidence = mutableListOf<String>()
         val battery = observation.batteryPercent
         val thermal = observation.thermalLabel?.trim()?.lowercase()
+        val hotThermal = thermal in HOT_THERMAL_LABELS ||
+            observation.thermalStatus?.let { it >= 3 } == true ||
+            observation.thermalHeadroom?.let { it >= 0.80f } == true
         val safeMemoryPreference = rememberedSafeProfilePreference(memories)
         val profile = when {
-            battery != null && battery <= LOW_BATTERY_PERCENT -> {
+            battery != null && battery < LOW_BATTERY_PERCENT -> {
                 evidence += "battery=$battery"
                 "BALANCED"
             }
-            thermal in HOT_THERMAL_LABELS -> {
+            hotThermal -> {
                 evidence += "thermal=" + observation.thermalLabel
                 "BALANCED"
             }
