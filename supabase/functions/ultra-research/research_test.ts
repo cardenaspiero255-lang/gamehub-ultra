@@ -6509,8 +6509,7 @@ Deno.test(
                   title: "Arthur Samuel",
                   extract:
                     "Arthur Samuel fue un pionero estadounidense de la inteligencia artificial y popularizó el término aprendizaje automático.",
-                  canonicalurl:
-                    "https://es.wikipedia.org/wiki/Arthur_Samuel",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Arthur_Samuel",
                 },
               },
             },
