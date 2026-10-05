@@ -551,9 +551,7 @@ object UltraMathEngine {
             ),
             ArithmeticPattern(
                 regex = Regex("""($operand)\s*(?:/|dividido\s+por|divided\s+by)\s*($operand)"""),
-                operation = { a, b ->
-                    if (b.compareTo(BigDecimal.ZERO) == 0) null else a.divide(b, mathContext)
-                },
+                operation = ::divideArithmetic,
                 symbol = "÷"
             ),
             ArithmeticPattern(
@@ -612,31 +610,18 @@ object UltraMathEngine {
         return base.multiply(factor)
     }
 
-    private fun writtenArithmeticNumber(token: String): BigDecimal? =
-        when (token) {
-            "cero", "zero" -> BigDecimal.ZERO
-            "un", "uno", "una", "one" -> BigDecimal.ONE
-            "dos", "two" -> BigDecimal("2")
-            "tres", "three" -> BigDecimal("3")
-            "cuatro", "four" -> BigDecimal("4")
-            "cinco", "five" -> BigDecimal("5")
-            "seis", "six" -> BigDecimal("6")
-            "siete", "seven" -> BigDecimal("7")
-            "ocho", "eight" -> BigDecimal("8")
-            "nueve", "nine" -> BigDecimal("9")
-            "diez", "ten" -> BigDecimal("10")
-            "once", "eleven" -> BigDecimal("11")
-            "doce", "twelve" -> BigDecimal("12")
-            "trece", "thirteen" -> BigDecimal("13")
-            "catorce", "fourteen" -> BigDecimal("14")
-            "quince", "fifteen" -> BigDecimal("15")
-            "dieciseis", "sixteen" -> BigDecimal("16")
-            "diecisiete", "seventeen" -> BigDecimal("17")
-            "dieciocho", "eighteen" -> BigDecimal("18")
-            "diecinueve", "nineteen" -> BigDecimal("19")
-            "veinte", "twenty" -> BigDecimal("20")
-            else -> null
-        }
+    private fun writtenArithmeticNumber(token: String): BigDecimal? {
+        val canonical = if (token == "uno" || token == "una") "un" else token
+        val spanish = listOf("cero", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez", "once", "doce", "trece", "catorce", "quince", "dieciseis", "diecisiete", "dieciocho", "diecinueve", "veinte")
+        val english = listOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
+        val index = spanish.indexOf(canonical).takeIf { it >= 0 }
+            ?: english.indexOf(canonical).takeIf { it >= 0 }
+            ?: return null
+        return BigDecimal.valueOf(index.toLong())
+    }
+
+    private fun divideArithmetic(a: BigDecimal, b: BigDecimal): BigDecimal? =
+        if (b.compareTo(BigDecimal.ZERO) == 0) null else a.divide(b, mathContext)
 
     private data class ArithmeticPattern(
         val regex: Regex,
