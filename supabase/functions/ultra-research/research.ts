@@ -2917,6 +2917,12 @@ function generalKnowledgeSearchTopic(
   } else if (/\bexoplanetas?\b/.test(clean)) {
     canonicalTopic = "planeta extrasolar";
     hints.push("exoplaneta", "astronomia");
+  } else if (
+    /\bmacro\s*verso\b/.test(clean) &&
+    /\bstephen king\b/.test(clean)
+  ) {
+    canonicalTopic = "Multiverso de Stephen King";
+    hints.push("Torre Oscura", "ficcion");
   } else if (/\bmacro\s*verso\b/.test(clean)) {
     canonicalTopic = "macroverso";
     hints.push("ficcion", "cosmologia");
@@ -3353,9 +3359,14 @@ async function wikidataKnowledgeEvidence(
 }
 
 function stableTerminologyEvidence(query: string): ResearchResult | null {
-  const clean = normalize(stripAssistantInvocation(query));
+  const clean = normalize(stripAssistantInvocation(query))
+    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
 
-  if (/\bmacro\s*verso\b/.test(clean)) {
+  const generalMacroverseDefinition =
+    /^(?:que es|que significa|define|explicame(?: que es)?|explica(?: que es)?|what is)\s+(?:(?:el|un)\s+)?macro\s*verso$/.test(
+      clean,
+    );
+  if (generalMacroverseDefinition) {
     const displayText =
       "«Macroverso» no es un término científico estandarizado. " +
       "Se usa de forma variable en ficción y otros marcos conceptuales para " +
