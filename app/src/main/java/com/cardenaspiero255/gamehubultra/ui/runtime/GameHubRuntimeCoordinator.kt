@@ -4,6 +4,7 @@ import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.SessionFinishHandle
+import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
@@ -85,6 +86,28 @@ internal class GameHubRuntimeCoordinator(
         snapshot.selectedGamePackage?.let { packageName ->
             actions.applySmartGameAssistantSuggestion(packageName, suggestion)
         } ?: actions.selectGlobalProfile(suggestion.profile)
+    }
+
+    fun recordRecommendationFeedback(
+        snapshot: GameHubRuntimeSnapshot,
+        profile: PerformanceProfile,
+        decision: OptimizationFeedbackDecision
+    ) {
+        if (decision == OptimizationFeedbackDecision.NONE) return
+        val recordedAt = nowMillis()
+        scope.launch {
+            withContext(optimizationDispatcher) {
+                recordOptimization(
+                    snapshot.optimizationContextKey,
+                    OptimizationObservation(
+                        contextKey = snapshot.optimizationContextKey.serialized,
+                        profile = profile,
+                        timestampMillis = recordedAt,
+                        feedbackDecision = decision
+                    )
+                )
+            }
+        }
     }
 
     fun endGameSession(
