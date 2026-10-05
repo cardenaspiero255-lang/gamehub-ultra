@@ -88,6 +88,7 @@ jobs:
           test -s app/build/reports/coverage/test/debug/report.xml
 
       - name: Warm up Codecov upload after transient transport errors
+        id: codecov_warmup
         if: steps.codecov_token.outputs.available == 'true'
         continue-on-error: true
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
@@ -103,8 +104,37 @@ jobs:
           version: "v11.3.1"
           verbose: true
 
+      - name: Back off before Codecov retry
+        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_warmup.outcome != 'success'
+        shell: bash
+        run: sleep 15
+
+      - name: Retry Codecov through legacy endpoint
+        id: codecov_retry
+        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_warmup.outcome != 'success'
+        continue-on-error: true
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: app/build/reports/coverage/test/debug/report.xml
+          disable_search: true
+          flags: unit-tests
+          name: gamehub-ultra-unit-tests-retry
+          fail_ci_if_error: true
+          use_pypi: true
+          version: "v11.3.1"
+          use_legacy_upload_endpoint: true
+          verbose: true
+
+      - name: Back off before required Codecov upload
+        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_warmup.outcome != 'success' && steps.codecov_retry.outcome != 'success'
+        shell: bash
+        run: sleep 30
+
       - name: Upload coverage to Codecov
-        if: steps.codecov_token.outputs.available == 'true'
+        id: codecov_required
+        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_warmup.outcome != 'success' && steps.codecov_retry.outcome != 'success'
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -116,8 +146,25 @@ jobs:
           fail_ci_if_error: true
           use_pypi: true
           version: "v11.3.1"
-          use_legacy_upload_endpoint: true
           verbose: true
+
+      - name: Verify Codecov upload gate
+        if: steps.codecov_token.outputs.available == 'true'
+        env:
+          WARMUP_OUTCOME: ${{ steps.codecov_warmup.outcome }}
+          RETRY_OUTCOME: ${{ steps.codecov_retry.outcome }}
+          REQUIRED_OUTCOME: ${{ steps.codecov_required.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$WARMUP_OUTCOME" = "success" ] || \
+             [ "$RETRY_OUTCOME" = "success" ] || \
+             [ "$REQUIRED_OUTCOME" = "success" ]; then
+            echo "Codecov upload confirmed."
+            exit 0
+          fi
+          echo "::error::All Codecov upload attempts failed."
+          exit 1
 
       - name: Preserve coverage report
         if: always()
