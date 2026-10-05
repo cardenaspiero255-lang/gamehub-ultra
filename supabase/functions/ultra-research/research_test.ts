@@ -3987,7 +3987,9 @@ Deno.test("stable definition mislabeled as current data recovers through general
 });
 
 
-Deno.test("runtime-generated knowledge phrasing is normalized to the actual topic", async () => {
+Deno.test(
+  "runtime-generated knowledge phrasing is normalized to the actual topic",
+  async () => {
   const observedSearches: string[] = [];
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -4045,9 +4047,12 @@ Deno.test("runtime-generated knowledge phrasing is normalized to the actual topi
   if (!result.displayText?.toLowerCase().includes("erosión")) {
     throw new Error("expected erosion answer");
   }
-});
+  },
+);
 
-Deno.test("irrelevant Wikipedia candidate is rejected before it can answer the user", async () => {
+Deno.test(
+  "irrelevant Wikipedia candidate is rejected before it can answer the user",
+  async () => {
   let tavilyCalls = 0;
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -4122,4 +4127,5 @@ Deno.test("irrelevant Wikipedia candidate is rejected before it can answer the u
   if (answer.includes("james cook")) {
     throw new Error("irrelevant Wikipedia answer leaked to the user");
   }
-});
+  },
+);
