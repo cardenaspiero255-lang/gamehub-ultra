@@ -14,6 +14,40 @@ data class UltraMathSolution(
 
 object UltraMathEngine {
     private val mathContext = MathContext(12, RoundingMode.HALF_UP)
+    private val writtenArithmeticNumbers = mapOf(
+        "cero" to 0, "un" to 1, "uno" to 1, "una" to 1, "dos" to 2,
+        "tres" to 3, "cuatro" to 4, "cinco" to 5, "seis" to 6, "siete" to 7,
+        "ocho" to 8, "nueve" to 9, "diez" to 10, "once" to 11, "doce" to 12,
+        "trece" to 13, "catorce" to 14, "quince" to 15, "dieciseis" to 16,
+        "diecisiete" to 17, "dieciocho" to 18, "diecinueve" to 19, "veinte" to 20,
+        "zero" to 0, "one" to 1, "two" to 2, "three" to 3, "four" to 4,
+        "five" to 5, "six" to 6, "seven" to 7, "eight" to 8, "nine" to 9,
+        "ten" to 10, "eleven" to 11, "twelve" to 12, "thirteen" to 13,
+        "fourteen" to 14, "fifteen" to 15, "sixteen" to 16, "seventeen" to 17,
+        "eighteen" to 18, "nineteen" to 19, "twenty" to 20
+    )
+    private val arithmeticMagnitudeFactors = mapOf(
+        "mil millones" to BigDecimal("1000000000"),
+        "mil" to BigDecimal("1000"),
+        "millon" to BigDecimal("1000000"),
+        "millones" to BigDecimal("1000000"),
+        "million" to BigDecimal("1000000"),
+        "millions" to BigDecimal("1000000"),
+        "billon" to BigDecimal("1000000000000"),
+        "billones" to BigDecimal("1000000000000"),
+        "billion" to BigDecimal("1000000000"),
+        "billions" to BigDecimal("1000000000"),
+        "trillon" to BigDecimal("1000000000000000000"),
+        "trillones" to BigDecimal("1000000000000000000"),
+        "trillion" to BigDecimal("1000000000000"),
+        "trillions" to BigDecimal("1000000000000")
+    )
+    private val writtenArithmeticNumberPattern = writtenArithmeticNumbers.keys
+        .sortedByDescending(String::length)
+        .joinToString("|") { Regex.escape(it) }
+    private val arithmeticMagnitudePattern = arithmeticMagnitudeFactors.keys
+        .sortedByDescending(String::length)
+        .joinToString("|") { Regex.escape(it) }
 
     fun solve(transcript: String): UltraMathSolution? {
         val clean = normalize(transcript)
@@ -537,10 +571,8 @@ object UltraMathEngine {
         }
 
     private fun solveArithmetic(clean: String): UltraMathSolution? {
-        val numberWord =
-            """(?:cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"""
-        val magnitude =
-            """(?:mil\s+millones|mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)"""
+        val numberWord = "(?:$writtenArithmeticNumberPattern)"
+        val magnitude = "(?:$arithmeticMagnitudePattern)"
         val operand =
             """(?:(?:menos|minus)\s+)?(?:(?:-?\d+(?:[.,]\d+)?|$numberWord)(?:\s*$magnitude)?|$magnitude)"""
         val patterns = listOf(
@@ -584,7 +616,7 @@ object UltraMathEngine {
         clean.toDecimalOrNull()?.let { return it }
 
         val match = Regex(
-            """^(?:(menos|minus)\s+)?(?:(-?\d+(?:[.,]\d+)?|cero|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s*)?(mil\s+millones|mil|millon(?:es)?|billon(?:es)?|trillon(?:es)?|million(?:s)?|billion(?:s)?|trillion(?:s)?)?$"""
+            """^(?:(menos|minus)\s+)?(?:(-?\d+(?:[.,]\d+)?|$writtenArithmeticNumberPattern)\s*)?($arithmeticMagnitudePattern)?$"""
         ).matchEntire(clean) ?: return null
 
         val writtenNegative = match.groupValues[1].isNotBlank()
@@ -592,35 +624,20 @@ object UltraMathEngine {
         val magnitudeToken = match.groupValues[3]
         if (baseToken.isBlank() && magnitudeToken.isBlank()) return null
 
-        val base = when (baseToken) {
-            "" -> BigDecimal.ONE
-            else -> baseToken.toDecimalOrNull()
-                ?: writtenArithmeticNumber(baseToken)
-                ?: return null
+        val base = when {
+            baseToken.isBlank() -> BigDecimal.ONE
+            baseToken.toDecimalOrNull() != null -> baseToken.toDecimalOrNull()!!
+            else -> BigDecimal.valueOf(
+                writtenArithmeticNumbers.getValue(baseToken).toLong()
+            )
         }
-        val factor = when (magnitudeToken) {
-            "" -> BigDecimal.ONE
-            "mil" -> BigDecimal("1000")
-            "mil millones" -> BigDecimal("1000000000")
-            "millon", "millones", "million", "millions" -> BigDecimal("1000000")
-            "billon", "billones" -> BigDecimal("1000000000000")
-            "billion", "billions" -> BigDecimal("1000000000")
-            "trillon", "trillones" -> BigDecimal("1000000000000000000")
-            "trillion", "trillions" -> BigDecimal("1000000000000")
-            else -> return null
+        val factor = if (magnitudeToken.isBlank()) {
+            BigDecimal.ONE
+        } else {
+            arithmeticMagnitudeFactors.getValue(magnitudeToken)
         }
         val value = base.multiply(factor)
         return if (writtenNegative) value.negate() else value
-    }
-
-    private fun writtenArithmeticNumber(token: String): BigDecimal? {
-        val canonical = if (token == "uno" || token == "una") "un" else token
-        val spanish = listOf("cero", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez", "once", "doce", "trece", "catorce", "quince", "dieciseis", "diecisiete", "dieciocho", "diecinueve", "veinte")
-        val english = listOf("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
-        val index = spanish.indexOf(canonical).takeIf { it >= 0 }
-            ?: english.indexOf(canonical).takeIf { it >= 0 }
-            ?: return null
-        return BigDecimal.valueOf(index.toLong())
     }
 
     private fun divideArithmetic(a: BigDecimal, b: BigDecimal): BigDecimal? =
