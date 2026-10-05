@@ -2756,8 +2756,7 @@ function generalKnowledgeSearchTopic(
     canonicalTopic = "NPC personaje no jugador";
     hints.push("videojuegos");
   } else if (/\bsinonim/.test(clean)) {
-    canonicalTopic = "sinonimia sinónimo semántica";
-    hints.push("linguistica", "palabra", "significado");
+    canonicalTopic = "Sinonimia semántica";
   } else if (/\bjbl\b/.test(clean)) {
     canonicalTopic = "JBL";
     hints.push("empresa", "audio");
@@ -2819,8 +2818,7 @@ function generalKnowledgeSearchTopic(
     /\bhigiene dental\b/.test(clean) &&
     /\b(?:mascota|perro|gato|veterinari)\b/.test(clean)
   ) {
-    canonicalTopic = "higiene dental veterinaria mascota";
-    hints.push("dientes", "encias", "salud oral");
+    canonicalTopic = "Higiene bucodental";
   }
 
   if (/\bmas grande\b/.test(clean) || /\bmayor tamano\b/.test(clean)) {
@@ -2988,8 +2986,11 @@ function candidateRelevanceScore(
   }
   if (
     /\bhigiene dental\b/.test(cleanQuery) &&
-    (normalizedTitle.includes("higiene dental") ||
-      normalizedExtract.includes("dientes"))
+    (
+      normalizedTitle.includes("higiene bucodental") ||
+      normalizedTitle.includes("higiene dental") ||
+      normalizedExtract.includes("dientes")
+    )
   ) {
     score += 28;
   }
