@@ -614,39 +614,80 @@ jobs:
               ],
           }
 
-          dynamic_cases = []
-          for domain, topics in dynamic_domains.items():
-              # Generate six runtime-composed variants per domain. Templates are
-              # selected independently from the seed so complete question strings
-              # vary between runs while remaining reproducible for a failing seed.
-              for index in range(6):
-                  topic, expected = rng.choice(topics)
-                  template = rng.choice(dynamic_templates)
-                  query = template.format(topic=topic)
-                  # Avoid accidental duplicates inside the same domain/run.
-                  attempts = 0
-                  while any(item[1] == query for item in dynamic_cases) and attempts < 24:
-                      topic, expected = rng.choice(topics)
-                      template = rng.choice(dynamic_templates)
-                      query = template.format(topic=topic)
-                      attempts += 1
-                  dynamic_cases.append((
-                      f"dyn_{domain}",
-                      query,
-                      "GENERAL_KNOWLEDGE",
-                      False,
-                      expected,
-                  ))
+          used_queries = set()
+          cases = []
 
-          cases = list(fixed)
+          def add_unique_case(case):
+              query = case[1]
+              if query in used_queries:
+                  return False
+              used_queries.add(query)
+              cases.append(case)
+              return True
+
+          for case in fixed:
+              if not add_unique_case(case):
+                  raise RuntimeError(f"Duplicate fixed smoke query: {case[1]}")
+
+          # Keep broad fixed pools well represented while de-duplicating globally.
           for label, questions in pools.items():
               kind = "CURRENT_DATA" if label in {"weather", "news"} else "GENERAL_KNOWLEDGE"
               fresh = label in {"weather", "news"}
-              for question, expected in rng.sample(questions, 8):
-                  cases.append((label, question, kind, fresh, expected))
+              shuffled_questions = list(questions)
+              rng.shuffle(shuffled_questions)
+              added = 0
+              for question, expected in shuffled_questions:
+                  if add_unique_case((label, question, kind, fresh, expected)):
+                      added += 1
+                  if added == 8:
+                      break
+              if added != 8:
+                  raise RuntimeError(
+                      f"Pool {label} only produced {added}/8 unique smoke questions"
+                  )
 
-          cases.extend(dynamic_cases)
-          if len({query for _, query, _, _, _ in cases}) != len(cases):
+          # Generate six unique runtime-composed variants per domain. Complete
+          # question strings change with the run seed but remain reproducible.
+          remaining_dynamic = []
+          for domain, topics in dynamic_domains.items():
+              candidates = [
+                  (
+                      f"dyn_{domain}",
+                      template.format(topic=topic),
+                      "GENERAL_KNOWLEDGE",
+                      False,
+                      expected,
+                  )
+                  for topic, expected in topics
+                  for template in dynamic_templates
+              ]
+              rng.shuffle(candidates)
+              added = 0
+              for case in candidates:
+                  if add_unique_case(case):
+                      added += 1
+                  if added == 6:
+                      break
+              if added != 6:
+                  raise RuntimeError(
+                      f"Dynamic domain {domain} only produced {added}/6 unique questions"
+                  )
+              remaining_dynamic.extend(candidates)
+
+          # 6 fixed + (19 pools * 8) + (46 domains * 6) = 434.
+          # Fill the remaining six slots from unused runtime combinations so the
+          # gate always exercises exactly 440 unique questions.
+          rng.shuffle(remaining_dynamic)
+          for case in remaining_dynamic:
+              if len(cases) >= 440:
+                  break
+              add_unique_case(case)
+
+          if len(cases) != 440:
+              raise RuntimeError(
+                  f"Smoke plan produced {len(cases)}/440 unique questions"
+              )
+          if len(used_queries) != len(cases):
               raise RuntimeError("Smoke plan contains duplicate questions")
 
           rng.shuffle(cases)
