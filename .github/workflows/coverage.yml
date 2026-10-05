@@ -91,7 +91,7 @@ jobs:
         id: codecov_warmup
         if: steps.codecov_token.outputs.available == 'true'
         continue-on-error: true
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -100,8 +100,6 @@ jobs:
           flags: unit-tests
           name: gamehub-ultra-unit-tests-warmup
           fail_ci_if_error: true
-          use_pypi: true
-          version: "v11.3.1"
           verbose: true
 
       - name: Back off before Codecov retry
@@ -113,7 +111,7 @@ jobs:
         id: codecov_retry
         if: steps.codecov_token.outputs.available == 'true' && steps.codecov_warmup.outcome != 'success'
         continue-on-error: true
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -122,8 +120,6 @@ jobs:
           flags: unit-tests
           name: gamehub-ultra-unit-tests-retry
           fail_ci_if_error: true
-          use_pypi: true
-          version: "v11.3.1"
           use_legacy_upload_endpoint: true
           verbose: true
 
@@ -135,7 +131,7 @@ jobs:
       - name: Upload coverage to Codecov
         id: codecov_required
         if: steps.codecov_token.outputs.available == 'true' && steps.codecov_warmup.outcome != 'success' && steps.codecov_retry.outcome != 'success'
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -144,8 +140,6 @@ jobs:
           flags: unit-tests
           name: gamehub-ultra-unit-tests
           fail_ci_if_error: true
-          use_pypi: true
-          version: "v11.3.1"
           verbose: true
 
       - name: Verify Codecov upload gate
