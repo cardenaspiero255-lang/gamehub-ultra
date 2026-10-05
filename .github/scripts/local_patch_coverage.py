@@ -82,9 +82,15 @@ def _report_lines(report: ET.Element) -> dict[str, dict[int, tuple[int, int]]]:
     return result
 
 
+def _obviously_non_executable_source_line(line: str) -> bool:
+    stripped = line.strip()
+    return not stripped or stripped.startswith(("//", "/*", "*", "*/", "package ", "import ", "@")) or stripped in {"{", "}", "(", ")", ")", "}"}
+
+
 def calculate_patch_line_coverage(
     report: ET.Element,
     added_lines: dict[str, set[int]],
+    source_text_by_path: dict[str, str] | None = None,
 ) -> PatchCoverage:
     report_by_path = _report_lines(report)
     executable = 0
@@ -104,6 +110,11 @@ def calculate_patch_line_coverage(
         for number in line_numbers:
             counters = source_lines.get(number)
             if counters is None:
+                if source_text_by_path is not None:
+                    source = source_text_by_path.get(path, "").splitlines()
+                    source_line = source[number - 1] if 0 < number <= len(source) else ""
+                    if not _obviously_non_executable_source_line(source_line):
+                        unmapped.append(f"{path}:{number}")
                 continue
             missed, hit = counters
             if missed + hit <= 0:
@@ -159,7 +170,12 @@ def main() -> int:
     diff_text = _git_diff(args.base, args.head, SOURCE_ROOTS)
     added = parse_added_lines(diff_text)
     report = ET.parse(args.xml).getroot()
-    stats = calculate_patch_line_coverage(report, added)
+    source_text_by_path = {
+        path: Path(path).read_text(encoding="utf-8")
+        for path in added
+        if path.startswith(SOURCE_ROOTS) and Path(path).is_file()
+    }
+    stats = calculate_patch_line_coverage(report, added, source_text_by_path)
 
     print(
         "Local patch coverage: "
