@@ -920,7 +920,7 @@ jobs:
 
           executed = len(results)
           passed = sum(1 for _, verdict, _ in results if verdict == "PASS")
-          answered = passed + fresh_abstentions
+          answered = passed
           answer_rate = answered / executed if executed else 0.0
 
           print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
@@ -932,11 +932,11 @@ jobs:
           if stable_abstentions != 0:
               print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
               sys.exit(1)
-          if fresh_abstentions > 4:
-              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 4")
+          if fresh_abstentions > 2:
+              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 2")
               sys.exit(1)
-          if answer_rate < 0.95:
-              print(f"::error::Answer rate below 95%: {answer_rate:.3f}")
+          if answer_rate < 0.998:
+              print(f"::error::Answer rate below SSS target 99.8%: {answer_rate:.3f}")
               sys.exit(1)
           if failures != 0:
               sys.exit(1)
