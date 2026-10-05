@@ -424,7 +424,7 @@ function primaryEvidenceTimeoutMs(
   if (Number.isFinite(configured) && configured > 0) {
     return Math.max(150, Math.min(3_000, Math.trunc(configured)));
   }
-  return 1_800;
+  return 4_500;
 }
 
 function remainingRouteBudgetMs(deadlineAt: number): number {
@@ -1467,6 +1467,22 @@ async function fetchJson(
   }
 }
 
+async function fetchWikipediaJson(
+  deps: ResearchDependencies,
+  input: string | URL,
+  init?: RequestInit,
+): Promise<JsonObject | null> {
+  const response = await fetchWithRetry(deps, input, init, 5);
+  if (!response?.ok) return null;
+
+  try {
+    const body = await response.json();
+    return body && typeof body === "object" ? body as JsonObject : null;
+  } catch {
+    return null;
+  }
+}
+
 function extractWeatherLocation(query: string): string | null {
   const clean = query.replace(/[?¿!¡]/g, " ").replace(/\s+/g, " ").trim();
   const patterns = [
@@ -2496,7 +2512,7 @@ async function stackOverflowSpanishEvidence(
   searchUrl.searchParams.set("order", "desc");
   searchUrl.searchParams.set("pagesize", "3");
 
-  const search = await fetchJson(deps, searchUrl, {
+  const search = await fetchWikipediaJson(deps, searchUrl, {
     headers: { "User-Agent": USER_AGENT },
     signal,
   });
@@ -2752,7 +2768,7 @@ async function wikipediaActionExtract(
   url.searchParams.set("format", "json");
   url.searchParams.set("origin", "*");
 
-  const payload = await fetchJson(deps, url, {
+  const payload = await fetchWikipediaJson(deps, url, {
     headers: { "User-Agent": USER_AGENT },
     signal,
   });
@@ -3055,7 +3071,7 @@ async function wikipediaGeneratorEvidence(
   url.searchParams.set("format", "json");
   url.searchParams.set("origin", "*");
 
-  const payload = await fetchJson(deps, url, {
+  const payload = await fetchWikipediaJson(deps, url, {
     headers: { "User-Agent": USER_AGENT },
     signal,
   });
@@ -3208,7 +3224,7 @@ async function generalKnowledgeEvidence(
     const summaryUrl =
       `https://${wikipediaHost}/api/rest_v1/page/summary/` +
       encodeURIComponent(title.replace(/ /g, "_"));
-    const summary = await fetchJson(deps, summaryUrl, {
+    const summary = await fetchWikipediaJson(deps, summaryUrl, {
       headers: { "User-Agent": USER_AGENT },
       signal,
     });
