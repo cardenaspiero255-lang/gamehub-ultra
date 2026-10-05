@@ -116,4 +116,51 @@ class GameOptimizationMemoryCar43Test {
         }
     }
 
+    @Test
+    fun `feedback in other contexts cannot evict measured session history`() = runBlocking {
+        val file = File.createTempFile("gamehub-ultra-car43-retention-", ".preferences_pb")
+            .also { it.delete() }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+                scope = scope,
+                produceFile = { file }
+            )
+            val store = GameOptimizationMemoryStore(dataStore, maxObservations = 2)
+            val measuredKey = OptimizationContextKey("device", "game.a", "1", null, "gpu")
+            val noisyKey = OptimizationContextKey("device", "game.b", "1", null, "gpu")
+
+            store.record(
+                measuredKey,
+                OptimizationObservation(
+                    contextKey = "",
+                    profile = PerformanceProfile.BALANCED,
+                    measuredFps = 60f,
+                    stable = true,
+                    timestampMillis = 1L
+                )
+            )
+            repeat(3) { index ->
+                store.record(
+                    noisyKey,
+                    OptimizationObservation(
+                        contextKey = "",
+                        profile = PerformanceProfile.X4,
+                        feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                        timestampMillis = 10L + index
+                    )
+                )
+            }
+
+            val measured = store.observationsFlow(measuredKey).first()
+            assertEquals(1, measured.size)
+            assertEquals(60f, measured.single().measuredFps)
+        } finally {
+            scope.cancel()
+            file.delete()
+            File(file.absolutePath + ".corrupt").delete()
+            File(file.absolutePath + ".bak").delete()
+        }
+    }
+
 }
