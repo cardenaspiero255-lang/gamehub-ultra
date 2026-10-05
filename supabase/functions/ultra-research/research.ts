@@ -2771,7 +2771,7 @@ async function wikipediaGeneratorEvidence(
   signal?: AbortSignal,
 ): Promise<ResearchResult | null> {
   const wikipediaHost = "es.wikipedia.org";
-  const url = new URL(\`https://\${wikipediaHost}/w/api.php\`);
+  const url = new URL(`https://${wikipediaHost}/w/api.php`);
   url.searchParams.set("action", "query");
   url.searchParams.set("generator", "search");
   url.searchParams.set("gsrsearch", searchTopic);
@@ -2825,7 +2825,7 @@ async function wikipediaGeneratorEvidence(
         encodeURIComponent(title.replace(/ /g, "_")));
 
     return {
-      claimKey: \`general:\${slug(title)}\`,
+      claimKey: `general:${slug(title)}`,
       value: normalize(extract),
       displayText: extract,
       sourceId: source,
