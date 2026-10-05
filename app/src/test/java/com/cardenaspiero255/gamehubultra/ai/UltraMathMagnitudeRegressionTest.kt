@@ -59,4 +59,10 @@ class UltraMathMagnitudeRegressionTest {
         assertEquals("6000000", UltraMathEngine.solve("dos millones por 3")?.resultText)
         assertEquals("12000000", UltraMathEngine.solve("doce millones x 1")?.resultText)
     }
+
+    @Test
+    fun `written negative magnitude keeps its sign`() {
+        assertEquals("-6000000", UltraMathEngine.solve("menos dos millones por 3")?.resultText)
+        assertEquals("-6000000", UltraMathEngine.solve("minus two million times 3")?.resultText)
+    }
 }
