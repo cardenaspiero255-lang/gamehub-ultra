@@ -465,7 +465,8 @@ internal fun GameHubUltraApp(
         storageFreePercent = runtimeDiagnostics?.storage?.freePercent ?: 100,
         inputDeviceCount = runtimeDiagnostics?.inputDeviceCount ?: 0,
         selectedProfile = uiState.effectiveProfile,
-        sessionActive = activeSessionPackage != null
+        sessionActive = activeSessionPackage != null,
+        optimizationObservations = optimizationObservations
     )
 
     val tabs = listOf(
