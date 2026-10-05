@@ -4817,9 +4817,11 @@ Deno.test(
           );
         }
       }
-      if (
-        !result.displayText?.toLowerCase().includes(testCase.expected)
-      ) {
+      const normalizedAnswer = (result.displayText ?? "")
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLowerCase();
+      if (!normalizedAnswer.includes(testCase.expected)) {
         throw new Error("unexpected answer for " + testCase.query);
       }
       if (modelCalls !== 0) {
