@@ -91,7 +91,7 @@ class UltraAiCore2(
             safeObservation,
             feedback,
             memories
-        ) ?: deterministicRecommendation(safeObservation, feedback)
+        ) ?: deterministicRecommendation(safeObservation, feedback, memories)
         return UltraAiCoreResult(
             recommendation = recommendation,
             explanation = buildExplanation(safeObservation, recommendation),
@@ -102,11 +102,13 @@ class UltraAiCore2(
 
     private fun deterministicRecommendation(
         observation: UltraAiObservation,
-        feedback: UltraAiFeedbackSnapshot
+        feedback: UltraAiFeedbackSnapshot,
+        memories: List<UltraAiMemorySignal>
     ): UltraAiRecommendation {
         val evidence = mutableListOf<String>()
         val battery = observation.batteryPercent
         val thermal = observation.thermalLabel?.trim()?.lowercase()
+        val safeMemoryPreference = rememberedSafeProfilePreference(memories)
         val profile = when {
             battery != null && battery <= LOW_BATTERY_PERCENT -> {
                 evidence += "battery=$battery"
@@ -115,6 +117,10 @@ class UltraAiCore2(
             thermal in HOT_THERMAL_LABELS -> {
                 evidence += "thermal=" + observation.thermalLabel
                 "BALANCED"
+            }
+            safeMemoryPreference != null -> {
+                evidence += "memoryPreference=$safeMemoryPreference"
+                safeMemoryPreference
             }
             observation.activeProfileId.isNotBlank() -> {
                 evidence += "activeProfile=" + observation.activeProfileId
@@ -136,6 +142,28 @@ class UltraAiCore2(
             source = UltraAiRecommendationSource.DETERMINISTIC_LOCAL
         )
     }
+
+    private fun rememberedSafeProfilePreference(
+        memories: List<UltraAiMemorySignal>
+    ): String? =
+        memories
+            .asSequence()
+            .filter { it.provenance == UltraMemoryProvenance.REMEMBERED_FACT }
+            .map { it.text.trim().lowercase() }
+            .firstOrNull { text ->
+                val expressesPreference =
+                    "prefiero" in text ||
+                    "priorizo" in text ||
+                    "mi preferencia" in text ||
+                    "perfil favorito" in text
+                val prefersStability =
+                    "estabilidad" in text ||
+                    "estable" in text ||
+                    "balanceado" in text ||
+                    "equilibrado" in text
+                expressesPreference && prefersStability
+            }
+            ?.let { "BALANCED" }
 
     private fun buildExplanation(
         observation: UltraAiObservation,
