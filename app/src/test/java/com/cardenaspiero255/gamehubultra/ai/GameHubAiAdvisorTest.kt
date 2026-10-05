@@ -670,6 +670,110 @@ class GameHubAiAdvisorTest {
         assertTrue(result.fallbackUsed)
     }
 
+
+    @Test
+    fun coreOverridesMapProfilesToExpectedReasons() {
+        fun advisorReturning(profileId: String): GameHubAiAdvisor =
+            GameHubAiAdvisor(
+                aiCore = object : UltraAiCoreGateway {
+                    override fun evaluate(
+                        observation: UltraAiObservation,
+                        feedback: UltraAiFeedbackSnapshot,
+                        memories: List<UltraAiMemorySignal>
+                    ): UltraAiCoreResult =
+                        UltraAiCoreResult(
+                            recommendation = UltraAiRecommendation(
+                                profileId = profileId,
+                                confidence = 0.95,
+                                evidence = listOf("test")
+                            ),
+                            explanation = "test",
+                            memorySignals = memories,
+                            requiresCloud = false
+                        )
+                }
+            )
+
+        val constrainedContext = healthyContext.copy(
+            thermalStatus = 3,
+            thermalHeadroom = 0.90f
+        )
+
+        val x4 = advisorReturning("X4").advise(
+            "qué modo me recomiendas",
+            constrainedContext
+        )
+        assertEquals(PerformanceProfile.X4, x4.suggestedProfile)
+        assertEquals(AiAdviceReason.X4_READY, x4.reason)
+
+        val interpolation = advisorReturning("FRAME_INTERPOLATION").advise(
+            "qué modo me recomiendas",
+            constrainedContext
+        )
+        assertEquals(
+            PerformanceProfile.FRAME_INTERPOLATION,
+            interpolation.suggestedProfile
+        )
+        assertEquals(AiAdviceReason.INTERPOLATION, interpolation.reason)
+    }
+
+    @Test
+    fun coreFallbackKeepsBaseAdviceWhenCloudInvalidOrExceptionOccurs() {
+        fun advisorWith(
+            profileId: String = "BALANCED",
+            requiresCloud: Boolean = false,
+            fail: Boolean = false
+        ): GameHubAiAdvisor =
+            GameHubAiAdvisor(
+                aiCore = object : UltraAiCoreGateway {
+                    override fun evaluate(
+                        observation: UltraAiObservation,
+                        feedback: UltraAiFeedbackSnapshot,
+                        memories: List<UltraAiMemorySignal>
+                    ): UltraAiCoreResult {
+                        if (fail) error("synthetic core failure")
+                        return UltraAiCoreResult(
+                            recommendation = UltraAiRecommendation(
+                                profileId = profileId,
+                                confidence = 0.5,
+                                evidence = emptyList()
+                            ),
+                            explanation = "test",
+                            memorySignals = memories,
+                            requiresCloud = requiresCloud
+                        )
+                    }
+                }
+            )
+
+        val baseline = GameHubAiAdvisor().advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(PerformanceProfile.X4, baseline.suggestedProfile)
+
+        val cloud = advisorWith(requiresCloud = true).advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(baseline.suggestedProfile, cloud.suggestedProfile)
+        assertEquals(baseline.reason, cloud.reason)
+
+        val invalid = advisorWith(profileId = "NOT_A_PROFILE").advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(baseline.suggestedProfile, invalid.suggestedProfile)
+        assertEquals(baseline.reason, invalid.reason)
+
+        val failed = advisorWith(fail = true).advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(baseline.suggestedProfile, failed.suggestedProfile)
+        assertEquals(baseline.reason, failed.reason)
+    }
+
     private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =
         object : UltraLongTermMemoryGateway {
             override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
