@@ -4293,6 +4293,89 @@ Deno.test(
 );
 
 Deno.test(
+  "rate-limited Wikipedia retries before falling through to a general model",
+  async () => {
+    let wikipediaGeneratorCalls = 0;
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaGeneratorCalls += 1;
+          if (wikipediaGeneratorCalls === 1) {
+            return new Response("rate limited", {
+              status: 429,
+              headers: { "Retry-After": "0" },
+            });
+          }
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Cultura",
+                  extract:
+                    "La cultura es el conjunto de conocimientos, costumbres, prácticas y expresiones compartidas por una sociedad.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Cultura",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          throw new Error("model fallback must not be needed after Wikipedia retry");
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "Explícame de forma sencilla qué es la cultura.",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected Wikipedia retry to recover stable knowledge");
+    }
+    if (wikipediaGeneratorCalls !== 2) {
+      throw new Error(
+        "expected one bounded Wikipedia rate-limit retry; calls=" +
+          wikipediaGeneratorCalls,
+      );
+    }
+    if (modelCalls !== 0) {
+      throw new Error("Wikipedia recovery must avoid model fallback");
+    }
+    if (!result.displayText?.toLowerCase().includes("cultura")) {
+      throw new Error("expected recovered culture answer");
+    }
+  },
+);
+
+Deno.test(
   "rate-limited Gemini falls through to xAI without retrying the same 429",
   async () => {
     let geminiCalls = 0;
