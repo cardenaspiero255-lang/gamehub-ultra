@@ -7,6 +7,12 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function wikipediaSearchParam(url: URL): string {
+  return url.searchParams.get("gsrsearch") ??
+    url.searchParams.get("srsearch") ??
+    "";
+}
+
 Deno.test("news requires two independent current sources before returning", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -438,7 +444,7 @@ Deno.test("explicit general-knowledge kind wins over incidental price words", as
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = wikipediaSearchParam(url);
         return jsonResponse({
           query: { search: [{ title: "Valor esperado" }] },
         });
@@ -487,7 +493,7 @@ Deno.test("general-knowledge follow-up searches with previous topic context", as
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = wikipediaSearchParam(url);
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -607,6 +613,22 @@ Deno.test("English general knowledge still returns Spanish encyclopedia content"
       const url = new URL(String(input));
       hosts.push(url.hostname);
       if (url.pathname === "/w/api.php") {
+        if (url.searchParams.get("generator") === "search") {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Fotosíntesis",
+                  extract:
+                    "La fotosíntesis convierte energía luminosa en energía química.",
+                  fullurl: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
+                },
+              },
+            },
+          });
+        }
         return jsonResponse({
           query: { search: [{ title: "Fotosíntesis" }] },
         });
@@ -648,7 +670,7 @@ Deno.test("Spanish factual prefixes are removed before encyclopedia search", asy
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        queries.push(url.searchParams.get("srsearch") ?? "");
+        queries.push(wikipediaSearchParam(url));
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -718,7 +740,23 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = wikipediaSearchParam(url);
+        if (url.searchParams.get("generator") === "search") {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Fotosíntesis",
+                  extract:
+                    "La fotosíntesis convierte energía luminosa en energía química.",
+                  fullurl: "https://es.wikipedia.org/wiki/Fotos%C3%ADntesis",
+                },
+              },
+            },
+          });
+        }
         return jsonResponse({
           query: { search: [{ title: "Fotosíntesis" }] },
         });
@@ -902,7 +940,7 @@ Deno.test("dependent knowledge follow-up keeps the previous subject", async () =
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        queries.push(url.searchParams.get("srsearch") ?? "");
+        queries.push(wikipediaSearchParam(url));
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -937,7 +975,7 @@ Deno.test("dependent follow-up may add a qualifier without replacing its subject
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = wikipediaSearchParam(url);
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -972,7 +1010,7 @@ Deno.test("complete new subject in a follow-up does not keep prior context", asy
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = wikipediaSearchParam(url);
         return jsonResponse({
           query: { search: [{ title: "Android" }] },
         });
@@ -1007,7 +1045,7 @@ Deno.test("speaker labels are stripped before assistant invocation in context", 
     fetcher: (input) => {
       const url = new URL(String(input));
       if (url.pathname === "/w/api.php") {
-        searchQuery = url.searchParams.get("srsearch") ?? "";
+        searchQuery = wikipediaSearchParam(url);
         return jsonResponse({
           query: { search: [{ title: "Vulkan" }] },
         });
@@ -2870,6 +2908,153 @@ Deno.test(
 );
 
 Deno.test(
+  "primary timeout retries stable knowledge through fresh Wikidata before models",
+  async () => {
+    let wikidataCalls = 0;
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input, init) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          return new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          wikidataCalls += 1;
+          return jsonResponse({
+            search: [{
+              id: "Q9135",
+              label: "Sistema operativo",
+              description:
+                "software que administra los recursos de un sistema informático",
+              concepturi: "https://www.wikidata.org/entity/Q9135",
+            }],
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          throw new Error("stable source fallback must run before models");
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "ULTRA_GENERAL_ROUTE_TIMEOUT_MS") return "1200";
+        if (name === "ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS") return "150";
+        if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+        return undefined;
+      },
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Para qué sirve un sistema operativo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("fresh Wikidata retry should recover stable knowledge");
+    }
+    if (wikidataCalls !== 1) {
+      throw new Error(
+        "expected one fresh Wikidata retry; calls=" + wikidataCalls,
+      );
+    }
+    if (modelCalls !== 0) {
+      throw new Error("stable Wikidata fallback should avoid model calls");
+    }
+    if (!result.displayText?.toLowerCase().includes("sistema operativo")) {
+      throw new Error("expected system-operating answer from Wikidata");
+    }
+  },
+);
+
+Deno.test(
+  "primary source abstention gets one fresh Wikidata retry before models",
+  async () => {
+    let wikidataCalls = 0;
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          wikidataCalls += 1;
+          if (wikidataCalls <= 3) {
+            return new Response("temporarily unavailable", { status: 503 });
+          }
+          return jsonResponse({
+            search: [{
+              id: "Q9135",
+              label: "Sistema operativo",
+              description:
+                "software que administra los recursos de un sistema informático",
+              concepturi: "https://www.wikidata.org/entity/Q9135",
+            }],
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          throw new Error("fresh stable-source retry must run before models");
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "ULTRA_GENERAL_ROUTE_TIMEOUT_MS") return "1800";
+        if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+        return undefined;
+      },
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Para qué sirve un sistema operativo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("fresh Wikidata retry should recover source abstention");
+    }
+    if (wikidataCalls !== 4) {
+      throw new Error(
+        "expected three primary Wikidata attempts plus one fresh retry; calls=" +
+          wikidataCalls,
+      );
+    }
+    if (modelCalls !== 0) {
+      throw new Error("stable source recovery should avoid model calls");
+    }
+    if (!result.displayText?.toLowerCase().includes("sistema operativo")) {
+      throw new Error("expected operating-system answer from fresh Wikidata");
+    }
+  },
+);
+
+Deno.test(
   "slow sole Tavily fallback gets more time than optional corroboration",
   async () => {
     const deps: ResearchDependencies = {
@@ -3544,7 +3729,7 @@ Deno.test("purpose-form general knowledge queries normalize leading articles bef
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        const search = url.searchParams.get("srsearch");
+        const search = wikipediaSearchParam(url);
         if (search !== "sistema operativo") {
           return jsonResponse({ query: { search: [] } });
         }
@@ -3595,6 +3780,64 @@ Deno.test("purpose-form general knowledge queries normalize leading articles bef
   }
   if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
     throw new Error("expected Wikipedia evidence without model fallback");
+  }
+});
+
+Deno.test("mAh stable knowledge resolves through the canonical ampere-hour topic without model keys", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.pathname === "/w/api.php"
+      ) {
+        const search = wikipediaSearchParam(url);
+        if (search !== "Amperio-hora") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                pageid: 1,
+                index: 1,
+                title: "Amperio-hora",
+                extract:
+                  "El amperio-hora es una unidad de carga eléctrica. El miliamperio-hora, mAh, equivale a una milésima de amperio-hora y se usa habitualmente para expresar la capacidad de baterías.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Amperio-hora",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "api.tavily.com") {
+        return jsonResponse({ results: [] });
+      }
+      if (
+        url.hostname === "generativelanguage.googleapis.com" ||
+        url.hostname === "api.x.ai"
+      ) {
+        throw new Error("model fallback must not be needed for mAh");
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué significa mAh en una batería?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error(
+      "expected stable mAh knowledge to resolve without a configured model",
+    );
+  }
+  if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
+    throw new Error("expected canonical Wikipedia evidence for mAh");
   }
 });
 
@@ -3885,7 +4128,7 @@ Deno.test("what-does-it-do phrasing normalizes to the stable encyclopedia topic"
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        const search = url.searchParams.get("srsearch");
+        const search = wikipediaSearchParam(url);
         return search === "procesador"
           ? jsonResponse({
             query: { search: [{ title: "Unidad central de procesamiento" }] },
@@ -3938,7 +4181,7 @@ Deno.test("stable definition mislabeled as current data recovers through general
       if (
         url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
       ) {
-        if (url.searchParams.get("srsearch") !== "un motor") {
+        if (wikipediaSearchParam(url) !== "un motor") {
           return jsonResponse({ query: { search: [] } });
         }
         return jsonResponse({
@@ -3983,5 +4226,1896 @@ Deno.test("stable definition mislabeled as current data recovers through general
   }
   if (!result.sourceIds?.some((source) => source.includes("wikipedia.org"))) {
     throw new Error("expected general-knowledge evidence from Wikipedia");
+  }
+});
+
+Deno.test(
+  "runtime-generated knowledge phrasing is normalized to the actual topic",
+  async () => {
+    const observedSearches: string[] = [];
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+        ) {
+          const search = wikipediaSearchParam(url);
+          observedSearches.push(search);
+          if (search !== "la erosión") {
+            return jsonResponse({ query: { search: [] } });
+          }
+          return jsonResponse({
+            query: { search: [{ title: "Erosión" }] },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            extract:
+              "La erosión es el desgaste y transporte de suelo y roca por agentes naturales.",
+            content_urls: {
+              desktop: {
+                page: "https://es.wikipedia.org/wiki/Erosi%C3%B3n",
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Dame una explicación clara de la erosión y su función principal.",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected correctly normalized encyclopedia result");
+    }
+    if (observedSearches[0] !== "la erosión") {
+      throw new Error(
+        "dynamic prompt wrapper leaked into Wikipedia search: " +
+          observedSearches[0],
+      );
+    }
+    if (!result.displayText?.toLowerCase().includes("erosión")) {
+      throw new Error("expected erosion answer");
+    }
+  },
+);
+
+Deno.test(
+  "irrelevant Wikipedia candidate is rejected before it can answer the user",
+  async () => {
+    let tavilyCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" && url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Primer viaje de James Cook" }] },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            extract:
+              "El primer viaje de James Cook fue una expedición por el océano Pacífico.",
+            content_urls: {
+              desktop: {
+                page:
+                  "https://es.wikipedia.org/wiki/Primer_viaje_de_James_Cook",
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          tavilyCalls += 1;
+          return jsonResponse({
+            results: [
+              {
+                title: "Erosión del suelo",
+                url: "https://science-one.example/erosion",
+                content:
+                  "La erosión desgasta y transporta partículas de suelo y roca mediante agua, viento u otros agentes.",
+                score: 0.95,
+              },
+              {
+                title: "Qué es la erosión",
+                url: "https://science-two.example/erosion",
+                content:
+                  "La erosión es un proceso de desgaste del suelo y las rocas y su posterior transporte.",
+                score: 0.9,
+              },
+            ],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+      secret: (name) =>
+        Promise.resolve(name === "TAVILY_API_KEY" ? "test-key" : undefined),
+    };
+
+    const result = await routeResearchQuery(
+      "Dame una explicación clara de la erosión y su función principal.",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected relevant Tavily fallback");
+    }
+    if (tavilyCalls === 0) {
+      throw new Error("irrelevant Wikipedia result must force a fallback");
+    }
+    const answer = result.displayText?.toLowerCase() ?? "";
+    if (!answer.includes("eros")) {
+      throw new Error("expected answer about erosion");
+    }
+    if (answer.includes("james cook")) {
+      throw new Error("irrelevant Wikipedia answer leaked to the user");
+    }
+  },
+);
+
+Deno.test(
+  "general knowledge skips an irrelevant Wikipedia result and uses a later relevant candidate",
+  async () => {
+    const summaries: string[] = [];
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              search: [
+                { title: "Crucifixión de Jesús" },
+                { title: "Yeso" },
+              ],
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          const title = decodeURIComponent(
+            url.pathname.split("/").pop() ?? "",
+          ).replaceAll("_", " ");
+          summaries.push(title);
+          if (title.includes("Crucifixión")) {
+            return jsonResponse({
+              title: "Crucifixión de Jesús",
+              type: "standard",
+              extract:
+                "La crucifixión de Jesús ocurrió en Judea durante el siglo I.",
+              content_urls: {
+                desktop: {
+                  page:
+                    "https://es.wikipedia.org/wiki/Crucifixi%C3%B3n_de_Jes%C3%BAs",
+                },
+              },
+            });
+          }
+          return jsonResponse({
+            title: "Yeso",
+            type: "standard",
+            extract:
+              "El yeso es un material usado en construcción para revestimientos, tabiques y acabados.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Yeso" },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Si alguien me pregunta por el yeso en construcción, ¿cómo lo explicarías en pocas frases?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected relevant Wikipedia answer");
+    if (!result.displayText?.toLowerCase().includes("yeso")) {
+      throw new Error("expected answer about yeso");
+    }
+    if (result.displayText?.toLowerCase().includes("crucifix")) {
+      throw new Error("irrelevant first search result leaked");
+    }
+    if (summaries.length < 2) {
+      throw new Error("expected the resolver to inspect a later candidate");
+    }
+  },
+);
+
+Deno.test(
+  "multi-token knowledge topics require strong relevance instead of one generic overlap",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              search: [
+                { title: "High Frame Rate" },
+                { title: "Frecuencia de imagen en videojuegos" },
+              ],
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          const title = decodeURIComponent(
+            url.pathname.split("/").pop() ?? "",
+          ).replaceAll("_", " ");
+          if (title.includes("High Frame Rate")) {
+            return jsonResponse({
+              title: "High Frame Rate",
+              type: "standard",
+              extract:
+                "High Frame Rate es una técnica de proyección cinematográfica a más de 24 fps.",
+              content_urls: {
+                desktop: {
+                  page: "https://es.wikipedia.org/wiki/High_Frame_Rate",
+                },
+              },
+            });
+          }
+          return jsonResponse({
+            title: "Frecuencia de imagen en videojuegos",
+            type: "standard",
+            extract:
+              "En videojuegos, FPS suele referirse a fotogramas por segundo y mide cuántas imágenes se muestran cada segundo.",
+            content_urls: {
+              desktop: {
+                page:
+                  "https://es.wikipedia.org/wiki/Frecuencia_de_imagen_en_videojuegos",
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué significa FPS en videojuegos?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected relevant FPS answer");
+    const text = result.displayText?.toLowerCase() ?? "";
+    if (!text.includes("videojuegos") || !text.includes("fotogram")) {
+      throw new Error("expected gaming FPS meaning, not generic cinema HFR");
+    }
+  },
+);
+
+Deno.test(
+  "rate-limited Wikipedia retries before falling through to a general model",
+  async () => {
+    let wikipediaGeneratorCalls = 0;
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaGeneratorCalls += 1;
+          if (wikipediaGeneratorCalls === 1) {
+            return new Response("rate limited", {
+              status: 429,
+              headers: { "Retry-After": "0" },
+            });
+          }
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Cultura",
+                  extract:
+                    "La cultura es el conjunto de conocimientos, costumbres, prácticas y expresiones compartidas por una sociedad.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Cultura",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          throw new Error(
+            "model fallback must not be needed after Wikipedia retry",
+          );
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "Explícame de forma sencilla qué es la cultura.",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected Wikipedia retry to recover stable knowledge");
+    }
+    if (wikipediaGeneratorCalls !== 2) {
+      throw new Error(
+        "expected one bounded Wikipedia rate-limit retry; calls=" +
+          wikipediaGeneratorCalls,
+      );
+    }
+    if (modelCalls !== 0) {
+      throw new Error("Wikipedia recovery must avoid model fallback");
+    }
+    if (!result.displayText?.toLowerCase().includes("cultura")) {
+      throw new Error("expected recovered culture answer");
+    }
+  },
+);
+
+Deno.test(
+  "Wikipedia tolerates a short 429 burst before stable knowledge abstains",
+  async () => {
+    let wikipediaGeneratorCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaGeneratorCalls += 1;
+          if (wikipediaGeneratorCalls <= 4) {
+            return new Response("rate limited", { status: 429 });
+          }
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Mitología griega",
+                  extract:
+                    "La mitología griega reúne relatos sobre dioses y héroes de la antigua Grecia.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Mitolog%C3%ADa_griega",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué debería saber una persona sobre la mitología griega?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("short Wikipedia throttling must recover");
+    }
+    if (wikipediaGeneratorCalls !== 5) {
+      throw new Error(
+        "expected five bounded Wikipedia attempts; calls=" +
+          wikipediaGeneratorCalls,
+      );
+    }
+  },
+);
+
+Deno.test(
+  "stable knowledge falls back to Spanish Wikidata when Wikipedia is unavailable",
+  async () => {
+    let wikidataCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          return new Response("temporarily unavailable", { status: 503 });
+        }
+        if (
+          url.hostname === "www.wikidata.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          wikidataCalls += 1;
+          if (url.searchParams.get("search") !== "germinación") {
+            return jsonResponse({ search: [] });
+          }
+          return jsonResponse({
+            search: [{
+              id: "Q100001",
+              label: "Germinación",
+              description:
+                "proceso por el que una semilla inicia su desarrollo y produce un brote",
+              concepturi: "https://www.wikidata.org/entity/Q100001",
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Para qué sirve o por qué es importante la germinación de una semilla?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected Wikidata stable-knowledge fallback");
+    }
+    if (wikidataCalls < 1) {
+      throw new Error("expected Wikidata to be consulted");
+    }
+    if (!result.displayText?.toLowerCase().includes("germin")) {
+      throw new Error("expected germination answer from Wikidata");
+    }
+    if (!result.sourceIds?.some((source) => source.includes("wikidata.org"))) {
+      throw new Error("expected visible Wikidata source");
+    }
+  },
+);
+
+Deno.test(
+  "refresh-rate aliases and matching brand evidence remain valid primary knowledge",
+  async () => {
+    const cases = [
+      {
+        query: "¿Qué significa 120 Hz en una televisión?",
+        title: "Frecuencia de actualización",
+        extract:
+          "La frecuencia de actualización de una pantalla indica cuántas veces se renueva la imagen por segundo.",
+        expected: "frecuencia",
+      },
+      {
+        query: "¿Qué es una tasa de refresco de 120 Hz?",
+        title: "Tasa de refresco",
+        extract:
+          "La tasa de refresco describe cuántas veces por segundo una pantalla actualiza la imagen mostrada.",
+        expected: "refresco",
+      },
+      {
+        query: "¿Qué fabrica NVIDIA?",
+        title: "Nvidia",
+        extract:
+          "Nvidia es una empresa tecnológica que diseña unidades de procesamiento gráfico y otros productos de computación.",
+        expected: "nvidia",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let modelCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php" &&
+            url.searchParams.get("generator") === "search"
+          ) {
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replace(/ /g, "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (
+            url.hostname === "generativelanguage.googleapis.com" ||
+            url.hostname === "api.x.ai"
+          ) {
+            modelCalls += 1;
+            throw new Error("primary evidence should avoid model fallback");
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: () => undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+      if (result.abstained) {
+        throw new Error(
+          "expected semantic primary evidence for " + testCase.query,
+        );
+      }
+      if (
+        !(result.displayText ?? "").toLowerCase().includes(testCase.expected)
+      ) {
+        throw new Error("unexpected answer for " + testCase.query);
+      }
+      if (modelCalls !== 0) {
+        throw new Error("primary knowledge unexpectedly used a model");
+      }
+    }
+  },
+);
+
+Deno.test(
+  "operating system smoke question resolves from canonical primary knowledge",
+  async () => {
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Sistema operativo",
+                  extract:
+                    "Un sistema operativo es el software principal que administra los recursos de un dispositivo y permite ejecutar aplicaciones.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Sistema_operativo",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          throw new Error("primary evidence should avoid model fallback");
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Para qué sirve un sistema operativo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (result.abstained) {
+      throw new Error("expected operating-system primary evidence");
+    }
+    if (!result.displayText?.toLowerCase().includes("sistema operativo")) {
+      throw new Error("expected operating-system answer");
+    }
+    if (modelCalls !== 0) {
+      throw new Error("operating-system knowledge unexpectedly used a model");
+    }
+  },
+);
+
+Deno.test(
+  "stable Spanish wrappers search the canonical subject without grammatical noise",
+  async () => {
+    const cases = [
+      {
+        query: "¿Qué es una emulsión en cocina?",
+        expectedSearch: "emulsión",
+        title: "Emulsión",
+        extract:
+          "Una emulsión es una mezcla de dos líquidos que normalmente no se mezclan.",
+      },
+      {
+        query: "¿Qué es el matchmaking?",
+        expectedSearch: "matchmaking",
+        title: "Matchmaking",
+        extract: "El matchmaking empareja jugadores para formar partidas.",
+      },
+      {
+        query: "Explícame de forma sencilla qué es la presión arterial.",
+        expectedSearch: "presión arterial",
+        title: "Presión arterial",
+        extract:
+          "La presión arterial es la presión que ejerce la sangre sobre las arterias.",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let observedSearch = "";
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php"
+          ) {
+            observedSearch = wikipediaSearchParam(url);
+            if (observedSearch !== testCase.expectedSearch) {
+              return jsonResponse({ query: { search: [] } });
+            }
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replace(/ /g, "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (url.hostname === "www.wikidata.org") {
+            return jsonResponse({ search: [] });
+          }
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: () => undefined,
+        sleep: () => Promise.resolve(),
+        random: () => 0,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+      if (result.abstained) {
+        throw new Error(
+          "canonical stable subject was not resolved: " + testCase.query,
+        );
+      }
+      if (observedSearch !== testCase.expectedSearch) {
+        throw new Error("unexpected canonical search: " + observedSearch);
+      }
+    }
+  },
+);
+
+Deno.test(
+  "stable common concepts use bare Wikidata labels when Wikipedia is unavailable",
+  async () => {
+    const cases = [
+      {
+        query: "¿Cómo funciona un ventilador?",
+        expectedSearch: "ventilador",
+        label: "Ventilador",
+        description: "máquina que mueve aire mediante aspas giratorias",
+      },
+      {
+        query: "¿Para qué sirve o por qué es importante la ética?",
+        expectedSearch: "ética",
+        label: "Ética",
+        description: "rama de la filosofía que estudia la conducta moral",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (url.hostname === "es.wikipedia.org") {
+            return new Response("temporarily unavailable", { status: 503 });
+          }
+          if (url.hostname === "www.wikidata.org") {
+            if (url.searchParams.get("search") !== testCase.expectedSearch) {
+              return jsonResponse({ search: [] });
+            }
+            return jsonResponse({
+              search: [{
+                id: "Q-test",
+                label: testCase.label,
+                description: testCase.description,
+                concepturi: "https://www.wikidata.org/entity/Q-test",
+              }],
+            });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: () => undefined,
+        sleep: () => Promise.resolve(),
+        random: () => 0,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+      if (result.abstained) {
+        throw new Error("stable concept should resolve without model keys");
+      }
+    }
+  },
+);
+
+Deno.test(
+  "search hints cannot validate an unrelated brand as authoritative",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Samsung",
+                  extract:
+                    "Samsung es una empresa tecnológica que fabrica productos electrónicos.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Samsung",
+                },
+              },
+            },
+          });
+        }
+        if (url.hostname === "es.wikipedia.org") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          return jsonResponse({ search: [] });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué productos fabrica Sony?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (!result.abstained) {
+      throw new Error(
+        "generic search hints must not validate an unrelated brand",
+      );
+    }
+  },
+);
+
+Deno.test(
+  "rate-limited Gemini falls through to xAI without retrying the same 429",
+  async () => {
+    let geminiCalls = 0;
+    let xaiCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalls += 1;
+          return new Response("quota", { status: 429 });
+        }
+        if (url.hostname === "api.x.ai") {
+          xaiCalls += 1;
+          return jsonResponse({
+            choices: [{
+              message: {
+                content:
+                  "Un catalizador acelera una reacción química sin consumirse de forma permanente en ella.",
+              },
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        if (name === "XAI_API_KEY") return "xai-test-key";
+        return undefined;
+      },
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un catalizador?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (geminiCalls !== 1) {
+      throw new Error(
+        "429 must not hammer the same provider; calls=" + geminiCalls,
+      );
+    }
+    if (xaiCalls !== 1 || result.abstained) {
+      throw new Error("expected immediate cross-provider fallback");
+    }
+    if (!result.displayText?.toLowerCase().includes("catalizador")) {
+      throw new Error("expected useful xAI fallback");
+    }
+  },
+);
+
+Deno.test(
+  "optional grounded synthesis can be disabled without disabling model fallback",
+  async () => {
+    let geminiCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php"
+        ) {
+          return jsonResponse({
+            query: { search: [{ title: "Motor" }] },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Motor",
+            type: "standard",
+            extract:
+              "Un motor es una máquina que transforma energía en trabajo mecánico.",
+            content_urls: {
+              desktop: { page: "https://es.wikipedia.org/wiki/Motor" },
+            },
+          });
+        }
+        if (url.hostname === "generativelanguage.googleapis.com") {
+          geminiCalls += 1;
+          return jsonResponse({
+            candidates: [{
+              finishReason: "STOP",
+              content: {
+                parts: [{
+                  text:
+                    "Un motor es una máquina que transforma energía en trabajo mecánico.",
+                }],
+              },
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "gemini-test-key";
+        if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un motor?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected verified answer");
+    if (geminiCalls !== 0) {
+      throw new Error("disabled optional synthesis must preserve model quota");
+    }
+    if (!result.displayText?.toLowerCase().includes("motor")) {
+      throw new Error("verified evidence must still be returned");
+    }
+  },
+);
+
+Deno.test(
+  "general knowledge resolves ranked Wikipedia candidates in one primary request",
+  async () => {
+    let wikipediaCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          wikipediaCalls += 1;
+          if (
+            url.pathname !== "/w/api.php" ||
+            url.searchParams.get("generator") !== "search"
+          ) {
+            throw new Error(
+              "expected single generator-search request before any fallback",
+            );
+          }
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Crucifixión de Jesús",
+                  extract:
+                    "La crucifixión de Jesús ocurrió en Judea durante el siglo I.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Crucifixi%C3%B3n_de_Jes%C3%BAs",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "Yeso",
+                  extract:
+                    "El yeso es un material empleado en construcción para revestimientos y acabados.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Yeso",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Si alguien me pregunta por el yeso en construcción, ¿cómo lo explicarías en pocas frases?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected Wikipedia answer");
+    if (wikipediaCalls !== 1) {
+      throw new Error(
+        "primary Wikipedia resolution should use one request; calls=" +
+          wikipediaCalls,
+      );
+    }
+    if (!result.displayText?.toLowerCase().includes("yeso")) {
+      throw new Error("expected the relevant ranked candidate");
+    }
+  },
+);
+
+Deno.test(
+  "ambiguous short knowledge entities receive domain disambiguation hints",
+  async () => {
+    const observedSearches: string[] = [];
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          const search = url.searchParams.get("gsrsearch") ?? "";
+          observedSearches.push(search);
+          const isNpc = search.toLowerCase().includes("npc");
+          return jsonResponse({
+            query: {
+              pages: isNpc
+                ? {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: "NPC Rieti",
+                    extract: "NPC Rieti es un equipo de baloncesto italiano.",
+                    canonicalurl: "https://es.wikipedia.org/wiki/NPC_Rieti",
+                  },
+                  "2": {
+                    pageid: 2,
+                    index: 2,
+                    title: "Personaje no jugador",
+                    extract:
+                      "Un personaje no jugador o NPC es un personaje de videojuego que no controla directamente un jugador.",
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Personaje_no_jugador",
+                  },
+                }
+                : {
+                  "3": {
+                    pageid: 3,
+                    index: 1,
+                    title: "Sinónimo (taxonomía)",
+                    extract:
+                      "En taxonomía, sinonimia es la existencia de más de un nombre científico para un taxón.",
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Sin%C3%B3nimo_(taxonom%C3%ADa)",
+                  },
+                  "4": {
+                    pageid: 4,
+                    index: 2,
+                    title: "Sinonimia (semántica)",
+                    extract:
+                      "En lingüística, un sinónimo es una palabra con significado igual o semejante al de otra palabra.",
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Sinonimia_(sem%C3%A1ntica)",
+                  },
+                },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
+
+    const npc = await routeResearchQuery(
+      "¿Qué es un NPC?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (
+      npc.abstained || !npc.displayText?.toLowerCase().includes("videojuego")
+    ) {
+      throw new Error("NPC must resolve to the gaming meaning");
+    }
+
+    const synonym = await routeResearchQuery(
+      "¿Qué es un sinónimo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (
+      synonym.abstained ||
+      !synonym.displayText?.toLowerCase().includes("palabra")
+    ) {
+      throw new Error("sinónimo must resolve to the linguistic meaning");
+    }
+
+    if (
+      !observedSearches.some((value) =>
+        value.toLowerCase().includes("videojuegos")
+      ) ||
+      !observedSearches.some((value) => {
+        const normalized = value.toLowerCase();
+        return normalized.includes("sinonimia") &&
+          normalized.includes("semántica");
+      })
+    ) {
+      throw new Error("expected domain-specific search hints");
+    }
+  },
+);
+
+Deno.test(
+  "ambiguous VPN query prefers the networking concept over a branded VPN product",
+  async () => {
+    let modelCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Mozilla VPN",
+                  extract:
+                    "Mozilla VPN es una aplicación y servicio de red privada virtual desarrollado por Mozilla.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Mozilla_VPN",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "Red privada virtual",
+                  extract:
+                    "Una red privada virtual o VPN extiende una red privada sobre una red pública y permite una conexión protegida entre dispositivos.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Red_privada_virtual",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "generativelanguage.googleapis.com" ||
+          url.hostname === "api.x.ai"
+        ) {
+          modelCalls += 1;
+          return new Response("quota", { status: 429 });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "GEMINI_API_KEY") return "test-gemini";
+        if (name === "XAI_API_KEY") return "test-xai";
+        if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+        return undefined;
+      },
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es una VPN?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected stable VPN answer");
+    const answer = result.displayText?.toLowerCase() ?? "";
+    if (!answer.includes("red privada virtual")) {
+      throw new Error("expected the general networking concept");
+    }
+    if (answer.includes("mozilla vpn")) {
+      throw new Error("branded VPN product must not win generic concept query");
+    }
+    if (modelCalls !== 0) {
+      throw new Error("verified primary evidence must avoid model quota");
+    }
+  },
+);
+
+Deno.test(
+  "stable smoke topics resolve from primary knowledge without consuming model quota",
+  async () => {
+    const cases = [
+      {
+        query: "¿Para qué sirve o por qué es importante el ISO en fotografía?",
+        searchMustContain: ["iso", "fotografia"],
+        title: "Sensibilidad ISO",
+        extract:
+          "La sensibilidad ISO en fotografía describe la sensibilidad usada para determinar la exposición de una imagen.",
+        expected: "fotograf",
+      },
+      {
+        query: "¿Cómo respiran los peces?",
+        searchMustContain: ["peces", "respir"],
+        title: "Respiración de los peces",
+        extract:
+          "La mayoría de los peces respira mediante branquias, que intercambian gases con el agua.",
+        expected: "branquias",
+      },
+      {
+        query: "¿Cómo funciona un parlante Bluetooth?",
+        searchMustContain: ["bluetooth", "altavoz"],
+        title: "Altavoz Bluetooth",
+        extract:
+          "Un altavoz Bluetooth recibe audio digital por Bluetooth y lo convierte en sonido mediante sus transductores.",
+        expected: "bluetooth",
+      },
+      {
+        query:
+          "Si alguien me pregunta por la navegación autónoma, ¿cómo lo explicarías en pocas frases?",
+        searchMustContain: ["navegacion", "robotica"],
+        title: "Navegación autónoma",
+        extract:
+          "La navegación autónoma permite que un robot determine su posición, planifique una ruta y se desplace sin control humano continuo.",
+        expected: "robot",
+      },
+      {
+        query: "¿Qué tipo de empresa es Lenovo?",
+        searchMustContain: ["lenovo", "empresa"],
+        title: "Lenovo",
+        extract:
+          "Lenovo es una empresa tecnológica multinacional que fabrica computadoras personales, dispositivos y otros productos electrónicos.",
+        expected: "empresa",
+      },
+      {
+        query: "¿Quién es ElRubius?",
+        searchMustContain: ["rubius", "youtuber"],
+        title: "El Rubius",
+        extract:
+          "El Rubius es un youtuber y creador de contenido español conocido por sus videos de entretenimiento y videojuegos.",
+        expected: "youtuber",
+      },
+      {
+        query: "¿Qué es HDR en una TV?",
+        searchMustContain: ["hdr", "rango"],
+        title: "Alto rango dinámico",
+        extract:
+          "El alto rango dinámico o HDR en televisión amplía el rango de luminancia y contraste para representar más detalle entre zonas oscuras y brillantes.",
+        expected: "rango",
+      },
+      {
+        query: "¿Qué significa IP68 en un celular?",
+        searchMustContain: ["ip68", "proteccion"],
+        title: "Grado de protección IP",
+        extract:
+          "IP68 es una clasificación del grado de protección frente a polvo y agua usada en dispositivos electrónicos.",
+        expected: "proteccion",
+      },
+      {
+        query: "¿Quién es Fernanfloo?",
+        searchMustContain: ["fernanfloo", "youtuber"],
+        title: "Fernanfloo",
+        extract:
+          "Fernanfloo es un youtuber y creador de contenido salvadoreño conocido por videos de videojuegos y entretenimiento.",
+        expected: "youtuber",
+      },
+      {
+        query:
+          "Resume qué es la higiene dental de una mascota sin asumir conocimientos técnicos.",
+        searchMustContain: ["higiene", "bucodental"],
+        title: "Higiene bucodental",
+        extract:
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expected: "dientes",
+      },
+      {
+        query: "¿Qué significa 120 Hz en una televisión?",
+        searchMustContain: ["120", "television"],
+        title: "Frecuencia de actualización",
+        extract:
+          "En una televisión, 120 Hz significa que la pantalla puede actualizar la imagen hasta 120 veces por segundo.",
+        expected: "120",
+      },
+      {
+        query: "¿Qué significa 120 Hz en una televisión?",
+        searchMustContain: ["120", "refresco"],
+        title: "Tasa de refresco",
+        extract:
+          "Una tasa de refresco de 120 Hz indica que una pantalla puede actualizar la imagen hasta 120 veces por segundo.",
+        expected: "120",
+      },
+      {
+        query:
+          "Resume qué es la higiene dental de una mascota sin asumir conocimientos técnicos.",
+        searchMustContain: ["higiene", "bucodental"],
+        title: "Higiene bucodental",
+        extract:
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expected: "dientes",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let modelCalls = 0;
+      let observedSearch = "";
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php" &&
+            url.searchParams.get("generator") === "search"
+          ) {
+            observedSearch = wikipediaSearchParam(url)
+              .normalize("NFD")
+              .replace(/\p{Diacritic}/gu, "")
+              .toLowerCase();
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replaceAll(" ", "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
+          if (
+            url.hostname === "generativelanguage.googleapis.com" ||
+            url.hostname === "api.x.ai"
+          ) {
+            modelCalls += 1;
+            return new Response("quota", { status: 429 });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: (name) => {
+          if (name === "GEMINI_API_KEY") return "test-gemini";
+          if (name === "XAI_API_KEY") return "test-xai";
+          if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+          return undefined;
+        },
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error("unexpected abstention for " + testCase.query);
+      }
+      for (const token of testCase.searchMustContain) {
+        if (!observedSearch.includes(token)) {
+          throw new Error(
+            "missing search hint " + token + " for " + testCase.query +
+              ": " + observedSearch,
+          );
+        }
+      }
+      const normalizedAnswer = (result.displayText ?? "")
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "")
+        .toLowerCase();
+      if (!normalizedAnswer.includes(testCase.expected)) {
+        throw new Error("unexpected answer for " + testCase.query);
+      }
+      if (modelCalls !== 0) {
+        throw new Error(
+          "stable primary answer consumed model quota for " + testCase.query,
+        );
+      }
+    }
+  },
+);
+
+Deno.test(
+  "synonym and alternate pet dental wrapper resolve without configured models",
+  async () => {
+    const cases = [
+      {
+        query: "¿Qué es un sinónimo?",
+        title: "Sinonimia (semántica)",
+        extract:
+          "La sinonimia es una relación semántica de identidad o semejanza de significados entre expresiones o palabras llamadas sinónimos.",
+        expectedSearch: ["sinonimia", "semantica"],
+        expectedAnswer: "palabras",
+      },
+      {
+        query:
+          "¿Qué debería saber una persona sobre la higiene dental de una mascota?",
+        title: "Higiene bucodental",
+        extract:
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expectedSearch: ["higiene", "bucodental"],
+        expectedAnswer: "dientes",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let observedSearch = "";
+      let modelCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php" &&
+            url.searchParams.get("generator") === "search"
+          ) {
+            observedSearch = wikipediaSearchParam(url)
+              .normalize("NFD")
+              .replace(/\p{Diacritic}/gu, "")
+              .toLowerCase();
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replaceAll(" ", "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
+          if (
+            url.hostname === "generativelanguage.googleapis.com" ||
+            url.hostname === "api.x.ai"
+          ) {
+            modelCalls += 1;
+            return new Response("not configured", { status: 503 });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: (name) =>
+          name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+      if (result.abstained) {
+        throw new Error("unexpected abstention for " + testCase.query);
+      }
+      for (const token of testCase.expectedSearch) {
+        if (!observedSearch.includes(token)) {
+          throw new Error(
+            "missing stable search hint " + token + ": " + observedSearch,
+          );
+        }
+      }
+      const answer = (result.displayText ?? "").normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "").toLowerCase();
+      if (!answer.includes(testCase.expectedAnswer)) {
+        throw new Error("unexpected stable answer for " + testCase.query);
+      }
+      if (modelCalls !== 0) {
+        throw new Error("stable answer unexpectedly used a model");
+      }
+    }
+  },
+);
+
+Deno.test(
+  "QLED and pet dental variants stay on stable primary evidence without models",
+  async () => {
+    const cases = [
+      {
+        query: "¿Qué es QLED?",
+        title: "QLED",
+        extract:
+          "QLED es una tecnología de pantalla basada en puntos cuánticos usada en televisores para reproducir color y brillo.",
+        expectedSearch: ["qled", "television"],
+        expectedAnswer: "pantalla",
+      },
+      {
+        query:
+          "Si alguien me pregunta por la higiene dental de una mascota, ¿cómo lo explicarías en pocas frases?",
+        title: "Higiene bucodental",
+        extract:
+          "La higiene bucodental es el cuidado de los dientes, las encías, la lengua y toda la cavidad bucal en general.",
+        expectedSearch: ["higiene", "bucodental"],
+        expectedAnswer: "dientes",
+      },
+    ];
+
+    for (const testCase of cases) {
+      let observedSearch = "";
+      let modelCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.pathname === "/w/api.php" &&
+            url.searchParams.get("generator") === "search"
+          ) {
+            observedSearch = wikipediaSearchParam(url)
+              .normalize("NFD")
+              .replace(/\p{Diacritic}/gu, "")
+              .toLowerCase();
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    pageid: 1,
+                    index: 1,
+                    title: testCase.title,
+                    extract: testCase.extract,
+                    canonicalurl: "https://es.wikipedia.org/wiki/" +
+                      encodeURIComponent(testCase.title.replaceAll(" ", "_")),
+                  },
+                },
+              },
+            });
+          }
+          if (url.hostname === "api.tavily.com") {
+            return jsonResponse({ results: [] });
+          }
+          if (
+            url.hostname === "generativelanguage.googleapis.com" ||
+            url.hostname === "api.x.ai"
+          ) {
+            modelCalls += 1;
+            return new Response("not configured", { status: 503 });
+          }
+          throw new Error("unexpected URL " + url);
+        },
+        env: (name) =>
+          name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error("unexpected abstention for " + testCase.query);
+      }
+      for (const token of testCase.expectedSearch) {
+        if (!observedSearch.includes(token)) {
+          throw new Error(
+            "missing stable search hint " + token + ": " + observedSearch,
+          );
+        }
+      }
+      if (
+        !(result.displayText ?? "")
+          .normalize("NFD")
+          .replace(/\p{Diacritic}/gu, "")
+          .toLowerCase()
+          .includes(testCase.expectedAnswer)
+      ) {
+        throw new Error("unexpected stable answer for " + testCase.query);
+      }
+      if (modelCalls !== 0) {
+        throw new Error("stable answer unexpectedly used a model");
+      }
+    }
+  },
+);
+
+Deno.test(
+  "dependent bear follow-up keeps the previous subject and resolves the intended comparison",
+  async () => {
+    let observedSearch = "";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          observedSearch = wikipediaSearchParam(url).toLowerCase();
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Oso polar",
+                  extract:
+                    "El oso polar es una especie de mamífero carnívoro de la familia de los osos y se encuentra entre los osos actuales de mayor tamaño.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursus_maritimus",
+                },
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Cuál es el más grande?",
+      deps,
+      "Tú: Háblame de los osos.\nUltra: Los osos son mamíferos de la familia Ursidae.",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected contextual bear answer");
+    if (!observedSearch.includes("oso")) {
+      throw new Error("previous bear topic was lost: " + observedSearch);
+    }
+    if (!result.displayText?.toLowerCase().includes("oso polar")) {
+      throw new Error("expected contextual answer about the largest bear");
+    }
+  },
+);
+
+Deno.test(
+  "generic synonym query rejects unrelated linguistics evidence before fallback",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Lingüística antropológica",
+                  extract:
+                    "La lingüística antropológica estudia el lenguaje, las palabras y su contexto social y cultural.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Ling%C3%BC%C3%ADstica_antropol%C3%B3gica",
+                },
+              },
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname === "/w/api.php" &&
+          url.searchParams.get("list") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              search: [{ title: "Sinonimia (semántica)" }],
+            },
+          });
+        }
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.pathname.includes("/api/rest_v1/page/summary/")
+        ) {
+          return jsonResponse({
+            title: "Sinonimia (semántica)",
+            type: "standard",
+            extract:
+              "Un sinónimo es una palabra que tiene un significado igual o semejante al de otra.",
+            content_urls: {
+              desktop: {
+                page:
+                  "https://es.wikipedia.org/wiki/Sinonimia_(sem%C3%A1ntica)",
+              },
+            },
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un sinónimo?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected semantic synonym answer");
+    const answer = result.displayText?.toLowerCase() ?? "";
+    if (!answer.includes("sinónimo") || !answer.includes("palabra")) {
+      throw new Error("expected a real synonym definition");
+    }
+    if (answer.includes("antropol")) {
+      throw new Error("unrelated linguistics evidence leaked");
+    }
+  },
+);
+
+Deno.test("new Spanish topic is not merged into previous context", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        searchQuery = wikipediaSearchParam(url);
+        return jsonResponse({
+          query: { search: [{ title: "Fotosíntesis" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Fotosíntesis",
+        type: "standard",
+        extract:
+          "La fotosíntesis convierte energía luminosa en energía química.",
+      });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Por qué es importante la fotosíntesis?",
+    deps,
+    "Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected independent new topic");
+  if (searchQuery.toLowerCase().includes("vulkan")) {
+    throw new Error("new topic merged with previous context");
+  }
+});
+
+Deno.test("complete purpose question stays independent of previous context", async () => {
+  let searchQuery = "";
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        searchQuery = wikipediaSearchParam(url);
+        return jsonResponse({
+          query: { search: [{ title: "Brújula" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Brújula",
+        type: "standard",
+        extract:
+          "La brújula es un instrumento de orientación que indica el norte magnético.",
+      });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Para qué sirve la brújula?",
+    deps,
+    "Ultra, explícame qué es Vulkan",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected independent purpose answer");
+  if (searchQuery.toLowerCase().includes("vulkan")) {
+    throw new Error("complete purpose question inherited previous context");
+  }
+});
+
+Deno.test("English knowledge accepts a valid Spanish cognate topic", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Fotosíntesis" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Fotosíntesis",
+        type: "standard",
+        extract:
+          "La fotosíntesis convierte energía luminosa en energía química.",
+      });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "what is photosynthesis?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("valid cross-language cognate evidence was rejected");
+  }
+});
+
+Deno.test("English queries reject unrelated encyclopedia evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/w/api.php") {
+        return jsonResponse({
+          query: { search: [{ title: "Motor de combustión interna" }] },
+        });
+      }
+      return jsonResponse({
+        title: "Motor de combustión interna",
+        type: "standard",
+        extract: "Un motor transforma energía en movimiento.",
+      });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "what is photosynthesis?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (!result.abstained) {
+    throw new Error("unrelated evidence must be rejected");
   }
 });

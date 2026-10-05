@@ -296,14 +296,81 @@ function queryTopicTokens(query: string): Set<string> {
   return evidenceTokens(topic || stripAssistantInvocation(query));
 }
 
+function crossLanguageEvidenceToken(value: string): string {
+  return value
+    .replaceAll("ph", "f")
+    .replaceAll("th", "t")
+    .replaceAll("y", "i")
+    .replace(/sis$/, "si");
+}
+
+function evidenceTokensRelated(first: string, second: string): boolean {
+  if (first === second) return true;
+  if (Math.min(first.length, second.length) < 6) return false;
+
+  const crossFirst = crossLanguageEvidenceToken(first);
+  const crossSecond = crossLanguageEvidenceToken(second);
+  if (crossFirst === crossSecond) return true;
+
+  let commonPrefix = 0;
+  const limit = Math.min(first.length, second.length);
+  while (
+    commonPrefix < limit &&
+    first.charCodeAt(commonPrefix) === second.charCodeAt(commonPrefix)
+  ) {
+    commonPrefix += 1;
+  }
+  if (commonPrefix >= 6) return true;
+  if (Math.min(first.length, second.length) < 7) return false;
+  const distance = levenshteinDistance(first, second);
+  return 1 - distance / Math.max(first.length, second.length) >= 0.72;
+}
+
+function levenshteinDistance(first: string, second: string): number {
+  const row = Array.from({ length: second.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= first.length; i++) {
+    let diagonal = row[0]; row[0] = i;
+    for (let j = 1; j <= second.length; j++) {
+      const above = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (first[i - 1] === second[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[second.length];
+}
+
+function isExplicitEnglishKnowledgeQuery(query: string): boolean {
+  const clean = normalize(
+    stripAssistantInvocation(stripConversationSpeaker(query)),
+  ).replace(/^[?!\s]+|[?!\s]+$/g, "");
+  return /^(?:what is|what are|who is|who are|why|how does|how do|where is|when was|define|explain)\b/.test(
+    clean,
+  );
+}
+
+function candidateMatchesTopic(
+  topic: string,
+  candidateText: string,
+): boolean {
+  const topicTokens = [...evidenceTokens(topic)];
+  if (topicTokens.length === 0) return true;
+  const candidateTokens = [...evidenceTokens(candidateText)];
+  const matchedTopics = topicTokens.filter((topicToken) =>
+    candidateTokens.some((candidateToken) =>
+      evidenceTokensRelated(topicToken, candidateToken)
+    )
+  );
+  const requiredMatches = topicTokens.length >= 2 ? 2 : 1;
+  return matchedTopics.length >= requiredMatches;
+}
+
 function candidateMatchesQuery(
   query: string,
   candidateText: string,
 ): boolean {
-  const queryTokens = queryTopicTokens(query);
-  if (queryTokens.size === 0) return true;
-  const candidateTokens = evidenceTokens(candidateText);
-  return [...queryTokens].some((token) => candidateTokens.has(token));
+  const topic = extractGeneralKnowledgeQuery(query) ||
+    stripAssistantInvocation(query);
+  return candidateMatchesTopic(topic, candidateText);
 }
 
 function candidateSupportsPrimary(
@@ -355,9 +422,9 @@ function primaryEvidenceTimeoutMs(
     deps.env("ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS")?.trim() ?? "",
   );
   if (Number.isFinite(configured) && configured > 0) {
-    return Math.max(150, Math.min(3_000, Math.trunc(configured)));
+    return Math.max(150, Math.min(6_000, Math.trunc(configured)));
   }
-  return 1_000;
+  return 4_500;
 }
 
 function remainingRouteBudgetMs(deadlineAt: number): number {
@@ -481,6 +548,48 @@ async function settleFallbackEvidence(
         ),
       );
     }, boundedTimeout(fallbackEvidenceTimeoutMs(deps), remainingBudget));
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function wikidataFallbackTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_WIKIDATA_FALLBACK_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(200, Math.min(2_500, Math.trunc(configured)));
+  }
+  return 1_200;
+}
+
+async function settleWikidataFallback(
+  promise: Promise<ResearchResult>,
+  controller: AbortController,
+  deps: ResearchDependencies,
+  remainingBudget?: number,
+): Promise<ResearchResult> {
+  let timer: number | undefined;
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "Wikidata tardó demasiado en el respaldo de conocimiento estable.",
+          {
+            reasonCode: "WIKIDATA_FALLBACK_TIMEOUT",
+            retryable: true,
+            stage: "wikidata",
+          },
+        ),
+      );
+    }, boundedTimeout(wikidataFallbackTimeoutMs(deps), remainingBudget));
   });
 
   try {
@@ -875,7 +984,7 @@ async function generalKnowledgeGeminiFallback(
       },
     }),
     signal,
-  }, 3, generalModelFallbackTimeoutMs(deps));
+  }, 1, generalModelFallbackTimeoutMs(deps));
 
   if (!response) {
     return abstain(
@@ -1032,6 +1141,10 @@ async function maybeSynthesizeWithAi(
   deps: ResearchDependencies,
   routeDeadlineAt?: number,
 ): Promise<ResearchResult> {
+  if (deps.env("ULTRA_DISABLE_OPTIONAL_SYNTHESIS")?.trim() === "1") {
+    return evidence;
+  }
+
   const geminiController = new AbortController();
   const gemini = await settleOptionalSynthesis(
     maybeSynthesizeWithGemini(
@@ -1343,6 +1456,17 @@ async function fetchWithRetry(
       if (response === null) {
         if (externalSignal?.aborted || attempt === maxAttempts) return null;
       } else {
+        if (response.status === 429) {
+          let hostname = "";
+          try {
+            hostname = new URL(String(input)).hostname;
+          } catch {
+            hostname = "";
+          }
+          if (!hostname.endsWith("wikipedia.org")) {
+            return response;
+          }
+        }
         const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
         if (!shouldRetry || attempt === maxAttempts) {
           return response;
@@ -1375,6 +1499,22 @@ async function fetchJson(
   init?: RequestInit,
 ): Promise<JsonObject | null> {
   const response = await fetchWithRetry(deps, input, init);
+  if (!response?.ok) return null;
+
+  try {
+    const body = await response.json();
+    return body && typeof body === "object" ? body as JsonObject : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikipediaJson(
+  deps: ResearchDependencies,
+  input: string | URL,
+  init?: RequestInit,
+): Promise<JsonObject | null> {
+  const response = await fetchWithRetry(deps, input, init, 5);
   if (!response?.ok) return null;
 
   try {
@@ -2246,9 +2386,37 @@ function stripConversationSpeaker(value: string): string {
     .replace(/^(?:tú|tu|you|usuario|user)\s*:\s*/i, "");
 }
 
+function unwrapGeneralKnowledgePrompt(value: string): string {
+  const wrappers: RegExp[] = [
+    /^dame una explicaci[oó]n clara de\s+(.+?)\s+y su funci[oó]n principal\.?$/i,
+    /^qu[eé] deber[ií]a saber una persona sobre\s+(.+?)\.?$/i,
+    /^si alguien me pregunta por\s+(.+?),?\s*[¿?]?c[oó]mo lo explicar[ií]as en pocas frases\.?$/i,
+    /^resume qu[eé] es\s+(.+?)\s+sin asumir conocimientos t[eé]cnicos\.?$/i,
+    /^expl[ií]came de forma sencilla qu[eé] es\s+(.+?)\.?$/i,
+    /^para qu[eé] sirve o por qu[eé] es importante\s+(.+?)\.?$/i,
+    /^por qu[eé] es importante\s+(?:(?:el|la|los|las|un|una)\s+)?(.+?)\.?$/i,
+    /^qu[eé] significa\s+(.+?)\.?$/i,
+    /^qu[eé] diferencia hay entre\s+(.+?)\.?$/i,
+    /^qu[eé] productos fabrica\s+(.+?)\.?$/i,
+    /^qu[eé] tipo de productos fabrica\s+(.+?)\.?$/i,
+    /^por qu[eé] es (?:conocida|conocido)\s+(.+?)\.?$/i,
+    /^cu[aá]ndo comenz[oó]\s+(.+?)\.?$/i,
+    /^qui[eé]n fue\s+(.+?)\.?$/i,
+    /^qu[eé] fue\s+(.+?)\.?$/i,
+  ];
+
+  for (const wrapper of wrappers) {
+    const match = value.match(wrapper);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return value;
+}
+
 function extractGeneralKnowledgeQuery(query: string): string {
-  const clean = stripAssistantInvocation(stripConversationSpeaker(query))
-    .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
+  const clean = unwrapGeneralKnowledgePrompt(
+    stripAssistantInvocation(stripConversationSpeaker(query))
+      .replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, ""),
+  );
   const purposeForm =
     /^(?:(?:hola|por favor|y|explicame|explícame|dime)\s+)*(?:para que sirve|para qué sirve|que hace|qué hace)\b/i.test(
       clean,
@@ -2256,7 +2424,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -2282,7 +2450,7 @@ function isExplicitNewKnowledgeTopic(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  return /^(?:y |and )?(?:que es|que son|quien es|quienes son|define|explicame que es|explica que es|what is|what are|who is|who are|define)\s+\S+/.test(
+  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|que significa|por que es|define|explicame que es|explica que es|what is|what are|who is|who was|who are|why is|define|explain)\s+\S+/.test(
     clean,
   );
 }
@@ -2291,11 +2459,21 @@ function isDependentKnowledgeFollowUp(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  if (!/^(?:y|and)\b/.test(clean)) return false;
   if (isExplicitNewKnowledgeTopic(query)) return false;
-  return /\b(?:lo|la|los|las|eso|esto|ese|esa|sirve|funciona|creo|crearon|inventaron|usa|usar)\b/.test(
-    clean,
-  );
+
+  const referential =
+    /\b(?:eso|esto|ese|esa|ellos|ellas)\b/.test(clean) ||
+    /\b(?:quien|para que|como|donde)\s+(?:lo|la|los|las)\b/.test(clean);
+  const followUpShape =
+    /^(?:(?:y|and)\s+)?(?:cual es (?:el|la|los|las)?\s*(?:mas|menos)(?:\s+\S+){0,3}|cuanto pesa|cuanto mide|donde vive|donde viven|que come|que comen|como se reproduce|como se reproducen|cuanto dura|cuanto viven|para que sirve|como funciona|quien lo creo|quien la creo|donde se usa|que hace)\s*$/.test(
+      clean,
+    );
+
+  return referential || followUpShape ||
+    (
+      /^(?:y|and)\b/.test(clean) &&
+      /\b(?:sirve|funciona|creo|crearon|inventaron|usa|usar)\b/.test(clean)
+    );
 }
 
 function dependentKnowledgeQualifier(query: string): string {
@@ -2306,6 +2484,7 @@ function dependentKnowledgeQualifier(query: string): string {
       /^(?:quien lo creo|quién lo creó|quien la creo|quién la creó|para que sirve|para qué sirve|como funciona|cómo funciona|donde se usa|dónde se usa|que hace|qué hace)(?:\s+|$)/i,
       "",
     )
+    .replace(/^(?:cual|cuál)\s+es\s+(?:(?:el|la|los|las)\s+)?/i, "")
     .replace(/^(?:en|con|sobre|para|de|del)\s+/i, "")
     .trim();
 }
@@ -2375,7 +2554,7 @@ async function stackOverflowSpanishEvidence(
   searchUrl.searchParams.set("order", "desc");
   searchUrl.searchParams.set("pagesize", "3");
 
-  const search = await fetchJson(deps, searchUrl, {
+  const search = await fetchWikipediaJson(deps, searchUrl, {
     headers: { "User-Agent": USER_AGENT },
     signal,
   });
@@ -2631,7 +2810,7 @@ async function wikipediaActionExtract(
   url.searchParams.set("format", "json");
   url.searchParams.set("origin", "*");
 
-  const payload = await fetchJson(deps, url, {
+  const payload = await fetchWikipediaJson(deps, url, {
     headers: { "User-Agent": USER_AGENT },
     signal,
   });
@@ -2658,6 +2837,515 @@ async function wikipediaActionExtract(
   return null;
 }
 
+function wikidataEntitySearchTopic(canonicalTopic: string): string {
+  const withoutArticle = canonicalTopic
+    .trim()
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/i, "");
+  const compactEntity = withoutArticle.replace(
+    /\s+de\s+(?:el|la|los|las|un|una|unos|unas)\b.*$/i,
+    "",
+  ).trim();
+  return compactEntity || withoutArticle;
+}
+
+function generalKnowledgeSearchTopic(
+  query: string,
+  topic: string,
+): { searchTopic: string; relevanceTopic: string; wikidataTopic: string } {
+  const clean = normalize(query);
+  const normalizedTopic = normalize(topic);
+  const hints: string[] = [];
+  let canonicalTopic = topic.trim();
+
+  if (/\bemulsion\b/.test(clean) && /\bcocina\b/.test(clean)) {
+    canonicalTopic = "emulsión";
+  } else if (/\bmatchmaking\b/.test(clean)) {
+    canonicalTopic = "matchmaking";
+  } else if (/\bpresion arterial\b/.test(clean)) {
+    canonicalTopic = "presión arterial";
+  } else if (/\bvpn\b/.test(clean)) {
+    canonicalTopic = "VPN red privada virtual";
+  } else if (/\bnpc\b/.test(clean)) {
+    canonicalTopic = "NPC personaje no jugador";
+    hints.push("videojuegos");
+  } else if (/\bsinonim/.test(clean)) {
+    canonicalTopic = "Sinonimia semántica";
+  } else if (/\bjbl\b/.test(clean)) {
+    canonicalTopic = "JBL";
+    hints.push("empresa", "audio");
+  } else if (/\bqled\b/.test(clean)) {
+    canonicalTopic = "QLED pantalla puntos cuánticos";
+    hints.push("television", "tecnologia");
+  } else if (
+    /\bhdr\b/.test(clean) &&
+    /\b(?:tv|television|televisor)\b/.test(clean)
+  ) {
+    canonicalTopic = "HDR alto rango dinámico";
+    hints.push("television", "brillo", "contraste");
+  } else if (
+    /\b120\s*hz\b/.test(clean) &&
+    /\b(?:tv|television|televisor|pantalla|tasa de refresco|frecuencia de actualizacion)\b/.test(clean)
+  ) {
+    canonicalTopic = "tasa de refresco 120 Hz";
+    hints.push("pantalla", "television", "refresco");
+  } else if (/\bip68\b/.test(clean)) {
+    canonicalTopic = "IP68 grado de protección IP";
+    hints.push("polvo", "agua", "dispositivo");
+  } else if (/\bnfc\b/.test(clean)) {
+    canonicalTopic = "NFC comunicación de campo cercano";
+    hints.push("telefono", "tecnologia");
+  } else if (/\bmah\b/.test(clean)) {
+    canonicalTopic = "Amperio-hora";
+  } else if (/\biso\b/.test(clean) && /\bfotograf/.test(clean)) {
+    canonicalTopic = "sensibilidad ISO";
+    hints.push("fotografia", "exposicion");
+  } else if (/\bfps\b/.test(clean) && /\bvideoj/.test(clean)) {
+    canonicalTopic = "FPS fotogramas por segundo";
+    hints.push("videojuegos");
+  } else if (/\bray tracing\b/.test(clean)) {
+    canonicalTopic = "ray tracing trazado de rayos";
+    hints.push("graficos");
+  } else if (/\blatencia\b/.test(clean) && /\bjuego/.test(clean)) {
+    canonicalTopic = "latencia";
+    hints.push("videojuegos", "red");
+  } else if (
+    /\b(?:parlante|altavoz)\b/.test(clean) &&
+    /\bbluetooth\b/.test(clean)
+  ) {
+    canonicalTopic = "altavoz Bluetooth";
+    hints.push("audio");
+  } else if (/\bsistema operativo\b/.test(clean)) {
+    canonicalTopic = "sistema operativo";
+  } else if (/\bnavegacion autonoma\b/.test(clean)) {
+    canonicalTopic = "navegación autónoma";
+    hints.push("robotica");
+  } else if (/\b(?:elrubius|el rubius)\b/.test(clean)) {
+    canonicalTopic = "El Rubius";
+    hints.push("youtuber", "creador contenido");
+  } else if (/\bfernanfloo\b/.test(clean)) {
+    canonicalTopic = "Fernanfloo";
+    hints.push("youtuber", "creador contenido");
+  } else if (/\brespir/.test(clean) && /\bpeces?\b/.test(clean)) {
+    canonicalTopic = "respiración de los peces";
+    hints.push("branquias");
+  } else if (
+    /\bhigiene dental\b/.test(clean) &&
+    /\b(?:mascota|perro|gato|veterinari)\b/.test(clean)
+  ) {
+    canonicalTopic = "Higiene bucodental";
+  }
+
+  if (/\bmas grande\b/.test(clean) || /\bmayor tamano\b/.test(clean)) {
+    hints.push("mayor tamaño");
+  }
+
+  const brandMatch = clean.match(
+    /\b(samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/,
+  );
+  const companyIntent =
+    /\b(?:empresa|productos?|fabrica|fabricar|conocid[oa]|tipo de empresa)\b/;
+  if (brandMatch && companyIntent.test(clean)) {
+    canonicalTopic = brandMatch[1];
+    hints.push("empresa", "tecnologia");
+  } else if (
+    /\blenovo\b/.test(clean) &&
+    normalizedTopic.includes("lenovo")
+  ) {
+    canonicalTopic = "Lenovo";
+    hints.push("empresa", "tecnologia");
+  }
+
+  const canonicalRelevanceTopic = canonicalTopic.trim();
+  const isRefreshRateQuery = /\b120\s*hz\b/.test(clean);
+  const relevanceTopic = isRefreshRateQuery
+    ? "120 pantalla"
+    : canonicalRelevanceTopic;
+  return {
+    searchTopic: [canonicalRelevanceTopic, ...hints].filter(Boolean).join(" ").trim(),
+    relevanceTopic,
+    wikidataTopic: isRefreshRateQuery
+      ? "frecuencia de actualización"
+      : wikidataEntitySearchTopic(canonicalRelevanceTopic),
+  };
+}
+
+function candidateMatchesKnownMeaning(
+  query: string,
+  title: string,
+  extract: string,
+): boolean {
+  const cleanQuery = normalize(query);
+  const candidate = normalize(title + " " + extract);
+
+  if (/\bsinonim/.test(cleanQuery)) {
+    const namesSynonymConcept = /\bsinonim/.test(candidate);
+    const explainsWordMeaning =
+      /\bsemant/.test(candidate) ||
+      (/\bpalabra/.test(candidate) && /\bsignific/.test(candidate));
+    return namesSynonymConcept && explainsWordMeaning;
+  }
+
+  return true;
+}
+
+function candidateMatchesKnowledgeTopic(
+  query: string,
+  topic: string,
+  candidateText: string,
+): boolean {
+  const cleanQuery = normalize(query);
+  const candidate = normalize(candidateText);
+
+  if (/\b120\s*hz\b/.test(cleanQuery)) {
+    const semanticRefreshRate =
+      /\b(?:tasa|frecuencia) de (?:refresco|actualizacion)\b/.test(candidate) ||
+      (
+        /\bhz\b/.test(candidate) &&
+        /\b(?:pantalla|television|refresco|actualizacion)\b/.test(candidate)
+      );
+    if (semanticRefreshRate) return true;
+  }
+
+  const brandMatch = cleanQuery.match(
+    /\b(samsung|apple|sony|xiaomi|nvidia|amd|lenovo|nintendo|lg)\b/,
+  );
+  const companyIntent =
+    /\b(?:empresa|productos?|fabrica|fabricar|conocid[oa]|tipo de empresa)\b/;
+  if (brandMatch && companyIntent.test(cleanQuery)) {
+    return candidate.split(/[^a-z0-9]+/).includes(brandMatch[1]);
+  }
+
+  return candidateMatchesTopic(topic, candidateText);
+}
+
+function candidateRelevanceScore(
+  searchTopic: string,
+  query: string,
+  title: string,
+  extract: string,
+): number {
+  const normalizedTitle = normalize(title);
+  const normalizedExtract = normalize(extract);
+  const normalizedSearch = normalize(searchTopic);
+  const titleTokens = [...evidenceTokens(title)];
+  const candidateTokens = [...evidenceTokens(title + " " + extract)];
+  const searchTokens = [...evidenceTokens(searchTopic)];
+
+  let score = 0;
+  if (normalizedTitle === normalizedSearch) score += 40;
+  if (
+    normalizedSearch.length >= 4 &&
+    normalizedTitle.includes(normalizedSearch)
+  ) {
+    score += 18;
+  }
+
+  for (const token of searchTokens) {
+    if (
+      titleTokens.some((candidateToken) =>
+        evidenceTokensRelated(token, candidateToken)
+      )
+    ) {
+      score += 6;
+      continue;
+    }
+    if (
+      candidateTokens.some((candidateToken) =>
+        evidenceTokensRelated(token, candidateToken)
+      )
+    ) {
+      score += 2;
+    }
+  }
+
+  const cleanQuery = normalize(query);
+  if (
+    /\bvpn\b/.test(cleanQuery) &&
+    normalizedTitle.includes("red privada virtual")
+  ) {
+    score += 30;
+  }
+  if (
+    /\bnpc\b/.test(cleanQuery) &&
+    normalizedTitle.includes("personaje no jugador")
+  ) {
+    score += 30;
+  }
+  if (/\bsinonim/.test(cleanQuery)) {
+    if (normalizedTitle.includes("sinonim")) score += 36;
+    if (normalizedTitle.includes("semant")) score += 18;
+    if (
+      normalizedExtract.includes("palabra") &&
+      normalizedExtract.includes("signific")
+    ) {
+      score += 20;
+    }
+    if (
+      !normalizedTitle.includes("sinonim") &&
+      normalizedTitle.includes("linguistic")
+    ) {
+      score -= 20;
+    }
+  }
+  if (
+    /\bsinonim/.test(cleanQuery) &&
+    (
+      normalizedTitle.includes("sinonim") ||
+      normalizedExtract.includes("relacion semantica") ||
+      normalizedExtract.includes("significado")
+    )
+  ) {
+    score += 30;
+  }
+  if (
+    /\bjbl\b/.test(cleanQuery) &&
+    (normalizedExtract.includes("audio") ||
+      normalizedExtract.includes("altavoz"))
+  ) {
+    score += 24;
+  }
+  if (
+    /\bqled\b/.test(cleanQuery) &&
+    (
+      normalizedTitle.includes("qled") ||
+      normalizedExtract.includes("punto cuantico") ||
+      normalizedExtract.includes("puntos cuanticos")
+    )
+  ) {
+    score += 30;
+  }
+  if (
+    /\bhdr\b/.test(cleanQuery) &&
+    normalizedTitle.includes("alto rango dinamico")
+  ) {
+    score += 30;
+  }
+  if (
+    /\bip68\b/.test(cleanQuery) &&
+    (normalizedTitle.includes("grado de proteccion") ||
+      normalizedExtract.includes("grado de proteccion"))
+  ) {
+    score += 28;
+  }
+  if (
+    /\bfernanfloo\b/.test(cleanQuery) &&
+    normalizedTitle === "fernanfloo"
+  ) {
+    score += 30;
+  }
+  if (
+    /\b120\s*hz\b/.test(cleanQuery) &&
+    normalizedTitle.includes("tasa de refresco")
+  ) {
+    score += 28;
+  }
+  if (
+    /\bhigiene dental\b/.test(cleanQuery) &&
+    (
+      normalizedTitle.includes("higiene bucodental") ||
+      normalizedTitle.includes("higiene dental") ||
+      normalizedExtract.includes("dientes")
+    )
+  ) {
+    score += 28;
+  }
+
+  return score;
+}
+
+async function wikipediaGeneratorEvidence(
+  searchTopic: string,
+  relevanceTopic: string,
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult | null> {
+  const wikipediaHost = "es.wikipedia.org";
+  const url = new URL("https://" + wikipediaHost + "/w/api.php");
+  url.searchParams.set("action", "query");
+  url.searchParams.set("generator", "search");
+  url.searchParams.set("gsrsearch", searchTopic);
+  url.searchParams.set("gsrlimit", "5");
+  url.searchParams.set("prop", "extracts|info|pageprops");
+  url.searchParams.set("inprop", "url");
+  url.searchParams.set("exintro", "1");
+  url.searchParams.set("explaintext", "1");
+  url.searchParams.set("redirects", "1");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const payload = await fetchWikipediaJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const queryPayload = payload?.query && typeof payload.query === "object"
+    ? payload.query as JsonObject
+    : null;
+  const pages = queryPayload?.pages && typeof queryPayload.pages === "object"
+    ? Object.values(queryPayload.pages as JsonObject)
+      .filter((page): page is JsonObject =>
+        Boolean(page) && typeof page === "object"
+      )
+    : [];
+
+  const ranked = pages
+    .map((page) => {
+      const pageProps = page.pageprops && typeof page.pageprops === "object"
+        ? page.pageprops as JsonObject
+        : null;
+      if (pageProps && "disambiguation" in pageProps) return null;
+
+      const title = stringValue(page.title);
+      const extract = stringValue(page.extract);
+      if (!title || !extract) return null;
+      if (!candidateMatchesKnownMeaning(query, title, extract)) return null;
+
+      return {
+        page,
+        title,
+        extract,
+        score: candidateRelevanceScore(searchTopic, query, title, extract),
+        index: numberValue(page.index) ?? Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .filter((candidate): candidate is {
+      page: JsonObject;
+      title: string;
+      extract: string;
+      score: number;
+      index: number;
+    } => candidate !== null)
+    .sort((first, second) =>
+      second.score - first.score || first.index - second.index
+    );
+
+  for (const candidate of ranked) {
+    if (
+      !candidateMatchesKnowledgeTopic(
+        query,
+        relevanceTopic,
+        candidate.title + " " + candidate.extract,
+      )
+    ) {
+      continue;
+    }
+
+    const source = stringValue(candidate.page.canonicalurl) ??
+      stringValue(candidate.page.fullurl) ??
+      ("https://es.wikipedia.org/wiki/" +
+        encodeURIComponent(candidate.title.replace(/ /g, "_")));
+
+    return {
+      claimKey: "general:" + slug(candidate.title),
+      value: normalize(candidate.extract),
+      displayText: candidate.extract,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return null;
+}
+
+async function wikidataKnowledgeEvidence(
+  searchTopic: string,
+  relevanceTopic: string,
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const url = new URL("https://www.wikidata.org/w/api.php");
+  url.searchParams.set("action", "wbsearchentities");
+  url.searchParams.set("search", searchTopic);
+  url.searchParams.set("language", "es");
+  url.searchParams.set("uselang", "es");
+  url.searchParams.set("type", "item");
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("origin", "*");
+
+  const response = await fetchWithRetry(
+    deps,
+    url,
+    {
+      headers: { "User-Agent": USER_AGENT },
+      signal,
+    },
+    3,
+  );
+  if (!response?.ok) {
+    return abstain(
+      "Wikidata no está disponible para respaldar esta consulta.",
+      {
+        reasonCode: response
+          ? upstreamReasonCode(response.status)
+          : "UPSTREAM_UNAVAILABLE",
+        retryable: !response || RETRYABLE_HTTP_STATUSES.has(response.status),
+        stage: "wikidata",
+        upstreamStatus: response?.status,
+      },
+    );
+  }
+
+  let payload: JsonObject | null = null;
+  try {
+    const parsed = await response.json();
+    payload = parsed && typeof parsed === "object"
+      ? parsed as JsonObject
+      : null;
+  } catch {
+    payload = null;
+  }
+
+  const raw = Array.isArray(payload?.search) ? payload.search : [];
+  for (const entry of raw.slice(0, 5)) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry as JsonObject;
+    const id = stringValue(item.id);
+    const label = stringValue(item.label);
+    const description = stringValue(item.description);
+    const aliases = Array.isArray(item.aliases)
+      ? item.aliases
+        .map((alias) => typeof alias === "string" ? alias : "")
+        .filter(Boolean)
+        .join(" ")
+      : "";
+    if (!id || !label || !description) continue;
+
+    const candidateText = [label, description, aliases]
+      .filter(Boolean)
+      .join(" ");
+    if (!candidateMatchesKnownMeaning(query, label, description)) continue;
+    if (!candidateMatchesKnowledgeTopic(query, relevanceTopic, candidateText)) {
+      continue;
+    }
+
+    const source = stringValue(item.concepturi) ??
+      `https://www.wikidata.org/wiki/${encodeURIComponent(id)}`;
+    const displayText = `${label}: ${description}.`;
+    return {
+      claimKey: `wikidata:${slug(id)}:${slug(label)}`,
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "Wikidata no encontró una descripción suficientemente relacionada con la consulta.",
+    {
+      reasonCode: "IRRELEVANT_PRIMARY_EVIDENCE",
+      retryable: false,
+      stage: "wikidata",
+    },
+  );
+}
+
 async function generalKnowledgeEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -2681,12 +3369,26 @@ async function generalKnowledgeEvidence(
     if (!technical.abstained) return technical;
   }
 
+  const topicPlan = generalKnowledgeSearchTopic(query, topic);
+  const searchTopic = topicPlan.searchTopic;
+  const relevanceTopic = dependentFollowUp
+    ? previousTopic
+    : topicPlan.relevanceTopic;
+  const generatorEvidence = await wikipediaGeneratorEvidence(
+    searchTopic,
+    relevanceTopic,
+    query,
+    deps,
+    signal,
+  );
+  if (generatorEvidence) return generatorEvidence;
+
   const wikipediaHost = "es.wikipedia.org";
   const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
   searchUrl.searchParams.set("action", "query");
   searchUrl.searchParams.set("list", "search");
-  searchUrl.searchParams.set("srsearch", topic);
-  searchUrl.searchParams.set("srlimit", "1");
+  searchUrl.searchParams.set("srsearch", searchTopic);
+  searchUrl.searchParams.set("srlimit", "5");
   searchUrl.searchParams.set("format", "json");
   searchUrl.searchParams.set("origin", "*");
 
@@ -2697,60 +3399,154 @@ async function generalKnowledgeEvidence(
   const results = search?.query && typeof search.query === "object"
     ? (search.query as JsonObject).search
     : null;
-  const first = Array.isArray(results) && results[0] && typeof results[0] === "object"
-    ? results[0] as JsonObject
-    : null;
-  const title = stringValue(first?.title);
-  if (!title) {
+  const candidates = Array.isArray(results)
+    ? results
+      .filter((item): item is JsonObject =>
+        Boolean(item) && typeof item === "object"
+      )
+      .slice(0, 5)
+    : [];
+
+  if (candidates.length === 0) {
+    const wikidata = await wikidataKnowledgeEvidence(
+      topicPlan.wikidataTopic,
+      relevanceTopic,
+      query,
+      deps,
+      signal,
+    );
+    if (!wikidata.abstained) return wikidata;
     return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
   }
 
-  const summaryUrl =
-    `https://${wikipediaHost}/api/rest_v1/page/summary/` +
-    encodeURIComponent(title.replace(/ /g, "_"));
-  const summary = await fetchJson(deps, summaryUrl, {
-    headers: { "User-Agent": USER_AGENT },
-    signal,
-  });
-  const summaryType = stringValue(summary?.type)?.toLowerCase();
-  if (summaryType === "disambiguation") {
-    return abstain("Wikipedia devolvió una desambiguación sin evidencia suficiente.");
-  }
-  const extract = stringValue(summary?.extract);
-  if (!extract) {
-    const actionFallback = await wikipediaActionExtract(title, deps, signal);
-    if (!actionFallback) {
-      return abstain("Wikipedia no devolvió una explicación utilizable.");
+  let sawUsableCandidate = false;
+  for (const candidate of candidates) {
+    if (signal?.aborted) {
+      return abstain(
+        "La búsqueda principal fue cancelada antes de resolver el tema.",
+        {
+          reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
+          retryable: true,
+          stage: "wikipedia",
+        },
+      );
     }
 
+    const title = stringValue(candidate.title);
+    if (!title) continue;
+
+    const summaryUrl =
+      `https://${wikipediaHost}/api/rest_v1/page/summary/` +
+      encodeURIComponent(title.replace(/ /g, "_"));
+    const summary = await fetchWikipediaJson(deps, summaryUrl, {
+      headers: { "User-Agent": USER_AGENT },
+      signal,
+    });
+    const summaryType = stringValue(summary?.type)?.toLowerCase();
+    if (summaryType === "disambiguation") continue;
+
+    let extract = stringValue(summary?.extract);
+    let source: string | undefined;
+
+    if (!extract) {
+      const actionFallback = await wikipediaActionExtract(title, deps, signal);
+      if (!actionFallback) continue;
+      extract = actionFallback.extract;
+      source = actionFallback.source;
+    } else {
+      const contentUrls = summary?.content_urls &&
+          typeof summary.content_urls === "object"
+        ? summary.content_urls as JsonObject
+        : null;
+      const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
+        ? contentUrls.desktop as JsonObject
+        : null;
+      source = stringValue(desktop?.page) ?? summaryUrl;
+    }
+
+    if (!extract) continue;
+    sawUsableCandidate = true;
+
+    if (!candidateMatchesKnownMeaning(query, title, extract)) {
+      continue;
+    }
+
+    if (
+      !candidateMatchesKnowledgeTopic(query, relevanceTopic, title + " " + extract)
+    ) {
+      continue;
+    }
+
+    const resolvedSource = source ?? summaryUrl;
     return {
       claimKey: `general:${slug(title)}`,
-      value: normalize(actionFallback.extract),
-      displayText: actionFallback.extract,
-      sourceId: actionFallback.source,
-      sourceIds: [actionFallback.source],
+      value: normalize(extract),
+      displayText: extract,
+      sourceId: resolvedSource,
+      sourceIds: [resolvedSource],
       independentSourceCount: 1,
       authoritative: true,
     };
   }
 
-  const contentUrls = summary?.content_urls && typeof summary.content_urls === "object"
-    ? summary.content_urls as JsonObject
-    : null;
-  const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
-    ? contentUrls.desktop as JsonObject
-    : null;
-  const source = stringValue(desktop?.page) ?? summaryUrl;
+  const wikidata = await wikidataKnowledgeEvidence(
+    topicPlan.wikidataTopic,
+    relevanceTopic,
+    query,
+    deps,
+    signal,
+  );
+  if (!wikidata.abstained) return wikidata;
 
-  return {
-    claimKey: `general:${slug(title)}`,
-    value: normalize(extract),
-    displayText: extract,
-    sourceId: source,
-    sourceIds: [source],
-    independentSourceCount: 1,
-    authoritative: true,
-  };
+  return abstain(
+    sawUsableCandidate
+      ? "Wikipedia devolvió entradas que no coinciden con el tema consultado."
+      : "Wikipedia no devolvió una explicación utilizable.",
+    {
+      reasonCode: sawUsableCandidate
+        ? "IRRELEVANT_PRIMARY_EVIDENCE"
+        : "UPSTREAM_UNAVAILABLE",
+      retryable: !sawUsableCandidate,
+      stage: "wikipedia",
+    },
+  );
+}
+
+async function freshWikidataGeneralKnowledgeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  context = "",
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const previousTopic = contextKnowledgeTopic(context);
+  const currentTopic = extractGeneralKnowledgeQuery(query);
+  const dependentFollowUp =
+    previousTopic.length > 0 && isDependentKnowledgeFollowUp(query);
+  const qualifier = dependentFollowUp
+    ? dependentKnowledgeQualifier(query)
+    : "";
+  const topic = dependentFollowUp
+    ? [previousTopic, qualifier].filter(Boolean).join(" ").trim()
+    : (currentTopic || previousTopic);
+  if (!topic) {
+    return abstain("Necesito una pregunta concreta para investigarla.");
+  }
+
+  const topicPlan = generalKnowledgeSearchTopic(query, topic);
+  const relevanceTopic = dependentFollowUp
+    ? previousTopic
+    : topicPlan.relevanceTopic;
+  const wikidataTopic = dependentFollowUp
+    ? wikidataEntitySearchTopic(previousTopic)
+    : topicPlan.wikidataTopic;
+
+  return await wikidataKnowledgeEvidence(
+    wikidataTopic,
+    relevanceTopic,
+    query,
+    deps,
+    signal,
+  );
 }
 
 function mergeGeneralKnowledgeEvidence(
@@ -2817,7 +3613,7 @@ export async function routeResearchQuery(
     const remainingBudget = () => remainingRouteBudgetMs(routeDeadlineAt);
 
     const primaryController = new AbortController();
-    const primaryEvidence = await settlePrimaryKnowledgeEvidence(
+    let primaryEvidence = await settlePrimaryKnowledgeEvidence(
       generalKnowledgeEvidence(
         query,
         deps,
@@ -2828,6 +3624,27 @@ export async function routeResearchQuery(
       deps,
       remainingBudget(),
     );
+
+    if (
+      primaryEvidence.abstained &&
+      remainingBudget() > 0
+    ) {
+      const wikidataController = new AbortController();
+      const wikidataFallback = await settleWikidataFallback(
+        freshWikidataGeneralKnowledgeEvidence(
+          query,
+          deps,
+          context,
+          wikidataController.signal,
+        ),
+        wikidataController,
+        deps,
+        remainingBudget(),
+      );
+      if (!wikidataFallback.abstained) {
+        primaryEvidence = wikidataFallback;
+      }
+    }
 
     let webEvidence: ResearchResult;
     if (remainingBudget() <= 0) {

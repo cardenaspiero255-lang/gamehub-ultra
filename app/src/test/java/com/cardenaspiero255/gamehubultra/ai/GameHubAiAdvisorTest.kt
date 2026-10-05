@@ -609,6 +609,289 @@ class GameHubAiAdvisorTest {
         assertTrue(receivedConversation.any { it.contains("prefiero X4") })
     }
 
+
+    @Test
+    fun reportedStableDefinitionsHaveOfflineFallbacks() {
+        val cases = listOf(
+            "¿Qué es un avión?" to "aeronave",
+            "¿Qué es un psicópata?" to "rasgos",
+            "¿Qué es un lápiz?" to "escribir"
+        )
+
+        cases.forEach { (question, expectedKeyword) ->
+            val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+                message = question,
+                context = healthyContext,
+                conversation = emptyList()
+            )
+
+            assertNotNull(answer, question)
+            assertTrue(
+                answer.contains(expectedKeyword, ignoreCase = true),
+                "$question -> $answer"
+            )
+        }
+    }
+
+    @Test
+    fun deterministicAdviceUsesUltraAiCoreProductionPath() {
+        var receivedObservation: UltraAiObservation? = null
+        val forcingCore = object : UltraAiCoreGateway {
+            override fun evaluate(
+                observation: UltraAiObservation,
+                feedback: UltraAiFeedbackSnapshot,
+                memories: List<UltraAiMemorySignal>
+            ): UltraAiCoreResult {
+                receivedObservation = observation
+                return UltraAiCoreResult(
+                    recommendation = UltraAiRecommendation(
+                        profileId = "BALANCED",
+                        confidence = 1.0,
+                        evidence = listOf("test-core"),
+                        source = UltraAiRecommendationSource.DETERMINISTIC_LOCAL
+                    ),
+                    explanation = "test",
+                    memorySignals = memories,
+                    requiresCloud = false
+                )
+            }
+        }
+
+        val result = GameHubAiAdvisor(
+            modelAdapter = null,
+            memoryGateway = null,
+            aiCore = forcingCore
+        ).advise("qué modo me recomiendas", healthyContext)
+
+        assertNotNull(receivedObservation)
+        assertEquals("com.example.game", receivedObservation.gamePackage)
+        assertEquals(PerformanceProfile.BALANCED, result.suggestedProfile)
+        assertFalse(result.localModelUsed)
+        assertTrue(result.fallbackUsed)
+    }
+
+
+    @Test
+    fun coreOverridesMapProfilesToExpectedReasons() {
+        fun advisorReturning(profileId: String): GameHubAiAdvisor =
+            GameHubAiAdvisor(
+                aiCore = object : UltraAiCoreGateway {
+                    override fun evaluate(
+                        observation: UltraAiObservation,
+                        feedback: UltraAiFeedbackSnapshot,
+                        memories: List<UltraAiMemorySignal>
+                    ): UltraAiCoreResult =
+                        UltraAiCoreResult(
+                            recommendation = UltraAiRecommendation(
+                                profileId = profileId,
+                                confidence = 0.95,
+                                evidence = listOf("test")
+                            ),
+                            explanation = "test",
+                            memorySignals = memories,
+                            requiresCloud = false
+                        )
+                }
+            )
+
+        val constrainedContext = healthyContext.copy(
+            thermalStatus = 3,
+            thermalHeadroom = 0.90f
+        )
+
+        val constrainedX4 = advisorReturning("X4").advise(
+            "qué modo me recomiendas",
+            constrainedContext
+        )
+        assertEquals(PerformanceProfile.BALANCED, constrainedX4.suggestedProfile)
+        assertEquals(AiAdviceReason.THERMAL, constrainedX4.reason)
+
+        val constrainedInterpolation = advisorReturning("FRAME_INTERPOLATION").advise(
+            "qué modo me recomiendas",
+            constrainedContext
+        )
+        assertEquals(PerformanceProfile.BALANCED, constrainedInterpolation.suggestedProfile)
+        assertEquals(AiAdviceReason.THERMAL, constrainedInterpolation.reason)
+
+        val x4 = advisorReturning("X4").advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(PerformanceProfile.X4, x4.suggestedProfile)
+        assertEquals(AiAdviceReason.X4_READY, x4.reason)
+
+        val interpolation = advisorReturning("FRAME_INTERPOLATION").advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(PerformanceProfile.FRAME_INTERPOLATION, interpolation.suggestedProfile)
+        assertEquals(AiAdviceReason.INTERPOLATION, interpolation.reason)
+
+        val unsupportedX4 = advisorReturning("X4").advise(
+            "qué modo me recomiendas",
+            healthyContext.copy(sustainedPerformanceSupported = false)
+        )
+        assertEquals(PerformanceProfile.BALANCED, unsupportedX4.suggestedProfile)
+        assertFalse(unsupportedX4.reason == AiAdviceReason.X4_READY)
+    }
+
+    @Test
+    fun coreFallbackKeepsBaseAdviceWhenCloudInvalidOrExceptionOccurs() {
+        fun advisorWith(
+            profileId: String = "BALANCED",
+            requiresCloud: Boolean = false,
+            fail: Boolean = false
+        ): GameHubAiAdvisor =
+            GameHubAiAdvisor(
+                aiCore = object : UltraAiCoreGateway {
+                    override fun evaluate(
+                        observation: UltraAiObservation,
+                        feedback: UltraAiFeedbackSnapshot,
+                        memories: List<UltraAiMemorySignal>
+                    ): UltraAiCoreResult {
+                        if (fail) error("synthetic core failure")
+                        return UltraAiCoreResult(
+                            recommendation = UltraAiRecommendation(
+                                profileId = profileId,
+                                confidence = 0.5,
+                                evidence = emptyList()
+                            ),
+                            explanation = "test",
+                            memorySignals = memories,
+                            requiresCloud = requiresCloud
+                        )
+                    }
+                }
+            )
+
+        val baseline = GameHubAiAdvisor().advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(PerformanceProfile.X4, baseline.suggestedProfile)
+
+        val cloud = advisorWith(requiresCloud = true).advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(baseline.suggestedProfile, cloud.suggestedProfile)
+        assertEquals(baseline.reason, cloud.reason)
+
+        val invalid = advisorWith(profileId = "NOT_A_PROFILE").advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(baseline.suggestedProfile, invalid.suggestedProfile)
+        assertEquals(baseline.reason, invalid.reason)
+
+        val failed = advisorWith(fail = true).advise(
+            "qué modo me recomiendas",
+            healthyContext
+        )
+        assertEquals(baseline.suggestedProfile, failed.suggestedProfile)
+        assertEquals(baseline.reason, failed.reason)
+    }
+
+
+    @Test
+    fun advicePassesRelevantLongTermMemoryIntoCore() {
+        var receivedMemories: List<UltraAiMemorySignal> = emptyList()
+        val capturingCore = object : UltraAiCoreGateway {
+            override fun evaluate(
+                observation: UltraAiObservation,
+                feedback: UltraAiFeedbackSnapshot,
+                memories: List<UltraAiMemorySignal>
+            ): UltraAiCoreResult {
+                receivedMemories = memories
+                return UltraAiCoreResult(
+                    recommendation = UltraAiRecommendation(
+                        profileId = observation.activeProfileId,
+                        confidence = 0.9,
+                        evidence = listOf("memory-aware")
+                    ),
+                    explanation = "test",
+                    memorySignals = memories,
+                    requiresCloud = false
+                )
+            }
+        }
+
+        GameHubAiAdvisor(
+            memoryGateway = fixedMemoryGateway("Prefiero estabilidad antes que FPS"),
+            aiCore = capturingCore
+        ).advise("qué modo me recomiendas", healthyContext)
+
+        assertEquals(1, receivedMemories.size)
+        assertEquals("Prefiero estabilidad antes que FPS", receivedMemories.single().text)
+        assertEquals(
+            UltraMemoryProvenance.REMEMBERED_FACT,
+            receivedMemories.single().provenance
+        )
+    }
+
+    @Test
+    fun chatReusesSingleRecallWhenPassingMemoryIntoCoreAdvice() {
+        var recallCalls = 0
+        var receivedMemories: List<UltraAiMemorySignal> = emptyList()
+        val gateway = object : UltraLongTermMemoryGateway {
+            override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
+
+            override fun recallContext(
+                message: String,
+                scope: UltraMemoryScope,
+                limit: Int
+            ): List<UltraMemoryRecall> {
+                recallCalls += 1
+                return listOf(
+                    UltraMemoryRecall(
+                        record = UltraStoredMemory(
+                            id = "memory-sss",
+                            kind = UltraMemoryKind.FACT,
+                            role = UltraMemoryRole.USER,
+                            text = "Prefiero perfiles estables",
+                            timestampMillis = 1L,
+                            scope = scope
+                        ),
+                        score = 0.95,
+                        provenance = UltraMemoryProvenance.REMEMBERED_FACT
+                    )
+                )
+            }
+        }
+        val capturingCore = object : UltraAiCoreGateway {
+            override fun evaluate(
+                observation: UltraAiObservation,
+                feedback: UltraAiFeedbackSnapshot,
+                memories: List<UltraAiMemorySignal>
+            ): UltraAiCoreResult {
+                receivedMemories = memories
+                return UltraAiCoreResult(
+                    recommendation = UltraAiRecommendation(
+                        profileId = observation.activeProfileId,
+                        confidence = 0.9,
+                        evidence = listOf("memory-aware")
+                    ),
+                    explanation = "test",
+                    memorySignals = memories,
+                    requiresCloud = false
+                )
+            }
+        }
+
+        GameHubAiAdvisor(
+            memoryGateway = gateway,
+            aiCore = capturingCore
+        ).chat(
+            message = "qué modo me recomiendas",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertEquals(1, recallCalls)
+        assertEquals(1, receivedMemories.size)
+        assertEquals("Prefiero perfiles estables", receivedMemories.single().text)
+    }
+
     private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =
         object : UltraLongTermMemoryGateway {
             override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null

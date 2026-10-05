@@ -19,10 +19,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: supabase-research-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # 440 cases intentionally run sequentially to avoid throttling public sources.
+    # Allow the full bounded-retry budget to finish and always emit its summary.
+    timeout-minutes: 240
     env:
       SMOKE_SEED: ${{ github.run_id }}
 
@@ -32,29 +38,42 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve canonical Supabase public client configuration
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.1.x
+
+      - name: Start branch-local Ultra research server
+        env:
+          SUPABASE_PUBLISHABLE_KEYS: '{"ci":"ci-smoke-key"}'
+          SUPABASE_ANON_KEY: ci-smoke-key
+          ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
+          ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
+          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "4500"
         shell: bash
         run: |
           set -euo pipefail
-          config_file="app/src/main/java/com/cardenaspiero255/gamehubultra/ai/UltraResearchProviderSource.kt"
-          supabase_url="$(grep -A1 'DEFAULT_SUPABASE_URL' "$config_file" | grep -o 'https://[^"]*' | head -n 1)"
-          publishable_key="$(grep -A1 'DEFAULT_SUPABASE_PUBLISHABLE_KEY' "$config_file" | grep -o 'sb_publishable_[^"]*' | head -n 1)"
+          log="$RUNNER_TEMP/ultra-research-local.log"
+          nohup deno run --allow-env --allow-net             supabase/functions/ultra-research/index.ts             >"$log" 2>&1 &
+          pid=$!
+          echo "ULTRA_RESEARCH_PID=$pid" >> "$GITHUB_ENV"
+          echo "ULTRA_RESEARCH_ENDPOINT=http://127.0.0.1:8000" >> "$GITHUB_ENV"
+          echo "ULTRA_RESEARCH_API_KEY=ci-smoke-key" >> "$GITHUB_ENV"
 
-          case "$supabase_url" in
-            https://*.supabase.co) ;;
-            *) echo "::error::Canonical Supabase URL is missing or malformed"; exit 1 ;;
-          esac
-          case "$publishable_key" in
-            sb_publishable_*) ;;
-            *) echo "::error::Canonical Supabase publishable key is missing or malformed"; exit 1 ;;
-          esac
+          for attempt in $(seq 1 60); do
+            status="$(curl -sS -o /dev/null -w '%{http_code}'               http://127.0.0.1:8000 || true)"
+            if [ "$status" = "405" ]; then
+              echo "Branch-local Ultra research server is ready."
+              exit 0
+            fi
+            sleep 0.5
+          done
 
-          echo "::add-mask::$publishable_key"
-          echo "SUPABASE_URL=$supabase_url" >> "$GITHUB_ENV"
-          echo "SUPABASE_PUBLISHABLE_KEY=$publishable_key" >> "$GITHUB_ENV"
-          echo "Using canonical Supabase project host from Android production config."
+          echo "::error::Branch-local Ultra research server did not become ready"
+          cat "$log" || true
+          exit 1
 
-      - name: Build reproducible smoke plan
+      - name: Build reproducible 440-question broad-spectrum smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -67,114 +86,845 @@ jobs:
           rng = random.Random(seed)
 
           fixed = [
-              ("general", "Qué es un motor", "CURRENT_DATA", True),
-              ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True),
-              ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True),
+              ("routing", "Qué es un motor", "GENERAL_KNOWLEDGE", False, ["motor", "energ"]),
+              ("general", "¿Qué es un avión?", "GENERAL_KNOWLEDGE", False, ["aeronave", "volar", "vuelo"]),
+              ("general", "¿Qué es un psicópata?", "GENERAL_KNOWLEDGE", False, ["rasgo", "empat", "remord"]),
+              ("general", "¿Qué es un lápiz?", "GENERAL_KNOWLEDGE", False, ["escribir", "dibujar", "grafito"]),
+              ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True, []),
+              ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True, []),
           ]
 
           pools = {
-              "general": [
-                  "¿Qué es la fotosíntesis?",
-                  "Explícame qué hace un procesador",
-                  "¿Por qué el cielo se ve azul?",
-                  "¿Qué diferencia hay entre RAM y almacenamiento?",
-                  "¿Qué es una red neuronal?",
-                  "¿Para qué sirve un sistema operativo?",
-                  "¿Qué significa latencia en internet?",
-                  "¿Cómo funciona un motor eléctrico?",
+              "everyday": [
+                  ("¿Cómo funciona un refrigerador?", ["calor", "refriger"]),
+                  ("¿Qué es una bicicleta?", ["rueda", "pedal"]),
+                  ("¿Cómo funciona un microondas?", ["microondas", "alimento"]),
+                  ("¿Qué es un termostato?", ["temperatura"]),
+                  ("¿Cómo funciona una cámara fotográfica?", ["imagen", "luz"]),
+                  ("¿Qué es una batería eléctrica?", ["energ", "electric"]),
+                  ("¿Para qué sirve una brújula?", ["norte", "orient"]),
+                  ("¿Cómo funciona un reloj?", ["tiempo", "hora"]),
+                  ("¿Qué es un ascensor?", ["eleva", "piso", "vertical"]),
+                  ("¿Cómo funciona un ventilador?", ["aire", "aspas"]),
+              ],
+              "science": [
+                  ("¿Qué es la fotosíntesis?", ["luz", "plant"]),
+                  ("¿Qué es un átomo?", ["núcleo", "electron"]),
+                  ("¿Qué es una molécula?", ["átomo", "enlace"]),
+                  ("¿Qué es la gravedad?", ["masa", "atra"]),
+                  ("¿Qué es el ADN?", ["gen", "información"]),
+                  ("¿Qué es una célula?", ["vida", "unidad"]),
+                  ("¿Qué es un agujero negro?", ["gravedad", "luz"]),
+                  ("¿Qué es un volcán?", ["magma", "corteza"]),
+                  ("¿Qué es la electricidad?", ["carga", "corriente"]),
+                  ("¿Qué es la energía cinética?", ["movimiento"]),
+              ],
+              "technology": [
+                  ("¿Qué es una API?", ["interfaz", "software"]),
+                  ("¿Qué diferencia hay entre RAM y almacenamiento?", ["ram", "almacen"]),
+                  ("¿Qué es una GPU?", ["gráfic", "proces"]),
+                  ("¿Para qué sirve un sistema operativo?", ["hardware", "software", "recursos"]),
+                  ("¿Qué es una base de datos?", ["información", "datos"]),
+                  ("¿Qué hace un compilador?", ["código", "traduc"]),
+                  ("¿Qué es un algoritmo?", ["pasos", "problema"]),
+                  ("¿Qué es una VPN?", ["red", "conexión", "cif"]),
+                  ("¿Qué es Wi-Fi?", ["inalámbr", "red"]),
+                  ("¿Qué es Bluetooth?", ["inalámbr", "disposit"]),
+              ],
+              "gaming": [
+                  ("¿Qué significa FPS en videojuegos?", ["fotogram", "segundo"]),
+                  ("¿Qué es un survival horror?", ["terror", "superviv"]),
+                  ("¿Qué es un NPC?", ["personaje", "jugador"]),
+                  ("¿Qué es ray tracing?", ["luz", "traz"]),
+                  ("¿Qué es un roguelike?", ["proced", "muerte", "reinic"]),
+                  ("¿Qué es un speedrun?", ["rápid", "tiempo"]),
+                  ("¿Qué significa latencia en juegos online?", ["retardo", "miliseg", "latencia"]),
+                  ("¿Qué es una tasa de refresco de 120 Hz?", ["120", "segundo", "pantalla"]),
+                  ("¿Qué es el input lag?", ["entrada", "retardo"]),
+                  ("¿Qué es el matchmaking?", ["jugador", "partida"]),
+              ],
+              "history_geo": [
+                  ("¿Cuál es la capital de Francia?", ["parís", "paris"]),
+                  ("¿Dónde está el monte Everest?", ["himalaya", "nepal", "tíbet"]),
+                  ("¿Cuándo comenzó la Revolución Francesa?", ["1789"]),
+                  ("¿Qué fue el Imperio Romano?", ["roma", "imperio"]),
+                  ("¿Qué es la cordillera de los Andes?", ["sudam", "montañ"]),
+                  ("¿Dónde está el desierto de Atacama?", ["chile", "atacama"]),
+                  ("¿Qué fue la Primera Guerra Mundial?", ["1914", "guerra"]),
+                  ("¿Qué es el océano Pacífico?", ["océano", "pacific"]),
+                  ("¿Quién fue Leonardo da Vinci?", ["artista", "invent", "renacimiento"]),
+                  ("¿Qué fue la Revolución Industrial?", ["industr", "máquin"]),
+              ],
+              "creators_famous": [
+                  ("¿Quién es MrBeast?", ["youtube", "creador", "jimmy"]),
+                  ("¿Quién es Ibai Llanos?", ["stream", "creador", "espa"]),
+                  ("¿Quién es ElRubius?", ["youtube", "creador", "rub"]),
+                  ("¿Quién es AuronPlay?", ["youtube", "stream", "creador"]),
+                  ("¿Quién es Markiplier?", ["youtube", "creador", "videojuego"]),
+                  ("¿Quién es PewDiePie?", ["youtube", "creador"]),
+                  ("¿Quién es Fernanfloo?", ["youtube", "salvador", "creador"]),
+                  ("¿Quién es Shakira?", ["cant", "colomb"]),
+                  ("¿Quién es Cristiano Ronaldo?", ["fut", "portugal"]),
+                  ("¿Quién es Elon Musk?", ["tesla", "spacex", "empres"]),
+              ],
+              "furniture_home": [
+                  ("¿Qué es un sofá?", ["asiento", "sent"]),
+                  ("¿Para qué sirve un armario?", ["ropa", "guardar", "almacen"]),
+                  ("¿Qué es una mesa de comedor?", ["mesa", "comer"]),
+                  ("¿Qué diferencia hay entre una silla y un sillón?", ["silla", "sillón"]),
+                  ("¿Qué es una estantería?", ["estante", "guardar", "objet"]),
+                  ("¿Para qué sirve un velador o mesa de noche?", ["cama", "noche", "objet"]),
+                  ("¿Qué es un escritorio?", ["trabaj", "estudi"]),
+                  ("¿Qué es una cómoda como mueble?", ["cajon", "ropa", "mueble"]),
+                  ("¿Para qué sirve un colchón?", ["dorm", "cama"]),
+                  ("¿Qué es una repisa?", ["pared", "objet", "estante"]),
+              ],
+              "objects_tools": [
+                  ("¿Para qué sirve un martillo?", ["clavo", "golp"]),
+                  ("¿Qué es un destornillador?", ["tornill"]),
+                  ("¿Para qué sirve un taladro?", ["perfor", "aguj"]),
+                  ("¿Qué es una cinta métrica?", ["medir", "longitud"]),
+                  ("¿Para qué sirve una llave inglesa?", ["tuerca", "ajust"]),
+                  ("¿Qué es una linterna?", ["luz", "ilumin"]),
+                  ("¿Para qué sirve un extintor?", ["fuego", "incend"]),
+                  ("¿Qué es un enchufe eléctrico?", ["electric", "corriente", "conect"]),
+                  ("¿Para qué sirve un termómetro?", ["temperatura"]),
+                  ("¿Qué son unas tijeras?", ["cortar", "hoja"]),
+              ],
+              "tv_audio": [
+                  ("¿Qué es un televisor OLED?", ["oled", "pixel"]),
+                  ("¿Qué significa 4K en un televisor?", ["3840", "2160", "resol"]),
+                  ("¿Qué es HDR en una TV?", ["rango", "dinám", "brillo"]),
+                  ("¿Para qué sirve HDMI?", ["audio", "video", "digital"]),
+                  ("¿Qué es una barra de sonido?", ["audio", "televisor", "sonido"]),
+                  ("¿Qué significa 120 Hz en una televisión?", ["120", "refresco"]),
+                  ("¿Qué es Mini-LED?", ["led", "retroilumin"]),
+                  ("¿Qué es QLED?", ["quantum", "punto", "lcd"]),
+                  ("¿Qué es Dolby Atmos?", ["audio", "sonido", "espacial"]),
+                  ("¿Cómo funciona un parlante Bluetooth?", ["bluetooth", "audio", "inalámbr"]),
+              ],
+              "phones_devices": [
+                  ("¿Qué es un smartphone?", ["teléfono", "aplic"]),
+                  ("¿Qué es un SoC en un celular?", ["chip", "proces", "sistema"]),
+                  ("¿Para qué sirve NFC en un teléfono?", ["pago", "corto", "inalámbr"]),
+                  ("¿Qué es una pantalla AMOLED?", ["oled", "pixel"]),
+                  ("¿Qué significa mAh en una batería?", ["capacidad", "bater"]),
+                  ("¿Qué significa IP68 en un celular?", ["agua", "polvo", "prote"]),
+                  ("¿Qué es una eSIM?", ["sim", "digital", "operador"]),
+                  ("¿Qué es OIS en la cámara de un teléfono?", ["estabil", "óptic"]),
+                  ("¿Qué es la carga rápida?", ["carga", "potencia", "bater"]),
+                  ("¿Qué es 5G?", ["móvil", "red", "generación"]),
+              ],
+              "brands_companies": [
+                  ("¿Qué tipo de productos fabrica Samsung?", ["electr", "teléfono", "televisor"]),
+                  ("¿Qué es Apple como empresa?", ["tecnolog", "iphone", "mac"]),
+                  ("¿Qué productos son conocidos de Sony?", ["playstation", "electr", "audio"]),
+                  ("¿Qué es Xiaomi?", ["tecnolog", "smartphone", "electr"]),
+                  ("¿Qué hace Nintendo?", ["videojuego", "consol"]),
+                  ("¿Qué fabrica NVIDIA?", ["gpu", "gráfic", "chip"]),
+                  ("¿Qué fabrica AMD?", ["proces", "cpu", "gpu"]),
+                  ("¿Qué productos fabrica LG?", ["electr", "televisor", "electro"]),
+                  ("¿Por qué es conocida JBL?", ["audio", "parlant", "auricular"]),
+                  ("¿Qué tipo de empresa es Lenovo?", ["comput", "tecnolog", "pc"]),
+              ],
+              "vehicles_transport": [
+                  ("¿Qué es el ABS de un automóvil?", ["freno", "bloque"]),
+                  ("¿Qué hace un turbocompresor?", ["aire", "motor", "turbo"]),
+                  ("¿Qué es un automóvil híbrido?", ["eléctr", "combust", "motor"]),
+                  ("¿Qué es una transmisión automática?", ["marcha", "cambio"]),
+                  ("¿Para qué sirve el cinturón de seguridad?", ["seguridad", "impact", "ocupante"]),
+                  ("¿Qué es el control de crucero?", ["velocidad", "mant"]),
+                  ("¿Qué es un vehículo eléctrico?", ["bater", "motor", "eléctr"]),
+                  ("¿Qué función tiene un airbag?", ["impact", "seguridad", "bolsa"]),
+                  ("¿Qué es la tracción integral?", ["rueda", "tracción"]),
+                  ("¿Qué es el torque de un motor?", ["fuerza", "giro", "par"]),
+              ],
+              "food_cooking": [
+                  ("¿Qué hace la levadura en el pan?", ["ferment", "masa"]),
+                  ("¿Qué es la pasteurización?", ["calor", "microorgan", "alimento"]),
+                  ("¿Qué significa hervir agua?", ["ebul", "temperatura"]),
+                  ("¿Qué es una proteína en nutrición?", ["amino", "nutr"]),
+                  ("¿Qué es la fibra alimentaria?", ["digest", "vegetal", "intestin"]),
+                  ("¿Para qué sirve marinar alimentos?", ["sabor", "líquido", "alimento"]),
+                  ("¿Qué es caramelizar?", ["azúcar", "calor"]),
+                  ("¿Qué diferencia hay entre hornear y freír?", ["horno", "aceite"]),
+                  ("¿Qué es una emulsión en cocina?", ["mezcla", "líquido", "aceite"]),
+                  ("¿Qué es el gluten?", ["prote", "trigo"]),
+              ],
+              "sports": [
+                  ("¿Qué es un fuera de juego en fútbol?", ["posición", "balón", "defens"]),
+                  ("¿Cuántos jugadores tiene un equipo de fútbol en cancha?", ["11", "once"]),
+                  ("¿Qué es un Grand Slam en tenis?", ["torneo", "tenis"]),
+                  ("¿Qué es la NBA?", ["baloncesto", "basket", "liga"]),
+                  ("¿Qué es un nocaut en boxeo?", ["combate", "box", "continuar"]),
+                  ("¿Qué es una maratón?", ["42", "carrera", "kiló"]),
+                  ("¿Qué son los Juegos Olímpicos?", ["deport", "olímp"]),
+                  ("¿Qué es un triple en baloncesto?", ["tres", "punto"]),
+                  ("¿Qué es la Fórmula 1?", ["automovil", "carrera", "monoplaza"]),
+                  ("¿Qué es una tarjeta roja en fútbol?", ["expuls", "jugador"]),
+              ],
+              "arts_entertainment": [
+                  ("¿Qué es el cine?", ["películ", "audiovisual"]),
+                  ("¿Qué es una orquesta?", ["músic", "instrument"]),
+                  ("¿Qué es el anime?", ["anim", "jap"]),
+                  ("¿Qué es el manga?", ["comic", "jap"]),
+                  ("¿Qué es un documental?", ["real", "hecho", "audiovisual"]),
+                  ("¿Qué son los premios Óscar?", ["cine", "academ"]),
+                  ("¿Qué es una novela literaria?", ["narr", "ficc"]),
+                  ("¿Qué es una película de terror?", ["miedo", "terror"]),
+                  ("¿Qué es una banda sonora?", ["músic", "películ", "obra"]),
+                  ("¿Qué es una serie de televisión?", ["episod", "televis"]),
+              ],
+              "animals_nature": [
+                  ("¿Qué es un mamífero?", ["leche", "vertebr"]),
+                  ("¿Cómo respiran los peces?", ["branqu"]),
+                  ("¿Qué es un tiburón?", ["pez", "cartíl"]),
+                  ("¿Por qué son importantes las abejas?", ["polin"]),
+                  ("¿Qué es un pulpo?", ["molus", "tent"]),
+                  ("¿Qué es la hibernación?", ["metabol", "invierno", "energ"]),
+                  ("¿Qué es un ecosistema?", ["organism", "ambiente"]),
+                  ("¿Qué es una cadena alimentaria?", ["energ", "organism", "alimento"]),
+                  ("¿Qué es un coral?", ["animal", "marin"]),
+                  ("¿Qué es la biodiversidad?", ["espec", "vida", "divers"]),
+              ],
+              "language_math": [
+                  ("¿Qué es un número primo?", ["divis", "1", "mismo"]),
+                  ("¿Cómo se calcula un porcentaje?", ["100", "divid", "multip"]),
+                  ("¿Qué es una fracción?", ["numerador", "denominador", "parte"]),
+                  ("¿Qué es una ecuación?", ["igual", "incógn"]),
+                  ("¿Qué es el teorema de Pitágoras?", ["triángulo", "hipoten"]),
+                  ("¿Qué es un sinónimo?", ["signific", "palabra"]),
+                  ("¿Qué es una metáfora?", ["compar", "figur"]),
+                  ("¿Qué es un verbo?", ["acción", "estado", "palabra"]),
+                  ("¿Qué es un adjetivo?", ["sustant", "cualidad"]),
+                  ("¿Qué es la media aritmética?", ["sum", "divid", "promedio"]),
               ],
               "weather": [
-                  "¿Cómo está el clima hoy en Rancagua?",
-                  "Temperatura actual en Santiago",
-                  "¿Qué tiempo hace ahora en Valparaíso?",
-                  "Clima actual en Concepción",
-                  "¿Cómo está el tiempo hoy en Puerto Montt?",
-                  "Temperatura de hoy en Talca",
+                  ("¿Cómo está el clima hoy en Rancagua?", []),
+                  ("Temperatura actual en Santiago", []),
+                  ("¿Qué tiempo hace ahora en Valparaíso?", []),
+                  ("Clima actual en Concepción", []),
+                  ("¿Cómo está el tiempo hoy en Puerto Montt?", []),
+                  ("Temperatura de hoy en Talca", []),
+                  ("¿Va a llover hoy en Temuco?", []),
+                  ("Clima actual en Antofagasta", []),
+                  ("Temperatura ahora en Iquique", []),
+                  ("¿Cómo está el clima hoy en La Serena?", []),
               ],
               "news": [
-                  "Noticias de tecnología de hoy",
-                  "¿Qué novedades hay hoy sobre inteligencia artificial?",
-                  "Dame noticias actuales de videojuegos",
-                  "¿Qué noticias recientes hay sobre Android?",
-                  "Noticias actuales sobre smartphones",
-                  "¿Qué ha pasado recientemente en tecnología?",
+                  ("¿Qué novedades hay hoy sobre inteligencia artificial?", []),
+                  ("Dame noticias actuales de videojuegos", []),
+                  ("¿Qué noticias recientes hay sobre Android?", []),
+                  ("Noticias actuales sobre smartphones", []),
+                  ("¿Qué ha pasado recientemente en tecnología?", []),
+                  ("Últimas noticias de ciberseguridad", []),
+                  ("Noticias recientes sobre procesadores", []),
+                  ("Novedades actuales sobre PlayStation", []),
+                  ("Noticias recientes sobre inteligencia artificial móvil", []),
+                  ("Últimas noticias sobre realidad virtual", []),
               ],
           }
 
-          cases = list(fixed)
-          for label, questions in pools.items():
-              kind = "GENERAL_KNOWLEDGE" if label == "general" else "CURRENT_DATA"
-              fresh = label != "general"
-              for question in rng.sample(questions, 3):
-                  cases.append((label, question, kind, fresh))
 
-          print(json.dumps({"meta": {"seed": seed, "caseCount": len(cases)}}, ensure_ascii=False))
-          for index, (label, query, kind, fresh) in enumerate(cases):
+          # Runtime-composed questions. The complete question strings below do not
+          # exist in the workflow: every run combines a random template + topic.
+          dynamic_templates = [
+              "Explícame de forma sencilla qué es {topic}.",
+              "¿Para qué sirve o por qué es importante {topic}?",
+              "Si alguien me pregunta por {topic}, ¿cómo lo explicarías en pocas frases?",
+              "Dame una explicación clara de {topic} y su función principal.",
+              "¿Qué debería saber una persona sobre {topic}?",
+              "Resume qué es {topic} sin asumir conocimientos técnicos.",
+          ]
+
+          dynamic_domains = {
+              "health_general": [
+                  ("el sistema inmunitario", ["defensa", "inmun"]),
+                  ("la presión arterial", ["presión", "sangre"]),
+                  ("el sueño REM", ["sueño", "rem"]),
+                  ("la hidratación", ["agua", "hidrat"]),
+              ],
+              "medicine_basics": [
+                  ("una vacuna", ["inmun", "vacuna"]),
+                  ("un antibiótico", ["bacter", "antibió"]),
+                  ("una radiografía", ["rayos", "imagen"]),
+                  ("la anestesia", ["dolor", "sensibilidad", "anest"]),
+              ],
+              "psychology": [
+                  ("la memoria a corto plazo", ["memoria", "información"]),
+                  ("la motivación", ["conducta", "objetivo", "motiv"]),
+                  ("el estrés", ["respuesta", "estrés"]),
+                  ("la atención", ["información", "concentr", "atención"]),
+              ],
+              "economics": [
+                  ("la inflación", ["precios", "inflación"]),
+                  ("el producto interno bruto", ["producción", "pib"]),
+                  ("la oferta y la demanda", ["precio", "oferta", "demanda"]),
+                  ("una recesión económica", ["econom", "actividad", "reces"]),
+              ],
+              "finance": [
+                  ("el interés compuesto", ["interés", "capital"]),
+                  ("un presupuesto personal", ["ingreso", "gasto", "presupuesto"]),
+                  ("la diversificación financiera", ["riesgo", "divers"]),
+                  ("una tarjeta de débito", ["cuenta", "pago", "débito"]),
+              ],
+              "business": [
+                  ("un modelo de negocio", ["cliente", "valor", "ingreso"]),
+                  ("el margen de beneficio", ["ingreso", "costo", "benef"]),
+                  ("el inventario de una empresa", ["stock", "producto", "invent"]),
+                  ("el servicio al cliente", ["cliente", "atención", "servicio"]),
+              ],
+              "education": [
+                  ("el aprendizaje activo", ["aprend", "particip"]),
+                  ("una rúbrica de evaluación", ["criter", "evalu"]),
+                  ("el pensamiento crítico", ["anal", "evidencia", "crít"]),
+                  ("la educación técnica", ["habil", "técn"]),
+              ],
+              "careers": [
+                  ("un currículum vitae", ["experiencia", "trabajo", "curr"]),
+                  ("una entrevista de trabajo", ["empleo", "entrevista"]),
+                  ("el trabajo remoto", ["trabaj", "distancia", "remoto"]),
+                  ("una práctica profesional", ["experiencia", "profes"]),
+              ],
+              "law_civics": [
+                  ("una constitución", ["ley", "estado", "derech"]),
+                  ("la separación de poderes", ["ejecut", "legisl", "judicial"]),
+                  ("un contrato", ["acuerdo", "oblig"]),
+                  ("el debido proceso", ["legal", "proceso", "derech"]),
+              ],
+              "political_science": [
+                  ("una democracia representativa", ["voto", "represent", "democr"]),
+                  ("un parlamento", ["legisl", "ley"]),
+                  ("una elección", ["voto", "candidato", "elec"]),
+                  ("la administración pública", ["estado", "públic"]),
+              ],
+              "philosophy": [
+                  ("la ética", ["moral", "conducta", "ética"]),
+                  ("la lógica", ["razon", "argument"]),
+                  ("el empirismo", ["experiencia", "conocimiento"]),
+                  ("un dilema moral", ["decisión", "moral", "ética"]),
+              ],
+              "religions_mythology": [
+                  ("la mitología griega", ["grecia", "dios", "mit"]),
+                  ("el budismo", ["buda", "bud"]),
+                  ("el hinduismo", ["india", "hind"]),
+                  ("la mitología nórdica", ["nórd", "dios", "mit"]),
+              ],
+              "sociology": [
+                  ("una norma social", ["sociedad", "conducta", "norma"]),
+                  ("la cultura", ["sociedad", "costumbre", "cultura"]),
+                  ("una institución social", ["sociedad", "institución"]),
+                  ("la urbanización", ["ciudad", "población", "urban"]),
+              ],
+              "architecture": [
+                  ("un plano arquitectónico", ["edificio", "plano", "diseño"]),
+                  ("una columna estructural", ["carga", "estructura", "columna"]),
+                  ("una fachada", ["edificio", "exterior", "fachada"]),
+                  ("el aislamiento térmico de una vivienda", ["calor", "temperatura", "aisl"]),
+              ],
+              "construction": [
+                  ("el hormigón", ["cement", "arena", "hormig"]),
+                  ("una viga", ["carga", "estructura", "viga"]),
+                  ("los cimientos de una casa", ["suelo", "carga", "cimient"]),
+                  ("el yeso en construcción", ["muro", "acabado", "yeso"]),
+              ],
+              "appliances": [
+                  ("una lavadora", ["ropa", "agua", "lav"]),
+                  ("un lavavajillas", ["plato", "agua", "lav"]),
+                  ("un aire acondicionado", ["temperatura", "aire", "calor"]),
+                  ("una aspiradora", ["polvo", "succión", "aspir"]),
+              ],
+              "fashion_textiles": [
+                  ("el algodón como fibra textil", ["fibra", "algod"]),
+                  ("el poliéster", ["sint", "fibra", "poliéster"]),
+                  ("una cremallera", ["cerr", "diente", "cremall"]),
+                  ("el calzado impermeable", ["agua", "calzado", "imperme"]),
+              ],
+              "agriculture": [
+                  ("la rotación de cultivos", ["suelo", "cultivo", "rotación"]),
+                  ("el riego por goteo", ["agua", "riego", "goteo"]),
+                  ("un invernadero", ["cultivo", "temperatura", "invern"]),
+                  ("el compost agrícola", ["orgán", "suelo", "compost"]),
+              ],
+              "gardening": [
+                  ("la poda de una planta", ["rama", "crecimiento", "poda"]),
+                  ("el drenaje de una maceta", ["agua", "raíz", "dren"]),
+                  ("un fertilizante", ["nutr", "planta", "fertil"]),
+                  ("la germinación de una semilla", ["semilla", "brot", "germin"]),
+              ],
+              "astronomy": [
+                  ("una estrella", ["fusión", "estrella", "energ"]),
+                  ("una galaxia", ["estrella", "galax"]),
+                  ("un planeta", ["órbita", "estrella", "planeta"]),
+                  ("una supernova", ["estrella", "explos", "supernova"]),
+              ],
+              "chemistry": [
+                  ("el pH", ["acidez", "alcal", "ph"]),
+                  ("un enlace químico", ["átomo", "electr", "enlace"]),
+                  ("una reacción química", ["sustancia", "producto", "reacción"]),
+                  ("un catalizador", ["reacción", "catal"]),
+              ],
+              "biology": [
+                  ("la mitosis", ["célula", "división", "mitosis"]),
+                  ("una enzima", ["prote", "reacción", "enzima"]),
+                  ("la evolución biológica", ["selección", "espec", "evolución"]),
+                  ("un ecosistema", ["organism", "ambiente", "ecosistema"]),
+              ],
+              "geology": [
+                  ("una placa tectónica", ["corteza", "placa", "tectón"]),
+                  ("un terremoto", ["falla", "energ", "sismo", "terrem"]),
+                  ("una roca sedimentaria", ["sediment", "roca"]),
+                  ("la erosión", ["suelo", "roca", "erosión"]),
+              ],
+              "environment": [
+                  ("el efecto invernadero", ["calor", "atmósfera", "invernadero"]),
+                  ("el reciclaje", ["resid", "material", "recicl"]),
+                  ("la huella de carbono", ["emision", "carbono"]),
+                  ("una energía renovable", ["solar", "eólica", "renovable"]),
+              ],
+              "energy": [
+                  ("un panel solar fotovoltaico", ["luz", "electric", "solar"]),
+                  ("una turbina eólica", ["viento", "electric", "turbina"]),
+                  ("una central hidroeléctrica", ["agua", "turbina", "electric"]),
+                  ("una batería de ion-litio", ["litio", "carga", "energ"]),
+              ],
+              "electronics": [
+                  ("un transistor", ["señal", "corriente", "transistor"]),
+                  ("una resistencia eléctrica", ["corriente", "resisten"]),
+                  ("un condensador", ["carga", "energ", "condens"]),
+                  ("un circuito integrado", ["chip", "circuit"]),
+              ],
+              "internet_networks": [
+                  ("un router", ["red", "paquete", "router"]),
+                  ("una dirección IP", ["red", "dirección", "ip"]),
+                  ("el DNS", ["dominio", "ip", "dns"]),
+                  ("el ancho de banda", ["datos", "segundo", "banda"]),
+              ],
+              "programming": [
+                  ("una variable en programación", ["dato", "valor", "variable"]),
+                  ("una función en programación", ["código", "función", "parámetro"]),
+                  ("una clase en programación orientada a objetos", ["objeto", "atribut", "clase"]),
+                  ("una prueba unitaria", ["código", "test", "prueba"]),
+              ],
+              "cybersecurity": [
+                  ("el phishing", ["engaño", "credencial", "phishing"]),
+                  ("el cifrado", ["dato", "clave", "cifr"]),
+                  ("la autenticación de dos factores", ["factor", "código", "seguridad"]),
+                  ("un firewall", ["red", "tráfico", "firewall"]),
+              ],
+              "ai_ml": [
+                  ("el aprendizaje automático", ["datos", "modelo", "aprend"]),
+                  ("una red neuronal artificial", ["neurona", "modelo", "capa"]),
+                  ("el entrenamiento de un modelo de IA", ["datos", "modelo", "entren"]),
+                  ("la inferencia de un modelo", ["modelo", "predic", "inferencia"]),
+              ],
+              "robotics": [
+                  ("un sensor en robótica", ["medir", "robot", "sensor"]),
+                  ("un actuador", ["movimiento", "señal", "actuador"]),
+                  ("un robot industrial", ["automat", "robot", "fábrica"]),
+                  ("la navegación autónoma", ["sensor", "ruta", "autón"]),
+              ],
+              "photography_video": [
+                  ("la apertura de una cámara", ["luz", "apertura", "diafragma"]),
+                  ("la velocidad de obturación", ["tiempo", "luz", "obtur"]),
+                  ("el ISO en fotografía", ["sensibilidad", "luz", "iso"]),
+                  ("la estabilización de imagen", ["movimiento", "estabil", "imagen"]),
+              ],
+              "music": [
+                  ("el ritmo musical", ["tiempo", "pulso", "ritmo"]),
+                  ("una escala musical", ["nota", "escala"]),
+                  ("un acorde", ["nota", "acorde"]),
+                  ("el tempo", ["velocidad", "música", "tempo"]),
+              ],
+              "literature": [
+                  ("un narrador", ["historia", "narr"]),
+                  ("una novela", ["narr", "ficc", "novela"]),
+                  ("un poema", ["verso", "poes"]),
+                  ("una metáfora literaria", ["figur", "compar", "metáfora"]),
+              ],
+              "visual_arts": [
+                  ("la perspectiva en dibujo", ["profund", "perspect"]),
+                  ("el contraste visual", ["diferencia", "luz", "contraste"]),
+                  ("una escultura", ["tridimensional", "material", "escultura"]),
+                  ("la teoría del color", ["color", "combin", "ton"]),
+              ],
+              "manufacturing": [
+                  ("una línea de montaje", ["producción", "montaje"]),
+                  ("el control de calidad", ["defecto", "calidad", "producto"]),
+                  ("el mecanizado CNC", ["máquina", "control", "corte"]),
+                  ("la impresión 3D", ["capa", "material", "impresión"]),
+              ],
+              "logistics": [
+                  ("una cadena de suministro", ["proveedor", "producto", "suministro"]),
+                  ("un centro de distribución", ["producto", "almacén", "distrib"]),
+                  ("la última milla", ["entrega", "cliente", "milla"]),
+                  ("el seguimiento de un envío", ["paquete", "ruta", "envío"]),
+              ],
+              "aviation": [
+                  ("la sustentación de un avión", ["ala", "aire", "sustent"]),
+                  ("un motor turbofán", ["aire", "turbina", "motor"]),
+                  ("una caja negra de avión", ["datos", "vuelo", "grab"]),
+                  ("el control del tráfico aéreo", ["avión", "espacio", "control"]),
+              ],
+              "maritime": [
+                  ("el casco de un barco", ["flot", "barco", "casco"]),
+                  ("un faro marítimo", ["luz", "naveg", "faro"]),
+                  ("un contenedor marítimo", ["carga", "transporte", "contenedor"]),
+                  ("la propulsión de un barco", ["hélice", "motor", "barco"]),
+              ],
+              "travel_tourism": [
+                  ("un pasaporte", ["ident", "viaje", "pasaporte"]),
+                  ("una escala aérea", ["vuelo", "aeropuerto", "escala"]),
+                  ("el equipaje de mano", ["cabina", "equipaje", "vuelo"]),
+                  ("un seguro de viaje", ["viaje", "cobertura", "seguro"]),
+              ],
+              "productivity": [
+                  ("la técnica Pomodoro", ["tiempo", "trabajo", "pomodoro"]),
+                  ("una lista de tareas", ["tarea", "organ"]),
+                  ("la priorización", ["importancia", "tarea", "prior"]),
+                  ("un calendario", ["fecha", "evento", "organ"]),
+              ],
+              "materials": [
+                  ("el acero inoxidable", ["acero", "corros"]),
+                  ("el vidrio templado", ["vidrio", "resisten", "calor"]),
+                  ("la fibra de carbono", ["fibra", "carbono", "resisten"]),
+                  ("el caucho", ["elást", "material", "caucho"]),
+              ],
+              "measurements": [
+                  ("un kilovatio", ["potencia", "1000", "watt"]),
+                  ("un megabyte", ["datos", "byte", "mega"]),
+                  ("un decibelio", ["sonido", "nivel", "decibel"]),
+                  ("un lumen", ["luz", "flujo", "lumen"]),
+              ],
+              "safety": [
+                  ("un detector de humo", ["humo", "alarma", "incend"]),
+                  ("una salida de emergencia", ["evacu", "emergencia"]),
+                  ("un casco de seguridad", ["cabeza", "impact", "prote"]),
+                  ("un botiquín de primeros auxilios", ["emerg", "lesión", "botiqu"]),
+              ],
+              "pets": [
+                  ("el microchip de una mascota", ["ident", "microchip", "mascota"]),
+                  ("el enriquecimiento ambiental para gatos", ["juego", "gato", "estímulo"]),
+                  ("la socialización de un perro", ["perro", "conducta", "social"]),
+                  ("la higiene dental de una mascota", ["diente", "mascota", "higiene"]),
+              ],
+              "space_exploration": [
+                  ("un cohete orbital", ["órbita", "cohete", "propuls"]),
+                  ("un satélite artificial", ["órbita", "satélite"]),
+                  ("una estación espacial", ["órbita", "astronaut", "estación"]),
+                  ("un rover planetario", ["robot", "planeta", "rover"]),
+              ],
+          }
+
+          used_queries = set()
+          cases = []
+
+          def add_unique_case(case):
+              query = case[1]
+              if query in used_queries:
+                  return False
+              used_queries.add(query)
+              cases.append(case)
+              return True
+
+          for case in fixed:
+              if not add_unique_case(case):
+                  raise RuntimeError(f"Duplicate fixed smoke query: {case[1]}")
+
+          # Keep broad fixed pools well represented while de-duplicating globally.
+          for label, questions in pools.items():
+              kind = "CURRENT_DATA" if label in {"weather", "news"} else "GENERAL_KNOWLEDGE"
+              fresh = label in {"weather", "news"}
+              shuffled_questions = list(questions)
+              rng.shuffle(shuffled_questions)
+              added = 0
+              for question, expected in shuffled_questions:
+                  if add_unique_case((label, question, kind, fresh, expected)):
+                      added += 1
+                  if added == 8:
+                      break
+              if added != 8:
+                  raise RuntimeError(
+                      f"Pool {label} only produced {added}/8 unique smoke questions"
+                  )
+
+          # Generate six unique runtime-composed variants per domain. Complete
+          # question strings change with the run seed but remain reproducible.
+          remaining_dynamic = []
+          for domain, topics in dynamic_domains.items():
+              candidates = [
+                  (
+                      f"dyn_{domain}",
+                      template.format(topic=topic),
+                      "GENERAL_KNOWLEDGE",
+                      False,
+                      expected,
+                  )
+                  for topic, expected in topics
+                  for template in dynamic_templates
+              ]
+              rng.shuffle(candidates)
+              added = 0
+              for case in candidates:
+                  if add_unique_case(case):
+                      added += 1
+                  if added == 6:
+                      break
+              if added != 6:
+                  raise RuntimeError(
+                      f"Dynamic domain {domain} only produced {added}/6 unique questions"
+                  )
+              remaining_dynamic.extend(candidates)
+
+          # 6 fixed + (19 pools * 8) + (46 domains * 6) = 434.
+          # Fill the remaining six slots from unused runtime combinations so the
+          # gate always exercises exactly 440 unique questions.
+          rng.shuffle(remaining_dynamic)
+          for case in remaining_dynamic:
+              if len(cases) >= 440:
+                  break
+              add_unique_case(case)
+
+          if len(cases) != 440:
+              raise RuntimeError(
+                  f"Smoke plan produced {len(cases)}/440 unique questions"
+              )
+          if len(used_queries) != len(cases):
+              raise RuntimeError("Smoke plan contains duplicate questions")
+
+          rng.shuffle(cases)
+          label_counts = {}
+          for label, *_ in cases:
+              label_counts[label] = label_counts.get(label, 0) + 1
+
+          print(json.dumps({
+              "meta": {
+                  "seed": seed,
+                  "caseCount": len(cases),
+                  "labels": label_counts,
+              }
+          }, ensure_ascii=False))
+          for index, (label, query, kind, fresh, expected_any) in enumerate(cases):
               print(json.dumps({
                   "label": label,
                   "query": query,
                   "kind": kind,
                   "fresh": fresh,
+                  "expectedAny": expected_any,
                   "correlationId": f"smoke-{seed}-{index}",
               }, ensure_ascii=False))
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "12"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "440"
+          test "$(python3 - <<'PY'
+          import json, os
+          path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
+          rows = [json.loads(line) for line in open(path, encoding="utf-8")][1:]
+          print(len({row["label"] for row in rows}))
+          PY
+          )" -ge "60"
 
-      - name: Exercise fixed controls and varied questions
+      - name: Exercise 440 stratified and runtime-generated questions
         shell: bash
         run: |
           set -euo pipefail
-          endpoint="${SUPABASE_URL%/}/functions/v1/ultra-research"
-          failures=0
-          abstentions=0
-          executed=0
+          python3 - <<'PY'
+          import json
+          import os
+          import socket
+          import sys
+          import time
+          import urllib.error
+          import urllib.request
 
-          while IFS= read -r case_json; do
-            executed=$((executed + 1))
-            label="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["label"])' "$case_json")"
-            query="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["query"])' "$case_json")"
-            kind="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["kind"])' "$case_json")"
-            fresh="$(python3 -c 'import json,sys; print(str(json.loads(sys.argv[1])["fresh"]).lower())' "$case_json")"
-            correlation="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["correlationId"])' "$case_json")"
-            body="$(python3 -c 'import json,sys; print(json.dumps({"query":sys.argv[1],"kind":sys.argv[2],"verificationMode":"STRICT","requiresFreshData":sys.argv[3]=="true","correlationId":sys.argv[4]}, ensure_ascii=False))' "$query" "$kind" "$fresh" "$correlation")"
-            out="$(mktemp)"
+          endpoint = os.environ["ULTRA_RESEARCH_ENDPOINT"]
+          api_key = os.environ["ULTRA_RESEARCH_API_KEY"]
+          seed = os.environ["SMOKE_SEED"]
+          plan_path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
+          rows = [json.loads(line) for line in open(plan_path, encoding="utf-8")][1:]
 
-            echo "Testing [$label] correlation=$correlation: $query"
+          def run_case_once(case):
+              body = json.dumps({
+                  "query": case["query"],
+                  "kind": case["kind"],
+                  "verificationMode": "STRICT",
+                  "requiresFreshData": case["fresh"],
+                  "correlationId": case["correlationId"],
+              }, ensure_ascii=False).encode("utf-8")
+              request = urllib.request.Request(
+                  endpoint,
+                  data=body,
+                  headers={
+                      "Content-Type": "application/json",
+                      "apikey": api_key,
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=45) as response:
+                      status = response.status
+                      raw = response.read().decode("utf-8", errors="replace")
+              except urllib.error.HTTPError as exc:
+                  return case, "FAIL", f"HTTP={exc.code} {exc.read().decode('utf-8', errors='replace')[:500]}"
+              except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
+                  return case, "FAIL", f"network={exc}"
 
-            set +e
-            code="$(curl --silent --show-error --connect-timeout 10 --max-time 45 -o "$out" -w '%{http_code}' -X POST "$endpoint" -H "Content-Type: application/json" -H "apikey: $SUPABASE_PUBLISHABLE_KEY" --data "$body")"
-            curl_status=$?
-            set -e
+              if status != 200:
+                  return case, "FAIL", f"HTTP={status}"
+              try:
+                  payload = json.loads(raw)
+              except json.JSONDecodeError:
+                  return case, "FAIL", "invalid JSON"
 
-            if [ "$curl_status" -ne 0 ] || [ "$code" != "200" ]; then
-              echo "::error::[$label] infrastructure failure curl=$curl_status HTTP=$code correlation=$correlation query=$query"
-              cat "$out" || true
-              failures=$((failures + 1))
-              rm -f "$out"
-              continue
-            fi
+              if payload.get("abstained") is True:
+                  reason = payload.get("reasonCode") or payload.get("message") or "unspecified"
+                  return case, "ABSTAIN", str(reason)
 
-            verdict="$(python3 -c 'import json,sys; p=json.load(open(sys.argv[2], encoding="utf-8")); label=sys.argv[1]; print("ABSTAIN|" + str(p.get("reasonCode") or p.get("message") or "unspecified") if p.get("abstained") is True else "FAIL|missing displayText" if not str(p.get("displayText") or "").strip() else "FAIL|fresh answer missing source evidence" if label in {"weather","news"} and not (p.get("sourceIds") or p.get("sourceId")) else "PASS|ok")' "$label" "$out")"
+              display = str(payload.get("displayText") or "").strip()
+              if not display:
+                  return case, "FAIL", "missing displayText"
 
-            case "$verdict" in
-              PASS*)
-                echo "PASS [$label] correlation=$correlation"
-                ;;
-              ABSTAIN*)
-                abstentions=$((abstentions + 1))
-                echo "::warning::[$label] safe abstention correlation=$correlation query=$query reason=${verdict#ABSTAIN|}"
-                ;;
-              *)
-                failures=$((failures + 1))
-                echo "::error::[$label] response contract failure correlation=$correlation query=$query detail=${verdict#FAIL|}"
-                ;;
-            esac
+              blocked_phrases = (
+                  "servicio de consulta no está disponible",
+                  "no pudo verificar",
+                  "no pude verificar",
+                  "asistente general online no respondió",
+              )
+              lowered = display.casefold()
+              if any(phrase in lowered for phrase in blocked_phrases):
+                  return case, "FAIL", f"degraded fallback leaked to user: answer={display[:300]}"
 
-            rm -f "$out"
-          done < <(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl")
+              if case["fresh"] and not (payload.get("sourceIds") or payload.get("sourceId")):
+                  return case, "FAIL", "fresh answer missing source evidence"
 
-          echo "Smoke summary: seed=$SMOKE_SEED executed=$executed abstentions=$abstentions failures=$failures"
-          test "$executed" -eq 12
-          test "$failures" -eq 0
+              import re
+              import unicodedata
+
+              def normalize_semantic(value):
+                  ascii_value = unicodedata.normalize("NFKD", value)
+                  ascii_value = "".join(
+                      ch for ch in ascii_value
+                      if not unicodedata.combining(ch)
+                  ).casefold()
+                  return re.sub(r"[^a-z0-9]+", " ", ascii_value).strip()
+
+              normalized_answer = normalize_semantic(display)
+              answer_words = set(normalized_answer.split())
+              expected = [
+                  normalize_semantic(token)
+                  for token in case.get("expectedAny", [])
+                  if normalize_semantic(token)
+              ]
+              expected_match = any(token in normalized_answer for token in expected)
+
+              stop_words = {
+                  "que", "como", "para", "sirve", "porque", "por", "una", "uno",
+                  "unos", "unas", "del", "las", "los", "con", "sin", "sobre",
+                  "dame", "explicacion", "clara", "funcion", "principal", "deberia",
+                  "saber", "persona", "alguien", "pregunta", "explicarias", "pocas",
+                  "frases", "resume", "asumir", "conocimientos", "tecnicos", "forma",
+                  "sencilla", "importante", "explicame", "esto", "esta", "este",
+                  "son", "hace", "hacer", "significa", "tipo", "productos", "producto",
+                  "diferencia", "hay", "entre", "actual", "hoy", "ahora",
+              }
+              query_tokens = {
+                  token
+                  for token in normalize_semantic(case["query"]).split()
+                  if len(token) >= 4 and token not in stop_words
+              }
+              query_match = any(token in answer_words for token in query_tokens)
+
+              if expected and not expected_match and not query_match:
+                  return case, "FAIL", (
+                      f"semantic relevance mismatch: expected={expected}; "
+                      f"query_tokens={sorted(query_tokens)}; answer={display[:300]}"
+                  )
+
+              return case, "PASS", "ok"
+
+          def run_case(case):
+              # Safe abstentions can be transient when public sources throttle or
+              # briefly fail. Retry only ABSTAIN results; never hide semantic,
+              # payload, HTTP or network FAIL verdicts.
+              max_attempts = 3
+              last_result = None
+              for attempt in range(1, max_attempts + 1):
+                  result = run_case_once(case)
+                  last_result = result
+                  if result[1] != "ABSTAIN":
+                      return result
+                  if attempt == max_attempts:
+                      return result
+                  print(
+                      f"RETRY safe-abstention attempt={attempt + 1}/{max_attempts} "
+                      f"correlation={case['correlationId']} reason={result[2]}"
+                  )
+                  time.sleep(0.25 * attempt)
+              return last_result
+
+          # Run sequentially to avoid throttling the public evidence sources.
+          results = []
+          for case in rows:
+              results.append(run_case(case))
+
+          failures = 0
+          stable_abstentions = 0
+          fresh_abstentions = 0
+          per_label = {}
+
+          for case, verdict, detail in sorted(results, key=lambda item: item[0]["correlationId"]):
+              label = case["label"]
+              stats = per_label.setdefault(label, {"PASS": 0, "ABSTAIN": 0, "FAIL": 0})
+              stats[verdict] += 1
+              prefix = f"[{label}] correlation={case['correlationId']} query={case['query']}"
+              if verdict == "PASS":
+                  print(f"PASS {prefix}")
+              elif verdict == "ABSTAIN":
+                  if case["fresh"]:
+                      fresh_abstentions += 1
+                      print(f"::warning::{prefix} safe abstention reason={detail}")
+                  else:
+                      stable_abstentions += 1
+                      failures += 1
+                      print(f"::error::{prefix} unexpected stable-knowledge abstention reason={detail}")
+              else:
+                  failures += 1
+                  print(f"::error::{prefix} {detail}")
+
+          executed = len(results)
+          passed = sum(1 for _, verdict, _ in results if verdict == "PASS")
+          answered = passed + fresh_abstentions
+          answer_rate = answered / executed if executed else 0.0
+
+          print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
+          print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
+
+          if executed != 440:
+              print(f"::error::Expected 440 cases, executed {executed}")
+              sys.exit(1)
+          if stable_abstentions != 0:
+              print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
+              sys.exit(1)
+          if fresh_abstentions > 4:
+              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 4")
+              sys.exit(1)
+          if answer_rate < 0.95:
+              print(f"::error::Answer rate below 95%: {answer_rate:.3f}")
+              sys.exit(1)
+          if failures != 0:
+              sys.exit(1)
+          PY
+
+      - name: Stop branch-local Ultra research server
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${ULTRA_RESEARCH_PID:-}" ]; then
+            kill "$ULTRA_RESEARCH_PID" 2>/dev/null || true
+          fi
+          if [ -f "$RUNNER_TEMP/ultra-research-local.log" ]; then
+            echo "---- branch-local Ultra research log tail ----"
+            tail -n 120 "$RUNNER_TEMP/ultra-research-local.log" || true
+          fi
+

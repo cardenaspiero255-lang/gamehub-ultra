@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -687,16 +688,108 @@ def main() -> None:
     for fragment in ("report.xml", "test -s"):
         require_run_fragment(coverage_verify, "coverage XML verification", fragment)
 
+    local_patch_coverage = require_step(
+        coverage,
+        "coverage",
+        "Enforce local patch coverage",
+        shell="bash",
+    )
+    for fragment in (
+        ".github/scripts/local_patch_coverage.py",
+        "report.xml",
+        "--base",
+        "--head",
+        "--min-patch-line 90",
+    ):
+        require_run_fragment(
+            local_patch_coverage,
+            "blocking local patch coverage gate",
+            fragment,
+        )
+
+    local_patch_run = local_patch_coverage.get("run")
+    if not isinstance(local_patch_run, str):
+        fail("blocking local patch coverage gate must execute the Python coverage checker")
+
+    coverage_tokens: list[str] | None = None
+    for command in logical_shell_commands(local_patch_run):
+        lexer = shlex.shlex(command, posix=True, punctuation_chars="|;&")
+        lexer.whitespace_split = True
+        try:
+            tokens = list(lexer)
+        except ValueError as exc:
+            fail(f"Unable to parse local patch coverage command: {exc}: {command!r}")
+        if tokens[:2] != ["python3", ".github/scripts/local_patch_coverage.py"]:
+            continue
+        if any(token in {"|", "||", ";", "&", "&&"} for token in tokens):
+            fail(f"blocking local patch coverage gate masks or redirects failure: {command!r}")
+        coverage_tokens = tokens
+        break
+
+    if coverage_tokens is None:
+        fail("blocking local patch coverage gate must execute the Python coverage checker")
+
+    codecov_probe = require_step(
+        coverage,
+        "coverage",
+        "Probe Codecov ingest availability",
+        shell="bash",
+        allowed_if="steps.codecov_token.outputs.available == 'true'",
+    )
+    for fragment in (
+        "https://ingest.codecov.io/",
+        "reachable=false",
+        "reachable=true",
+    ):
+        require_run_fragment(codecov_probe, "Codecov availability probe", fragment)
+
     codecov = require_step(
         coverage,
         "coverage",
         "Upload coverage to Codecov",
         uses_prefix="codecov/codecov-action@",
-        allowed_if="steps.codecov_token.outputs.available == 'true'",
+        allowed_if=(
+            "steps.codecov_token.outputs.available == 'true' && "
+            "steps.codecov_probe.outputs.reachable == 'true'"
+        ),
+        best_effort=True,
     )
     with_values = codecov.get("with")
     if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
-        fail("Codecov upload no longer has fail_ci_if_error: true")
+        fail("Codecov upload no longer reports upload failures")
+
+    codecov_retry = require_step(
+        coverage,
+        "coverage",
+        "Retry Codecov through legacy endpoint",
+        uses_prefix="codecov/codecov-action@",
+        allowed_if=(
+            "steps.codecov_token.outputs.available == 'true' && "
+            "steps.codecov_probe.outputs.reachable == 'true' && "
+            "steps.codecov_upload.outcome != 'success'"
+        ),
+        best_effort=True,
+    )
+    retry_with = codecov_retry.get("with")
+    if not isinstance(retry_with, dict) or retry_with.get("fail_ci_if_error") is not True:
+        fail("Codecov retry no longer reports upload failures")
+    if retry_with.get("use_legacy_upload_endpoint") is not True:
+        fail("Codecov retry must preserve the independent legacy endpoint")
+
+    codecov_status = require_step(
+        coverage,
+        "coverage",
+        "Report Codecov upload status",
+        shell="bash",
+        allowed_if="always() && steps.codecov_token.outputs.available == 'true'",
+    )
+    for fragment in (
+        "$PROBE_REACHABLE",
+        "$UPLOAD_OUTCOME",
+        "$RETRY_OUTCOME",
+        "local patch coverage",
+    ):
+        require_run_fragment(codecov_status, "Codecov status reporting", fragment)
 
     android_jobs = android.get("jobs")
     if not isinstance(android_jobs, dict):

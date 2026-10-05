@@ -43,6 +43,10 @@ jobs:
         shell: bash
         run: python3 .github/scripts/test-ci-safety-contract-regressions.py
 
+      - name: Test local patch coverage gate
+        shell: bash
+        run: python3 .github/scripts/test-local-patch-coverage.py
+
       - name: Verify CI safety contract
         shell: bash
         run: bash .github/scripts/test-ci-safety-contract.sh

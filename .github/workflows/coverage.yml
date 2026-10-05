@@ -87,9 +87,44 @@ jobs:
           find app/build/reports/coverage -type f -maxdepth 8 -print | sort
           test -s app/build/reports/coverage/test/debug/report.xml
 
-      - name: Upload coverage to Codecov
+      - name: Enforce local patch coverage
+        env:
+          PATCH_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PATCH_HEAD_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${PATCH_BASE_SHA:-}"
+          head_sha="${PATCH_HEAD_SHA:-$GITHUB_SHA}"
+          if [ -z "$base_sha" ] || [[ "$base_sha" =~ ^0+$ ]]; then
+            base_sha="$(git rev-parse "$head_sha^")"
+          fi
+          python3 .github/scripts/local_patch_coverage.py \
+            --xml app/build/reports/coverage/test/debug/report.xml \
+            --base "$base_sha" \
+            --head "$head_sha" \
+            --min-patch-line 90
+
+      - name: Probe Codecov ingest availability
+        id: codecov_probe
         if: steps.codecov_token.outputs.available == 'true'
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --connect-timeout 5 --max-time 8 -sS -o /dev/null -w '%{http_code}' https://ingest.codecov.io/ || true)"
+          if [ "$status" = "000" ] || [ -z "$status" ]; then
+            echo "reachable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Codecov ingest is unreachable from this runner; local patch coverage remains authoritative."
+          else
+            echo "reachable=true" >> "$GITHUB_OUTPUT"
+            echo "Codecov ingest reachable (HTTP $status)."
+          fi
+
+      - name: Upload coverage to Codecov
+        id: codecov_upload
+        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_probe.outputs.reachable == 'true'
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -99,6 +134,47 @@ jobs:
           name: gamehub-ultra-unit-tests
           fail_ci_if_error: true
           verbose: true
+
+      - name: Retry Codecov through legacy endpoint
+        id: codecov_retry
+        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_probe.outputs.reachable == 'true' && steps.codecov_upload.outcome != 'success'
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: app/build/reports/coverage/test/debug/report.xml
+          disable_search: true
+          flags: unit-tests
+          name: gamehub-ultra-unit-tests-legacy-retry
+          fail_ci_if_error: true
+          use_legacy_upload_endpoint: true
+          verbose: true
+
+      - name: Report Codecov upload status
+        if: always() && steps.codecov_token.outputs.available == 'true'
+        env:
+          PROBE_REACHABLE: ${{ steps.codecov_probe.outputs.reachable }}
+          UPLOAD_OUTCOME: ${{ steps.codecov_upload.outcome }}
+          RETRY_OUTCOME: ${{ steps.codecov_retry.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$UPLOAD_OUTCOME" = "success" ] || [ "$RETRY_OUTCOME" = "success" ]; then
+            echo "Codecov upload confirmed."
+          elif [ "$PROBE_REACHABLE" != "true" ]; then
+            echo "::notice::Codecov transport unavailable; blocking local patch coverage passed independently."
+          else
+            echo "::notice::Codecov upload failed after retry; blocking local patch coverage remains authoritative and the XML artifact is preserved."
+          fi
+
+      - name: Preserve coverage report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-coverage-report
+          path: app/build/reports/coverage/test/debug/report.xml
+          if-no-files-found: error
 
   metrics:
     name: metrics

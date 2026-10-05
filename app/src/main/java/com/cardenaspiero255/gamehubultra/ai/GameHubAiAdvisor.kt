@@ -8,7 +8,8 @@ import java.util.Locale
 
 class GameHubAiAdvisor(
     private val modelAdapter: LocalAiModelAdapter? = null,
-    private val memoryGateway: UltraLongTermMemoryGateway? = null
+    private val memoryGateway: UltraLongTermMemoryGateway? = null,
+    private val aiCore: UltraAiCoreGateway = UltraAiCore2()
 ) : UltraAssistantGateway {
 
     override fun hasLocalModelProvider(): Boolean = modelAdapter != null
@@ -40,6 +41,16 @@ class GameHubAiAdvisor(
     override fun advise(
         question: String,
         context: GameHubAiContext
+    ): GameHubAiAdvice = adviseInternal(
+        question = question,
+        context = context,
+        memories = recallMemorySignals(question, context)
+    )
+
+    private fun adviseInternal(
+        question: String,
+        context: GameHubAiContext,
+        memories: List<UltraAiMemorySignal>
     ): GameHubAiAdvice {
         val modelCandidate = runCatching {
             modelAdapter
@@ -55,7 +66,27 @@ class GameHubAiAdvisor(
             )
         }
 
-        return deterministicAdvice(question, context)
+        return deterministicAdvice(question, context, memories)
+    }
+
+    private fun recallMemorySignals(
+        question: String,
+        context: GameHubAiContext
+    ): List<UltraAiMemorySignal> {
+        val scope = UltraMemoryScope(
+            userId = "local",
+            gamePackage = context.selectedGamePackage
+        )
+        return runCatching {
+            memoryGateway
+                ?.recallContext(question, scope, limit = MEMORY_RECALL_LIMIT)
+                .orEmpty()
+                .asSequence()
+                .filter { it.record.text.isNotBlank() }
+                .take(MEMORY_RECALL_LIMIT)
+                .map(UltraAiMemorySignal::from)
+                .toList()
+        }.getOrDefault(emptyList())
     }
 
     override fun chat(
@@ -126,7 +157,11 @@ class GameHubAiAdvisor(
 
         deterministicStableKnowledgeOrNull(message)?.let { return it }
 
-        val advice = advise(message, context)
+        val advice = adviseInternal(
+            question = message,
+            context = context,
+            memories = recalled.map(UltraAiMemorySignal::from)
+        )
         val profile = profileLabel(advice.suggestedProfile)
 
         return when {
@@ -371,6 +406,15 @@ class GameHubAiAdvisor(
             normalized.contains("revolucion francesa") || normalized.contains("french revolution") ->
                 "La Revolución Francesa comenzó en 1789 y transformó profundamente el sistema político y social de Francia."
 
+            Regex("""\bavion(?:es)?\b|\bairplane(?:s)?\b|\baircraft\b""").containsMatchIn(normalized) ->
+                "Un avión es una aeronave de ala fija diseñada para volar gracias a la sustentación generada por sus alas y al empuje de uno o más motores."
+
+            Regex("""\bpsicopata(?:s)?\b|\bpsychopath(?:s)?\b""").containsMatchIn(normalized) ->
+                "Psicópata es un término de uso común para describir a una persona con ciertos rasgos persistentes, como baja empatía, manipulación o escaso remordimiento. No es por sí solo un diagnóstico clínico independiente y su evaluación corresponde a profesionales de salud mental."
+
+            Regex("""\blapiz(?:es)?\b|\bpencil(?:s)?\b""").containsMatchIn(normalized) ->
+                "Un lápiz es un instrumento para escribir o dibujar que suele tener una mina de grafito u otro material encerrada en madera o en un cuerpo mecánico."
+
             Regex("""\bmotor(?:es)?\b|\bengine(?:s)?\b""").containsMatchIn(normalized) ->
                 "Un motor es una máquina que transforma una forma de energía en movimiento o trabajo mecánico."
 
@@ -467,7 +511,8 @@ class GameHubAiAdvisor(
 
     private fun deterministicAdvice(
         question: String,
-        context: GameHubAiContext
+        context: GameHubAiContext,
+        memories: List<UltraAiMemorySignal> = emptyList()
     ): GameHubAiAdvice {
         val readiness = readinessScore(context)
         val hot = context.thermalHeadroom?.let { it >= 0.80f } == true ||
@@ -503,12 +548,53 @@ class GameHubAiAdvisor(
             else -> AiAdviceReason.BALANCED_GENERAL
         }
 
-        return GameHubAiAdvice(
+        val baseAdvice = GameHubAiAdvice(
             readiness = readiness,
             suggestedProfile = suggested,
             reason = reason,
             localModelUsed = false,
             fallbackUsed = true
+        )
+
+        val coreResult = runCatching {
+            aiCore.evaluate(
+                observation = UltraAiObservation.from(context).copy(
+                    activeProfileId = baseAdvice.suggestedProfile.name
+                ),
+                feedback = UltraAiFeedbackSnapshot(),
+                memories = memories
+            )
+        }.getOrNull()
+
+        val coreProfile = coreResult
+            ?.takeIf { !it.requiresCloud }
+            ?.recommendation
+            ?.profileId
+            ?.let { profileId ->
+                PerformanceProfile.entries.firstOrNull {
+                    it.name.equals(profileId, ignoreCase = true)
+                }
+            }
+
+        val safetyConstrained = hot || lowBattery || lowStorage
+        val safeCoreProfile = coreProfile?.takeIf { candidate ->
+            !safetyConstrained &&
+                (candidate != PerformanceProfile.X4 || context.sustainedPerformanceSupported)
+        }
+        val finalProfile = safeCoreProfile ?: baseAdvice.suggestedProfile
+        val finalReason = if (finalProfile == baseAdvice.suggestedProfile) {
+            baseAdvice.reason
+        } else {
+            when (finalProfile) {
+                PerformanceProfile.BALANCED -> AiAdviceReason.BALANCED_GENERAL
+                PerformanceProfile.FRAME_INTERPOLATION -> AiAdviceReason.INTERPOLATION
+                PerformanceProfile.X4 -> AiAdviceReason.X4_READY
+            }
+        }
+
+        return baseAdvice.copy(
+            suggestedProfile = finalProfile,
+            reason = finalReason
         )
     }
 
@@ -579,6 +665,10 @@ class GameHubAiAdvisor(
 
     private fun containsAny(value: String, vararg patterns: String): Boolean =
         patterns.any(value::contains)
+
+    private companion object {
+        const val MEMORY_RECALL_LIMIT = 6
+    }
 
     private fun normalize(value: String): String =
         Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
