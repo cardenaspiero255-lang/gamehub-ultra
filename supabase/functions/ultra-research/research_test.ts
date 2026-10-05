@@ -6365,7 +6365,6 @@ Deno.test("stable knowledge reuses verified topic evidence across wrapper varian
   }
 });
 
-
 Deno.test("stable cache keeps dependent follow-up qualifiers isolated", async () => {
   let specificSearches = 0;
   const deps: ResearchDependencies = {
@@ -6430,9 +6429,13 @@ Deno.test("stable cache keeps dependent follow-up qualifiers isolated", async ()
     "GENERAL_KNOWLEDGE",
   );
 
-  if (followUp.abstained) throw new Error("expected qualified follow-up evidence");
+  if (followUp.abstained) {
+    throw new Error("expected qualified follow-up evidence");
+  }
   if (specificSearches !== 1) {
-    throw new Error("dependent qualifier must not reuse the generic topic cache");
+    throw new Error(
+      "dependent qualifier must not reuse the generic topic cache",
+    );
   }
   if (!(followUp.displayText ?? "").toLowerCase().includes("polar")) {
     throw new Error("expected the qualified bear result");
