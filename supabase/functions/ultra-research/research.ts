@@ -3363,7 +3363,12 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
 
-  if (clean === "aprendizaje automatico" || clean === "machine learning") {
+  if (
+    clean === "aprendizaje automatico" ||
+    clean === "machine learning" ||
+    /\\baprendizaje automatico\\b/.test(clean) ||
+    /\\bmachine learning\\b/.test(clean)
+  ) {
     const displayText =
       "El aprendizaje automático es una rama de la inteligencia artificial " +
       "en la que un modelo aprende patrones a partir de datos para realizar " +
