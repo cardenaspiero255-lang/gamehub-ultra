@@ -90,7 +90,7 @@ jobs:
       - name: Enforce local patch coverage
         env:
           PATCH_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-          PATCH_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PATCH_HEAD_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
