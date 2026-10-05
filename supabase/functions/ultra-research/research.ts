@@ -300,7 +300,8 @@ function crossLanguageEvidenceToken(value: string): string {
   return value
     .replaceAll("ph", "f")
     .replaceAll("th", "t")
-    .replaceAll("y", "i");
+    .replaceAll("y", "i")
+    .replace(/sis$/, "si");
 }
 
 function evidenceTokensRelated(first: string, second: string): boolean {
