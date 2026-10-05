@@ -1386,9 +1386,6 @@ async function fetchWithRetry(
       if (response === null) {
         if (externalSignal?.aborted || attempt === maxAttempts) return null;
       } else {
-        if (response.status === 429) {
-          return response;
-        }
         const shouldRetry = RETRYABLE_HTTP_STATUSES.has(response.status);
         if (!shouldRetry || attempt === maxAttempts) {
           return response;
@@ -2782,8 +2779,7 @@ function generalKnowledgeSearchTopic(
     canonicalTopic = "NFC comunicación de campo cercano";
     hints.push("telefono", "tecnologia");
   } else if (/\bmah\b/.test(clean)) {
-    canonicalTopic = "mAh miliamperio hora";
-    hints.push("bateria", "capacidad");
+    canonicalTopic = "Amperio-hora";
   } else if (/\biso\b/.test(clean) && /\bfotograf/.test(clean)) {
     canonicalTopic = "sensibilidad ISO";
     hints.push("fotografia", "exposicion");
