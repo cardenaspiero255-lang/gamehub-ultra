@@ -46,6 +46,9 @@ object UltraGeneralQueryRouter {
     private val explicitCurrentValuePattern = Regex(
         """\b(precio (?:de|del)|precios de|price of|prices of|cuanto cuesta|cuanto cuestan|how much|cost of|costs of|[a-z0-9]+\s+s\s+(?:price|cost))\b"""
     )
+    private val explicitCostQuestionPattern = Regex(
+        """\b(?:what\s+(?:is|does|do|are)\s+.{1,80}\s+cost|how\s+much\s+(?:is|are|does|do)\b|cuanto\s+cuesta|cuanto\s+cuestan)\b"""
+    )
     private val currentQualifierPattern = Regex(
         """\b(actual|actualmente|ahora|hoy|esta noche|esta semana|current|currently|latest|newest|today|tomorrow|tonight|this week)\b"""
     )
@@ -140,6 +143,15 @@ object UltraGeneralQueryRouter {
                     explicitFreshUpdatePattern.containsMatchIn(clean) &&
                         !generalKnowledgePattern.containsMatchIn(clean)
                     ) ->
+                request(
+                    transcript = transcript,
+                    kind = UltraGeneralQueryKind.CURRENT_DATA,
+                    verificationMode = UltraVerificationMode.REQUIRED,
+                    requiresFreshData = true,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            explicitCostQuestionPattern.containsMatchIn(clean) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,
