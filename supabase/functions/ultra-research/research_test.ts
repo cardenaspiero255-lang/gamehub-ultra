@@ -6774,7 +6774,6 @@ Deno.test("World Bank indicator questions use keyless authoritative data", async
   }
 });
 
-
 Deno.test("arXiv preprint queries use the public keyless API", async () => {
   let arxivCalls = 0;
   const deps: ResearchDependencies = {
@@ -6838,7 +6837,8 @@ Deno.test("CVE questions use the keyless NVD vulnerability API", async () => {
             lastModified: "2026-09-01T00:00:00.000",
             descriptions: [{
               lang: "en",
-              value: "A vulnerability in Example App allows privilege escalation.",
+              value:
+                "A vulnerability in Example App allows privilege escalation.",
             }],
             metrics: {
               cvssMetricV31: [{
@@ -6894,7 +6894,8 @@ Deno.test("earthquake questions use the public USGS catalog", async () => {
               mag: 5.1,
               place: "42 km W of Coquimbo, Chile",
               time: 1791234567000,
-              url: "https://earthquake.usgs.gov/earthquakes/eventpage/us7000test",
+              url:
+                "https://earthquake.usgs.gov/earthquakes/eventpage/us7000test",
             },
             geometry: {
               coordinates: [-72.1, -30.0, 25.0],
