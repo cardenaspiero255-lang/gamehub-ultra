@@ -142,7 +142,7 @@ class SessionCoachMonitorServiceTest {
     @Test
     fun validStartCollectsRealSnapshotAndPreSessionMessage() = runBlocking {
         val store = SessionCoachSessionStore(context)
-        assertTrue(store.beginSession("live-session", "game.a", 1L))
+        assertTrue(store.beginSession("live-session", "game.a", System.currentTimeMillis()))
         val controller = Robolectric.buildService(SessionCoachMonitorService::class.java).create()
         val service = controller.get()
 
