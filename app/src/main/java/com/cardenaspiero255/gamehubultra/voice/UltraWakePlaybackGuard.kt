@@ -9,7 +9,8 @@ internal enum class UltraWakeSpeechTimeoutAction {
 internal enum class UltraWakeRecognitionDisposition {
     ACCEPT,
     SUPPRESS,
-    INTERRUPT_TTS
+    INTERRUPT_TTS,
+    STOP_TTS
 }
 
 internal enum class UltraWakeSensitivity {
@@ -127,6 +128,23 @@ internal class UltraWakeRepeatGate(
     }
 }
 
+internal object UltraWakeStopSpeakingIntent {
+    fun matches(transcript: String): Boolean {
+        val clean = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
+            .trim()
+        return clean in setOf(
+            "detente",
+            "para",
+            "parate",
+            "callate",
+            "silencio",
+            "stop",
+            "stop talking",
+            "be quiet"
+        )
+    }
+}
+
 internal object UltraWakeBargeInPolicy {
     fun decide(
         playbackActive: Boolean,
@@ -136,6 +154,8 @@ internal object UltraWakeBargeInPolicy {
         when {
             !playbackActive -> UltraWakeRecognitionDisposition.ACCEPT
             playbackEcho -> UltraWakeRecognitionDisposition.SUPPRESS
+            UltraWakeStopSpeakingIntent.matches(transcript) ->
+                UltraWakeRecognitionDisposition.STOP_TTS
             UltraWakeWordMatcher.isExplicitInvocation(transcript) ->
                 UltraWakeRecognitionDisposition.INTERRUPT_TTS
             else -> UltraWakeRecognitionDisposition.SUPPRESS
