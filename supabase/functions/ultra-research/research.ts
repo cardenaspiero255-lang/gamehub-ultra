@@ -2650,6 +2650,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^resume qu[eé] es\s+(.+?)\.?$/i,
     /^dime lo esencial sobre\s+(.+?)\.?$/i,
     /^c[oó]mo explicar[ií]as\s+(.+?)\.?$/i,
+    /^c[oó]mo se calcula\s+(.+?)\.?$/i,
     /^dame una explicaci[oó]n clara de\s+(.+?)\s+y su funci[oó]n principal\.?$/i,
     /^qu[eé] deber[ií]a saber una persona sobre\s+(.+?)\.?$/i,
     /^si alguien me pregunta por\s+(.+?),?\s*[¿?]?c[oó]mo lo explicar[ií]as en pocas frases\.?$/i,
@@ -2686,7 +2687,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -2712,7 +2713,7 @@ function isExplicitNewKnowledgeTopic(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|que significa|por que es|define|explicame que es|explica que es|what is|what are|who is|who was|who are|why is|define|explain)\s+\S+/.test(
+  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|que significa|por que es|define|explicame que es|explica que es|como se calcula|what is|what are|who is|who was|who are|why is|define|explain)\s+\S+/.test(
     clean,
   );
 }
@@ -5595,7 +5596,7 @@ function mergeGeneralKnowledgeEvidence(
 function isStableGeneralKnowledgeIntent(query: string): boolean {
   const clean = normalize(stripAssistantInvocation(query));
   const stableQuestion =
-    /^(?:que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue)\b/.test(
+    /^(?:que es|que son|quien es|quienes son|por que|para que sirve|como funciona|como se calcula|explicame|explica|define|cual es|cuales son|donde esta|cuando fue)\b/.test(
       clean,
     );
   if (!stableQuestion) return false;
