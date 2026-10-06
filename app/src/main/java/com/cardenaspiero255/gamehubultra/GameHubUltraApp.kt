@@ -398,17 +398,8 @@ internal fun GameHubUltraApp(
             selectedTab = 1
             return
         }
-        val coachSessionId =
-            com.cardenaspiero255.gamehubultra.session.SessionCoachMonitorService.start(
-                context = context,
-                packageName = packageName
-            )
         if (openGame(context, packageName)) {
             recordGameOpened(packageName)
-        } else if (coachSessionId != null) {
-            com.cardenaspiero255.gamehubultra.session.SessionCoachMonitorService.cancelLaunch(
-                context
-            )
         }
     }
 
@@ -433,8 +424,8 @@ internal fun GameHubUltraApp(
             }
         }
 
-        if (activeSessionId != null && completedCoachSession != null) {
-            val monitoredLast = completedCoachSession.samples.lastOrNull()
+        if (activeSessionId != null) {
+            val monitoredLast = completedCoachSession?.samples?.lastOrNull()
             runtimeCoordinator.endGameSession(
                 runtimeSnapshot().copy(
                     metrics = RuntimeSessionMetrics(
