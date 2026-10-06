@@ -131,7 +131,7 @@ class SessionCoachSessionStore(
             .putString(ACTIVE_PACKAGE, cleanPackage)
             .putLong(ACTIVE_STARTED, startedAtMillis.coerceAtLeast(0L))
             .putString(ACTIVE_SAMPLES, "")
-            .commit()
+            .apply()
         return true
     }
 
@@ -141,9 +141,10 @@ class SessionCoachSessionStore(
         message: SessionCoachMessage
     ): Boolean {
         if (preferences.getString(ACTIVE_ID, null) != sessionId) return false
-        return preferences.edit()
+        preferences.edit()
             .putString(ACTIVE_PRE, SessionCoachMessageCodec.encode(message))
-            .commit()
+            .apply()
+        return true
     }
 
     @Synchronized
@@ -171,13 +172,17 @@ class SessionCoachSessionStore(
                 SessionCoachMessageCodec.encode(message)
             )
         }
-        editor.commit()
+        editor.apply()
         return previous
     }
 
     @Synchronized
-    fun finishActiveSession(endedAtMillis: Long): SessionCoachStoredSession? {
+    fun finishActiveSession(
+        endedAtMillis: Long,
+        expectedSessionId: String? = null
+    ): SessionCoachStoredSession? {
         val active = readSession(ACTIVE_PREFIX) ?: return null
+        if (expectedSessionId != null && active.sessionId != expectedSessionId) return null
         val finished = active.copy(
             endedAtMillis = maxOf(endedAtMillis, active.startedAtMillis)
         )
@@ -185,16 +190,18 @@ class SessionCoachSessionStore(
         LAST_KEYS.forEach(editor::remove)
         writeSession(editor, LAST_PREFIX, finished)
         ACTIVE_KEYS.forEach(editor::remove)
-        editor.commit()
+        editor.apply()
         return finished
     }
 
     @Synchronized
-    fun discardActiveSession(): Boolean {
-        if (!hasActiveSession()) return false
+    fun discardActiveSession(expectedSessionId: String? = null): Boolean {
+        val activeId = preferences.getString(ACTIVE_ID, null) ?: return false
+        if (expectedSessionId != null && activeId != expectedSessionId) return false
         val editor = preferences.edit()
         ACTIVE_KEYS.forEach(editor::remove)
-        return editor.commit()
+        editor.apply()
+        return true
     }
 
     fun hasActiveSession(): Boolean =
