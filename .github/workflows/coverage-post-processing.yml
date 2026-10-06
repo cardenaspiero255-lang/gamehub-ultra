@@ -1,0 +1,95 @@
+name: Coverage Post Processing
+
+on:
+  workflow_run:
+    workflows: ["Unit Test Coverage"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: coverage-post-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+
+    steps:
+      - name: Checkout trusted default-branch tooling
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Download exact coverage artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gamehub-ultra-coverage-report
+          path: ${{ runner.temp }}/coverage
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify downloaded coverage report
+        shell: bash
+        run: test -s "$RUNNER_TEMP/coverage/report.xml"
+
+      - name: Check Codecov token availability
+        id: codecov_token
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        shell: bash
+        run: |
+          if [ -n "$CODECOV_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CODECOV_TOKEN is unavailable; local patch coverage already passed."
+          fi
+
+      - name: Upload coverage to Codecov
+        if: steps.codecov_token.outputs.available == 'true'
+        continue-on-error: true
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: ${{ runner.temp }}/coverage/report.xml
+          disable_search: true
+          flags: unit-tests
+          name: gamehub-ultra-unit-tests
+          override_commit: ${{ github.event.workflow_run.head_sha }}
+          override_branch: ${{ github.event.workflow_run.head_branch }}
+          override_build: ${{ github.event.workflow_run.id }}
+          fail_ci_if_error: false
+          verbose: false
+
+      - name: Collect CI performance metrics
+        env:
+          GH_METRICS_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/ci-performance-metrics.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-id "${{ github.event.workflow_run.id }}" \
+            --token "$GH_METRICS_TOKEN" \
+            --history 20 \
+            --json-out "$RUNNER_TEMP/ci-performance.json" \
+            --summary-out "$RUNNER_TEMP/ci-performance.md"
+          cat "$RUNNER_TEMP/ci-performance.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CI performance metrics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-ci-metrics-coverage-${{ github.event.workflow_run.id }}
+          path: |
+            ${{ runner.temp }}/ci-performance.json
+            ${{ runner.temp }}/ci-performance.md
+          if-no-files-found: ignore
+          compression-level: 1
