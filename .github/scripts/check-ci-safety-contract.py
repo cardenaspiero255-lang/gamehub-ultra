@@ -10,6 +10,7 @@ from typing import Any
 
 ANDROID = Path(".github/workflows/android.yml")
 COVERAGE = Path(".github/workflows/coverage.yml")
+COVERAGE_POST = Path(".github/workflows/coverage-post-processing.yml")
 SHADOW_METRICS = Path(".github/workflows/ci-metrics-shadow.yml")
 
 
@@ -729,67 +730,25 @@ def main() -> None:
     if coverage_tokens is None:
         fail("blocking local patch coverage gate must execute the Python coverage checker")
 
-    codecov_probe = require_step(
-        coverage,
-        "coverage",
-        "Probe Codecov ingest availability",
-        shell="bash",
-        allowed_if="steps.codecov_token.outputs.available == 'true'",
-    )
+    coverage_text = COVERAGE.read_text(encoding="utf-8")
+    if "codecov/codecov-action@" in coverage_text:
+        fail("Codecov publishing must stay off the blocking coverage critical path")
+
+    if not COVERAGE_POST.is_file():
+        fail("Coverage post-processing workflow is missing")
+    coverage_post_text = COVERAGE_POST.read_text(encoding="utf-8")
     for fragment in (
-        "https://ingest.codecov.io/",
-        "reachable=false",
-        "reachable=true",
+        'workflows: ["Unit Test Coverage"]',
+        "types: [completed]",
+        "github.event.workflow_run.id",
+        "gamehub-ultra-coverage-report",
+        "actions/download-artifact@",
+        "codecov/codecov-action@",
+        "override_commit: ${{ github.event.workflow_run.head_sha }}",
+        "continue-on-error: true",
     ):
-        require_run_fragment(codecov_probe, "Codecov availability probe", fragment)
-
-    codecov = require_step(
-        coverage,
-        "coverage",
-        "Upload coverage to Codecov",
-        uses_prefix="codecov/codecov-action@",
-        allowed_if=(
-            "steps.codecov_token.outputs.available == 'true' && "
-            "steps.codecov_probe.outputs.reachable == 'true'"
-        ),
-        best_effort=True,
-    )
-    with_values = codecov.get("with")
-    if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
-        fail("Codecov upload no longer reports upload failures")
-
-    codecov_retry = require_step(
-        coverage,
-        "coverage",
-        "Retry Codecov through legacy endpoint",
-        uses_prefix="codecov/codecov-action@",
-        allowed_if=(
-            "steps.codecov_token.outputs.available == 'true' && "
-            "steps.codecov_probe.outputs.reachable == 'true' && "
-            "steps.codecov_upload.outcome != 'success'"
-        ),
-        best_effort=True,
-    )
-    retry_with = codecov_retry.get("with")
-    if not isinstance(retry_with, dict) or retry_with.get("fail_ci_if_error") is not True:
-        fail("Codecov retry no longer reports upload failures")
-    if retry_with.get("use_legacy_upload_endpoint") is not True:
-        fail("Codecov retry must preserve the independent legacy endpoint")
-
-    codecov_status = require_step(
-        coverage,
-        "coverage",
-        "Report Codecov upload status",
-        shell="bash",
-        allowed_if="always() && steps.codecov_token.outputs.available == 'true'",
-    )
-    for fragment in (
-        "$PROBE_REACHABLE",
-        "$UPLOAD_OUTCOME",
-        "$RETRY_OUTCOME",
-        "local patch coverage",
-    ):
-        require_run_fragment(codecov_status, "Codecov status reporting", fragment)
+        if fragment not in coverage_post_text:
+            fail(f"Coverage post-processing contract is incomplete: {fragment}")
 
     android_jobs = android.get("jobs")
     if not isinstance(android_jobs, dict):
