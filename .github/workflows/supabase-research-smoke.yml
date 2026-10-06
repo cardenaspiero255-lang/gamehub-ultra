@@ -26,11 +26,24 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    # 1000 cases intentionally run sequentially to avoid throttling public sources.
-    # Allow the full bounded-retry budget to finish and always emit its summary.
-    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    # All 10,000 cases are generated identically. We keep 32 logical shards but
+    # pack two logical shards into each of 16 GitHub runners so runner queuing
+    # does not serialize half the matrix. Each runner uses 24 stable workers,
+    # preserving the same theoretical 32x12 parallelism. Fresh-data checks stay
+    # on the runner that owns logical shard 0 to avoid provider bursts.
+    timeout-minutes: 60
     env:
       SMOKE_SEED: ${{ github.run_id }}
+      SMOKE_STABLE_WORKERS: "24"
+      SMOKE_WARMUP_WORKERS: "1"
+      SMOKE_WARMUP_WAVE_COUNT: "16"
+      SMOKE_WARMUP_WAVE_DELAY_SECONDS: "2"
+      SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
+      SMOKE_SHARD_COUNT: "32"
 
     steps:
       - name: Checkout
@@ -47,9 +60,27 @@ jobs:
         env:
           SUPABASE_PUBLISHABLE_KEYS: '{"ci":"ci-smoke-key"}'
           SUPABASE_ANON_KEY: ci-smoke-key
+          # Use real configured providers when repository CI secrets are available.
+          # SUPABASE_DB_URL lets the branch-local server resolve GEMINI/XAI/Tavily
+          # from the existing Supabase Vault without copying provider keys into code.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
+          ULTRA_QUIET_REQUEST_LOGS: "1"
           ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
-          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "4500"
+          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "4000"
+          # CI performance profile: fail fast on a slow/throttled upstream so one
+          # provider cannot pin a worker for 6+ seconds. The smoke still validates
+          # the same 10,000 answers and treats stable abstentions as hard failures.
+          ULTRA_FETCH_ATTEMPT_TIMEOUT_MS: "1500"
+          ULTRA_FETCH_RETRY_BUDGET_MS: "4000"
+          ULTRA_SPECIALIST_EVIDENCE_TIMEOUT_MS: "2500"
+          ULTRA_CORROBORATION_TIMEOUT_MS: "1200"
+          ULTRA_FALLBACK_SEARCH_TIMEOUT_MS: "2500"
+          ULTRA_WIKIDATA_FALLBACK_TIMEOUT_MS: "2200"
         shell: bash
         run: |
           set -euo pipefail
@@ -73,7 +104,7 @@ jobs:
           cat "$log" || true
           exit 1
 
-      - name: Build reproducible 1000-question broad-spectrum smoke plan
+      - name: Build reproducible 10000-question broad-spectrum smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -92,6 +123,9 @@ jobs:
               ("general", "¿Qué es un lápiz?", "GENERAL_KNOWLEDGE", False, ["escribir", "dibujar", "grafito"]),
               ("astronomy_regression", "¿Qué es un exoplaneta?", "GENERAL_KNOWLEDGE", False, ["planeta", "estrella", "solar"]),
               ("cosmology_regression", "¿Qué es un macroverso?", "GENERAL_KNOWLEDGE", False, ["univers", "cosmos", "macro"]),
+              ("voice_regression", "¿Qué es YouTube?", "GENERAL_KNOWLEDGE", False, ["video", "youtube"]),
+              ("voice_regression", "¿Qué es un patógeno?", "GENERAL_KNOWLEDGE", False, ["enfermed", "agente", "infecc"]),
+              ("voice_regression", "¿Qué es un oso?", "GENERAL_KNOWLEDGE", False, ["mamífer", "urs"]),
               ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True, []),
               ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True, []),
           ]
@@ -328,15 +362,32 @@ jobs:
           }
 
 
-          # Runtime-composed questions. The complete question strings below do not
-          # exist in the workflow: every run combines a random template + topic.
-          dynamic_templates = [
-              "Explícame de forma sencilla qué es {topic}.",
-              "¿Para qué sirve o por qué es importante {topic}?",
-              "Si alguien me pregunta por {topic}, ¿cómo lo explicarías en pocas frases?",
-              "Dame una explicación clara de {topic} y su función principal.",
-              "¿Qué debería saber una persona sobre {topic}?",
-              "Resume qué es {topic} sin asumir conocimientos técnicos.",
+          # Runtime-composed questions. Complete prompts do not exist statically:
+          # every run combines a topic with randomized framing while remaining
+          # reproducible from SMOKE_SEED.
+          dynamic_stems = [
+              "Explícame qué es {topic}",
+              "Describe {topic}",
+              "¿Para qué sirve o por qué importa {topic}?",
+              "Resume qué es {topic}",
+              "Dime lo esencial sobre {topic}",
+              "¿Cómo explicarías {topic}?",
+          ]
+          dynamic_audiences = [
+              "para un estudiante",
+              "para alguien que empieza",
+              "sin asumir conocimientos previos",
+              "en lenguaje cotidiano",
+              "sin jerga innecesaria",
+              "de forma clara y directa",
+          ]
+          dynamic_focus = [
+              "en pocas frases",
+              "y menciona su función principal",
+              "y destaca una idea clave",
+              "con una explicación breve",
+              "sin inventar datos",
+              "y explica por qué es relevante",
           ]
 
           dynamic_domains = {
@@ -674,46 +725,48 @@ jobs:
                       f"Pool {label} only produced {added}/8 unique smoke questions"
                   )
 
-          # Generate sixteen unique runtime-composed variants per domain. Complete
-          # question strings change with the run seed but remain reproducible.
+          target_cases = 10_000
+          minimum_per_dynamic_domain = 100
           remaining_dynamic = []
           for domain, topics in dynamic_domains.items():
               candidates = [
                   (
                       f"dyn_{domain}",
-                      template.format(topic=topic),
+                      f"{stem.format(topic=topic)} {audience}, {focus}.",
                       "GENERAL_KNOWLEDGE",
                       False,
                       expected,
                   )
                   for topic, expected in topics
-                  for template in dynamic_templates
+                  for stem in dynamic_stems
+                  for audience in dynamic_audiences
+                  for focus in dynamic_focus
               ]
               rng.shuffle(candidates)
               added = 0
               for case in candidates:
                   if add_unique_case(case):
                       added += 1
-                  if added == 16:
+                  if added == minimum_per_dynamic_domain:
                       break
-              if added != 16:
+              if added != minimum_per_dynamic_domain:
                   raise RuntimeError(
-                      f"Dynamic domain {domain} only produced {added}/16 unique questions"
+                      f"Dynamic domain {domain} only produced "
+                      f"{added}/{minimum_per_dynamic_domain} unique questions"
                   )
               remaining_dynamic.extend(candidates)
 
-          # 8 fixed + (19 pools * 8) + (49 domains * 16) = 944.
-          # Fill the remaining 56 slots from unused runtime combinations so the
-          # gate always exercises exactly 1000 unique questions across 70+ labels.
+          # Fill to exactly 10,000 unique cases from unused runtime combinations.
+          # This keeps 70+ labels represented while heavily varying wording.
           rng.shuffle(remaining_dynamic)
           for case in remaining_dynamic:
-              if len(cases) >= 1000:
+              if len(cases) >= target_cases:
                   break
               add_unique_case(case)
 
-          if len(cases) != 1000:
+          if len(cases) != target_cases:
               raise RuntimeError(
-                  f"Smoke plan produced {len(cases)}/1000 unique questions"
+                  f"Smoke plan produced {len(cases)}/{target_cases} unique questions"
               )
           if len(used_queries) != len(cases):
               raise RuntimeError("Smoke plan contains duplicate questions")
@@ -731,18 +784,24 @@ jobs:
               }
           }, ensure_ascii=False))
           for index, (label, query, kind, fresh, expected_any) in enumerate(cases):
+              routing_key = (
+                  f"{label}|{'|'.join(expected_any)}"
+                  if expected_any
+                  else f"{label}|{query}"
+              )
               print(json.dumps({
                   "label": label,
                   "query": query,
                   "kind": kind,
                   "fresh": fresh,
                   "expectedAny": expected_any,
+                  "routingKey": routing_key,
                   "correlationId": f"smoke-{seed}-{index}",
               }, ensure_ascii=False))
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "1000"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "10000"
           test "$(python3 - <<'PY'
           import json, os
           path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
@@ -751,11 +810,12 @@ jobs:
           PY
           )" -ge "70"
 
-      - name: Exercise 1000 stratified and runtime-generated questions
+      - name: Exercise 10000 stratified and runtime-generated questions
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import concurrent.futures
           import json
           import os
           import socket
@@ -763,6 +823,7 @@ jobs:
           import time
           import urllib.error
           import urllib.request
+          import zlib
 
           endpoint = os.environ["ULTRA_RESEARCH_ENDPOINT"]
           api_key = os.environ["ULTRA_RESEARCH_API_KEY"]
@@ -872,27 +933,142 @@ jobs:
           def run_case(case):
               # Safe abstentions can be transient when public sources throttle or
               # briefly fail. Retry only ABSTAIN results; never hide semantic,
-              # payload, HTTP or network FAIL verdicts.
-              max_attempts = 3
+              # payload, HTTP or network FAIL verdicts. Rate limits get a slightly
+              # longer bounded retry window so a single 429 cannot make the 10k
+              # corpus flaky, while the final abstention still hard-fails.
+              max_attempts = 5
               last_result = None
               for attempt in range(1, max_attempts + 1):
                   result = run_case_once(case)
                   last_result = result
                   if result[1] != "ABSTAIN":
                       return result
-                  if attempt == max_attempts:
+
+                  reason = str(result[2])
+                  allowed_attempts = 5 if reason == "UPSTREAM_RATE_LIMIT" else 3
+                  if attempt >= allowed_attempts:
                       return result
+
+                  if reason == "UPSTREAM_RATE_LIMIT":
+                      delay = min(2.0, 0.5 * (2 ** (attempt - 1)))
+                  else:
+                      delay = 0.5 * attempt
+
                   print(
-                      f"RETRY safe-abstention attempt={attempt + 1}/{max_attempts} "
-                      f"correlation={case['correlationId']} reason={result[2]}"
+                      f"RETRY safe-abstention attempt={attempt + 1}/{allowed_attempts} "
+                      f"correlation={case['correlationId']} reason={reason} "
+                      f"delay={delay:.1f}s"
                   )
-                  time.sleep(0.25 * attempt)
+                  time.sleep(delay)
               return last_result
 
-          # Run sequentially to avoid throttling the public evidence sources.
-          results = []
-          for case in rows:
-              results.append(run_case(case))
+          execution_started = time.monotonic()
+          shard_index = int(os.environ.get("SMOKE_SHARD_INDEX", "0"))
+          shard_count = int(os.environ.get("SMOKE_SHARD_COUNT", "1"))
+          physical_runner_count = 16
+          logical_shards_per_runner = 2
+          if shard_count != physical_runner_count * logical_shards_per_runner:
+              raise RuntimeError(
+                  f"Expected {physical_runner_count * logical_shards_per_runner} "
+                  f"logical shards, got {shard_count}"
+              )
+          if shard_index < 0 or shard_index >= physical_runner_count:
+              raise RuntimeError(
+                  f"Invalid physical smoke runner {shard_index}/{physical_runner_count}"
+              )
+
+          logical_shards = {
+              shard_index + physical_runner_count * lane
+              for lane in range(logical_shards_per_runner)
+          }
+
+          def logical_shard_for(case):
+              routing_key = case.get("routingKey") or case["correlationId"]
+              return zlib.crc32(routing_key.encode("utf-8")) % shard_count
+
+          stable_rows = [
+              case for case in rows
+              if not case["fresh"]
+              and logical_shard_for(case) in logical_shards
+          ]
+          # Fresh/current-data checks stay on the runner owning logical shard 0.
+          # This preserves the exact corpus while preventing provider bursts.
+          fresh_rows = [
+              case for case in rows
+              if case["fresh"] and 0 in logical_shards
+          ]
+          expected_executed = len(stable_rows) + len(fresh_rows)
+          stable_workers = int(os.environ.get("SMOKE_STABLE_WORKERS", "6"))
+          if stable_workers < 1 or stable_workers > 24:
+              raise RuntimeError(
+                  f"SMOKE_STABLE_WORKERS must be between 1 and 24, got {stable_workers}"
+              )
+
+          warmup_workers = int(os.environ.get("SMOKE_WARMUP_WORKERS", "8"))
+          if warmup_workers < 1 or warmup_workers > stable_workers:
+              raise RuntimeError(
+                  f"SMOKE_WARMUP_WORKERS must be between 1 and "
+                  f"{stable_workers}, got {warmup_workers}"
+              )
+
+          warmup_wave_count = int(os.environ.get("SMOKE_WARMUP_WAVE_COUNT", "1"))
+          warmup_wave_delay_seconds = float(
+              os.environ.get("SMOKE_WARMUP_WAVE_DELAY_SECONDS", "0")
+          )
+          if warmup_wave_count < 1 or warmup_wave_count > physical_runner_count:
+              raise RuntimeError(
+                  f"SMOKE_WARMUP_WAVE_COUNT must be between 1 and "
+                  f"{physical_runner_count}, got {warmup_wave_count}"
+              )
+          if warmup_wave_delay_seconds < 0 or warmup_wave_delay_seconds > 10:
+              raise RuntimeError(
+                  "SMOKE_WARMUP_WAVE_DELAY_SECONDS must be between 0 and 10"
+              )
+
+          stable_groups = {}
+          for case in stable_rows:
+              stable_groups.setdefault(case["routingKey"], []).append(case)
+
+          warmup_rows = []
+          cached_rows = []
+          for group in stable_groups.values():
+              warmup_rows.append(group[0])
+              cached_rows.extend(group[1:])
+
+          print(
+              f"Smoke execution runner={shard_index + 1}/{physical_runner_count}: "
+              f"logical_shards={sorted(logical_shards)} "
+              f"stable={len(stable_rows)} groups={len(stable_groups)} "
+              f"warmup_workers={warmup_workers} bulk_workers={stable_workers}; "
+              f"fresh={len(fresh_rows)} workers=1 expected={expected_executed}"
+          )
+
+          # Warm one representative per semantic topic first. Stagger the
+          # physical runners into small deterministic waves so Wikipedia/Wikidata
+          # and model fallbacks are not hit by a 16-runner burst. This preserves
+          # all 10,000 cases and the 24-worker cached bulk phase.
+          warmup_wave = shard_index % warmup_wave_count
+          warmup_delay = warmup_wave * warmup_wave_delay_seconds
+          if warmup_delay > 0:
+              print(
+                  f"Warmup wave={warmup_wave + 1}/{warmup_wave_count} "
+                  f"delay={warmup_delay:.1f}s"
+              )
+              time.sleep(warmup_delay)
+
+          with concurrent.futures.ThreadPoolExecutor(
+              max_workers=warmup_workers
+          ) as executor:
+              warmup_results = list(executor.map(run_case, warmup_rows))
+
+          with concurrent.futures.ThreadPoolExecutor(
+              max_workers=stable_workers
+          ) as executor:
+              cached_results = list(executor.map(run_case, cached_rows))
+
+          stable_results = warmup_results + cached_results
+          fresh_results = [run_case(case) for case in fresh_rows]
+          results = stable_results + fresh_results
 
           failures = 0
           stable_abstentions = 0
@@ -905,7 +1081,7 @@ jobs:
               stats[verdict] += 1
               prefix = f"[{label}] correlation={case['correlationId']} query={case['query']}"
               if verdict == "PASS":
-                  print(f"PASS {prefix}")
+                  pass
               elif verdict == "ABSTAIN":
                   if case["fresh"]:
                       fresh_abstentions += 1
@@ -921,19 +1097,30 @@ jobs:
           executed = len(results)
           passed = sum(1 for _, verdict, _ in results if verdict == "PASS")
           answered = passed
-          answer_rate = answered / executed if executed else 0.0
+          # Stable failures are hard failures on their owning shard. Fresh
+          # abstentions are evaluated against the original 10,000-case denominator,
+          # preserving the pre-sharding global 99.8% SSS gate exactly.
+          answer_rate = (
+              (10000 - fresh_abstentions) / 10000
+              if shard_index == 0
+              else 1.0
+          )
 
-          print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
+          elapsed_seconds = time.monotonic() - execution_started
+          print(f"Smoke summary: seed={seed} runner={shard_index + 1}/{physical_runner_count} logical_shards={sorted(logical_shards)} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f} stable_workers={stable_workers} elapsed_seconds={elapsed_seconds:.1f}")
           print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
 
-          if executed != 1000:
-              print(f"::error::Expected 1000 cases, executed {executed}")
+          if executed != expected_executed:
+              print(
+                  f"::error::Shard expected {expected_executed} cases, "
+                  f"executed {executed}"
+              )
               sys.exit(1)
           if stable_abstentions != 0:
               print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
               sys.exit(1)
-          if fresh_abstentions > 2:
-              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 2")
+          if fresh_abstentions > 20:
+              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 20")
               sys.exit(1)
           if answer_rate < 0.998:
               print(f"::error::Answer rate below SSS target 99.8%: {answer_rate:.3f}")

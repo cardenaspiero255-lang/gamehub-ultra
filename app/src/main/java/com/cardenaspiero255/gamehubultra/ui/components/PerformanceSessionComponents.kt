@@ -12,6 +12,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -131,6 +135,10 @@ internal fun SmartPerformanceCard(
     onRevert: () -> Unit,
     onClearMemory: () -> Unit
 ) {
+    var showDetails by rememberSaveable { mutableStateOf(false) }
+    val presentation = smartPerformancePresentation(recommendation)
+    val confidenceLabel = stringResource(presentation.confidenceLabelRes)
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -140,32 +148,48 @@ internal fun SmartPerformanceCard(
                 stringResource(R.string.smart_performance_title),
                 style = MaterialTheme.typography.titleLarge
             )
+            Text(localizedProfileTitle(recommendation.profile))
             Text(
-                localizedProfileTitle(recommendation.profile) +
-                    " · " + recommendation.score + "/100"
+                stringResource(R.string.smart_performance_confidence, confidenceLabel),
+                style = MaterialTheme.typography.labelLarge
             )
-            Text(recommendation.reason)
-            if (recommendation.evidence.isNotEmpty()) {
+            Text(recommendation.explanation.conciseSummary)
+
+            TextButton(onClick = { showDetails = !showDetails }) {
                 Text(
-                    stringResource(R.string.smart_performance_evidence),
-                    style = MaterialTheme.typography.labelLarge
+                    stringResource(
+                        if (showDetails) {
+                            R.string.smart_performance_hide_details
+                        } else {
+                            R.string.smart_performance_why
+                        }
+                    )
                 )
-                recommendation.evidence.take(5).forEach { evidence ->
-                    Text("• " + evidence, style = MaterialTheme.typography.bodySmall)
+            }
+
+            if (showDetails) {
+                presentation.sections.forEach { section ->
+                    Text(
+                        stringResource(section.titleRes),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    section.lines.forEach { line ->
+                        val prefixText = line.prefixRes
+                            ?.let { stringResource(it) + " · " }
+                            .orEmpty()
+                        Text(
+                            "• $prefixText${line.text}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             }
+
             Text(
                 stringResource(
                     R.string.smart_performance_driver,
                     recommendation.gpuFamily.name,
-                    when (recommendation.driverStrategy) {
-                        com.cardenaspiero255.gamehubultra.domain.DriverStrategy.SYSTEM_ONLY ->
-                            stringResource(R.string.driver_system_only)
-                        com.cardenaspiero255.gamehubultra.domain.DriverStrategy.TURNIP_CANDIDATE ->
-                            stringResource(R.string.driver_turnip_candidate)
-                        com.cardenaspiero255.gamehubultra.domain.DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE ->
-                            stringResource(R.string.driver_native_candidate)
-                    }
+                    stringResource(presentation.driverLabelRes)
                 ),
                 style = MaterialTheme.typography.bodySmall
             )
@@ -202,4 +226,3 @@ internal fun SmartPerformanceCard(
         }
     }
 }
-

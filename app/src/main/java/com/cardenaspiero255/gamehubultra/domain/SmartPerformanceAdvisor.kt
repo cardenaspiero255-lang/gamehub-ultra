@@ -27,7 +27,8 @@ data class SmartPerformanceInput(
     val gameVersion: String?,
     val emulatorBackend: String?,
     val currentProfile: PerformanceProfile,
-    val historicalObservations: List<OptimizationObservation> = emptyList()
+    val historicalObservations: List<OptimizationObservation> = emptyList(),
+    val externalEvidence: List<RecommendationExternalEvidence> = emptyList()
 )
 
 data class SmartPerformanceRecommendation(
@@ -37,7 +38,9 @@ data class SmartPerformanceRecommendation(
     val evidence: List<String>,
     val score: Int,
     val driverStrategy: DriverStrategy,
-    val gpuFamily: GpuFamily
+    val gpuFamily: GpuFamily,
+    val explanation: SmartRecommendationExplanation =
+        SmartRecommendationExplanation.legacy(reason, evidence)
 )
 
 object SmartPerformanceAdvisor {
@@ -121,14 +124,28 @@ object SmartPerformanceAdvisor {
         }
 
         if (input.gamePackage.isNullOrBlank()) {
+            val reason = "Sin juego seleccionado, se conserva el perfil seguro."
+            val evidence = listOf("No hay un paquete de juego activo.")
             return SmartPerformanceRecommendation(
                 profile = PerformanceProfile.BALANCED,
-                reason = "Sin juego seleccionado, se conserva el perfil seguro.",
+                reason = reason,
                 safeFallback = PerformanceProfile.BALANCED,
-                evidence = listOf("No hay un paquete de juego activo."),
+                evidence = evidence,
                 score = baseScores.getValue(PerformanceProfile.BALANCED),
                 driverStrategy = DriverStrategy.SYSTEM_ONLY,
-                gpuFamily = gpuFamily
+                gpuFamily = gpuFamily,
+                explanation = SmartRecommendationExplanationFactory.build(
+                    input = input,
+                    recommendedProfile = PerformanceProfile.BALANCED,
+                    reason = reason,
+                    measuredGood = measuredGood,
+                    acceptedFeedback = acceptedFeedback,
+                    knownBad = knownBad,
+                    thermalHot = thermalHot,
+                    lowBattery = lowBattery,
+                    memoryPressure = memoryPressure,
+                    storagePressure = storagePressure
+                )
             )
         }
 
@@ -205,7 +222,19 @@ object SmartPerformanceAdvisor {
                 GpuFamily.MALI, GpuFamily.POWERVR, GpuFamily.OTHER -> DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE
                 GpuFamily.UNKNOWN -> DriverStrategy.SYSTEM_ONLY
             },
-            gpuFamily = gpuFamily
+            gpuFamily = gpuFamily,
+            explanation = SmartRecommendationExplanationFactory.build(
+                input = input,
+                recommendedProfile = best,
+                reason = reason,
+                measuredGood = measuredGood,
+                acceptedFeedback = acceptedFeedback,
+                knownBad = knownBad,
+                thermalHot = thermalHot,
+                lowBattery = lowBattery,
+                memoryPressure = memoryPressure,
+                storagePressure = storagePressure
+            )
         )
     }
 

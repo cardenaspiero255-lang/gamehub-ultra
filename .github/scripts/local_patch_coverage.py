@@ -120,7 +120,9 @@ def _looks_executable_source_line(line: str) -> bool:
         return False
     if re.match(r"^\)\s*(?::\s*[^=]+)?\s*(?:\{|=)?$", stripped):
         return False
-    if re.match(r"^(?:else\s*->\s*\{|\}\s*else\s*\{)$", stripped):
+    if re.match(r"^(?:else\s*->(?:\s*\{)?|\}\s*else\s*\{)$", stripped):
+        return False
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_.]*\s*->(?:\s*\{)?$", stripped):
         return False
     return True
 
@@ -139,6 +141,7 @@ def calculate_patch_line_coverage(
         if not path.startswith(SOURCE_ROOTS):
             continue
 
+        source_text = (source_text_by_path or {}).get(path, "")
         source_lines = report_by_path.get(path)
         if source_lines is None:
             if line_numbers:

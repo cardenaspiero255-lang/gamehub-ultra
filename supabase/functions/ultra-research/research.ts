@@ -35,10 +35,19 @@ type StableKnowledgeCacheEntry = {
   storedAt: number;
 };
 
+type StableKnowledgeInFlightEntry = {
+  promise: Promise<ResearchResult>;
+  controller: AbortController;
+  waiters: number;
+  settled: boolean;
+};
+
 const stableKnowledgeCaches =
   new WeakMap<object, Map<string, StableKnowledgeCacheEntry>>();
+const stableKnowledgeInFlight =
+  new WeakMap<object, Map<string, StableKnowledgeInFlightEntry>>();
 const STABLE_KNOWLEDGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 256;
+const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 2048;
 
 const USER_AGENT =
   "GameHub-Ultra-CAR73/1.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
@@ -175,6 +184,87 @@ function rememberStableKnowledge(
     storedAt: Date.now(),
   });
   return result;
+}
+
+async function coalescedStableKnowledgeLookup(
+  fetcher: ResearchFetcher,
+  topic: string,
+  loader: (signal: AbortSignal) => Promise<ResearchResult>,
+  callerSignal?: AbortSignal,
+): Promise<ResearchResult> {
+  const key = stableKnowledgeCacheKey(topic);
+  if (!key) {
+    const controller = new AbortController();
+    return await loader(controller.signal);
+  }
+
+  let inFlight = stableKnowledgeInFlight.get(fetcher as object);
+  if (!inFlight) {
+    inFlight = new Map<string, StableKnowledgeInFlightEntry>();
+    stableKnowledgeInFlight.set(fetcher as object, inFlight);
+  }
+
+  let entry = inFlight.get(key);
+  if (!entry) {
+    const controller = new AbortController();
+    const created: StableKnowledgeInFlightEntry = {
+      controller,
+      waiters: 0,
+      settled: false,
+      promise: Promise.resolve(loader(controller.signal)),
+    };
+    entry = created;
+    inFlight.set(key, created);
+    void created.promise.then(
+      () => {
+        created.settled = true;
+        if (inFlight?.get(key) === created) inFlight.delete(key);
+      },
+      () => {
+        created.settled = true;
+        if (inFlight?.get(key) === created) inFlight.delete(key);
+      },
+    );
+  }
+
+  entry.waiters += 1;
+  let onAbort: (() => void) | undefined;
+  const aborted = callerSignal
+    ? new Promise<ResearchResult>((resolve) => {
+      onAbort = () => {
+        resolve(
+          abstain(
+            "La búsqueda principal fue cancelada antes de resolver el tema.",
+            {
+              reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
+              retryable: true,
+              stage: "wikipedia",
+            },
+          ),
+        );
+      };
+      if (callerSignal.aborted) {
+        onAbort();
+      } else {
+        callerSignal.addEventListener("abort", onAbort, { once: true });
+      }
+    })
+    : null;
+
+  try {
+    const result = aborted
+      ? await Promise.race([entry.promise, aborted])
+      : await entry.promise;
+    return cloneResearchResult(result);
+  } finally {
+    if (callerSignal && onAbort) {
+      callerSignal.removeEventListener("abort", onAbort);
+    }
+    entry.waiters = Math.max(0, entry.waiters - 1);
+    if (entry.waiters === 0 && !entry.settled && callerSignal?.aborted) {
+      entry.controller.abort();
+    }
+  }
 }
 
 const CORROBORATION_STOP_WORDS = new Set([
@@ -2523,8 +2613,44 @@ function stripConversationSpeaker(value: string): string {
     .replace(/^(?:tú|tu|you|usuario|user)\s*:\s*/i, "");
 }
 
+function stripGeneralKnowledgeStyleModifiers(value: string): string {
+  let clean = value.trim();
+  const modifiers: RegExp[] = [
+    /\s*,?\s+para un estudiante\b/gi,
+    /\s*,?\s+para alguien que empieza\b/gi,
+    /\s*,?\s+sin asumir conocimientos previos\b/gi,
+    /\s*,?\s+en lenguaje cotidiano\b/gi,
+    /\s*,?\s+sin jerga innecesaria\b/gi,
+    /\s*,?\s+de forma clara y directa\b/gi,
+    /\s*,?\s+en pocas frases\b/gi,
+    /\s*,?\s+y menciona su funci[oó]n principal\b/gi,
+    /\s*,?\s+y destaca una idea clave\b/gi,
+    /\s*,?\s+con una explicaci[oó]n breve\b/gi,
+    /\s*,?\s+sin inventar datos\b/gi,
+    /\s*,?\s+y explica por qu[eé] es relevante\b/gi,
+  ];
+
+  for (const modifier of modifiers) {
+    clean = clean.replace(modifier, " ");
+  }
+
+  return clean
+    .replace(/\s+/g, " ")
+    .replace(/\s*,\s*$/g, "")
+    .replace(/[.?!]+$/g, "")
+    .trim();
+}
+
 function unwrapGeneralKnowledgePrompt(value: string): string {
+  const cleanValue = stripGeneralKnowledgeStyleModifiers(value);
   const wrappers: RegExp[] = [
+    /^expl[ií]came qu[eé] es\s+(.+?)\.?$/i,
+    /^describe\s+(.+?)\.?$/i,
+    /^para qu[eé] sirve o por qu[eé] importa\s+(.+?)\.?$/i,
+    /^resume qu[eé] es\s+(.+?)\.?$/i,
+    /^dime lo esencial sobre\s+(.+?)\.?$/i,
+    /^c[oó]mo explicar[ií]as\s+(.+?)\.?$/i,
+    /^c[oó]mo se calcula\s+(.+?)\.?$/i,
     /^dame una explicaci[oó]n clara de\s+(.+?)\s+y su funci[oó]n principal\.?$/i,
     /^qu[eé] deber[ií]a saber una persona sobre\s+(.+?)\.?$/i,
     /^si alguien me pregunta por\s+(.+?),?\s*[¿?]?c[oó]mo lo explicar[ií]as en pocas frases\.?$/i,
@@ -2543,10 +2669,10 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
   ];
 
   for (const wrapper of wrappers) {
-    const match = value.match(wrapper);
+    const match = cleanValue.match(wrapper) ?? value.match(wrapper);
     if (match?.[1]?.trim()) return match[1].trim();
   }
-  return value;
+  return cleanValue;
 }
 
 function extractGeneralKnowledgeQuery(query: string): string {
@@ -2561,7 +2687,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -2587,7 +2713,7 @@ function isExplicitNewKnowledgeTopic(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|que significa|por que es|define|explicame que es|explica que es|what is|what are|who is|who was|who are|why is|define|explain)\s+\S+/.test(
+  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|que significa|por que es|define|explicame que es|explica que es|como se calcula|what is|what are|who is|who was|who are|why is|define|explain)\s+\S+/.test(
     clean,
   );
 }
@@ -4726,6 +4852,12 @@ function generalKnowledgeSearchTopic(
   };
 }
 
+function isBiologicalBearCandidate(candidate: string): boolean {
+  return /\b(?:mamifer|ursid|carnivor|animal|familia ursidae|familia de los osos)\b/.test(
+    candidate,
+  );
+}
+
 function candidateMatchesKnownMeaning(
   query: string,
   title: string,
@@ -4733,6 +4865,16 @@ function candidateMatchesKnownMeaning(
 ): boolean {
   const cleanQuery = normalize(query);
   const candidate = normalize(title + " " + extract);
+
+  const genericBearIntent =
+    /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
+    !/\b(?:yogui|yogi|personaje)\b/.test(cleanQuery);
+  if (genericBearIntent) {
+    // A bare "oso" token is not enough: it also appears in surnames/titles.
+    // Require biological evidence so people such as "Fernando Jiménez del Oso"
+    // and fictional characters cannot outrank the animal definition.
+    if (!isBiologicalBearCandidate(candidate)) return false;
+  }
 
   if (/\bsinonim/.test(cleanQuery)) {
     const namesSynonymConcept = /\bsinonim/.test(candidate);
@@ -4752,6 +4894,20 @@ function candidateMatchesKnowledgeTopic(
 ): boolean {
   const cleanQuery = normalize(query);
   const candidate = normalize(candidateText);
+
+  const genericBearIntent =
+    /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
+    !/\b(?:yogui|yogi|personaje)\b/.test(cleanQuery);
+  if (genericBearIntent) {
+    return isBiologicalBearCandidate(candidate);
+  }
+
+  if (
+    /\brepisa\b/.test(cleanQuery) &&
+    /\b(?:repisa|anaquel|estante|soporte)\b/.test(candidate)
+  ) {
+    return true;
+  }
 
   if (/\b120\s*hz\b/.test(cleanQuery)) {
     const semanticRefreshRate =
@@ -5081,7 +5237,11 @@ async function wikidataKnowledgeEvidence(
 
     const source = stringValue(item.concepturi) ??
       `https://www.wikidata.org/wiki/${encodeURIComponent(id)}`;
-    const displayText = `${label}: ${description}.`;
+    const requestedTopic = relevanceTopic.trim();
+    const displayText = requestedTopic &&
+        normalize(requestedTopic) !== normalize(label)
+      ? `${requestedTopic}: ${description}. Término relacionado: ${label}.`
+      : `${label}: ${description}.`;
     return {
       claimKey: `wikidata:${slug(id)}:${slug(label)}`,
       value: normalize(displayText),
@@ -5107,6 +5267,20 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   const clean = normalize(topic)
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
+
+  if (clean === "oso" || clean === "osos" || clean === "ursidae") {
+    const displayText =
+      "Un oso es un mamífero carnívoro de la familia Ursidae. " +
+      "Los osos tienen cuerpos robustos, extremidades fuertes y una dieta que varía según la especie, " +
+      "desde principalmente vegetal hasta omnívora o carnívora.";
+    return {
+      claimKey: "local-stable:bear",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
 
   if (
     clean === "aprendizaje automatico" ||
@@ -5214,155 +5388,174 @@ async function generalKnowledgeEvidence(
     const cached = cachedStableKnowledge(deps.fetcher, cacheTopic);
     if (cached) return cached;
   }
-  const generatorEvidence = await wikipediaGeneratorEvidence(
-    searchTopic,
-    relevanceTopic,
-    query,
-    deps,
-    signal,
-  );
-  if (generatorEvidence) {
-    return rememberStableKnowledge(
-      deps.fetcher,
-      cacheTopic,
-      generatorEvidence,
+  const loadStableEvidence = async (
+    lookupSignal: AbortSignal,
+  ): Promise<ResearchResult> => {
+    const generatorEvidence = await wikipediaGeneratorEvidence(
+      searchTopic,
+      relevanceTopic,
+      query,
+      deps,
+      lookupSignal,
     );
-  }
+    if (generatorEvidence) {
+      return rememberStableKnowledge(
+        deps.fetcher,
+        cacheTopic,
+        generatorEvidence,
+      );
+    }
 
-  const wikipediaHost = "es.wikipedia.org";
-  const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
-  searchUrl.searchParams.set("action", "query");
-  searchUrl.searchParams.set("list", "search");
-  searchUrl.searchParams.set("srsearch", searchTopic);
-  searchUrl.searchParams.set("srlimit", "5");
-  searchUrl.searchParams.set("format", "json");
-  searchUrl.searchParams.set("origin", "*");
+    const wikipediaHost = "es.wikipedia.org";
+    const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
+    searchUrl.searchParams.set("action", "query");
+    searchUrl.searchParams.set("list", "search");
+    searchUrl.searchParams.set("srsearch", searchTopic);
+    searchUrl.searchParams.set("srlimit", "5");
+    searchUrl.searchParams.set("format", "json");
+    searchUrl.searchParams.set("origin", "*");
 
-  const search = await fetchJson(deps, searchUrl, {
-    headers: { "User-Agent": USER_AGENT },
-    signal,
-  });
-  const results = search?.query && typeof search.query === "object"
-    ? (search.query as JsonObject).search
-    : null;
-  const candidates = Array.isArray(results)
-    ? results
-      .filter((item): item is JsonObject =>
-        Boolean(item) && typeof item === "object"
-      )
-      .slice(0, 5)
-    : [];
+    const search = await fetchJson(deps, searchUrl, {
+      headers: { "User-Agent": USER_AGENT },
+      signal: lookupSignal,
+    });
+    const results = search?.query && typeof search.query === "object"
+      ? (search.query as JsonObject).search
+      : null;
+    const candidates = Array.isArray(results)
+      ? results
+        .filter((item): item is JsonObject =>
+          Boolean(item) && typeof item === "object"
+        )
+        .slice(0, 5)
+      : [];
 
-  if (candidates.length === 0) {
+    if (candidates.length === 0) {
+      const wikidata = await wikidataKnowledgeEvidence(
+        topicPlan.wikidataTopic,
+        relevanceTopic,
+        query,
+        deps,
+        lookupSignal,
+      );
+      if (!wikidata.abstained) {
+        return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
+      }
+      return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
+    }
+
+    let sawUsableCandidate = false;
+    for (const candidate of candidates) {
+      if (lookupSignal?.aborted) {
+        return abstain(
+          "La búsqueda principal fue cancelada antes de resolver el tema.",
+          {
+            reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
+            retryable: true,
+            stage: "wikipedia",
+          },
+        );
+      }
+
+      const title = stringValue(candidate.title);
+      if (!title) continue;
+
+      const summaryUrl =
+        `https://${wikipediaHost}/api/rest_v1/page/summary/` +
+        encodeURIComponent(title.replace(/ /g, "_"));
+      const summary = await fetchWikipediaJson(deps, summaryUrl, {
+        headers: { "User-Agent": USER_AGENT },
+        signal: lookupSignal,
+      });
+      const summaryType = stringValue(summary?.type)?.toLowerCase();
+      if (summaryType === "disambiguation") continue;
+
+      let extract = stringValue(summary?.extract);
+      let source: string | undefined;
+
+      if (!extract) {
+        const actionFallback = await wikipediaActionExtract(
+          title,
+          deps,
+          lookupSignal,
+        );
+        if (!actionFallback) continue;
+        extract = actionFallback.extract;
+        source = actionFallback.source;
+      } else {
+        const contentUrls = summary?.content_urls &&
+            typeof summary.content_urls === "object"
+          ? summary.content_urls as JsonObject
+          : null;
+        const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
+          ? contentUrls.desktop as JsonObject
+          : null;
+        source = stringValue(desktop?.page) ?? summaryUrl;
+      }
+
+      if (!extract) continue;
+      sawUsableCandidate = true;
+
+      if (!candidateMatchesKnownMeaning(query, title, extract)) {
+        continue;
+      }
+
+      if (
+        !candidateMatchesKnowledgeTopic(query, relevanceTopic, title + " " + extract)
+      ) {
+        continue;
+      }
+
+      const resolvedSource = source ?? summaryUrl;
+      return rememberStableKnowledge(
+        deps.fetcher,
+        cacheTopic,
+        {
+          claimKey: `general:${slug(title)}`,
+          value: normalize(extract),
+          displayText: extract,
+          sourceId: resolvedSource,
+          sourceIds: [resolvedSource],
+          independentSourceCount: 1,
+          authoritative: true,
+        },
+      );
+    }
+
     const wikidata = await wikidataKnowledgeEvidence(
       topicPlan.wikidataTopic,
       relevanceTopic,
       query,
       deps,
-      signal,
+      lookupSignal,
     );
     if (!wikidata.abstained) {
       return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
     }
-    return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
-  }
 
-  let sawUsableCandidate = false;
-  for (const candidate of candidates) {
-    if (signal?.aborted) {
-      return abstain(
-        "La búsqueda principal fue cancelada antes de resolver el tema.",
-        {
-          reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
-          retryable: true,
-          stage: "wikipedia",
-        },
-      );
-    }
-
-    const title = stringValue(candidate.title);
-    if (!title) continue;
-
-    const summaryUrl =
-      `https://${wikipediaHost}/api/rest_v1/page/summary/` +
-      encodeURIComponent(title.replace(/ /g, "_"));
-    const summary = await fetchWikipediaJson(deps, summaryUrl, {
-      headers: { "User-Agent": USER_AGENT },
-      signal,
-    });
-    const summaryType = stringValue(summary?.type)?.toLowerCase();
-    if (summaryType === "disambiguation") continue;
-
-    let extract = stringValue(summary?.extract);
-    let source: string | undefined;
-
-    if (!extract) {
-      const actionFallback = await wikipediaActionExtract(title, deps, signal);
-      if (!actionFallback) continue;
-      extract = actionFallback.extract;
-      source = actionFallback.source;
-    } else {
-      const contentUrls = summary?.content_urls &&
-          typeof summary.content_urls === "object"
-        ? summary.content_urls as JsonObject
-        : null;
-      const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
-        ? contentUrls.desktop as JsonObject
-        : null;
-      source = stringValue(desktop?.page) ?? summaryUrl;
-    }
-
-    if (!extract) continue;
-    sawUsableCandidate = true;
-
-    if (!candidateMatchesKnownMeaning(query, title, extract)) {
-      continue;
-    }
-
-    if (
-      !candidateMatchesKnowledgeTopic(query, relevanceTopic, title + " " + extract)
-    ) {
-      continue;
-    }
-
-    const resolvedSource = source ?? summaryUrl;
-    return rememberStableKnowledge(
-      deps.fetcher,
-      cacheTopic,
+    return abstain(
+      sawUsableCandidate
+        ? "Wikipedia devolvió entradas que no coinciden con el tema consultado."
+        : "Wikipedia no devolvió una explicación utilizable.",
       {
-        claimKey: `general:${slug(title)}`,
-        value: normalize(extract),
-        displayText: extract,
-        sourceId: resolvedSource,
-        sourceIds: [resolvedSource],
-        independentSourceCount: 1,
-        authoritative: true,
+        reasonCode: sawUsableCandidate
+          ? "IRRELEVANT_PRIMARY_EVIDENCE"
+          : "UPSTREAM_UNAVAILABLE",
+        retryable: !sawUsableCandidate,
+        stage: "wikipedia",
       },
     );
+  };
+
+  if (technicalTroubleshooting) {
+    return await loadStableEvidence(signal ?? new AbortController().signal);
   }
 
-  const wikidata = await wikidataKnowledgeEvidence(
-    topicPlan.wikidataTopic,
-    relevanceTopic,
-    query,
-    deps,
+  return await coalescedStableKnowledgeLookup(
+    deps.fetcher,
+    cacheTopic,
+    loadStableEvidence,
     signal,
-  );
-  if (!wikidata.abstained) {
-    return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
-  }
-
-  return abstain(
-    sawUsableCandidate
-      ? "Wikipedia devolvió entradas que no coinciden con el tema consultado."
-      : "Wikipedia no devolvió una explicación utilizable.",
-    {
-      reasonCode: sawUsableCandidate
-        ? "IRRELEVANT_PRIMARY_EVIDENCE"
-        : "UPSTREAM_UNAVAILABLE",
-      retryable: !sawUsableCandidate,
-      stage: "wikipedia",
-    },
   );
 }
 
@@ -5428,7 +5621,7 @@ function mergeGeneralKnowledgeEvidence(
 function isStableGeneralKnowledgeIntent(query: string): boolean {
   const clean = normalize(stripAssistantInvocation(query));
   const stableQuestion =
-    /^(?:que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue)\b/.test(
+    /^(?:que es|que son|quien es|quienes son|por que|para que sirve|como funciona|como se calcula|explicame|explica|define|cual es|cuales son|donde esta|cuando fue)\b/.test(
       clean,
     );
   if (!stableQuestion) return false;

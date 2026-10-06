@@ -7392,3 +7392,311 @@ Deno.test(
     }
   },
 );
+
+Deno.test(
+  "concurrent stable-knowledge requests coalesce one primary evidence lookup",
+  async () => {
+    let wikipediaCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: async (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaCalls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  title: "Glaciar",
+                  extract:
+                    "Un glaciar es una masa persistente de hielo formada por acumulación y compactación de nieve.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Glaciar",
+                  index: 1,
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const [first, second] = await Promise.all([
+      routeResearchQuery(
+        "Explícame qué es un glaciar para un estudiante, en pocas frases.",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+      routeResearchQuery(
+        "Resume qué es un glaciar sin asumir conocimientos previos, y destaca una idea clave.",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+    ]);
+
+    if (first.abstained || second.abstained) {
+      throw new Error("expected both concurrent requests to resolve");
+    }
+    if (wikipediaCalls !== 1) {
+      throw new Error(
+        `expected one coalesced Wikipedia lookup, got ${wikipediaCalls}`,
+      );
+    }
+  },
+);
+
+Deno.test(
+  "generic bear definition rejects fictional character search results",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Fernando Jiménez del Oso",
+                  extract:
+                    "Fernando Jiménez del Oso fue un psiquiatra y periodista español especializado en misterio y parapsicología.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Fernando_Jimenez_del_Oso",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "El Oso Yogui",
+                  extract:
+                    "El Oso Yogui es un personaje ficticio de dibujos animados creado por Hanna-Barbera.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/El_Oso_Yogui",
+                },
+                "3": {
+                  pageid: 3,
+                  index: 3,
+                  title: "Ursidae",
+                  extract:
+                    "Los osos son mamíferos carnívoros de la familia Ursidae.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursidae",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un oso?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected a bear definition");
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("mamífer") || answer.includes("yogui")) {
+      throw new Error("expected the animal, not a fictional bear");
+    }
+  },
+);
+
+Deno.test(
+  "generic bear definition rejects people whose surname contains Oso",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Fernando Jiménez del Oso",
+                  extract:
+                    "Fernando Jiménez del Oso fue un psiquiatra y periodista español especializado en misterio y parapsicología.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Fernando_Jim%C3%A9nez_del_Oso",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "Ursidae",
+                  extract:
+                    "Los osos son mamíferos carnívoros de la familia Ursidae.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursidae",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un oso?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected a bear definition");
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("mamífer") || answer.includes("fernando")) {
+      throw new Error("expected the animal, not a person whose surname is Oso");
+    }
+  },
+);
+
+Deno.test(
+  "percentage calculation wrapper resolves the stable percentage topic",
+  async () => {
+    let searchTopic = "";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          searchTopic = url.searchParams.get("gsrsearch") ?? "";
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Porcentaje",
+                  extract:
+                    "Un porcentaje expresa una proporción tomando cien como referencia.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Porcentaje",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Cómo se calcula un porcentaje?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected percentage evidence");
+    if (
+      !searchTopic.toLowerCase().includes("porcentaje") ||
+      searchTopic.toLowerCase().includes("calcula")
+    ) {
+      throw new Error("expected a canonical percentage search topic");
+    }
+  },
+);
+
+Deno.test(
+  "Wikidata alias answers keep the requested stable topic visible",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          return jsonResponse({
+            search: [{
+              id: "QREPISA",
+              label: "Anaquel",
+              description:
+                "soporte instalado horizontalmente que sirve como superficie para colocar objetos",
+              concepturi: "https://www.wikidata.org/wiki/QREPISA",
+            }],
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es una repisa?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected stable repisa evidence");
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("repisa") || !answer.includes("soporte")) {
+      throw new Error("expected the requested topic to remain visible");
+    }
+  },
+);
+
+Deno.test(
+  "generic bear definition survives provider rate limiting without a model",
+  async () => {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        return jsonResponse({}, 429);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un oso?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error(
+        "expected stable bear knowledge during provider throttling",
+      );
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("mamífer") || !answer.includes("urs")) {
+      throw new Error("expected a biological bear definition");
+    }
+    if (networkCalls !== 0) {
+      throw new Error("basic bear knowledge should not require network access");
+    }
+  },
+);

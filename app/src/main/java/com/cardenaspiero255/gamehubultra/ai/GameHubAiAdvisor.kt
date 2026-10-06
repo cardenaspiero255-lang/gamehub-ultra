@@ -269,6 +269,15 @@ class GameHubAiAdvisor(
             Regex("""\btik\s*tok\b|\btiktok\b""").containsMatchIn(normalized) ->
                 "TikTok es una plataforma social centrada en videos cortos donde las personas pueden crear, descubrir y compartir contenido. También ofrece recomendaciones personalizadas según la interacción del usuario."
 
+            Regex("""\byou\s*tube\b|\byoutube\b""").containsMatchIn(normalized) ->
+                "YouTube es una plataforma de video en línea donde las personas pueden publicar, ver y compartir videos, transmisiones y otros contenidos audiovisuales."
+
+            Regex("""\bpatogenos?\b|\bpathogens?\b""").containsMatchIn(normalized) ->
+                "Un patógeno es un agente biológico capaz de causar enfermedad, como ciertos virus, bacterias, hongos, parásitos u otros agentes infecciosos."
+
+            Regex("""\bosos?\b|\bbears?\b""").containsMatchIn(normalized) ->
+                "Un oso es un mamífero de la familia Ursidae. Los osos son grandes, robustos y omnívoros en muchas especies, aunque su dieta y hábitat varían según la especie."
+
             Regex("""\bsentimientos?\b""").containsMatchIn(normalized) ->
                 "Los sentimientos son experiencias afectivas conscientes que surgen al interpretar emociones, pensamientos y situaciones. Pueden influir en cómo percibimos, decidimos y actuamos, y suelen durar más que una reacción emocional instantánea."
 
