@@ -7642,7 +7642,9 @@ Deno.test(
     );
 
     if (result.abstained) {
-      throw new Error("expected stable bear knowledge during provider throttling");
+      throw new Error(
+        "expected stable bear knowledge during provider throttling",
+      );
     }
     const answer = (result.displayText ?? "").toLowerCase();
     if (!answer.includes("mamífer") || !answer.includes("urs")) {
