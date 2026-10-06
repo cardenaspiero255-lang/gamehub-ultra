@@ -5257,6 +5257,20 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
 
+  if (clean === "oso" || clean === "osos" || clean === "ursidae") {
+    const displayText =
+      "Un oso es un mamífero carnívoro de la familia Ursidae. " +
+      "Los osos tienen cuerpos robustos, extremidades fuertes y una dieta que varía según la especie, " +
+      "desde principalmente vegetal hasta omnívora o carnívora.";
+    return {
+      claimKey: "local-stable:bear",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   if (
     clean === "aprendizaje automatico" ||
     clean === "machine learning"
