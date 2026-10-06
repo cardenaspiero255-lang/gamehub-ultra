@@ -125,9 +125,8 @@ private companion object {
         self.assertEqual(stats.covered, 1)
 
 
-    def test_compose_body_is_excluded_but_neighboring_logic_remains_blocking(self) -> None:
-        source = """val productionDecision = expensiveCall()
-@Composable
+    def test_mapped_compose_body_remains_blocking_patch_coverage(self) -> None:
+        source = """@Composable
 internal fun ExampleCard(
     enabled: Boolean,
 ) {
@@ -136,25 +135,22 @@ internal fun ExampleCard(
         Text("enabled")
     }
 }
-val uncoveredDecision = expensiveCall()
 """
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
-            '<line nr="1" mi="0" ci="1"/>'
-            '<line nr="6" mi="4" ci="0"/>'
-            '<line nr="7" mi="2" ci="0"/>'
-            '<line nr="8" mi="4" ci="0"/>'
-            '<line nr="11" mi="3" ci="0"/>'
+            '<line nr="5" mi="4" ci="0"/>'
+            '<line nr="6" mi="2" ci="0"/>'
+            '<line nr="7" mi="4" ci="0"/>'
             '</sourcefile></package></report>'
         )
         stats = gate.calculate_patch_line_coverage(
             report,
-            {"app/src/main/java/com/example/Foo.kt": set(range(1, 12))},
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 9))},
             {"app/src/main/java/com/example/Foo.kt": source},
         )
-        self.assertEqual(stats.executable, 2)
-        self.assertEqual(stats.covered, 1)
-        self.assertAlmostEqual(stats.percent, 50.0)
+        self.assertEqual(stats.executable, 3)
+        self.assertEqual(stats.covered, 0)
+        self.assertAlmostEqual(stats.percent, 0.0)
 
     def test_enum_when_branch_label_omitted_by_jacoco_is_not_false_unmapped(self) -> None:
         report = ET.fromstring(
