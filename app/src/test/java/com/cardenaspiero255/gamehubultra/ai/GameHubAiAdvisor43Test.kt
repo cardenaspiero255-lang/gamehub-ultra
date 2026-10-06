@@ -290,4 +290,108 @@ class GameHubAiAdvisor43Test {
         assertNotNull(result.recoveryExplanation)
     }
 
+    private fun advisorWithRecoveryCore(
+        adapterProfile: String,
+        coreProfile: String,
+        requiresCloud: Boolean = false,
+        recoveryExplanation: String? = null
+    ): GameHubAiAdvisor {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+            override fun advise(question: String, context: GameHubAiContext) =
+                LocalAiActionCandidate(adapterProfile)
+        }
+        val core = object : UltraAiCoreGateway {
+            override fun evaluate(
+                observation: UltraAiObservation,
+                feedback: UltraAiFeedbackSnapshot,
+                memories: List<UltraAiMemorySignal>
+            ) = UltraAiCoreResult(
+                recommendation = UltraAiRecommendation(
+                    profileId = coreProfile,
+                    confidence = 0.8,
+                    evidence = listOf("car43-test")
+                ),
+                explanation = "test",
+                memorySignals = memories,
+                requiresCloud = requiresCloud,
+                recoveryExplanation = recoveryExplanation
+            )
+        }
+        return GameHubAiAdvisor(modelAdapter = adapter, aiCore = core)
+    }
+
+    @Test
+    fun `cloud recovery result keeps the original allowlisted advice`() {
+        val result = advisorWithRecoveryCore(
+            adapterProfile = AiActionAllowlist.PROFILE_X4,
+            coreProfile = "BALANCED",
+            requiresCloud = true
+        ).advise("perfil", contextWithPoorX4History)
+
+        assertEquals(PerformanceProfile.X4, result.suggestedProfile)
+    }
+
+    @Test
+    fun `unknown recovery profile keeps the original allowlisted advice`() {
+        val result = advisorWithRecoveryCore(
+            adapterProfile = AiActionAllowlist.PROFILE_X4,
+            coreProfile = "NOT_A_PROFILE"
+        ).advise("perfil", contextWithPoorX4History)
+
+        assertEquals(PerformanceProfile.X4, result.suggestedProfile)
+    }
+
+    @Test
+    fun `recovery without explanation can still select a different safe profile`() {
+        val result = advisorWithRecoveryCore(
+            adapterProfile = AiActionAllowlist.PROFILE_X4,
+            coreProfile = "FRAME_INTERPOLATION"
+        ).advise("perfil", contextWithPoorX4History)
+
+        assertEquals(PerformanceProfile.FRAME_INTERPOLATION, result.suggestedProfile)
+        assertEquals(AiAdviceReason.INTERPOLATION, result.reason)
+    }
+
+    @Test
+    fun `unsupported recovered x4 keeps the safe original advice`() {
+        val context = contextWithPoorX4History.copy(
+            sustainedPerformanceSupported = false,
+            selectedProfile = PerformanceProfile.BALANCED
+        )
+        val result = advisorWithRecoveryCore(
+            adapterProfile = AiActionAllowlist.PROFILE_BALANCED,
+            coreProfile = "X4",
+            recoveryExplanation = "feedback"
+        ).advise("perfil", context)
+
+        assertEquals(PerformanceProfile.BALANCED, result.suggestedProfile)
+    }
+
+    @Test
+    fun `same recovered profile preserves recovery explanation`() {
+        val result = advisorWithRecoveryCore(
+            adapterProfile = AiActionAllowlist.PROFILE_BALANCED,
+            coreProfile = "BALANCED",
+            recoveryExplanation = "Ajusté la confianza con tu historial."
+        ).advise("perfil", contextWithPoorX4History)
+
+        assertEquals(PerformanceProfile.BALANCED, result.suggestedProfile)
+        assertEquals(
+            "Ajusté la confianza con tu historial.",
+            result.recoveryExplanation
+        )
+    }
+
+    @Test
+    fun `recovered x4 maps to x4 ready reason when supported`() {
+        val result = advisorWithRecoveryCore(
+            adapterProfile = AiActionAllowlist.PROFILE_BALANCED,
+            coreProfile = "X4"
+        ).advise("perfil", contextWithPoorX4History)
+
+        assertEquals(PerformanceProfile.X4, result.suggestedProfile)
+        assertEquals(AiAdviceReason.X4_READY, result.reason)
+    }
+
 }
