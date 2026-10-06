@@ -31,6 +31,11 @@ internal object SmartRecommendationActions {
     }
 
 
+    @Suppress("UNUSED_PARAMETER")
+    fun onExternalProfileSelection(
+        target: SmartRecommendationRevertTarget?
+    ): SmartRecommendationRevertTarget? = null
+
     fun onProfileChanged(
         target: SmartRecommendationRevertTarget?,
         gamePackage: String?,
