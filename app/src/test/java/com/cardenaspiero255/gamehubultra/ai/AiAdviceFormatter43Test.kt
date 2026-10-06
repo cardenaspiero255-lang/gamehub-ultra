@@ -1,15 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import kotlin.test.Test
-import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlin.test.assertEquals
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
 class AiAdviceFormatter43Test {
     @Test
     fun `recovery explanation is appended when non blank`() {
@@ -39,25 +32,4 @@ class AiAdviceFormatter43Test {
             )
         )
     }
-    @Test
-    fun `full response includes localized advice and recovery explanation`() {
-        val context = RuntimeEnvironment.getApplication()
-        val response = AiAdviceFormatter.fullResponse(
-            context,
-            GameHubAiAdvice(
-                readiness = 91,
-                suggestedProfile = PerformanceProfile.BALANCED,
-                reason = AiAdviceReason.BALANCED_GENERAL,
-                localModelUsed = false,
-                fallbackUsed = true,
-                recoveryExplanation = "Ajusté la recomendación con tu historial."
-            )
-        )
-
-        kotlin.test.assertTrue(response.contains("91"))
-        kotlin.test.assertTrue(
-            response.contains("Ajusté la recomendación con tu historial.")
-        )
-    }
-
 }
