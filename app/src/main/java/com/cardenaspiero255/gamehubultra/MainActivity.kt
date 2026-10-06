@@ -4,12 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
+import com.cardenaspiero255.gamehubultra.session.SessionCoachMonitorService
 import com.cardenaspiero255.gamehubultra.ui.GameHubPresentation
 
 class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        SessionCoachMonitorService.finishOnReturn(this)
         GameHubProductionComposition.resumeContinuousVoice(this)
     }
 
