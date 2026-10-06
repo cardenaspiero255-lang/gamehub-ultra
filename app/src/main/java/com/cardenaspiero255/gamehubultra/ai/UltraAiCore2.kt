@@ -135,7 +135,8 @@ data class UltraAiCoreResult(
     val explanation: String,
     val memorySignals: List<UltraAiMemorySignal>,
     val requiresCloud: Boolean,
-    val recoveryExplanation: String? = null
+    val recoveryExplanation: String? = null,
+    val overrideBaseRecommendation: Boolean = true
 )
 
 interface UltraAiCoreGateway {
@@ -165,12 +166,18 @@ class UltraAiCore2(
             recommendation = rawRecommendation,
             feedback = feedback
         )
+        val recoveryExplanation = buildRecoveryExplanation(recommendation)
+        val shouldOverrideBase =
+            recommender != null ||
+                recoveryExplanation != null ||
+                recommendation.evidence.any { it.startsWith("memoryPreference=") }
         return UltraAiCoreResult(
             recommendation = recommendation,
             explanation = buildExplanation(safeObservation, recommendation),
             memorySignals = memories,
             requiresCloud = false,
-            recoveryExplanation = buildRecoveryExplanation(recommendation)
+            recoveryExplanation = recoveryExplanation,
+            overrideBaseRecommendation = shouldOverrideBase
         )
     }
 
