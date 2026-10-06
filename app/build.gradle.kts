@@ -6,6 +6,7 @@ import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.testing.Test
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
@@ -237,4 +238,8 @@ tasks.withType<Test>().configureEach {
     forkEvery = 0L
     maxHeapSize = gameHubUnitTestHeap.get()
     jvmArgs("-XX:+UseParallelGC")
+    extensions.configure<JacocoTaskExtension> {
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
 }
