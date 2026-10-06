@@ -6,8 +6,10 @@ import kotlin.test.assertEquals
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class AiAdviceFormatter43Test {
     @Test
     fun `recovery explanation is appended when non blank`() {
