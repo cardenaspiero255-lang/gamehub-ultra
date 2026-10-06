@@ -22,6 +22,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -173,9 +174,10 @@ class SessionCoachMonitorServiceTest {
         )
 
         assertEquals(Service.START_NOT_STICKY, result)
-        repeat(20) {
-            if (store.readActiveSession()?.samples?.isNotEmpty() == true) return@repeat
-            delay(25)
+        withTimeout(5_000L) {
+            while (store.readActiveSession()?.preSessionMessage == null) {
+                delay(50)
+            }
         }
 
         val active = assertNotNull(store.readActiveSession())
