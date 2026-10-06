@@ -7392,3 +7392,64 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "concurrent stable-knowledge requests coalesce one primary evidence lookup",
+  async () => {
+    let wikipediaCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: async (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          wikipediaCalls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  title: "Glaciar",
+                  extract:
+                    "Un glaciar es una masa persistente de hielo formada por acumulación y compactación de nieve.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Glaciar",
+                  index: 1,
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const [first, second] = await Promise.all([
+      routeResearchQuery(
+        "¿Qué es un glaciar?",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+      routeResearchQuery(
+        "¿Qué es un glaciar?",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+    ]);
+
+    if (first.abstained || second.abstained) {
+      throw new Error("expected both concurrent requests to resolve");
+    }
+    if (wikipediaCalls !== 1) {
+      throw new Error(
+        `expected one coalesced Wikipedia lookup, got ${wikipediaCalls}`,
+      );
+    }
+  },
+);
