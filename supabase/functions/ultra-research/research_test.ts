@@ -7622,6 +7622,52 @@ Deno.test(
 );
 
 Deno.test(
+  "Wikidata alias answers keep the requested stable topic visible",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "es.wikipedia.org") {
+          return jsonResponse({ query: { search: [] } });
+        }
+        if (url.hostname === "www.wikidata.org") {
+          return jsonResponse({
+            search: [{
+              id: "QREPISA",
+              label: "Anaquel",
+              description:
+                "soporte instalado horizontalmente que sirve como superficie para colocar objetos",
+              concepturi: "https://www.wikidata.org/wiki/QREPISA",
+            }],
+          });
+        }
+        if (url.hostname === "api.tavily.com") {
+          return jsonResponse({ results: [] });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es una repisa?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected stable repisa evidence");
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("repisa") || !answer.includes("soporte")) {
+      throw new Error("expected the requested topic to remain visible");
+    }
+  },
+);
+
+Deno.test(
   "generic bear definition survives provider rate limiting without a model",
   async () => {
     let networkCalls = 0;
