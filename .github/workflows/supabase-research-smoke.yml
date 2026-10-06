@@ -58,7 +58,16 @@ jobs:
           SUPABASE_ANON_KEY: ci-smoke-key
           ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
           ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
-          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "4500"
+          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "2500"
+          # CI performance profile: fail fast on a slow/throttled upstream so one
+          # provider cannot pin a worker for 6+ seconds. The smoke still validates
+          # the same 10,000 answers and treats stable abstentions as hard failures.
+          ULTRA_FETCH_ATTEMPT_TIMEOUT_MS: "900"
+          ULTRA_FETCH_RETRY_BUDGET_MS: "2200"
+          ULTRA_SPECIALIST_EVIDENCE_TIMEOUT_MS: "2200"
+          ULTRA_CORROBORATION_TIMEOUT_MS: "1200"
+          ULTRA_FALLBACK_SEARCH_TIMEOUT_MS: "1800"
+          ULTRA_WIKIDATA_FALLBACK_TIMEOUT_MS: "1500"
         shell: bash
         run: |
           set -euo pipefail
