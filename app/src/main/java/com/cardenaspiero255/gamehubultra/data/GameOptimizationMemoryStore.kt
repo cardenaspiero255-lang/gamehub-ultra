@@ -36,6 +36,24 @@ data class OptimizationContextKey(
             emulatorBackend.orEmpty(),
             driverFingerprint.orEmpty()
         ).joinToString("¦")
+
+    internal val lookupSerializedKeys: Set<String>
+        get() = buildSet {
+            add(serialized)
+            legacyNoGpuSerializedKey()?.let(::add)
+        }
+
+    private fun legacyNoGpuSerializedKey(): String? {
+        if (driverFingerprint != null || !deviceFingerprint.endsWith("¦")) return null
+        val legacyDeviceFingerprint = deviceFingerprint + "|"
+        return listOf(
+            legacyDeviceFingerprint,
+            gamePackage,
+            gameVersion.orEmpty(),
+            emulatorBackend.orEmpty(),
+            "|"
+        ).joinToString("¦")
+    }
 }
 
 class GameOptimizationMemoryStore(
@@ -47,24 +65,34 @@ class GameOptimizationMemoryStore(
 
     private val observationsKey = stringPreferencesKey("observations_v1")
 
-    override fun observationsFlow(contextKey: OptimizationContextKey): Flow<List<OptimizationObservation>> =
-        dataStore.data.map { preferences ->
+    override fun observationsFlow(contextKey: OptimizationContextKey): Flow<List<OptimizationObservation>> {
+        val lookupKeys = contextKey.lookupSerializedKeys
+        return dataStore.data.map { preferences ->
             preferences[observationsKey]
                 .orEmpty()
                 .lineSequence()
                 .mapNotNull(::decode)
-                .filter { it.contextKey == contextKey.serialized }
+                .filter { it.contextKey in lookupKeys }
                 .sortedByDescending { it.timestampMillis }
                 .take(maxObservations)
                 .toList()
         }
+    }
 
     override suspend fun record(contextKey: OptimizationContextKey, observation: OptimizationObservation) {
+        val lookupKeys = contextKey.lookupSerializedKeys
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
                 .lineSequence()
                 .mapNotNull(::decode)
+                .map { stored ->
+                    if (stored.contextKey in lookupKeys) {
+                        stored.copy(contextKey = contextKey.serialized)
+                    } else {
+                        stored
+                    }
+                }
                 .filterNot { it.id == observation.id }
                 .toMutableList()
             all += observation.copy(contextKey = contextKey.serialized)
@@ -89,12 +117,14 @@ class GameOptimizationMemoryStore(
     }
 
     override suspend fun pruneTo(contextKey: OptimizationContextKey) {
+        val lookupKeys = contextKey.lookupSerializedKeys
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
                 .lineSequence()
                 .mapNotNull(::decode)
-                .filter { it.contextKey == contextKey.serialized }
+                .filter { it.contextKey in lookupKeys }
+                .map { it.copy(contextKey = contextKey.serialized) }
             preferences[observationsKey] = all.joinToString("\n", transform = ::encode)
         }
     }
@@ -104,12 +134,13 @@ class GameOptimizationMemoryStore(
     }
 
     override suspend fun clearGame(contextKey: OptimizationContextKey) {
+        val lookupKeys = contextKey.lookupSerializedKeys
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
                 .lineSequence()
                 .mapNotNull(::decode)
-                .filterNot { it.contextKey == contextKey.serialized }
+                .filterNot { it.contextKey in lookupKeys }
             preferences[observationsKey] = all.joinToString("\n", transform = ::encode)
         }
     }
