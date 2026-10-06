@@ -20,6 +20,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -135,6 +137,41 @@ class SessionCoachMonitorServiceTest {
         )
         assertTrue(notification.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals(1, notification.actions.size)
+    }
+
+    @Test
+    fun validStartCollectsRealSnapshotAndPreSessionMessage() = runBlocking {
+        val store = SessionCoachSessionStore(context)
+        assertTrue(store.beginSession("live-session", "game.a", 1L))
+        val controller = Robolectric.buildService(SessionCoachMonitorService::class.java).create()
+        val service = controller.get()
+
+        val result = service.onStartCommand(
+            Intent(context, SessionCoachMonitorService::class.java)
+                .setAction(SessionCoachMonitorService.ACTION_START)
+                .putExtra("session_id", "live-session")
+                .putExtra("package_name", "game.a"),
+            0,
+            1
+        )
+
+        assertEquals(Service.START_NOT_STICKY, result)
+        repeat(20) {
+            if (store.readActiveSession()?.samples?.isNotEmpty() == true) return@repeat
+            delay(25)
+        }
+
+        val active = assertNotNull(store.readActiveSession())
+        assertTrue(active.samples.isNotEmpty())
+        assertNotNull(active.preSessionMessage)
+
+        service.onStartCommand(
+            Intent(context, SessionCoachMonitorService::class.java)
+                .setAction(SessionCoachMonitorService.ACTION_STOP),
+            0,
+            2
+        )
+        controller.destroy()
     }
 
     @Test
