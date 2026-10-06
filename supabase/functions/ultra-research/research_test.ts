@@ -6773,3 +6773,156 @@ Deno.test("World Bank indicator questions use keyless authoritative data", async
     throw new Error("expected World Bank source");
   }
 });
+
+
+Deno.test("arXiv preprint queries use the public keyless API", async () => {
+  let arxivCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "export.arxiv.org") {
+        throw new Error("unexpected URL " + url);
+      }
+      arxivCalls += 1;
+      return Promise.resolve(
+        new Response(
+          `<?xml version="1.0" encoding="UTF-8"?>
+          <feed xmlns="http://www.w3.org/2005/Atom">
+            <entry>
+              <id>https://arxiv.org/abs/2601.12345v1</id>
+              <title>Efficient Android Inference for On-device Language Models</title>
+              <summary>We study efficient inference techniques for language models running on Android devices.</summary>
+              <published>2026-01-20T00:00:00Z</published>
+              <author><name>Researcher One</name></author>
+            </entry>
+          </feed>`,
+          { status: 200, headers: { "content-type": "application/atom+xml" } },
+        ),
+      );
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca preprints de arXiv sobre inferencia eficiente en Android",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected arXiv evidence");
+  if (arxivCalls !== 1) throw new Error("expected one arXiv call");
+  if (!(result.sourceId ?? "").includes("arxiv.org/abs/2601.12345")) {
+    throw new Error("expected canonical arXiv source");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("android")) {
+    throw new Error("expected Android preprint evidence");
+  }
+});
+
+Deno.test("CVE questions use the keyless NVD vulnerability API", async () => {
+  let nvdCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "services.nvd.nist.gov") {
+        throw new Error("unexpected URL " + url);
+      }
+      nvdCalls += 1;
+      return jsonResponse({
+        vulnerabilities: [{
+          cve: {
+            id: "CVE-2026-12345",
+            published: "2026-08-01T00:00:00.000",
+            lastModified: "2026-09-01T00:00:00.000",
+            descriptions: [{
+              lang: "en",
+              value: "A vulnerability in Example App allows privilege escalation.",
+            }],
+            metrics: {
+              cvssMetricV31: [{
+                cvssData: {
+                  baseScore: 8.8,
+                  baseSeverity: "HIGH",
+                },
+              }],
+            },
+          },
+        }],
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Explícame CVE-2026-12345",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected NVD evidence");
+  if (nvdCalls !== 1) throw new Error("expected one NVD call");
+  if (!(result.displayText ?? "").includes("CVE-2026-12345")) {
+    throw new Error("expected CVE identifier");
+  }
+  if (!(result.displayText ?? "").includes("8.8")) {
+    throw new Error("expected CVSS score");
+  }
+  if (!(result.sourceId ?? "").includes("nvd.nist.gov/vuln/detail")) {
+    throw new Error("expected NVD detail source");
+  }
+});
+
+Deno.test("earthquake questions use the public USGS catalog", async () => {
+  let usgsCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "earthquake.usgs.gov") {
+        throw new Error("unexpected URL " + url);
+      }
+      usgsCalls += 1;
+      return jsonResponse({
+        type: "FeatureCollection",
+        features: [
+          {
+            id: "us7000test",
+            properties: {
+              mag: 5.1,
+              place: "42 km W of Coquimbo, Chile",
+              time: 1791234567000,
+              url: "https://earthquake.usgs.gov/earthquakes/eventpage/us7000test",
+            },
+            geometry: {
+              coordinates: [-72.1, -30.0, 25.0],
+            },
+          },
+        ],
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Cuál fue el último sismo en Chile?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected USGS earthquake evidence");
+  if (usgsCalls !== 1) throw new Error("expected one USGS call");
+  if (!(result.displayText ?? "").includes("5.1")) {
+    throw new Error("expected earthquake magnitude");
+  }
+  if (!(result.displayText ?? "").includes("Coquimbo")) {
+    throw new Error("expected earthquake place");
+  }
+  if (!(result.sourceId ?? "").includes("earthquake.usgs.gov")) {
+    throw new Error("expected USGS source");
+  }
+});
