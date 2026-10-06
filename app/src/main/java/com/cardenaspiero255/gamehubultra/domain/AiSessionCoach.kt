@@ -159,7 +159,7 @@ object AiSessionCoach {
                 occurrences = thermalOccurrences,
                 summary = "La presión térmica elevada se repitió durante la sesión.",
                 action =
-                    "Prueba un perfil menos exigente o mejora la ventilación si el patrón se repite."
+                    "Prueba un perfil menos exigente para reducir presión térmica o mejora la ventilación si el patrón se repite."
             )
         }
 
