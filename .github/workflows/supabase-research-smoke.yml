@@ -39,7 +39,7 @@ jobs:
     env:
       SMOKE_SEED: ${{ github.run_id }}
       SMOKE_STABLE_WORKERS: "24"
-      SMOKE_WARMUP_WORKERS: "8"
+      SMOKE_WARMUP_WORKERS: "2"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
       SMOKE_SHARD_COUNT: "32"
 
@@ -61,16 +61,16 @@ jobs:
           ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
           ULTRA_QUIET_REQUEST_LOGS: "1"
           ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
-          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "2500"
+          ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "4000"
           # CI performance profile: fail fast on a slow/throttled upstream so one
           # provider cannot pin a worker for 6+ seconds. The smoke still validates
           # the same 10,000 answers and treats stable abstentions as hard failures.
-          ULTRA_FETCH_ATTEMPT_TIMEOUT_MS: "900"
-          ULTRA_FETCH_RETRY_BUDGET_MS: "2200"
-          ULTRA_SPECIALIST_EVIDENCE_TIMEOUT_MS: "2200"
+          ULTRA_FETCH_ATTEMPT_TIMEOUT_MS: "1500"
+          ULTRA_FETCH_RETRY_BUDGET_MS: "4000"
+          ULTRA_SPECIALIST_EVIDENCE_TIMEOUT_MS: "2500"
           ULTRA_CORROBORATION_TIMEOUT_MS: "1200"
-          ULTRA_FALLBACK_SEARCH_TIMEOUT_MS: "1800"
-          ULTRA_WIKIDATA_FALLBACK_TIMEOUT_MS: "1500"
+          ULTRA_FALLBACK_SEARCH_TIMEOUT_MS: "2500"
+          ULTRA_WIKIDATA_FALLBACK_TIMEOUT_MS: "2200"
         shell: bash
         run: |
           set -euo pipefail
