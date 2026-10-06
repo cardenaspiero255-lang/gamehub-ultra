@@ -227,4 +227,17 @@ class UltraGeneralKnowledgeCorpusRegressionTest {
             "Ultra, conversa conmigo"
         )
     }
+    @Test
+    fun `cost phrasing always requires fresh current data`() {
+        listOf(
+            "Ultra, what is the RedMagic 12 Pro cost?",
+            "Ultra, what does a RTX 5090 cost?"
+        ).forEach { question ->
+            val request = UltraGeneralQueryRouter.classify(question)
+            assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind, question)
+            assertTrue(request.requiresFreshData, question)
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode, question)
+        }
+    }
+
 }
