@@ -123,4 +123,40 @@ class VoiceOptimizationFeedbackContextTest {
         assertEquals(null, key.driverFingerprint)
     }
 
+
+    @Test
+    fun `safe voice enrichment returns loaded context and falls back on failure`() {
+        val base = GameHubAiContext(
+            selectedGamePackage = "game.a",
+            sustainedPerformanceSupported = true,
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuAvailable = true,
+            thermalStatus = 0,
+            thermalHeadroom = 0.2f,
+            batteryPercent = 80,
+            charging = false,
+            refreshRateHz = 120f,
+            networkValidated = true,
+            networkLatencyMs = 30L,
+            downstreamBandwidthKbps = 100_000L,
+            storageFreePercent = 50,
+            inputDeviceCount = 1,
+            selectedProfile = PerformanceProfile.BALANCED,
+            sessionActive = true
+        )
+        val loaded = base.copy(batteryPercent = 79)
+
+        assertEquals(
+            loaded,
+            VoiceOptimizationFeedbackContext.enrichOrBase(base) { loaded }
+        )
+        assertEquals(
+            base,
+            VoiceOptimizationFeedbackContext.enrichOrBase(base) {
+                error("storage unavailable")
+            }
+        )
+    }
+
 }
