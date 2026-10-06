@@ -164,11 +164,11 @@ object SmartPerformanceAdvisor {
                 add("Considera recomendaciones aceptadas previamente")
             }
             if (input.historicalObservations.any {
-                    it.feedbackDecision == OptimizationFeedbackDecision.REJECTED ||
-                        it.feedbackDecision == OptimizationFeedbackDecision.REVERTED
-                }) {
-                add("Evita recomendaciones rechazadas o revertidas repetidamente")
-            }
+                    it.feedbackDecision in setOf(
+                        OptimizationFeedbackDecision.REJECTED,
+                        OptimizationFeedbackDecision.REVERTED
+                    )
+                }) add("Evita recomendaciones rechazadas o revertidas repetidamente")
             if (input.historicalObservations.any { it.failed || it.highTemperature }) {
                 add("Evita configuraciones con fallos/temperatura excesiva")
             }
