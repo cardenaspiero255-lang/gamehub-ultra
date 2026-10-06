@@ -788,12 +788,10 @@ class GameHubAiAdvisor(
         )
     }
 
-    private fun isProfileRecommendationQuestion(normalized: String): Boolean =
-        normalized.contains("fps") ||
-            normalized.contains("modo") ||
-            normalized.contains("perfil") ||
-            normalized.contains("mode") ||
-            normalized.contains("profile")
+    private fun isProfileRecommendationQuestion(normalized: String): Boolean {
+        val tokens = normalized.split(Regex("""[^a-z0-9]+""")).filter(String::isNotBlank)
+        return tokens.any { it in PROFILE_RECOMMENDATION_TOKENS }
+    }
 
     private fun isSafetyConstrained(context: GameHubAiContext): Boolean =
         context.thermalStatus?.let { it >= 3 } == true ||
@@ -823,6 +821,7 @@ class GameHubAiAdvisor(
 
     private companion object {
         const val MEMORY_RECALL_LIMIT = 6
+        val PROFILE_RECOMMENDATION_TOKENS = setOf("fps", "modo", "perfil", "mode", "profile")
     }
 
     private fun normalize(value: String): String =
