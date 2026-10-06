@@ -7106,7 +7106,6 @@ Deno.test("specialist providers share the general research deadline", async () =
   }
 });
 
-
 Deno.test("chemistry property questions use keyless PubChem PUG REST", async () => {
   let pubchemCalls = 0;
   const deps: ResearchDependencies = {
@@ -7145,7 +7144,9 @@ Deno.test("chemistry property questions use keyless PubChem PUG REST", async () 
   if (!answer.includes("C8H10N4O2") || !answer.includes("194.19")) {
     throw new Error("expected PubChem molecular properties");
   }
-  if (!(result.sourceId ?? "").includes("pubchem.ncbi.nlm.nih.gov/compound/2519")) {
+  if (
+    !(result.sourceId ?? "").includes("pubchem.ncbi.nlm.nih.gov/compound/2519")
+  ) {
     throw new Error("expected PubChem compound source");
   }
 });
@@ -7188,7 +7189,11 @@ Deno.test("exoplanet data questions use NASA Exoplanet Archive TAP", async () =>
   if (!answer.includes("TRAPPIST-1 e") || !answer.includes("6.099615")) {
     throw new Error("expected exoplanet orbital data");
   }
-  if (!(result.sourceId ?? "").includes("exoplanetarchive.ipac.caltech.edu/TAP/sync")) {
+  if (
+    !(result.sourceId ?? "").includes(
+      "exoplanetarchive.ipac.caltech.edu/TAP/sync",
+    )
+  ) {
     throw new Error("expected NASA Exoplanet Archive TAP source");
   }
 });
