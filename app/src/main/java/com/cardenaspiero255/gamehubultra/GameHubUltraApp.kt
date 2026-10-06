@@ -164,12 +164,7 @@ internal fun GameHubUltraApp(
         selectedGameForMemory?.let { packageVersionName(context, it) }
     }
     val currentOptimizationKey = remember(selectedGameForMemory, selectedGameVersion, device) {
-        OptimizationContextKeyFactory.from(
-            device,
-            selectedGameForMemory,
-            selectedGameVersion,
-            EmulatorBackendDetector.detect()
-        )
+        OptimizationContextKeyFactory.from(device, selectedGameForMemory, selectedGameVersion, EmulatorBackendDetector.detect())
     }
     val optimizationObservations by optimizationMemoryStore
         .observationsFlow(currentOptimizationKey)
@@ -414,9 +409,7 @@ internal fun GameHubUltraApp(
         activeSessionId = activeSessionId
     )
 
-    var smartRecommendationRevertTarget by remember(selectedGamePackage) {
-        mutableStateOf<SmartRecommendationRevertTarget?>(null)
-    }
+    var smartRecommendationRevertTarget by remember(selectedGamePackage) { mutableStateOf<SmartRecommendationRevertTarget?>(null) }
 
     val smartRecommendation = SmartPerformanceAdvisor.recommend(
         SmartPerformanceInput(
@@ -429,20 +422,9 @@ internal fun GameHubUltraApp(
             historicalObservations = optimizationObservations
         )
     )
-    val smartRecommendationRejectionKey = SmartRecommendationRevertPolicy.rejectionKey(
-        currentOptimizationKey,
-        smartRecommendation.profile,
-        uiState.effectiveProfile,
-        optimizationObservations
-    )
-    var rejectedSmartRecommendation by remember(smartRecommendationRejectionKey) {
-        mutableStateOf(false)
-    }
-    val canRevertSmartRecommendation = SmartRecommendationRevertPolicy.canRevert(
-        smartRecommendationRevertTarget,
-        selectedGamePackage,
-        uiState.effectiveProfile
-    )
+    val smartRecommendationRejectionKey = SmartRecommendationRevertPolicy.rejectionKey(currentOptimizationKey, smartRecommendation.profile, uiState.effectiveProfile, optimizationObservations)
+    var rejectedSmartRecommendation by remember(smartRecommendationRejectionKey) { mutableStateOf(false) }
+    val canRevertSmartRecommendation = SmartRecommendationRevertPolicy.canRevert(smartRecommendationRevertTarget, selectedGamePackage, uiState.effectiveProfile)
 
     val smartGameAssistantSuggestions = SmartGameAssistant.suggestAll(
         SmartGameAssistantInput(
@@ -496,10 +478,8 @@ internal fun GameHubUltraApp(
         }
     }
 
-    fun recordSmartRecommendationFeedback(
-        profile: PerformanceProfile,
-        feedback: OptimizationFeedbackDecision
-    ) = runtimeCoordinator.recordRecommendationFeedback(runtimeSnapshot(), profile, feedback)
+    val recordSmartRecommendationFeedback: (PerformanceProfile, OptimizationFeedbackDecision) -> Unit =
+        { profile, feedback -> runtimeCoordinator.recordRecommendationFeedback(runtimeSnapshot(), profile, feedback) }
 
     val screenContent: @Composable (Modifier, Boolean) -> Unit = { contentModifier, showAssistantCards ->
         when {
@@ -544,29 +524,13 @@ internal fun GameHubUltraApp(
                 smartRecommendation = smartRecommendation,
                 canRevertSmartRecommendation = canRevertSmartRecommendation,
                 onApplySmartRecommendation = {
-                    smartRecommendationRevertTarget = SmartRecommendationActions.apply(
-                        selectedGamePackage,
-                        uiState.effectiveProfile,
-                        smartRecommendation.profile,
-                        ::recordSmartRecommendationFeedback,
-                        ::selectProfile
-                    )
+                    smartRecommendationRevertTarget = SmartRecommendationActions.apply(selectedGamePackage, uiState.effectiveProfile, smartRecommendation.profile, recordSmartRecommendationFeedback, ::selectProfile)
                 },
                 onRejectSmartRecommendation = {
-                    rejectedSmartRecommendation = SmartRecommendationActions.reject(
-                        rejectedSmartRecommendation,
-                        smartRecommendation.profile,
-                        ::recordSmartRecommendationFeedback
-                    )
+                    rejectedSmartRecommendation = SmartRecommendationActions.reject(rejectedSmartRecommendation, smartRecommendation.profile, recordSmartRecommendationFeedback)
                 },
                 onRevertSmartRecommendation = {
-                    smartRecommendationRevertTarget = SmartRecommendationActions.revert(
-                        smartRecommendationRevertTarget,
-                        selectedGamePackage,
-                        uiState.effectiveProfile,
-                        ::recordSmartRecommendationFeedback,
-                        ::selectProfile
-                    )
+                    smartRecommendationRevertTarget = SmartRecommendationActions.revert(smartRecommendationRevertTarget, selectedGamePackage, uiState.effectiveProfile, recordSmartRecommendationFeedback, ::selectProfile)
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
                 onApplySmartGameAssistant = ::applySmartGameAssistantSuggestion,
