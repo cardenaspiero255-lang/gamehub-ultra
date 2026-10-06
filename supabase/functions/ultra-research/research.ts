@@ -186,7 +186,6 @@ function rememberStableKnowledge(
   return result;
 }
 
-
 async function coalescedStableKnowledgeLookup(
   fetcher: ResearchFetcher,
   topic: string,
@@ -212,9 +211,7 @@ async function coalescedStableKnowledgeLookup(
       controller,
       waiters: 0,
       settled: false,
-      promise: Promise.resolve(
-        loader(controller.signal),
-      ),
+      promise: Promise.resolve(loader(controller.signal)),
     };
     entry = created;
     inFlight.set(key, created);
@@ -5315,7 +5312,7 @@ async function generalKnowledgeEvidence(
       relevanceTopic,
       query,
       deps,
-      signal,
+      lookupSignal,
     );
     if (generatorEvidence) {
       return rememberStableKnowledge(
@@ -5336,7 +5333,7 @@ async function generalKnowledgeEvidence(
   
     const search = await fetchJson(deps, searchUrl, {
       headers: { "User-Agent": USER_AGENT },
-      signal,
+      lookupSignal,
     });
     const results = search?.query && typeof search.query === "object"
       ? (search.query as JsonObject).search
@@ -5355,7 +5352,7 @@ async function generalKnowledgeEvidence(
         relevanceTopic,
         query,
         deps,
-        signal,
+        lookupSignal,
       );
       if (!wikidata.abstained) {
         return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
@@ -5365,7 +5362,7 @@ async function generalKnowledgeEvidence(
   
     let sawUsableCandidate = false;
     for (const candidate of candidates) {
-      if (signal?.aborted) {
+      if (lookupSignal?.aborted) {
         return abstain(
           "La búsqueda principal fue cancelada antes de resolver el tema.",
           {
@@ -5384,7 +5381,7 @@ async function generalKnowledgeEvidence(
         encodeURIComponent(title.replace(/ /g, "_"));
       const summary = await fetchWikipediaJson(deps, summaryUrl, {
         headers: { "User-Agent": USER_AGENT },
-        signal,
+        lookupSignal,
       });
       const summaryType = stringValue(summary?.type)?.toLowerCase();
       if (summaryType === "disambiguation") continue;
@@ -5393,7 +5390,7 @@ async function generalKnowledgeEvidence(
       let source: string | undefined;
   
       if (!extract) {
-        const actionFallback = await wikipediaActionExtract(title, deps, signal);
+        const actionFallback = await wikipediaActionExtract(title, deps, lookupSignal);
         if (!actionFallback) continue;
         extract = actionFallback.extract;
         source = actionFallback.source;
@@ -5442,7 +5439,7 @@ async function generalKnowledgeEvidence(
       relevanceTopic,
       query,
       deps,
-      signal,
+      lookupSignal,
     );
     if (!wikidata.abstained) {
       return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
@@ -5472,7 +5469,6 @@ async function generalKnowledgeEvidence(
     loadStableEvidence,
     signal,
   );
-
 }
 
 async function freshWikidataGeneralKnowledgeEvidence(
