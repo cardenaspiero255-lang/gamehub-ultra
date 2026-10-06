@@ -176,7 +176,7 @@ class VoiceOptimizationFeedbackContextTest {
             emulatorBackend = null
         )
 
-        assertEquals("ARM", expected.driverFingerprint)
+        assertEquals("ARM|", expected.driverFingerprint)
         assertEquals(expected, actual)
 
         val emptyGpu = partialGpu.copy(gpuVendor = " ", gpuRenderer = null)
