@@ -144,8 +144,7 @@ class SessionCoachMonitorServiceTest {
         val notification = SessionCoachNotifications.foreground(
             context = context,
             title = "Preparación 88/100",
-            detail = "Listo para jugar.",
-            important = true
+            detail = "Listo para jugar."
         )
 
         assertEquals(
@@ -555,6 +554,11 @@ class SessionCoachMonitorServiceTest {
             count
         )
         assertEquals(0, count)
+        count = SessionCoachMonitorService.nextInactiveEvidenceCount(
+            SessionCoachGamePresence.INACTIVE,
+            count
+        )
+        assertFalse(SessionCoachMonitorService.shouldFinishForInactivity(count))
         count = SessionCoachMonitorService.nextInactiveEvidenceCount(
             SessionCoachGamePresence.INACTIVE,
             count
