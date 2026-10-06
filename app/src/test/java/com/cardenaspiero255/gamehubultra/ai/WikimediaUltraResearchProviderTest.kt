@@ -371,6 +371,28 @@ class WikimediaUltraResearchProviderTest {
     }
 
     @Test
+    fun englishDefinitionVariantsAcceptTranslatedSpanishWikipediaTitle() {
+        listOf(
+            "Ultra, what does black hole mean?",
+            "Ultra, meaning of black hole"
+        ).forEach { question ->
+            val provider = WikimediaUltraResearchProvider(
+                scriptedTransport(
+                    searchBody = """{"query":{"search":[{"title":"Agujero negro"}]}}""",
+                    extractBody =
+                        """{"query":{"pages":{"9":{"title":"Agujero negro","extract":"Un agujero negro es una región del espacio con un campo gravitatorio extremo.","canonicalurl":"https://es.wikipedia.org/wiki/Agujero_negro"}}}}"""
+                )
+            )
+
+            val result = provider.fetchResult(UltraGeneralQueryRouter.classify(question))
+
+            val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+            assertEquals("https://es.wikipedia.org/wiki/Agujero_negro", evidence.sourceId, question)
+            assertTrue(evidence.displayText.contains("agujero negro", ignoreCase = true), question)
+        }
+    }
+
+    @Test
     fun properNameDefiniteArticleIsPreservedInSearchTopic() {
         var searchUrl = ""
         val provider = WikimediaUltraResearchProvider(
