@@ -29,17 +29,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
     # All 10,000 cases are generated identically on every shard, then partitioned
-    # deterministically across 16 runners. Stable knowledge keeps the validated
+    # deterministically across 32 runners. Stable knowledge keeps the validated
     # 12-worker ceiling per runner; fresh-data checks execute only on shard 0
     # to avoid multiplying external-provider bursts.
-    timeout-minutes: 120
+    timeout-minutes: 60
     env:
       SMOKE_SEED: ${{ github.run_id }}
       SMOKE_STABLE_WORKERS: "12"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
-      SMOKE_SHARD_COUNT: "16"
+      SMOKE_SHARD_COUNT: "32"
 
     steps:
       - name: Checkout
