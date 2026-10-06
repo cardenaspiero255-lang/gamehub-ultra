@@ -6,6 +6,7 @@ import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateReposito
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
+import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
@@ -58,7 +59,6 @@ import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
-import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceAdvisor
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistant
@@ -168,22 +168,11 @@ internal fun GameHubUltraApp(
         selectedGameVersion,
         device
     ) {
-        val driverFingerprint = listOf(
-            device.gpuVendor.orEmpty(),
-            device.gpuRenderer.orEmpty()
-        ).joinToString("|").takeIf(String::isNotBlank)
-        OptimizationContextKey(
-            deviceFingerprint = OptimizationFingerprint.from(
-                device = device,
-                gamePackage = selectedGameForMemory,
-                gameVersion = selectedGameVersion,
-                emulatorBackend = EmulatorBackendDetector.detect(),
-                driverFingerprint = driverFingerprint
-            ),
-            gamePackage = selectedGameForMemory.orEmpty(),
+        OptimizationContextKeyFactory.from(
+            device = device,
+            gamePackage = selectedGameForMemory,
             gameVersion = selectedGameVersion,
-            emulatorBackend = EmulatorBackendDetector.detect(),
-            driverFingerprint = driverFingerprint
+            emulatorBackend = EmulatorBackendDetector.detect()
         )
     }
     val optimizationObservations by optimizationMemoryStore
