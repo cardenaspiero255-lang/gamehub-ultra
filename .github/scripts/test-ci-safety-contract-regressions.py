@@ -262,12 +262,12 @@ def mask_local_patch_coverage_with_or_true(android: str, coverage: str):
 
 def comment_out_coverage_command(android: str, coverage: str):
     """Comment out the authoritative coverage command while preserving its text."""
-    needle = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    needle = "          gradle :app:createDebugUnitTestCoverageReport \\\n"
     if needle not in coverage:
         raise SystemExit("Fixture drift: coverage command not found")
     return android, coverage.replace(
         needle,
-        "        # run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n",
+        "          # gradle :app:createDebugUnitTestCoverageReport \\\n",
         1,
     )
 
