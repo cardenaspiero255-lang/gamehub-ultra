@@ -196,15 +196,11 @@ private class GameHubVoiceInteractionSession(context: Context) :
             selectedProfile = selectedProfile,
             sessionActive = selectedGamePackage != null
         )
-        val aiContext = runCatching {
-            runBlocking {
-                VoiceOptimizationFeedbackContext.enrich(
-                    base = baseAiContext,
-                    context = context,
-                    device = device
-                )
-            }
-        }.getOrDefault(baseAiContext)
+        val aiContext = VoiceOptimizationFeedbackContext.enrichBlockingOrBase(
+            base = baseAiContext,
+            context = context,
+            device = device
+        )
         val intentResolver = aiAdvisor.intentResolver()
         val result = VoiceCommandEngine.execute(
             command = VoiceCommandParser.parse(
