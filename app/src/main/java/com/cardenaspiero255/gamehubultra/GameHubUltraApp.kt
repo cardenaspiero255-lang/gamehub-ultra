@@ -100,6 +100,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val MAX_CHAT_HISTORY = 8
+private const val COACH_RUNTIME_START_TOLERANCE_MS = 5_000L
+
+internal fun completedCoachBelongsToRuntimeSession(
+    completed: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession,
+    active: GameSessionRecord?
+): Boolean {
+    val runtime = active ?: return false
+    if (completed.packageName != runtime.packageName) return false
+    val startDelta = kotlin.math.abs(completed.startedAtMillis - runtime.startedAtMillis)
+    if (startDelta > COACH_RUNTIME_START_TOLERANCE_MS) return false
+    val completedAt = completed.endedAtMillis ?: return false
+    return completedAt >= runtime.startedAtMillis
+}
 
 private val UltraHomeRed = Color(0xFFFF1630)
 private val UltraHomeBlack = Color(0xFF030303)
@@ -285,7 +298,12 @@ internal fun GameHubUltraApp(
                     telemetryTrend = update.telemetryTrend
                     performanceTimelineSamples = update.timelineSamples
                     sessionCoachSamples = update.coachSamples
-                    sessionCoachObservations = update.coachObservations
+                    if (sessionId != null) {
+                        sessionCoachObservations = update.coachObservations
+                    }
+                    update.lastCompletedCoachReport?.let { report ->
+                        lastSessionCoachReport = report
+                    }
                     adaptiveDecision = update.adaptiveDecision
                     delay(10_000)
                 }
@@ -416,7 +434,7 @@ internal fun GameHubUltraApp(
                     completed.samples
                 )
             sessionCoachObservations = listOfNotNull(completed.latestObservation)
-            if (activeSessionId != null) {
+            if (completedCoachBelongsToRuntimeSession(completed, runtimeGameSession)) {
                 val last = completed.samples.lastOrNull()
                 runtimeCoordinator.endGameSession(
                     runtimeSnapshot().copy(
