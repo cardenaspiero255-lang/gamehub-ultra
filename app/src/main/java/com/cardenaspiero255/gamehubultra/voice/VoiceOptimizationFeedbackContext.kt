@@ -91,7 +91,7 @@ internal object VoiceOptimizationFeedbackContext {
             device.gpuRenderer
         )
             .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-            .takeIf(List<String>::isNotEmpty)
+            .takeIf { it.isNotEmpty() }
             ?.joinToString("|")
         return OptimizationContextKey(
             deviceFingerprint = OptimizationFingerprint.from(
