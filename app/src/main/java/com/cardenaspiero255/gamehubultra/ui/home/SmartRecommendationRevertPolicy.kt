@@ -4,7 +4,6 @@ import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
-import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 
 internal data class SmartRecommendationRevertTarget(
     val gamePackage: String?,
@@ -52,7 +51,6 @@ internal object SmartRecommendationRevertPolicy {
         contextKey: OptimizationContextKey,
         profile: PerformanceProfile,
         currentProfile: PerformanceProfile,
-        runtime: RuntimeDiagnostics?,
         observations: List<OptimizationObservation>
     ): SmartRecommendationRejectionKey =
         SmartRecommendationRejectionKey(
