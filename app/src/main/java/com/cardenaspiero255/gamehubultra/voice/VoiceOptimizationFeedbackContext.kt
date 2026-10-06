@@ -9,8 +9,24 @@ import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 internal object VoiceOptimizationFeedbackContext {
+    internal fun enrichOrBase(
+        base: GameHubAiContext,
+        loader: suspend () -> GameHubAiContext
+    ): GameHubAiContext =
+        runCatching { runBlocking { loader() } }.getOrDefault(base)
+
+    fun enrichBlockingOrBase(
+        base: GameHubAiContext,
+        context: Context,
+        device: DeviceInfo
+    ): GameHubAiContext =
+        enrichOrBase(base) {
+            enrich(base = base, context = context, device = device)
+        }
+
     suspend fun enrich(
         base: GameHubAiContext,
         repository: GameOptimizationMemoryStateRepository,
