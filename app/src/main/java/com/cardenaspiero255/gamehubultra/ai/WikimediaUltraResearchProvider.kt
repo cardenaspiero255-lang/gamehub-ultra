@@ -541,9 +541,25 @@ class WikimediaUltraResearchProvider(
             ?.takeIf(String::isNotBlank)
             ?: return false
 
-        return textMatchesTopic(topic, englishTitle) &&
+        return englishTitleCoversTopic(topic, englishTitle) &&
             normalizedTopicPhrase(translatedTitle) ==
                 normalizedTopicPhrase(spanishTitle)
+    }
+
+    private fun englishTitleCoversTopic(
+        topic: String,
+        englishTitle: String
+    ): Boolean {
+        val topicTokens = meaningfulTokens(topic)
+        val titleTokens = meaningfulTokens(englishTitle)
+        if (topicTokens.isEmpty() || titleTokens.isEmpty()) return false
+
+        return topicTokens.all { topicToken ->
+            titleTokens.any { titleToken ->
+                topicToken == titleToken ||
+                    lexicallyRelated(topicToken, titleToken)
+            }
+        }
     }
 
     private fun isEnglishDefinitionQuestion(value: String): Boolean {
