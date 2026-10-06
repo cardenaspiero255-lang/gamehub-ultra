@@ -144,6 +144,7 @@ internal fun GameHubUltraApp(
     var sessionCoachSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot>>(emptyList()) }
     var sessionCoachObservations by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage>>(emptyList()) }
     var lastSessionCoachReport by remember { mutableStateOf<com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?>(null) }
+    var hydratedCoachSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
@@ -404,41 +405,32 @@ internal fun GameHubUltraApp(
     }
 
     LaunchedEffect(appResumeRefreshToken) {
-        val completedCoachSession = withContext(Dispatchers.IO) {
-            val store = com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
-            if (store.hasActiveSession()) {
-                com.cardenaspiero255.gamehubultra.session.SessionCoachMonitorService.finishOnReturn(
-                    context
-                )
-            } else {
-                store.readLastCompletedSession()
-            }
+        val completed = withContext(Dispatchers.IO) {
+            com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
+                .readLastCompletedSession()
         }
-        completedCoachSession?.let { completed ->
+        if (completed != null && completed.sessionId != hydratedCoachSessionId) {
+            hydratedCoachSessionId = completed.sessionId
             lastSessionCoachReport =
                 com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.postSession(
                     completed.samples
                 )
-            completed.latestObservation?.let { observation ->
-                sessionCoachObservations = listOf(observation)
-            }
-        }
-
-        if (activeSessionId != null) {
-            val monitoredLast = completedCoachSession?.samples?.lastOrNull()
-            runtimeCoordinator.endGameSession(
-                runtimeSnapshot().copy(
-                    metrics = RuntimeSessionMetrics(
-                        batteryPercent = monitoredLast?.batteryPercent
-                            ?: runtimeDiagnostics?.battery?.percent,
-                        thermalStatus = monitoredLast?.thermalStatus
-                            ?: runtimeDiagnostics?.thermal?.status,
-                        ramUsedPercent = runtimeDiagnostics?.memory?.usedPercent,
-                        diagnosticsAvailable =
-                            monitoredLast != null || runtimeDiagnostics != null
+            sessionCoachObservations = listOfNotNull(completed.latestObservation)
+            if (activeSessionId != null) {
+                val last = completed.samples.lastOrNull()
+                runtimeCoordinator.endGameSession(
+                    runtimeSnapshot().copy(
+                        metrics = RuntimeSessionMetrics(
+                            batteryPercent = last?.batteryPercent
+                                ?: runtimeDiagnostics?.battery?.percent,
+                            thermalStatus = last?.thermalStatus
+                                ?: runtimeDiagnostics?.thermal?.status,
+                            ramUsedPercent = runtimeDiagnostics?.memory?.usedPercent,
+                            diagnosticsAvailable = last != null || runtimeDiagnostics != null
+                        )
                     )
                 )
-            )
+            }
         }
     }
 
@@ -454,34 +446,17 @@ internal fun GameHubUltraApp(
     )
 
     val sessionCoachPreMessage = runtimeDiagnostics?.let { diagnostics ->
-        val readiness = com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator.calculate(
-            com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput(
-                cpuCores = device.cpuCores,
-                totalRamMb = device.totalRamMb,
-                gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
-                    !device.gpuVendor.isNullOrBlank(),
-                thermalStatus = diagnostics.thermal.status,
-                thermalHeadroom = diagnostics.thermal.headroom,
-                batteryPercent = diagnostics.battery.percent,
-                charging = diagnostics.battery.charging,
-                refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
-                networkValidated = diagnostics.connectivity.validated,
-                networkLatencyMs = diagnostics.connectivity.latencyMs,
-                downstreamBandwidthKbps = diagnostics.connectivity.downstreamBandwidthKbps,
-                storageFreePercent = diagnostics.storage.freePercent,
-                inputDeviceCount = diagnostics.inputDeviceCount
-            )
-        )
         com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.preSession(
-            readiness = readiness,
-            snapshot = com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot(
-                timestampMillis = 0L,
-                batteryPercent = diagnostics.battery.percent,
-                thermalStatus = diagnostics.thermal.status,
-                thermalHeadroom = diagnostics.thermal.headroom,
-                refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
-                latencyMs = diagnostics.connectivity.latencyMs
-            )
+            readiness =
+                com.cardenaspiero255.gamehubultra.session.SessionCoachTelemetryMapper.readiness(
+                    device,
+                    diagnostics
+                ),
+            snapshot =
+                com.cardenaspiero255.gamehubultra.session.SessionCoachTelemetryMapper.snapshot(
+                    timestampMillis = 0L,
+                    diagnostics = diagnostics
+                )
         )
     }
 
