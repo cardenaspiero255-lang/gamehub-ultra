@@ -7072,20 +7072,27 @@ Deno.test("specialist providers share the general research deadline", async () =
   };
 
   const started = performance.now();
-  const result = await Promise.race([
-    routeResearchQuery(
-      "Busca papers científicos sobre exoplanet atmospheres",
-      deps,
-      "",
-      "GENERAL_KNOWLEDGE",
-    ),
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("specialist route exceeded shared deadline")),
-        1_500,
-      )
-    ),
-  ]);
+  let watchdog: number | undefined;
+  const watchdogPromise = new Promise<never>((_, reject) => {
+    watchdog = setTimeout(
+      () => reject(new Error("specialist route exceeded shared deadline")),
+      1_500,
+    );
+  });
+  let result;
+  try {
+    result = await Promise.race([
+      routeResearchQuery(
+        "Busca papers científicos sobre exoplanet atmospheres",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+      watchdogPromise,
+    ]);
+  } finally {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+  }
   const elapsed = performance.now() - started;
 
   if (!result.abstained) {
