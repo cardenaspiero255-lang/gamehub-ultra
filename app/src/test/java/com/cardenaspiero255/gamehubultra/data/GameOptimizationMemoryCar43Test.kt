@@ -233,13 +233,39 @@ class GameOptimizationMemoryCar43Test {
                 preferences[stringPreferencesKey("observations_v1")] = encoded
             }
 
-            val loaded = GameOptimizationMemoryStore(dataStore)
-                .observationsFlow(currentKey)
-                .first()
+            val store = GameOptimizationMemoryStore(dataStore)
+            val loaded = store.observationsFlow(currentKey).first()
 
             assertEquals(1, loaded.size)
             assertEquals("legacy-no-gpu", loaded.single().id)
             assertEquals(OptimizationFeedbackDecision.REJECTED, loaded.single().feedbackDecision)
+
+            store.record(
+                currentKey,
+                OptimizationObservation(
+                    id = "current-no-gpu",
+                    contextKey = "",
+                    profile = PerformanceProfile.BALANCED,
+                    timestampMillis = 100L
+                )
+            )
+            val migrated = store.observationsFlow(currentKey).first()
+            assertEquals(2, migrated.size)
+            assertEquals(
+                setOf(currentKey.serialized),
+                migrated.map(OptimizationObservation::contextKey).toSet()
+            )
+
+            dataStore.edit { preferences ->
+                preferences[stringPreferencesKey("observations_v1")] = encoded
+            }
+            store.pruneTo(currentKey)
+            val pruned = store.observationsFlow(currentKey).first()
+            assertEquals(1, pruned.size)
+            assertEquals(currentKey.serialized, pruned.single().contextKey)
+
+            store.clearGame(currentKey)
+            assertEquals(emptyList(), store.observationsFlow(currentKey).first())
         } finally {
             scope.cancel()
             file.delete()
