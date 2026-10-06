@@ -311,7 +311,7 @@ internal object SmartRecommendationExplanationFactory {
             )
         )
 
-        val concise = (recommendedProfile.name + ": " + reason).let {
+        val concise = reason.let {
             if (it.length <= 180) it else it.take(177) + "..."
         }
 
