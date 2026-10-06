@@ -138,7 +138,6 @@ object SmartPerformanceAdvisor {
                     input = input,
                     recommendedProfile = PerformanceProfile.BALANCED,
                     reason = reason,
-                    legacyEvidence = evidence,
                     measuredGood = measuredGood,
                     acceptedFeedback = acceptedFeedback,
                     knownBad = knownBad,
