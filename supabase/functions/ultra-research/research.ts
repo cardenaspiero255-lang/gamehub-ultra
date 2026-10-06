@@ -35,10 +35,19 @@ type StableKnowledgeCacheEntry = {
   storedAt: number;
 };
 
+type StableKnowledgeInFlightEntry = {
+  promise: Promise<ResearchResult>;
+  controller: AbortController;
+  waiters: number;
+  settled: boolean;
+};
+
 const stableKnowledgeCaches =
   new WeakMap<object, Map<string, StableKnowledgeCacheEntry>>();
+const stableKnowledgeInFlight =
+  new WeakMap<object, Map<string, StableKnowledgeInFlightEntry>>();
 const STABLE_KNOWLEDGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 256;
+const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 2048;
 
 const USER_AGENT =
   "GameHub-Ultra-CAR73/1.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
@@ -175,6 +184,90 @@ function rememberStableKnowledge(
     storedAt: Date.now(),
   });
   return result;
+}
+
+
+async function coalescedStableKnowledgeLookup(
+  fetcher: ResearchFetcher,
+  topic: string,
+  loader: (signal: AbortSignal) => Promise<ResearchResult>,
+  callerSignal?: AbortSignal,
+): Promise<ResearchResult> {
+  const key = stableKnowledgeCacheKey(topic);
+  if (!key) {
+    const controller = new AbortController();
+    return await loader(controller.signal);
+  }
+
+  let inFlight = stableKnowledgeInFlight.get(fetcher as object);
+  if (!inFlight) {
+    inFlight = new Map<string, StableKnowledgeInFlightEntry>();
+    stableKnowledgeInFlight.set(fetcher as object, inFlight);
+  }
+
+  let entry = inFlight.get(key);
+  if (!entry) {
+    const controller = new AbortController();
+    const created: StableKnowledgeInFlightEntry = {
+      controller,
+      waiters: 0,
+      settled: false,
+      promise: Promise.resolve(
+        loader(controller.signal),
+      ),
+    };
+    entry = created;
+    inFlight.set(key, created);
+    void created.promise.then(
+      () => {
+        created.settled = true;
+        if (inFlight?.get(key) === created) inFlight.delete(key);
+      },
+      () => {
+        created.settled = true;
+        if (inFlight?.get(key) === created) inFlight.delete(key);
+      },
+    );
+  }
+
+  entry.waiters += 1;
+  let onAbort: (() => void) | undefined;
+  const aborted = callerSignal
+    ? new Promise<ResearchResult>((resolve) => {
+      onAbort = () => {
+        resolve(
+          abstain(
+            "La búsqueda principal fue cancelada antes de resolver el tema.",
+            {
+              reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
+              retryable: true,
+              stage: "wikipedia",
+            },
+          ),
+        );
+      };
+      if (callerSignal.aborted) {
+        onAbort();
+      } else {
+        callerSignal.addEventListener("abort", onAbort, { once: true });
+      }
+    })
+    : null;
+
+  try {
+    const result = aborted
+      ? await Promise.race([entry.promise, aborted])
+      : await entry.promise;
+    return cloneResearchResult(result);
+  } finally {
+    if (callerSignal && onAbort) {
+      callerSignal.removeEventListener("abort", onAbort);
+    }
+    entry.waiters = Math.max(0, entry.waiters - 1);
+    if (entry.waiters === 0 && !entry.settled && callerSignal?.aborted) {
+      entry.controller.abort();
+    }
+  }
 }
 
 const CORROBORATION_STOP_WORDS = new Set([
@@ -5214,46 +5307,136 @@ async function generalKnowledgeEvidence(
     const cached = cachedStableKnowledge(deps.fetcher, cacheTopic);
     if (cached) return cached;
   }
-  const generatorEvidence = await wikipediaGeneratorEvidence(
-    searchTopic,
-    relevanceTopic,
-    query,
-    deps,
-    signal,
-  );
-  if (generatorEvidence) {
-    return rememberStableKnowledge(
-      deps.fetcher,
-      cacheTopic,
-      generatorEvidence,
+  const loadStableEvidence = async (
+    lookupSignal: AbortSignal,
+  ): Promise<ResearchResult> => {
+    const generatorEvidence = await wikipediaGeneratorEvidence(
+      searchTopic,
+      relevanceTopic,
+      query,
+      deps,
+      signal,
     );
-  }
-
-  const wikipediaHost = "es.wikipedia.org";
-  const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
-  searchUrl.searchParams.set("action", "query");
-  searchUrl.searchParams.set("list", "search");
-  searchUrl.searchParams.set("srsearch", searchTopic);
-  searchUrl.searchParams.set("srlimit", "5");
-  searchUrl.searchParams.set("format", "json");
-  searchUrl.searchParams.set("origin", "*");
-
-  const search = await fetchJson(deps, searchUrl, {
-    headers: { "User-Agent": USER_AGENT },
-    signal,
-  });
-  const results = search?.query && typeof search.query === "object"
-    ? (search.query as JsonObject).search
-    : null;
-  const candidates = Array.isArray(results)
-    ? results
-      .filter((item): item is JsonObject =>
-        Boolean(item) && typeof item === "object"
-      )
-      .slice(0, 5)
-    : [];
-
-  if (candidates.length === 0) {
+    if (generatorEvidence) {
+      return rememberStableKnowledge(
+        deps.fetcher,
+        cacheTopic,
+        generatorEvidence,
+      );
+    }
+  
+    const wikipediaHost = "es.wikipedia.org";
+    const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
+    searchUrl.searchParams.set("action", "query");
+    searchUrl.searchParams.set("list", "search");
+    searchUrl.searchParams.set("srsearch", searchTopic);
+    searchUrl.searchParams.set("srlimit", "5");
+    searchUrl.searchParams.set("format", "json");
+    searchUrl.searchParams.set("origin", "*");
+  
+    const search = await fetchJson(deps, searchUrl, {
+      headers: { "User-Agent": USER_AGENT },
+      signal,
+    });
+    const results = search?.query && typeof search.query === "object"
+      ? (search.query as JsonObject).search
+      : null;
+    const candidates = Array.isArray(results)
+      ? results
+        .filter((item): item is JsonObject =>
+          Boolean(item) && typeof item === "object"
+        )
+        .slice(0, 5)
+      : [];
+  
+    if (candidates.length === 0) {
+      const wikidata = await wikidataKnowledgeEvidence(
+        topicPlan.wikidataTopic,
+        relevanceTopic,
+        query,
+        deps,
+        signal,
+      );
+      if (!wikidata.abstained) {
+        return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
+      }
+      return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
+    }
+  
+    let sawUsableCandidate = false;
+    for (const candidate of candidates) {
+      if (signal?.aborted) {
+        return abstain(
+          "La búsqueda principal fue cancelada antes de resolver el tema.",
+          {
+            reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
+            retryable: true,
+            stage: "wikipedia",
+          },
+        );
+      }
+  
+      const title = stringValue(candidate.title);
+      if (!title) continue;
+  
+      const summaryUrl =
+        `https://${wikipediaHost}/api/rest_v1/page/summary/` +
+        encodeURIComponent(title.replace(/ /g, "_"));
+      const summary = await fetchWikipediaJson(deps, summaryUrl, {
+        headers: { "User-Agent": USER_AGENT },
+        signal,
+      });
+      const summaryType = stringValue(summary?.type)?.toLowerCase();
+      if (summaryType === "disambiguation") continue;
+  
+      let extract = stringValue(summary?.extract);
+      let source: string | undefined;
+  
+      if (!extract) {
+        const actionFallback = await wikipediaActionExtract(title, deps, signal);
+        if (!actionFallback) continue;
+        extract = actionFallback.extract;
+        source = actionFallback.source;
+      } else {
+        const contentUrls = summary?.content_urls &&
+            typeof summary.content_urls === "object"
+          ? summary.content_urls as JsonObject
+          : null;
+        const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
+          ? contentUrls.desktop as JsonObject
+          : null;
+        source = stringValue(desktop?.page) ?? summaryUrl;
+      }
+  
+      if (!extract) continue;
+      sawUsableCandidate = true;
+  
+      if (!candidateMatchesKnownMeaning(query, title, extract)) {
+        continue;
+      }
+  
+      if (
+        !candidateMatchesKnowledgeTopic(query, relevanceTopic, title + " " + extract)
+      ) {
+        continue;
+      }
+  
+      const resolvedSource = source ?? summaryUrl;
+      return rememberStableKnowledge(
+        deps.fetcher,
+        cacheTopic,
+        {
+          claimKey: `general:${slug(title)}`,
+          value: normalize(extract),
+          displayText: extract,
+          sourceId: resolvedSource,
+          sourceIds: [resolvedSource],
+          independentSourceCount: 1,
+          authoritative: true,
+        },
+      );
+    }
+  
     const wikidata = await wikidataKnowledgeEvidence(
       topicPlan.wikidataTopic,
       relevanceTopic,
@@ -5264,106 +5447,32 @@ async function generalKnowledgeEvidence(
     if (!wikidata.abstained) {
       return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
     }
-    return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
-  }
-
-  let sawUsableCandidate = false;
-  for (const candidate of candidates) {
-    if (signal?.aborted) {
-      return abstain(
-        "La búsqueda principal fue cancelada antes de resolver el tema.",
-        {
-          reasonCode: "PRIMARY_EVIDENCE_TIMEOUT",
-          retryable: true,
-          stage: "wikipedia",
-        },
-      );
-    }
-
-    const title = stringValue(candidate.title);
-    if (!title) continue;
-
-    const summaryUrl =
-      `https://${wikipediaHost}/api/rest_v1/page/summary/` +
-      encodeURIComponent(title.replace(/ /g, "_"));
-    const summary = await fetchWikipediaJson(deps, summaryUrl, {
-      headers: { "User-Agent": USER_AGENT },
-      signal,
-    });
-    const summaryType = stringValue(summary?.type)?.toLowerCase();
-    if (summaryType === "disambiguation") continue;
-
-    let extract = stringValue(summary?.extract);
-    let source: string | undefined;
-
-    if (!extract) {
-      const actionFallback = await wikipediaActionExtract(title, deps, signal);
-      if (!actionFallback) continue;
-      extract = actionFallback.extract;
-      source = actionFallback.source;
-    } else {
-      const contentUrls = summary?.content_urls &&
-          typeof summary.content_urls === "object"
-        ? summary.content_urls as JsonObject
-        : null;
-      const desktop = contentUrls?.desktop && typeof contentUrls.desktop === "object"
-        ? contentUrls.desktop as JsonObject
-        : null;
-      source = stringValue(desktop?.page) ?? summaryUrl;
-    }
-
-    if (!extract) continue;
-    sawUsableCandidate = true;
-
-    if (!candidateMatchesKnownMeaning(query, title, extract)) {
-      continue;
-    }
-
-    if (
-      !candidateMatchesKnowledgeTopic(query, relevanceTopic, title + " " + extract)
-    ) {
-      continue;
-    }
-
-    const resolvedSource = source ?? summaryUrl;
-    return rememberStableKnowledge(
-      deps.fetcher,
-      cacheTopic,
+  
+    return abstain(
+      sawUsableCandidate
+        ? "Wikipedia devolvió entradas que no coinciden con el tema consultado."
+        : "Wikipedia no devolvió una explicación utilizable.",
       {
-        claimKey: `general:${slug(title)}`,
-        value: normalize(extract),
-        displayText: extract,
-        sourceId: resolvedSource,
-        sourceIds: [resolvedSource],
-        independentSourceCount: 1,
-        authoritative: true,
+        reasonCode: sawUsableCandidate
+          ? "IRRELEVANT_PRIMARY_EVIDENCE"
+          : "UPSTREAM_UNAVAILABLE",
+        retryable: !sawUsableCandidate,
+        stage: "wikipedia",
       },
     );
+  };
+
+  if (technicalTroubleshooting) {
+    return await loadStableEvidence(signal ?? new AbortController().signal);
   }
 
-  const wikidata = await wikidataKnowledgeEvidence(
-    topicPlan.wikidataTopic,
-    relevanceTopic,
-    query,
-    deps,
+  return await coalescedStableKnowledgeLookup(
+    deps.fetcher,
+    cacheTopic,
+    loadStableEvidence,
     signal,
   );
-  if (!wikidata.abstained) {
-    return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
-  }
 
-  return abstain(
-    sawUsableCandidate
-      ? "Wikipedia devolvió entradas que no coinciden con el tema consultado."
-      : "Wikipedia no devolvió una explicación utilizable.",
-    {
-      reasonCode: sawUsableCandidate
-        ? "IRRELEVANT_PRIMARY_EVIDENCE"
-        : "UPSTREAM_UNAVAILABLE",
-      retryable: !sawUsableCandidate,
-      stage: "wikipedia",
-    },
-  );
 }
 
 async function freshWikidataGeneralKnowledgeEvidence(
