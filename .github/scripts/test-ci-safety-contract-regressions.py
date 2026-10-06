@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ANDROID = ROOT / ".github/workflows/android.yml"
 COVERAGE = ROOT / ".github/workflows/coverage.yml"
+COVERAGE_POST = ROOT / ".github/workflows/coverage-post-processing.yml"
 SHADOW_METRICS = ROOT / ".github/workflows/ci-metrics-shadow.yml"
 CONTRACT = ROOT / ".github/scripts/test-ci-safety-contract.sh"
 CHECKER = ROOT / ".github/scripts/check-ci-safety-contract.py"
@@ -87,6 +88,10 @@ def run_mutation(label: str, mutate) -> None:
         (temp / ".github/workflows/android.yml").write_text(android, encoding="utf-8")
         (temp / ".github/workflows/coverage.yml").write_text(coverage, encoding="utf-8")
         shutil.copy2(SHADOW_METRICS, temp / ".github/workflows/ci-metrics-shadow.yml")
+        shutil.copy2(
+            COVERAGE_POST,
+            temp / ".github/workflows/coverage-post-processing.yml"
+        )
         target = temp / ".github/scripts/test-ci-safety-contract.sh"
         checker = temp / ".github/scripts/check-ci-safety-contract.py"
         shutil.copy2(CONTRACT, target)
