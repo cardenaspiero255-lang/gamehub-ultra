@@ -1,7 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import android.content.Context
-import android.test.mock.MockContext
+import org.mockito.Mockito
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
@@ -239,9 +239,8 @@ class VoiceOptimizationFeedbackContextTest {
             gpuVendor = "ARM",
             gpuRenderer = "Mali"
         )
-        val context = object : MockContext() {
-            override fun getApplicationContext(): Context = this
-        }
+        val context = Mockito.mock(Context::class.java)
+        Mockito.`when`(context.applicationContext).thenReturn(context)
 
         assertEquals(
             base,
