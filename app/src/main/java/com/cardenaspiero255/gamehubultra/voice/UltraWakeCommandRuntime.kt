@@ -67,11 +67,8 @@ internal class UltraWakeCommandRuntime(
             selectedProfile = selectedProfile,
             sessionActive = selectedGamePackage != null
         )
-        val aiContext = VoiceOptimizationFeedbackContext.enrichBlockingOrBase(
-            base = baseAiContext,
-            context = context,
-            device = device
-        )
+        val aiContext =
+            VoiceOptimizationFeedbackContext.enrichBlockingOrBase(baseAiContext, context, device)
         val status = VoiceDeviceStatus(
             batteryPercent = diagnostics.battery.percent,
             thermalLabel = voiceThermalLabel(diagnostics.thermal.status)
