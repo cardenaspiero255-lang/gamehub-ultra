@@ -1,0 +1,380 @@
+package com.cardenaspiero255.gamehubultra.session
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import com.cardenaspiero255.gamehubultra.MainActivity
+import com.cardenaspiero255.gamehubultra.R
+import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
+import com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession
+import com.cardenaspiero255.gamehubultra.domain.AiSessionCoach
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachPriority
+import com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe
+import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
+import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
+import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class SessionCoachMonitorService : Service() {
+    companion object {
+        const val ACTION_START =
+            "com.cardenaspiero255.gamehubultra.session.COACH_START"
+        const val ACTION_STOP =
+            "com.cardenaspiero255.gamehubultra.session.COACH_STOP"
+
+        private const val EXTRA_SESSION_ID = "session_id"
+        private const val EXTRA_PACKAGE_NAME = "package_name"
+        private const val SAMPLE_INTERVAL_MS = 15_000L
+        private const val LATENCY_RECHECK_MS = 30_000L
+        private const val MAX_SESSION_DURATION_MS = 4L * 60L * 60L * 1_000L
+
+        internal fun start(
+            context: Context,
+            packageName: String,
+            nowMillis: Long = System.currentTimeMillis(),
+            sessionId: String = UUID.randomUUID().toString()
+        ): String? {
+            val cleanPackage = packageName.trim()
+            if (cleanPackage.isEmpty()) return null
+
+            val store = SessionCoachSessionStore(context)
+            if (!store.beginSession(sessionId, cleanPackage, nowMillis)) return null
+
+            val intent = Intent(context, SessionCoachMonitorService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_SESSION_ID, sessionId)
+                .putExtra(EXTRA_PACKAGE_NAME, cleanPackage)
+
+            return runCatching {
+                ContextCompat.startForegroundService(context, intent)
+                sessionId
+            }.getOrElse {
+                store.discardActiveSession()
+                null
+            }
+        }
+
+        internal fun cancelLaunch(context: Context) {
+            SessionCoachSessionStore(context).discardActiveSession()
+            requestStop(context)
+        }
+
+        fun finishOnReturn(
+            context: Context,
+            nowMillis: Long = System.currentTimeMillis()
+        ): SessionCoachStoredSession? {
+            val finished = SessionCoachSessionStore(context)
+                .finishActiveSession(nowMillis)
+                ?: return null
+            SessionCoachNotifications.postSummary(context, finished)
+            requestStop(context)
+            return finished
+        }
+
+        private fun requestStop(context: Context) {
+            val intent = Intent(context, SessionCoachMonitorService::class.java)
+                .setAction(ACTION_STOP)
+            runCatching { context.startService(intent) }
+        }
+    }
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val store by lazy { SessionCoachSessionStore(applicationContext) }
+    private var monitorJob: Job? = null
+    private var lastLatencyMs: Long? = null
+    private var lastLatencyCheckAt = 0L
+
+    override fun onCreate() {
+        super.onCreate()
+        SessionCoachNotifications.ensureChannel(this)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopMonitoring()
+                return START_NOT_STICKY
+            }
+
+            ACTION_START -> {
+                val sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME).orEmpty()
+                if (sessionId.isBlank() || packageName.isBlank()) {
+                    stopMonitoring()
+                    return START_NOT_STICKY
+                }
+
+                ensureForeground(
+                    SessionCoachNotifications.foreground(
+                        context = this,
+                        title = "Ultra Session Coach",
+                        detail = "Preparando análisis para $packageName…"
+                    )
+                )
+                monitorJob?.cancel()
+                monitorJob = serviceScope.launch {
+                    monitorSession(sessionId, packageName)
+                }
+            }
+
+            else -> stopMonitoring()
+        }
+        return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        monitorJob?.cancel()
+        serviceScope.cancel()
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private suspend fun monitorSession(
+        sessionId: String,
+        packageName: String
+    ) {
+        val startedAt = store.readActiveSession()
+            ?.takeIf { it.sessionId == sessionId }
+            ?.startedAtMillis
+            ?: return stopMonitoring()
+
+        val device = withContext(Dispatchers.IO) {
+            DeviceInfoProvider.get(applicationContext)
+        }
+        var previous = store.readActiveSession()?.samples?.lastOrNull()
+        var firstSample = previous == null
+
+        while (serviceScope.isActive) {
+            val now = System.currentTimeMillis()
+            if (now - startedAt >= MAX_SESSION_DURATION_MS) {
+                finishTimedOutSession(now)
+                return
+            }
+            if (store.readActiveSession()?.sessionId != sessionId) {
+                stopMonitoring()
+                return
+            }
+
+            val diagnostics = readDiagnostics(now)
+            val current = SessionCoachTelemetryMapper.snapshot(now, diagnostics)
+            val observations = previous
+                ?.let { AiSessionCoach.midSession(it, current) }
+                .orEmpty()
+
+            store.appendSnapshot(
+                sessionId = sessionId,
+                snapshot = current,
+                observations = observations
+            )
+
+            if (firstSample) {
+                val pre = AiSessionCoach.preSession(
+                    readiness = SessionCoachTelemetryMapper.readiness(device, diagnostics),
+                    snapshot = current
+                )
+                store.recordPreSession(sessionId, pre)
+                updateForeground(
+                    SessionCoachNotifications.foreground(
+                        context = this,
+                        title = pre.title,
+                        detail = pre.detail
+                    )
+                )
+                firstSample = false
+            } else {
+                observations.maxByOrNull { it.priority.ordinal }?.let { message ->
+                    updateForeground(
+                        SessionCoachNotifications.foreground(
+                            context = this,
+                            title = message.title,
+                            detail = message.action ?: message.detail,
+                            important = message.priority == SessionCoachPriority.ACTION
+                        )
+                    )
+                }
+            }
+
+            previous = current
+            delay(SAMPLE_INTERVAL_MS)
+        }
+    }
+
+    private suspend fun readDiagnostics(nowMillis: Long): RuntimeDiagnostics {
+        val base = withContext(Dispatchers.IO) {
+            RuntimeDiagnosticsProvider.get(applicationContext)
+        }
+        val network = base.connectivity
+        val handle = network.networkHandle
+        val shouldProbe =
+            network.connected &&
+                network.validated &&
+                !network.metered &&
+                handle != null &&
+                (
+                    lastLatencyCheckAt == 0L ||
+                        nowMillis - lastLatencyCheckAt >= LATENCY_RECHECK_MS
+                    )
+
+        if (shouldProbe) {
+            lastLatencyMs = ConnectivityLatencyProbe.measure(
+                context = applicationContext,
+                expectedNetworkHandle = handle
+            )
+            lastLatencyCheckAt = nowMillis
+        } else if (!network.connected || !network.validated || network.metered) {
+            lastLatencyMs = null
+            lastLatencyCheckAt = 0L
+        }
+
+        return base.copy(
+            connectivity = network.copy(latencyMs = lastLatencyMs)
+        )
+    }
+
+    private fun finishTimedOutSession(nowMillis: Long) {
+        store.finishActiveSession(nowMillis)?.let { finished ->
+            SessionCoachNotifications.postSummary(this, finished)
+        }
+        stopMonitoring()
+    }
+
+    private fun ensureForeground(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                SessionCoachNotifications.FOREGROUND_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else {
+            startForeground(SessionCoachNotifications.FOREGROUND_ID, notification)
+        }
+    }
+
+    private fun updateForeground(notification: Notification) {
+        getSystemService(NotificationManager::class.java)
+            ?.notify(SessionCoachNotifications.FOREGROUND_ID, notification)
+    }
+
+    private fun stopMonitoring() {
+        monitorJob?.cancel()
+        monitorJob = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        stopSelf()
+    }
+}
+
+internal object SessionCoachNotifications {
+    const val FOREGROUND_ID = 45_001
+    private const val SUMMARY_ID = 45_002
+    private const val CHANNEL_ID = "ultra_session_coach"
+
+    fun ensureChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                "Ultra Session Coach",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Análisis de sesión con telemetría real del dispositivo."
+            }
+        )
+    }
+
+    fun foreground(
+        context: Context,
+        title: String,
+        detail: String,
+        important: Boolean = false
+    ): Notification {
+        ensureChannel(context)
+        return NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_qs_gamehub)
+            .setContentTitle(title)
+            .setContentText(detail)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setContentIntent(openAppIntent(context))
+            .setOngoing(true)
+            .setOnlyAlertOnce(!important)
+            .setPriority(
+                if (important) NotificationCompat.PRIORITY_DEFAULT
+                else NotificationCompat.PRIORITY_LOW
+            )
+            .addAction(
+                0,
+                "Detener",
+                stopIntent(context)
+            )
+            .build()
+    }
+
+    fun postSummary(
+        context: Context,
+        session: SessionCoachStoredSession
+    ) {
+        ensureChannel(context)
+        val report = AiSessionCoach.postSession(session.samples)
+        val detail = buildString {
+            append(report.summary)
+            report.nextSteps.take(3).forEach { step ->
+                append("\n• ")
+                append(step)
+            }
+        }
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_qs_gamehub)
+            .setContentTitle("Resumen de sesión · Ultra")
+            .setContentText(report.summary)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setContentIntent(openAppIntent(context))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        context.getSystemService(NotificationManager::class.java)
+            ?.notify(SUMMARY_ID, notification)
+    }
+
+    private fun openAppIntent(context: Context): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+    private fun stopIntent(context: Context): PendingIntent =
+        PendingIntent.getService(
+            context,
+            1,
+            Intent(context, SessionCoachMonitorService::class.java)
+                .setAction(SessionCoachMonitorService.ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+}
