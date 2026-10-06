@@ -6544,7 +6544,6 @@ Deno.test(
   },
 );
 
-
 Deno.test("academic paper queries use keyless Semantic Scholar specialist", async () => {
   let semanticCalls = 0;
   const deps: ResearchDependencies = {
@@ -6579,7 +6578,9 @@ Deno.test("academic paper queries use keyless Semantic Scholar specialist", asyn
   );
 
   if (result.abstained) throw new Error("expected Semantic Scholar evidence");
-  if (semanticCalls !== 1) throw new Error("expected one Semantic Scholar call");
+  if (semanticCalls !== 1) {
+    throw new Error("expected one Semantic Scholar call");
+  }
   if (!(result.sourceId ?? "").includes("semanticscholar.org")) {
     throw new Error("expected Semantic Scholar source");
   }
