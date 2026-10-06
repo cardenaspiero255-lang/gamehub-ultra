@@ -44,10 +44,10 @@ object UltraGeneralQueryRouter {
         """\b(clima|tiempo de hoy|weather|pronostico|forecast|temperatura|temperature|noticias|news|novedades|updates?|latest|newest|precio|price|precios|prices|cuanto cuesta|cuanto cuestan|how much|cost|costs|salio nuevo|released|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out|security patch|parche de seguridad)\b"""
     )
     private val explicitCurrentValuePattern = Regex(
-        """\b(precio (?:de|del)|precios de|price of|prices of|cuanto cuesta|cuanto cuestan|how much|cost of|costs of|[a-z0-9]+\s+s\s+(?:price|cost))\b"""
+        """\b(precio (?:de|del)|precios de|price of|prices of|cuanto cuesta|cuanto cuestan|how much|[a-z0-9]+\s+s\s+(?:price|cost))\b"""
     )
     private val explicitCostQuestionPattern = Regex(
-        """\b(?:what\s+(?:does|do|are)\s+.{1,80}\s+cost(?!\s+(?:mean|means|meaning|definition|refer\s+to))|what\s+is\s+(?:the\s+)?(?:price|cost)\s+(?:of|for)\b|how\s+much\s+(?:is|are|does|do)\b|cuanto\s+cuesta|cuanto\s+cuestan)\b"""
+        """(?:\bwhat\s+(?:does|do)\s+.{1,80}\s+cost\s*[?.!]?\s*$|\bwhat\s+is\s+(?:the\s+)?price\s+(?:of|for)\b|\bhow\s+much\s+(?:is|are|does|do)\b|\bcuanto\s+cuesta(?:n)?\b)"""
     )
     private val currentQualifierPattern = Regex(
         """\b(actual|actualmente|ahora|hoy|esta noche|esta semana|current|currently|latest|newest|today|tomorrow|tonight|this week)\b"""
