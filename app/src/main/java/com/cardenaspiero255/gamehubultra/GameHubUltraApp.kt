@@ -448,7 +448,6 @@ internal fun GameHubUltraApp(
         contextKey = currentOptimizationKey,
         profile = smartRecommendation.profile,
         currentProfile = uiState.effectiveProfile,
-        runtime = runtimeDiagnostics,
         observations = optimizationObservations
     )
     var rejectedSmartRecommendation by remember(smartRecommendationRejectionKey) {
