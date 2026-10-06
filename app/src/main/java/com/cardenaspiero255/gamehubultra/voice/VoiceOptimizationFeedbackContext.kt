@@ -56,12 +56,24 @@ internal object VoiceOptimizationFeedbackContext {
                         .versionName
                 }.getOrNull()
             }
-        val emulatorBackend = EmulatorBackendDetector.detect()
+        return buildContextKey(
+            device = device,
+            gamePackage = gamePackage,
+            gameVersion = gameVersion,
+            emulatorBackend = EmulatorBackendDetector.detect()
+        )
+    }
+
+    internal fun buildContextKey(
+        device: DeviceInfo,
+        gamePackage: String?,
+        gameVersion: String?,
+        emulatorBackend: String?
+    ): OptimizationContextKey {
         val driverFingerprint = listOf(
             device.gpuVendor.orEmpty(),
             device.gpuRenderer.orEmpty()
         ).joinToString("|").takeIf(String::isNotBlank)
-
         return OptimizationContextKey(
             deviceFingerprint = OptimizationFingerprint.from(
                 device = device,
