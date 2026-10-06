@@ -9,7 +9,8 @@ internal object SmartRecommendationActions {
         currentProfile: PerformanceProfile,
         recommendedProfile: PerformanceProfile,
         recordFeedback: (PerformanceProfile, OptimizationFeedbackDecision) -> Unit,
-        selectProfile: (PerformanceProfile) -> Unit
+        selectProfile: (PerformanceProfile) -> Unit,
+        existingRevertTarget: SmartRecommendationRevertTarget? = null
     ): SmartRecommendationRevertTarget? {
         val decision = SmartRecommendationRevertPolicy.applyDecision(
             gamePackage = gamePackage,
@@ -20,7 +21,13 @@ internal object SmartRecommendationActions {
             recordFeedback(recommendedProfile, feedback)
         }
         selectProfile(recommendedProfile)
-        return decision.revertTarget
+        return decision.revertTarget ?: existingRevertTarget?.takeIf {
+            SmartRecommendationRevertPolicy.canRevert(
+                target = it,
+                gamePackage = gamePackage,
+                currentProfile = currentProfile
+            )
+        }
     }
 
     fun reject(
