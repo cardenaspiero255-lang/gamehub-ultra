@@ -163,19 +163,13 @@ object SmartPerformanceAdvisor {
             if (acceptedFeedback.isNotEmpty()) {
                 add("Considera recomendaciones aceptadas previamente")
             }
-            if (
-                input.historicalObservations.any {
+            if (input.historicalObservations.any {
                     it.feedbackDecision == OptimizationFeedbackDecision.REJECTED ||
                         it.feedbackDecision == OptimizationFeedbackDecision.REVERTED
-                }
-            ) {
+                }) {
                 add("Evita recomendaciones rechazadas o revertidas repetidamente")
             }
-            if (
-                input.historicalObservations.any {
-                    it.failed || it.highTemperature
-                }
-            ) {
+            if (input.historicalObservations.any { it.failed || it.highTemperature }) {
                 add("Evita configuraciones con fallos/temperatura excesiva")
             }
         }
