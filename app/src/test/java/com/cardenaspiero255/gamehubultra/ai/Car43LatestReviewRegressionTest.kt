@@ -64,11 +64,27 @@ class Car43LatestReviewRegressionTest {
             "what is opportunity cost?",
             "what is marginal cost?",
             "what does opportunity cost mean?",
-            "what does sunk cost mean?"
+            "what does sunk cost mean?",
+            "what does marginal cost represent in economics?",
+            "what is the cost of goods sold?"
         ).forEach { question ->
             val request = UltraGeneralQueryRouter.classify(question)
             assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind, question)
             assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode, question)
+        }
+    }
+
+    @Test
+    fun `unambiguous price questions remain fresh`() {
+        listOf(
+            "What does an iPhone cost?",
+            "What is the price of an iPhone?",
+            "How much is an iPhone?",
+            "¿Cuánto cuesta un iPhone?"
+        ).forEach { question ->
+            val request = UltraGeneralQueryRouter.classify(question)
+            assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind, question)
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode, question)
         }
     }
 
@@ -91,7 +107,9 @@ class Car43LatestReviewRegressionTest {
             "What is profile likelihood?",
             "What is the mode of this distribution?",
             "Ultra, what is profile likelihood?",
-            "Ultra, what is the mode of this distribution?"
+            "Ultra, what is the mode of this distribution?",
+            "Which profile should I use for LinkedIn?",
+            "Which mode should I use for accessibility?"
         ).forEach { question ->
             assertEquals(
                 "Respuesta estable del modelo.",
