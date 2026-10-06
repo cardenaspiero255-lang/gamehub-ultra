@@ -293,6 +293,51 @@ class GameHubAiAdvisor(
             Regex("""\bexo\s*planetas?\b|\bexoplanetas?\b|\bexoplanets?\b""").containsMatchIn(normalized) ->
                 "Un exoplaneta es un planeta que orbita una estrella distinta del Sol. Se detecta mediante técnicas como tránsitos, velocidad radial, imagen directa y otros métodos astronómicos."
 
+            Regex("""\bcapa de ozono\b|\bozone layer\b""").containsMatchIn(normalized) ->
+                "La capa de ozono es una región de la estratosfera con una concentración relativamente alta de ozono. Absorbe gran parte de la radiación ultravioleta dañina del Sol y ayuda a proteger la vida en la Tierra."
+
+            Regex("""\bvelociraptors?\b""").containsMatchIn(normalized) ->
+                "El Velociraptor fue un dinosaurio terópodo pequeño y ágil que vivió durante el Cretácico tardío. Tenía plumas y una gran garra curva en cada pie, y era mucho más pequeño que su representación habitual en el cine."
+
+            Regex("""\bsol\b|\bsun\b""").containsMatchIn(normalized) ->
+                "El Sol es la estrella situada en el centro del sistema solar. Su energía procede principalmente de la fusión nuclear de hidrógeno en helio y proporciona la mayor parte de la luz y el calor que recibe la Tierra."
+
+            Regex("""\bluna\b|\bmoon\b""").containsMatchIn(normalized) ->
+                "La Luna es el satélite natural de la Tierra. Orbita nuestro planeta y su gravedad contribuye de forma importante a las mareas."
+
+            Regex("""\bdinosaurios?\b|\bdinosaurs?\b""").containsMatchIn(normalized) ->
+                "Los dinosaurios fueron un grupo diverso de reptiles que dominaron muchos ecosistemas terrestres durante gran parte de la era Mesozoica. Las aves modernas forman parte del linaje de los dinosaurios terópodos."
+
+            Regex("""\bterremotos?\b|\bearthquakes?\b""").containsMatchIn(normalized) ->
+                "Un terremoto es una liberación repentina de energía en la corteza terrestre que genera ondas sísmicas, normalmente por el movimiento de fallas asociado a las placas tectónicas."
+
+            Regex("""\btsunamis?\b""").containsMatchIn(normalized) ->
+                "Un tsunami es una serie de olas de gran longitud de onda causada por un desplazamiento brusco de mucha agua, por ejemplo debido a un terremoto submarino, un deslizamiento o una erupción volcánica."
+
+            normalized.contains("efecto invernadero") || normalized.contains("greenhouse effect") ->
+                "El efecto invernadero es el proceso por el que ciertos gases de la atmósfera absorben y reemiten radiación infrarroja, reteniendo parte del calor. Es natural y necesario, pero su intensificación eleva la temperatura media del planeta."
+
+            normalized.contains("cambio climatico") || normalized.contains("climate change") ->
+                "El cambio climático es una alteración persistente de los patrones del clima durante décadas o más. El calentamiento global actual está impulsado principalmente por el aumento de gases de efecto invernadero debido a actividades humanas."
+
+            Regex("""\bproteinas?\b|\bproteins?\b""").containsMatchIn(normalized) ->
+                "Una proteína es una molécula formada por cadenas de aminoácidos plegadas en estructuras específicas. Las proteínas cumplen funciones como catalizar reacciones, formar tejidos, transportar sustancias y participar en señales celulares."
+
+            Regex("""\bneuronas?\b|\bneurons?\b""").containsMatchIn(normalized) ->
+                "Una neurona es una célula especializada del sistema nervioso que recibe, procesa y transmite información mediante señales eléctricas y químicas."
+
+            Regex("""\bmitocondrias?\b|\bmitochondri(?:a|on)\b""").containsMatchIn(normalized) ->
+                "La mitocondria es un orgánulo celular que participa de forma central en la producción de energía utilizable, especialmente ATP, mediante procesos de respiración celular."
+
+            Regex("""\bfosiles?\b|\bfossils?\b""").containsMatchIn(normalized) ->
+                "Un fósil es un resto, huella o evidencia de un organismo del pasado preservado en materiales geológicos, como huesos mineralizados, impresiones o rastros."
+
+            Regex("""\bsupernovas?\b""").containsMatchIn(normalized) ->
+                "Una supernova es una explosión estelar extremadamente energética que puede ocurrir al final de la evolución de ciertas estrellas o por procesos explosivos en sistemas con enanas blancas."
+
+            Regex("""\bnubes?\b|\bclouds?\b""").containsMatchIn(normalized) ->
+                "Una nube es un conjunto visible de diminutas gotas de agua, cristales de hielo o ambos suspendidos en la atmósfera. Se forma cuando el vapor de agua se enfría y condensa alrededor de pequeñas partículas."
+
             Regex("""\bintrovertid[oa]s?\b|\bintroversion(?:es)?\b|\bintroverts?\b|\bintroverted\b""").containsMatchIn(normalized) ->
                 "Una persona introvertida suele orientar más su atención hacia su mundo interno y puede preferir ambientes con menor estimulación social. La introversión es un rasgo de personalidad, no implica necesariamente timidez ni un trastorno."
 
