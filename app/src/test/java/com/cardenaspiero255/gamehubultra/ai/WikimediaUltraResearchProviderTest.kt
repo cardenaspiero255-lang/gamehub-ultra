@@ -357,7 +357,8 @@ class WikimediaUltraResearchProviderTest {
                         }
                       }
                     }
-                """.trimIndent()
+                """.trimIndent(),
+                englishTranslationBody = """{"query":{"pages":{"42":{"title":"Black hole","langlinks":[{"lang":"es","*":"Agujero negro"}]}}}}"""
             )
         )
 
@@ -380,7 +381,8 @@ class WikimediaUltraResearchProviderTest {
                 scriptedTransport(
                     searchBody = """{"query":{"search":[{"title":"Agujero negro"}]}}""",
                     extractBody =
-                        """{"query":{"pages":{"9":{"title":"Agujero negro","extract":"Un agujero negro es una región del espacio con un campo gravitatorio extremo.","canonicalurl":"https://es.wikipedia.org/wiki/Agujero_negro"}}}}"""
+                        """{"query":{"pages":{"9":{"title":"Agujero negro","extract":"Un agujero negro es una región del espacio con un campo gravitatorio extremo.","canonicalurl":"https://es.wikipedia.org/wiki/Agujero_negro"}}}}""",
+                    englishTranslationBody = """{"query":{"pages":{"42":{"title":"Black hole","langlinks":[{"lang":"es","*":"Agujero negro"}]}}}}"""
                 )
             )
 
@@ -1242,10 +1244,14 @@ class WikimediaUltraResearchProviderTest {
         searchStatus: Int = 200,
         searchBody: String,
         extractStatus: Int = 200,
-        extractBody: String = "{}"
+        extractBody: String = "{}",
+        englishTranslationBody: String? = null
     ): UltraPublicKnowledgeTransport =
         UltraPublicKnowledgeTransport { url, _ ->
             when {
+                url.contains("en.wikipedia.org") && englishTranslationBody != null ->
+                    UltraResearchHttpResponse(200, englishTranslationBody)
+
                 url.contains("list=search") ->
                     UltraResearchHttpResponse(searchStatus, searchBody)
 
