@@ -2613,8 +2613,43 @@ function stripConversationSpeaker(value: string): string {
     .replace(/^(?:tú|tu|you|usuario|user)\s*:\s*/i, "");
 }
 
+function stripGeneralKnowledgeStyleModifiers(value: string): string {
+  let clean = value.trim();
+  const modifiers: RegExp[] = [
+    /\s*,?\s+para un estudiante\b/gi,
+    /\s*,?\s+para alguien que empieza\b/gi,
+    /\s*,?\s+sin asumir conocimientos previos\b/gi,
+    /\s*,?\s+en lenguaje cotidiano\b/gi,
+    /\s*,?\s+sin jerga innecesaria\b/gi,
+    /\s*,?\s+de forma clara y directa\b/gi,
+    /\s*,?\s+en pocas frases\b/gi,
+    /\s*,?\s+y menciona su funci[oó]n principal\b/gi,
+    /\s*,?\s+y destaca una idea clave\b/gi,
+    /\s*,?\s+con una explicaci[oó]n breve\b/gi,
+    /\s*,?\s+sin inventar datos\b/gi,
+    /\s*,?\s+y explica por qu[eé] es relevante\b/gi,
+  ];
+
+  for (const modifier of modifiers) {
+    clean = clean.replace(modifier, " ");
+  }
+
+  return clean
+    .replace(/\s+/g, " ")
+    .replace(/\s*,\s*$/g, "")
+    .replace(/[.?!]+$/g, "")
+    .trim();
+}
+
 function unwrapGeneralKnowledgePrompt(value: string): string {
+  const cleanValue = stripGeneralKnowledgeStyleModifiers(value);
   const wrappers: RegExp[] = [
+    /^expl[ií]came qu[eé] es\s+(.+?)\.?$/i,
+    /^describe\s+(.+?)\.?$/i,
+    /^para qu[eé] sirve o por qu[eé] importa\s+(.+?)\.?$/i,
+    /^resume qu[eé] es\s+(.+?)\.?$/i,
+    /^dime lo esencial sobre\s+(.+?)\.?$/i,
+    /^c[oó]mo explicar[ií]as\s+(.+?)\.?$/i,
     /^dame una explicaci[oó]n clara de\s+(.+?)\s+y su funci[oó]n principal\.?$/i,
     /^qu[eé] deber[ií]a saber una persona sobre\s+(.+?)\.?$/i,
     /^si alguien me pregunta por\s+(.+?),?\s*[¿?]?c[oó]mo lo explicar[ií]as en pocas frases\.?$/i,
@@ -2633,10 +2668,10 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
   ];
 
   for (const wrapper of wrappers) {
-    const match = value.match(wrapper);
+    const match = cleanValue.match(wrapper);
     if (match?.[1]?.trim()) return match[1].trim();
   }
-  return value;
+  return cleanValue;
 }
 
 function extractGeneralKnowledgeQuery(query: string): string {
