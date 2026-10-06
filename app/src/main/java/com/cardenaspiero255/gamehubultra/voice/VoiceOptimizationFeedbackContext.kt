@@ -22,10 +22,7 @@ internal object VoiceOptimizationFeedbackContext {
         base: GameHubAiContext,
         context: Context,
         device: DeviceInfo
-    ): GameHubAiContext =
-        enrichOrBase(base) {
-            enrich(base = base, context = context, device = device)
-        }
+    ): GameHubAiContext = enrichOrBase(base) { enrich(base, context, device) }
 
     suspend fun enrich(
         base: GameHubAiContext,
@@ -44,16 +41,10 @@ internal object VoiceOptimizationFeedbackContext {
         device: DeviceInfo
     ): GameHubAiContext {
         val appContext = context.applicationContext
-        val repository: GameOptimizationMemoryStateRepository =
-            GameOptimizationMemoryStore(appContext)
         return enrich(
-            base = base,
-            repository = repository,
-            contextKey = contextKey(
-                context = appContext,
-                device = device,
-                gamePackage = base.selectedGamePackage
-            )
+            base,
+            GameOptimizationMemoryStore(appContext),
+            contextKey(appContext, device, base.selectedGamePackage)
         )
     }
 
@@ -62,22 +53,12 @@ internal object VoiceOptimizationFeedbackContext {
         device: DeviceInfo,
         gamePackage: String?
     ): OptimizationContextKey {
-        val gameVersion = gamePackage
-            ?.takeIf(String::isNotBlank)
-            ?.let { packageName ->
-                @Suppress("DEPRECATION")
-                runCatching {
-                    context.packageManager
-                        .getPackageInfo(packageName, 0)
-                        .versionName
-                }.getOrNull()
-            }
-        return buildContextKey(
-            device = device,
-            gamePackage = gamePackage,
-            gameVersion = gameVersion,
-            emulatorBackend = EmulatorBackendDetector.detect()
-        )
+        @Suppress("DEPRECATION")
+        val gameVersion = gamePackage?.takeIf(String::isNotBlank)?.let { packageName ->
+            runCatching { context.packageManager.getPackageInfo(packageName, 0).versionName }
+                .getOrNull()
+        }
+        return buildContextKey(device, gamePackage, gameVersion, EmulatorBackendDetector.detect())
     }
 
     internal fun buildContextKey(
