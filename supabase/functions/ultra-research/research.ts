@@ -2609,6 +2609,613 @@ function conciseExcerpt(value: string, maxChars = 650): string {
   return clean + "…";
 }
 
+
+type SpecialistResearchDomain =
+  | "doi"
+  | "biomedical"
+  | "academic"
+  | "books"
+  | "world_bank";
+
+function specialistResearchDomain(
+  query: string,
+): SpecialistResearchDomain | null {
+  const clean = normalize(stripAssistantInvocation(query));
+
+  if (
+    /\b(?:doi|digital object identifier|identificador digital|crossref)\b/.test(
+      clean,
+    )
+  ) {
+    return "doi";
+  }
+
+  const biomedicalResearchSignal =
+    /\b(?:estudio|estudios|paper|papers|articulo|articulos|investigacion|investigaciones|research|study|studies|literatura|literature)\b/.test(
+      clean,
+    );
+  const biomedicalTopicSignal =
+    /\b(?:biomed|biomedico|biomedica|medicina|medico|medica|clinical|clinico|clinica|cancer|melanoma|tumor|oncologia|inmunoterapia|immunotherapy|enfermedad|disease|farmaco|drug|tratamiento|treatment|genetica|genetic|neuro|cardio|pubmed|europe pmc)\b/.test(
+      clean,
+    );
+  if (biomedicalResearchSignal && biomedicalTopicSignal) {
+    return "biomedical";
+  }
+
+  if (
+    /\b(?:paper|papers|articulo cientifico|articulos cientificos|estudio cientifico|estudios cientificos|literatura cientifica|scientific paper|scientific papers|research paper|research papers|semantic scholar)\b/.test(
+      clean,
+    )
+  ) {
+    return "academic";
+  }
+
+  if (
+    /\b(?:libro|libros|books?|bibliografia|bibliography|open library|isbn)\b/.test(
+      clean,
+    )
+  ) {
+    return "books";
+  }
+
+  const worldBankSignal = /\b(?:banco mundial|world bank)\b/.test(clean);
+  const worldBankIndicatorSignal =
+    /\b(?:pib|gdp|producto interno bruto|population|poblacion|inflacion|inflation|desempleo|unemployment|esperanza de vida|life expectancy)\b/.test(
+      clean,
+    );
+  if (worldBankSignal && worldBankIndicatorSignal) {
+    return "world_bank";
+  }
+
+  return null;
+}
+
+function specialistSearchTopic(
+  query: string,
+  domain: SpecialistResearchDomain,
+): string {
+  const raw = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const patterns: Record<SpecialistResearchDomain, RegExp[]> = {
+    doi: [
+      /^(?:encuentra|buscar?|busca|dime|cual es|cuál es)\s+(?:el\s+)?doi\s+(?:del|de la|de|para)\s+(?:paper|articulo|artículo|estudio)?\s*/i,
+      /^(?:doi|crossref)\s+(?:de|del|para)\s*/i,
+    ],
+    biomedical: [
+      /^(?:busca|buscar|encuentra|muestrame|muéstrame)\s+(?:estudios?|papers?|articulos?|artículos?|investigaciones?)\s+(?:biomedicos?|biomédicos?|biomedicas?|biomédicas?)?\s*(?:sobre|de)?\s*/i,
+      /^(?:estudios?|papers?|research|literatura)\s+(?:sobre|de)\s*/i,
+    ],
+    academic: [
+      /^(?:busca|buscar|encuentra|muestrame|muéstrame)\s+(?:papers?|articulos?|artículos?|estudios?)\s+(?:cientificos?|científicos?)?\s*(?:sobre|de)?\s*/i,
+      /^(?:papers?|research papers?|scientific papers?|literatura cientifica|literatura científica)\s+(?:sobre|de)?\s*/i,
+    ],
+    books: [
+      /^(?:busca|buscar|encuentra|recomienda|muestrame|muéstrame)\s+(?:libros?|books?)\s+(?:sobre|de)?\s*/i,
+      /^(?:libros?|books?)\s+(?:sobre|de)\s*/i,
+    ],
+    world_bank: [],
+  };
+
+  let topic = raw;
+  for (const pattern of patterns[domain]) {
+    topic = topic.replace(pattern, "").trim();
+  }
+
+  if (domain === "world_bank") {
+    topic = topic
+      .replace(/\s+(?:segun|según)\s+(?:el\s+)?banco mundial.*$/i, "")
+      .replace(/\s+according to (?:the )?world bank.*$/i, "")
+      .trim();
+  }
+
+  return topic || raw;
+}
+
+function specialistCandidateMatches(
+  topic: string,
+  candidateText: string,
+): boolean {
+  return candidateMatchesTopic(topic, candidateText) ||
+    candidateMatchesQuery(topic, candidateText);
+}
+
+async function semanticScholarEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "academic");
+  if (!topic) return abstain("Necesito un tema científico concreto.");
+
+  const url = new URL(
+    "https://api.semanticscholar.org/graph/v1/paper/search",
+  );
+  url.searchParams.set("query", topic);
+  url.searchParams.set("limit", "3");
+  url.searchParams.set(
+    "fields",
+    "paperId,title,year,abstract,url,citationCount,authors",
+  );
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const papers = Array.isArray(payload?.data) ? payload.data : [];
+
+  for (const rawPaper of papers.slice(0, 3)) {
+    if (!rawPaper || typeof rawPaper !== "object") continue;
+    const paper = rawPaper as JsonObject;
+    const paperId = stringValue(paper.paperId);
+    const title = stringValue(paper.title);
+    const abstract = stringValue(paper.abstract);
+    const year = numberValue(paper.year);
+    const source = stringValue(paper.url) ??
+      (paperId
+        ? "https://www.semanticscholar.org/paper/" +
+          encodeURIComponent(paperId)
+        : null);
+    if (!title || !source) continue;
+
+    const candidateText = [title, abstract].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = Array.isArray(paper.authors)
+      ? paper.authors
+        .map((author) =>
+          author && typeof author === "object"
+            ? stringValue((author as JsonObject).name)
+            : null
+        )
+        .filter((value): value is string => Boolean(value))
+        .slice(0, 4)
+      : [];
+    const citationCount = numberValue(paper.citationCount);
+    const summary = abstract
+      ? conciseExcerpt(abstract, 900)
+      : "Semantic Scholar no devolvió resumen para este resultado.";
+    const metadata = [
+      year == null ? "" : "Año: " + Math.trunc(year),
+      authors.length ? "Autores: " + authors.join(", ") : "",
+      citationCount == null
+        ? ""
+        : "Citas registradas: " + Math.trunc(citationCount),
+    ].filter(Boolean).join(". ");
+    const displayText =
+      title + (metadata ? ". " + metadata : "") + ". " + summary;
+
+    return {
+      claimKey: "semantic-scholar:" + slug(paperId ?? title),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: false,
+    };
+  }
+
+  return abstain(
+    "Semantic Scholar no encontró un paper suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "semantic_scholar",
+    },
+  );
+}
+
+async function europePmcEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "biomedical");
+  if (!topic) return abstain("Necesito un tema biomédico concreto.");
+
+  const url = new URL(
+    "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+  );
+  url.searchParams.set("query", topic);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("pageSize", "3");
+  url.searchParams.set("resultType", "core");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const resultList = payload?.resultList &&
+      typeof payload.resultList === "object"
+    ? payload.resultList as JsonObject
+    : null;
+  const results = Array.isArray(resultList?.result) ? resultList.result : [];
+
+  for (const rawResult of results.slice(0, 3)) {
+    if (!rawResult || typeof rawResult !== "object") continue;
+    const item = rawResult as JsonObject;
+    const id = stringValue(item.id);
+    const sourceCode = stringValue(item.source) ?? "MED";
+    const title = stringValue(item.title);
+    const abstract = stringValue(item.abstractText);
+    if (!id || !title) continue;
+
+    const candidateText = [title, abstract].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const source = "https://europepmc.org/article/" +
+      encodeURIComponent(sourceCode) + "/" + encodeURIComponent(id);
+    const authors = stringValue(item.authorString);
+    const year = stringValue(item.pubYear);
+    const doi = stringValue(item.doi);
+    const summary = abstract
+      ? conciseExcerpt(abstract, 900)
+      : "Europe PMC no devolvió resumen para este resultado.";
+    const metadata = [
+      year ? "Año: " + year : "",
+      authors ? "Autores: " + authors : "",
+      doi ? "DOI: " + doi : "",
+    ].filter(Boolean).join(". ");
+    const displayText =
+      title + (metadata ? ". " + metadata : "") + ". " + summary;
+
+    return {
+      claimKey: "europe-pmc:" + slug(sourceCode) + ":" + slug(id),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: doi
+        ? unique([source, "https://doi.org/" + doi])
+        : [source],
+      independentSourceCount: 1,
+      authoritative: false,
+    };
+  }
+
+  return abstain(
+    "Europe PMC no encontró un estudio biomédico suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "europe_pmc",
+    },
+  );
+}
+
+function crossrefTitle(
+  item: JsonObject,
+): string | null {
+  const titles = Array.isArray(item.title) ? item.title : [];
+  return titles
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .find(Boolean) ?? null;
+}
+
+function crossrefAuthors(
+  item: JsonObject,
+): string[] {
+  return Array.isArray(item.author)
+    ? item.author
+      .map((rawAuthor) => {
+        if (!rawAuthor || typeof rawAuthor !== "object") return "";
+        const author = rawAuthor as JsonObject;
+        return [
+          stringValue(author.given),
+          stringValue(author.family),
+        ].filter(Boolean).join(" ").trim();
+      })
+      .filter(Boolean)
+      .slice(0, 5)
+    : [];
+}
+
+async function crossrefEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "doi");
+  if (!topic) return abstain("Necesito un título o tema bibliográfico concreto.");
+
+  const url = new URL("https://api.crossref.org/works");
+  url.searchParams.set("query.bibliographic", topic);
+  url.searchParams.set("rows", "3");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const message = payload?.message && typeof payload.message === "object"
+    ? payload.message as JsonObject
+    : null;
+  const items = Array.isArray(message?.items) ? message.items : [];
+
+  for (const rawItem of items.slice(0, 3)) {
+    if (!rawItem || typeof rawItem !== "object") continue;
+    const item = rawItem as JsonObject;
+    const title = crossrefTitle(item);
+    const doi = stringValue(item.DOI);
+    if (!title || !doi) continue;
+
+    const publisher = stringValue(item.publisher);
+    const candidateText = [title, publisher].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = crossrefAuthors(item);
+    const source = stringValue(item.URL) ?? "https://doi.org/" + doi;
+    const metadata = [
+      "DOI: " + doi,
+      authors.length ? "Autores: " + authors.join(", ") : "",
+      publisher ? "Editorial: " + publisher : "",
+    ].filter(Boolean).join(". ");
+    const displayText = title + ". " + metadata + ".";
+
+    return {
+      claimKey: "crossref:" + slug(doi),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: unique([source, "https://doi.org/" + doi]),
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "Crossref no encontró metadatos bibliográficos suficientemente relacionados.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "crossref",
+    },
+  );
+}
+
+async function openLibraryEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "books");
+  if (!topic) return abstain("Necesito un tema o título de libro concreto.");
+
+  const url = new URL("https://openlibrary.org/search.json");
+  url.searchParams.set("q", topic);
+  url.searchParams.set("limit", "3");
+  url.searchParams.set(
+    "fields",
+    "key,title,author_name,first_publish_year,subject",
+  );
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const docs = Array.isArray(payload?.docs) ? payload.docs : [];
+
+  for (const rawDoc of docs.slice(0, 3)) {
+    if (!rawDoc || typeof rawDoc !== "object") continue;
+    const doc = rawDoc as JsonObject;
+    const key = stringValue(doc.key);
+    const title = stringValue(doc.title);
+    if (!key || !title) continue;
+
+    const subjects = stringArray(doc.subject).slice(0, 8);
+    const candidateText = [title, ...subjects].join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = stringArray(doc.author_name).slice(0, 5);
+    const year = numberValue(doc.first_publish_year);
+    const source = "https://openlibrary.org" + key;
+    const metadata = [
+      authors.length ? "Autores: " + authors.join(", ") : "",
+      year == null ? "" : "Primera publicación: " + Math.trunc(year),
+      subjects.length ? "Temas: " + subjects.slice(0, 4).join(", ") : "",
+    ].filter(Boolean).join(". ");
+    const displayText = title + (metadata ? ". " + metadata : "") + ".";
+
+    return {
+      claimKey: "open-library:" + slug(key),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "Open Library no encontró un libro suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "open_library",
+    },
+  );
+}
+
+type WorldBankIndicator = {
+  code: string;
+  label: string;
+};
+
+function worldBankIndicator(
+  query: string,
+): WorldBankIndicator | null {
+  const clean = normalize(query);
+  if (/\b(?:pib per capita|gdp per capita)\b/.test(clean)) {
+    return { code: "NY.GDP.PCAP.CD", label: "PIB per cápita" };
+  }
+  if (/\b(?:pib|gdp|producto interno bruto)\b/.test(clean)) {
+    return { code: "NY.GDP.MKTP.CD", label: "PIB" };
+  }
+  if (/\b(?:poblacion|population)\b/.test(clean)) {
+    return { code: "SP.POP.TOTL", label: "Población" };
+  }
+  if (/\b(?:inflacion|inflation)\b/.test(clean)) {
+    return { code: "FP.CPI.TOTL.ZG", label: "Inflación" };
+  }
+  if (/\b(?:desempleo|unemployment)\b/.test(clean)) {
+    return { code: "SL.UEM.TOTL.ZS", label: "Desempleo" };
+  }
+  if (/\b(?:esperanza de vida|life expectancy)\b/.test(clean)) {
+    return { code: "SP.DYN.LE00.IN", label: "Esperanza de vida" };
+  }
+  return null;
+}
+
+function worldBankCountryQuery(
+  query: string,
+): string | null {
+  const stripped = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const match = stripped.match(
+    /(?:\bde\b|\ben\b|\bof\b|\bin\b)\s+([\p{L}][\p{L}\s.'-]{1,80}?)(?:\s+(?:segun|según)\s+(?:el\s+)?banco mundial|\s+according to (?:the )?world bank|$)/iu,
+  );
+  return match?.[1]?.trim() || null;
+}
+
+async function worldBankEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const indicator = worldBankIndicator(query);
+  const countryQuery = worldBankCountryQuery(query);
+  if (!indicator || !countryQuery) {
+    return abstain(
+      "Necesito un indicador compatible y un país para consultar el Banco Mundial.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "world_bank",
+      },
+    );
+  }
+
+  const countriesUrl = new URL("https://api.worldbank.org/v2/country");
+  countriesUrl.searchParams.set("format", "json");
+  countriesUrl.searchParams.set("per_page", "400");
+
+  const countriesPayload = await fetchJson(deps, countriesUrl, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const countries = Array.isArray(countriesPayload) &&
+      Array.isArray(countriesPayload[1])
+    ? countriesPayload[1]
+    : [];
+  const normalizedCountry = normalize(countryQuery);
+  const country = countries.find((rawCountry) => {
+    if (!rawCountry || typeof rawCountry !== "object") return false;
+    const item = rawCountry as JsonObject;
+    return [
+      stringValue(item.name),
+      stringValue(item.iso2Code),
+      stringValue(item.id),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => normalize(value) === normalizedCountry);
+  }) as JsonObject | undefined;
+
+  const iso2Code = stringValue(country?.iso2Code);
+  const countryName = stringValue(country?.name);
+  if (!iso2Code || !countryName) {
+    return abstain(
+      "El Banco Mundial no pudo resolver el país solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "world_bank",
+      },
+    );
+  }
+
+  const indicatorUrl = new URL(
+    "https://api.worldbank.org/v2/country/" +
+      encodeURIComponent(iso2Code) + "/indicator/" + indicator.code,
+  );
+  indicatorUrl.searchParams.set("format", "json");
+  indicatorUrl.searchParams.set("per_page", "10");
+  indicatorUrl.searchParams.set("mrv", "5");
+
+  const indicatorPayload = await fetchJson(deps, indicatorUrl, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const observations = Array.isArray(indicatorPayload) &&
+      Array.isArray(indicatorPayload[1])
+    ? indicatorPayload[1]
+    : [];
+  const latest = observations.find((rawObservation) =>
+    Boolean(rawObservation) &&
+    typeof rawObservation === "object" &&
+    numberValue((rawObservation as JsonObject).value) != null
+  ) as JsonObject | undefined;
+  const value = numberValue(latest?.value);
+  const year = stringValue(latest?.date);
+  if (value == null || !year) {
+    return abstain(
+      "El Banco Mundial no devolvió una observación reciente utilizable.",
+      {
+        reasonCode: "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "world_bank",
+      },
+    );
+  }
+
+  const formatted = new Intl.NumberFormat("es-CL", {
+    maximumFractionDigits: 2,
+  }).format(value);
+  const displayText = indicator.label + " de " + countryName + ": " +
+    formatted + " (" + year + "), según el Banco Mundial.";
+
+  return {
+    claimKey: "world-bank:" + slug(iso2Code) + ":" + slug(indicator.code),
+    value: indicator.code + "|" + iso2Code + "|" + year + "|" + value,
+    displayText,
+    sourceId: indicatorUrl.toString(),
+    sourceIds: [indicatorUrl.toString()],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt: year,
+  };
+}
+
+async function specializedResearchEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult | null> {
+  const domain = specialistResearchDomain(query);
+  if (!domain) return null;
+
+  if (domain === "doi") {
+    return await crossrefEvidence(query, deps, signal);
+  }
+  if (domain === "biomedical") {
+    const europePmc = await europePmcEvidence(query, deps, signal);
+    if (!europePmc.abstained) return europePmc;
+    return await semanticScholarEvidence(query, deps, signal);
+  }
+  if (domain === "academic") {
+    const semanticScholar = await semanticScholarEvidence(query, deps, signal);
+    if (!semanticScholar.abstained) return semanticScholar;
+    return await crossrefEvidence(query, deps, signal);
+  }
+  if (domain === "books") {
+    return await openLibraryEvidence(query, deps, signal);
+  }
+  return await worldBankEvidence(query, deps, signal);
+}
+
 async function stackOverflowSpanishEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -3773,6 +4380,16 @@ export async function routeResearchQuery(
   const comparisonSignal = /\b(compara|compare|versus|vs)\b/;
   const specsSignal =
     /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
+
+  const specialistController = new AbortController();
+  const specialist = await specializedResearchEvidence(
+    query,
+    deps,
+    specialistController.signal,
+  );
+  if (specialist && !specialist.abstained) {
+    return specialist;
+  }
 
   if (
     kind === "GENERAL_KNOWLEDGE" ||
