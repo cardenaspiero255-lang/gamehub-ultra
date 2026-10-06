@@ -40,7 +40,7 @@ jobs:
       SMOKE_SEED: ${{ github.run_id }}
       SMOKE_STABLE_WORKERS: "24"
       SMOKE_WARMUP_WORKERS: "1"
-      SMOKE_WARMUP_WAVE_COUNT: "4"
+      SMOKE_WARMUP_WAVE_COUNT: "16"
       SMOKE_WARMUP_WAVE_DELAY_SECONDS: "2"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
       SMOKE_SHARD_COUNT: "32"
