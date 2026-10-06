@@ -289,4 +289,39 @@ class SmartRecommendationRevertPolicyTest {
         assertEquals(listOf(PerformanceProfile.X4), selected)
     }
 
+    @Test
+    fun `profile changes invalidate stale smart recommendation revert targets`() {
+        val target = SmartRecommendationRevertPolicy.capture(
+            gamePackage = "game.a",
+            previousProfile = PerformanceProfile.BALANCED,
+            appliedProfile = PerformanceProfile.X4
+        )
+
+        assertEquals(
+            target,
+            SmartRecommendationActions.onProfileChanged(
+                target = target,
+                gamePackage = "game.a",
+                currentProfile = PerformanceProfile.X4
+            )
+        )
+        assertEquals(
+            null,
+            SmartRecommendationActions.onProfileChanged(
+                target = target,
+                gamePackage = "game.a",
+                currentProfile = PerformanceProfile.FRAME_INTERPOLATION
+            )
+        )
+        assertEquals(
+            null,
+            SmartRecommendationActions.onProfileChanged(
+                target = target,
+                gamePackage = "game.b",
+                currentProfile = PerformanceProfile.X4
+            )
+        )
+    }
+
+
 }
