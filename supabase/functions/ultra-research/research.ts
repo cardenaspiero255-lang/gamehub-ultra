@@ -2676,7 +2676,9 @@ type SpecialistResearchDomain =
   | "books"
   | "world_bank"
   | "cybersecurity"
-  | "earthquake";
+  | "earthquake"
+  | "chemistry"
+  | "exoplanet";
 
 function specialistResearchDomain(
   query: string,
@@ -2693,6 +2695,27 @@ function specialistResearchDomain(
 
   if (/\b(?:arxiv|preprint|preprints)\b/.test(clean)) {
     return "arxiv";
+  }
+
+  const chemistryPropertySignal =
+    /\b(?:pubchem|formula molecular|molecular formula|masa molecular|peso molecular|molecular weight|iupac|smiles|inchi|compound id|cid)\b/.test(
+      clean,
+    );
+  if (chemistryPropertySignal) {
+    return "chemistry";
+  }
+
+  const exoplanetArchiveSignal =
+    /\b(?:nasa exoplanet archive|exoplanet archive|archivo de exoplanetas de nasa)\b/.test(
+      clean,
+    );
+  const exoplanetDataSignal =
+    /\b(?:exoplaneta|exoplanet)\b/.test(clean) &&
+    /\b(?:datos|data|masa|mass|radio|radius|orbita|orbital|periodo|period|estrella anfitriona|host star|metodo de descubrimiento|discovery method|descubierto|discovered)\b/.test(
+      clean,
+    );
+  if (exoplanetArchiveSignal || exoplanetDataSignal) {
+    return "exoplanet";
   }
 
   if (
@@ -2764,6 +2787,15 @@ function specialistSearchTopic(
     .trim();
 
   const patterns: Record<SpecialistResearchDomain, RegExp[]> = {
+    chemistry: [
+      /^(?:cual es|cuál es|dime|busca|buscar|encuentra)\s+(?:la\s+)?(?:formula molecular|fórmula molecular|masa molecular|peso molecular|molecular formula|molecular weight)(?:\s+y\s+(?:masa molecular|peso molecular|molecular weight))?\s+(?:de|del|para)\s*/i,
+      /^(?:pubchem|compound|compuesto)\s+(?:de|del|para)?\s*/i,
+    ],
+    exoplanet: [
+      /^(?:busca|buscar|encuentra|dame|muestrame|muéstrame)\s+(?:datos|data)\s+(?:del|de|en)\s+(?:nasa\s+)?exoplanet archive\s+(?:sobre|de)?\s*/i,
+      /^(?:nasa\s+)?exoplanet archive\s+(?:sobre|de)?\s*/i,
+      /^(?:datos|data)\s+(?:sobre|de)\s+(?:el\s+)?exoplaneta\s*/i,
+    ],
     doi: [
       /^(?:encuentra|buscar?|busca|dime|cual es|cuál es)\s+(?:el\s+)?doi\s+(?:del|de la|de|para)\s+(?:paper|articulo|artículo|estudio)?\s*/i,
       /^(?:doi|crossref)\s+(?:de|del|para)\s*/i,
@@ -2857,6 +2889,182 @@ function specialistCandidateMatches(
   return matched.length >= 2;
 }
 
+
+
+async function pubChemEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "chemistry")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!topic || topic.length > 120) {
+    return abstain(
+      "Necesito un compuesto químico concreto para consultar PubChem.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "pubchem",
+      },
+    );
+  }
+
+  const url = new URL(
+    "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/" +
+      encodeURIComponent(topic) +
+      "/property/Title,MolecularFormula,MolecularWeight,IUPACName/JSON",
+  );
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const propertyTable = payload?.PropertyTable &&
+      typeof payload.PropertyTable === "object"
+    ? payload.PropertyTable as JsonObject
+    : null;
+  const properties = Array.isArray(propertyTable?.Properties)
+    ? propertyTable.Properties
+    : [];
+  const raw = properties.find((value) =>
+    Boolean(value) && typeof value === "object"
+  ) as JsonObject | undefined;
+
+  const cid = numberValue(raw?.CID);
+  const title = stringValue(raw?.Title) ?? topic;
+  const formula = stringValue(raw?.MolecularFormula);
+  const molecularWeight = stringValue(raw?.MolecularWeight) ??
+    (numberValue(raw?.MolecularWeight)?.toString() ?? null);
+  const iupacName = stringValue(raw?.IUPACName);
+
+  if (cid == null || (!formula && !molecularWeight && !iupacName)) {
+    return abstain(
+      "PubChem no encontró propiedades utilizables para el compuesto solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "pubchem",
+      },
+    );
+  }
+
+  const source =
+    "https://pubchem.ncbi.nlm.nih.gov/compound/" + Math.trunc(cid);
+  const displayText = [
+    title + ".",
+    formula ? "Fórmula molecular: " + formula + "." : "",
+    molecularWeight ? "Masa molecular: " + molecularWeight + "." : "",
+    iupacName ? "Nombre IUPAC: " + iupacName + "." : "",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "pubchem:" + Math.trunc(cid),
+    value: normalize(displayText),
+    displayText,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+  };
+}
+
+function escapeAdqlString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+async function nasaExoplanetEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "exoplanet")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!topic || topic.length > 120) {
+    return abstain(
+      "Necesito el nombre de un exoplaneta concreto para consultar el archivo de NASA.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "nasa_exoplanet_archive",
+      },
+    );
+  }
+
+  const safeTopic = escapeAdqlString(topic);
+  const adql =
+    "select top 3 pl_name,hostname,disc_year,discoverymethod," +
+    "pl_orbper,pl_rade,pl_masse from pscomppars where lower(pl_name) " +
+    "like lower('%" + safeTopic + "%')";
+  const url = new URL(
+    "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
+  );
+  url.searchParams.set("query", adql);
+  url.searchParams.set("format", "json");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const rows = Array.isArray(payload) ? payload : [];
+  const normalizedTopic = normalize(topic);
+  const row = rows
+    .filter((value): value is JsonObject =>
+      Boolean(value) && typeof value === "object"
+    )
+    .find((candidate) => {
+      const planetName = stringValue(candidate.pl_name);
+      if (!planetName) return false;
+      const normalizedName = normalize(planetName);
+      return normalizedName.includes(normalizedTopic) ||
+        normalizedTopic.includes(normalizedName);
+    });
+
+  const planetName = stringValue(row?.pl_name);
+  if (!row || !planetName) {
+    return abstain(
+      "NASA Exoplanet Archive no encontró el planeta solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "nasa_exoplanet_archive",
+      },
+    );
+  }
+
+  const hostName = stringValue(row.hostname);
+  const discoveryYear = numberValue(row.disc_year);
+  const discoveryMethod = stringValue(row.discoverymethod);
+  const orbitalPeriod = numberValue(row.pl_orbper);
+  const earthRadius = numberValue(row.pl_rade);
+  const earthMass = numberValue(row.pl_masse);
+
+  const displayText = [
+    planetName + ".",
+    hostName ? "Estrella anfitriona: " + hostName + "." : "",
+    discoveryYear == null
+      ? ""
+      : "Año de descubrimiento: " + Math.trunc(discoveryYear) + ".",
+    discoveryMethod
+      ? "Método de descubrimiento: " + discoveryMethod + "."
+      : "",
+    orbitalPeriod == null
+      ? ""
+      : "Período orbital: " + orbitalPeriod + " días.",
+    earthRadius == null ? "" : "Radio: " + earthRadius + " R⊕.",
+    earthMass == null ? "" : "Masa: " + earthMass + " M⊕.",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "nasa-exoplanet:" + slug(planetName),
+    value: normalize(displayText),
+    displayText,
+    sourceId: url.toString(),
+    sourceIds: [url.toString()],
+    independentSourceCount: 1,
+    authoritative: true,
+  };
+}
 
 function decodeXmlText(value: string): string {
   return value
@@ -3655,6 +3863,12 @@ async function specializedResearchEvidence(
   const domain = specialistResearchDomain(query);
   if (!domain) return null;
 
+  if (domain === "chemistry") {
+    return await pubChemEvidence(query, deps, signal);
+  }
+  if (domain === "exoplanet") {
+    return await nasaExoplanetEvidence(query, deps, signal);
+  }
   if (domain === "doi") {
     return await crossrefEvidence(query, deps, signal);
   }
