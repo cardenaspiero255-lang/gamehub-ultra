@@ -7452,3 +7452,58 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "generic bear definition rejects fictional character search results",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "El Oso Yogui",
+                  extract:
+                    "El Oso Yogui es un personaje ficticio de dibujos animados creado por Hanna-Barbera.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/El_Oso_Yogui",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "Ursidae",
+                  extract:
+                    "Los osos son mamíferos carnívoros de la familia Ursidae.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursidae",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un oso?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected a bear definition");
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("mamífer") || answer.includes("yogui")) {
+      throw new Error("expected the animal, not a fictional bear");
+    }
+  },
+);
