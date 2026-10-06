@@ -199,4 +199,32 @@ class UltraAiCore43Test {
         assertEquals("BALANCED", result.recommendation.profileId)
     }
 
+    @Test
+    fun `non finite model confidence is normalized safely during feedback recovery`() {
+        val result = UltraAiCore2(
+            recommender = UltraAiRecommender { _, _, _ ->
+                UltraAiRecommendation(
+                    profileId = "X4",
+                    confidence = Double.NaN,
+                    evidence = listOf("model=nan")
+                )
+            }
+        ).evaluate(
+            observation = UltraAiObservation(
+                gamePackage = "com.example.game",
+                activeProfileId = "X4",
+                batteryPercent = 80,
+                thermalLabel = "normal"
+            ),
+            feedback = UltraAiFeedbackSnapshot(
+                rejectedProfileIds = setOf("X4"),
+                rejectedProfileCounts = mapOf("X4" to 1)
+            ),
+            memories = emptyList()
+        )
+
+        assertTrue(result.recommendation.confidence.isFinite())
+        assertEquals(0.0, result.recommendation.confidence)
+    }
+
 }
