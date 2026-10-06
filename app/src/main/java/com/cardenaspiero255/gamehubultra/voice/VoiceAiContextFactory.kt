@@ -19,9 +19,7 @@ internal object VoiceAiContextFactory {
             sustainedPerformanceSupported = capabilities.sustainedPerformanceSupported,
             cpuCores = device.cpuCores,
             totalRamMb = device.totalRamMb.toInt(),
-            gpuAvailable =
-                !device.gpuRenderer.isNullOrBlank() ||
-                    !device.gpuVendor.isNullOrBlank(),
+            gpuAvailable = !device.gpuRenderer.isNullOrBlank() || !device.gpuVendor.isNullOrBlank(),
             thermalStatus = diagnostics.thermal.status,
             thermalHeadroom = diagnostics.thermal.headroom,
             batteryPercent = diagnostics.battery.percent,
@@ -29,8 +27,7 @@ internal object VoiceAiContextFactory {
             refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
             networkValidated = diagnostics.connectivity.validated,
             networkLatencyMs = diagnostics.connectivity.latencyMs,
-            downstreamBandwidthKbps =
-                diagnostics.connectivity.downstreamBandwidthKbps?.toLong(),
+            downstreamBandwidthKbps = diagnostics.connectivity.downstreamBandwidthKbps?.toLong(),
             storageFreePercent = diagnostics.storage.freePercent,
             inputDeviceCount = diagnostics.inputDeviceCount,
             selectedProfile = selectedProfile,
