@@ -87,9 +87,12 @@ internal object VoiceOptimizationFeedbackContext {
         emulatorBackend: String?
     ): OptimizationContextKey {
         val driverFingerprint = listOf(
-            device.gpuVendor.orEmpty(),
-            device.gpuRenderer.orEmpty()
-        ).joinToString("|").takeIf(String::isNotBlank)
+            device.gpuVendor,
+            device.gpuRenderer
+        )
+            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
+            .takeIf(List<String>::isNotEmpty)
+            ?.joinToString("|")
         return OptimizationContextKey(
             deviceFingerprint = OptimizationFingerprint.from(
                 device = device,
