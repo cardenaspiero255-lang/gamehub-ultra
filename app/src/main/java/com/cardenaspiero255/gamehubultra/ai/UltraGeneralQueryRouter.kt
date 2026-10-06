@@ -44,7 +44,10 @@ object UltraGeneralQueryRouter {
         """\b(clima|tiempo de hoy|weather|pronostico|forecast|temperatura|temperature|noticias|news|novedades|updates?|latest|newest|precio|price|precios|prices|cuanto cuesta|cuanto cuestan|how much|cost|costs|salio nuevo|released|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out|security patch|parche de seguridad)\b"""
     )
     private val explicitCurrentValuePattern = Regex(
-        """\b(precio (?:de|del)|precios de|price of|prices of|cuanto cuesta|cuanto cuestan|how much|cost of|costs of|[a-z0-9]+\s+s\s+(?:price|cost))\b"""
+        """\b(precio (?:de|del)|precios de|price of|prices of|cuanto cuesta|cuanto cuestan|how much|[a-z0-9]+\s+s\s+(?:price|cost))\b"""
+    )
+    private val explicitCostQuestionPattern = Regex(
+        """(?:\bwhat\s+(?:does|do)\s+.{1,80}\s+cost\s*[?.!]?\s*$|\bwhat\s+is\s+(?:the\s+)?cost\s+(?:of|for)\s+(?:a|an)\s+.{1,80}\s*[?.!]?\s*$|\bwhat\s+is\s+(?:the\s+)?price\s+(?:of|for)\b|\bhow\s+much\s+(?:is|are|does|do)\b|\bcuanto\s+cuesta(?:n)?\b)"""
     )
     private val currentQualifierPattern = Regex(
         """\b(actual|actualmente|ahora|hoy|esta noche|esta semana|current|currently|latest|newest|today|tomorrow|tonight|this week)\b"""
@@ -56,13 +59,13 @@ object UltraGeneralQueryRouter {
         """\b(?:novedades|updates?|latest|newest|security patch|parche de seguridad|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out)\b"""
     )
     private val definitionPattern = Regex(
-        """\b(que es|que son|what is|what are|define)\b"""
+        """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|what is|what are|what does|meaning of|define)\b"""
     )
     private val broadFactualPattern = Regex(
         """\b(cuantos|cuantas|como se llama|como se llaman|how many|how old|what year|which country)\b"""
     )
     private val generalKnowledgePattern = Regex(
-        """\b(que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|what does|how does|explain|define|where is|when was)\b"""
+        """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|what does|meaning of|how does|explain|define|where is|when was)\b"""
     )
     private val englishWhyQuestionPattern = Regex(
         """^(?:(?:hello|hi|please|and)\s+)?why\b"""
@@ -140,6 +143,15 @@ object UltraGeneralQueryRouter {
                     explicitFreshUpdatePattern.containsMatchIn(clean) &&
                         !generalKnowledgePattern.containsMatchIn(clean)
                     ) ->
+                request(
+                    transcript = transcript,
+                    kind = UltraGeneralQueryKind.CURRENT_DATA,
+                    verificationMode = UltraVerificationMode.REQUIRED,
+                    requiresFreshData = true,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
+            explicitCostQuestionPattern.containsMatchIn(clean) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.CURRENT_DATA,

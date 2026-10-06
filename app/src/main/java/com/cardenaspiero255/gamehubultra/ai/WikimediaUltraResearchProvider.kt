@@ -215,8 +215,34 @@ class WikimediaUltraResearchProvider(
                 message = "Wikimedia no encontró un resultado utilizable.",
                 stage = "wikimedia-search"
             )
+        val searchSnippet = jsonString(searchResponse.body, "snippet").orEmpty()
+        val directTitleMatch = titleMatchesTopic(
+            topic = topic,
+            title = title,
+            currentQuestion = currentQuestion,
+            searchSnippet = ""
+        )
+        val verifiedTranslatedTitleMatch =
+            !directTitleMatch &&
+                isEnglishDefinitionQuestion(currentQuestion) &&
+                translatedSpanishTitleMatchesEnglishTopic(
+                    topic = topic,
+                    spanishTitle = title,
+                    deadlineNanos = deadlineNanos,
+                    perCallBudgetMillis = perCallBudgetMillis
+                )
+        val titleOrTrustedMatch =
+            directTitleMatch || verifiedTranslatedTitleMatch
+        val snippetOnlyMatch =
+            !titleOrTrustedMatch &&
+                titleMatchesTopic(
+                    topic = topic,
+                    title = title,
+                    currentQuestion = currentQuestion,
+                    searchSnippet = searchSnippet
+                )
 
-        if (!titleMatchesTopic(topic, title, currentQuestion)) {
+        if (!titleOrTrustedMatch && !snippetOnlyMatch) {
             return UltraProviderResult.Abstained(
                 reasonCode = "PUBLIC_FALLBACK_IRRELEVANT_RESULT",
                 message = "Wikimedia encontró una página que no coincide con el tema.",
@@ -267,6 +293,14 @@ class WikimediaUltraResearchProvider(
                 message = "Wikimedia no devolvió una explicación utilizable.",
                 stage = "wikimedia-extract"
             )
+
+        if (snippetOnlyMatch && !textMatchesTopic(topic, extract)) {
+            return UltraProviderResult.Abstained(
+                reasonCode = "PUBLIC_FALLBACK_IRRELEVANT_RESULT",
+                message = "Wikimedia no confirmó el tema en el contenido del artículo.",
+                stage = "wikimedia-extract"
+            )
+        }
 
         val canonicalUrl = jsonString(
             extractResponse.body,
@@ -413,7 +447,8 @@ class WikimediaUltraResearchProvider(
     private fun titleMatchesTopic(
         topic: String,
         title: String,
-        currentQuestion: String
+        currentQuestion: String,
+        searchSnippet: String
     ): Boolean {
         val normalizedTopic = normalizedTopicPhrase(topic)
         val normalizedTitle = normalizedTopicPhrase(title)
@@ -435,9 +470,18 @@ class WikimediaUltraResearchProvider(
         )
         val compactTopic = normalizedTopic.replace(" ", "")
         val compactTitle = normalizedTitle.replace(" ", "")
+        val rawTopicTokens = normalizedTopic
+            .split(' ')
+            .filter(String::isNotBlank)
+        val safeSpacingVariant =
+            rawTopicTokens.size >= 2 &&
+                rawTopicTokens.all { token ->
+                    token.length >= 3 && token !in TOPIC_STOP_WORDS
+                }
         if (
             compactTopic == compactTitle &&
-            compactTopic in compactAliases
+            compactTopic.isNotBlank() &&
+            (compactTopic in compactAliases || safeSpacingVariant)
         ) {
             return true
         }
@@ -452,13 +496,70 @@ class WikimediaUltraResearchProvider(
             return true
         }
 
-        // Spanish Wikipedia may return the translated Spanish article title for
-        // a valid English definition query (for example "black hole" ->
-        // "Agujero negro"). In that case lexical overlap is impossible by
-        // design, so rely on Wikipedia's top search result only for an explicit
-        // English definition question; other query classes keep the strict
-        // lexical relevance guard.
-        return isEnglishDefinitionQuestion(currentQuestion)
+        val snippetTokens = meaningfulTokens(searchSnippet)
+        val snippetRelated = topicTokens.any { topicToken ->
+            snippetTokens.any { snippetToken -> lexicallyRelated(topicToken, snippetToken) }
+        }
+        if (topicTokens.isNotEmpty() && snippetTokens.isNotEmpty() && snippetRelated) return true
+
+        return false
+    }
+
+    private fun translatedSpanishTitleMatchesEnglishTopic(
+        topic: String,
+        spanishTitle: String,
+        deadlineNanos: Long,
+        perCallBudgetMillis: Long
+    ): Boolean {
+        val validationUrl = buildString {
+            append("https://en.wikipedia.org/w/api.php")
+            append("?action=query&generator=search&gsrlimit=1")
+            append("&prop=langlinks&lllang=es&lllimit=1")
+            append("&format=json&origin=*&gsrsearch=")
+            append(urlEncode(topic))
+        }
+
+        val validationTimeout = remainingCallTimeoutMillis(
+            deadlineNanos = deadlineNanos,
+            perCallBudgetMillis = perCallBudgetMillis
+        ) ?: return false
+
+        val response = when (
+            val attempt = getSafely(validationUrl, validationTimeout)
+        ) {
+            is TransportOutcome.Success -> attempt.response
+            is TransportOutcome.Failure -> return false
+        }
+        if (response.statusCode !in 200..299) return false
+
+        val englishTitle = jsonString(response.body, "title")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val translatedTitle = jsonString(response.body, "*")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+
+        return englishTitleCoversTopic(topic, englishTitle) &&
+            normalizedTopicPhrase(translatedTitle) ==
+                normalizedTopicPhrase(spanishTitle)
+    }
+
+    private fun englishTitleCoversTopic(
+        topic: String,
+        englishTitle: String
+    ): Boolean {
+        val topicTokens = meaningfulTokens(topic)
+        val titleTokens = meaningfulTokens(englishTitle)
+        if (topicTokens.isEmpty() || titleTokens.isEmpty()) return false
+
+        return topicTokens.all { topicToken ->
+            titleTokens.any { titleToken ->
+                topicToken == titleToken ||
+                    lexicallyRelated(topicToken, titleToken)
+            }
+        }
     }
 
     private fun isEnglishDefinitionQuestion(value: String): Boolean {
@@ -471,7 +572,7 @@ class WikimediaUltraResearchProvider(
         ).trimStart(' ', '¿', '¡')
 
         return Regex(
-            """^(?:what\s+(?:is|are|was|were)|who\s+(?:is|was|are|were))\b""",
+            """^(?:what\s+(?:is|are|was|were|does)|who\s+(?:is|was|are|were)|meaning\s+of)\b""",
             RegexOption.IGNORE_CASE
         ).containsMatchIn(stripped)
     }
@@ -492,6 +593,41 @@ class WikimediaUltraResearchProvider(
             .filterNot(TOPIC_STOP_WORDS::contains)
             .toSet()
 
+    private fun textMatchesTopic(
+        topic: String,
+        text: String
+    ): Boolean {
+        val topicTokens = meaningfulTokens(topic)
+        val textTokens = meaningfulTokens(text)
+        return topicTokens.isNotEmpty() &&
+            textTokens.isNotEmpty() &&
+            topicTokens.any { topicToken ->
+                textTokens.any { textToken ->
+                    lexicallyRelated(topicToken, textToken)
+                }
+            }
+    }
+
+    private fun lexicallyRelated(
+        left: String,
+        right: String
+    ): Boolean {
+        if (left == right) return true
+        if (left.length < 6 || right.length < 6) return false
+
+        val limit = minOf(left.length, right.length)
+        var commonPrefix = 0
+        while (commonPrefix < limit && left[commonPrefix] == right[commonPrefix]) {
+            commonPrefix++
+        }
+        return commonPrefix >= limit - 2 ||
+            (
+                commonPrefix >= 7 &&
+                    left.length >= 9 &&
+                    right.length >= 9
+                )
+    }
+
     private fun jsonHasKey(
         json: String,
         key: String
@@ -511,10 +647,17 @@ class WikimediaUltraResearchProvider(
             )
             .trim(' ', '¿', '?', '¡', '!')
 
+        Regex(
+            """^what\s+does\s+(.+?)\s+mean$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(current)?.groupValues?.getOrNull(1)?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { return it }
+
         return current
             .replace(
                 Regex(
-                    """^(?:que es|qué es|que son|qué son|quien es|quién es|quienes son|quiénes son|define|definicion de|definición de|explicame|explícame|explica|dime que es|dime qué es|what is|what are|who is|who are|define)\s+""",
+                    """^(?:cual es el significado de|cuál es el significado de|que significa|qué significa|significado de|que es|qué es|que son|qué son|quien es|quién es|quienes son|quiénes son|define|definicion de|definición de|explicame|explícame|explica|dime que es|dime qué es|what is|what are|who is|who are|what does|meaning of|define)\s+""",
                     RegexOption.IGNORE_CASE
                 ),
                 ""
@@ -522,7 +665,7 @@ class WikimediaUltraResearchProvider(
             .trim()
             .replace(
                 Regex(
-                    """^(?:un|una|unos|unas|a|an)\s+""",
+                    """^(?:un|una|unos|unas|ser|a|an)\s+""",
                     RegexOption.IGNORE_CASE
                 ),
                 ""

@@ -60,10 +60,11 @@ class GameHubAiAdvisor(
             ?.takeIf(AiActionAllowlist::validate)
 
         if (modelCandidate != null) {
-            return adviceFromAllowlistedAction(
+            val modelAdvice = adviceFromAllowlistedAction(
                 candidate = modelCandidate,
                 context = context
             )
+            return recoverAdviceWithFeedback(modelAdvice, context)
         }
 
         return deterministicAdvice(question, context, memories)
@@ -130,6 +131,14 @@ class GameHubAiAdvisor(
             recalledConversation + conversation.takeLast(12)
         ).takeLast(18)
 
+        val normalized = normalize(message)
+        val feedbackAwareProfileQuestion =
+            isProfileRecommendationQuestion(normalized) &&
+                context.optimizationObservations.any {
+                    it.feedbackDecision == com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision.REJECTED ||
+                        it.feedbackDecision == com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision.REVERTED
+                }
+
         val local = runCatching {
             modelAdapter
                 ?.takeIf { it.isAvailable() }
@@ -138,9 +147,7 @@ class GameHubAiAdvisor(
             ?.takeIf { it.isNotBlank() }
             ?.let { AiChatSafetyFilter.sanitize(it, message) }
             ?.takeUnless(::looksPredominantlyEnglish)
-        if (local != null) return local
-
-        val normalized = normalize(message)
+        if (local != null && !feedbackAwareProfileQuestion) return local
         val memoryRecallQuestion = listOf(
             "que recuerdas",
             "que sabes de mi",
@@ -182,7 +189,8 @@ class GameHubAiAdvisor(
             normalized.contains("fps") || normalized.contains("modo") || normalized.contains("perfil") ||
                 normalized.contains("mode") || normalized.contains("profile") ->
                 "Con los datos actuales, mi recomendación es " + profile +
-                    ". Preparación gaming estimada: " + advice.readiness + "/100."
+                    ". Preparación gaming estimada: " + advice.readiness + "/100." +
+                    advice.recoveryExplanation?.let { " " + it }.orEmpty()
 
             normalized.contains("red") || normalized.contains("latencia") || normalized.contains("internet") ||
                 normalized.contains("network") || normalized.contains("latency") ->
@@ -272,6 +280,12 @@ class GameHubAiAdvisor(
 
             normalized.contains("agujero negro") || normalized.contains("black hole") ->
                 "Un agujero negro es una región del espacio donde la gravedad es tan intensa que, más allá de su horizonte de sucesos, ni siquiera la luz puede escapar."
+
+            Regex("""\bexo\s*planetas?\b|\bexoplanetas?\b|\bexoplanets?\b""").containsMatchIn(normalized) ->
+                "Un exoplaneta es un planeta que orbita una estrella distinta del Sol. Se detecta mediante técnicas como tránsitos, velocidad radial, imagen directa y otros métodos astronómicos."
+
+            Regex("""\bintrovertid[oa]s?\b|\bintroversion(?:es)?\b|\bintroverts?\b|\bintroverted\b""").containsMatchIn(normalized) ->
+                "Una persona introvertida suele orientar más su atención hacia su mundo interno y puede preferir ambientes con menor estimulación social. La introversión es un rasgo de personalidad, no implica necesariamente timidez ni un trastorno."
 
             Regex("""\badn\b|\bdna\b""").containsMatchIn(normalized) ->
                 "El ADN es la molécula que almacena la información genética usada por los seres vivos para desarrollarse, funcionar y transmitir rasgos hereditarios."
@@ -556,12 +570,13 @@ class GameHubAiAdvisor(
             fallbackUsed = true
         )
 
+        val feedback = feedbackSnapshot(context)
         val coreResult = runCatching {
             aiCore.evaluate(
                 observation = UltraAiObservation.from(context).copy(
-                    activeProfileId = baseAdvice.suggestedProfile.name
+                    proposedProfileId = baseAdvice.suggestedProfile.name
                 ),
-                feedback = UltraAiFeedbackSnapshot(),
+                feedback = feedback,
                 memories = memories
             )
         }.getOrNull()
@@ -577,10 +592,26 @@ class GameHubAiAdvisor(
             }
 
         val safetyConstrained = hot || lowBattery || lowStorage
-        val safeCoreProfile = coreProfile?.takeIf { candidate ->
-            !safetyConstrained &&
-                (candidate != PerformanceProfile.X4 || context.sustainedPerformanceSupported)
-        }
+        val coreOverrideAllowed = coreResult?.overrideBaseRecommendation == true
+        val safeCoreProfile = coreProfile
+            ?.takeIf { candidate ->
+                coreOverrideAllowed &&
+                    !safetyConstrained &&
+                    (candidate != PerformanceProfile.X4 ||
+                        context.sustainedPerformanceSupported)
+            }
+            ?.let { candidate ->
+                if (coreResult.recoveryExplanation != null) {
+                    preferSafeCurrentProfile(
+                        proposed = baseAdvice.suggestedProfile,
+                        recovered = candidate,
+                        context = context,
+                        feedback = feedback
+                    )
+                } else {
+                    candidate
+                }
+            }
         val finalProfile = safeCoreProfile ?: baseAdvice.suggestedProfile
         val finalReason = if (finalProfile == baseAdvice.suggestedProfile) {
             baseAdvice.reason
@@ -594,7 +625,9 @@ class GameHubAiAdvisor(
 
         return baseAdvice.copy(
             suggestedProfile = finalProfile,
-            reason = finalReason
+            reason = finalReason,
+            recoveryExplanation = coreResult?.recoveryExplanation
+                ?.takeIf { safeCoreProfile != null }
         )
     }
 
@@ -646,6 +679,136 @@ class GameHubAiAdvisor(
         }
     }
 
+    private fun feedbackSnapshot(
+        context: GameHubAiContext
+    ): UltraAiFeedbackSnapshot =
+        UltraAiFeedbackSnapshot.fromObservations(context.optimizationObservations)
+
+    private fun preferSafeCurrentProfile(
+        proposed: PerformanceProfile,
+        recovered: PerformanceProfile,
+        context: GameHubAiContext,
+        feedback: UltraAiFeedbackSnapshot
+    ): PerformanceProfile {
+        val current = context.selectedProfile
+        val currentSupported =
+            current != PerformanceProfile.X4 ||
+                context.sustainedPerformanceSupported
+        val currentIsSafeAlternative =
+            currentSupported &&
+                current != proposed &&
+                feedback.poorOutcomeCount(current.name) == 0
+        val recoveredLooksLikeDefaultFallback =
+            recovered == PerformanceProfile.BALANCED &&
+                !feedback.isAccepted(PerformanceProfile.BALANCED.name)
+
+        return if (
+            recovered != proposed &&
+            recoveredLooksLikeDefaultFallback &&
+            currentIsSafeAlternative
+        ) {
+            current
+        } else {
+            recovered
+        }
+    }
+
+    private fun recoverAdviceWithFeedback(
+        advice: GameHubAiAdvice,
+        context: GameHubAiContext
+    ): GameHubAiAdvice {
+        if (isSafetyConstrained(context)) {
+            return deterministicAdvice(
+                question = "safety constrained feedback recovery",
+                context = context
+            ).copy(
+                localModelUsed = advice.localModelUsed,
+                fallbackUsed = true,
+                recoveryExplanation = null
+            )
+        }
+
+        val feedback = feedbackSnapshot(context)
+        val hasFeedback =
+            feedback.acceptedProfileIds.isNotEmpty() ||
+                feedback.rejectedProfileIds.isNotEmpty() ||
+                feedback.revertedProfileIds.isNotEmpty()
+        if (!hasFeedback) return advice
+
+        val coreResult = runCatching {
+            aiCore.evaluate(
+                observation = UltraAiObservation.from(context).copy(
+                    proposedProfileId = advice.suggestedProfile.name
+                ),
+                feedback = feedback,
+                memories = emptyList()
+            )
+        }.getOrNull()
+            ?.takeIf { !it.requiresCloud }
+            ?: return advice
+
+        val coreRecoveredProfile =
+            PerformanceProfile.entries.firstOrNull { profile ->
+                profile.name.equals(
+                    coreResult.recommendation.profileId,
+                    ignoreCase = true
+                )
+            } ?: return advice
+        val recoveredProfile =
+            if (coreResult.recoveryExplanation != null) {
+                preferSafeCurrentProfile(
+                    proposed = advice.suggestedProfile,
+                    recovered = coreRecoveredProfile,
+                    context = context,
+                    feedback = feedback
+                )
+            } else {
+                coreRecoveredProfile
+            }
+
+        if (recoveredProfile == PerformanceProfile.X4 &&
+            !context.sustainedPerformanceSupported) {
+            return advice
+        }
+        if (recoveredProfile == advice.suggestedProfile) {
+            return advice.copy(
+                recoveryExplanation = coreResult.recoveryExplanation
+            )
+        }
+
+        return advice.copy(
+            suggestedProfile = recoveredProfile,
+            reason = when (recoveredProfile) {
+                PerformanceProfile.BALANCED -> AiAdviceReason.BALANCED_GENERAL
+                PerformanceProfile.FRAME_INTERPOLATION -> AiAdviceReason.INTERPOLATION
+                PerformanceProfile.X4 -> AiAdviceReason.X4_READY
+            },
+            fallbackUsed = true,
+            recoveryExplanation = coreResult.recoveryExplanation
+        )
+    }
+
+    private fun isProfileRecommendationQuestion(normalized: String): Boolean {
+        val query = normalized
+            .removePrefix("gamehub ultra ")
+            .removePrefix("gamehub ")
+            .removePrefix("ultra ")
+            .trim()
+        if (GENERIC_PROFILE_RECOMMENDATION_PATTERN.matches(query)) return true
+
+        val tokens = query.split(' ').filter(String::isNotBlank)
+        val hasProfileSubject = tokens.any { it in PROFILE_RECOMMENDATION_TOKENS }
+        val hasRecommendationIntent = tokens.any { it in PROFILE_RECOMMENDATION_INTENT_TOKENS }
+        val hasGamingContext = tokens.any { it in PROFILE_GAMING_SIGNAL_TOKENS }
+        return hasProfileSubject && hasRecommendationIntent && hasGamingContext
+    }
+
+    private fun isSafetyConstrained(context: GameHubAiContext): Boolean =
+        context.thermalStatus?.let { it >= 3 } == true ||
+            context.thermalHeadroom?.let { it >= 0.80f } == true ||
+            context.batteryPercent?.let { it < 20 } == true ||
+            context.storageFreePercent < 10
+
     private fun readinessScore(context: GameHubAiContext): Int {
         var score = 50
         if (context.cpuCores >= 8) score += 10 else if (context.cpuCores >= 4) score += 5
@@ -668,6 +831,22 @@ class GameHubAiAdvisor(
 
     private companion object {
         const val MEMORY_RECALL_LIMIT = 6
+        val PROFILE_RECOMMENDATION_TOKENS = setOf("modo", "perfil", "mode", "profile")
+        val PROFILE_GAMING_SIGNAL_TOKENS = setOf(
+            "fps", "x4", "interpolacion", "interpolation", "balanceado", "balanced",
+            "gaming", "rendimiento", "performance", "juego", "juegos", "game", "games",
+            "gamehub", "ultra"
+        )
+        val PROFILE_RECOMMENDATION_INTENT_TOKENS = setOf(
+            "recomienda", "recomiendas", "recomendacion", "recomendado",
+            "recommend", "recommends", "recommendation", "recommended",
+            "mejor", "best", "usar", "use", "choose", "elegir", "elige",
+            "switch", "cambiar", "cambia", "activar", "activa", "set",
+            "conviene", "should"
+        )
+        val GENERIC_PROFILE_RECOMMENDATION_PATTERN = Regex(
+            """^(?:(?:que|cual) (?:modo|perfil) (?:me )?(?:recomiendas|recomienda|conviene|debo usar|deberia usar|uso|elijo)|(?:which|what) (?:mode|profile) (?:do you recommend|should i use|is best|should i choose))$"""
+        )
     }
 
     private fun normalize(value: String): String =

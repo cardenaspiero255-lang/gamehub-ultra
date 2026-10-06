@@ -510,6 +510,64 @@ function remainingRouteBudgetMs(deadlineAt: number): number {
   return Math.max(0, Math.trunc(deadlineAt - performance.now()));
 }
 
+function specialistEvidenceTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_SPECIALIST_EVIDENCE_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(150, Math.min(4_000, Math.trunc(configured)));
+  }
+  return 2_500;
+}
+
+async function settleSpecialistEvidence(
+  promise: Promise<ResearchResult | null>,
+  controller: AbortController,
+  deps: ResearchDependencies,
+  remainingBudget: number,
+): Promise<ResearchResult | null> {
+  if (remainingBudget <= 0) {
+    controller.abort();
+    return abstain(
+      "La investigación especializada agotó su presupuesto de tiempo.",
+      {
+        reasonCode: "SPECIALIST_ROUTE_TIMEOUT",
+        retryable: true,
+        stage: "specialist",
+      },
+    );
+  }
+
+  let timer: number | undefined;
+  const timeoutMs = Math.min(
+    specialistEvidenceTimeoutMs(deps),
+    remainingBudget,
+  );
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "La fuente especializada tardó demasiado; continuaré con los respaldos verificados.",
+          {
+            reasonCode: "SPECIALIST_ROUTE_TIMEOUT",
+            retryable: true,
+            stage: "specialist",
+          },
+        ),
+      );
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function boundedTimeout(
   configured: number,
   remainingBudget?: number,
@@ -2609,6 +2667,1614 @@ function conciseExcerpt(value: string, maxChars = 650): string {
   return clean + "…";
 }
 
+
+type SpecialistResearchDomain =
+  | "doi"
+  | "biomedical"
+  | "arxiv"
+  | "academic"
+  | "books"
+  | "world_bank"
+  | "cybersecurity"
+  | "earthquake"
+  | "chemistry"
+  | "exoplanet"
+  | "protein"
+  | "biodiversity"
+  | "clinical_trials";
+
+function specialistResearchDomain(
+  query: string,
+): SpecialistResearchDomain | null {
+  const clean = normalize(stripAssistantInvocation(query));
+
+  if (
+    /\b(?:doi|digital object identifier|identificador digital|crossref)\b/.test(
+      clean,
+    )
+  ) {
+    return "doi";
+  }
+
+  if (/\b(?:arxiv|preprint|preprints)\b/.test(clean)) {
+    return "arxiv";
+  }
+
+  const chemistryPropertySignal =
+    /\b(?:pubchem|formula molecular|molecular formula|masa molecular|peso molecular|molecular weight|iupac|smiles|inchi|compound id|cid)\b/.test(
+      clean,
+    );
+  if (chemistryPropertySignal) {
+    return "chemistry";
+  }
+
+  const exoplanetArchiveSignal =
+    /\b(?:nasa exoplanet archive|exoplanet archive|archivo de exoplanetas de nasa)\b/.test(
+      clean,
+    );
+  const exoplanetDataSignal =
+    /\b(?:exoplaneta|exoplanet)\b/.test(clean) &&
+    /\b(?:datos|data|masa|mass|radio|radius|orbita|orbital|periodo|period|estrella anfitriona|host star|metodo de descubrimiento|discovery method|descubierto|discovered)\b/.test(
+      clean,
+    );
+  if (exoplanetArchiveSignal || exoplanetDataSignal) {
+    return "exoplanet";
+  }
+
+  const clinicalTrialSignal =
+    /\b(?:clinicaltrials\.gov|clinical trials?|ensayos? clinicos?)\b/.test(
+      clean,
+    );
+  if (clinicalTrialSignal) {
+    return "clinical_trials";
+  }
+
+  const uniProtSignal = /\buniprot\b/.test(clean);
+  const proteinSignal =
+    /\b(?:proteina|proteinas|protein|proteins|gen|genes|gene)\b/.test(clean);
+  const proteinDataSignal =
+    /\b(?:datos|data|funcion|function|secuencia|sequence|longitud|length|accession|entrada|entry|organismo|organism|swiss prot|reviewed)\b/.test(
+      clean,
+    );
+  if (uniProtSignal || (proteinSignal && proteinDataSignal)) {
+    return "protein";
+  }
+
+  const gbifSignal = /\bgbif\b/.test(clean);
+  const biodiversityTopicSignal =
+    /\b(?:taxonomia|taxonomy|taxon|especie|especies|species|biodiversidad|biodiversity|nombre cientifico|scientific name)\b/.test(
+      clean,
+    );
+  const biodiversityDataSignal =
+    /\b(?:datos|data|clasificacion|classification|taxonomia|taxonomy|gbif)\b/.test(
+      clean,
+    );
+  if (gbifSignal || (biodiversityTopicSignal && biodiversityDataSignal)) {
+    return "biodiversity";
+  }
+
+  if (
+    /\bcve-\d{4}-\d{4,7}\b/.test(clean) ||
+    /\b(?:nvd|national vulnerability database)\b/.test(clean)
+  ) {
+    return "cybersecurity";
+  }
+
+  const earthquakeSignal =
+    /\b(?:sismo|sismos|terremoto|terremotos|temblor|temblores|earthquake|earthquakes)\b/.test(
+      clean,
+    );
+  const earthquakeRecencySignal =
+    /\b(?:ultimo|último|ultimos|últimos|ultima|última|reciente|recientes|hoy|ahora|actual|actualmente|latest|last|recent|recently|today|now|current|currently)\b/.test(
+      clean,
+    );
+  if (earthquakeSignal && earthquakeRecencySignal) {
+    return "earthquake";
+  }
+
+  const biomedicalResearchSignal =
+    /\b(?:estudio|estudios|paper|papers|articulo|articulos|investigacion|investigaciones|research|study|studies|literatura|literature)\b/.test(
+      clean,
+    );
+  const biomedicalTopicSignal =
+    /\b(?:biomed|biomedico|biomedica|medicina|medico|medica|clinical|clinico|clinica|cancer|melanoma|tumor|oncologia|inmunoterapia|immunotherapy|enfermedad|disease|farmaco|drug|tratamiento|treatment|genetica|genetic|neuro|cardio|pubmed|europe pmc)\b/.test(
+      clean,
+    );
+  if (biomedicalResearchSignal && biomedicalTopicSignal) {
+    return "biomedical";
+  }
+
+  if (
+    /\b(?:paper|papers|articulo cientifico|articulos cientificos|estudio cientifico|estudios cientificos|literatura cientifica|scientific paper|scientific papers|research paper|research papers|semantic scholar)\b/.test(
+      clean,
+    )
+  ) {
+    return "academic";
+  }
+
+  if (
+    /\b(?:libro|libros|books?|bibliografia|bibliography|open library|isbn)\b/.test(
+      clean,
+    )
+  ) {
+    return "books";
+  }
+
+  const worldBankSignal = /\b(?:banco mundial|world bank)\b/.test(clean);
+  const worldBankIndicatorSignal =
+    /\b(?:pib|gdp|producto interno bruto|population|poblacion|inflacion|inflation|desempleo|unemployment|esperanza de vida|life expectancy)\b/.test(
+      clean,
+    );
+  if (worldBankSignal && worldBankIndicatorSignal) {
+    return "world_bank";
+  }
+
+  return null;
+}
+
+function specialistSearchTopic(
+  query: string,
+  domain: SpecialistResearchDomain,
+): string {
+  const raw = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const patterns: Record<SpecialistResearchDomain, RegExp[]> = {
+    protein: [
+      /^(?:busca|buscar|encuentra|dame|muestrame|muéstrame)\s+(?:en\s+)?uniprot\s+(?:datos|data|informacion|información)?\s*(?:de|sobre|para)?\s*(?:la|el)?\s*(?:proteina|proteína|protein|gen|gene)?\s*/i,
+      /^(?:uniprot)\s+(?:datos|data|informacion|información)?\s*(?:de|sobre|para)?\s*(?:la|el)?\s*(?:proteina|proteína|protein|gen|gene)?\s*/i,
+    ],
+    biodiversity: [
+      /^(?:busca|buscar|encuentra|dame|muestrame|muéstrame)\s+(?:en\s+)?gbif\s+(?:la\s+)?(?:taxonomia|taxonomía|taxonomy|especie|species|datos|data)?\s*(?:de|sobre|para)?\s*/i,
+      /^(?:gbif)\s+(?:taxonomia|taxonomía|taxonomy|especie|species|datos|data)?\s*(?:de|sobre|para)?\s*/i,
+    ],
+    clinical_trials: [
+      /^(?:busca|buscar|encuentra|dame|muestrame|muéstrame)\s+(?:ensayos?\s+clinicos?|ensayos?\s+clínicos?|clinical\s+trials?)\s+(?:sobre|de|para)?\s*/i,
+      /^(?:clinicaltrials\.gov|ensayos?\s+clinicos?|ensayos?\s+clínicos?|clinical\s+trials?)\s+(?:sobre|de|para)?\s*/i,
+    ],
+    chemistry: [
+      /^(?:cual es|cuál es|dime|busca|buscar|encuentra)\s+(?:la\s+)?(?:formula molecular|fórmula molecular|masa molecular|peso molecular|molecular formula|molecular weight)(?:\s+y\s+(?:masa molecular|peso molecular|molecular weight))?\s+(?:de|del|para)\s*/i,
+      /^(?:pubchem|compound|compuesto)\s+(?:de|del|para)?\s*/i,
+    ],
+    exoplanet: [
+      /^(?:busca|buscar|encuentra|dame|muestrame|muéstrame)\s+(?:datos|data)\s+(?:del|de|en)\s+(?:nasa\s+)?exoplanet archive\s+(?:sobre|de)?\s*/i,
+      /^(?:nasa\s+)?exoplanet archive\s+(?:sobre|de)?\s*/i,
+      /^(?:datos|data)\s+(?:sobre|de)\s+(?:el\s+)?exoplaneta\s*/i,
+    ],
+    doi: [
+      /^(?:encuentra|buscar?|busca|dime|cual es|cuál es)\s+(?:el\s+)?doi\s+(?:del|de la|de|para)\s+(?:paper|articulo|artículo|estudio)?\s*/i,
+      /^(?:doi|crossref)\s+(?:de|del|para)\s*/i,
+    ],
+    arxiv: [
+      /^(?:busca|buscar|encuentra|muestrame|muéstrame)\s+(?:preprints?|papers?)\s+(?:de\s+)?arxiv\s+(?:sobre|de)?\s*/i,
+      /^(?:arxiv|preprints?)\s+(?:sobre|de)?\s*/i,
+    ],
+    biomedical: [
+      /^(?:busca|buscar|encuentra|muestrame|muéstrame)\s+(?:estudios?|papers?|articulos?|artículos?|investigaciones?)\s+(?:biomedicos?|biomédicos?|biomedicas?|biomédicas?)?\s*(?:sobre|de)?\s*/i,
+      /^(?:estudios?|papers?|research|literatura)\s+(?:sobre|de)\s*/i,
+    ],
+    academic: [
+      /^(?:busca|buscar|encuentra|muestrame|muéstrame)\s+(?:papers?|articulos?|artículos?|estudios?)\s+(?:cientificos?|científicos?)?\s*(?:sobre|de)?\s*/i,
+      /^(?:papers?|research papers?|scientific papers?|literatura cientifica|literatura científica)\s+(?:sobre|de)?\s*/i,
+    ],
+    books: [
+      /^(?:busca|buscar|encuentra|recomienda|muestrame|muéstrame)\s+(?:libros?|books?)\s+(?:sobre|de)?\s*/i,
+      /^(?:libros?|books?)\s+(?:sobre|de)\s*/i,
+    ],
+    world_bank: [],
+    cybersecurity: [],
+    earthquake: [],
+  };
+
+  let topic = raw;
+  for (const pattern of patterns[domain]) {
+    topic = topic.replace(pattern, "").trim();
+  }
+
+  if (domain === "world_bank") {
+    topic = topic
+      .replace(/\s+(?:segun|según)\s+(?:el\s+)?banco mundial.*$/i, "")
+      .replace(/\s+according to (?:the )?world bank.*$/i, "")
+      .trim();
+  }
+
+  return topic || raw;
+}
+
+function specialistComparableToken(value: string): string {
+  return canonicalEvidenceToken(value)
+    .replace(/^inmun/, "immun")
+    .replace(/terapia$/, "therapy")
+    .replace(/fera$/, "phere")
+    .replace(/logia$/, "logy")
+    .replace(/cion$/, "tion")
+    .replace(/ico$/, "ic")
+    .replace(/ica$/, "ic");
+}
+
+function specialistTokenRelated(
+  first: string,
+  second: string,
+): boolean {
+  if (evidenceTokensRelated(first, second)) return true;
+  const comparableFirst = specialistComparableToken(first);
+  const comparableSecond = specialistComparableToken(second);
+  return evidenceTokensRelated(comparableFirst, comparableSecond);
+}
+
+function specialistCandidateMatches(
+  topic: string,
+  candidateText: string,
+): boolean {
+  const topicTokens = [...evidenceTokens(topic)];
+  const candidateTokens = [...evidenceTokens(candidateText)];
+  if (topicTokens.length === 0 || candidateTokens.length === 0) return false;
+
+  if (topicTokens.length === 1) {
+    const topicToken = topicTokens[0];
+    const comparableTopic = specialistComparableToken(topicToken);
+    return candidateTokens.some((candidateToken) =>
+      candidateToken === topicToken ||
+      specialistComparableToken(candidateToken) === comparableTopic
+    );
+  }
+
+  if (
+    candidateMatchesTopic(topic, candidateText) ||
+    candidateMatchesQuery(topic, candidateText)
+  ) {
+    return true;
+  }
+
+  const matched = topicTokens.filter((topicToken) =>
+    candidateTokens.some((candidateToken) =>
+      specialistTokenRelated(topicToken, candidateToken)
+    )
+  );
+  return matched.length >= 2;
+}
+
+
+
+async function pubChemEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "chemistry")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!topic || topic.length > 120) {
+    return abstain(
+      "Necesito un compuesto químico concreto para consultar PubChem.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "pubchem",
+      },
+    );
+  }
+
+  const url = new URL(
+    "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/" +
+      encodeURIComponent(topic) +
+      "/property/Title,MolecularFormula,MolecularWeight,IUPACName/JSON",
+  );
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const propertyTable = payload?.PropertyTable &&
+      typeof payload.PropertyTable === "object"
+    ? payload.PropertyTable as JsonObject
+    : null;
+  const properties = Array.isArray(propertyTable?.Properties)
+    ? propertyTable.Properties
+    : [];
+  const raw = properties.find((value) =>
+    Boolean(value) && typeof value === "object"
+  ) as JsonObject | undefined;
+
+  const cid = numberValue(raw?.CID);
+  const title = stringValue(raw?.Title) ?? topic;
+  const formula = stringValue(raw?.MolecularFormula);
+  const molecularWeight = stringValue(raw?.MolecularWeight) ??
+    (numberValue(raw?.MolecularWeight)?.toString() ?? null);
+  const iupacName = stringValue(raw?.IUPACName);
+
+  if (cid == null || (!formula && !molecularWeight && !iupacName)) {
+    return abstain(
+      "PubChem no encontró propiedades utilizables para el compuesto solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "pubchem",
+      },
+    );
+  }
+
+  const source =
+    "https://pubchem.ncbi.nlm.nih.gov/compound/" + Math.trunc(cid);
+  const displayText = [
+    title + ".",
+    formula ? "Fórmula molecular: " + formula + "." : "",
+    molecularWeight ? "Masa molecular: " + molecularWeight + "." : "",
+    iupacName ? "Nombre IUPAC: " + iupacName + "." : "",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "pubchem:" + Math.trunc(cid),
+    value: normalize(displayText),
+    displayText,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+  };
+}
+
+function escapeAdqlString(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+async function nasaExoplanetEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "exoplanet")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!topic || topic.length > 120) {
+    return abstain(
+      "Necesito el nombre de un exoplaneta concreto para consultar el archivo de NASA.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "nasa_exoplanet_archive",
+      },
+    );
+  }
+
+  const safeTopic = escapeAdqlString(topic);
+  const adql =
+    "select top 3 pl_name,hostname,disc_year,discoverymethod," +
+    "pl_orbper,pl_rade,pl_masse from pscomppars where lower(pl_name) " +
+    "like lower('%" + safeTopic + "%')";
+  const url = new URL(
+    "https://exoplanetarchive.ipac.caltech.edu/TAP/sync",
+  );
+  url.searchParams.set("query", adql);
+  url.searchParams.set("format", "json");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const rows = Array.isArray(payload) ? payload : [];
+  const normalizedTopic = normalize(topic);
+  const row = rows
+    .filter((value): value is JsonObject =>
+      Boolean(value) && typeof value === "object"
+    )
+    .find((candidate) => {
+      const planetName = stringValue(candidate.pl_name);
+      if (!planetName) return false;
+      const normalizedName = normalize(planetName);
+      return normalizedName.includes(normalizedTopic) ||
+        normalizedTopic.includes(normalizedName);
+    });
+
+  const planetName = stringValue(row?.pl_name);
+  if (!row || !planetName) {
+    return abstain(
+      "NASA Exoplanet Archive no encontró el planeta solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "nasa_exoplanet_archive",
+      },
+    );
+  }
+
+  const hostName = stringValue(row.hostname);
+  const discoveryYear = numberValue(row.disc_year);
+  const discoveryMethod = stringValue(row.discoverymethod);
+  const orbitalPeriod = numberValue(row.pl_orbper);
+  const earthRadius = numberValue(row.pl_rade);
+  const earthMass = numberValue(row.pl_masse);
+
+  const displayText = [
+    planetName + ".",
+    hostName ? "Estrella anfitriona: " + hostName + "." : "",
+    discoveryYear == null
+      ? ""
+      : "Año de descubrimiento: " + Math.trunc(discoveryYear) + ".",
+    discoveryMethod
+      ? "Método de descubrimiento: " + discoveryMethod + "."
+      : "",
+    orbitalPeriod == null
+      ? ""
+      : "Período orbital: " + orbitalPeriod + " días.",
+    earthRadius == null ? "" : "Radio: " + earthRadius + " R⊕.",
+    earthMass == null ? "" : "Masa: " + earthMass + " M⊕.",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "nasa-exoplanet:" + slug(planetName),
+    value: normalize(displayText),
+    displayText,
+    sourceId: url.toString(),
+    sourceIds: [url.toString()],
+    independentSourceCount: 1,
+    authoritative: true,
+  };
+}
+
+async function uniProtEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "protein")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!topic || topic.length > 120) {
+    return abstain(
+      "Necesito una proteína o gen concreto para consultar UniProt.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "uniprot",
+      },
+    );
+  }
+
+  const url = new URL("https://rest.uniprot.org/uniprotkb/search");
+  url.searchParams.set("query", topic);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("size", "3");
+
+  const payload = await fetchJson(deps, url, {
+    headers: {
+      "User-Agent": USER_AGENT,
+      "Accept": "application/json",
+    },
+    signal,
+  });
+  const results = Array.isArray(payload?.results) ? payload.results : [];
+
+  for (const rawProtein of results.slice(0, 3)) {
+    if (!rawProtein || typeof rawProtein !== "object") continue;
+    const protein = rawProtein as JsonObject;
+    const accession = stringValue(protein.primaryAccession);
+    if (!accession) continue;
+
+    const description = protein.proteinDescription &&
+        typeof protein.proteinDescription === "object"
+      ? protein.proteinDescription as JsonObject
+      : null;
+    const recommended = description?.recommendedName &&
+        typeof description.recommendedName === "object"
+      ? description.recommendedName as JsonObject
+      : null;
+    const fullName = recommended?.fullName &&
+        typeof recommended.fullName === "object"
+      ? recommended.fullName as JsonObject
+      : null;
+    const proteinName = stringValue(fullName?.value) ??
+      stringValue(protein.uniProtkbId) ??
+      accession;
+
+    const genes = Array.isArray(protein.genes) ? protein.genes : [];
+    const firstGene = genes.find((value) =>
+      Boolean(value) && typeof value === "object"
+    ) as JsonObject | undefined;
+    const geneNameObject = firstGene?.geneName &&
+        typeof firstGene.geneName === "object"
+      ? firstGene.geneName as JsonObject
+      : null;
+    const geneName = stringValue(geneNameObject?.value);
+
+    const organism = protein.organism && typeof protein.organism === "object"
+      ? protein.organism as JsonObject
+      : null;
+    const organismName = stringValue(organism?.scientificName);
+
+    const sequence = protein.sequence && typeof protein.sequence === "object"
+      ? protein.sequence as JsonObject
+      : null;
+    const length = numberValue(sequence?.length);
+
+    const comments = Array.isArray(protein.comments) ? protein.comments : [];
+    const functionComment = comments.find((value) =>
+      Boolean(value) &&
+      typeof value === "object" &&
+      stringValue((value as JsonObject).commentType) === "FUNCTION"
+    ) as JsonObject | undefined;
+    const functionTexts = Array.isArray(functionComment?.texts)
+      ? functionComment.texts
+      : [];
+    const functionText = functionTexts
+      .map((value) =>
+        value && typeof value === "object"
+          ? stringValue((value as JsonObject).value)
+          : null
+      )
+      .find((value): value is string => Boolean(value));
+
+    const candidateText = [
+      accession,
+      stringValue(protein.uniProtkbId),
+      proteinName,
+      geneName,
+      organismName,
+      functionText,
+    ].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const source = "https://www.uniprot.org/uniprotkb/" +
+      encodeURIComponent(accession) + "/entry";
+    const displayText = [
+      (geneName ? geneName + " — " : "") + proteinName + " (" + accession + ").",
+      organismName ? "Organismo: " + organismName + "." : "",
+      length == null ? "" : "Longitud: " + Math.trunc(length) + " aa.",
+      functionText ? "Función: " + conciseExcerpt(functionText, 650) : "",
+    ].filter(Boolean).join(" ");
+
+    return {
+      claimKey: "uniprot:" + slug(accession),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "UniProt no encontró una entrada suficientemente relacionada.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "uniprot",
+    },
+  );
+}
+
+async function gbifTaxonomyEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "biodiversity")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!topic || topic.length > 160) {
+    return abstain(
+      "Necesito un taxón o especie concreta para consultar GBIF.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "gbif",
+      },
+    );
+  }
+
+  const url = new URL("https://api.gbif.org/v1/species/match");
+  url.searchParams.set("name", topic);
+  url.searchParams.set("verbose", "true");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const usageKey = numberValue(payload?.usageKey);
+  const scientificName = stringValue(payload?.scientificName);
+  const canonicalName = stringValue(payload?.canonicalName);
+  const confidence = numberValue(payload?.confidence);
+  const matchType = stringValue(payload?.matchType)?.toUpperCase();
+
+  const candidateText = [scientificName, canonicalName].filter(Boolean).join(" ");
+  if (
+    usageKey == null ||
+    !scientificName ||
+    matchType === "NONE" ||
+    (confidence != null && confidence < 80) ||
+    !specialistCandidateMatches(topic, candidateText)
+  ) {
+    return abstain(
+      "GBIF no encontró una coincidencia taxonómica suficientemente confiable.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "gbif",
+      },
+    );
+  }
+
+  const source = "https://www.gbif.org/species/" + Math.trunc(usageKey);
+  const taxonomy = [
+    stringValue(payload?.kingdom),
+    stringValue(payload?.phylum),
+    stringValue(payload?.class),
+    stringValue(payload?.order),
+    stringValue(payload?.family),
+    stringValue(payload?.genus),
+  ].filter((value): value is string => Boolean(value));
+
+  const displayText = [
+    (canonicalName ?? scientificName) + ".",
+    "Nombre científico: " + scientificName + ".",
+    stringValue(payload?.rank) ? "Rango: " + stringValue(payload?.rank) + "." : "",
+    taxonomy.length ? "Clasificación: " + taxonomy.join(" › ") + "." : "",
+    confidence == null ? "" : "Confianza GBIF: " + Math.trunc(confidence) + "%.",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "gbif:" + Math.trunc(usageKey),
+    value: normalize(displayText),
+    displayText,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+  };
+}
+
+async function clinicalTrialsEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "clinical_trials")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!topic || topic.length > 180) {
+    return abstain(
+      "Necesito una condición o intervención concreta para buscar ensayos clínicos.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "clinicaltrials",
+      },
+    );
+  }
+
+  const url = new URL("https://clinicaltrials.gov/api/v2/studies");
+  url.searchParams.set("query.term", topic);
+  url.searchParams.set("pageSize", "3");
+  url.searchParams.set("format", "json");
+  url.searchParams.set(
+    "fields",
+    "NCTId,BriefTitle,OverallStatus,StudyType,Phases,Conditions,Interventions",
+  );
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const studies = Array.isArray(payload?.studies) ? payload.studies : [];
+
+  for (const rawStudy of studies.slice(0, 3)) {
+    if (!rawStudy || typeof rawStudy !== "object") continue;
+    const study = rawStudy as JsonObject;
+    const protocol = study.protocolSection &&
+        typeof study.protocolSection === "object"
+      ? study.protocolSection as JsonObject
+      : null;
+    const identification = protocol?.identificationModule &&
+        typeof protocol.identificationModule === "object"
+      ? protocol.identificationModule as JsonObject
+      : null;
+    const statusModule = protocol?.statusModule &&
+        typeof protocol.statusModule === "object"
+      ? protocol.statusModule as JsonObject
+      : null;
+    const designModule = protocol?.designModule &&
+        typeof protocol.designModule === "object"
+      ? protocol.designModule as JsonObject
+      : null;
+    const conditionsModule = protocol?.conditionsModule &&
+        typeof protocol.conditionsModule === "object"
+      ? protocol.conditionsModule as JsonObject
+      : null;
+
+    const nctId = stringValue(identification?.nctId);
+    const title = stringValue(identification?.briefTitle);
+    if (!nctId || !title) continue;
+
+    const conditions = Array.isArray(conditionsModule?.conditions)
+      ? conditionsModule.conditions
+        .map((value) => stringValue(value))
+        .filter((value): value is string => Boolean(value))
+      : [];
+    const candidateText = [title, ...conditions].join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const overallStatus = stringValue(statusModule?.overallStatus);
+    const phases = Array.isArray(designModule?.phases)
+      ? designModule.phases
+        .map((value) => stringValue(value))
+        .filter((value): value is string => Boolean(value))
+      : [];
+    const source = "https://clinicaltrials.gov/study/" +
+      encodeURIComponent(nctId);
+    const displayText = [
+      title + " (" + nctId + ").",
+      overallStatus ? "Estado: " + overallStatus + "." : "",
+      phases.length ? "Fase: " + phases.join(", ") + "." : "",
+      conditions.length ? "Condiciones: " + conditions.join(", ") + "." : "",
+    ].filter(Boolean).join(" ");
+
+    return {
+      claimKey: "clinicaltrials:" + slug(nctId),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "ClinicalTrials.gov no encontró un ensayo suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "clinicaltrials",
+    },
+  );
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function atomTag(
+  xml: string,
+  tag: string,
+): string | null {
+  const match = xml.match(
+    new RegExp("<" + tag + "(?:\\s[^>]*)?>([\\s\\S]*?)<\\/" + tag + ">", "i"),
+  );
+  return match?.[1] ? decodeXmlText(match[1]) : null;
+}
+
+async function arxivEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const domain = specialistResearchDomain(query) === "arxiv"
+    ? "arxiv"
+    : "academic";
+  const topic = specialistSearchTopic(query, domain);
+  if (!topic) return abstain("Necesito un tema concreto para buscar en arXiv.");
+
+  const url = new URL("https://export.arxiv.org/api/query");
+  url.searchParams.set("search_query", "all:" + topic);
+  url.searchParams.set("start", "0");
+  url.searchParams.set("max_results", "3");
+  url.searchParams.set("sortBy", "relevance");
+  url.searchParams.set("sortOrder", "descending");
+
+  const response = await fetchWithRetry(
+    deps,
+    url,
+    {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/atom+xml",
+      },
+      signal,
+    },
+    2,
+  );
+  if (!response?.ok) {
+    return abstain(
+      "arXiv no está disponible para esta consulta.",
+      {
+        reasonCode: response
+          ? upstreamReasonCode(response.status)
+          : "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "arxiv",
+      },
+    );
+  }
+
+  const xml = await response.text();
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gi)]
+    .map((match) => match[1])
+    .slice(0, 3);
+
+  for (const entry of entries) {
+    const title = atomTag(entry, "title");
+    const summary = atomTag(entry, "summary");
+    const id = atomTag(entry, "id");
+    const published = atomTag(entry, "published");
+    if (!title || !id) continue;
+
+    const candidateText = [title, summary].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/gi)]
+      .map((match) => decodeXmlText(match[1]))
+      .filter(Boolean)
+      .slice(0, 5);
+    const source = id.replace(/v\d+$/i, "");
+    const displayText = [
+      title + ".",
+      published ? "Publicado: " + published.slice(0, 10) + "." : "",
+      authors.length ? "Autores: " + authors.join(", ") + "." : "",
+      summary ? conciseExcerpt(summary, 900) : "",
+    ].filter(Boolean).join(" ");
+
+    return {
+      claimKey: "arxiv:" + slug(source),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: false,
+      observedAt: published ?? undefined,
+    };
+  }
+
+  return abstain(
+    "arXiv no encontró un preprint suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "arxiv",
+    },
+  );
+}
+
+function cveIdFromQuery(query: string): string | null {
+  return query.match(/\bCVE-\d{4}-\d{4,7}\b/i)?.[0]?.toUpperCase() ?? null;
+}
+
+function nvdCvss(
+  cve: JsonObject,
+): { score: number; severity: string } | null {
+  const metrics = cve.metrics && typeof cve.metrics === "object"
+    ? cve.metrics as JsonObject
+    : null;
+  if (!metrics) return null;
+
+  for (
+    const key of [
+      "cvssMetricV40",
+      "cvssMetricV31",
+      "cvssMetricV30",
+      "cvssMetricV2",
+    ]
+  ) {
+    const entries = Array.isArray(metrics[key]) ? metrics[key] : [];
+    for (const rawEntry of entries) {
+      if (!rawEntry || typeof rawEntry !== "object") continue;
+      const entry = rawEntry as JsonObject;
+      const data = entry.cvssData && typeof entry.cvssData === "object"
+        ? entry.cvssData as JsonObject
+        : null;
+      const score = numberValue(data?.baseScore);
+      const severity = stringValue(data?.baseSeverity) ??
+        stringValue(entry.baseSeverity);
+      if (score != null && severity) return { score, severity };
+    }
+  }
+  return null;
+}
+
+async function nvdEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const cveId = cveIdFromQuery(query);
+  if (!cveId) {
+    return abstain(
+      "Necesito un identificador CVE concreto para consultar NVD.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "nvd",
+      },
+    );
+  }
+
+  const url = new URL("https://services.nvd.nist.gov/rest/json/cves/2.0");
+  url.searchParams.set("cveId", cveId);
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const vulnerabilities = Array.isArray(payload?.vulnerabilities)
+    ? payload.vulnerabilities
+    : [];
+  const raw = vulnerabilities.find((value) =>
+    Boolean(value) && typeof value === "object"
+  ) as JsonObject | undefined;
+  const cve = raw?.cve && typeof raw.cve === "object"
+    ? raw.cve as JsonObject
+    : null;
+  if (!cve || stringValue(cve.id)?.toUpperCase() !== cveId) {
+    return abstain(
+      "NVD no encontró el CVE solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "nvd",
+      },
+    );
+  }
+
+  const descriptions = Array.isArray(cve.descriptions)
+    ? cve.descriptions
+    : [];
+  const descriptionEntry = descriptions
+    .filter((value): value is JsonObject =>
+      Boolean(value) && typeof value === "object"
+    )
+    .find((value) => stringValue(value.lang)?.toLowerCase() === "en") ??
+    descriptions.find((value): value is JsonObject =>
+      Boolean(value) && typeof value === "object"
+    );
+  const description = descriptionEntry
+    ? stringValue(descriptionEntry.value)
+    : null;
+  const cvss = nvdCvss(cve);
+  const published = stringValue(cve.published);
+  const lastModified = stringValue(cve.lastModified);
+  const source = "https://nvd.nist.gov/vuln/detail/" + cveId;
+  const displayText = [
+    cveId + ".",
+    cvss ? "CVSS: " + cvss.score + " (" + cvss.severity + ")." : "",
+    description ? conciseExcerpt(description, 900) : "",
+    published ? "Publicado: " + published.slice(0, 10) + "." : "",
+    lastModified ? "Última modificación: " + lastModified.slice(0, 10) + "." : "",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "nvd:" + slug(cveId),
+    value: normalize(displayText),
+    displayText,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt: lastModified ?? published ?? undefined,
+  };
+}
+
+function earthquakePlaceQuery(query: string): string | null {
+  const stripped = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped.match(
+    /(?:\ben\b|\bde\b|\bin\b)\s+([\p{L}][\p{L}\s.'-]{1,80})$/iu,
+  )?.[1]?.trim() ?? null;
+}
+
+async function usgsEarthquakeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const placeQuery = earthquakePlaceQuery(query);
+  const url = new URL(
+    "https://earthquake.usgs.gov/fdsnws/event/1/query",
+  );
+  url.searchParams.set("format", "geojson");
+  url.searchParams.set("orderby", "time");
+  url.searchParams.set("limit", "50");
+  url.searchParams.set("minmagnitude", "2.5");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const features = Array.isArray(payload?.features) ? payload.features : [];
+  const normalizedPlace = placeQuery ? normalize(placeQuery) : "";
+
+  const feature = features.find((rawFeature) => {
+    if (!rawFeature || typeof rawFeature !== "object") return false;
+    const feature = rawFeature as JsonObject;
+    const properties = feature.properties &&
+        typeof feature.properties === "object"
+      ? feature.properties as JsonObject
+      : null;
+    const place = stringValue(properties?.place);
+    if (!place) return false;
+    return !normalizedPlace || normalize(place).includes(normalizedPlace);
+  }) as JsonObject | undefined;
+  const properties = feature?.properties &&
+      typeof feature.properties === "object"
+    ? feature.properties as JsonObject
+    : null;
+  const magnitude = numberValue(properties?.mag);
+  const place = stringValue(properties?.place);
+  const time = numberValue(properties?.time);
+  const source = stringValue(properties?.url);
+  const geometry = feature?.geometry && typeof feature.geometry === "object"
+    ? feature.geometry as JsonObject
+    : null;
+  const coordinates = Array.isArray(geometry?.coordinates)
+    ? geometry.coordinates
+    : [];
+  const depth = coordinates.length >= 3
+    ? numberValue(coordinates[2])
+    : null;
+
+  if (magnitude == null || !place || time == null || !source) {
+    return abstain(
+      "USGS no encontró un sismo reciente que coincida con la ubicación.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "usgs_earthquake",
+      },
+    );
+  }
+
+  const timestamp = new Date(time).toISOString();
+  const displayText = [
+    "Sismo de magnitud " + magnitude + " en " + place + ".",
+    "Fecha UTC: " + timestamp + ".",
+    depth == null ? "" : "Profundidad: " + depth + " km.",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "usgs-earthquake:" + slug(stringValue(feature?.id) ?? source),
+    value: normalize(displayText),
+    displayText,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt: timestamp,
+  };
+}
+
+async function semanticScholarEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "academic");
+  if (!topic) return abstain("Necesito un tema científico concreto.");
+
+  const url = new URL(
+    "https://api.semanticscholar.org/graph/v1/paper/search",
+  );
+  url.searchParams.set("query", topic);
+  url.searchParams.set("limit", "3");
+  url.searchParams.set(
+    "fields",
+    "paperId,title,year,abstract,url,citationCount,authors",
+  );
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const papers = Array.isArray(payload?.data) ? payload.data : [];
+
+  for (const rawPaper of papers.slice(0, 3)) {
+    if (!rawPaper || typeof rawPaper !== "object") continue;
+    const paper = rawPaper as JsonObject;
+    const paperId = stringValue(paper.paperId);
+    const title = stringValue(paper.title);
+    const abstract = stringValue(paper.abstract);
+    const year = numberValue(paper.year);
+    const source = stringValue(paper.url) ??
+      (paperId
+        ? "https://www.semanticscholar.org/paper/" +
+          encodeURIComponent(paperId)
+        : null);
+    if (!title || !source) continue;
+
+    const candidateText = [title, abstract].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = Array.isArray(paper.authors)
+      ? paper.authors
+        .map((author) =>
+          author && typeof author === "object"
+            ? stringValue((author as JsonObject).name)
+            : null
+        )
+        .filter((value): value is string => Boolean(value))
+        .slice(0, 4)
+      : [];
+    const citationCount = numberValue(paper.citationCount);
+    const summary = abstract
+      ? conciseExcerpt(abstract, 900)
+      : "Semantic Scholar no devolvió resumen para este resultado.";
+    const metadata = [
+      year == null ? "" : "Año: " + Math.trunc(year),
+      authors.length ? "Autores: " + authors.join(", ") : "",
+      citationCount == null
+        ? ""
+        : "Citas registradas: " + Math.trunc(citationCount),
+    ].filter(Boolean).join(". ");
+    const displayText =
+      title + (metadata ? ". " + metadata : "") + ". " + summary;
+
+    return {
+      claimKey: "semantic-scholar:" + slug(paperId ?? title),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: false,
+    };
+  }
+
+  return abstain(
+    "Semantic Scholar no encontró un paper suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "semantic_scholar",
+    },
+  );
+}
+
+async function europePmcEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "biomedical");
+  if (!topic) return abstain("Necesito un tema biomédico concreto.");
+
+  const url = new URL(
+    "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+  );
+  url.searchParams.set("query", topic);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("pageSize", "3");
+  url.searchParams.set("resultType", "core");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const resultList = payload?.resultList &&
+      typeof payload.resultList === "object"
+    ? payload.resultList as JsonObject
+    : null;
+  const results = Array.isArray(resultList?.result) ? resultList.result : [];
+
+  for (const rawResult of results.slice(0, 3)) {
+    if (!rawResult || typeof rawResult !== "object") continue;
+    const item = rawResult as JsonObject;
+    const id = stringValue(item.id);
+    const sourceCode = stringValue(item.source) ?? "MED";
+    const title = stringValue(item.title);
+    const abstract = stringValue(item.abstractText);
+    if (!id || !title) continue;
+
+    const candidateText = [title, abstract].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const source = "https://europepmc.org/article/" +
+      encodeURIComponent(sourceCode) + "/" + encodeURIComponent(id);
+    const authors = stringValue(item.authorString);
+    const year = stringValue(item.pubYear);
+    const doi = stringValue(item.doi);
+    const summary = abstract
+      ? conciseExcerpt(abstract, 900)
+      : "Europe PMC no devolvió resumen para este resultado.";
+    const metadata = [
+      year ? "Año: " + year : "",
+      authors ? "Autores: " + authors : "",
+      doi ? "DOI: " + doi : "",
+    ].filter(Boolean).join(". ");
+    const displayText =
+      title + (metadata ? ". " + metadata : "") + ". " + summary;
+
+    return {
+      claimKey: "europe-pmc:" + slug(sourceCode) + ":" + slug(id),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: doi
+        ? unique([source, "https://doi.org/" + doi])
+        : [source],
+      independentSourceCount: 1,
+      authoritative: false,
+    };
+  }
+
+  return abstain(
+    "Europe PMC no encontró un estudio biomédico suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "europe_pmc",
+    },
+  );
+}
+
+function crossrefTitle(
+  item: JsonObject,
+): string | null {
+  const titles = Array.isArray(item.title) ? item.title : [];
+  return titles
+    .map((value) => typeof value === "string" ? value.trim() : "")
+    .find(Boolean) ?? null;
+}
+
+function crossrefAuthors(
+  item: JsonObject,
+): string[] {
+  return Array.isArray(item.author)
+    ? item.author
+      .map((rawAuthor) => {
+        if (!rawAuthor || typeof rawAuthor !== "object") return "";
+        const author = rawAuthor as JsonObject;
+        return [
+          stringValue(author.given),
+          stringValue(author.family),
+        ].filter(Boolean).join(" ").trim();
+      })
+      .filter(Boolean)
+      .slice(0, 5)
+    : [];
+}
+
+async function crossrefEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "doi");
+  if (!topic) return abstain("Necesito un título o tema bibliográfico concreto.");
+
+  const url = new URL("https://api.crossref.org/works");
+  url.searchParams.set("query.bibliographic", topic);
+  url.searchParams.set("rows", "3");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const message = payload?.message && typeof payload.message === "object"
+    ? payload.message as JsonObject
+    : null;
+  const items = Array.isArray(message?.items) ? message.items : [];
+
+  for (const rawItem of items.slice(0, 3)) {
+    if (!rawItem || typeof rawItem !== "object") continue;
+    const item = rawItem as JsonObject;
+    const title = crossrefTitle(item);
+    const doi = stringValue(item.DOI);
+    if (!title || !doi) continue;
+
+    const publisher = stringValue(item.publisher);
+    const candidateText = [title, publisher].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = crossrefAuthors(item);
+    const source = stringValue(item.URL) ?? "https://doi.org/" + doi;
+    const metadata = [
+      "DOI: " + doi,
+      authors.length ? "Autores: " + authors.join(", ") : "",
+      publisher ? "Editorial: " + publisher : "",
+    ].filter(Boolean).join(". ");
+    const displayText = title + ". " + metadata + ".";
+
+    return {
+      claimKey: "crossref:" + slug(doi),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: unique([source, "https://doi.org/" + doi]),
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "Crossref no encontró metadatos bibliográficos suficientemente relacionados.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "crossref",
+    },
+  );
+}
+
+async function openLibraryEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const topic = specialistSearchTopic(query, "books");
+  if (!topic) return abstain("Necesito un tema o título de libro concreto.");
+
+  const url = new URL("https://openlibrary.org/search.json");
+  url.searchParams.set("q", topic);
+  url.searchParams.set("limit", "3");
+  url.searchParams.set(
+    "fields",
+    "key,title,author_name,first_publish_year,subject",
+  );
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const docs = Array.isArray(payload?.docs) ? payload.docs : [];
+
+  for (const rawDoc of docs.slice(0, 3)) {
+    if (!rawDoc || typeof rawDoc !== "object") continue;
+    const doc = rawDoc as JsonObject;
+    const key = stringValue(doc.key);
+    const title = stringValue(doc.title);
+    if (!key || !title) continue;
+
+    const subjects = stringArray(doc.subject).slice(0, 8);
+    const candidateText = [title, ...subjects].join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = stringArray(doc.author_name).slice(0, 5);
+    const year = numberValue(doc.first_publish_year);
+    const source = "https://openlibrary.org" + key;
+    const metadata = [
+      authors.length ? "Autores: " + authors.join(", ") : "",
+      year == null ? "" : "Primera publicación: " + Math.trunc(year),
+      subjects.length ? "Temas: " + subjects.slice(0, 4).join(", ") : "",
+    ].filter(Boolean).join(". ");
+    const displayText = title + (metadata ? ". " + metadata : "") + ".";
+
+    return {
+      claimKey: "open-library:" + slug(key),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: true,
+    };
+  }
+
+  return abstain(
+    "Open Library no encontró un libro suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "open_library",
+    },
+  );
+}
+
+type WorldBankIndicator = {
+  code: string;
+  label: string;
+};
+
+function worldBankIndicator(
+  query: string,
+): WorldBankIndicator | null {
+  const clean = normalize(query);
+  if (/\b(?:pib per capita|gdp per capita)\b/.test(clean)) {
+    return { code: "NY.GDP.PCAP.CD", label: "PIB per cápita" };
+  }
+  if (/\b(?:pib|gdp|producto interno bruto)\b/.test(clean)) {
+    return { code: "NY.GDP.MKTP.CD", label: "PIB" };
+  }
+  if (/\b(?:poblacion|population)\b/.test(clean)) {
+    return { code: "SP.POP.TOTL", label: "Población" };
+  }
+  if (/\b(?:inflacion|inflation)\b/.test(clean)) {
+    return { code: "FP.CPI.TOTL.ZG", label: "Inflación" };
+  }
+  if (/\b(?:desempleo|unemployment)\b/.test(clean)) {
+    return { code: "SL.UEM.TOTL.ZS", label: "Desempleo" };
+  }
+  if (/\b(?:esperanza de vida|life expectancy)\b/.test(clean)) {
+    return { code: "SP.DYN.LE00.IN", label: "Esperanza de vida" };
+  }
+  return null;
+}
+
+function worldBankCountryQuery(
+  query: string,
+): string | null {
+  const stripped = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const match = stripped.match(
+    /(?:\bde\b|\ben\b|\bof\b|\bin\b)\s+([\p{L}][\p{L}\s.'-]{1,80}?)(?:\s+(?:segun|según)\s+(?:el\s+)?banco mundial|\s+according to (?:the )?world bank|$)/iu,
+  );
+  return match?.[1]?.trim() || null;
+}
+
+async function worldBankEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const indicator = worldBankIndicator(query);
+  const countryQuery = worldBankCountryQuery(query);
+  if (!indicator || !countryQuery) {
+    return abstain(
+      "Necesito un indicador compatible y un país para consultar el Banco Mundial.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "world_bank",
+      },
+    );
+  }
+
+  const countriesUrl = new URL("https://api.worldbank.org/v2/country");
+  countriesUrl.searchParams.set("format", "json");
+  countriesUrl.searchParams.set("per_page", "400");
+
+  const countriesPayload = await fetchJson(deps, countriesUrl, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const countries = Array.isArray(countriesPayload) &&
+      Array.isArray(countriesPayload[1])
+    ? countriesPayload[1]
+    : [];
+  const normalizedCountry = normalize(countryQuery);
+  const country = countries.find((rawCountry) => {
+    if (!rawCountry || typeof rawCountry !== "object") return false;
+    const item = rawCountry as JsonObject;
+    return [
+      stringValue(item.name),
+      stringValue(item.iso2Code),
+      stringValue(item.id),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => normalize(value) === normalizedCountry);
+  }) as JsonObject | undefined;
+
+  const iso2Code = stringValue(country?.iso2Code);
+  const countryName = stringValue(country?.name);
+  if (!iso2Code || !countryName) {
+    return abstain(
+      "El Banco Mundial no pudo resolver el país solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "world_bank",
+      },
+    );
+  }
+
+  const indicatorUrl = new URL(
+    "https://api.worldbank.org/v2/country/" +
+      encodeURIComponent(iso2Code) + "/indicator/" + indicator.code,
+  );
+  indicatorUrl.searchParams.set("format", "json");
+  indicatorUrl.searchParams.set("per_page", "10");
+  indicatorUrl.searchParams.set("mrv", "5");
+
+  const indicatorPayload = await fetchJson(deps, indicatorUrl, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const observations = Array.isArray(indicatorPayload) &&
+      Array.isArray(indicatorPayload[1])
+    ? indicatorPayload[1]
+    : [];
+  const latest = observations.find((rawObservation) =>
+    Boolean(rawObservation) &&
+    typeof rawObservation === "object" &&
+    numberValue((rawObservation as JsonObject).value) != null
+  ) as JsonObject | undefined;
+  const value = numberValue(latest?.value);
+  const year = stringValue(latest?.date);
+  if (value == null || !year) {
+    return abstain(
+      "El Banco Mundial no devolvió una observación reciente utilizable.",
+      {
+        reasonCode: "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "world_bank",
+      },
+    );
+  }
+
+  const formatted = new Intl.NumberFormat("es-CL", {
+    maximumFractionDigits: 2,
+  }).format(value);
+  const displayText = indicator.label + " de " + countryName + ": " +
+    formatted + " (" + year + "), según el Banco Mundial.";
+
+  return {
+    claimKey: "world-bank:" + slug(iso2Code) + ":" + slug(indicator.code),
+    value: indicator.code + "|" + iso2Code + "|" + year + "|" + value,
+    displayText,
+    sourceId: indicatorUrl.toString(),
+    sourceIds: [indicatorUrl.toString()],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt: year,
+  };
+}
+
+async function specializedResearchEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult | null> {
+  const domain = specialistResearchDomain(query);
+  if (!domain) return null;
+
+  if (domain === "chemistry") {
+    return await pubChemEvidence(query, deps, signal);
+  }
+  if (domain === "exoplanet") {
+    return await nasaExoplanetEvidence(query, deps, signal);
+  }
+  if (domain === "protein") {
+    return await uniProtEvidence(query, deps, signal);
+  }
+  if (domain === "biodiversity") {
+    return await gbifTaxonomyEvidence(query, deps, signal);
+  }
+  if (domain === "clinical_trials") {
+    return await clinicalTrialsEvidence(query, deps, signal);
+  }
+  if (domain === "doi") {
+    return await crossrefEvidence(query, deps, signal);
+  }
+  if (domain === "biomedical") {
+    const europePmc = await europePmcEvidence(query, deps, signal);
+    if (!europePmc.abstained) return europePmc;
+    const semanticScholar = await semanticScholarEvidence(query, deps, signal);
+    if (!semanticScholar.abstained) return semanticScholar;
+    return await arxivEvidence(query, deps, signal);
+  }
+  if (domain === "arxiv") {
+    return await arxivEvidence(query, deps, signal);
+  }
+  if (domain === "academic") {
+    const semanticScholar = await semanticScholarEvidence(query, deps, signal);
+    if (!semanticScholar.abstained) return semanticScholar;
+    const arxiv = await arxivEvidence(query, deps, signal);
+    if (!arxiv.abstained) return arxiv;
+    return await crossrefEvidence(query, deps, signal);
+  }
+  if (domain === "books") {
+    return await openLibraryEvidence(query, deps, signal);
+  }
+  if (domain === "world_bank") {
+    return await worldBankEvidence(query, deps, signal);
+  }
+  if (domain === "cybersecurity") {
+    return await nvdEvidence(query, deps, signal);
+  }
+  return await usgsEarthquakeEvidence(query, deps, signal);
+}
+
 async function stackOverflowSpanishEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -3459,6 +5125,24 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     };
   }
 
+  if (
+    clean === "televisor oled" ||
+    clean === "television oled" ||
+    clean === "oled"
+  ) {
+    const displayText =
+      "Un televisor OLED usa diodos orgánicos emisores de luz: cada píxel " +
+      "emite su propia luz y puede apagarse individualmente, lo que permite " +
+      "negros profundos, alto contraste y un control muy preciso de la imagen.";
+    return {
+      claimKey: "local-stable:oled-display",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   return null;
 }
 
@@ -3761,6 +5445,8 @@ export async function routeResearchQuery(
   context = "",
   kind = "",
 ): Promise<ResearchResult> {
+  const routeDeadlineAt =
+    performance.now() + generalKnowledgeRouteTimeoutMs(deps);
   const clean = normalize(query);
   const cleanContext = normalize(context);
   const combinedSignals = `${clean} ${cleanContext}`.trim();
@@ -3774,12 +5460,25 @@ export async function routeResearchQuery(
   const specsSignal =
     /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
 
+  const specialistController = new AbortController();
+  const specialist = await settleSpecialistEvidence(
+    specializedResearchEvidence(
+      query,
+      deps,
+      specialistController.signal,
+    ),
+    specialistController,
+    deps,
+    remainingRouteBudgetMs(routeDeadlineAt),
+  );
+  if (specialist && !specialist.abstained) {
+    return specialist;
+  }
+
   if (
     kind === "GENERAL_KNOWLEDGE" ||
     isStableGeneralKnowledgeIntent(query)
   ) {
-    const routeDeadlineAt =
-      performance.now() + generalKnowledgeRouteTimeoutMs(deps);
     const remainingBudget = () => remainingRouteBudgetMs(routeDeadlineAt);
 
     const primaryController = new AbortController();

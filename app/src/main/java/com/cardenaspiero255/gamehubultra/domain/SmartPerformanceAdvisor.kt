@@ -48,16 +48,38 @@ object SmartPerformanceAdvisor {
         val lowBattery = runtime?.battery?.percent?.let { it < 20 } == true
         val memoryPressure = runtime?.memory?.usedPercent?.let { it >= 90 } == true
         val storagePressure = runtime?.storage?.freePercent?.let { it < 10 } == true
+        val safetyConstrained =
+            thermalHot || lowBattery || memoryPressure || storagePressure
         val gpuFamily = detectGpuFamily(input.device.gpuVendor, input.device.gpuRenderer)
 
         val knownBad = input.historicalObservations
-            .filter { it.failed || it.highTemperature }
+            .filter {
+                it.failed ||
+                    it.highTemperature ||
+                    it.feedbackDecision == OptimizationFeedbackDecision.REJECTED ||
+                    it.feedbackDecision == OptimizationFeedbackDecision.REVERTED
+            }
             .groupingBy { it.profile }
             .eachCount()
-        val knownGood = input.historicalObservations
+        val measuredGood = input.historicalObservations
             .filter { it.stable && !it.failed && !it.highTemperature }
             .groupingBy { it.profile }
             .eachCount()
+        val acceptedFeedback = input.historicalObservations
+            .filter {
+                it.feedbackDecision == OptimizationFeedbackDecision.ACCEPTED &&
+                    !it.failed &&
+                    !it.highTemperature
+            }
+            .groupingBy { it.profile }
+            .eachCount()
+        val knownGood = buildMap {
+            PerformanceProfile.entries.forEach { profile ->
+                val count = measuredGood.getOrDefault(profile, 0) +
+                    acceptedFeedback.getOrDefault(profile, 0)
+                if (count > 0) put(profile, count)
+            }
+        }
 
         val baseScores = linkedMapOf(
             PerformanceProfile.BALANCED to 60,
@@ -117,11 +139,15 @@ object SmartPerformanceAdvisor {
                     (input.device.cpuCores >= 4 && input.device.totalRamMb >= 4096)
             }
 
-        val best = supportedProfiles.maxWithOrNull(
-            compareBy<PerformanceProfile> { baseScores.getValue(it) }
-                .thenBy { if (it == input.currentProfile) 1 else 0 }
-                .thenBy { it.ordinal * -1 }
-        ) ?: PerformanceProfile.BALANCED
+        val best = if (safetyConstrained) {
+            PerformanceProfile.BALANCED
+        } else {
+            supportedProfiles.maxWithOrNull(
+                compareBy<PerformanceProfile> { baseScores.getValue(it) }
+                    .thenBy { if (it == input.currentProfile) 1 else 0 }
+                    .thenBy { it.ordinal * -1 }
+            ) ?: PerformanceProfile.BALANCED
+        }
 
         val evidence = buildList {
             add(input.device.cpuCores.toString() + " núcleos CPU")
@@ -131,8 +157,18 @@ object SmartPerformanceAdvisor {
             runtime?.refresh?.currentRefreshRateHz?.let { add("Refresco actual: " + it.toInt() + " Hz") }
             runtime?.thermal?.status?.let { add("Estado térmico: " + it) }
             runtime?.battery?.percent?.let { add("Batería: " + it + "%") }
-            if (knownGood.isNotEmpty()) add("Usa resultados estables guardados localmente")
-            if (knownBad.isNotEmpty()) add("Evita configuraciones con fallos/temperatura excesiva")
+            if (measuredGood.isNotEmpty()) {
+                add("Usa resultados estables guardados localmente")
+            }
+            if (acceptedFeedback.isNotEmpty()) {
+                add("Considera recomendaciones aceptadas previamente")
+            }
+            if (input.historicalObservations.any { it.feedbackDecision == OptimizationFeedbackDecision.REJECTED || it.feedbackDecision == OptimizationFeedbackDecision.REVERTED }) {
+                add("Evita recomendaciones rechazadas o revertidas repetidamente")
+            }
+            if (input.historicalObservations.any { it.failed || it.highTemperature }) {
+                add("Evita configuraciones con fallos/temperatura excesiva")
+            }
         }
 
         val reason = when {
@@ -140,7 +176,10 @@ object SmartPerformanceAdvisor {
             lowBattery -> "Batería baja: se prioriza estabilidad y consumo."
             memoryPressure -> "Presión de memoria alta: se reduce el riesgo de inestabilidad."
             storagePressure -> "Almacenamiento libre bajo: se evita una configuración agresiva."
-            knownGood.containsKey(best) -> "Existe evidencia local de estabilidad para este perfil."
+            measuredGood.containsKey(best) ->
+                "Existe evidencia local de estabilidad para este perfil."
+            acceptedFeedback.containsKey(best) ->
+                "Este perfil fue aceptado previamente en este dispositivo y juego."
             best == PerformanceProfile.X4 -> "El dispositivo expone suficiente capacidad para probar X4 de forma conservadora."
             best == PerformanceProfile.FRAME_INTERPOLATION -> "El perfil encaja con un refresco alto y sin presión térmica relevante."
             else -> "Se conserva un perfil equilibrado con la evidencia disponible."
@@ -149,7 +188,10 @@ object SmartPerformanceAdvisor {
         return SmartPerformanceRecommendation(
             profile = best,
             reason = reason,
-            safeFallback = knownGood.entries
+            safeFallback = measuredGood.entries
+                .asSequence()
+                .filter { it.key != best }
+                .filter { knownBad.getOrDefault(it.key, 0) < 2 }
                 .maxWithOrNull(
                     compareBy<Map.Entry<PerformanceProfile, Int>> { it.value }
                         .thenBy { if (it.key == PerformanceProfile.BALANCED) 1 else 0 }

@@ -30,7 +30,6 @@ import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
-import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
@@ -176,26 +175,9 @@ private class GameHubVoiceInteractionSession(context: Context) :
         val device = DeviceInfoProvider.get(context)
         val diagnostics = RuntimeDiagnosticsProvider.get(context)
         val capabilities = DeviceCapabilitiesProvider.get(context)
-        val aiContext = GameHubAiContext(
-            selectedGamePackage = selectedGamePackage,
-            sustainedPerformanceSupported = capabilities.sustainedPerformanceSupported,
-            cpuCores = device.cpuCores,
-            totalRamMb = device.totalRamMb.toInt(),
-            gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
-                !device.gpuVendor.isNullOrBlank(),
-            thermalStatus = diagnostics.thermal.status,
-            thermalHeadroom = diagnostics.thermal.headroom,
-            batteryPercent = diagnostics.battery.percent,
-            charging = diagnostics.battery.charging,
-            refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
-            networkValidated = diagnostics.connectivity.validated,
-            networkLatencyMs = diagnostics.connectivity.latencyMs,
-            downstreamBandwidthKbps = diagnostics.connectivity.downstreamBandwidthKbps?.toLong(),
-            storageFreePercent = diagnostics.storage.freePercent,
-            inputDeviceCount = diagnostics.inputDeviceCount,
-            selectedProfile = selectedProfile,
-            sessionActive = selectedGamePackage != null
-        )
+        val baseAiContext = VoiceAiContextFactory.create(selectedGamePackage, selectedProfile, device, diagnostics, capabilities)
+        val aiContext =
+            VoiceOptimizationFeedbackContext.enrichBlockingOrBase(baseAiContext, context, device)
         val intentResolver = aiAdvisor.intentResolver()
         val result = VoiceCommandEngine.execute(
             command = VoiceCommandParser.parse(

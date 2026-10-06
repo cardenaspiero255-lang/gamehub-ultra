@@ -152,6 +152,44 @@ class GameOptimizationMemoryStoreTest {
         assertEquals(120, store.observationsFlow(key).first().size)
     }
 
+    @Test
+    fun `legacy gpu-less context migrates to canonical key without losing feedback`() = runBlocking {
+        val canonical = OptimizationContextKey(
+            deviceFingerprint = "device-a¦",
+            gamePackage = "game-a",
+            gameVersion = "1",
+            emulatorBackend = null,
+            driverFingerprint = null
+        )
+        val legacy = canonical.copy(
+            deviceFingerprint = "device-a¦|",
+            driverFingerprint = "|"
+        )
+        store.record(
+            legacy,
+            OptimizationObservation(
+                contextKey = "",
+                profile = PerformanceProfile.X4,
+                stable = true,
+                timestampMillis = 7L
+            )
+        )
+
+        store.record(
+            canonical,
+            OptimizationObservation(
+                contextKey = "",
+                profile = PerformanceProfile.BALANCED,
+                stable = true,
+                timestampMillis = 8L
+            )
+        )
+
+        val migrated = store.observationsFlow(canonical).first()
+        assertEquals(2, migrated.size)
+        assertTrue(migrated.all { it.contextKey == canonical.serialized })
+    }
+
     private fun deleteDataStoreFiles(base: File) {
         base.delete()
         File(base.absolutePath + ".corrupt").delete()

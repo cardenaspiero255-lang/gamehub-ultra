@@ -112,4 +112,200 @@ class SmartPerformanceAdvisorTest {
         assertEquals(DriverStrategy.SYSTEM_ONLY, result.driverStrategy)
         assertTrue(result.evidence.isNotEmpty())
     }
+
+    @Test
+    fun rejectedRecommendationsNeedRepeatedEvidenceBeforeBeingExcluded() {
+        val oneRejection = listOf(
+            OptimizationObservation(
+                contextKey = "same",
+                profile = PerformanceProfile.X4,
+                feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                timestampMillis = 1L
+            )
+        )
+        val afterOne = SmartPerformanceAdvisor.recommend(
+            SmartPerformanceInput(
+                device,
+                runtime(),
+                "game",
+                "1",
+                null,
+                PerformanceProfile.BALANCED,
+                oneRejection
+            )
+        )
+        assertEquals(PerformanceProfile.X4, afterOne.profile)
+
+        val repeatedRejections = oneRejection + OptimizationObservation(
+            contextKey = "same",
+            profile = PerformanceProfile.X4,
+            feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+            timestampMillis = 2L
+        )
+        val afterRepeated = SmartPerformanceAdvisor.recommend(
+            SmartPerformanceInput(
+                device,
+                runtime(),
+                "game",
+                "1",
+                null,
+                PerformanceProfile.BALANCED,
+                repeatedRejections
+            )
+        )
+        assertNotEquals(PerformanceProfile.X4, afterRepeated.profile)
+        assertTrue(
+            afterRepeated.evidence.any {
+                it.contains("rechaz", ignoreCase = true) ||
+                    it.contains("revert", ignoreCase = true)
+            }
+        )
+    }
+
+    @Test
+    fun acceptedRecommendationContributesPositiveLocalEvidence() {
+        val result = SmartPerformanceAdvisor.recommend(
+            SmartPerformanceInput(
+                device = device,
+                runtime = runtime(),
+                gamePackage = "game",
+                gameVersion = "1",
+                emulatorBackend = null,
+                currentProfile = PerformanceProfile.BALANCED,
+                historicalObservations = listOf(
+                    OptimizationObservation(
+                        contextKey = "same",
+                        profile = PerformanceProfile.BALANCED,
+                        feedbackDecision = OptimizationFeedbackDecision.ACCEPTED,
+                        timestampMillis = 1L
+                    )
+                )
+            )
+        )
+
+        assertTrue(
+            result.evidence.any {
+                it.contains("acept", ignoreCase = true)
+            }
+        )
+    }
+
+    @Test
+    fun repeatedBalancedRejectionsDoNotDisableSafetyFallback() {
+        val observations = listOf(
+            OptimizationObservation(
+                contextKey = "same",
+                profile = PerformanceProfile.BALANCED,
+                feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                timestampMillis = 1L
+            ),
+            OptimizationObservation(
+                contextKey = "same",
+                profile = PerformanceProfile.BALANCED,
+                feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                timestampMillis = 2L
+            )
+        )
+
+        val result = SmartPerformanceAdvisor.recommend(
+            SmartPerformanceInput(
+                device,
+                runtime(thermalStatus = 4, thermalHeadroom = 0.90f),
+                "game",
+                "1",
+                null,
+                PerformanceProfile.X4,
+                observations
+            )
+        )
+
+        assertEquals(PerformanceProfile.BALANCED, result.profile)
+    }
+
+    @Test
+    fun acceptedFeedbackDoesNotMakeRecommendationItsOwnSafeFallback() {
+        val result = SmartPerformanceAdvisor.recommend(
+            SmartPerformanceInput(
+                device = device,
+                runtime = runtime(),
+                gamePackage = "game",
+                gameVersion = "1",
+                emulatorBackend = null,
+                currentProfile = PerformanceProfile.BALANCED,
+                historicalObservations = listOf(
+                    OptimizationObservation(
+                        contextKey = "same",
+                        profile = PerformanceProfile.X4,
+                        feedbackDecision = OptimizationFeedbackDecision.ACCEPTED,
+                        timestampMillis = 1L
+                    )
+                )
+            )
+        )
+
+        assertEquals(PerformanceProfile.X4, result.profile)
+        assertEquals(PerformanceProfile.BALANCED, result.safeFallback)
+    }
+
+    @Test
+    fun `all repeatedly poor profiles fall back safely to balanced`() {
+        val observations = PerformanceProfile.entries.flatMap { profile ->
+            listOf(
+                OptimizationObservation(
+                    contextKey = "same",
+                    profile = profile,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                    timestampMillis = profile.ordinal.toLong() * 10L + 1L
+                ),
+                OptimizationObservation(
+                    contextKey = "same",
+                    profile = profile,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                    timestampMillis = profile.ordinal.toLong() * 10L + 2L
+                )
+            )
+        }
+
+        val result = SmartPerformanceAdvisor.recommend(
+            SmartPerformanceInput(
+                device = device,
+                runtime = runtime(),
+                gamePackage = "game",
+                gameVersion = "1",
+                emulatorBackend = null,
+                currentProfile = PerformanceProfile.X4,
+                historicalObservations = observations
+            )
+        )
+
+        assertEquals(PerformanceProfile.BALANCED, result.profile)
+    }
+
+    @Test
+    fun `measured stable profile contributes evidence and becomes preferred reason`() {
+        val result = SmartPerformanceAdvisor.recommend(
+            SmartPerformanceInput(
+                device = device,
+                runtime = runtime(),
+                gamePackage = "game",
+                gameVersion = "1",
+                emulatorBackend = null,
+                currentProfile = PerformanceProfile.BALANCED,
+                historicalObservations = listOf(
+                    OptimizationObservation(
+                        contextKey = "same",
+                        profile = PerformanceProfile.X4,
+                        measuredFps = 120f,
+                        stable = true,
+                        timestampMillis = 1L
+                    )
+                )
+            )
+        )
+
+        assertEquals(PerformanceProfile.X4, result.profile)
+        assertTrue(result.evidence.any { it.contains("estables", ignoreCase = true) })
+        assertTrue(result.reason.contains("evidencia local", ignoreCase = true))
+    }
+
 }

@@ -6543,3 +6543,852 @@ Deno.test(
     }
   },
 );
+
+Deno.test("academic paper queries use keyless Semantic Scholar specialist", async () => {
+  let semanticCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.semanticscholar.org") {
+        semanticCalls += 1;
+        return jsonResponse({
+          data: [{
+            paperId: "S2-EXO-1",
+            title: "Atmospheres of Exoplanets",
+            year: 2026,
+            abstract:
+              "Exoplanet atmospheres can be studied with transit spectroscopy and thermal emission measurements.",
+            url: "https://www.semanticscholar.org/paper/S2-EXO-1",
+            citationCount: 42,
+            authors: [{ name: "A. Researcher" }],
+          }],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca papers científicos sobre atmósferas de exoplanetas",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Semantic Scholar evidence");
+  if (semanticCalls !== 1) {
+    throw new Error("expected one Semantic Scholar call");
+  }
+  if (!(result.sourceId ?? "").includes("semanticscholar.org")) {
+    throw new Error("expected Semantic Scholar source");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("exoplanet")) {
+    throw new Error("expected exoplanet paper evidence");
+  }
+});
+
+Deno.test("biomedical research queries use keyless Europe PMC specialist", async () => {
+  let europePmcCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "www.ebi.ac.uk") {
+        europePmcCalls += 1;
+        return jsonResponse({
+          resultList: {
+            result: [{
+              id: "PMC123",
+              source: "PMC",
+              title: "Immunotherapy advances in melanoma",
+              abstractText:
+                "Checkpoint inhibitors have changed the treatment landscape of melanoma and remain an active research area.",
+              authorString: "Researcher A et al.",
+              pubYear: "2026",
+              doi: "10.1000/melanoma",
+            }],
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca estudios biomédicos sobre inmunoterapia del melanoma",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Europe PMC evidence");
+  if (europePmcCalls !== 1) throw new Error("expected one Europe PMC call");
+  if (!(result.sourceId ?? "").includes("europepmc.org")) {
+    throw new Error("expected Europe PMC source");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("melanoma")) {
+    throw new Error("expected melanoma research evidence");
+  }
+});
+
+Deno.test("DOI queries use public Crossref metadata", async () => {
+  let crossrefCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.crossref.org") {
+        crossrefCalls += 1;
+        return jsonResponse({
+          message: {
+            items: [{
+              DOI: "10.5555/attention",
+              title: ["Attention Is All You Need"],
+              publisher: "Test Publisher",
+              URL: "https://doi.org/10.5555/attention",
+              author: [
+                { given: "Ashish", family: "Vaswani" },
+              ],
+            }],
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Encuentra el DOI del paper Attention Is All You Need",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Crossref evidence");
+  if (crossrefCalls !== 1) throw new Error("expected one Crossref call");
+  if (!(result.displayText ?? "").includes("10.5555/attention")) {
+    throw new Error("expected DOI in answer");
+  }
+  if (!(result.sourceId ?? "").includes("doi.org")) {
+    throw new Error("expected DOI source");
+  }
+});
+
+Deno.test("book discovery queries use keyless Open Library specialist", async () => {
+  let openLibraryCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "openlibrary.org") {
+        openLibraryCalls += 1;
+        return jsonResponse({
+          docs: [{
+            key: "/works/OL123W",
+            title: "Kotlin in Action",
+            author_name: ["Dmitry Jemerov", "Svetlana Isakova"],
+            first_publish_year: 2017,
+            subject: ["Kotlin", "Computer programming"],
+          }],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca libros sobre programación en Kotlin",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Open Library evidence");
+  if (openLibraryCalls !== 1) throw new Error("expected one Open Library call");
+  if (!(result.sourceId ?? "").includes("openlibrary.org/works/OL123W")) {
+    throw new Error("expected Open Library work source");
+  }
+  if (!(result.displayText ?? "").includes("Kotlin in Action")) {
+    throw new Error("expected book title");
+  }
+});
+
+Deno.test("World Bank indicator questions use keyless authoritative data", async () => {
+  let countryCalls = 0;
+  let indicatorCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "api.worldbank.org") {
+        throw new Error("unexpected URL " + url);
+      }
+      if (url.pathname === "/v2/country") {
+        countryCalls += 1;
+        return jsonResponse([
+          { page: 1, pages: 1 },
+          [{ id: "CHL", iso2Code: "CL", name: "Chile" }],
+        ]);
+      }
+      if (
+        url.pathname ===
+          "/v2/country/CL/indicator/NY.GDP.PCAP.CD"
+      ) {
+        indicatorCalls += 1;
+        return jsonResponse([
+          { page: 1, pages: 1 },
+          [{
+            country: { value: "Chile" },
+            date: "2025",
+            value: 18000.5,
+          }],
+        ]);
+      }
+      throw new Error("unexpected World Bank URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Cuál es el PIB per cápita de Chile según el Banco Mundial?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected World Bank evidence");
+  if (countryCalls !== 1 || indicatorCalls !== 1) {
+    throw new Error("expected country resolution plus indicator lookup");
+  }
+  const answer = result.displayText ?? "";
+  if (!answer.includes("Chile") || !answer.includes("2025")) {
+    throw new Error("expected country and observation year");
+  }
+  if (!(result.sourceId ?? "").includes("api.worldbank.org")) {
+    throw new Error("expected World Bank source");
+  }
+});
+
+Deno.test("arXiv preprint queries use the public keyless API", async () => {
+  let arxivCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "export.arxiv.org") {
+        throw new Error("unexpected URL " + url);
+      }
+      arxivCalls += 1;
+      return Promise.resolve(
+        new Response(
+          `<?xml version="1.0" encoding="UTF-8"?>
+          <feed xmlns="http://www.w3.org/2005/Atom">
+            <entry>
+              <id>https://arxiv.org/abs/2601.12345v1</id>
+              <title>Efficient Android Inference for On-device Language Models</title>
+              <summary>We study efficient inference techniques for language models running on Android devices.</summary>
+              <published>2026-01-20T00:00:00Z</published>
+              <author><name>Researcher One</name></author>
+            </entry>
+          </feed>`,
+          { status: 200, headers: { "content-type": "application/atom+xml" } },
+        ),
+      );
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca preprints de arXiv sobre inferencia eficiente en Android",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected arXiv evidence");
+  if (arxivCalls !== 1) throw new Error("expected one arXiv call");
+  if (!(result.sourceId ?? "").includes("arxiv.org/abs/2601.12345")) {
+    throw new Error("expected canonical arXiv source");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("android")) {
+    throw new Error("expected Android preprint evidence");
+  }
+});
+
+Deno.test("CVE questions use the keyless NVD vulnerability API", async () => {
+  let nvdCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "services.nvd.nist.gov") {
+        throw new Error("unexpected URL " + url);
+      }
+      nvdCalls += 1;
+      return jsonResponse({
+        vulnerabilities: [{
+          cve: {
+            id: "CVE-2026-12345",
+            published: "2026-08-01T00:00:00.000",
+            lastModified: "2026-09-01T00:00:00.000",
+            descriptions: [{
+              lang: "en",
+              value:
+                "A vulnerability in Example App allows privilege escalation.",
+            }],
+            metrics: {
+              cvssMetricV31: [{
+                cvssData: {
+                  baseScore: 8.8,
+                  baseSeverity: "HIGH",
+                },
+              }],
+            },
+          },
+        }],
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Explícame CVE-2026-12345",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected NVD evidence");
+  if (nvdCalls !== 1) throw new Error("expected one NVD call");
+  if (!(result.displayText ?? "").includes("CVE-2026-12345")) {
+    throw new Error("expected CVE identifier");
+  }
+  if (!(result.displayText ?? "").includes("8.8")) {
+    throw new Error("expected CVSS score");
+  }
+  if (!(result.sourceId ?? "").includes("nvd.nist.gov/vuln/detail")) {
+    throw new Error("expected NVD detail source");
+  }
+});
+
+Deno.test("earthquake questions use the public USGS catalog", async () => {
+  let usgsCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "earthquake.usgs.gov") {
+        throw new Error("unexpected URL " + url);
+      }
+      usgsCalls += 1;
+      return jsonResponse({
+        type: "FeatureCollection",
+        features: [
+          {
+            id: "us7000test",
+            properties: {
+              mag: 5.1,
+              place: "42 km W of Coquimbo, Chile",
+              time: 1791234567000,
+              url:
+                "https://earthquake.usgs.gov/earthquakes/eventpage/us7000test",
+            },
+            geometry: {
+              coordinates: [-72.1, -30.0, 25.0],
+            },
+          },
+        ],
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Cuál fue el último sismo en Chile?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected USGS earthquake evidence");
+  if (usgsCalls !== 1) throw new Error("expected one USGS call");
+  if (!(result.displayText ?? "").includes("5.1")) {
+    throw new Error("expected earthquake magnitude");
+  }
+  if (!(result.displayText ?? "").includes("Coquimbo")) {
+    throw new Error("expected earthquake place");
+  }
+  if (!(result.sourceId ?? "").includes("earthquake.usgs.gov")) {
+    throw new Error("expected USGS source");
+  }
+});
+
+Deno.test("stable earthquake definitions bypass the recent-event specialist", async () => {
+  let usgsCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "earthquake.usgs.gov") {
+        usgsCalls += 1;
+        return jsonResponse({ type: "FeatureCollection", features: [] });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.get("list") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            search: [{
+              title: "Terremoto",
+              snippet: "Un terremoto es un movimiento de la corteza terrestre.",
+            }],
+          },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.get("prop")?.includes("extracts")
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                title: "Terremoto",
+                extract:
+                  "Un terremoto es un movimiento brusco de la corteza terrestre.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Terremoto",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es un terremoto?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected definition evidence");
+  if (usgsCalls !== 0) {
+    throw new Error("stable earthquake definitions must not call USGS");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("terremoto")) {
+    throw new Error("expected earthquake definition");
+  }
+});
+
+Deno.test("single-token specialist topics reject fuzzy near-matches", async () => {
+  let arxivCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "export.arxiv.org") {
+        arxivCalls += 1;
+        return Promise.resolve(
+          new Response(
+            `<?xml version="1.0" encoding="UTF-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <id>https://arxiv.org/abs/2601.99999v1</id>
+                <title>Astrology and Personality Prediction</title>
+                <summary>We study astrology-based personality prediction.</summary>
+                <published>2026-01-20T00:00:00Z</published>
+              </entry>
+            </feed>`,
+            {
+              status: 200,
+              headers: { "content-type": "application/atom+xml" },
+            },
+          ),
+        );
+      }
+      if (url.hostname === "api.semanticscholar.org") {
+        return jsonResponse({ data: [] });
+      }
+      if (url.hostname === "api.crossref.org") {
+        return jsonResponse({ message: { items: [] } });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca preprints de arXiv sobre astronomy",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (!result.abstained) {
+    throw new Error("astronomy must not accept an astrology preprint");
+  }
+  if (arxivCalls !== 1) throw new Error("expected exactly one arXiv call");
+});
+
+Deno.test("specialist providers share the general research deadline", async () => {
+  let specialistAborted = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.semanticscholar.org") {
+        return new Promise<Response>((resolve) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            specialistAborted = true;
+            resolve(jsonResponse({ data: [] }));
+            return;
+          }
+          signal?.addEventListener(
+            "abort",
+            () => {
+              specialistAborted = true;
+              resolve(jsonResponse({ data: [] }));
+            },
+            { once: true },
+          );
+        });
+      }
+      throw new Error("unexpected URL after specialist timeout " + url);
+    },
+    env: (name) => {
+      if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+      if (name === "ULTRA_GENERAL_ROUTE_TIMEOUT_MS") return "800";
+      return undefined;
+    },
+  };
+
+  const started = performance.now();
+  let watchdog: number | undefined;
+  const watchdogPromise = new Promise<never>((_, reject) => {
+    watchdog = setTimeout(
+      () => reject(new Error("specialist route exceeded shared deadline")),
+      1_500,
+    );
+  });
+  let result;
+  try {
+    result = await Promise.race([
+      routeResearchQuery(
+        "Busca papers científicos sobre exoplanet atmospheres",
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      ),
+      watchdogPromise,
+    ]);
+  } finally {
+    if (watchdog !== undefined) clearTimeout(watchdog);
+  }
+  const elapsed = performance.now() - started;
+
+  if (!result.abstained) {
+    throw new Error("timed-out specialist route should fail closed");
+  }
+  if (!specialistAborted) {
+    throw new Error("shared deadline must abort the specialist request");
+  }
+  if (elapsed >= 1_500) {
+    throw new Error("specialist route exceeded shared deadline");
+  }
+});
+
+Deno.test("chemistry property questions use keyless PubChem PUG REST", async () => {
+  let pubchemCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "pubchem.ncbi.nlm.nih.gov") {
+        throw new Error("unexpected URL " + url);
+      }
+      pubchemCalls += 1;
+      return jsonResponse({
+        PropertyTable: {
+          Properties: [{
+            CID: 2519,
+            Title: "Caffeine",
+            MolecularFormula: "C8H10N4O2",
+            MolecularWeight: "194.19",
+            IUPACName: "1,3,7-trimethylpurine-2,6-dione",
+          }],
+        },
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Cuál es la fórmula molecular y masa molecular de cafeína?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected PubChem evidence");
+  if (pubchemCalls !== 1) throw new Error("expected one PubChem call");
+  const answer = result.displayText ?? "";
+  if (!answer.includes("C8H10N4O2") || !answer.includes("194.19")) {
+    throw new Error("expected PubChem molecular properties");
+  }
+  if (
+    !(result.sourceId ?? "").includes("pubchem.ncbi.nlm.nih.gov/compound/2519")
+  ) {
+    throw new Error("expected PubChem compound source");
+  }
+});
+
+Deno.test("exoplanet data questions use NASA Exoplanet Archive TAP", async () => {
+  let nasaCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "exoplanetarchive.ipac.caltech.edu") {
+        throw new Error("unexpected URL " + url);
+      }
+      nasaCalls += 1;
+      return jsonResponse([
+        {
+          pl_name: "TRAPPIST-1 e",
+          hostname: "TRAPPIST-1",
+          disc_year: 2017,
+          discoverymethod: "Transit",
+          pl_orbper: 6.099615,
+          pl_rade: 0.92,
+          pl_masse: 0.692,
+        },
+      ]);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca datos del NASA Exoplanet Archive sobre TRAPPIST-1 e",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected NASA exoplanet evidence");
+  if (nasaCalls !== 1) throw new Error("expected one NASA archive call");
+  const answer = result.displayText ?? "";
+  if (!answer.includes("TRAPPIST-1 e") || !answer.includes("6.099615")) {
+    throw new Error("expected exoplanet orbital data");
+  }
+  if (
+    !(result.sourceId ?? "").includes(
+      "exoplanetarchive.ipac.caltech.edu/TAP/sync",
+    )
+  ) {
+    throw new Error("expected NASA Exoplanet Archive TAP source");
+  }
+});
+
+Deno.test(
+  "protein data questions use keyless UniProt specialist",
+  async () => {
+    let calls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname !== "rest.uniprot.org") {
+          throw new Error("unexpected URL " + url);
+        }
+        calls += 1;
+        return jsonResponse({
+          results: [{
+            primaryAccession: "P04637",
+            uniProtkbId: "P53_HUMAN",
+            entryType: "UniProtKB reviewed (Swiss-Prot)",
+            organism: { scientificName: "Homo sapiens", taxonId: 9606 },
+            proteinDescription: {
+              recommendedName: {
+                fullName: { value: "Cellular tumor antigen p53" },
+              },
+            },
+            genes: [{ geneName: { value: "TP53" } }],
+            sequence: { length: 393 },
+            comments: [{
+              commentType: "FUNCTION",
+              texts: [{
+                value: "Acts as a tumor suppressor in many tumor types.",
+              }],
+            }],
+          }],
+        });
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Busca en UniProt datos de la proteína TP53",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected UniProt evidence");
+    if (calls !== 1) throw new Error("expected one UniProt call");
+    if (!(result.sourceId ?? "").includes("uniprot.org/uniprotkb/P04637")) {
+      throw new Error("expected UniProt entry source");
+    }
+    const answer = result.displayText ?? "";
+    if (!answer.includes("TP53") || !answer.includes("393")) {
+      throw new Error("expected protein identity and length");
+    }
+  },
+);
+
+Deno.test("taxonomy questions use keyless GBIF specialist", async () => {
+  let calls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "api.gbif.org") {
+        throw new Error("unexpected URL " + url);
+      }
+      calls += 1;
+      return jsonResponse({
+        usageKey: 5231190,
+        scientificName: "Passer domesticus (Linnaeus, 1758)",
+        canonicalName: "Passer domesticus",
+        rank: "SPECIES",
+        status: "ACCEPTED",
+        confidence: 98,
+        matchType: "EXACT",
+        kingdom: "Animalia",
+        phylum: "Chordata",
+        class: "Aves",
+        order: "Passeriformes",
+        family: "Passeridae",
+        genus: "Passer",
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca en GBIF la taxonomía de Passer domesticus",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected GBIF evidence");
+  if (calls !== 1) throw new Error("expected one GBIF call");
+  if (!(result.sourceId ?? "").includes("gbif.org/species/5231190")) {
+    throw new Error("expected GBIF species source");
+  }
+  const answer = result.displayText ?? "";
+  if (!answer.includes("Passer domesticus") || !answer.includes("Aves")) {
+    throw new Error("expected taxonomy evidence");
+  }
+});
+
+Deno.test(
+  "clinical-trial questions use public ClinicalTrials.gov v2",
+  async () => {
+    let calls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname !== "clinicaltrials.gov") {
+          throw new Error("unexpected URL " + url);
+        }
+        calls += 1;
+        return jsonResponse({
+          studies: [{
+            protocolSection: {
+              identificationModule: {
+                nctId: "NCT01234567",
+                briefTitle: "Immunotherapy for advanced melanoma",
+              },
+              statusModule: {
+                overallStatus: "RECRUITING",
+              },
+              designModule: {
+                phases: ["PHASE3"],
+              },
+              conditionsModule: {
+                conditions: ["Melanoma"],
+              },
+            },
+          }],
+        });
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Busca ensayos clínicos sobre melanoma",
+      deps,
+      "",
+      "CURRENT_DATA",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected ClinicalTrials.gov evidence");
+    }
+    if (calls !== 1) throw new Error("expected one ClinicalTrials.gov call");
+    if (
+      !(result.sourceId ?? "").includes(
+        "clinicaltrials.gov/study/NCT01234567",
+      )
+    ) {
+      throw new Error("expected ClinicalTrials.gov study source");
+    }
+    const answer = result.displayText ?? "";
+    if (!answer.includes("NCT01234567") || !answer.includes("RECRUITING")) {
+      throw new Error("expected trial identifier and status");
+    }
+  },
+);
+
+Deno.test(
+  "OLED definitions stay available without configured general model",
+  async () => {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        return jsonResponse({ query: { pages: {} }, search: [] });
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un televisor OLED?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected stable OLED knowledge without external model");
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("oled") || !answer.includes("píxel")) {
+      throw new Error("expected OLED pixel-level explanation");
+    }
+    if (networkCalls !== 0) {
+      throw new Error("stable OLED definition should not require the network");
+    }
+  },
+);

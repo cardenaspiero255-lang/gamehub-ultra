@@ -357,7 +357,8 @@ class WikimediaUltraResearchProviderTest {
                         }
                       }
                     }
-                """.trimIndent()
+                """.trimIndent(),
+                englishTranslationBody = """{"query":{"pages":{"42":{"title":"Black hole","langlinks":[{"lang":"es","*":"Agujero negro"}]}}}}"""
             )
         )
 
@@ -368,6 +369,29 @@ class WikimediaUltraResearchProviderTest {
         val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
         assertEquals("https://es.wikipedia.org/wiki/Agujero_negro", evidence.sourceId)
         assertTrue(evidence.displayText.contains("agujero negro", ignoreCase = true))
+    }
+
+    @Test
+    fun englishDefinitionVariantsAcceptTranslatedSpanishWikipediaTitle() {
+        listOf(
+            "Ultra, what does black hole mean?",
+            "Ultra, meaning of black hole"
+        ).forEach { question ->
+            val provider = WikimediaUltraResearchProvider(
+                scriptedTransport(
+                    searchBody = """{"query":{"search":[{"title":"Agujero negro"}]}}""",
+                    extractBody =
+                        """{"query":{"pages":{"9":{"title":"Agujero negro","extract":"Un agujero negro es una región del espacio con un campo gravitatorio extremo.","canonicalurl":"https://es.wikipedia.org/wiki/Agujero_negro"}}}}""",
+                    englishTranslationBody = """{"query":{"pages":{"42":{"title":"Black hole","langlinks":[{"lang":"es","*":"Agujero negro"}]}}}}"""
+                )
+            )
+
+            val result = provider.fetchResult(UltraGeneralQueryRouter.classify(question))
+
+            val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+            assertEquals("https://es.wikipedia.org/wiki/Agujero_negro", evidence.sourceId, question)
+            assertTrue(evidence.displayText.contains("agujero negro", ignoreCase = true), question)
+        }
     }
 
     @Test
@@ -1115,6 +1139,134 @@ class WikimediaUltraResearchProviderTest {
         assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
     }
 
+
+    @Test
+    fun spacedCompoundTopicAcceptsCompactCanonicalTitle() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Exoplaneta"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Exoplaneta","extract":"Un exoplaneta es un planeta que orbita una estrella distinta del Sol.","canonicalurl":"https://es.wikipedia.org/wiki/Exoplaneta"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un exo planeta?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertTrue(evidence.displayText.contains("exoplaneta", ignoreCase = true))
+    }
+
+    @Test
+    fun searchSnippetCanConfirmRelatedArticleForStableDefinition() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Extraversión e introversión","snippet":"Una persona introvertida suele orientar más su atención hacia su mundo interno."}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Extraversión e introversión","extract":"La introversión describe una orientación preferente hacia el mundo interno y una menor búsqueda de estimulación social.","canonicalurl":"https://es.wikipedia.org/wiki/Extraversi%C3%B3n_e_introversi%C3%B3n"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es introvertido?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertTrue(evidence.displayText.contains("introversión", ignoreCase = true))
+    }
+
+
+    @Test
+    fun translatedTitleValidationFailsClosedOnDeadlineTransportAndMalformedMappings() {
+        var calls = 0
+        val expiredProvider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                calls++
+                error("deadline must avoid the network")
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = expiredProvider,
+                topic = "black hole",
+                spanishTitle = "Agujero negro",
+                deadlineNanos = System.nanoTime() - 1L
+            )
+        )
+        assertEquals(0, calls)
+
+        val failingProvider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                throw IllegalStateException("offline")
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = failingProvider,
+                topic = "black hole",
+                spanishTitle = "Agujero negro"
+            )
+        )
+
+        val missingEnglishTitle = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                UltraResearchHttpResponse(
+                    200,
+                    """{"query":{"pages":{"42":{"langlinks":[{"lang":"es","*":"Agujero negro"}]}}}}"""
+                )
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = missingEnglishTitle,
+                topic = "black hole",
+                spanishTitle = "Agujero negro"
+            )
+        )
+
+        val missingSpanishTitle = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                UltraResearchHttpResponse(
+                    200,
+                    """{"query":{"pages":{"42":{"title":"Black hole","langlinks":[{"lang":"es"}]}}}}"""
+                )
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = missingSpanishTitle,
+                topic = "black hole",
+                spanishTitle = "Agujero negro"
+            )
+        )
+    }
+
+    private fun invokeTranslatedSpanishTitleMatch(
+        provider: WikimediaUltraResearchProvider,
+        topic: String,
+        spanishTitle: String,
+        deadlineNanos: Long = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+    ): Boolean {
+        val method = WikimediaUltraResearchProvider::class.java.getDeclaredMethod(
+            "translatedSpanishTitleMatchesEnglishTopic",
+            String::class.java,
+            String::class.java,
+            Long::class.javaPrimitiveType,
+            Long::class.javaPrimitiveType
+        )
+        method.isAccessible = true
+        return method.invoke(
+            provider,
+            topic,
+            spanishTitle,
+            deadlineNanos,
+            1_200L
+        ) as Boolean
+    }
+
     private fun withRawHttpServer(
         status: Int,
         body: String,
@@ -1181,10 +1333,14 @@ class WikimediaUltraResearchProviderTest {
         searchStatus: Int = 200,
         searchBody: String,
         extractStatus: Int = 200,
-        extractBody: String = "{}"
+        extractBody: String = "{}",
+        englishTranslationBody: String? = null
     ): UltraPublicKnowledgeTransport =
         UltraPublicKnowledgeTransport { url, _ ->
             when {
+                url.contains("en.wikipedia.org") && englishTranslationBody != null ->
+                    UltraResearchHttpResponse(200, englishTranslationBody)
+
                 url.contains("list=search") ->
                     UltraResearchHttpResponse(searchStatus, searchBody)
 
@@ -1194,4 +1350,86 @@ class WikimediaUltraResearchProviderTest {
                 else -> error("URL inesperada: $url")
             }
         }
+    @Test
+    fun `snippet alone cannot validate unrelated article`() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Therapist","snippet":"Exoplaneta aparece en este snippet irrelevante."}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Therapist","extract":"A therapist is a trained professional who provides therapy.","canonicalurl":"https://example.com/therapist"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un exoplaneta?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+    }
+
+    @Test
+    fun englishDefinitionRejectsUnrelatedTopResultWithoutVerifiedTranslation() {
+        var englishValidationCalls = 0
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, _ ->
+                when {
+                    url.contains("es.wikipedia.org") && url.contains("list=search") ->
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"search":[{"title":"Therapist"}]}}"""
+                        )
+
+                    url.contains("en.wikipedia.org") -> {
+                        englishValidationCalls += 1
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"pages":{"42":{"title":"Exoplanet","langlinks":[{"lang":"es","*":"Exoplaneta"}]}}}}"""
+                        )
+                    }
+
+                    url.contains("prop=extracts") ->
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"pages":{"1":{"title":"Therapist","extract":"A therapist is a trained professional who provides therapy.","canonicalurl":"https://es.wikipedia.org/wiki/Therapist"}}}}"""
+                        )
+
+                    else -> error("URL inesperada: $url")
+                }
+            }
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, what does exoplanet mean?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+        assertTrue(englishValidationCalls >= 1)
+    }
+
+
+
+    @Test
+    fun translatedEnglishDefinitionRequiresFullTopicCoverage() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Negro"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Negro","extract":"Negro es un color.","canonicalurl":"https://es.wikipedia.org/wiki/Negro"}}}}""",
+                englishTranslationBody =
+                    """{"query":{"pages":{"42":{"title":"Black","langlinks":[{"lang":"es","*":"Negro"}]}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, what is a black hole?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+    }
+
 }

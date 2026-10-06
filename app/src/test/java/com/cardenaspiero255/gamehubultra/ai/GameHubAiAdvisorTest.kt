@@ -32,6 +32,29 @@ class GameHubAiAdvisorTest {
     )
 
     @Test
+    fun reportedStableDefinitionsRemainAnswerableWithoutLocalModel() {
+        val advisor = GameHubAiAdvisor()
+
+        val introvertido = assertNotNull(
+            advisor.generalKnowledgeChatOrNull(
+                "¿Qué es introvertido?",
+                healthyContext,
+                emptyList()
+            )
+        )
+        val exoplaneta = assertNotNull(
+            advisor.generalKnowledgeChatOrNull(
+                "¿Qué es un exo planeta?",
+                healthyContext,
+                emptyList()
+            )
+        )
+
+        assertTrue(introvertido.contains("introvert", ignoreCase = true))
+        assertTrue(exoplaneta.contains("exoplaneta", ignoreCase = true))
+    }
+
+    @Test
     fun deterministicFallbackWorksWithoutLocalModel() {
         val result = GameHubAiAdvisor().advise("que modo me recomiendas", healthyContext)
 

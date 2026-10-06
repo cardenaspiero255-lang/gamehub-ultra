@@ -142,6 +142,9 @@ class UltraGeneralKnowledgeCorpusRegressionTest {
             "Ultra, ¿qué es un agujero negro?",
             "Ultra, ¿qué es el ADN?",
             "Ultra, ¿qué es una célula?",
+            "Ultra, ¿qué es introvertido?",
+            "Ultra, ¿qué es un exo planeta?",
+            "Ultra, ¿qué significa ser introvertido?",
             "Ultra, ¿qué es un volcán?",
             "Ultra, ¿qué es la gravedad?",
             "Ultra, ¿qué es la electricidad?",
@@ -224,4 +227,31 @@ class UltraGeneralKnowledgeCorpusRegressionTest {
             "Ultra, conversa conmigo"
         )
     }
+    @Test
+    fun `cost phrasing always requires fresh current data`() {
+        listOf(
+            "Ultra, what is the price of the RedMagic 12 Pro?",
+            "Ultra, what does a RTX 5090 cost?"
+        ).forEach { question ->
+            val request = UltraGeneralQueryRouter.classify(question)
+            assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind, question)
+            assertTrue(request.requiresFreshData, question)
+            assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode, question)
+        }
+    }
+
+    @Test
+    fun `economic cost concepts remain stable knowledge`() {
+        listOf(
+            "Ultra, what is opportunity cost?",
+            "Ultra, what is marginal cost?",
+            "Ultra, what is sunk cost?"
+        ).forEach { question ->
+            val request = UltraGeneralQueryRouter.classify(question)
+            assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind, question)
+            assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode, question)
+            assertFalse(request.requiresFreshData, question)
+        }
+    }
+
 }
