@@ -510,6 +510,64 @@ function remainingRouteBudgetMs(deadlineAt: number): number {
   return Math.max(0, Math.trunc(deadlineAt - performance.now()));
 }
 
+function specialistEvidenceTimeoutMs(
+  deps: ResearchDependencies,
+): number {
+  const configured = Number(
+    deps.env("ULTRA_SPECIALIST_EVIDENCE_TIMEOUT_MS")?.trim() ?? "",
+  );
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.max(150, Math.min(4_000, Math.trunc(configured)));
+  }
+  return 2_500;
+}
+
+async function settleSpecialistEvidence(
+  promise: Promise<ResearchResult | null>,
+  controller: AbortController,
+  deps: ResearchDependencies,
+  remainingBudget: number,
+): Promise<ResearchResult | null> {
+  if (remainingBudget <= 0) {
+    controller.abort();
+    return abstain(
+      "La investigación especializada agotó su presupuesto de tiempo.",
+      {
+        reasonCode: "SPECIALIST_ROUTE_TIMEOUT",
+        retryable: true,
+        stage: "specialist",
+      },
+    );
+  }
+
+  let timer: number | undefined;
+  const timeoutMs = Math.min(
+    specialistEvidenceTimeoutMs(deps),
+    remainingBudget,
+  );
+  const timeout = new Promise<ResearchResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(
+        abstain(
+          "La fuente especializada tardó demasiado; continuaré con los respaldos verificados.",
+          {
+            reasonCode: "SPECIALIST_ROUTE_TIMEOUT",
+            retryable: true,
+            stage: "specialist",
+          },
+        ),
+      );
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function boundedTimeout(
   configured: number,
   remainingBudget?: number,
@@ -2644,11 +2702,15 @@ function specialistResearchDomain(
     return "cybersecurity";
   }
 
-  if (
+  const earthquakeSignal =
     /\b(?:sismo|sismos|terremoto|terremotos|temblor|temblores|earthquake|earthquakes)\b/.test(
       clean,
-    )
-  ) {
+    );
+  const earthquakeRecencySignal =
+    /\b(?:ultimo|último|ultimos|últimos|ultima|última|reciente|recientes|hoy|ahora|actual|actualmente|latest|last|recent|recently|today|now|current|currently)\b/.test(
+      clean,
+    );
+  if (earthquakeSignal && earthquakeRecencySignal) {
     return "earthquake";
   }
 
@@ -2778,13 +2840,21 @@ function specialistCandidateMatches(
   const candidateTokens = [...evidenceTokens(candidateText)];
   if (topicTokens.length === 0 || candidateTokens.length === 0) return false;
 
+  if (topicTokens.length === 1) {
+    const topicToken = topicTokens[0];
+    const comparableTopic = specialistComparableToken(topicToken);
+    return candidateTokens.some((candidateToken) =>
+      candidateToken === topicToken ||
+      specialistComparableToken(candidateToken) === comparableTopic
+    );
+  }
+
   const matched = topicTokens.filter((topicToken) =>
     candidateTokens.some((candidateToken) =>
       specialistTokenRelated(topicToken, candidateToken)
     )
   );
-  const required = topicTokens.length >= 2 ? 2 : 1;
-  return matched.length >= required;
+  return matched.length >= 2;
 }
 
 
@@ -4769,6 +4839,8 @@ export async function routeResearchQuery(
   context = "",
   kind = "",
 ): Promise<ResearchResult> {
+  const routeDeadlineAt =
+    performance.now() + generalKnowledgeRouteTimeoutMs(deps);
   const clean = normalize(query);
   const cleanContext = normalize(context);
   const combinedSignals = `${clean} ${cleanContext}`.trim();
@@ -4783,10 +4855,15 @@ export async function routeResearchQuery(
     /\b(especificaciones|specs|specifications|ficha tecnica)\b/;
 
   const specialistController = new AbortController();
-  const specialist = await specializedResearchEvidence(
-    query,
+  const specialist = await settleSpecialistEvidence(
+    specializedResearchEvidence(
+      query,
+      deps,
+      specialistController.signal,
+    ),
+    specialistController,
     deps,
-    specialistController.signal,
+    remainingRouteBudgetMs(routeDeadlineAt),
   );
   if (specialist && !specialist.abstained) {
     return specialist;
@@ -4796,8 +4873,6 @@ export async function routeResearchQuery(
     kind === "GENERAL_KNOWLEDGE" ||
     isStableGeneralKnowledgeIntent(query)
   ) {
-    const routeDeadlineAt =
-      performance.now() + generalKnowledgeRouteTimeoutMs(deps);
     const remainingBudget = () => remainingRouteBudgetMs(routeDeadlineAt);
 
     const primaryController = new AbortController();
