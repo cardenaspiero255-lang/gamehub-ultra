@@ -2613,9 +2613,12 @@ function conciseExcerpt(value: string, maxChars = 650): string {
 type SpecialistResearchDomain =
   | "doi"
   | "biomedical"
+  | "arxiv"
   | "academic"
   | "books"
-  | "world_bank";
+  | "world_bank"
+  | "cybersecurity"
+  | "earthquake";
 
 function specialistResearchDomain(
   query: string,
@@ -2628,6 +2631,25 @@ function specialistResearchDomain(
     )
   ) {
     return "doi";
+  }
+
+  if (/\b(?:arxiv|preprint|preprints)\b/.test(clean)) {
+    return "arxiv";
+  }
+
+  if (
+    /\bcve-\d{4}-\d{4,7}\b/.test(clean) ||
+    /\b(?:nvd|national vulnerability database)\b/.test(clean)
+  ) {
+    return "cybersecurity";
+  }
+
+  if (
+    /\b(?:sismo|sismos|terremoto|terremotos|temblor|temblores|earthquake|earthquakes)\b/.test(
+      clean,
+    )
+  ) {
+    return "earthquake";
   }
 
   const biomedicalResearchSignal =
@@ -2684,6 +2706,10 @@ function specialistSearchTopic(
       /^(?:encuentra|buscar?|busca|dime|cual es|cuál es)\s+(?:el\s+)?doi\s+(?:del|de la|de|para)\s+(?:paper|articulo|artículo|estudio)?\s*/i,
       /^(?:doi|crossref)\s+(?:de|del|para)\s*/i,
     ],
+    arxiv: [
+      /^(?:busca|buscar|encuentra|muestrame|muéstrame)\s+(?:preprints?|papers?)\s+(?:de\s+)?arxiv\s+(?:sobre|de)?\s*/i,
+      /^(?:arxiv|preprints?)\s+(?:sobre|de)?\s*/i,
+    ],
     biomedical: [
       /^(?:busca|buscar|encuentra|muestrame|muéstrame)\s+(?:estudios?|papers?|articulos?|artículos?|investigaciones?)\s+(?:biomedicos?|biomédicos?|biomedicas?|biomédicas?)?\s*(?:sobre|de)?\s*/i,
       /^(?:estudios?|papers?|research|literatura)\s+(?:sobre|de)\s*/i,
@@ -2697,6 +2723,8 @@ function specialistSearchTopic(
       /^(?:libros?|books?)\s+(?:sobre|de)\s*/i,
     ],
     world_bank: [],
+    cybersecurity: [],
+    earthquake: [],
   };
 
   let topic = raw;
@@ -2757,6 +2785,329 @@ function specialistCandidateMatches(
   );
   const required = topicTokens.length >= 2 ? 2 : 1;
   return matched.length >= required;
+}
+
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function atomTag(
+  xml: string,
+  tag: string,
+): string | null {
+  const match = xml.match(
+    new RegExp("<" + tag + "(?:\\s[^>]*)?>([\\s\\S]*?)<\\/" + tag + ">", "i"),
+  );
+  return match?.[1] ? decodeXmlText(match[1]) : null;
+}
+
+async function arxivEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const domain = specialistResearchDomain(query) === "arxiv"
+    ? "arxiv"
+    : "academic";
+  const topic = specialistSearchTopic(query, domain);
+  if (!topic) return abstain("Necesito un tema concreto para buscar en arXiv.");
+
+  const url = new URL("https://export.arxiv.org/api/query");
+  url.searchParams.set("search_query", "all:" + topic);
+  url.searchParams.set("start", "0");
+  url.searchParams.set("max_results", "3");
+  url.searchParams.set("sortBy", "relevance");
+  url.searchParams.set("sortOrder", "descending");
+
+  const response = await fetchWithRetry(
+    deps,
+    url,
+    {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/atom+xml",
+      },
+      signal,
+    },
+    2,
+  );
+  if (!response?.ok) {
+    return abstain(
+      "arXiv no está disponible para esta consulta.",
+      {
+        reasonCode: response
+          ? upstreamReasonCode(response.status)
+          : "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "arxiv",
+      },
+    );
+  }
+
+  const xml = await response.text();
+  const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/gi)]
+    .map((match) => match[1])
+    .slice(0, 3);
+
+  for (const entry of entries) {
+    const title = atomTag(entry, "title");
+    const summary = atomTag(entry, "summary");
+    const id = atomTag(entry, "id");
+    const published = atomTag(entry, "published");
+    if (!title || !id) continue;
+
+    const candidateText = [title, summary].filter(Boolean).join(" ");
+    if (!specialistCandidateMatches(topic, candidateText)) continue;
+
+    const authors = [...entry.matchAll(/<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/gi)]
+      .map((match) => decodeXmlText(match[1]))
+      .filter(Boolean)
+      .slice(0, 5);
+    const source = id.replace(/v\d+$/i, "");
+    const displayText = [
+      title + ".",
+      published ? "Publicado: " + published.slice(0, 10) + "." : "",
+      authors.length ? "Autores: " + authors.join(", ") + "." : "",
+      summary ? conciseExcerpt(summary, 900) : "",
+    ].filter(Boolean).join(" ");
+
+    return {
+      claimKey: "arxiv:" + slug(source),
+      value: normalize(displayText),
+      displayText,
+      sourceId: source,
+      sourceIds: [source],
+      independentSourceCount: 1,
+      authoritative: false,
+      observedAt: published ?? undefined,
+    };
+  }
+
+  return abstain(
+    "arXiv no encontró un preprint suficientemente relacionado.",
+    {
+      reasonCode: "SPECIALIST_NO_MATCH",
+      retryable: false,
+      stage: "arxiv",
+    },
+  );
+}
+
+function cveIdFromQuery(query: string): string | null {
+  return query.match(/\bCVE-\d{4}-\d{4,7}\b/i)?.[0]?.toUpperCase() ?? null;
+}
+
+function nvdCvss(
+  cve: JsonObject,
+): { score: number; severity: string } | null {
+  const metrics = cve.metrics && typeof cve.metrics === "object"
+    ? cve.metrics as JsonObject
+    : null;
+  if (!metrics) return null;
+
+  for (
+    const key of [
+      "cvssMetricV40",
+      "cvssMetricV31",
+      "cvssMetricV30",
+      "cvssMetricV2",
+    ]
+  ) {
+    const entries = Array.isArray(metrics[key]) ? metrics[key] : [];
+    for (const rawEntry of entries) {
+      if (!rawEntry || typeof rawEntry !== "object") continue;
+      const entry = rawEntry as JsonObject;
+      const data = entry.cvssData && typeof entry.cvssData === "object"
+        ? entry.cvssData as JsonObject
+        : null;
+      const score = numberValue(data?.baseScore);
+      const severity = stringValue(data?.baseSeverity) ??
+        stringValue(entry.baseSeverity);
+      if (score != null && severity) return { score, severity };
+    }
+  }
+  return null;
+}
+
+async function nvdEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const cveId = cveIdFromQuery(query);
+  if (!cveId) {
+    return abstain(
+      "Necesito un identificador CVE concreto para consultar NVD.",
+      {
+        reasonCode: "SPECIALIST_QUERY_INCOMPLETE",
+        retryable: false,
+        stage: "nvd",
+      },
+    );
+  }
+
+  const url = new URL("https://services.nvd.nist.gov/rest/json/cves/2.0");
+  url.searchParams.set("cveId", cveId);
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const vulnerabilities = Array.isArray(payload?.vulnerabilities)
+    ? payload.vulnerabilities
+    : [];
+  const raw = vulnerabilities.find((value) =>
+    Boolean(value) && typeof value === "object"
+  ) as JsonObject | undefined;
+  const cve = raw?.cve && typeof raw.cve === "object"
+    ? raw.cve as JsonObject
+    : null;
+  if (!cve || stringValue(cve.id)?.toUpperCase() !== cveId) {
+    return abstain(
+      "NVD no encontró el CVE solicitado.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "nvd",
+      },
+    );
+  }
+
+  const descriptions = Array.isArray(cve.descriptions)
+    ? cve.descriptions
+    : [];
+  const descriptionEntry = descriptions
+    .filter((value): value is JsonObject =>
+      Boolean(value) && typeof value === "object"
+    )
+    .find((value) => stringValue(value.lang)?.toLowerCase() === "en") ??
+    descriptions.find((value): value is JsonObject =>
+      Boolean(value) && typeof value === "object"
+    );
+  const description = descriptionEntry
+    ? stringValue(descriptionEntry.value)
+    : null;
+  const cvss = nvdCvss(cve);
+  const published = stringValue(cve.published);
+  const lastModified = stringValue(cve.lastModified);
+  const source = "https://nvd.nist.gov/vuln/detail/" + cveId;
+  const displayText = [
+    cveId + ".",
+    cvss ? "CVSS: " + cvss.score + " (" + cvss.severity + ")." : "",
+    description ? conciseExcerpt(description, 900) : "",
+    published ? "Publicado: " + published.slice(0, 10) + "." : "",
+    lastModified ? "Última modificación: " + lastModified.slice(0, 10) + "." : "",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "nvd:" + slug(cveId),
+    value: normalize(displayText),
+    displayText,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt: lastModified ?? published ?? undefined,
+  };
+}
+
+function earthquakePlaceQuery(query: string): string | null {
+  const stripped = stripAssistantInvocation(query)
+    .replace(/[¿?¡!]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return stripped.match(
+    /(?:\ben\b|\bde\b|\bin\b)\s+([\p{L}][\p{L}\s.'-]{1,80})$/iu,
+  )?.[1]?.trim() ?? null;
+}
+
+async function usgsEarthquakeEvidence(
+  query: string,
+  deps: ResearchDependencies,
+  signal?: AbortSignal,
+): Promise<ResearchResult> {
+  const placeQuery = earthquakePlaceQuery(query);
+  const url = new URL(
+    "https://earthquake.usgs.gov/fdsnws/event/1/query",
+  );
+  url.searchParams.set("format", "geojson");
+  url.searchParams.set("orderby", "time");
+  url.searchParams.set("limit", "50");
+  url.searchParams.set("minmagnitude", "2.5");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+    signal,
+  });
+  const features = Array.isArray(payload?.features) ? payload.features : [];
+  const normalizedPlace = placeQuery ? normalize(placeQuery) : "";
+
+  const feature = features.find((rawFeature) => {
+    if (!rawFeature || typeof rawFeature !== "object") return false;
+    const feature = rawFeature as JsonObject;
+    const properties = feature.properties &&
+        typeof feature.properties === "object"
+      ? feature.properties as JsonObject
+      : null;
+    const place = stringValue(properties?.place);
+    if (!place) return false;
+    return !normalizedPlace || normalize(place).includes(normalizedPlace);
+  }) as JsonObject | undefined;
+  const properties = feature?.properties &&
+      typeof feature.properties === "object"
+    ? feature.properties as JsonObject
+    : null;
+  const magnitude = numberValue(properties?.mag);
+  const place = stringValue(properties?.place);
+  const time = numberValue(properties?.time);
+  const source = stringValue(properties?.url);
+  const geometry = feature?.geometry && typeof feature.geometry === "object"
+    ? feature.geometry as JsonObject
+    : null;
+  const coordinates = Array.isArray(geometry?.coordinates)
+    ? geometry.coordinates
+    : [];
+  const depth = coordinates.length >= 3
+    ? numberValue(coordinates[2])
+    : null;
+
+  if (magnitude == null || !place || time == null || !source) {
+    return abstain(
+      "USGS no encontró un sismo reciente que coincida con la ubicación.",
+      {
+        reasonCode: "SPECIALIST_NO_MATCH",
+        retryable: false,
+        stage: "usgs_earthquake",
+      },
+    );
+  }
+
+  const timestamp = new Date(time).toISOString();
+  const displayText = [
+    "Sismo de magnitud " + magnitude + " en " + place + ".",
+    "Fecha UTC: " + timestamp + ".",
+    depth == null ? "" : "Profundidad: " + depth + " km.",
+  ].filter(Boolean).join(" ");
+
+  return {
+    claimKey: "usgs-earthquake:" + slug(stringValue(feature?.id) ?? source),
+    value: normalize(displayText),
+    displayText,
+    sourceId: source,
+    sourceIds: [source],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt: timestamp,
+  };
 }
 
 async function semanticScholarEvidence(
@@ -3240,17 +3591,30 @@ async function specializedResearchEvidence(
   if (domain === "biomedical") {
     const europePmc = await europePmcEvidence(query, deps, signal);
     if (!europePmc.abstained) return europePmc;
-    return await semanticScholarEvidence(query, deps, signal);
+    const semanticScholar = await semanticScholarEvidence(query, deps, signal);
+    if (!semanticScholar.abstained) return semanticScholar;
+    return await arxivEvidence(query, deps, signal);
+  }
+  if (domain === "arxiv") {
+    return await arxivEvidence(query, deps, signal);
   }
   if (domain === "academic") {
     const semanticScholar = await semanticScholarEvidence(query, deps, signal);
     if (!semanticScholar.abstained) return semanticScholar;
+    const arxiv = await arxivEvidence(query, deps, signal);
+    if (!arxiv.abstained) return arxiv;
     return await crossrefEvidence(query, deps, signal);
   }
   if (domain === "books") {
     return await openLibraryEvidence(query, deps, signal);
   }
-  return await worldBankEvidence(query, deps, signal);
+  if (domain === "world_bank") {
+    return await worldBankEvidence(query, deps, signal);
+  }
+  if (domain === "cybersecurity") {
+    return await nvdEvidence(query, deps, signal);
+  }
+  return await usgsEarthquakeEvidence(query, deps, signal);
 }
 
 async function stackOverflowSpanishEvidence(
