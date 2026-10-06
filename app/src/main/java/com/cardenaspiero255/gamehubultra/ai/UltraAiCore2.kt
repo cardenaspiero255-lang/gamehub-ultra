@@ -8,6 +8,7 @@ enum class UltraAiRecommendationSource { MODEL, DETERMINISTIC_LOCAL }
 data class UltraAiObservation(
     val gamePackage: String,
     val activeProfileId: String,
+    val proposedProfileId: String? = null,
     val batteryPercent: Int? = null,
     val thermalLabel: String? = null,
     val refreshRateHz: Float? = null,
@@ -17,6 +18,7 @@ data class UltraAiObservation(
     val sessionActive: Boolean = false
 ) {
     fun sanitized(): UltraAiObservation = copy(
+        proposedProfileId = proposedProfileId?.trim()?.takeIf(String::isNotBlank),
         batteryPercent = batteryPercent?.takeIf { it in 0..100 },
         refreshRateHz = refreshRateHz?.takeIf { it.isFinite() && it > 0f },
         latencyMs = latencyMs?.takeIf { it >= 0 },
@@ -211,6 +213,10 @@ class UltraAiCore2(
             safeMemoryPreference != null -> {
                 evidence += "memoryPreference=$safeMemoryPreference"
                 safeMemoryPreference
+            }
+            !observation.proposedProfileId.isNullOrBlank() -> {
+                evidence += "proposedProfile=" + observation.proposedProfileId
+                observation.proposedProfileId
             }
             observation.activeProfileId.isNotBlank() -> {
                 evidence += "activeProfile=" + observation.activeProfileId
