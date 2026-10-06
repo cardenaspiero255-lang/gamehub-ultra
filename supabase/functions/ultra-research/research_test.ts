@@ -7507,7 +7507,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "percentage calculation wrapper resolves the stable percentage topic",
   async () => {
