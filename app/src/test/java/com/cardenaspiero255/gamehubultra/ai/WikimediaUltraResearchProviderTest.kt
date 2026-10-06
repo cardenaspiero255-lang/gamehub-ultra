@@ -1178,6 +1178,95 @@ class WikimediaUltraResearchProviderTest {
         assertTrue(evidence.displayText.contains("introversión", ignoreCase = true))
     }
 
+
+    @Test
+    fun translatedTitleValidationFailsClosedOnDeadlineTransportAndMalformedMappings() {
+        var calls = 0
+        val expiredProvider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                calls++
+                error("deadline must avoid the network")
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = expiredProvider,
+                topic = "black hole",
+                spanishTitle = "Agujero negro",
+                deadlineNanos = System.nanoTime() - 1L
+            )
+        )
+        assertEquals(0, calls)
+
+        val failingProvider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                throw IllegalStateException("offline")
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = failingProvider,
+                topic = "black hole",
+                spanishTitle = "Agujero negro"
+            )
+        )
+
+        val missingEnglishTitle = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                UltraResearchHttpResponse(
+                    200,
+                    """{"query":{"pages":{"42":{"langlinks":[{"lang":"es","*":"Agujero negro"}]}}}}"""
+                )
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = missingEnglishTitle,
+                topic = "black hole",
+                spanishTitle = "Agujero negro"
+            )
+        )
+
+        val missingSpanishTitle = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { _, _ ->
+                UltraResearchHttpResponse(
+                    200,
+                    """{"query":{"pages":{"42":{"title":"Black hole","langlinks":[{"lang":"es"}]}}}}"""
+                )
+            }
+        )
+        assertFalse(
+            invokeTranslatedSpanishTitleMatch(
+                provider = missingSpanishTitle,
+                topic = "black hole",
+                spanishTitle = "Agujero negro"
+            )
+        )
+    }
+
+    private fun invokeTranslatedSpanishTitleMatch(
+        provider: WikimediaUltraResearchProvider,
+        topic: String,
+        spanishTitle: String,
+        deadlineNanos: Long = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+    ): Boolean {
+        val method = WikimediaUltraResearchProvider::class.java.getDeclaredMethod(
+            "translatedSpanishTitleMatchesEnglishTopic",
+            String::class.java,
+            String::class.java,
+            Long::class.javaPrimitiveType,
+            Long::class.javaPrimitiveType
+        )
+        method.isAccessible = true
+        return method.invoke(
+            provider,
+            topic,
+            spanishTitle,
+            deadlineNanos,
+            1_200L
+        ) as Boolean
+    }
+
     private fun withRawHttpServer(
         status: Int,
         body: String,
