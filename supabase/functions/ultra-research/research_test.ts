@@ -7197,3 +7197,153 @@ Deno.test("exoplanet data questions use NASA Exoplanet Archive TAP", async () =>
     throw new Error("expected NASA Exoplanet Archive TAP source");
   }
 });
+
+
+Deno.test("protein data questions use keyless UniProt specialist", async () => {
+  let calls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "rest.uniprot.org") {
+        throw new Error("unexpected URL " + url);
+      }
+      calls += 1;
+      return jsonResponse({
+        results: [{
+          primaryAccession: "P04637",
+          uniProtkbId: "P53_HUMAN",
+          entryType: "UniProtKB reviewed (Swiss-Prot)",
+          organism: { scientificName: "Homo sapiens", taxonId: 9606 },
+          proteinDescription: {
+            recommendedName: {
+              fullName: { value: "Cellular tumor antigen p53" },
+            },
+          },
+          genes: [{ geneName: { value: "TP53" } }],
+          sequence: { length: 393 },
+          comments: [{
+            commentType: "FUNCTION",
+            texts: [{ value: "Acts as a tumor suppressor in many tumor types." }],
+          }],
+        }],
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca en UniProt datos de la proteína TP53",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected UniProt evidence");
+  if (calls !== 1) throw new Error("expected one UniProt call");
+  if (!(result.sourceId ?? "").includes("uniprot.org/uniprotkb/P04637")) {
+    throw new Error("expected UniProt entry source");
+  }
+  const answer = result.displayText ?? "";
+  if (!answer.includes("TP53") || !answer.includes("393")) {
+    throw new Error("expected protein identity and length");
+  }
+});
+
+Deno.test("taxonomy questions use keyless GBIF specialist", async () => {
+  let calls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "api.gbif.org") {
+        throw new Error("unexpected URL " + url);
+      }
+      calls += 1;
+      return jsonResponse({
+        usageKey: 5231190,
+        scientificName: "Passer domesticus (Linnaeus, 1758)",
+        canonicalName: "Passer domesticus",
+        rank: "SPECIES",
+        status: "ACCEPTED",
+        confidence: 98,
+        matchType: "EXACT",
+        kingdom: "Animalia",
+        phylum: "Chordata",
+        class: "Aves",
+        order: "Passeriformes",
+        family: "Passeridae",
+        genus: "Passer",
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca en GBIF la taxonomía de Passer domesticus",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected GBIF evidence");
+  if (calls !== 1) throw new Error("expected one GBIF call");
+  if (!(result.sourceId ?? "").includes("gbif.org/species/5231190")) {
+    throw new Error("expected GBIF species source");
+  }
+  const answer = result.displayText ?? "";
+  if (!answer.includes("Passer domesticus") || !answer.includes("Aves")) {
+    throw new Error("expected taxonomy evidence");
+  }
+});
+
+Deno.test("clinical-trial questions use public ClinicalTrials.gov v2", async () => {
+  let calls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "clinicaltrials.gov") {
+        throw new Error("unexpected URL " + url);
+      }
+      calls += 1;
+      return jsonResponse({
+        studies: [{
+          protocolSection: {
+            identificationModule: {
+              nctId: "NCT01234567",
+              briefTitle: "Immunotherapy for advanced melanoma",
+            },
+            statusModule: {
+              overallStatus: "RECRUITING",
+            },
+            designModule: {
+              phases: ["PHASE3"],
+            },
+            conditionsModule: {
+              conditions: ["Melanoma"],
+            },
+          },
+        }],
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca ensayos clínicos sobre melanoma",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected ClinicalTrials.gov evidence");
+  if (calls !== 1) throw new Error("expected one ClinicalTrials.gov call");
+  if (!(result.sourceId ?? "").includes("clinicaltrials.gov/study/NCT01234567")) {
+    throw new Error("expected ClinicalTrials.gov study source");
+  }
+  const answer = result.displayText ?? "";
+  if (!answer.includes("NCT01234567") || !answer.includes("RECRUITING")) {
+    throw new Error("expected trial identifier and status");
+  }
+});
