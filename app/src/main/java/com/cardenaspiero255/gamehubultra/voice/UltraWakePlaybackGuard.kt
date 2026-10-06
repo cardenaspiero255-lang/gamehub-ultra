@@ -145,6 +145,16 @@ internal object UltraWakeStopSpeakingIntent {
     }
 }
 
+
+internal fun stopActiveUltraSpeech(
+    stopPlayback: () -> Unit,
+    activeToken: () -> Long?,
+    finish: (Long) -> Unit
+) {
+    stopPlayback()
+    activeToken()?.let(finish)
+}
+
 internal object UltraWakeBargeInPolicy {
     fun decide(
         playbackActive: Boolean,
