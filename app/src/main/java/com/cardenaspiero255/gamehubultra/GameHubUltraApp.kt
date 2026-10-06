@@ -618,7 +618,7 @@ internal fun GameHubUltraApp(
                 runtimeDiagnostics = runtimeDiagnostics,
                 sessionHistory = sessionHistory,
                 onGameSelected = ::selectGame,
-                onProfileSelected = ::selectProfile,
+                onProfileSelected = ::selectExternalProfile,
                 onToggleFavorite = viewModel::setFavoriteGame,
                 onGameOpened = ::recordGameOpened,
                 onToggleManualGame = viewModel::setManualGame,
@@ -723,11 +723,11 @@ internal fun GameHubUltraApp(
                         onConversationChanged = ultraSessionController::updateConversation,
                         assistantInputEnabled = ultraAssistantInputReady,
                         selectedProfileName = selectedProfileName,
-                        onProfileSelected = ::selectProfile,
+                        onProfileSelected = ::selectExternalProfile,
                         onGameSelected = ::selectGame,
                         onVoiceSelectedGame = viewModel::persistVoiceSelectedGame,
-                        onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile,
-                        onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile
+                        onVoiceSelectedProfile = ::persistExternalVoiceProfile,
+                        onVoiceSelectedGameWithProfile = ::persistExternalVoiceGameWithProfile
                     )
                 }
             }
