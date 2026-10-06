@@ -4852,6 +4852,12 @@ function generalKnowledgeSearchTopic(
   };
 }
 
+function isBiologicalBearCandidate(candidate: string): boolean {
+  return /\b(?:mamifer|ursid|carnivor|animal|familia ursidae|familia de los osos)\b/.test(
+    candidate,
+  );
+}
+
 function candidateMatchesKnownMeaning(
   query: string,
   title: string,
@@ -4864,13 +4870,10 @@ function candidateMatchesKnownMeaning(
     /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
     !/\b(?:yogui|yogi|personaje)\b/.test(cleanQuery);
   if (genericBearIntent) {
-    const fictionalCandidate =
-      /\b(?:personaje|fictici|dibujos animados|hanna barbera|antropomorf)\b/.test(
-        candidate,
-      );
-    const biologicalCandidate =
-      /\b(?:mamifer|ursid|carnivor|animal|familia)\b/.test(candidate);
-    if (fictionalCandidate && !biologicalCandidate) return false;
+    // A bare "oso" token is not enough: it also appears in surnames/titles.
+    // Require biological evidence so people such as "Fernando Jiménez del Oso"
+    // and fictional characters cannot outrank the animal definition.
+    if (!isBiologicalBearCandidate(candidate)) return false;
   }
 
   if (/\bsinonim/.test(cleanQuery)) {
@@ -4895,11 +4898,8 @@ function candidateMatchesKnowledgeTopic(
   const genericBearIntent =
     /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
     !/\b(?:yogui|yogi|personaje)\b/.test(cleanQuery);
-  if (
-    genericBearIntent &&
-    /\b(?:oso|osos|ursid|mamifer|carnivor)\b/.test(candidate)
-  ) {
-    return true;
+  if (genericBearIntent) {
+    return isBiologicalBearCandidate(candidate);
   }
 
   if (/\b120\s*hz\b/.test(cleanQuery)) {
