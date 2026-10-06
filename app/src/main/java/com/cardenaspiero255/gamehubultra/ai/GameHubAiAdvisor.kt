@@ -281,6 +281,12 @@ class GameHubAiAdvisor(
             normalized.contains("agujero negro") || normalized.contains("black hole") ->
                 "Un agujero negro es una región del espacio donde la gravedad es tan intensa que, más allá de su horizonte de sucesos, ni siquiera la luz puede escapar."
 
+            Regex("""\bexo\s*planetas?\b|\bexoplanetas?\b|\bexoplanets?\b""").containsMatchIn(normalized) ->
+                "Un exoplaneta es un planeta que orbita una estrella distinta del Sol. Se detecta mediante técnicas como tránsitos, velocidad radial, imagen directa y otros métodos astronómicos."
+
+            Regex("""\bintrovertid[oa]s?\b|\bintroversion(?:es)?\b|\bintroverts?\b|\bintroverted\b""").containsMatchIn(normalized) ->
+                "Una persona introvertida suele orientar más su atención hacia su mundo interno y puede preferir ambientes con menor estimulación social. La introversión es un rasgo de personalidad, no implica necesariamente timidez ni un trastorno."
+
             Regex("""\badn\b|\bdna\b""").containsMatchIn(normalized) ->
                 "El ADN es la molécula que almacena la información genética usada por los seres vivos para desarrollarse, funcionar y transmitir rasgos hereditarios."
 
@@ -583,8 +589,10 @@ class GameHubAiAdvisor(
             }
 
         val safetyConstrained = hot || lowBattery || lowStorage
+        val recoveryRequested = coreResult?.recoveryExplanation != null
         val safeCoreProfile = coreProfile?.takeIf { candidate ->
-            !safetyConstrained &&
+            recoveryRequested &&
+                !safetyConstrained &&
                 (candidate != PerformanceProfile.X4 || context.sustainedPerformanceSupported)
         }
         val finalProfile = safeCoreProfile ?: baseAdvice.suggestedProfile
