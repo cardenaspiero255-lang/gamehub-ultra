@@ -29,15 +29,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
-    # All 10,000 cases are generated identically on every shard, then partitioned
-    # deterministically across 32 runners. Stable knowledge keeps the validated
-    # 12-worker ceiling per runner; fresh-data checks execute only on shard 0
-    # to avoid multiplying external-provider bursts.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    # All 10,000 cases are generated identically. We keep 32 logical shards but
+    # pack two logical shards into each of 16 GitHub runners so runner queuing
+    # does not serialize half the matrix. Each runner uses 24 stable workers,
+    # preserving the same theoretical 32x12 parallelism. Fresh-data checks stay
+    # on the runner that owns logical shard 0 to avoid provider bursts.
     timeout-minutes: 60
     env:
       SMOKE_SEED: ${{ github.run_id }}
-      SMOKE_STABLE_WORKERS: "12"
+      SMOKE_STABLE_WORKERS: "24"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
       SMOKE_SHARD_COUNT: "32"
 
@@ -933,33 +934,47 @@ jobs:
           execution_started = time.monotonic()
           shard_index = int(os.environ.get("SMOKE_SHARD_INDEX", "0"))
           shard_count = int(os.environ.get("SMOKE_SHARD_COUNT", "1"))
-          if shard_count < 1 or shard_index < 0 or shard_index >= shard_count:
+          physical_runner_count = 16
+          logical_shards_per_runner = 2
+          if shard_count != physical_runner_count * logical_shards_per_runner:
               raise RuntimeError(
-                  f"Invalid smoke shard {shard_index}/{shard_count}"
+                  f"Expected {physical_runner_count * logical_shards_per_runner} "
+                  f"logical shards, got {shard_count}"
               )
+          if shard_index < 0 or shard_index >= physical_runner_count:
+              raise RuntimeError(
+                  f"Invalid physical smoke runner {shard_index}/{physical_runner_count}"
+              )
+
+          logical_shards = {
+              shard_index + physical_runner_count * lane
+              for lane in range(logical_shards_per_runner)
+          }
 
           def case_index(case):
               return int(case["correlationId"].rsplit("-", 1)[1])
 
           stable_rows = [
               case for case in rows
-              if not case["fresh"] and case_index(case) % shard_count == shard_index
+              if not case["fresh"]
+              and case_index(case) % shard_count in logical_shards
           ]
-          # Fresh/current-data checks stay on one runner. This preserves the exact
-          # corpus while preventing sharding from multiplying external-provider load.
+          # Fresh/current-data checks stay on the runner owning logical shard 0.
+          # This preserves the exact corpus while preventing provider bursts.
           fresh_rows = [
               case for case in rows
-              if case["fresh"] and shard_index == 0
+              if case["fresh"] and 0 in logical_shards
           ]
           expected_executed = len(stable_rows) + len(fresh_rows)
           stable_workers = int(os.environ.get("SMOKE_STABLE_WORKERS", "6"))
-          if stable_workers < 1 or stable_workers > 12:
+          if stable_workers < 1 or stable_workers > 24:
               raise RuntimeError(
-                  f"SMOKE_STABLE_WORKERS must be between 1 and 12, got {stable_workers}"
+                  f"SMOKE_STABLE_WORKERS must be between 1 and 24, got {stable_workers}"
               )
 
           print(
-              f"Smoke execution shard={shard_index + 1}/{shard_count}: "
+              f"Smoke execution runner={shard_index + 1}/{physical_runner_count}: "
+              f"logical_shards={sorted(logical_shards)} "
               f"stable={len(stable_rows)} workers={stable_workers}; "
               f"fresh={len(fresh_rows)} workers=1 expected={expected_executed}"
           )
@@ -1011,7 +1026,7 @@ jobs:
           )
 
           elapsed_seconds = time.monotonic() - execution_started
-          print(f"Smoke summary: seed={seed} shard={shard_index + 1}/{shard_count} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f} stable_workers={stable_workers} elapsed_seconds={elapsed_seconds:.1f}")
+          print(f"Smoke summary: seed={seed} runner={shard_index + 1}/{physical_runner_count} logical_shards={sorted(logical_shards)} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f} stable_workers={stable_workers} elapsed_seconds={elapsed_seconds:.1f}")
           print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
 
           if executed != expected_executed:
