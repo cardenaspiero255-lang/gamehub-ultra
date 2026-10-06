@@ -15,10 +15,7 @@ object AiAdviceFormatter {
         )
 
     fun fullResponse(context: Context, advice: GameHubAiAdvice): String =
-        appendRecoveryExplanation(
-            base = title(context, advice) + ". " + explanation(context, advice),
-            recoveryExplanation = advice.recoveryExplanation
-        )
+        appendRecoveryExplanation(title(context, advice) + ". " + explanation(context, advice), advice.recoveryExplanation)
 
     internal fun appendRecoveryExplanation(
         base: String,
