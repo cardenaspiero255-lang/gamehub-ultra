@@ -92,4 +92,54 @@ class VoiceOptimizationFeedbackContextRobolectricTest {
             runBlocking { store.clearAll() }
         }
     }
+
+    @Test
+    fun `direct Android enrichment builds the scoped key path`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val device = DeviceInfo(
+            manufacturer = "Test",
+            model = "Device",
+            androidVersion = "14",
+            sdkInt = 34,
+            supportedAbis = listOf("arm64-v8a"),
+            cpuModel = "cpu",
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuVendor = "ARM",
+            gpuRenderer = "Mali"
+        )
+        val base = GameHubAiContext(
+            selectedGamePackage = null,
+            sustainedPerformanceSupported = true,
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuAvailable = true,
+            thermalStatus = 0,
+            thermalHeadroom = 0.2f,
+            batteryPercent = 80,
+            charging = false,
+            refreshRateHz = 120f,
+            networkValidated = true,
+            networkLatencyMs = 30L,
+            downstreamBandwidthKbps = 100_000L,
+            storageFreePercent = 50,
+            inputDeviceCount = 1,
+            selectedProfile = PerformanceProfile.BALANCED,
+            sessionActive = false
+        )
+        val store = GameOptimizationMemoryStore(context)
+        store.clearAll()
+
+        try {
+            val enriched = VoiceOptimizationFeedbackContext.enrich(
+                base = base,
+                context = context,
+                device = device
+            )
+
+            assertTrue(enriched.optimizationObservations.isEmpty())
+        } finally {
+            store.clearAll()
+        }
+    }
 }
