@@ -83,7 +83,6 @@ internal object SmartRecommendationExplanationFactory {
         input: SmartPerformanceInput,
         recommendedProfile: PerformanceProfile,
         reason: String,
-        legacyEvidence: List<String>,
         measuredGood: Map<PerformanceProfile, Int>,
         acceptedFeedback: Map<PerformanceProfile, Int>,
         knownBad: Map<PerformanceProfile, Int>,
@@ -224,10 +223,7 @@ internal object SmartRecommendationExplanationFactory {
 
         val contradictions = buildList {
             PerformanceProfile.entries.forEach { profile ->
-                if (
-                    measuredGood.getOrDefault(profile, 0) > 0 &&
-                    knownBad.getOrDefault(profile, 0) > 0
-                ) {
+                if (measuredGood.getOrDefault(profile, 0) > 0 && knownBad.getOrDefault(profile, 0) > 0) {
                     add(
                         "El historial de ${profile.name} contiene resultados estables y señales negativas."
                     )
@@ -237,10 +233,7 @@ internal object SmartRecommendationExplanationFactory {
             if (externalOpinions.size > 1) {
                 add("Las fuentes externas disponibles no coinciden sobre la recomendación.")
             }
-            if (
-                (thermalHot || lowBattery || memoryPressure || storagePressure) &&
-                measuredGood.keys.any { it != PerformanceProfile.BALANCED }
-            ) {
+            if ((thermalHot || lowBattery || memoryPressure || storagePressure) && measuredGood.keys.any { it != PerformanceProfile.BALANCED }) {
                 add(
                     "El historial favorable de perfiles agresivos no coincide con las restricciones actuales de seguridad."
                 )
@@ -275,10 +268,7 @@ internal object SmartRecommendationExplanationFactory {
                         add("X4 no se recomienda porque la capacidad mínima no está confirmada.")
                 }
             }
-            if (
-                recommendedProfile != PerformanceProfile.FRAME_INTERPOLATION &&
-                runtime?.refresh?.currentRefreshRateHz?.let { it < 90f } == true
-            ) {
+            if (recommendedProfile != PerformanceProfile.FRAME_INTERPOLATION && runtime?.refresh?.currentRefreshRateHz?.let { it < 90f } == true) {
                 add("La interpolación no se prioriza con el refresco actual.")
             }
         }
@@ -317,14 +307,7 @@ internal object SmartRecommendationExplanationFactory {
 
         return SmartRecommendationExplanation(
             reason = reason,
-            evidence = evidence.ifEmpty {
-                legacyEvidence.map {
-                    RecommendationEvidence(
-                        text = it,
-                        provenance = RecommendationEvidenceProvenance.INFERRED
-                    )
-                }
-            },
+            evidence = evidence,
             unavailableData = unavailable,
             contradictions = contradictions,
             confidence = confidence,
