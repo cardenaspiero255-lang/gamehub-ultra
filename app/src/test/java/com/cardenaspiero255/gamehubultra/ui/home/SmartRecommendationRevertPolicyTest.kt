@@ -168,4 +168,103 @@ class SmartRecommendationRevertPolicyTest {
         )
     }
 
+    @Test
+    fun `smart recommendation actions execute feedback and profile effects`() {
+        val feedback = mutableListOf<Pair<PerformanceProfile, OptimizationFeedbackDecision>>()
+        val selected = mutableListOf<PerformanceProfile>()
+
+        val target = SmartRecommendationActions.apply(
+            gamePackage = "game.a",
+            currentProfile = PerformanceProfile.BALANCED,
+            recommendedProfile = PerformanceProfile.X4,
+            recordFeedback = { profile, decision -> feedback += profile to decision },
+            selectProfile = selected::add
+        )
+
+        assertEquals(PerformanceProfile.BALANCED, target?.previousProfile)
+        assertEquals(PerformanceProfile.X4, target?.appliedProfile)
+        assertEquals(
+            listOf(PerformanceProfile.X4 to OptimizationFeedbackDecision.ACCEPTED),
+            feedback
+        )
+        assertEquals(listOf(PerformanceProfile.X4), selected)
+
+        feedback.clear()
+        assertTrue(
+            SmartRecommendationActions.reject(
+                alreadyRejected = false,
+                recommendedProfile = PerformanceProfile.X4,
+                recordFeedback = { profile, decision -> feedback += profile to decision }
+            )
+        )
+        assertEquals(
+            listOf(PerformanceProfile.X4 to OptimizationFeedbackDecision.REJECTED),
+            feedback
+        )
+
+        feedback.clear()
+        assertTrue(
+            SmartRecommendationActions.reject(
+                alreadyRejected = true,
+                recommendedProfile = PerformanceProfile.X4,
+                recordFeedback = { profile, decision -> feedback += profile to decision }
+            )
+        )
+        assertTrue(feedback.isEmpty())
+
+        feedback.clear()
+        selected.clear()
+        val remainingTarget = SmartRecommendationActions.revert(
+            target = target,
+            gamePackage = "game.a",
+            currentProfile = PerformanceProfile.X4,
+            recordFeedback = { profile, decision -> feedback += profile to decision },
+            selectProfile = selected::add
+        )
+
+        assertEquals(null, remainingTarget)
+        assertEquals(
+            listOf(PerformanceProfile.X4 to OptimizationFeedbackDecision.REVERTED),
+            feedback
+        )
+        assertEquals(listOf(PerformanceProfile.BALANCED), selected)
+    }
+
+    @Test
+    fun `smart recommendation actions preserve state when no effect applies`() {
+        val feedback = mutableListOf<Pair<PerformanceProfile, OptimizationFeedbackDecision>>()
+        val selected = mutableListOf<PerformanceProfile>()
+
+        val noChangeTarget = SmartRecommendationActions.apply(
+            gamePackage = "game.a",
+            currentProfile = PerformanceProfile.X4,
+            recommendedProfile = PerformanceProfile.X4,
+            recordFeedback = { profile, decision -> feedback += profile to decision },
+            selectProfile = selected::add
+        )
+        assertEquals(null, noChangeTarget)
+        assertTrue(feedback.isEmpty())
+        assertEquals(listOf(PerformanceProfile.X4), selected)
+
+        val target = SmartRecommendationRevertPolicy.capture(
+            gamePackage = "game.a",
+            previousProfile = PerformanceProfile.BALANCED,
+            appliedProfile = PerformanceProfile.X4
+        )
+        feedback.clear()
+        selected.clear()
+
+        val preserved = SmartRecommendationActions.revert(
+            target = target,
+            gamePackage = "game.b",
+            currentProfile = PerformanceProfile.X4,
+            recordFeedback = { profile, decision -> feedback += profile to decision },
+            selectProfile = selected::add
+        )
+
+        assertEquals(target, preserved)
+        assertTrue(feedback.isEmpty())
+        assertTrue(selected.isEmpty())
+    }
+
 }
