@@ -1,10 +1,15 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
+import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
+import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
+import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
+import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
-import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -46,12 +51,43 @@ class VoiceOptimizationFeedbackContextRobolectricTest {
             sessionActive = true
         )
 
-        val enriched = VoiceOptimizationFeedbackContext.enrichBlockingOrBase(
-            base = base,
-            context = context,
-            device = device
+        @Suppress("DEPRECATION")
+        val gameVersion = context.packageManager
+            .getPackageInfo(context.packageName, 0)
+            .versionName
+        val key = VoiceOptimizationFeedbackContext.buildContextKey(
+            device = device,
+            gamePackage = context.packageName,
+            gameVersion = gameVersion,
+            emulatorBackend = EmulatorBackendDetector.detect()
+        )
+        val store = GameOptimizationMemoryStore(context)
+        val seeded = OptimizationObservation(
+            contextKey = key.serialized,
+            profile = PerformanceProfile.X4,
+            timestampMillis = 123L,
+            feedbackDecision = OptimizationFeedbackDecision.REJECTED
         )
 
-        assertEquals(base, enriched)
+        runBlocking {
+            store.clearAll()
+            store.record(key, seeded)
+        }
+        try {
+            val enriched = VoiceOptimizationFeedbackContext.enrichBlockingOrBase(
+                base = base,
+                context = context,
+                device = device
+            )
+
+            assertTrue(
+                enriched.optimizationObservations.any {
+                    it.id == seeded.id &&
+                        it.feedbackDecision == OptimizationFeedbackDecision.REJECTED
+                }
+            )
+        } finally {
+            runBlocking { store.clearAll() }
+        }
     }
 }
