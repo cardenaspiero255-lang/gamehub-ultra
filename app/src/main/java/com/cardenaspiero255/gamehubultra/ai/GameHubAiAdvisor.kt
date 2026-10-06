@@ -326,10 +326,10 @@ class GameHubAiAdvisor(
             Regex("""\bneuronas?\b|\bneurons?\b""").containsMatchIn(normalized) ->
                 "Una neurona es una célula especializada del sistema nervioso que recibe, procesa y transmite información mediante señales eléctricas y químicas."
 
-            Regex("""\bmitocondrias?\b|\bmitochondri(?:a|on)\b""").containsMatchIn(normalized) ->
+            Regex("""\bmitocondrias?\b|\bmitochondri(?:a|on)s?\b""").containsMatchIn(normalized) ->
                 "La mitocondria es un orgánulo celular que participa de forma central en la producción de energía utilizable, especialmente ATP, mediante procesos de respiración celular."
 
-            Regex("""\bfosiles?\b|\bfossils?\b""").containsMatchIn(normalized) ->
+            Regex("""\bfosil(?:es)?\b|\bfossils?\b""").containsMatchIn(normalized) ->
                 "Un fósil es un resto, huella o evidencia de un organismo del pasado preservado en materiales geológicos, como huesos mineralizados, impresiones o rastros."
 
             Regex("""\bsupernovas?\b""").containsMatchIn(normalized) ->
