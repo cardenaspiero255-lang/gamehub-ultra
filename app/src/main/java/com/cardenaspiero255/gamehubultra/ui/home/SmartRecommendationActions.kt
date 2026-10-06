@@ -30,6 +30,20 @@ internal object SmartRecommendationActions {
         }
     }
 
+
+    fun onProfileChanged(
+        target: SmartRecommendationRevertTarget?,
+        gamePackage: String?,
+        currentProfile: PerformanceProfile
+    ): SmartRecommendationRevertTarget? =
+        target?.takeIf {
+            SmartRecommendationRevertPolicy.canRevert(
+                target = it,
+                gamePackage = gamePackage,
+                currentProfile = currentProfile
+            )
+        }
+
     fun reject(
         alreadyRejected: Boolean,
         recommendedProfile: PerformanceProfile,
