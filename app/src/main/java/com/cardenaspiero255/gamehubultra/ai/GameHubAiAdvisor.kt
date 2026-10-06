@@ -574,7 +574,7 @@ class GameHubAiAdvisor(
         val coreResult = runCatching {
             aiCore.evaluate(
                 observation = UltraAiObservation.from(context).copy(
-                    activeProfileId = baseAdvice.suggestedProfile.name
+                    proposedProfileId = baseAdvice.suggestedProfile.name
                 ),
                 feedback = feedback,
                 memories = memories
@@ -738,7 +738,7 @@ class GameHubAiAdvisor(
         val coreResult = runCatching {
             aiCore.evaluate(
                 observation = UltraAiObservation.from(context).copy(
-                    activeProfileId = advice.suggestedProfile.name
+                    proposedProfileId = advice.suggestedProfile.name
                 ),
                 feedback = feedback,
                 memories = emptyList()
@@ -791,6 +791,7 @@ class GameHubAiAdvisor(
     private fun isProfileRecommendationQuestion(normalized: String): Boolean {
         val query = normalized
             .removePrefix("gamehub ultra ")
+            .removePrefix("gamehub ")
             .removePrefix("ultra ")
             .trim()
         if (GENERIC_PROFILE_RECOMMENDATION_PATTERN.matches(query)) return true
@@ -833,7 +834,8 @@ class GameHubAiAdvisor(
         val PROFILE_RECOMMENDATION_TOKENS = setOf("modo", "perfil", "mode", "profile")
         val PROFILE_GAMING_SIGNAL_TOKENS = setOf(
             "fps", "x4", "interpolacion", "interpolation", "balanceado", "balanced",
-            "gaming", "rendimiento", "performance", "juego", "juegos", "game", "games"
+            "gaming", "rendimiento", "performance", "juego", "juegos", "game", "games",
+            "gamehub", "ultra"
         )
         val PROFILE_RECOMMENDATION_INTENT_TOKENS = setOf(
             "recomienda", "recomiendas", "recomendacion", "recomendado",
