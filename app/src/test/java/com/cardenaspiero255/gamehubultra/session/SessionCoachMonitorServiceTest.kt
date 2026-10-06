@@ -34,7 +34,7 @@ class SessionCoachMonitorServiceTest {
             Context.MODE_PRIVATE
         ).edit().clear().commit()
         val manager = context.getSystemService(NotificationManager::class.java)
-        shadowOf(manager).cancelAll()
+        manager.cancelAll()
     }
 
     @Test
