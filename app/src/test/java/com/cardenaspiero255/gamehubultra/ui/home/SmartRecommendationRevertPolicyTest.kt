@@ -108,14 +108,12 @@ class SmartRecommendationRevertPolicyTest {
             contextKey = key,
             profile = PerformanceProfile.X4,
             currentProfile = PerformanceProfile.BALANCED,
-            runtime = null,
             observations = emptyList()
         )
         val after = SmartRecommendationRevertPolicy.rejectionKey(
             contextKey = key,
             profile = PerformanceProfile.X4,
             currentProfile = PerformanceProfile.BALANCED,
-            runtime = null,
             observations = listOf(rejected)
         )
 
