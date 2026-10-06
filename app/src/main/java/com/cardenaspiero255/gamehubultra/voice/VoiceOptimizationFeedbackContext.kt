@@ -86,13 +86,13 @@ internal object VoiceOptimizationFeedbackContext {
         gameVersion: String?,
         emulatorBackend: String?
     ): OptimizationContextKey {
-        val driverFingerprint = listOf(
-            device.gpuVendor,
-            device.gpuRenderer
-        )
-            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString("|")
+        val gpuVendor = device.gpuVendor?.trim().orEmpty()
+        val gpuRenderer = device.gpuRenderer?.trim().orEmpty()
+        val driverFingerprint = if (gpuVendor.isBlank() && gpuRenderer.isBlank()) {
+            null
+        } else {
+            "$gpuVendor|$gpuRenderer"
+        }
         return OptimizationContextKey(
             deviceFingerprint = OptimizationFingerprint.from(
                 device = device,
