@@ -190,10 +190,10 @@ def remove_device_validation_result_assertion(android: str, coverage: str):
 
 def remove_unit_test_but_leave_comment(android: str, coverage: str):
     """Replace the active coverage test command with a non-executable comment."""
-    needle = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    needle = "          gradle :app:createDebugUnitTestCoverageReport \\\n"
     if needle not in coverage:
         raise SystemExit("Fixture drift: coverage-owned unit-test command not found")
-    replacement = "        # run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    replacement = "          # gradle :app:createDebugUnitTestCoverageReport \\\n"
     return android, coverage.replace(needle, replacement, 1)
 
 
@@ -329,10 +329,10 @@ def make_quality_advisory_with_expression(android: str, coverage: str):
 
 def remove_unit_test_but_echo_name(android: str, coverage: str):
     """Replace coverage execution with an echo that only mentions the task name."""
-    command = "        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace\n"
+    command = "          gradle :app:createDebugUnitTestCoverageReport \\\n"
     if command not in coverage:
         raise SystemExit("Fixture drift: coverage-owned unit-test command not found")
-    replacement = "        run: echo ':app:createDebugUnitTestCoverageReport'\n"
+    replacement = "          echo ':app:createDebugUnitTestCoverageReport' \\\n"
     return android, coverage.replace(command, replacement, 1)
 
 
