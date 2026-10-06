@@ -570,10 +570,13 @@ class GameHubAiAdvisor(
             fallbackUsed = true
         )
 
+        val feedback = feedbackSnapshot(context)
         val coreResult = runCatching {
             aiCore.evaluate(
-                observation = UltraAiObservation.from(context),
-                feedback = feedbackSnapshot(context),
+                observation = UltraAiObservation.from(context).copy(
+                    activeProfileId = baseAdvice.suggestedProfile.name
+                ),
+                feedback = feedback,
                 memories = memories
             )
         }.getOrNull()
@@ -590,11 +593,25 @@ class GameHubAiAdvisor(
 
         val safetyConstrained = hot || lowBattery || lowStorage
         val coreOverrideAllowed = coreResult?.overrideBaseRecommendation == true
-        val safeCoreProfile = coreProfile?.takeIf { candidate ->
-            coreOverrideAllowed &&
-                !safetyConstrained &&
-                (candidate != PerformanceProfile.X4 || context.sustainedPerformanceSupported)
-        }
+        val safeCoreProfile = coreProfile
+            ?.takeIf { candidate ->
+                coreOverrideAllowed &&
+                    !safetyConstrained &&
+                    (candidate != PerformanceProfile.X4 ||
+                        context.sustainedPerformanceSupported)
+            }
+            ?.let { candidate ->
+                if (coreResult?.recoveryExplanation != null) {
+                    preferSafeCurrentProfile(
+                        proposed = baseAdvice.suggestedProfile,
+                        recovered = candidate,
+                        context = context,
+                        feedback = feedback
+                    )
+                } else {
+                    candidate
+                }
+            }
         val finalProfile = safeCoreProfile ?: baseAdvice.suggestedProfile
         val finalReason = if (finalProfile == baseAdvice.suggestedProfile) {
             baseAdvice.reason
@@ -606,17 +623,11 @@ class GameHubAiAdvisor(
             }
         }
 
-        val recoveryApplied =
-            safeCoreProfile != null &&
-                coreProfile != null &&
-                finalProfile == coreProfile &&
-                finalProfile != baseAdvice.suggestedProfile
-
         return baseAdvice.copy(
             suggestedProfile = finalProfile,
             reason = finalReason,
             recoveryExplanation = coreResult?.recoveryExplanation
-                ?.takeIf { recoveryApplied }
+                ?.takeIf { safeCoreProfile != null }
         )
     }
 
@@ -673,6 +684,35 @@ class GameHubAiAdvisor(
     ): UltraAiFeedbackSnapshot =
         UltraAiFeedbackSnapshot.fromObservations(context.optimizationObservations)
 
+    private fun preferSafeCurrentProfile(
+        proposed: PerformanceProfile,
+        recovered: PerformanceProfile,
+        context: GameHubAiContext,
+        feedback: UltraAiFeedbackSnapshot
+    ): PerformanceProfile {
+        val current = context.selectedProfile
+        val currentSupported =
+            current != PerformanceProfile.X4 ||
+                context.sustainedPerformanceSupported
+        val currentIsSafeAlternative =
+            currentSupported &&
+                current != proposed &&
+                feedback.poorOutcomeCount(current.name) == 0
+        val recoveredLooksLikeDefaultFallback =
+            recovered == PerformanceProfile.BALANCED &&
+                !feedback.isAccepted(PerformanceProfile.BALANCED.name)
+
+        return if (
+            recovered != proposed &&
+            recoveredLooksLikeDefaultFallback &&
+            currentIsSafeAlternative
+        ) {
+            current
+        } else {
+            recovered
+        }
+    }
+
     private fun recoverAdviceWithFeedback(
         advice: GameHubAiAdvice,
         context: GameHubAiContext
@@ -697,7 +737,9 @@ class GameHubAiAdvisor(
 
         val coreResult = runCatching {
             aiCore.evaluate(
-                observation = UltraAiObservation.from(context),
+                observation = UltraAiObservation.from(context).copy(
+                    activeProfileId = advice.suggestedProfile.name
+                ),
                 feedback = feedback,
                 memories = emptyList()
             )
@@ -705,12 +747,24 @@ class GameHubAiAdvisor(
             ?.takeIf { !it.requiresCloud }
             ?: return advice
 
-        val recoveredProfile = PerformanceProfile.entries.firstOrNull { profile ->
-            profile.name.equals(
-                coreResult.recommendation.profileId,
-                ignoreCase = true
-            )
-        } ?: return advice
+        val coreRecoveredProfile =
+            PerformanceProfile.entries.firstOrNull { profile ->
+                profile.name.equals(
+                    coreResult.recommendation.profileId,
+                    ignoreCase = true
+                )
+            } ?: return advice
+        val recoveredProfile =
+            if (coreResult.recoveryExplanation != null) {
+                preferSafeCurrentProfile(
+                    proposed = advice.suggestedProfile,
+                    recovered = coreRecoveredProfile,
+                    context = context,
+                    feedback = feedback
+                )
+            } else {
+                coreRecoveredProfile
+            }
 
         if (recoveredProfile == PerformanceProfile.X4 &&
             !context.sustainedPerformanceSupported) {
