@@ -26,9 +26,13 @@ internal object OptimizationContextKeyFactory {
         )
     }
 
-    internal fun driverFingerprint(device: DeviceInfo): String? =
-        listOf(device.gpuVendor, device.gpuRenderer)
-            .mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-            .takeIf { it.isNotEmpty() }
-            ?.joinToString("|")
+    internal fun driverFingerprint(device: DeviceInfo): String? {
+        val gpuVendor = device.gpuVendor?.trim().orEmpty()
+        val gpuRenderer = device.gpuRenderer?.trim().orEmpty()
+        return if (gpuVendor.isBlank() && gpuRenderer.isBlank()) {
+            null
+        } else {
+            "$gpuVendor|$gpuRenderer"
+        }
+    }
 }
