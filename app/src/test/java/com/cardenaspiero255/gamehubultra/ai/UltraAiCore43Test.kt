@@ -129,4 +129,74 @@ class UltraAiCore43Test {
         assertTrue(result.recommendation.confidence <= 0.04)
     }
 
+
+    @Test
+    fun `repeated poor suggestion keeps a safe active alternative before defaulting balanced`() {
+        val result = UltraAiCore2(
+            recommender = UltraAiRecommender { _, _, _ ->
+                UltraAiRecommendation("X4", 0.90, listOf("model=x4"))
+            }
+        ).evaluate(
+            observation = UltraAiObservation(
+                gamePackage = "com.example.game",
+                activeProfileId = "FRAME_INTERPOLATION",
+                batteryPercent = 80,
+                thermalLabel = "normal"
+            ),
+            feedback = UltraAiFeedbackSnapshot(
+                rejectedProfileIds = setOf("X4"),
+                rejectedProfileCounts = mapOf("X4" to 2)
+            ),
+            memories = emptyList()
+        )
+
+        assertEquals("FRAME_INTERPOLATION", result.recommendation.profileId)
+    }
+
+    @Test
+    fun `repeated poor suggestion falls back to balanced when active profile is also poor suggestion`() {
+        val result = UltraAiCore2(
+            recommender = UltraAiRecommender { _, _, _ ->
+                UltraAiRecommendation("X4", 0.90, listOf("model=x4"))
+            }
+        ).evaluate(
+            observation = UltraAiObservation(
+                gamePackage = "com.example.game",
+                activeProfileId = "X4",
+                batteryPercent = 80,
+                thermalLabel = "normal"
+            ),
+            feedback = UltraAiFeedbackSnapshot(
+                rejectedProfileIds = setOf("X4"),
+                rejectedProfileCounts = mapOf("X4" to 2)
+            ),
+            memories = emptyList()
+        )
+
+        assertEquals("BALANCED", result.recommendation.profileId)
+    }
+
+    @Test
+    fun `balanced stays balanced when every safe fallback is already poor`() {
+        val result = UltraAiCore2(
+            recommender = UltraAiRecommender { _, _, _ ->
+                UltraAiRecommendation("BALANCED", 0.80, listOf("model=balanced"))
+            }
+        ).evaluate(
+            observation = UltraAiObservation(
+                gamePackage = "com.example.game",
+                activeProfileId = "BALANCED",
+                batteryPercent = 80,
+                thermalLabel = "normal"
+            ),
+            feedback = UltraAiFeedbackSnapshot(
+                rejectedProfileIds = setOf("BALANCED"),
+                rejectedProfileCounts = mapOf("BALANCED" to 2)
+            ),
+            memories = emptyList()
+        )
+
+        assertEquals("BALANCED", result.recommendation.profileId)
+    }
+
 }
