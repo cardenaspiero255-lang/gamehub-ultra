@@ -2829,13 +2829,6 @@ function specialistCandidateMatches(
   topic: string,
   candidateText: string,
 ): boolean {
-  if (
-    candidateMatchesTopic(topic, candidateText) ||
-    candidateMatchesQuery(topic, candidateText)
-  ) {
-    return true;
-  }
-
   const topicTokens = [...evidenceTokens(topic)];
   const candidateTokens = [...evidenceTokens(candidateText)];
   if (topicTokens.length === 0 || candidateTokens.length === 0) return false;
@@ -2847,6 +2840,13 @@ function specialistCandidateMatches(
       candidateToken === topicToken ||
       specialistComparableToken(candidateToken) === comparableTopic
     );
+  }
+
+  if (
+    candidateMatchesTopic(topic, candidateText) ||
+    candidateMatchesQuery(topic, candidateText)
+  ) {
+    return true;
   }
 
   const matched = topicTokens.filter((topicToken) =>
