@@ -467,7 +467,11 @@ class WikimediaUltraResearchProvider(
         if (
             topicTokens.isNotEmpty() &&
             snippetTokens.isNotEmpty() &&
-            topicTokens.intersect(snippetTokens).isNotEmpty()
+            topicTokens.any { topicToken ->
+                snippetTokens.any { snippetToken ->
+                    lexicallyRelated(topicToken, snippetToken)
+                }
+            }
         ) {
             return true
         }
@@ -512,6 +516,24 @@ class WikimediaUltraResearchProvider(
             .filterNot(TOPIC_STOP_WORDS::contains)
             .toSet()
 
+    private fun lexicallyRelated(
+        left: String,
+        right: String
+    ): Boolean {
+        if (left == right) return true
+        if (left.length < 6 || right.length < 6) return false
+
+        val limit = minOf(left.length, right.length)
+        var commonPrefix = 0
+        while (
+            commonPrefix < limit &&
+            left[commonPrefix] == right[commonPrefix]
+        ) {
+            commonPrefix++
+        }
+        return commonPrefix >= limit - 2
+    }
+
     private fun jsonHasKey(
         json: String,
         key: String
@@ -542,7 +564,7 @@ class WikimediaUltraResearchProvider(
             .trim()
             .replace(
                 Regex(
-                    """^(?:un|una|unos|unas|el|la|los|las|ser|a|an)\s+""",
+                    """^(?:un|una|unos|unas|ser|a|an)\s+""",
                     RegexOption.IGNORE_CASE
                 ),
                 ""
