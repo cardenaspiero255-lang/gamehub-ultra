@@ -77,7 +77,7 @@ class GameOptimizationMemoryStore(
                         .take(maxObservations)
                 }
                 .sortedByDescending { observations ->
-                    observations.maxOfOrNull { it.timestampMillis } ?: Long.MIN_VALUE
+                    observations.maxOfOrNull(OptimizationObservation::timestampMillis) ?: Long.MIN_VALUE
                 }
                 .take(maxContexts)
                 .flatten()
