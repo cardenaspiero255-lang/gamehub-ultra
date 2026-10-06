@@ -419,6 +419,38 @@ internal fun GameHubUltraApp(
         )
     }
 
+    fun clearSmartRecommendationRevertForExternalProfileChange() {
+        smartRecommendationRevertTarget =
+            SmartRecommendationActions.onExternalProfileSelection(
+                smartRecommendationRevertTarget
+            )
+    }
+
+    fun selectExternalProfile(profile: PerformanceProfile) {
+        clearSmartRecommendationRevertForExternalProfileChange()
+        selectProfile(profile)
+    }
+
+    fun applyExternalSmartGameAssistantSuggestion(
+        suggestion: SmartGameAssistantSuggestion
+    ) {
+        clearSmartRecommendationRevertForExternalProfileChange()
+        applySmartGameAssistantSuggestion(suggestion)
+    }
+
+    fun persistExternalVoiceProfile(profile: PerformanceProfile) {
+        clearSmartRecommendationRevertForExternalProfileChange()
+        viewModel.persistVoiceSelectedProfile(profile)
+    }
+
+    fun persistExternalVoiceGameWithProfile(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        clearSmartRecommendationRevertForExternalProfileChange()
+        viewModel.persistVoiceSelectedGameWithProfile(packageName, profile)
+    }
+
     val smartRecommendation = SmartPerformanceAdvisor.recommend(
         SmartPerformanceInput(
             device = device,
@@ -517,7 +549,7 @@ internal fun GameHubUltraApp(
                 state = state,
                 device = device,
                 selectedProfileName = selectedProfileName,
-                onProfileSelected = ::selectProfile,
+                onProfileSelected = ::selectExternalProfile,
                 onGameSelected = ::selectGame,
                 onPlaySelectedGame = ::playSelectedGame,
                 runtimeDiagnostics = runtimeDiagnostics,
@@ -541,7 +573,7 @@ internal fun GameHubUltraApp(
                     smartRecommendationRevertTarget = SmartRecommendationActions.revert(smartRecommendationRevertTarget, selectedGamePackage, uiState.effectiveProfile, recordSmartRecommendationFeedback, ::selectProfile)
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
-                onApplySmartGameAssistant = ::applySmartGameAssistantSuggestion,
+                onApplySmartGameAssistant = ::applyExternalSmartGameAssistantSuggestion,
                 optimizationObservations = optimizationObservations,
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) {
@@ -550,7 +582,7 @@ internal fun GameHubUltraApp(
                 },
                 performanceHistory = performanceHistory,
                 onApplyAdaptiveProfile = {
-                    adaptiveDecision?.let { selectProfile(it.profile) }
+                    adaptiveDecision?.let { selectExternalProfile(it.profile) }
                 },
                 aiContext = aiContext,
                 ultraRuntime = ultraRuntime,
@@ -559,8 +591,8 @@ internal fun GameHubUltraApp(
                 onConversationChanged = ultraSessionController::updateConversation,
                 assistantInputEnabled = ultraAssistantInputReady,
                 onVoiceSelectedGame = viewModel::persistVoiceSelectedGame,
-                onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile,
-                onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile,
+                onVoiceSelectedProfile = ::persistExternalVoiceProfile,
+                onVoiceSelectedGameWithProfile = ::persistExternalVoiceGameWithProfile,
                 favoriteGames = favoriteGames,
                 recentGamePackages = recentGamePackages,
                 manualGamePackages = manualGamePackages,
