@@ -417,4 +417,38 @@ class GameHubAiAdvisor43Test {
         assertFalse(answer.contains("perfil", ignoreCase = true))
     }
 
+    @Test
+    fun `repeated poor balanced advice preserves real active safe alternative`() {
+        val context = contextWithPoorX4History.copy(
+            selectedProfile = PerformanceProfile.FRAME_INTERPOLATION,
+            optimizationObservations = listOf(
+                OptimizationObservation(
+                    contextKey = "device|game",
+                    profile = PerformanceProfile.BALANCED,
+                    timestampMillis = 2L,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED
+                ),
+                OptimizationObservation(
+                    contextKey = "device|game",
+                    profile = PerformanceProfile.BALANCED,
+                    timestampMillis = 1L,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED
+                )
+            )
+        )
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+            override fun advise(question: String, context: GameHubAiContext) =
+                LocalAiActionCandidate(AiActionAllowlist.PROFILE_BALANCED)
+        }
+
+        val result = GameHubAiAdvisor(modelAdapter = adapter).advise(
+            "¿qué perfil me recomiendas?",
+            context
+        )
+
+        assertEquals(PerformanceProfile.FRAME_INTERPOLATION, result.suggestedProfile)
+        assertNotNull(result.recoveryExplanation)
+    }
+
 }
