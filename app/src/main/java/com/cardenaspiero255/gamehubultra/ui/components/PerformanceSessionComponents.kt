@@ -137,14 +137,9 @@ internal fun SmartPerformanceCard(
 ) {
     var showDetails by rememberSaveable { mutableStateOf(false) }
     val explanation = recommendation.explanation
-    val confidenceLabel = when (explanation.confidence) {
-        com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand.LOW ->
-            stringResource(R.string.smart_performance_confidence_low)
-        com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand.MEDIUM ->
-            stringResource(R.string.smart_performance_confidence_medium)
-        com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand.HIGH ->
-            stringResource(R.string.smart_performance_confidence_high)
-    }
+    val confidenceLabel = stringResource(
+        smartPerformanceConfidenceLabelRes(explanation.confidence)
+    )
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -166,110 +161,7 @@ internal fun SmartPerformanceCard(
                 Text(
                     stringResource(
                         if (showDetails) {
-                            R.string.smart_performance_hide_details
-                        } else {
-                            R.string.smart_performance_why
-                        }
-                    )
-                )
-            }
-
-            if (showDetails) {
-                if (explanation.evidence.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.smart_performance_evidence),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    explanation.evidence.take(8).forEach { evidence ->
-                        val provenance = when (evidence.provenance) {
-                            com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.MEASURED ->
-                                stringResource(R.string.smart_performance_evidence_measured)
-                            com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.INFERRED ->
-                                stringResource(R.string.smart_performance_evidence_inferred)
-                            com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.REMEMBERED ->
-                                stringResource(R.string.smart_performance_evidence_remembered)
-                            com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.EXTERNALLY_RESEARCHED ->
-                                stringResource(R.string.smart_performance_evidence_external)
-                        }
-                        Text("• [$provenance] ${evidence.text}", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-
-                if (explanation.unavailableData.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.smart_performance_unavailable),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    Text(
-                        explanation.unavailableData.joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-
-                if (explanation.contradictions.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.smart_performance_contradictions),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    explanation.contradictions.take(3).forEach {
-                        Text("• $it", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-
-                explanation.changeExplanation?.let {
-                    Text(
-                        stringResource(R.string.smart_performance_changed),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    Text(it, style = MaterialTheme.typography.bodySmall)
-                }
-
-                if (explanation.withheldReasons.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.smart_performance_not_recommended),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    explanation.withheldReasons.take(3).forEach {
-                        Text("• $it", style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-
-                if (explanation.outcomes.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.smart_performance_comparison),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    explanation.outcomes.forEach { outcome ->
-                        val label = when (outcome.objective) {
-                            com.cardenaspiero255.gamehubultra.domain.RecommendationOutcomeObjective.RECOMMENDED ->
-                                stringResource(R.string.smart_performance_outcome_recommended)
-                            com.cardenaspiero255.gamehubultra.domain.RecommendationOutcomeObjective.BALANCED ->
-                                stringResource(R.string.smart_performance_outcome_balanced)
-                            com.cardenaspiero255.gamehubultra.domain.RecommendationOutcomeObjective.BATTERY ->
-                                stringResource(R.string.smart_performance_outcome_battery)
-                        }
-                        Text(
-                            "• $label: ${outcome.summary}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-
-                Text(
-                    stringResource(
-                        R.string.smart_performance_driver,
-                        recommendation.gpuFamily.name,
-                        when (recommendation.driverStrategy) {
-                            com.cardenaspiero255.gamehubultra.domain.DriverStrategy.SYSTEM_ONLY ->
-                                stringResource(R.string.driver_system_only)
-                            com.cardenaspiero255.gamehubultra.domain.DriverStrategy.TURNIP_CANDIDATE ->
-                                stringResource(R.string.driver_turnip_candidate)
-                            com.cardenaspiero255.gamehubultra.domain.DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE ->
-                                stringResource(R.string.driver_native_candidate)
-                        }
-                    ),
-                    style = MaterialTheme.typography.bodySmall
-                )
+                SmartPerformanceExplanationDetails(recommendation)
             }
 
             Text(
@@ -304,5 +196,127 @@ internal fun SmartPerformanceCard(
             }
         }
     }
+} 
+
+internal fun smartPerformanceConfidenceLabelRes(
+    confidence: com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand
+): Int = when (confidence) {
+    com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand.LOW ->
+        R.string.smart_performance_confidence_low
+    com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand.MEDIUM ->
+        R.string.smart_performance_confidence_medium
+    com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand.HIGH ->
+        R.string.smart_performance_confidence_high
+}
+
+internal fun smartPerformanceEvidenceLabelRes(
+    provenance: com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance
+): Int = when (provenance) {
+    com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.MEASURED ->
+        R.string.smart_performance_evidence_measured
+    com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.INFERRED ->
+        R.string.smart_performance_evidence_inferred
+    com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.REMEMBERED ->
+        R.string.smart_performance_evidence_remembered
+    com.cardenaspiero255.gamehubultra.domain.RecommendationEvidenceProvenance.EXTERNALLY_RESEARCHED ->
+        R.string.smart_performance_evidence_external
+}
+
+internal fun smartPerformanceOutcomeLabelRes(
+    objective: com.cardenaspiero255.gamehubultra.domain.RecommendationOutcomeObjective
+): Int = when (objective) {
+    com.cardenaspiero255.gamehubultra.domain.RecommendationOutcomeObjective.RECOMMENDED ->
+        R.string.smart_performance_outcome_recommended
+    com.cardenaspiero255.gamehubultra.domain.RecommendationOutcomeObjective.BALANCED ->
+        R.string.smart_performance_outcome_balanced
+    com.cardenaspiero255.gamehubultra.domain.RecommendationOutcomeObjective.BATTERY ->
+        R.string.smart_performance_outcome_battery
+}
+
+@Composable
+internal fun SmartPerformanceExplanationDetails(
+    recommendation: com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation
+) {
+    val explanation = recommendation.explanation
+    if (explanation.evidence.isNotEmpty()) {
+        Text(
+            stringResource(R.string.smart_performance_evidence),
+            style = MaterialTheme.typography.labelLarge
+        )
+        explanation.evidence.take(8).forEach { evidence ->
+            val provenance = stringResource(
+                smartPerformanceEvidenceLabelRes(evidence.provenance)
+            )
+            Text("• [$provenance] ${evidence.text}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    if (explanation.unavailableData.isNotEmpty()) {
+        Text(
+            stringResource(R.string.smart_performance_unavailable),
+            style = MaterialTheme.typography.labelLarge
+        )
+        Text(
+            explanation.unavailableData.joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+
+    if (explanation.contradictions.isNotEmpty()) {
+        Text(
+            stringResource(R.string.smart_performance_contradictions),
+            style = MaterialTheme.typography.labelLarge
+        )
+        explanation.contradictions.take(3).forEach {
+            Text("• $it", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    explanation.changeExplanation?.let {
+        Text(
+            stringResource(R.string.smart_performance_changed),
+            style = MaterialTheme.typography.labelLarge
+        )
+        Text(it, style = MaterialTheme.typography.bodySmall)
+    }
+
+    if (explanation.withheldReasons.isNotEmpty()) {
+        Text(
+            stringResource(R.string.smart_performance_not_recommended),
+            style = MaterialTheme.typography.labelLarge
+        )
+        explanation.withheldReasons.take(3).forEach {
+            Text("• $it", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    if (explanation.outcomes.isNotEmpty()) {
+        Text(
+            stringResource(R.string.smart_performance_comparison),
+            style = MaterialTheme.typography.labelLarge
+        )
+        explanation.outcomes.forEach { outcome ->
+            val label = stringResource(
+                smartPerformanceOutcomeLabelRes(outcome.objective)
+            )
+            Text("• $label: ${outcome.summary}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    Text(
+        stringResource(
+            R.string.smart_performance_driver,
+            recommendation.gpuFamily.name,
+            when (recommendation.driverStrategy) {
+                com.cardenaspiero255.gamehubultra.domain.DriverStrategy.SYSTEM_ONLY ->
+                    stringResource(R.string.driver_system_only)
+                com.cardenaspiero255.gamehubultra.domain.DriverStrategy.TURNIP_CANDIDATE ->
+                    stringResource(R.string.driver_turnip_candidate)
+                com.cardenaspiero255.gamehubultra.domain.DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE ->
+                    stringResource(R.string.driver_native_candidate)
+            }
+        ),
+        style = MaterialTheme.typography.bodySmall
+    )
 }
 
