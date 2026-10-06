@@ -37,11 +37,10 @@ data class OptimizationContextKey(
             driverFingerprint.orEmpty()
         ).joinToString("¦")
 
-    internal val lookupSerializedKeys: Set<String>
-        get() = buildSet {
-            add(serialized)
-            legacyNoGpuSerializedKey()?.let(::add)
-        }
+    internal fun lookupSerializedKeys(): Set<String> = buildSet {
+        add(serialized)
+        legacyNoGpuSerializedKey()?.let(::add)
+    }
 
     private fun legacyNoGpuSerializedKey(): String? {
         if (driverFingerprint != null || !deviceFingerprint.endsWith("¦")) return null
@@ -66,7 +65,7 @@ class GameOptimizationMemoryStore(
     private val observationsKey = stringPreferencesKey("observations_v1")
 
     override fun observationsFlow(contextKey: OptimizationContextKey): Flow<List<OptimizationObservation>> {
-        val lookupKeys = contextKey.lookupSerializedKeys
+        val lookupKeys = contextKey.lookupSerializedKeys()
         return dataStore.data.map { preferences ->
             preferences[observationsKey]
                 .orEmpty()
@@ -80,7 +79,7 @@ class GameOptimizationMemoryStore(
     }
 
     override suspend fun record(contextKey: OptimizationContextKey, observation: OptimizationObservation) {
-        val lookupKeys = contextKey.lookupSerializedKeys
+        val lookupKeys = contextKey.lookupSerializedKeys()
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
@@ -104,9 +103,7 @@ class GameOptimizationMemoryStore(
                         .sortedByDescending { it.timestampMillis }
                         .take(maxObservations)
                 }
-                .sortedByDescending { observations ->
-                    observations.maxOfOrNull(OptimizationObservation::timestampMillis) ?: Long.MIN_VALUE
-                }
+                .sortedByDescending { it.maxOf(OptimizationObservation::timestampMillis) }
                 .take(maxContexts)
                 .flatten()
                 .sortedByDescending { it.timestampMillis }
@@ -117,7 +114,7 @@ class GameOptimizationMemoryStore(
     }
 
     override suspend fun pruneTo(contextKey: OptimizationContextKey) {
-        val lookupKeys = contextKey.lookupSerializedKeys
+        val lookupKeys = contextKey.lookupSerializedKeys()
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
@@ -134,7 +131,7 @@ class GameOptimizationMemoryStore(
     }
 
     override suspend fun clearGame(contextKey: OptimizationContextKey) {
-        val lookupKeys = contextKey.lookupSerializedKeys
+        val lookupKeys = contextKey.lookupSerializedKeys()
         dataStore.edit { preferences ->
             val all = preferences[observationsKey]
                 .orEmpty()
