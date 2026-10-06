@@ -281,9 +281,8 @@ class VoiceOptimizationFeedbackContextTest {
             gpuVendor = "ARM",
             gpuRenderer = "Mali"
         )
-        val context = object : MockContext() {
-            override fun getApplicationContext(): Context = this
-        }
+        val context = Mockito.mock(Context::class.java)
+        Mockito.`when`(context.applicationContext).thenReturn(context)
 
         assertEquals(
             base,
