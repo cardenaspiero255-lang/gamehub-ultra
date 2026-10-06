@@ -89,7 +89,9 @@ class Car43LatestReviewRegressionTest {
 
         listOf(
             "What is profile likelihood?",
-            "What is the mode of this distribution?"
+            "What is the mode of this distribution?",
+            "Ultra, what is profile likelihood?",
+            "Ultra, what is the mode of this distribution?"
         ).forEach { question ->
             assertEquals(
                 "Respuesta estable del modelo.",
