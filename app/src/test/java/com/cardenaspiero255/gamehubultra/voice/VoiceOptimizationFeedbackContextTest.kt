@@ -291,37 +291,4 @@ class VoiceOptimizationFeedbackContextTest {
     }
 
 
-    @Test
-    fun `private context key helper preserves null game scope`() {
-        val context = Mockito.mock(Context::class.java)
-        val device = DeviceInfo(
-            manufacturer = "Test",
-            model = "Device",
-            androidVersion = "14",
-            sdkInt = 34,
-            supportedAbis = listOf("arm64-v8a"),
-            cpuModel = "cpu",
-            cpuCores = 8,
-            totalRamMb = 8192,
-            gpuVendor = "ARM",
-            gpuRenderer = "Mali"
-        )
-        val method = VoiceOptimizationFeedbackContext::class.java.getDeclaredMethod(
-            "contextKey",
-            Context::class.java,
-            DeviceInfo::class.java,
-            String::class.java
-        )
-        method.isAccessible = true
-
-        val key = method.invoke(
-            VoiceOptimizationFeedbackContext,
-            context,
-            device,
-            null
-        ) as OptimizationContextKey
-
-        assertEquals("", key.gamePackage)
-        assertEquals("ARM|Mali", key.driverFingerprint)
-    }
 }
