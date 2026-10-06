@@ -6928,7 +6928,6 @@ Deno.test("earthquake questions use the public USGS catalog", async () => {
   }
 });
 
-
 Deno.test("stable earthquake definitions bypass the recent-event specialist", async () => {
   let usgsCalls = 0;
   const deps: ResearchDependencies = {
