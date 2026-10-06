@@ -8,14 +8,14 @@ enum class UltraAiRecommendationSource { MODEL, DETERMINISTIC_LOCAL }
 data class UltraAiObservation(
     val gamePackage: String,
     val activeProfileId: String,
-    val proposedProfileId: String? = null,
     val batteryPercent: Int? = null,
     val thermalLabel: String? = null,
     val refreshRateHz: Float? = null,
     val latencyMs: Int? = null,
     val thermalStatus: Int? = null,
     val thermalHeadroom: Float? = null,
-    val sessionActive: Boolean = false
+    val sessionActive: Boolean = false,
+    val proposedProfileId: String? = null
 ) {
     fun sanitized(): UltraAiObservation = copy(
         proposedProfileId = proposedProfileId?.trim()?.takeIf(String::isNotBlank),
