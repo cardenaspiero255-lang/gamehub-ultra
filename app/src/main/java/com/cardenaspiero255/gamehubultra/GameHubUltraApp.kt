@@ -398,15 +398,30 @@ internal fun GameHubUltraApp(
             selectedTab = 1
             return
         }
+        val coachSessionId =
+            com.cardenaspiero255.gamehubultra.session.SessionCoachMonitorService.start(
+                context = context,
+                packageName = packageName
+            )
         if (openGame(context, packageName)) {
             recordGameOpened(packageName)
+        } else if (coachSessionId != null) {
+            com.cardenaspiero255.gamehubultra.session.SessionCoachMonitorService.cancelLaunch(
+                context
+            )
         }
     }
 
     LaunchedEffect(appResumeRefreshToken) {
         val completedCoachSession = withContext(Dispatchers.IO) {
-            com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
-                .readLastCompletedSession()
+            val store = com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
+            if (store.hasActiveSession()) {
+                com.cardenaspiero255.gamehubultra.session.SessionCoachMonitorService.finishOnReturn(
+                    context
+                )
+            } else {
+                store.readLastCompletedSession()
+            }
         }
         completedCoachSession?.let { completed ->
             lastSessionCoachReport =
@@ -418,8 +433,8 @@ internal fun GameHubUltraApp(
             }
         }
 
-        if (activeSessionId != null) {
-            val monitoredLast = completedCoachSession?.samples?.lastOrNull()
+        if (activeSessionId != null && completedCoachSession != null) {
+            val monitoredLast = completedCoachSession.samples.lastOrNull()
             runtimeCoordinator.endGameSession(
                 runtimeSnapshot().copy(
                     metrics = RuntimeSessionMetrics(
