@@ -7508,6 +7508,61 @@ Deno.test(
 );
 
 Deno.test(
+  "generic bear definition rejects people whose surname contains Oso",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Fernando Jiménez del Oso",
+                  extract:
+                    "Fernando Jiménez del Oso fue un psiquiatra y periodista español especializado en misterio y parapsicología.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Fernando_Jim%C3%A9nez_del_Oso",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
+                  title: "Ursidae",
+                  extract:
+                    "Los osos son mamíferos carnívoros de la familia Ursidae.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Ursidae",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un oso?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected a bear definition");
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("mamífer") || answer.includes("fernando")) {
+      throw new Error("expected the animal, not a person whose surname is Oso");
+    }
+  },
+);
+
+Deno.test(
   "percentage calculation wrapper resolves the stable percentage topic",
   async () => {
     let searchTopic = "";
