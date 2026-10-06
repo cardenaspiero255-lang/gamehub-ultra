@@ -233,6 +233,17 @@ internal fun smartPerformanceOutcomeLabelRes(
         R.string.smart_performance_outcome_battery
 }
 
+internal fun smartPerformanceDriverLabelRes(
+    strategy: com.cardenaspiero255.gamehubultra.domain.DriverStrategy
+): Int = when (strategy) {
+    com.cardenaspiero255.gamehubultra.domain.DriverStrategy.SYSTEM_ONLY ->
+        R.string.driver_system_only
+    com.cardenaspiero255.gamehubultra.domain.DriverStrategy.TURNIP_CANDIDATE ->
+        R.string.driver_turnip_candidate
+    com.cardenaspiero255.gamehubultra.domain.DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE ->
+        R.string.driver_native_candidate
+}
+
 @Composable
 internal fun SmartPerformanceExplanationDetails(
     recommendation: com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation
@@ -307,14 +318,7 @@ internal fun SmartPerformanceExplanationDetails(
         stringResource(
             R.string.smart_performance_driver,
             recommendation.gpuFamily.name,
-            when (recommendation.driverStrategy) {
-                com.cardenaspiero255.gamehubultra.domain.DriverStrategy.SYSTEM_ONLY ->
-                    stringResource(R.string.driver_system_only)
-                com.cardenaspiero255.gamehubultra.domain.DriverStrategy.TURNIP_CANDIDATE ->
-                    stringResource(R.string.driver_turnip_candidate)
-                com.cardenaspiero255.gamehubultra.domain.DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE ->
-                    stringResource(R.string.driver_native_candidate)
-            }
+            stringResource(smartPerformanceDriverLabelRes(recommendation.driverStrategy))
         ),
         style = MaterialTheme.typography.bodySmall
     )
