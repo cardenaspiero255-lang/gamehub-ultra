@@ -411,6 +411,14 @@ internal fun GameHubUltraApp(
 
     var smartRecommendationRevertTarget by remember(selectedGamePackage) { mutableStateOf<SmartRecommendationRevertTarget?>(null) }
 
+    LaunchedEffect(selectedGamePackage, uiState.effectiveProfile) {
+        smartRecommendationRevertTarget = SmartRecommendationActions.onProfileChanged(
+            target = smartRecommendationRevertTarget,
+            gamePackage = selectedGamePackage,
+            currentProfile = uiState.effectiveProfile
+        )
+    }
+
     val smartRecommendation = SmartPerformanceAdvisor.recommend(
         SmartPerformanceInput(
             device = device,
