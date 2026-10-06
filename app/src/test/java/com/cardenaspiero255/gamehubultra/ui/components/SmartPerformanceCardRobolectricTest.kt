@@ -107,11 +107,17 @@ class SmartPerformanceCardRobolectricTest {
 
         activity.setContent {
             MaterialTheme {
-                SmartPerformanceExplanationDetails(
+                SmartPerformanceCard(
                     recommendation = recommendation(
                         strategy = DriverStrategy.TURNIP_CANDIDATE,
                         explanation = explanation
-                    )
+                    ),
+                    observations = emptyList(),
+                    canRevert = true,
+                    onApply = {},
+                    onReject = {},
+                    onRevert = {},
+                    onClearMemory = {}
                 )
             }
         }
