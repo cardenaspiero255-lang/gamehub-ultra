@@ -1115,6 +1115,45 @@ class WikimediaUltraResearchProviderTest {
         assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
     }
 
+
+    @Test
+    fun spacedCompoundTopicAcceptsCompactCanonicalTitle() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Exoplaneta"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Exoplaneta","extract":"Un exoplaneta es un planeta que orbita una estrella distinta del Sol.","canonicalurl":"https://es.wikipedia.org/wiki/Exoplaneta"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un exo planeta?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertTrue(evidence.displayText.contains("exoplaneta", ignoreCase = true))
+    }
+
+    @Test
+    fun searchSnippetCanConfirmRelatedArticleForStableDefinition() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Extraversión e introversión","snippet":"Una persona introvertida suele orientar más su atención hacia su mundo interno."}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Extraversión e introversión","extract":"La introversión describe una orientación preferente hacia el mundo interno y una menor búsqueda de estimulación social.","canonicalurl":"https://es.wikipedia.org/wiki/Extraversi%C3%B3n_e_introversi%C3%B3n"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es introvertido?")
+        )
+
+        val evidence = assertIs<UltraProviderResult.Evidence>(result).evidence
+        assertTrue(evidence.displayText.contains("introversión", ignoreCase = true))
+    }
+
     private fun withRawHttpServer(
         status: Int,
         body: String,
