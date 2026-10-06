@@ -181,11 +181,6 @@ tasks.named("preBuild").configure {
     dependsOn(generateExactLauncherIcon)
 }
 
-tasks.withType<Test>().configureEach {
-    val cpuCount = Runtime.getRuntime().availableProcessors()
-    maxParallelForks = (cpuCount / 2).coerceIn(1, 4)
-}
-
 sentry {
     includeProguardMapping.set(sentryMappingUploadEnabled)
     autoUploadProguardMapping.set(sentryMappingUploadEnabled)
