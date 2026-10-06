@@ -6,6 +6,7 @@ import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -67,4 +68,59 @@ class VoiceOptimizationFeedbackContextTest {
 
         assertEquals(history, enriched.optimizationObservations)
     }
+
+    @Test
+    fun `voice optimization key keeps game version backend and gpu scope`() {
+        val device = DeviceInfo(
+            manufacturer = "Vivo",
+            model = "V25 Pro",
+            androidVersion = "14",
+            sdkInt = 34,
+            supportedAbis = listOf("arm64-v8a"),
+            cpuModel = "Dimensity",
+            cpuCores = 8,
+            totalRamMb = 12_288,
+            gpuVendor = "ARM",
+            gpuRenderer = "Mali-G77"
+        )
+
+        val key = VoiceOptimizationFeedbackContext.buildContextKey(
+            device = device,
+            gamePackage = "game.a",
+            gameVersion = "42",
+            emulatorBackend = "native"
+        )
+
+        assertEquals("game.a", key.gamePackage)
+        assertEquals("42", key.gameVersion)
+        assertEquals("native", key.emulatorBackend)
+        assertEquals("ARM|Mali-G77", key.driverFingerprint)
+    }
+
+    @Test
+    fun `voice optimization key omits blank gpu fingerprint safely`() {
+        val device = DeviceInfo(
+            manufacturer = "Test",
+            model = "Device",
+            androidVersion = "14",
+            sdkInt = 34,
+            supportedAbis = emptyList(),
+            cpuModel = "cpu",
+            cpuCores = 4,
+            totalRamMb = 4096,
+            gpuVendor = null,
+            gpuRenderer = null
+        )
+
+        val key = VoiceOptimizationFeedbackContext.buildContextKey(
+            device = device,
+            gamePackage = null,
+            gameVersion = null,
+            emulatorBackend = null
+        )
+
+        assertEquals("", key.gamePackage)
+        assertEquals(null, key.driverFingerprint)
+    }
+
 }
