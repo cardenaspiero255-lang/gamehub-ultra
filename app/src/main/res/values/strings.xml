@@ -260,4 +260,10 @@
     <string name="peripherals_loading">Consultando periféricos conectados…</string>
     <string name="peripherals_none_detected">No hay periféricos externos de entrada detectados.</string>
     <string name="peripherals_audio_label">Salidas de audio externas</string>
+
+    <string name="session_coach_title">Ultra · Coach de sesión</string>
+    <string name="session_coach_live">Sesión activa · %1$d muestras analizadas</string>
+    <string name="session_coach_stable">Sin cambios relevantes: Ultra evita avisos por variaciones pequeñas.</string>
+    <string name="session_coach_waiting">Esperando telemetría real para evaluar la próxima sesión.</string>
+    <string name="session_coach_last_session">Última sesión analizada</string>
 </resources>
