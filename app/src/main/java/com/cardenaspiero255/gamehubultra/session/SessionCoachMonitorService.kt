@@ -20,6 +20,7 @@ import com.cardenaspiero255.gamehubultra.domain.AiSessionCoach
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachPriority
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe
+import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
@@ -46,6 +47,23 @@ class SessionCoachMonitorService : Service() {
         private const val SAMPLE_INTERVAL_MS = 15_000L
         private const val LATENCY_RECHECK_MS = 30_000L
         private const val MAX_SESSION_DURATION_MS = 4L * 60L * 60L * 1_000L
+
+        internal fun shouldProbeLatency(
+            network: ConnectivityTelemetry,
+            lastLatencyCheckAt: Long,
+            nowMillis: Long
+        ): Boolean =
+            network.connected &&
+                network.validated &&
+                !network.metered &&
+                network.networkHandle != null &&
+                (
+                    lastLatencyCheckAt == 0L ||
+                        nowMillis - lastLatencyCheckAt >= LATENCY_RECHECK_MS
+                    )
+
+        internal fun shouldResetLatency(network: ConnectivityTelemetry): Boolean =
+            !network.connected || !network.validated || network.metered
 
         internal fun start(
             context: Context,
@@ -228,23 +246,19 @@ class SessionCoachMonitorService : Service() {
         }
         val network = base.connectivity
         val handle = network.networkHandle
-        val shouldProbe =
-            network.connected &&
-                network.validated &&
-                !network.metered &&
-                handle != null &&
-                (
-                    lastLatencyCheckAt == 0L ||
-                        nowMillis - lastLatencyCheckAt >= LATENCY_RECHECK_MS
-                    )
+        val shouldProbe = shouldProbeLatency(
+            network = network,
+            lastLatencyCheckAt = lastLatencyCheckAt,
+            nowMillis = nowMillis
+        )
 
         if (shouldProbe) {
             lastLatencyMs = ConnectivityLatencyProbe.measure(
                 context = applicationContext,
-                expectedNetworkHandle = handle
+                expectedNetworkHandle = checkNotNull(handle)
             )
             lastLatencyCheckAt = nowMillis
-        } else if (!network.connected || !network.validated || network.metered) {
+        } else if (shouldResetLatency(network)) {
             lastLatencyMs = null
             lastLatencyCheckAt = 0L
         }
@@ -281,12 +295,7 @@ class SessionCoachMonitorService : Service() {
     private fun stopMonitoring() {
         monitorJob?.cancel()
         monitorJob = null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 }
