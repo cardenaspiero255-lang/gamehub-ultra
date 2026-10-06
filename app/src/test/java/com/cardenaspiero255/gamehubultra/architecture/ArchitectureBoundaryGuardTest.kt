@@ -643,12 +643,14 @@ class ArchitectureBoundaryGuardTest {
 
         listOf(
             "onVoiceSelectedGame = viewModel::persistVoiceSelectedGame",
-            "onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile",
-            "onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile"
+            "onVoiceSelectedProfile = ::persistExternalVoiceProfile",
+            "onVoiceSelectedGameWithProfile = ::persistExternalVoiceGameWithProfile",
+            "viewModel.persistVoiceSelectedProfile(profile)",
+            "viewModel.persistVoiceSelectedGameWithProfile(packageName, profile)"
         ).forEach { expected ->
             assertTrue(
                 app.contains(expected),
-                "Embedded voice callbacks must use durable persistence: $expected"
+                "Embedded voice callbacks must preserve durable persistence through the external-selection safety wrapper: $expected"
             )
         }
 
