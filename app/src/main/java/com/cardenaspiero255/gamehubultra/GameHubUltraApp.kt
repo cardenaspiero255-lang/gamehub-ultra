@@ -285,7 +285,6 @@ internal fun GameHubUltraApp(
                     performanceTimelineSamples = update.timelineSamples
                     sessionCoachSamples = update.coachSamples
                     sessionCoachObservations = update.coachObservations
-                    update.lastCompletedCoachReport?.let { lastSessionCoachReport = it }
                     adaptiveDecision = update.adaptiveDecision
                     delay(10_000)
                 }
@@ -401,6 +400,39 @@ internal fun GameHubUltraApp(
         }
         if (openGame(context, packageName)) {
             recordGameOpened(packageName)
+        }
+    }
+
+    LaunchedEffect(appResumeRefreshToken) {
+        val completedCoachSession = withContext(Dispatchers.IO) {
+            com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
+                .readLastCompletedSession()
+        }
+        completedCoachSession?.let { completed ->
+            lastSessionCoachReport =
+                com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.postSession(
+                    completed.samples
+                )
+            completed.latestObservation?.let { observation ->
+                sessionCoachObservations = listOf(observation)
+            }
+        }
+
+        if (activeSessionId != null) {
+            val monitoredLast = completedCoachSession?.samples?.lastOrNull()
+            runtimeCoordinator.endGameSession(
+                runtimeSnapshot().copy(
+                    metrics = RuntimeSessionMetrics(
+                        batteryPercent = monitoredLast?.batteryPercent
+                            ?: runtimeDiagnostics?.battery?.percent,
+                        thermalStatus = monitoredLast?.thermalStatus
+                            ?: runtimeDiagnostics?.thermal?.status,
+                        ramUsedPercent = runtimeDiagnostics?.memory?.usedPercent,
+                        diagnosticsAvailable =
+                            monitoredLast != null || runtimeDiagnostics != null
+                    )
+                )
+            )
         }
     }
 
