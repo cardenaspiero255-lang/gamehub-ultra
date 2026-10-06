@@ -93,6 +93,13 @@ internal fun AiSessionCoachCard(
     postSession: SessionCoachPostSessionReport?,
     sessionActive: Boolean
 ) {
+    val lines = SessionCoachPresentation.lines(
+        preSession,
+        liveSamples,
+        observations,
+        postSession,
+        sessionActive
+    )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(14.dp),
@@ -102,50 +109,8 @@ internal fun AiSessionCoachCard(
                 stringResource(R.string.session_coach_title),
                 style = MaterialTheme.typography.titleLarge
             )
-
-            if (sessionActive) {
-                Text(
-                    stringResource(R.string.session_coach_live, liveSamples.size),
-                    style = MaterialTheme.typography.labelLarge
-                )
-                if (observations.isEmpty()) {
-                    Text(
-                        stringResource(R.string.session_coach_stable),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    observations.takeLast(3).forEach { observation ->
-                        Text(
-                            "• ${observation.title}: ${observation.detail}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        observation.action?.let { action ->
-                            Text(action, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            } else {
-                preSession?.let { message ->
-                    Text(message.title, style = MaterialTheme.typography.labelLarge)
-                    Text(message.detail, style = MaterialTheme.typography.bodySmall)
-                    message.action?.let { action ->
-                        Text(action, style = MaterialTheme.typography.bodySmall)
-                    }
-                } ?: Text(
-                    stringResource(R.string.session_coach_waiting),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-
-            postSession?.let { report ->
-                Text(
-                    stringResource(R.string.session_coach_last_session),
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Text(report.summary, style = MaterialTheme.typography.bodySmall)
-                report.nextSteps.take(3).forEach { step ->
-                    Text("• $step", style = MaterialTheme.typography.bodySmall)
-                }
+            lines.forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
