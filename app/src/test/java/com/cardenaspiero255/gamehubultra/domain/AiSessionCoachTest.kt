@@ -72,7 +72,7 @@ class AiSessionCoachTest {
             thermalStatus = 3,
             thermalHeadroom = 0.84f,
             refreshRateHz = 60f,
-            latencyMs = 145
+            latencyMs = 320
         )
 
         assertTrue(AiSessionCoach.midSession(previous, noisy).isEmpty())
@@ -88,9 +88,9 @@ class AiSessionCoachTest {
     fun recurringPatternsRequireRepeatedEvidence() {
         val samples = listOf(
             SessionCoachSnapshot(1_000, 80, 1, 0.30f, 120f, 35),
-            SessionCoachSnapshot(2_000, 72, 3, 0.82f, 60f, 135),
-            SessionCoachSnapshot(3_000, 64, 3, 0.85f, 60f, 150),
-            SessionCoachSnapshot(4_000, 55, 4, 0.88f, 60f, 160)
+            SessionCoachSnapshot(2_000, 72, 3, 0.82f, 60f, 280),
+            SessionCoachSnapshot(3_000, 64, 3, 0.85f, 60f, 310),
+            SessionCoachSnapshot(4_000, 55, 4, 0.88f, 60f, 330)
         )
 
         val patterns = AiSessionCoach.recurringPatterns(samples)
@@ -154,7 +154,7 @@ class AiSessionCoachTest {
                 reasons = listOf(
                     "Batería: nivel bajo sin carga (-20).",
                     "Térmica: throttling severo o superior (-25).",
-                    "Latencia: ≥120 ms (-10).",
+                    "Latencia: medición elevada (-10).",
                     "Almacenamiento: menos de 10 % libre (-15)."
                 )
             ),
@@ -164,7 +164,7 @@ class AiSessionCoachTest {
                 thermalStatus = 4,
                 thermalHeadroom = 0.90f,
                 refreshRateHz = 60f,
-                latencyMs = 180L
+                latencyMs = 320L
             )
         )
 
