@@ -432,17 +432,32 @@ internal fun GameHubUltraApp(
         mutableStateOf<SmartRecommendationRevertTarget?>(null)
     }
 
+    val smartRecommendationInput = SmartPerformanceInput(
+        device = device,
+        runtime = runtimeDiagnostics,
+        gamePackage = selectedGamePackage,
+        gameVersion = selectedGameVersion,
+        emulatorBackend = EmulatorBackendDetector.detect(),
+        currentProfile = uiState.effectiveProfile,
+        historicalObservations = optimizationObservations
+    )
     val smartRecommendation = SmartPerformanceAdvisor.recommend(
-        SmartPerformanceInput(
-            device = device,
-            runtime = runtimeDiagnostics,
-            gamePackage = selectedGamePackage,
-            gameVersion = selectedGameVersion,
-            emulatorBackend = EmulatorBackendDetector.detect(),
-            currentProfile = uiState.effectiveProfile,
-            historicalObservations = optimizationObservations
+        smartRecommendationInput
+    )
+    val smartRecommendationRejectionKey = Triple(
+        currentOptimizationKey,
+        smartRecommendation.profile,
+        smartRecommendationInput.copy(
+            historicalObservations =
+                SmartRecommendationRevertPolicy.rejectionStableObservations(
+                    recommendedProfile = smartRecommendation.profile,
+                    observations = smartRecommendationInput.historicalObservations
+                )
         )
     )
+    var rejectedSmartRecommendation by remember(smartRecommendationRejectionKey) {
+        mutableStateOf(false)
+    }
     val canRevertSmartRecommendation =
         SmartRecommendationRevertPolicy.canRevert(
             target = smartRecommendationRevertTarget,
@@ -567,11 +582,18 @@ internal fun GameHubUltraApp(
                     selectProfile(smartRecommendation.profile)
                 },
                 onRejectSmartRecommendation = {
-                    runtimeCoordinator.recordRecommendationFeedback(
-                        runtimeSnapshot(),
-                        smartRecommendation.profile,
-                        OptimizationFeedbackDecision.REJECTED
-                    )
+                    if (
+                        SmartRecommendationRevertPolicy.shouldRecordRejected(
+                            alreadyRejected = rejectedSmartRecommendation
+                        )
+                    ) {
+                        rejectedSmartRecommendation = true
+                        runtimeCoordinator.recordRecommendationFeedback(
+                            runtimeSnapshot(),
+                            smartRecommendation.profile,
+                            OptimizationFeedbackDecision.REJECTED
+                        )
+                    }
                 },
                 onRevertSmartRecommendation = {
                     val target = smartRecommendationRevertTarget
