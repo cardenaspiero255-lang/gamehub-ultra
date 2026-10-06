@@ -216,12 +216,23 @@ class WikimediaUltraResearchProvider(
                 stage = "wikimedia-search"
             )
         val searchSnippet = jsonString(searchResponse.body, "snippet").orEmpty()
-        val titleOrTrustedMatch = titleMatchesTopic(
+        val directTitleMatch = titleMatchesTopic(
             topic = topic,
             title = title,
             currentQuestion = currentQuestion,
             searchSnippet = ""
         )
+        val verifiedTranslatedTitleMatch =
+            !directTitleMatch &&
+                isEnglishDefinitionQuestion(currentQuestion) &&
+                translatedSpanishTitleMatchesEnglishTopic(
+                    topic = topic,
+                    spanishTitle = title,
+                    deadlineNanos = deadlineNanos,
+                    perCallBudgetMillis = perCallBudgetMillis
+                )
+        val titleOrTrustedMatch =
+            directTitleMatch || verifiedTranslatedTitleMatch
         val snippetOnlyMatch =
             !titleOrTrustedMatch &&
                 titleMatchesTopic(
@@ -491,13 +502,48 @@ class WikimediaUltraResearchProvider(
         }
         if (topicTokens.isNotEmpty() && snippetTokens.isNotEmpty() && snippetRelated) return true
 
-        // Spanish Wikipedia may return the translated Spanish article title for
-        // a valid English definition query (for example "black hole" ->
-        // "Agujero negro"). In that case lexical overlap is impossible by
-        // design, so rely on Wikipedia's top search result only for an explicit
-        // English definition question; other query classes keep the strict
-        // lexical relevance guard.
-        return isEnglishDefinitionQuestion(currentQuestion)
+        return false
+    }
+
+    private fun translatedSpanishTitleMatchesEnglishTopic(
+        topic: String,
+        spanishTitle: String,
+        deadlineNanos: Long,
+        perCallBudgetMillis: Long
+    ): Boolean {
+        val validationUrl = buildString {
+            append("https://en.wikipedia.org/w/api.php")
+            append("?action=query&generator=search&gsrlimit=1")
+            append("&prop=langlinks&lllang=es&lllimit=1")
+            append("&format=json&origin=*&gsrsearch=")
+            append(urlEncode(topic))
+        }
+
+        val validationTimeout = remainingCallTimeoutMillis(
+            deadlineNanos = deadlineNanos,
+            perCallBudgetMillis = perCallBudgetMillis
+        ) ?: return false
+
+        val response = when (
+            val attempt = getSafely(validationUrl, validationTimeout)
+        ) {
+            is TransportOutcome.Success -> attempt.response
+            is TransportOutcome.Failure -> return false
+        }
+        if (response.statusCode !in 200..299) return false
+
+        val englishTitle = jsonString(response.body, "title")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+        val translatedTitle = jsonString(response.body, "*")
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: return false
+
+        return textMatchesTopic(topic, englishTitle) &&
+            normalizedTopicPhrase(translatedTitle) ==
+                normalizedTopicPhrase(spanishTitle)
     }
 
     private fun isEnglishDefinitionQuestion(value: String): Boolean {
