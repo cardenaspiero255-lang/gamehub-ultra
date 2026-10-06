@@ -647,6 +647,13 @@ class WikimediaUltraResearchProvider(
             )
             .trim(' ', '¿', '?', '¡', '!')
 
+        Regex(
+            """^what\s+does\s+(.+?)\s+mean$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(current)?.groupValues?.getOrNull(1)?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?.let { return it }
+
         return current
             .replace(
                 Regex(
