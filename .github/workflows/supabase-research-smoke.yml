@@ -58,6 +58,14 @@ jobs:
         env:
           SUPABASE_PUBLISHABLE_KEYS: '{"ci":"ci-smoke-key"}'
           SUPABASE_ANON_KEY: ci-smoke-key
+          # Use real configured providers when repository CI secrets are available.
+          # SUPABASE_DB_URL lets the branch-local server resolve GEMINI/XAI/Tavily
+          # from the existing Supabase Vault without copying provider keys into code.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
           ULTRA_QUIET_REQUEST_LOGS: "1"
           ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
