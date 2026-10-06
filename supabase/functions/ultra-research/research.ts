@@ -5125,6 +5125,24 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     };
   }
 
+  if (
+    clean === "televisor oled" ||
+    clean === "television oled" ||
+    clean === "oled"
+  ) {
+    const displayText =
+      "Un televisor OLED usa diodos orgánicos emisores de luz: cada píxel " +
+      "emite su propia luz y puede apagarse individualmente, lo que permite " +
+      "negros profundos, alto contraste y un control muy preciso de la imagen.";
+    return {
+      claimKey: "local-stable:oled-display",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   return null;
 }
 
