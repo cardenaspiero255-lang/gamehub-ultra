@@ -7393,7 +7393,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "concurrent stable-knowledge requests coalesce one primary evidence lookup",
   async () => {
@@ -7406,7 +7405,9 @@ Deno.test(
           url.searchParams.get("generator") === "search"
         ) {
           wikipediaCalls += 1;
-          await new Promise((resolve) => setTimeout(resolve, 80));
+          await new Promise((resolve) =>
+            setTimeout(resolve, 80)
+          );
           return jsonResponse({
             query: {
               pages: {
