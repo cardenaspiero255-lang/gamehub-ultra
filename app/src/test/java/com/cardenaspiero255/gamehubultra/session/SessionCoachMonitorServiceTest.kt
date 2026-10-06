@@ -189,6 +189,7 @@ class SessionCoachMonitorServiceTest {
             2
         )
         controller.destroy()
+        Unit
     }
 
     @Test
