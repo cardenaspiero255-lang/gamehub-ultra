@@ -7198,7 +7198,6 @@ Deno.test("exoplanet data questions use NASA Exoplanet Archive TAP", async () =>
   }
 });
 
-
 Deno.test(
   "protein data questions use keyless UniProt specialist",
   async () => {
@@ -7225,7 +7224,9 @@ Deno.test(
             sequence: { length: 393 },
             comments: [{
               commentType: "FUNCTION",
-              texts: [{ value: "Acts as a tumor suppressor in many tumor types." }],
+              texts: [{
+                value: "Acts as a tumor suppressor in many tumor types.",
+              }],
             }],
           }],
         });
