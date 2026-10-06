@@ -216,8 +216,22 @@ class WikimediaUltraResearchProvider(
                 stage = "wikimedia-search"
             )
         val searchSnippet = jsonString(searchResponse.body, "snippet").orEmpty()
+        val titleOrTrustedMatch = titleMatchesTopic(
+            topic = topic,
+            title = title,
+            currentQuestion = currentQuestion,
+            searchSnippet = ""
+        )
+        val snippetOnlyMatch =
+            !titleOrTrustedMatch &&
+                titleMatchesTopic(
+                    topic = topic,
+                    title = title,
+                    currentQuestion = currentQuestion,
+                    searchSnippet = searchSnippet
+                )
 
-        if (!titleMatchesTopic(topic, title, currentQuestion, searchSnippet)) {
+        if (!titleOrTrustedMatch && !snippetOnlyMatch) {
             return UltraProviderResult.Abstained(
                 reasonCode = "PUBLIC_FALLBACK_IRRELEVANT_RESULT",
                 message = "Wikimedia encontró una página que no coincide con el tema.",
@@ -268,6 +282,14 @@ class WikimediaUltraResearchProvider(
                 message = "Wikimedia no devolvió una explicación utilizable.",
                 stage = "wikimedia-extract"
             )
+
+        if (snippetOnlyMatch && !textMatchesTopic(topic, extract)) {
+            return UltraProviderResult.Abstained(
+                reasonCode = "PUBLIC_FALLBACK_IRRELEVANT_RESULT",
+                message = "Wikimedia no confirmó el tema en el contenido del artículo.",
+                stage = "wikimedia-extract"
+            )
+        }
 
         val canonicalUrl = jsonString(
             extractResponse.body,
@@ -511,6 +533,21 @@ class WikimediaUltraResearchProvider(
             .filterNot(TOPIC_STOP_WORDS::contains)
             .toSet()
 
+    private fun textMatchesTopic(
+        topic: String,
+        text: String
+    ): Boolean {
+        val topicTokens = meaningfulTokens(topic)
+        val textTokens = meaningfulTokens(text)
+        return topicTokens.isNotEmpty() &&
+            textTokens.isNotEmpty() &&
+            topicTokens.any { topicToken ->
+                textTokens.any { textToken ->
+                    lexicallyRelated(topicToken, textToken)
+                }
+            }
+    }
+
     private fun lexicallyRelated(
         left: String,
         right: String
@@ -523,7 +560,12 @@ class WikimediaUltraResearchProvider(
         while (commonPrefix < limit && left[commonPrefix] == right[commonPrefix]) {
             commonPrefix++
         }
-        return commonPrefix >= limit - 2
+        return commonPrefix >= limit - 2 ||
+            (
+                commonPrefix >= 7 &&
+                    left.length >= 9 &&
+                    right.length >= 9
+                )
     }
 
     private fun jsonHasKey(
