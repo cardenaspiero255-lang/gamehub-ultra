@@ -26,11 +26,12 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    # 1000 cases intentionally run sequentially to avoid throttling public sources.
-    # Allow the full bounded-retry budget to finish and always emit its summary.
+    # 10,000 cases keep full semantic coverage. Stable knowledge uses bounded
+    # concurrency; fresh-data checks stay sequential to avoid provider bursts.
     timeout-minutes: 360
     env:
       SMOKE_SEED: ${{ github.run_id }}
+      SMOKE_STABLE_WORKERS: "6"
 
     steps:
       - name: Checkout
@@ -778,6 +779,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import concurrent.futures
           import json
           import os
           import socket
@@ -908,13 +910,31 @@ jobs:
                       f"RETRY safe-abstention attempt={attempt + 1}/{max_attempts} "
                       f"correlation={case['correlationId']} reason={result[2]}"
                   )
-                  time.sleep(0.25 * attempt)
+                  time.sleep(0.5 * attempt)
               return last_result
 
-          # Run sequentially to avoid throttling the public evidence sources.
-          results = []
-          for case in rows:
-              results.append(run_case(case))
+          stable_rows = [case for case in rows if not case["fresh"]]
+          fresh_rows = [case for case in rows if case["fresh"]]
+          stable_workers = int(os.environ.get("SMOKE_STABLE_WORKERS", "6"))
+          if stable_workers < 1 or stable_workers > 12:
+              raise RuntimeError(
+                  f"SMOKE_STABLE_WORKERS must be between 1 and 12, got {stable_workers}"
+              )
+
+          print(
+              f"Smoke execution lanes: stable={len(stable_rows)} "
+              f"workers={stable_workers}; fresh={len(fresh_rows)} workers=1"
+          )
+
+          # Stable knowledge is independent and dominates the 10k corpus, so it
+          # can safely use bounded concurrency. Fresh/current-data cases remain
+          # sequential to avoid bursts against weather/news/public providers.
+          with concurrent.futures.ThreadPoolExecutor(
+              max_workers=stable_workers
+          ) as executor:
+              stable_results = list(executor.map(run_case, stable_rows))
+          fresh_results = [run_case(case) for case in fresh_rows]
+          results = stable_results + fresh_results
 
           failures = 0
           stable_abstentions = 0
@@ -927,7 +947,7 @@ jobs:
               stats[verdict] += 1
               prefix = f"[{label}] correlation={case['correlationId']} query={case['query']}"
               if verdict == "PASS":
-                  print(f"PASS {prefix}")
+                  pass
               elif verdict == "ABSTAIN":
                   if case["fresh"]:
                       fresh_abstentions += 1
