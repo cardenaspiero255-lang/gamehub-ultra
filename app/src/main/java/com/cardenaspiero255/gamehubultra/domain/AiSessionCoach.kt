@@ -66,11 +66,9 @@ object AiSessionCoach {
             if (snapshot.thermalStatus != null && snapshot.thermalStatus >= 3) {
                 add("Estado térmico elevado (${snapshot.thermalStatus}).")
             }
-            if (
-                snapshot.thermalHeadroom != null &&
-                !snapshot.thermalHeadroom.isNaN() &&
-                snapshot.thermalHeadroom >= HIGH_THERMAL_HEADROOM
-            ) {
+            val highThermalHeadroom =
+                snapshot.thermalHeadroom?.let { !it.isNaN() && it >= HIGH_THERMAL_HEADROOM } == true
+            if (highThermalHeadroom) {
                 add("Margen térmico reducido.")
             }
             if (snapshot.latencyMs != null && snapshot.latencyMs >= HIGH_LATENCY_MS) {
@@ -158,8 +156,7 @@ object AiSessionCoach {
                 signal = SessionCoachSignal.THERMAL,
                 occurrences = thermalOccurrences,
                 summary = "La presión térmica elevada se repitió durante la sesión.",
-                action =
-                    "Prueba un perfil menos exigente para reducir presión térmica o mejora la ventilación si el patrón se repite."
+                action = "Prueba un perfil menos exigente para reducir presión térmica o mejora la ventilación si el patrón se repite."
             )
         }
 
@@ -167,17 +164,16 @@ object AiSessionCoach {
         val batteryDrop = batteryValues.firstOrNull()?.let { first ->
             batteryValues.lastOrNull()?.let { last -> (first - last).coerceAtLeast(0) }
         }
-        if (
+        val recurringBatteryDrop =
             batteryValues.size >= RECURRING_EVIDENCE_COUNT &&
-            batteryDrop != null &&
-            batteryDrop >= RECURRING_BATTERY_DROP
-        ) {
+                batteryDrop != null &&
+                batteryDrop >= RECURRING_BATTERY_DROP
+        if (recurringBatteryDrop) {
             patterns += SessionCoachPattern(
                 signal = SessionCoachSignal.BATTERY,
                 occurrences = batteryValues.size,
                 summary = "La batería cayó $batteryDrop % durante las muestras observadas.",
-                action =
-                    "Si necesitas más autonomía, usa un perfil equilibrado o reduce carga visual compatible."
+                action = "Si necesitas más autonomía, usa un perfil equilibrado o reduce carga visual compatible."
             )
         }
 
@@ -189,8 +185,7 @@ object AiSessionCoach {
                 signal = SessionCoachSignal.REFRESH,
                 occurrences = refreshOccurrences,
                 summary = "El refresco observado se mantuvo en 60 Hz o menos repetidamente.",
-                action =
-                    "Comprueba que el perfil y la frecuencia solicitada sean compatibles con el juego y la pantalla."
+                action = "Comprueba que el perfil y la frecuencia solicitada sean compatibles con el juego y la pantalla."
             )
         }
 
@@ -202,8 +197,7 @@ object AiSessionCoach {
                 signal = SessionCoachSignal.LATENCY,
                 occurrences = latencyOccurrences,
                 summary = "La latencia alta se repitió durante la sesión.",
-                action =
-                    "Revisa estabilidad de la red, señal Wi-Fi o congestión antes de la próxima partida competitiva."
+                action = "Revisa estabilidad de la red, señal Wi-Fi o congestión antes de la próxima partida competitiva."
             )
         }
 
@@ -277,8 +271,7 @@ object AiSessionCoach {
             priority = SessionCoachPriority.ACTION,
             title = "Cambio térmico relevante",
             detail = "La presión térmica aumentó de forma suficiente como para afectar una sesión exigente.",
-            action =
-                "Vigila la temperatura y considera un perfil menos exigente si la tendencia continúa."
+            action = "Vigila la temperatura y considera un perfil menos exigente si la tendencia continúa."
         )
     }
 
@@ -314,20 +307,16 @@ object AiSessionCoach {
     ): SessionCoachMessage? {
         val before = previous.refreshRateHz ?: return null
         val after = current.refreshRateHz ?: return null
-        if (
-            before < 90f ||
-            after > before - MEANINGFUL_REFRESH_DROP_HZ
-        ) {
-            return null
-        }
+        val refreshChangeIsNoise =
+            before < 90f || after > before - MEANINGFUL_REFRESH_DROP_HZ
+        if (refreshChangeIsNoise) return null
 
         return SessionCoachMessage(
             signal = SessionCoachSignal.REFRESH,
             priority = SessionCoachPriority.WATCH,
             title = "Caída de refresco observada",
             detail = "El refresco observado pasó de ${before.toInt()} Hz a ${after.toInt()} Hz.",
-            action =
-                "Comprueba si el juego, el perfil y la pantalla permiten la frecuencia esperada."
+            action = "Comprueba si el juego, el perfil y la pantalla permiten la frecuencia esperada."
         )
     }
 
@@ -351,8 +340,7 @@ object AiSessionCoach {
             } else {
                 "La latencia pasó de $before ms a $after ms."
             },
-            action =
-                "Revisa señal, congestión o cambios de conectividad antes de atribuirlo al juego."
+            action = "Revisa señal, congestión o cambios de conectividad antes de atribuirlo al juego."
         )
     }
 
