@@ -49,7 +49,7 @@ object AiSessionCoach {
     private const val MEANINGFUL_BATTERY_DROP = 5
     private const val RECURRING_BATTERY_DROP = 15
     private const val MEANINGFUL_REFRESH_DROP_HZ = 20f
-    private const val HIGH_LATENCY_MS = 120L
+    private const val HIGH_LATENCY_MS = 250L
     private const val MEANINGFUL_LATENCY_JUMP_MS = 40L
     private const val HIGH_THERMAL_HEADROOM = 0.80f
     private const val MEANINGFUL_HEADROOM_JUMP = 0.15f
@@ -177,15 +177,21 @@ object AiSessionCoach {
             )
         }
 
-        val refreshOccurrences = ordered.count { sample ->
-            sample.refreshRateHz?.let { it in 1f..60f } == true
+        val refreshValues = ordered.mapNotNull { it.refreshRateHz }
+        val highestRefresh = refreshValues.maxOrNull()
+        val refreshOccurrences = if (highestRefresh != null && highestRefresh >= 90f) {
+            refreshValues.count { refresh ->
+                refresh <= highestRefresh - MEANINGFUL_REFRESH_DROP_HZ
+            }
+        } else {
+            0
         }
         if (refreshOccurrences >= RECURRING_EVIDENCE_COUNT) {
             patterns += SessionCoachPattern(
                 signal = SessionCoachSignal.REFRESH,
                 occurrences = refreshOccurrences,
-                summary = "El refresco observado se mantuvo en 60 Hz o menos repetidamente.",
-                action = "Comprueba que el perfil y la frecuencia solicitada sean compatibles con el juego y la pantalla."
+                summary = "El refresco observado cayó repetidamente frente al máximo medido de ${highestRefresh?.toInt()} Hz.",
+                action = "Comprueba que el perfil, el juego y la pantalla mantengan la frecuencia esperada."
             )
         }
 
@@ -282,7 +288,9 @@ object AiSessionCoach {
         val before = previous.batteryPercent ?: return null
         val after = current.batteryPercent ?: return null
         val drop = before - after
-        if (drop < MEANINGFUL_BATTERY_DROP && after > 15) return null
+        val crossedLowBatteryThreshold = before > 15 && after <= 15
+        val meaningfulDrop = drop >= MEANINGFUL_BATTERY_DROP
+        if (!crossedLowBatteryThreshold && !meaningfulDrop) return null
 
         return SessionCoachMessage(
             signal = SessionCoachSignal.BATTERY,
@@ -325,9 +333,8 @@ object AiSessionCoach {
         current: SessionCoachSnapshot
     ): SessionCoachMessage? {
         val after = current.latencyMs ?: return null
-        val before = previous.latencyMs
-        val meaningfulJump =
-            before == null || after - before >= MEANINGFUL_LATENCY_JUMP_MS
+        val before = previous.latencyMs ?: return null
+        val meaningfulJump = after - before >= MEANINGFUL_LATENCY_JUMP_MS
 
         if (after < HIGH_LATENCY_MS || !meaningfulJump) return null
 
@@ -335,11 +342,7 @@ object AiSessionCoach {
             signal = SessionCoachSignal.LATENCY,
             priority = SessionCoachPriority.ACTION,
             title = "Pico de latencia",
-            detail = if (before == null) {
-                "Se observaron $after ms de latencia."
-            } else {
-                "La latencia pasó de $before ms a $after ms."
-            },
+            detail = "La medición de conexión pasó de $before ms a $after ms.",
             action = "Revisa señal, congestión o cambios de conectividad antes de atribuirlo al juego."
         )
     }
