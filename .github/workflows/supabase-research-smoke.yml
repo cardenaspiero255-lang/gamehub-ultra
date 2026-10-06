@@ -27,11 +27,11 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     # 10,000 cases keep full semantic coverage. Stable knowledge uses bounded
-    # concurrency; fresh-data checks stay sequential to avoid provider bursts.
+    # concurrency at the validated 12-worker ceiling; fresh-data checks stay sequential to avoid provider bursts.
     timeout-minutes: 360
     env:
       SMOKE_SEED: ${{ github.run_id }}
-      SMOKE_STABLE_WORKERS: "6"
+      SMOKE_STABLE_WORKERS: "12"
 
     steps:
       - name: Checkout
