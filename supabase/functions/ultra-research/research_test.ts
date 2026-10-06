@@ -7105,3 +7105,90 @@ Deno.test("specialist providers share the general research deadline", async () =
     throw new Error("specialist route exceeded shared deadline");
   }
 });
+
+
+Deno.test("chemistry property questions use keyless PubChem PUG REST", async () => {
+  let pubchemCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "pubchem.ncbi.nlm.nih.gov") {
+        throw new Error("unexpected URL " + url);
+      }
+      pubchemCalls += 1;
+      return jsonResponse({
+        PropertyTable: {
+          Properties: [{
+            CID: 2519,
+            Title: "Caffeine",
+            MolecularFormula: "C8H10N4O2",
+            MolecularWeight: "194.19",
+            IUPACName: "1,3,7-trimethylpurine-2,6-dione",
+          }],
+        },
+      });
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Cuál es la fórmula molecular y masa molecular de cafeína?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected PubChem evidence");
+  if (pubchemCalls !== 1) throw new Error("expected one PubChem call");
+  const answer = result.displayText ?? "";
+  if (!answer.includes("C8H10N4O2") || !answer.includes("194.19")) {
+    throw new Error("expected PubChem molecular properties");
+  }
+  if (!(result.sourceId ?? "").includes("pubchem.ncbi.nlm.nih.gov/compound/2519")) {
+    throw new Error("expected PubChem compound source");
+  }
+});
+
+Deno.test("exoplanet data questions use NASA Exoplanet Archive TAP", async () => {
+  let nasaCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "exoplanetarchive.ipac.caltech.edu") {
+        throw new Error("unexpected URL " + url);
+      }
+      nasaCalls += 1;
+      return jsonResponse([
+        {
+          pl_name: "TRAPPIST-1 e",
+          hostname: "TRAPPIST-1",
+          disc_year: 2017,
+          discoverymethod: "Transit",
+          pl_orbper: 6.099615,
+          pl_rade: 0.92,
+          pl_masse: 0.692,
+        },
+      ]);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca datos del NASA Exoplanet Archive sobre TRAPPIST-1 e",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected NASA exoplanet evidence");
+  if (nasaCalls !== 1) throw new Error("expected one NASA archive call");
+  const answer = result.displayText ?? "";
+  if (!answer.includes("TRAPPIST-1 e") || !answer.includes("6.099615")) {
+    throw new Error("expected exoplanet orbital data");
+  }
+  if (!(result.sourceId ?? "").includes("exoplanetarchive.ipac.caltech.edu/TAP/sync")) {
+    throw new Error("expected NASA Exoplanet Archive TAP source");
+  }
+});
