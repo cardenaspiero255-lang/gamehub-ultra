@@ -486,12 +486,10 @@ class WikimediaUltraResearchProvider(
         }
 
         val snippetTokens = meaningfulTokens(searchSnippet)
-        if (topicTokens.isNotEmpty() && snippetTokens.isNotEmpty() &&
-            topicTokens.any { topicToken ->
-                snippetTokens.any { snippetToken -> lexicallyRelated(topicToken, snippetToken) }
-            }) {
-            return true
+        val snippetRelated = topicTokens.any { topicToken ->
+            snippetTokens.any { snippetToken -> lexicallyRelated(topicToken, snippetToken) }
         }
+        if (topicTokens.isNotEmpty() && snippetTokens.isNotEmpty() && snippetRelated) return true
 
         // Spanish Wikipedia may return the translated Spanish article title for
         // a valid English definition query (for example "black hole" ->
