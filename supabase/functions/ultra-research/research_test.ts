@@ -7506,3 +7506,54 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "percentage calculation wrapper resolves the stable percentage topic",
+  async () => {
+    let searchTopic = "";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "es.wikipedia.org" &&
+          url.searchParams.get("generator") === "search"
+        ) {
+          searchTopic = url.searchParams.get("gsrsearch") ?? "";
+          return jsonResponse({
+            query: {
+              pages: {
+                "1": {
+                  pageid: 1,
+                  index: 1,
+                  title: "Porcentaje",
+                  extract:
+                    "Un porcentaje expresa una proporción tomando cien como referencia.",
+                  canonicalurl: "https://es.wikipedia.org/wiki/Porcentaje",
+                },
+              },
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Cómo se calcula un porcentaje?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) throw new Error("expected percentage evidence");
+    if (
+      !searchTopic.toLowerCase().includes("porcentaje") ||
+      searchTopic.toLowerCase().includes("calcula")
+    ) {
+      throw new Error("expected a canonical percentage search topic");
+    }
+  },
+);
