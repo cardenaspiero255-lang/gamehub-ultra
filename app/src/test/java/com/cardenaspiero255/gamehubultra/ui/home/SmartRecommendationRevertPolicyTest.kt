@@ -265,4 +265,28 @@ class SmartRecommendationRevertPolicyTest {
         assertTrue(selected.isEmpty())
     }
 
+    @Test
+    fun `repeated apply preserves existing revert target`() {
+        val feedback = mutableListOf<Pair<PerformanceProfile, OptimizationFeedbackDecision>>()
+        val selected = mutableListOf<PerformanceProfile>()
+        val existingTarget = SmartRecommendationRevertPolicy.capture(
+            gamePackage = "game.a",
+            previousProfile = PerformanceProfile.BALANCED,
+            appliedProfile = PerformanceProfile.X4
+        )
+
+        val preserved = SmartRecommendationActions.apply(
+            gamePackage = "game.a",
+            currentProfile = PerformanceProfile.X4,
+            recommendedProfile = PerformanceProfile.X4,
+            recordFeedback = { profile, decision -> feedback += profile to decision },
+            selectProfile = selected::add,
+            existingRevertTarget = existingTarget
+        )
+
+        assertEquals(existingTarget, preserved)
+        assertTrue(feedback.isEmpty())
+        assertEquals(listOf(PerformanceProfile.X4), selected)
+    }
+
 }
