@@ -90,7 +90,7 @@ internal fun smartPerformancePresentation(
             add(
                 SmartPerformanceDetailSection(
                     titleRes = R.string.smart_performance_contradictions,
-                    lines = explanation.contradictions.take(3).map(::SmartPerformanceDetailLine)
+                    lines = explanation.contradictions.take(3).map { SmartPerformanceDetailLine(it) }
                 )
             )
         }
@@ -106,7 +106,7 @@ internal fun smartPerformancePresentation(
             add(
                 SmartPerformanceDetailSection(
                     titleRes = R.string.smart_performance_not_recommended,
-                    lines = explanation.withheldReasons.take(3).map(::SmartPerformanceDetailLine)
+                    lines = explanation.withheldReasons.take(3).map { SmartPerformanceDetailLine(it) }
                 )
             )
         }
