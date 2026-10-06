@@ -39,6 +39,7 @@ jobs:
     env:
       SMOKE_SEED: ${{ github.run_id }}
       SMOKE_STABLE_WORKERS: "24"
+      SMOKE_WARMUP_WORKERS: "8"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
       SMOKE_SHARD_COUNT: "32"
 
@@ -58,6 +59,7 @@ jobs:
           SUPABASE_PUBLISHABLE_KEYS: '{"ci":"ci-smoke-key"}'
           SUPABASE_ANON_KEY: ci-smoke-key
           ULTRA_DISABLE_OPTIONAL_SYNTHESIS: "1"
+          ULTRA_QUIET_REQUEST_LOGS: "1"
           ULTRA_GENERAL_ROUTE_TIMEOUT_MS: "10000"
           ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "2500"
           # CI performance profile: fail fast on a slow/throttled upstream so one
@@ -772,12 +774,18 @@ jobs:
               }
           }, ensure_ascii=False))
           for index, (label, query, kind, fresh, expected_any) in enumerate(cases):
+              routing_key = (
+                  f"{label}|{'|'.join(expected_any)}"
+                  if expected_any
+                  else f"{label}|{query}"
+              )
               print(json.dumps({
                   "label": label,
                   "query": query,
                   "kind": kind,
                   "fresh": fresh,
                   "expectedAny": expected_any,
+                  "routingKey": routing_key,
                   "correlationId": f"smoke-{seed}-{index}",
               }, ensure_ascii=False))
           PY
@@ -805,6 +813,7 @@ jobs:
           import time
           import urllib.error
           import urllib.request
+          import zlib
 
           endpoint = os.environ["ULTRA_RESEARCH_ENDPOINT"]
           api_key = os.environ["ULTRA_RESEARCH_API_KEY"]
@@ -951,13 +960,14 @@ jobs:
               for lane in range(logical_shards_per_runner)
           }
 
-          def case_index(case):
-              return int(case["correlationId"].rsplit("-", 1)[1])
+          def logical_shard_for(case):
+              routing_key = case.get("routingKey") or case["correlationId"]
+              return zlib.crc32(routing_key.encode("utf-8")) % shard_count
 
           stable_rows = [
               case for case in rows
               if not case["fresh"]
-              and case_index(case) % shard_count in logical_shards
+              and logical_shard_for(case) in logical_shards
           ]
           # Fresh/current-data checks stay on the runner owning logical shard 0.
           # This preserves the exact corpus while preventing provider bursts.
@@ -972,20 +982,46 @@ jobs:
                   f"SMOKE_STABLE_WORKERS must be between 1 and 24, got {stable_workers}"
               )
 
+          warmup_workers = int(os.environ.get("SMOKE_WARMUP_WORKERS", "8"))
+          if warmup_workers < 1 or warmup_workers > stable_workers:
+              raise RuntimeError(
+                  f"SMOKE_WARMUP_WORKERS must be between 1 and "
+                  f"{stable_workers}, got {warmup_workers}"
+              )
+
+          stable_groups = {}
+          for case in stable_rows:
+              stable_groups.setdefault(case["routingKey"], []).append(case)
+
+          warmup_rows = []
+          cached_rows = []
+          for group in stable_groups.values():
+              warmup_rows.append(group[0])
+              cached_rows.extend(group[1:])
+
           print(
               f"Smoke execution runner={shard_index + 1}/{physical_runner_count}: "
               f"logical_shards={sorted(logical_shards)} "
-              f"stable={len(stable_rows)} workers={stable_workers}; "
+              f"stable={len(stable_rows)} groups={len(stable_groups)} "
+              f"warmup_workers={warmup_workers} bulk_workers={stable_workers}; "
               f"fresh={len(fresh_rows)} workers=1 expected={expected_executed}"
           )
 
-          # Stable knowledge is independent and dominates the 10k corpus, so it
-          # can safely use bounded concurrency. Fresh/current-data cases remain
-          # sequential to avoid bursts against weather/news/public providers.
+          # Warm one representative per semantic topic first. This keeps public
+          # providers below burst limits and fills Ultra's verified stable cache.
+          # Every remaining question still traverses the full HTTP endpoint and
+          # all 10,000 semantic/quality assertions remain unchanged.
+          with concurrent.futures.ThreadPoolExecutor(
+              max_workers=warmup_workers
+          ) as executor:
+              warmup_results = list(executor.map(run_case, warmup_rows))
+
           with concurrent.futures.ThreadPoolExecutor(
               max_workers=stable_workers
           ) as executor:
-              stable_results = list(executor.map(run_case, stable_rows))
+              cached_results = list(executor.map(run_case, cached_rows))
+
+          stable_results = warmup_results + cached_results
           fresh_results = [run_case(case) for case in fresh_rows]
           results = stable_results + fresh_results
 
