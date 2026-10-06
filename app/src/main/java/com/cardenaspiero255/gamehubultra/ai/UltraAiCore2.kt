@@ -307,18 +307,14 @@ class UltraAiCore2(
         if (acceptedAlternative != null) return acceptedAlternative
 
         val activeProfile = observation.activeProfileId.trim()
-        if (
-            activeProfile.isNotBlank() &&
+        if (activeProfile.isNotBlank() &&
             !activeProfile.equals(originalProfile, ignoreCase = true) &&
-            feedback.poorOutcomeCount(activeProfile) == 0
-        ) {
+            feedback.poorOutcomeCount(activeProfile) == 0) {
             return activeProfile
         }
 
-        return if (
-            !originalProfile.equals("BALANCED", ignoreCase = true) &&
-            feedback.poorOutcomeCount("BALANCED") < REPEATED_POOR_OUTCOME_THRESHOLD
-        ) {
+        return if (!originalProfile.equals("BALANCED", ignoreCase = true) &&
+            feedback.poorOutcomeCount("BALANCED") < REPEATED_POOR_OUTCOME_THRESHOLD) {
             "BALANCED"
         } else {
             originalProfile
@@ -383,8 +379,7 @@ class UltraAiCore2(
         recommendation: UltraAiRecommendation
     ): String? = when {
         "recovery=poor-history" in recommendation.evidence ->
-            "Ajusté la recomendación porque el rendimiento previo de una sugerencia " +
-                "fue desfavorable o se revirtió repetidamente."
+            "Ajusté la recomendación porque el rendimiento previo de una sugerencia fue desfavorable o se revirtió repetidamente."
         "feedback=contradiction" in recommendation.evidence ->
             "Ajusté la confianza porque detecté feedback contradictorio sobre esta recomendación."
         "recovery=confidence-reduced" in recommendation.evidence ->
