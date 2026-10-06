@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import android.content.Context
+import android.test.mock.MockContext
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
@@ -200,6 +202,93 @@ class VoiceOptimizationFeedbackContextTest {
                 gameVersion = null,
                 emulatorBackend = null
             ).driverFingerprint
+        )
+    }
+
+
+    @Test
+    fun `android voice enrichment falls back when storage context is unavailable`() {
+        val base = GameHubAiContext(
+            selectedGamePackage = null,
+            sustainedPerformanceSupported = true,
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuAvailable = true,
+            thermalStatus = 0,
+            thermalHeadroom = 0.2f,
+            batteryPercent = 80,
+            charging = false,
+            refreshRateHz = 120f,
+            networkValidated = true,
+            networkLatencyMs = 30L,
+            downstreamBandwidthKbps = 100_000L,
+            storageFreePercent = 50,
+            inputDeviceCount = 1,
+            selectedProfile = PerformanceProfile.BALANCED,
+            sessionActive = false
+        )
+        val device = DeviceInfo(
+            manufacturer = "Test",
+            model = "Device",
+            androidVersion = "14",
+            sdkInt = 34,
+            supportedAbis = listOf("arm64-v8a"),
+            cpuModel = "cpu",
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuVendor = "ARM",
+            gpuRenderer = "Mali"
+        )
+        val context = object : MockContext() {
+            override fun getApplicationContext(): Context = this
+        }
+
+        assertEquals(
+            base,
+            VoiceOptimizationFeedbackContext.enrichBlockingOrBase(base, context, device)
+        )
+    }
+
+    @Test
+    fun `android voice enrichment survives package metadata lookup failure`() {
+        val base = GameHubAiContext(
+            selectedGamePackage = "missing.package",
+            sustainedPerformanceSupported = true,
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuAvailable = true,
+            thermalStatus = 0,
+            thermalHeadroom = 0.2f,
+            batteryPercent = 80,
+            charging = false,
+            refreshRateHz = 120f,
+            networkValidated = true,
+            networkLatencyMs = 30L,
+            downstreamBandwidthKbps = 100_000L,
+            storageFreePercent = 50,
+            inputDeviceCount = 1,
+            selectedProfile = PerformanceProfile.BALANCED,
+            sessionActive = false
+        )
+        val device = DeviceInfo(
+            manufacturer = "Test",
+            model = "Device",
+            androidVersion = "14",
+            sdkInt = 34,
+            supportedAbis = listOf("arm64-v8a"),
+            cpuModel = "cpu",
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuVendor = "ARM",
+            gpuRenderer = "Mali"
+        )
+        val context = object : MockContext() {
+            override fun getApplicationContext(): Context = this
+        }
+
+        assertEquals(
+            base,
+            VoiceOptimizationFeedbackContext.enrichBlockingOrBase(base, context, device)
         )
     }
 
