@@ -78,6 +78,8 @@ class Car43LatestReviewRegressionTest {
     fun `unambiguous price questions remain fresh`() {
         listOf(
             "What does an iPhone cost?",
+            "What is the cost of an iPhone?",
+            "What is the cost for a laptop?",
             "What is the price of an iPhone?",
             "How much is an iPhone?",
             "¿Cuánto cuesta un iPhone?"
@@ -144,4 +146,47 @@ class Car43LatestReviewRegressionTest {
             answer
         )
     }
+    @Test
+    fun `GameHub branded profile requests remain feedback aware`() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ) = LocalAiActionCandidate(AiActionAllowlist.PROFILE_X4)
+
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String = "Te recomiendo X4."
+        }
+        val context = healthyContext.copy(
+            selectedProfile = PerformanceProfile.BALANCED,
+            optimizationObservations = listOf(
+                OptimizationObservation(
+                    contextKey = "ctx",
+                    profile = PerformanceProfile.X4,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                    timestampMillis = 2L
+                ),
+                OptimizationObservation(
+                    contextKey = "ctx",
+                    profile = PerformanceProfile.X4,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                    timestampMillis = 1L
+                )
+            )
+        )
+
+        listOf(
+            "GameHub, which profile should I use?",
+            "Which GameHub Ultra profile should I use?"
+        ).forEach { question ->
+            val answer = GameHubAiAdvisor(adapter).chat(question, context)
+            kotlin.test.assertFalse(answer.contains("recomiendo X4", ignoreCase = true), question)
+            kotlin.test.assertTrue(answer.contains("balance", ignoreCase = true), question)
+        }
+    }
+
 }
