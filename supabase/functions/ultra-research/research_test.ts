@@ -6927,3 +6927,175 @@ Deno.test("earthquake questions use the public USGS catalog", async () => {
     throw new Error("expected USGS source");
   }
 });
+
+
+Deno.test("stable earthquake definitions bypass the recent-event specialist", async () => {
+  let usgsCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "earthquake.usgs.gov") {
+        usgsCalls += 1;
+        return jsonResponse({ type: "FeatureCollection", features: [] });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.get("list") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            search: [{
+              title: "Terremoto",
+              snippet: "Un terremoto es un movimiento de la corteza terrestre.",
+            }],
+          },
+        });
+      }
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.get("prop")?.includes("extracts")
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                title: "Terremoto",
+                extract:
+                  "Un terremoto es un movimiento brusco de la corteza terrestre.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Terremoto",
+              },
+            },
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Qué es un terremoto?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected definition evidence");
+  if (usgsCalls !== 0) {
+    throw new Error("stable earthquake definitions must not call USGS");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("terremoto")) {
+    throw new Error("expected earthquake definition");
+  }
+});
+
+Deno.test("single-token specialist topics reject fuzzy near-matches", async () => {
+  let arxivCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "export.arxiv.org") {
+        arxivCalls += 1;
+        return Promise.resolve(
+          new Response(
+            `<?xml version="1.0" encoding="UTF-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <id>https://arxiv.org/abs/2601.99999v1</id>
+                <title>Astrology and Personality Prediction</title>
+                <summary>We study astrology-based personality prediction.</summary>
+                <published>2026-01-20T00:00:00Z</published>
+              </entry>
+            </feed>`,
+            {
+              status: 200,
+              headers: { "content-type": "application/atom+xml" },
+            },
+          ),
+        );
+      }
+      if (url.hostname === "api.semanticscholar.org") {
+        return jsonResponse({ data: [] });
+      }
+      if (url.hostname === "api.crossref.org") {
+        return jsonResponse({ message: { items: [] } });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca preprints de arXiv sobre astronomy",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (!result.abstained) {
+    throw new Error("astronomy must not accept an astrology preprint");
+  }
+  if (arxivCalls !== 1) throw new Error("expected exactly one arXiv call");
+});
+
+Deno.test("specialist providers share the general research deadline", async () => {
+  let specialistAborted = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.semanticscholar.org") {
+        return new Promise<Response>((resolve) => {
+          const signal = init?.signal;
+          if (signal?.aborted) {
+            specialistAborted = true;
+            resolve(jsonResponse({ data: [] }));
+            return;
+          }
+          signal?.addEventListener(
+            "abort",
+            () => {
+              specialistAborted = true;
+              resolve(jsonResponse({ data: [] }));
+            },
+            { once: true },
+          );
+        });
+      }
+      throw new Error("unexpected URL after specialist timeout " + url);
+    },
+    env: (name) => {
+      if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
+      if (name === "ULTRA_GENERAL_ROUTE_TIMEOUT_MS") return "800";
+      return undefined;
+    },
+  };
+
+  const started = performance.now();
+  const result = await Promise.race([
+    routeResearchQuery(
+      "Busca papers científicos sobre exoplanet atmospheres",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    ),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("specialist route exceeded shared deadline")),
+        1_500,
+      )
+    ),
+  ]);
+  const elapsed = performance.now() - started;
+
+  if (!result.abstained) {
+    throw new Error("timed-out specialist route should fail closed");
+  }
+  if (!specialistAborted) {
+    throw new Error("shared deadline must abort the specialist request");
+  }
+  if (elapsed >= 1_500) {
+    throw new Error("specialist route exceeded shared deadline");
+  }
+});
