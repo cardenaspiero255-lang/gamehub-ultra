@@ -5,8 +5,8 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
+import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
 import com.cardenaspiero255.gamehubultra.domain.EmulatorBackendDetector
-import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -85,26 +85,11 @@ internal object VoiceOptimizationFeedbackContext {
         gamePackage: String?,
         gameVersion: String?,
         emulatorBackend: String?
-    ): OptimizationContextKey {
-        val gpuVendor = device.gpuVendor?.trim().orEmpty()
-        val gpuRenderer = device.gpuRenderer?.trim().orEmpty()
-        val driverFingerprint = if (gpuVendor.isBlank() && gpuRenderer.isBlank()) {
-            null
-        } else {
-            "$gpuVendor|$gpuRenderer"
-        }
-        return OptimizationContextKey(
-            deviceFingerprint = OptimizationFingerprint.from(
-                device = device,
-                gamePackage = gamePackage,
-                gameVersion = gameVersion,
-                emulatorBackend = emulatorBackend,
-                driverFingerprint = driverFingerprint
-            ),
-            gamePackage = gamePackage.orEmpty(),
+    ): OptimizationContextKey =
+        OptimizationContextKeyFactory.from(
+            device = device,
+            gamePackage = gamePackage,
             gameVersion = gameVersion,
-            emulatorBackend = emulatorBackend,
-            driverFingerprint = driverFingerprint
+            emulatorBackend = emulatorBackend
         )
-    }
 }
