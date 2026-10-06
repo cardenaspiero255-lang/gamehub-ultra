@@ -510,7 +510,7 @@ class WikimediaUltraResearchProvider(
         ).trimStart(' ', '¿', '¡')
 
         return Regex(
-            """^(?:what\s+(?:is|are|was|were)|who\s+(?:is|was|are|were))\b""",
+            """^(?:what\s+(?:is|are|was|were|does)|who\s+(?:is|was|are|were)|meaning\s+of)\b""",
             RegexOption.IGNORE_CASE
         ).containsMatchIn(stripped)
     }
