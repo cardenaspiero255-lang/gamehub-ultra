@@ -272,10 +272,11 @@ class UltraAiCore2(
             .takeIf(Double::isFinite)
             ?.coerceIn(0.0, 1.0)
             ?: 0.0
+        val recoveryFloor = minOf(MIN_RECOVERY_CONFIDENCE, baseConfidence)
         return recommendation.copy(
             profileId = recoveredProfile,
             confidence = (baseConfidence - confidencePenalty)
-                .coerceIn(MIN_RECOVERY_CONFIDENCE, 1.0),
+                .coerceIn(recoveryFloor, 1.0),
             evidence = evidence.distinct()
         )
     }
