@@ -7453,7 +7453,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "generic bear definition rejects fictional character search results",
   async () => {
