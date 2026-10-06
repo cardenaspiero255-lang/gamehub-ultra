@@ -142,4 +142,30 @@ class VoiceOptimizationFeedbackContextRobolectricTest {
             store.clearAll()
         }
     }
+
+    @Test
+    fun `context key builder is directly verifiable on Android`() {
+        val context = RuntimeEnvironment.getApplication()
+        val device = DeviceInfo(
+            manufacturer = "Vivo",
+            model = "V25 Pro",
+            androidVersion = "14",
+            sdkInt = 34,
+            supportedAbis = listOf("arm64-v8a"),
+            cpuModel = "Dimensity",
+            cpuCores = 8,
+            totalRamMb = 12_288,
+            gpuVendor = "ARM",
+            gpuRenderer = "Mali-G77"
+        )
+
+        val key = VoiceOptimizationFeedbackContext.contextKey(
+            context = context,
+            device = device,
+            gamePackage = null
+        )
+
+        assertTrue(key.gamePackage.isEmpty())
+        assertTrue(key.driverFingerprint == "ARM|Mali-G77")
+    }
 }
