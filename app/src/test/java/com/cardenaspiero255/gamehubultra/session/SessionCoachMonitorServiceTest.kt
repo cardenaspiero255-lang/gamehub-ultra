@@ -53,6 +53,23 @@ class SessionCoachMonitorServiceTest {
     }
 
     @Test
+    fun startCreatesProvisionalSessionForValidPackage() {
+        val id = SessionCoachMonitorService.start(
+            context = context,
+            packageName = "game.a",
+            nowMillis = 1_000L,
+            sessionId = "session-start"
+        )
+
+        assertEquals("session-start", id)
+        val active = assertNotNull(SessionCoachSessionStore(context).readActiveSession())
+        assertEquals("game.a", active.packageName)
+        assertEquals(1_000L, active.startedAtMillis)
+
+        SessionCoachMonitorService.cancelLaunch(context)
+    }
+
+    @Test
     fun finishOnReturnPersistsCompletedSessionAndPostsSummary() {
         val store = SessionCoachSessionStore(context)
         assertTrue(store.beginSession("session", "game.a", 1_000L))
