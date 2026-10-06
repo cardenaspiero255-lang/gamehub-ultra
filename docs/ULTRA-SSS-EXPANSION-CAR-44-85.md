@@ -5,9 +5,10 @@ This document is an **additive overlay** for `docs/CAR-31-70-ULTRA-NEXT-GEN.md`.
 It does **not** replace, rename, remove, or weaken the original scope of any CAR. Every existing CAR keeps its original acceptance criteria. The SSS additions below are extra capabilities and extra quality gates.
 
 Historical note:
-- CAR-70, CAR-71, CAR-72, CAR-73 and CAR-74 already exist in the project history and must not be reused for new work.
+- CAR-70, CAR-71, CAR-72, CAR-73 and CAR-74 already exist in the project history and must not be reused for unrelated new work.
 - New SSS megacapabilities therefore start at **CAR-75**.
-- CAR-71 remains the existing conversational-memory foundation.
+- CAR-71 remains the existing conversational-memory foundation, but **must not be treated as complete merely because its number already exists**. Its canonical acceptance criteria remain authoritative until every required history/thread/search/filter/export/import/privacy/offline item and applicable gate is actually implemented and verified.
+- Any CAR-81 Memory 4.0 work must preserve CAR-71 scope and treat still-missing CAR-71 requirements as prerequisites or explicit carried-forward work; CAR-81 may extend them, not silently skip them.
 - CAR-72 remains the existing network/game-booster foundation.
 - CAR-73 remains the existing general-assistant/research foundation.
 - CAR-74 remains the existing verified-query execution hardening foundation.
@@ -637,14 +638,25 @@ Required metrics:
 - action success/rollback;
 - per-domain results instead of one misleading global score.
 
-CAR-85 may only label a subsystem “SSS” when its published threshold is met repeatedly on the fixed benchmark suite. GameHub Ultra as a whole is not “SSS in everything” while a required subsystem remains below its gate.
+Before any CAR-85 “SSS” label is applied, the repository must publish a **versioned pass/fail manifest** for the fixed benchmark suite. For every required metric and every benchmark domain, that manifest must define:
+
+- the exact metric calculation/formula;
+- the numeric pass threshold or explicit binary acceptance rule;
+- the minimum number of independent runs/repetitions;
+- how repeated-run results are aggregated (for example minimum, median, percentile or confidence interval);
+- the corpus/benchmark version and relevant runtime/provider configuration;
+- and the rule that converts the recorded result into PASS/FAIL.
+
+Thresholds cannot be invented after seeing the result. Changes to a threshold, formula, run count, aggregation rule or fixed-suite composition require a new manifest version and must preserve historical results for comparison.
+
+CAR-85 may only label a subsystem “SSS” when **every required metric for that subsystem passes the versioned manifest repeatedly on the fixed benchmark suite**. GameHub Ultra as a whole is not “SSS in everything” while a required subsystem remains below its gate.
 
 # Dependency order
 
 Recommended dependency graph after CAR-43 is clean:
 
 1. Continue CAR-44..69 in their approved order, applying the SSS overlay above whenever each CAR is reached.
-2. Preserve CAR-70..74 as already-existing foundations/history.
+2. Preserve CAR-70..74 as already-existing numbered foundations/history **without assuming every preserved CAR is complete**. Re-check each canonical acceptance list before depending on it; in particular, unresolved CAR-71 requirements must be completed or explicitly carried as prerequisites before CAR-81 can claim its memory layer is complete.
 3. CAR-75 Reasoning Core.
 4. CAR-76 Research Mesh.
 5. CAR-77 Evidence/Confidence.
