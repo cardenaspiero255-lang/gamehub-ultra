@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra.voice
 
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
+import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
@@ -156,6 +157,37 @@ class VoiceOptimizationFeedbackContextTest {
             VoiceOptimizationFeedbackContext.enrichOrBase(base) {
                 error("storage unavailable")
             }
+        )
+    }
+
+    @Test
+    fun `voice and ui optimization keys share the same gpu normalization`() {
+        val partialGpu = device.copy(gpuVendor = " ARM ", gpuRenderer = null)
+        val expected = OptimizationContextKeyFactory.from(
+            device = partialGpu,
+            gamePackage = "com.example.game",
+            gameVersion = "1.2.3",
+            emulatorBackend = null
+        )
+        val actual = VoiceOptimizationFeedbackContext.buildContextKey(
+            device = partialGpu,
+            gamePackage = "com.example.game",
+            gameVersion = "1.2.3",
+            emulatorBackend = null
+        )
+
+        assertEquals("ARM", expected.driverFingerprint)
+        assertEquals(expected, actual)
+
+        val emptyGpu = partialGpu.copy(gpuVendor = " ", gpuRenderer = null)
+        assertEquals(
+            null,
+            OptimizationContextKeyFactory.from(
+                device = emptyGpu,
+                gamePackage = "com.example.game",
+                gameVersion = null,
+                emulatorBackend = null
+            ).driverFingerprint
         )
     }
 
