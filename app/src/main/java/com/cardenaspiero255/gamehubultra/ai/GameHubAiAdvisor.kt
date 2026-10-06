@@ -712,10 +712,8 @@ class GameHubAiAdvisor(
             )
         } ?: return advice
 
-        if (
-            recoveredProfile == PerformanceProfile.X4 &&
-            !context.sustainedPerformanceSupported
-        ) {
+        if (recoveredProfile == PerformanceProfile.X4 &&
+            !context.sustainedPerformanceSupported) {
             return advice
         }
         if (recoveredProfile == advice.suggestedProfile) {
