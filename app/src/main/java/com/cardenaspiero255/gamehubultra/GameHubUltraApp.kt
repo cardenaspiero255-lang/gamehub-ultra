@@ -141,6 +141,9 @@ internal fun GameHubUltraApp(
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
     var performanceTimelineSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineSample>>(emptyList()) }
+    var sessionCoachSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot>>(emptyList()) }
+    var sessionCoachObservations by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage>>(emptyList()) }
+    var lastSessionCoachReport by remember { mutableStateOf<com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?>(null) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
@@ -280,6 +283,9 @@ internal fun GameHubUltraApp(
                     runtimeDiagnostics = update.diagnostics
                     telemetryTrend = update.telemetryTrend
                     performanceTimelineSamples = update.timelineSamples
+                    sessionCoachSamples = update.coachSamples
+                    sessionCoachObservations = update.coachObservations
+                    update.lastCompletedCoachReport?.let { lastSessionCoachReport = it }
                     adaptiveDecision = update.adaptiveDecision
                     delay(10_000)
                 }
@@ -408,6 +414,38 @@ internal fun GameHubUltraApp(
         events = performanceHistory,
         activeSessionId = activeSessionId
     )
+
+    val sessionCoachPreMessage = runtimeDiagnostics?.let { diagnostics ->
+        val readiness = com.cardenaspiero255.gamehubultra.domain.GamingReadinessCalculator.calculate(
+            com.cardenaspiero255.gamehubultra.domain.GamingReadinessInput(
+                cpuCores = device.cpuCores,
+                totalRamMb = device.totalRamMb,
+                gpuAvailable = !device.gpuRenderer.isNullOrBlank() ||
+                    !device.gpuVendor.isNullOrBlank(),
+                thermalStatus = diagnostics.thermal.status,
+                thermalHeadroom = diagnostics.thermal.headroom,
+                batteryPercent = diagnostics.battery.percent,
+                charging = diagnostics.battery.charging,
+                refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
+                networkValidated = diagnostics.connectivity.validated,
+                networkLatencyMs = diagnostics.connectivity.latencyMs,
+                downstreamBandwidthKbps = diagnostics.connectivity.downstreamBandwidthKbps,
+                storageFreePercent = diagnostics.storage.freePercent,
+                inputDeviceCount = diagnostics.inputDeviceCount
+            )
+        )
+        com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.preSession(
+            readiness = readiness,
+            snapshot = com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot(
+                timestampMillis = 0L,
+                batteryPercent = diagnostics.battery.percent,
+                thermalStatus = diagnostics.thermal.status,
+                thermalHeadroom = diagnostics.thermal.headroom,
+                refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
+                latencyMs = diagnostics.connectivity.latencyMs
+            )
+        )
+    }
 
     var smartRecommendationRevertTarget by remember(selectedGamePackage) { mutableStateOf<SmartRecommendationRevertTarget?>(null) }
 
@@ -556,6 +594,10 @@ internal fun GameHubUltraApp(
                 telemetryTrend = telemetryTrend,
                 performanceTimeline = performanceTimeline,
                 sessionHistory = sessionHistory,
+                sessionCoachPreMessage = sessionCoachPreMessage,
+                sessionCoachSamples = sessionCoachSamples,
+                sessionCoachObservations = sessionCoachObservations,
+                lastSessionCoachReport = lastSessionCoachReport,
                 onClearSessions = {
                     viewModel.clearSessionHistory()
                 },
