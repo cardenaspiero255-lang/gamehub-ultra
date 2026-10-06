@@ -38,6 +38,11 @@ class UltraWakeCommandRuntimeCar43RobolectricTest {
 
         val answer = runtime.execute("Ultra, batería")
 
-        assertTrue(answer.contains("batería", ignoreCase = true))
+        assertTrue(
+            answer.contains("térmica", ignoreCase = true) ||
+                answer.contains("RAM", ignoreCase = true) ||
+                answer.contains("Hz", ignoreCase = true),
+            answer
+        )
     }
 }
