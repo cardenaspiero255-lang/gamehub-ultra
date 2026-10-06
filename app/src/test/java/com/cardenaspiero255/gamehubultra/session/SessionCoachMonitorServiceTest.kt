@@ -476,6 +476,116 @@ class SessionCoachMonitorServiceTest {
     }
 
     @Test
+    fun explicitStopFinalizesStoredSessionAtStopTime() = runBlocking {
+        val store = SessionCoachSessionStore(context)
+        assertTrue(store.beginSession("stop-session", "game.stop", 1_000L))
+        store.appendSnapshot(
+            "stop-session",
+            SessionCoachSnapshot(1_500L, 80, 1, 0.2f, 120f, 40L)
+        )
+        val controller = Robolectric.buildService(SessionCoachMonitorService::class.java).create()
+        val service = controller.get()
+
+        service.onStartCommand(
+            Intent(context, SessionCoachMonitorService::class.java)
+                .setAction(SessionCoachMonitorService.ACTION_STOP),
+            0,
+            1
+        )
+
+        withTimeout(2_000L) {
+            while (store.hasActiveSession()) delay(20)
+        }
+        val completed = assertNotNull(store.readLastCompletedSession())
+        assertEquals("stop-session", completed.sessionId)
+        assertTrue((completed.endedAtMillis ?: 0L) >= 1_500L)
+        controller.destroy()
+        Unit
+    }
+
+    @Test
+    fun networkHandleChangeForcesFreshLatencyProbe() {
+        val switched = ConnectivityTelemetry(
+            networkHandle = 8L,
+            connected = true,
+            validated = true,
+            metered = false,
+            transport = "wifi",
+            downstreamBandwidthKbps = 100_000,
+            latencyMs = null
+        )
+
+        assertTrue(
+            SessionCoachMonitorService.shouldProbeLatency(
+                network = switched,
+                lastNetworkHandle = 7L,
+                lastLatencyCheckAt = 1_000L,
+                nowMillis = 2_000L
+            )
+        )
+        assertTrue(
+            SessionCoachMonitorService.shouldResetLatency(
+                network = switched,
+                lastNetworkHandle = 7L
+            )
+        )
+    }
+
+    @Test
+    fun obsoleteMonitorCannotStopReplacementMonitor() {
+        assertFalse(
+            SessionCoachMonitorService.shouldStopOwnedMonitor(
+                activeMonitorSessionId = "new-session",
+                expectedSessionId = "old-session"
+            )
+        )
+        assertTrue(
+            SessionCoachMonitorService.shouldStopOwnedMonitor(
+                activeMonitorSessionId = "new-session",
+                expectedSessionId = "new-session"
+            )
+        )
+    }
+
+    @Test
+    fun repeatedInactiveGameEvidenceEndsMonitoringButUnknownDoesNot() {
+        var count = 0
+        count = SessionCoachMonitorService.nextInactiveEvidenceCount(
+            SessionCoachGamePresence.UNKNOWN,
+            count
+        )
+        assertEquals(0, count)
+        count = SessionCoachMonitorService.nextInactiveEvidenceCount(
+            SessionCoachGamePresence.INACTIVE,
+            count
+        )
+        assertFalse(SessionCoachMonitorService.shouldFinishForInactivity(count))
+        count = SessionCoachMonitorService.nextInactiveEvidenceCount(
+            SessionCoachGamePresence.INACTIVE,
+            count
+        )
+        assertTrue(SessionCoachMonitorService.shouldFinishForInactivity(count))
+        assertEquals(
+            0,
+            SessionCoachMonitorService.nextInactiveEvidenceCount(
+                SessionCoachGamePresence.ACTIVE,
+                count
+            )
+        )
+    }
+
+    @Test
+    fun actionNotificationsUseDefaultImportanceChannelOnAndroidOPlus() {
+        SessionCoachNotifications.ensureChannel(context)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val actionChannel = manager.notificationChannels
+            .firstOrNull { it.id == "ultra_session_coach_alerts" }
+
+        assertNotNull(actionChannel)
+        assertEquals(NotificationManager.IMPORTANCE_DEFAULT, actionChannel.importance)
+    }
+
+    @Test
     fun serviceRejectsMalformedStartAndAcceptsExplicitStop() {
         val controller = Robolectric.buildService(SessionCoachMonitorService::class.java).create()
         val service = controller.get()

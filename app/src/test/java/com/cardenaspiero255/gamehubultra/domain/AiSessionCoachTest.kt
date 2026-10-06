@@ -210,14 +210,51 @@ class AiSessionCoachTest {
     }
 
     @Test
-    fun latencyCanTriggerWhenNoPreviousMeasurementExists() {
+    fun firstLatencyMeasurementDoesNotCreateSpikeAlert() {
         val previous = SessionCoachSnapshot(1L, 80, 1, 0.2f, 120f, null)
-        val current = previous.copy(timestampMillis = 2L, latencyMs = 150L)
+        val current = previous.copy(timestampMillis = 2L, latencyMs = 300L)
 
-        val latency = AiSessionCoach.midSession(previous, current)
-            .single { it.signal == SessionCoachSignal.LATENCY }
+        assertTrue(
+            AiSessionCoach.midSession(previous, current)
+                .none { it.signal == SessionCoachSignal.LATENCY }
+        )
+    }
 
-        assertTrue(latency.detail.contains("150 ms"))
+    @Test
+    fun stableLowBatteryDoesNotRepeatAlert() {
+        val previous = SessionCoachSnapshot(1L, 14, 1, 0.2f, 120f, 40L)
+        val current = previous.copy(timestampMillis = 2L, batteryPercent = 14)
+
+        assertTrue(
+            AiSessionCoach.midSession(previous, current)
+                .none { it.signal == SessionCoachSignal.BATTERY }
+        )
+    }
+
+    @Test
+    fun fixedSixtyHzSessionDoesNotCreateRefreshPattern() {
+        val samples = listOf(
+            SessionCoachSnapshot(1L, 90, 1, 0.2f, 60f, 40L),
+            SessionCoachSnapshot(2L, 89, 1, 0.2f, 60f, 42L),
+            SessionCoachSnapshot(3L, 88, 1, 0.2f, 60f, 41L),
+            SessionCoachSnapshot(4L, 87, 1, 0.2f, 60f, 43L)
+        )
+
+        assertTrue(
+            AiSessionCoach.recurringPatterns(samples)
+                .none { it.signal == SessionCoachSignal.REFRESH }
+        )
+    }
+
+    @Test
+    fun handshakeScaleLatencyAtOneHundredSixtyMsIsNotAnActionAlert() {
+        val previous = SessionCoachSnapshot(1L, 80, 1, 0.2f, 120f, 80L)
+        val current = previous.copy(timestampMillis = 2L, latencyMs = 160L)
+
+        assertTrue(
+            AiSessionCoach.midSession(previous, current)
+                .none { it.signal == SessionCoachSignal.LATENCY }
+        )
     }
 
     @Test

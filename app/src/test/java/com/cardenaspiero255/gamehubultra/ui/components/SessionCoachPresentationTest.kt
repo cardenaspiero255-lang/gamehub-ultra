@@ -67,6 +67,27 @@ class SessionCoachPresentationTest {
         assertEquals(listOf("Sesión activa · 0 muestras", "Sin cambios relevantes."), lines)
     }
 
+
+    @Test
+    fun idleSessionShowsLatestObservationInsteadOfDroppingIt() {
+        val observation = message(
+            "Cambio térmico relevante",
+            "La presión térmica aumentó.",
+            "Usa un perfil menos exigente."
+        )
+
+        val lines = SessionCoachPresentation.lines(
+            preSession = null,
+            liveSamples = emptyList(),
+            observations = listOf(observation),
+            postSession = null,
+            sessionActive = false
+        )
+
+        assertTrue(lines.any { it.contains("Cambio térmico relevante") })
+        assertTrue(lines.any { it.contains("perfil menos exigente") })
+    }
+
     private fun message(title: String, detail: String, action: String?) =
         SessionCoachMessage(
             signal = SessionCoachSignal.GENERAL,
