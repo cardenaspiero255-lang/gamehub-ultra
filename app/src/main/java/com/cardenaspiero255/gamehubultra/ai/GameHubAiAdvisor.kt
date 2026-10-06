@@ -589,9 +589,9 @@ class GameHubAiAdvisor(
             }
 
         val safetyConstrained = hot || lowBattery || lowStorage
-        val recoveryRequested = coreResult?.recoveryExplanation != null
+        val coreOverrideAllowed = coreResult?.overrideBaseRecommendation == true
         val safeCoreProfile = coreProfile?.takeIf { candidate ->
-            recoveryRequested &&
+            coreOverrideAllowed &&
                 !safetyConstrained &&
                 (candidate != PerformanceProfile.X4 || context.sustainedPerformanceSupported)
         }
