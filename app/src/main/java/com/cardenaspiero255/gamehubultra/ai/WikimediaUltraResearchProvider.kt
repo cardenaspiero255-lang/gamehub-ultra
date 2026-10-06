@@ -215,8 +215,9 @@ class WikimediaUltraResearchProvider(
                 message = "Wikimedia no encontró un resultado utilizable.",
                 stage = "wikimedia-search"
             )
+        val searchSnippet = jsonString(searchResponse.body, "snippet").orEmpty()
 
-        if (!titleMatchesTopic(topic, title, currentQuestion)) {
+        if (!titleMatchesTopic(topic, title, currentQuestion, searchSnippet)) {
             return UltraProviderResult.Abstained(
                 reasonCode = "PUBLIC_FALLBACK_IRRELEVANT_RESULT",
                 message = "Wikimedia encontró una página que no coincide con el tema.",
@@ -413,7 +414,8 @@ class WikimediaUltraResearchProvider(
     private fun titleMatchesTopic(
         topic: String,
         title: String,
-        currentQuestion: String
+        currentQuestion: String,
+        searchSnippet: String
     ): Boolean {
         val normalizedTopic = normalizedTopicPhrase(topic)
         val normalizedTitle = normalizedTopicPhrase(title)
@@ -435,9 +437,18 @@ class WikimediaUltraResearchProvider(
         )
         val compactTopic = normalizedTopic.replace(" ", "")
         val compactTitle = normalizedTitle.replace(" ", "")
+        val rawTopicTokens = normalizedTopic
+            .split(' ')
+            .filter(String::isNotBlank)
+        val safeSpacingVariant =
+            rawTopicTokens.size >= 2 &&
+                rawTopicTokens.all { token ->
+                    token.length >= 3 && token !in TOPIC_STOP_WORDS
+                }
         if (
             compactTopic == compactTitle &&
-            compactTopic in compactAliases
+            compactTopic.isNotBlank() &&
+            (compactTopic in compactAliases || safeSpacingVariant)
         ) {
             return true
         }
@@ -448,6 +459,15 @@ class WikimediaUltraResearchProvider(
             topicTokens.isNotEmpty() &&
             titleTokens.isNotEmpty() &&
             topicTokens.intersect(titleTokens).isNotEmpty()
+        ) {
+            return true
+        }
+
+        val snippetTokens = meaningfulTokens(searchSnippet)
+        if (
+            topicTokens.isNotEmpty() &&
+            snippetTokens.isNotEmpty() &&
+            topicTokens.intersect(snippetTokens).isNotEmpty()
         ) {
             return true
         }
@@ -514,7 +534,7 @@ class WikimediaUltraResearchProvider(
         return current
             .replace(
                 Regex(
-                    """^(?:que es|qué es|que son|qué son|quien es|quién es|quienes son|quiénes son|define|definicion de|definición de|explicame|explícame|explica|dime que es|dime qué es|what is|what are|who is|who are|define)\s+""",
+                    """^(?:cual es el significado de|cuál es el significado de|que significa|qué significa|significado de|que es|qué es|que son|qué son|quien es|quién es|quienes son|quiénes son|define|definicion de|definición de|explicame|explícame|explica|dime que es|dime qué es|what is|what are|who is|who are|what does|meaning of|define)\s+""",
                     RegexOption.IGNORE_CASE
                 ),
                 ""
@@ -522,7 +542,7 @@ class WikimediaUltraResearchProvider(
             .trim()
             .replace(
                 Regex(
-                    """^(?:un|una|unos|unas|a|an)\s+""",
+                    """^(?:un|una|unos|unas|el|la|los|las|ser|a|an)\s+""",
                     RegexOption.IGNORE_CASE
                 ),
                 ""
