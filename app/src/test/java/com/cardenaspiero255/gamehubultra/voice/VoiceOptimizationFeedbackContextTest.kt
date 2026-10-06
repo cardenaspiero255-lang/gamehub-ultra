@@ -162,6 +162,18 @@ class VoiceOptimizationFeedbackContextTest {
 
     @Test
     fun `voice and ui optimization keys share the same gpu normalization`() {
+        val device = DeviceInfo(
+            manufacturer = "Vivo",
+            model = "V25 Pro",
+            androidVersion = "14",
+            sdkInt = 34,
+            supportedAbis = listOf("arm64-v8a"),
+            cpuModel = "Dimensity",
+            cpuCores = 8,
+            totalRamMb = 12_288,
+            gpuVendor = "ARM",
+            gpuRenderer = "Mali-G77"
+        )
         val partialGpu = device.copy(gpuVendor = " ARM ", gpuRenderer = null)
         val expected = OptimizationContextKeyFactory.from(
             device = partialGpu,
