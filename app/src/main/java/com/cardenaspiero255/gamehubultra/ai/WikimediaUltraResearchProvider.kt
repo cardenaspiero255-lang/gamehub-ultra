@@ -464,15 +464,10 @@ class WikimediaUltraResearchProvider(
         }
 
         val snippetTokens = meaningfulTokens(searchSnippet)
-        if (
-            topicTokens.isNotEmpty() &&
-            snippetTokens.isNotEmpty() &&
+        if (topicTokens.isNotEmpty() && snippetTokens.isNotEmpty() &&
             topicTokens.any { topicToken ->
-                snippetTokens.any { snippetToken ->
-                    lexicallyRelated(topicToken, snippetToken)
-                }
-            }
-        ) {
+                snippetTokens.any { snippetToken -> lexicallyRelated(topicToken, snippetToken) }
+            }) {
             return true
         }
 
@@ -525,10 +520,7 @@ class WikimediaUltraResearchProvider(
 
         val limit = minOf(left.length, right.length)
         var commonPrefix = 0
-        while (
-            commonPrefix < limit &&
-            left[commonPrefix] == right[commonPrefix]
-        ) {
+        while (commonPrefix < limit && left[commonPrefix] == right[commonPrefix]) {
             commonPrefix++
         }
         return commonPrefix >= limit - 2
