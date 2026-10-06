@@ -913,6 +913,7 @@ jobs:
                   time.sleep(0.5 * attempt)
               return last_result
 
+          execution_started = time.monotonic()
           stable_rows = [case for case in rows if not case["fresh"]]
           fresh_rows = [case for case in rows if case["fresh"]]
           stable_workers = int(os.environ.get("SMOKE_STABLE_WORKERS", "6"))
@@ -965,7 +966,8 @@ jobs:
           answered = passed
           answer_rate = answered / executed if executed else 0.0
 
-          print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
+          elapsed_seconds = time.monotonic() - execution_started
+          print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f} stable_workers={stable_workers} elapsed_seconds={elapsed_seconds:.1f}")
           print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
 
           if executed != 10000:
