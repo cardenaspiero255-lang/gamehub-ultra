@@ -244,6 +244,7 @@ class SmartRecommendationExplanationFactoryTest {
     @Test
     fun `safety restriction can contradict positive aggressive history`() {
         val result = build(
+            input = input(currentProfile = PerformanceProfile.X4),
             recommended = PerformanceProfile.BALANCED,
             measuredGood = mapOf(PerformanceProfile.X4 to 2),
             thermalHot = true
