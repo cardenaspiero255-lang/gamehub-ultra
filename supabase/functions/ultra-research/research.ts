@@ -4859,6 +4859,19 @@ function candidateMatchesKnownMeaning(
   const cleanQuery = normalize(query);
   const candidate = normalize(title + " " + extract);
 
+  const genericBearIntent =
+    /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
+    !/\b(?:yogui|yogi|personaje)\b/.test(cleanQuery);
+  if (genericBearIntent) {
+    const fictionalCandidate =
+      /\b(?:personaje|fictici|dibujos animados|hanna barbera|antropomorf)\b/.test(
+        candidate,
+      );
+    const biologicalCandidate =
+      /\b(?:mamifer|ursid|carnivor|animal|familia)\b/.test(candidate);
+    if (fictionalCandidate && !biologicalCandidate) return false;
+  }
+
   if (/\bsinonim/.test(cleanQuery)) {
     const namesSynonymConcept = /\bsinonim/.test(candidate);
     const explainsWordMeaning =
