@@ -5230,7 +5230,11 @@ async function wikidataKnowledgeEvidence(
 
     const source = stringValue(item.concepturi) ??
       `https://www.wikidata.org/wiki/${encodeURIComponent(id)}`;
-    const displayText = `${label}: ${description}.`;
+    const requestedTopic = relevanceTopic.trim();
+    const displayText = requestedTopic &&
+        normalize(requestedTopic) !== normalize(label)
+      ? `${requestedTopic}: ${description}. Término relacionado: ${label}.`
+      : `${label}: ${description}.`;
     return {
       claimKey: `wikidata:${slug(id)}:${slug(label)}`,
       value: normalize(displayText),
