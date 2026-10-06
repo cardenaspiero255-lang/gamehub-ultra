@@ -1233,4 +1233,23 @@ class WikimediaUltraResearchProviderTest {
                 else -> error("URL inesperada: $url")
             }
         }
+    @Test
+    fun `snippet alone cannot validate unrelated article`() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Therapist","snippet":"Exoplaneta aparece en este snippet irrelevante."}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Therapist","extract":"A therapist is a trained professional who provides therapy.","canonicalurl":"https://example.com/therapist"}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, ¿qué es un exoplaneta?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+    }
+
 }
