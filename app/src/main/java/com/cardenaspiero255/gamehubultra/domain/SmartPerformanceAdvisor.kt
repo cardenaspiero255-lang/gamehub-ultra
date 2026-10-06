@@ -227,7 +227,6 @@ object SmartPerformanceAdvisor {
                 input = input,
                 recommendedProfile = best,
                 reason = reason,
-                legacyEvidence = evidence,
                 measuredGood = measuredGood,
                 acceptedFeedback = acceptedFeedback,
                 knownBad = knownBad,
