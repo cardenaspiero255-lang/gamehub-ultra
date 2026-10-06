@@ -792,8 +792,7 @@ class GameHubAiAdvisor(
         val tokens = normalized.split(Regex("""[^a-z0-9]+""")).filter(String::isNotBlank)
         if (tokens.any { it in PROFILE_GAMING_SIGNAL_TOKENS }) return true
         if (tokens.none { it in PROFILE_RECOMMENDATION_TOKENS }) return false
-        return tokens.any { it in PROFILE_RECOMMENDATION_INTENT_TOKENS } ||
-            PROFILE_RECOMMENDATION_PHRASES.any(normalized::contains)
+        return tokens.any { it in PROFILE_RECOMMENDATION_INTENT_TOKENS }
     }
 
     private fun isSafetyConstrained(context: GameHubAiContext): Boolean =
@@ -833,11 +832,7 @@ class GameHubAiAdvisor(
             "recommend", "recommends", "recommendation", "recommended",
             "mejor", "best", "usar", "use", "choose", "elegir", "elige",
             "switch", "cambiar", "cambia", "activar", "activa", "set",
-            "gaming", "rendimiento", "performance", "gamehub", "ultra"
-        )
-        val PROFILE_RECOMMENDATION_PHRASES = setOf(
-            "which mode", "which profile", "que modo", "que perfil",
-            "qué modo", "qué perfil"
+            "gaming", "rendimiento", "performance", "conviene", "should"
         )
     }
 
