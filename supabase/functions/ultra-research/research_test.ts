@@ -7405,9 +7405,7 @@ Deno.test(
           url.searchParams.get("generator") === "search"
         ) {
           wikipediaCalls += 1;
-          await new Promise((resolve) =>
-            setTimeout(resolve, 80)
-          );
+          await new Promise((resolve) => setTimeout(resolve, 80));
           return jsonResponse({
             query: {
               pages: {
