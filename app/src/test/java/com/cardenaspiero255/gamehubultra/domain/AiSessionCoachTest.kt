@@ -8,6 +8,18 @@ import kotlin.test.assertTrue
 
 class AiSessionCoachTest {
     @Test
+    fun sessionCoachMessageDefaultActionIsNull() {
+        val message = SessionCoachMessage(
+            signal = SessionCoachSignal.GENERAL,
+            priority = SessionCoachPriority.INFO,
+            title = "Info",
+            detail = "Detalle"
+        )
+
+        assertNull(message.action)
+    }
+
+    @Test
     fun preSessionSummaryUsesReadinessWithoutInventingMissingMetrics() {
         val readiness = GamingReadiness(
             score = 72,
