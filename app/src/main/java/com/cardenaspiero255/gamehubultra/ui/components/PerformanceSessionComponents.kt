@@ -161,6 +161,15 @@ internal fun SmartPerformanceCard(
                 Text(
                     stringResource(
                         if (showDetails) {
+                            R.string.smart_performance_hide_details
+                        } else {
+                            R.string.smart_performance_why
+                        }
+                    )
+                )
+            }
+
+            if (showDetails) {
                 SmartPerformanceExplanationDetails(recommendation)
             }
 
@@ -196,7 +205,7 @@ internal fun SmartPerformanceCard(
             }
         }
     }
-} 
+}
 
 internal fun smartPerformanceConfidenceLabelRes(
     confidence: com.cardenaspiero255.gamehubultra.domain.RecommendationConfidenceBand
