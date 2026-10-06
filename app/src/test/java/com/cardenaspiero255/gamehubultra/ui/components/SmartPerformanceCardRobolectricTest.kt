@@ -17,6 +17,7 @@ import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceRecommendation
 import com.cardenaspiero255.gamehubultra.domain.SmartRecommendationExplanation
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -123,6 +124,102 @@ class SmartPerformanceCardRobolectricTest {
         }
 
         Shadows.shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    @Test
+    fun `presentation builder exposes all detail sections and stays deterministic`() {
+        val explanation = SmartRecommendationExplanation(
+            reason = "Razón",
+            evidence = listOf(
+                RecommendationEvidence("Medido", RecommendationEvidenceProvenance.MEASURED),
+                RecommendationEvidence("Inferido", RecommendationEvidenceProvenance.INFERRED),
+                RecommendationEvidence("Recordado", RecommendationEvidenceProvenance.REMEMBERED),
+                RecommendationEvidence("Investigado", RecommendationEvidenceProvenance.EXTERNALLY_RESEARCHED)
+            ),
+            unavailableData = listOf("Latencia"),
+            contradictions = listOf("Contradicción"),
+            confidence = RecommendationConfidenceBand.HIGH,
+            outcomes = listOf(
+                RecommendationOutcome(
+                    RecommendationOutcomeObjective.RECOMMENDED,
+                    PerformanceProfile.X4,
+                    "Rendimiento"
+                ),
+                RecommendationOutcome(
+                    RecommendationOutcomeObjective.BALANCED,
+                    PerformanceProfile.BALANCED,
+                    "Equilibrio"
+                ),
+                RecommendationOutcome(
+                    RecommendationOutcomeObjective.BATTERY,
+                    PerformanceProfile.BALANCED,
+                    "Batería"
+                )
+            ),
+            changeExplanation = "Cambió",
+            withheldReasons = listOf("No X4"),
+            conciseSummary = "Resumen"
+        )
+
+        val presentation = smartPerformancePresentation(
+            recommendation(
+                strategy = DriverStrategy.NATIVE_OR_VENDOR_CANDIDATE,
+                explanation = explanation
+            )
+        )
+
+        assertEquals(R.string.smart_performance_confidence_high, presentation.confidenceLabelRes)
+        assertEquals(R.string.driver_native_candidate, presentation.driverLabelRes)
+        assertEquals(
+            listOf(
+                R.string.smart_performance_evidence,
+                R.string.smart_performance_unavailable,
+                R.string.smart_performance_contradictions,
+                R.string.smart_performance_changed,
+                R.string.smart_performance_not_recommended,
+                R.string.smart_performance_comparison
+            ),
+            presentation.sections.map { it.titleRes }
+        )
+        assertEquals(
+            listOf(
+                R.string.smart_performance_evidence_measured,
+                R.string.smart_performance_evidence_inferred,
+                R.string.smart_performance_evidence_remembered,
+                R.string.smart_performance_evidence_external
+            ),
+            presentation.sections.first().lines.map { it.prefixRes }
+        )
+        assertEquals(
+            listOf(
+                R.string.smart_performance_outcome_recommended,
+                R.string.smart_performance_outcome_balanced,
+                R.string.smart_performance_outcome_battery
+            ),
+            presentation.sections.last().lines.map { it.prefixRes }
+        )
+    }
+
+    @Test
+    fun `presentation builder omits empty optional sections`() {
+        val presentation = smartPerformancePresentation(
+            recommendation(
+                explanation = SmartRecommendationExplanation(
+                    reason = "Razón",
+                    evidence = emptyList(),
+                    unavailableData = emptyList(),
+                    contradictions = emptyList(),
+                    confidence = RecommendationConfidenceBand.LOW,
+                    outcomes = emptyList(),
+                    changeExplanation = null,
+                    withheldReasons = emptyList(),
+                    conciseSummary = "Resumen"
+                )
+            )
+        )
+
+        assertEquals(R.string.smart_performance_confidence_low, presentation.confidenceLabelRes)
+        assertTrue(presentation.sections.isEmpty())
     }
 
     @Test
