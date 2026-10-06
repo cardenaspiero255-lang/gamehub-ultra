@@ -2714,12 +2714,49 @@ function specialistSearchTopic(
   return topic || raw;
 }
 
+function specialistComparableToken(value: string): string {
+  return canonicalEvidenceToken(value)
+    .replace(/^inmun/, "immun")
+    .replace(/terapia$/, "therapy")
+    .replace(/fera$/, "phere")
+    .replace(/logia$/, "logy")
+    .replace(/cion$/, "tion")
+    .replace(/ico$/, "ic")
+    .replace(/ica$/, "ic");
+}
+
+function specialistTokenRelated(
+  first: string,
+  second: string,
+): boolean {
+  if (evidenceTokensRelated(first, second)) return true;
+  const comparableFirst = specialistComparableToken(first);
+  const comparableSecond = specialistComparableToken(second);
+  return evidenceTokensRelated(comparableFirst, comparableSecond);
+}
+
 function specialistCandidateMatches(
   topic: string,
   candidateText: string,
 ): boolean {
-  return candidateMatchesTopic(topic, candidateText) ||
-    candidateMatchesQuery(topic, candidateText);
+  if (
+    candidateMatchesTopic(topic, candidateText) ||
+    candidateMatchesQuery(topic, candidateText)
+  ) {
+    return true;
+  }
+
+  const topicTokens = [...evidenceTokens(topic)];
+  const candidateTokens = [...evidenceTokens(candidateText)];
+  if (topicTokens.length === 0 || candidateTokens.length === 0) return false;
+
+  const matched = topicTokens.filter((topicToken) =>
+    candidateTokens.some((candidateToken) =>
+      specialistTokenRelated(topicToken, candidateToken)
+    )
+  );
+  const required = topicTokens.length >= 2 ? 2 : 1;
+  return matched.length >= required;
 }
 
 async function semanticScholarEvidence(
