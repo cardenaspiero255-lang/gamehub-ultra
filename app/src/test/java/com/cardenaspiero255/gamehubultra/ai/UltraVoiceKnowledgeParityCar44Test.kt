@@ -53,6 +53,40 @@ class UltraVoiceKnowledgeParityCar44Test {
         }
     }
 
+    @Test
+    fun `common general knowledge never falls into verification error offline`() {
+        val cases = listOf(
+            "¿Qué es el sol?" to "estrella",
+            "¿Qué es la capa de ozono?" to "ultravioleta",
+            "¿Qué es un velociraptor?" to "dinosaurio",
+            "¿Qué es la Luna?" to "satélite",
+            "¿Qué es un dinosaurio?" to "reptil",
+            "¿Qué es un terremoto?" to "corteza",
+            "¿Qué es un tsunami?" to "ola",
+            "¿Qué es el efecto invernadero?" to "atmósfera",
+            "¿Qué es el cambio climático?" to "clima",
+            "¿Qué es una proteína?" to "aminoácido",
+            "¿Qué es una neurona?" to "nervioso",
+            "¿Qué es una mitocondria?" to "energía",
+            "¿Qué es un fósil?" to "resto",
+            "¿Qué es una supernova?" to "estrella",
+            "¿Qué es una nube?" to "agua"
+        )
+
+        cases.forEach { (question, expectedKeyword) ->
+            assertVoiceParity(question, "Ultra, $question") { answer ->
+                assertTrue(
+                    answer.contains(expectedKeyword, ignoreCase = true),
+                    "$question -> $answer"
+                )
+                assertTrue(
+                    !answer.contains("No pude verificar", ignoreCase = true),
+                    "$question -> $answer"
+                )
+            }
+        }
+    }
+
     private fun assertVoiceParity(
         oneShotText: String,
         continuousText: String,
