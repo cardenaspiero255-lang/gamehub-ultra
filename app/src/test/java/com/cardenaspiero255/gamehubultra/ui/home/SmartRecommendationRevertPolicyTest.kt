@@ -324,4 +324,19 @@ class SmartRecommendationRevertPolicyTest {
     }
 
 
+    @Test
+    fun `external profile selection invalidates revert target synchronously`() {
+        val target = SmartRecommendationRevertPolicy.capture(
+            gamePackage = "game.a",
+            previousProfile = PerformanceProfile.BALANCED,
+            appliedProfile = PerformanceProfile.X4
+        )
+
+        assertEquals(
+            null,
+            SmartRecommendationActions.onExternalProfileSelection(target)
+        )
+    }
+
+
 }
