@@ -601,7 +601,7 @@ class GameHubAiAdvisor(
                         context.sustainedPerformanceSupported)
             }
             ?.let { candidate ->
-                if (coreResult?.recoveryExplanation != null) {
+                if (coreResult.recoveryExplanation != null) {
                     preferSafeCurrentProfile(
                         proposed = baseAdvice.suggestedProfile,
                         recovered = candidate,
