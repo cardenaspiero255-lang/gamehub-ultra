@@ -5,6 +5,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.testing.Test
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
@@ -221,4 +222,19 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+
+val gameHubUnitTestForks = providers.environmentVariable("GAMEHUB_UNIT_TEST_FORKS")
+    .map { it.toIntOrNull() ?: 1 }
+    .orElse(1)
+
+val gameHubUnitTestHeap = providers.environmentVariable("GAMEHUB_UNIT_TEST_HEAP")
+    .orElse("1024m")
+
+tasks.withType<Test>().configureEach {
+    maxParallelForks = gameHubUnitTestForks.get().coerceIn(1, 4)
+    forkEvery = 0L
+    maxHeapSize = gameHubUnitTestHeap.get()
+    jvmArgs("-XX:+UseParallelGC")
 }
