@@ -48,7 +48,7 @@ internal object VoiceOptimizationFeedbackContext {
         )
     }
 
-    private fun contextKey(
+    internal fun contextKey(
         context: Context,
         device: DeviceInfo,
         gamePackage: String?
