@@ -7360,3 +7360,36 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "OLED definitions stay available without configured general model",
+  async () => {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        return jsonResponse({ query: { pages: {} }, search: [] });
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un televisor OLED?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected stable OLED knowledge without external model");
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("oled") || !answer.includes("píxel")) {
+      throw new Error("expected OLED pixel-level explanation");
+    }
+    if (networkCalls !== 0) {
+      throw new Error("stable OLED definition should not require the network");
+    }
+  },
+);
