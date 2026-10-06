@@ -13,8 +13,10 @@ import kotlin.test.assertTrue
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class VoiceOptimizationFeedbackContextRobolectricTest {
     @Test
     fun `blocking voice enrichment loads the Android scoped feedback context`() {
