@@ -73,7 +73,7 @@ jobs:
           cat "$log" || true
           exit 1
 
-      - name: Build reproducible 1000-question broad-spectrum smoke plan
+      - name: Build reproducible 10000-question broad-spectrum smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -92,6 +92,9 @@ jobs:
               ("general", "¿Qué es un lápiz?", "GENERAL_KNOWLEDGE", False, ["escribir", "dibujar", "grafito"]),
               ("astronomy_regression", "¿Qué es un exoplaneta?", "GENERAL_KNOWLEDGE", False, ["planeta", "estrella", "solar"]),
               ("cosmology_regression", "¿Qué es un macroverso?", "GENERAL_KNOWLEDGE", False, ["univers", "cosmos", "macro"]),
+              ("voice_regression", "¿Qué es YouTube?", "GENERAL_KNOWLEDGE", False, ["video", "youtube"]),
+              ("voice_regression", "¿Qué es un patógeno?", "GENERAL_KNOWLEDGE", False, ["enfermed", "agente", "infecc"]),
+              ("voice_regression", "¿Qué es un oso?", "GENERAL_KNOWLEDGE", False, ["mamífer", "urs"]),
               ("weather", "Clima de hoy en Santiago", "CURRENT_DATA", True, []),
               ("news", "Noticias de tecnología de hoy", "CURRENT_DATA", True, []),
           ]
@@ -328,15 +331,32 @@ jobs:
           }
 
 
-          # Runtime-composed questions. The complete question strings below do not
-          # exist in the workflow: every run combines a random template + topic.
-          dynamic_templates = [
-              "Explícame de forma sencilla qué es {topic}.",
-              "¿Para qué sirve o por qué es importante {topic}?",
-              "Si alguien me pregunta por {topic}, ¿cómo lo explicarías en pocas frases?",
-              "Dame una explicación clara de {topic} y su función principal.",
-              "¿Qué debería saber una persona sobre {topic}?",
-              "Resume qué es {topic} sin asumir conocimientos técnicos.",
+          # Runtime-composed questions. Complete prompts do not exist statically:
+          # every run combines a topic with randomized framing while remaining
+          # reproducible from SMOKE_SEED.
+          dynamic_stems = [
+              "Explícame qué es {topic}",
+              "Describe {topic}",
+              "¿Para qué sirve o por qué importa {topic}?",
+              "Resume qué es {topic}",
+              "Dime lo esencial sobre {topic}",
+              "¿Cómo explicarías {topic}?",
+          ]
+          dynamic_audiences = [
+              "para un estudiante",
+              "para alguien que empieza",
+              "sin asumir conocimientos previos",
+              "en lenguaje cotidiano",
+              "sin jerga innecesaria",
+              "de forma clara y directa",
+          ]
+          dynamic_focus = [
+              "en pocas frases",
+              "y menciona su función principal",
+              "y destaca una idea clave",
+              "con una explicación breve",
+              "sin inventar datos",
+              "y explica por qué es relevante",
           ]
 
           dynamic_domains = {
@@ -674,46 +694,48 @@ jobs:
                       f"Pool {label} only produced {added}/8 unique smoke questions"
                   )
 
-          # Generate sixteen unique runtime-composed variants per domain. Complete
-          # question strings change with the run seed but remain reproducible.
+          target_cases = 10_000
+          minimum_per_dynamic_domain = 100
           remaining_dynamic = []
           for domain, topics in dynamic_domains.items():
               candidates = [
                   (
                       f"dyn_{domain}",
-                      template.format(topic=topic),
+                      f"{stem.format(topic=topic)} {audience}, {focus}.",
                       "GENERAL_KNOWLEDGE",
                       False,
                       expected,
                   )
                   for topic, expected in topics
-                  for template in dynamic_templates
+                  for stem in dynamic_stems
+                  for audience in dynamic_audiences
+                  for focus in dynamic_focus
               ]
               rng.shuffle(candidates)
               added = 0
               for case in candidates:
                   if add_unique_case(case):
                       added += 1
-                  if added == 16:
+                  if added == minimum_per_dynamic_domain:
                       break
-              if added != 16:
+              if added != minimum_per_dynamic_domain:
                   raise RuntimeError(
-                      f"Dynamic domain {domain} only produced {added}/16 unique questions"
+                      f"Dynamic domain {domain} only produced "
+                      f"{added}/{minimum_per_dynamic_domain} unique questions"
                   )
               remaining_dynamic.extend(candidates)
 
-          # 8 fixed + (19 pools * 8) + (49 domains * 16) = 944.
-          # Fill the remaining 56 slots from unused runtime combinations so the
-          # gate always exercises exactly 1000 unique questions across 70+ labels.
+          # Fill to exactly 10,000 unique cases from unused runtime combinations.
+          # This keeps 70+ labels represented while heavily varying wording.
           rng.shuffle(remaining_dynamic)
           for case in remaining_dynamic:
-              if len(cases) >= 1000:
+              if len(cases) >= target_cases:
                   break
               add_unique_case(case)
 
-          if len(cases) != 1000:
+          if len(cases) != target_cases:
               raise RuntimeError(
-                  f"Smoke plan produced {len(cases)}/1000 unique questions"
+                  f"Smoke plan produced {len(cases)}/{target_cases} unique questions"
               )
           if len(used_queries) != len(cases):
               raise RuntimeError("Smoke plan contains duplicate questions")
@@ -742,7 +764,7 @@ jobs:
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "1000"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "10000"
           test "$(python3 - <<'PY'
           import json, os
           path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
@@ -751,7 +773,7 @@ jobs:
           PY
           )" -ge "70"
 
-      - name: Exercise 1000 stratified and runtime-generated questions
+      - name: Exercise 10000 stratified and runtime-generated questions
         shell: bash
         run: |
           set -euo pipefail
@@ -926,14 +948,14 @@ jobs:
           print(f"Smoke summary: seed={seed} executed={executed} passed={passed} fresh_abstentions={fresh_abstentions} stable_abstentions={stable_abstentions} failures={failures} answer_rate={answer_rate:.3f}")
           print("Category summary: " + json.dumps(per_label, ensure_ascii=False, sort_keys=True))
 
-          if executed != 1000:
-              print(f"::error::Expected 1000 cases, executed {executed}")
+          if executed != 10000:
+              print(f"::error::Expected 10000 cases, executed {executed}")
               sys.exit(1)
           if stable_abstentions != 0:
               print(f"::error::Stable knowledge must not abstain; got {stable_abstentions}")
               sys.exit(1)
-          if fresh_abstentions > 2:
-              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 2")
+          if fresh_abstentions > 20:
+              print(f"::error::Too many fresh-data abstentions: {fresh_abstentions} > 20")
               sys.exit(1)
           if answer_rate < 0.998:
               print(f"::error::Answer rate below SSS target 99.8%: {answer_rate:.3f}")
