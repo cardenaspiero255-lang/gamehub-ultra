@@ -125,6 +125,53 @@ private companion object {
         self.assertEqual(stats.covered, 1)
 
 
+    def test_compose_body_is_excluded_but_neighboring_logic_remains_blocking(self) -> None:
+        source = """val productionDecision = expensiveCall()
+@Composable
+internal fun ExampleCard(
+    enabled: Boolean,
+) {
+    Text("hello")
+    if (enabled) {
+        Text("enabled")
+    }
+}
+val uncoveredDecision = expensiveCall()
+"""
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/>'
+            '<line nr="6" mi="4" ci="0"/>'
+            '<line nr="7" mi="2" ci="0"/>'
+            '<line nr="8" mi="4" ci="0"/>'
+            '<line nr="11" mi="3" ci="0"/>'
+            '</sourcefile></package></report>'
+        )
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 12))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.executable, 2)
+        self.assertEqual(stats.covered, 1)
+        self.assertAlmostEqual(stats.percent, 50.0)
+
+    def test_enum_when_branch_label_omitted_by_jacoco_is_not_false_unmapped(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = "val covered = expensiveCall()\nSTOP_TTS ->\n"
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
     def test_threshold_is_blocking_below_minimum(self) -> None:
         stats = gate.PatchCoverage(executable=10, covered=8)
         self.assertFalse(gate.meets_threshold(stats, 90.0))
