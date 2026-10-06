@@ -5321,7 +5321,7 @@ async function generalKnowledgeEvidence(
         generatorEvidence,
       );
     }
-  
+
     const wikipediaHost = "es.wikipedia.org";
     const searchUrl = new URL(`https://${wikipediaHost}/w/api.php`);
     searchUrl.searchParams.set("action", "query");
@@ -5330,10 +5330,10 @@ async function generalKnowledgeEvidence(
     searchUrl.searchParams.set("srlimit", "5");
     searchUrl.searchParams.set("format", "json");
     searchUrl.searchParams.set("origin", "*");
-  
+
     const search = await fetchJson(deps, searchUrl, {
       headers: { "User-Agent": USER_AGENT },
-      lookupSignal,
+      signal: lookupSignal,
     });
     const results = search?.query && typeof search.query === "object"
       ? (search.query as JsonObject).search
@@ -5345,7 +5345,7 @@ async function generalKnowledgeEvidence(
         )
         .slice(0, 5)
       : [];
-  
+
     if (candidates.length === 0) {
       const wikidata = await wikidataKnowledgeEvidence(
         topicPlan.wikidataTopic,
@@ -5359,7 +5359,7 @@ async function generalKnowledgeEvidence(
       }
       return abstain("Wikipedia no encontró una entrada utilizable para esta consulta.");
     }
-  
+
     let sawUsableCandidate = false;
     for (const candidate of candidates) {
       if (lookupSignal?.aborted) {
@@ -5372,25 +5372,29 @@ async function generalKnowledgeEvidence(
           },
         );
       }
-  
+
       const title = stringValue(candidate.title);
       if (!title) continue;
-  
+
       const summaryUrl =
         `https://${wikipediaHost}/api/rest_v1/page/summary/` +
         encodeURIComponent(title.replace(/ /g, "_"));
       const summary = await fetchWikipediaJson(deps, summaryUrl, {
         headers: { "User-Agent": USER_AGENT },
-        lookupSignal,
+        signal: lookupSignal,
       });
       const summaryType = stringValue(summary?.type)?.toLowerCase();
       if (summaryType === "disambiguation") continue;
-  
+
       let extract = stringValue(summary?.extract);
       let source: string | undefined;
-  
+
       if (!extract) {
-        const actionFallback = await wikipediaActionExtract(title, deps, lookupSignal);
+        const actionFallback = await wikipediaActionExtract(
+          title,
+          deps,
+          lookupSignal,
+        );
         if (!actionFallback) continue;
         extract = actionFallback.extract;
         source = actionFallback.source;
@@ -5404,20 +5408,20 @@ async function generalKnowledgeEvidence(
           : null;
         source = stringValue(desktop?.page) ?? summaryUrl;
       }
-  
+
       if (!extract) continue;
       sawUsableCandidate = true;
-  
+
       if (!candidateMatchesKnownMeaning(query, title, extract)) {
         continue;
       }
-  
+
       if (
         !candidateMatchesKnowledgeTopic(query, relevanceTopic, title + " " + extract)
       ) {
         continue;
       }
-  
+
       const resolvedSource = source ?? summaryUrl;
       return rememberStableKnowledge(
         deps.fetcher,
@@ -5433,7 +5437,7 @@ async function generalKnowledgeEvidence(
         },
       );
     }
-  
+
     const wikidata = await wikidataKnowledgeEvidence(
       topicPlan.wikidataTopic,
       relevanceTopic,
@@ -5444,7 +5448,7 @@ async function generalKnowledgeEvidence(
     if (!wikidata.abstained) {
       return rememberStableKnowledge(deps.fetcher, cacheTopic, wikidata);
     }
-  
+
     return abstain(
       sawUsableCandidate
         ? "Wikipedia devolvió entradas que no coinciden con el tema consultado."
