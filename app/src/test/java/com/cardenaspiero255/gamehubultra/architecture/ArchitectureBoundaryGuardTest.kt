@@ -1207,4 +1207,41 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+
+    @Test
+    fun externalProfileSelectionPathsInvalidateSmartRecommendationRevertSynchronously() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        val forbiddenBypasses = listOf(
+            "onProfileSelected = ::selectProfile",
+            "onVoiceSelectedProfile = viewModel::persistVoiceSelectedProfile",
+            "onVoiceSelectedGameWithProfile = viewModel::persistVoiceSelectedGameWithProfile"
+        )
+        val violations = forbiddenBypasses.filter(app::contains)
+
+        assertTrue(
+            violations.isEmpty(),
+            violations.joinToString(
+                prefix = "External profile changes must invalidate Smart Recommendation revert state before persistence:\n",
+                separator = "\n"
+            )
+        )
+        assertTrue(
+            app.contains("onProfileSelected = ::selectExternalProfile"),
+            "Profile selectors must route through synchronous revert invalidation"
+        )
+        assertTrue(
+            app.contains("onVoiceSelectedProfile = ::persistExternalVoiceProfile"),
+            "Voice profile selection must route through synchronous revert invalidation"
+        )
+        assertTrue(
+            app.contains(
+                "onVoiceSelectedGameWithProfile = ::persistExternalVoiceGameWithProfile"
+            ),
+            "Voice game+profile selection must route through synchronous revert invalidation"
+        )
+    }
+
 }
