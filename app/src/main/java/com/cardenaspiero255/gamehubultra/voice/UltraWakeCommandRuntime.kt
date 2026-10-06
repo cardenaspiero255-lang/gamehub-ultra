@@ -47,13 +47,7 @@ internal class UltraWakeCommandRuntime(
         val device = DeviceInfoProvider.get(context)
         val diagnostics = RuntimeDiagnosticsProvider.get(context)
         val capabilities = DeviceCapabilitiesProvider.get(context)
-        val baseAiContext = VoiceAiContextFactory.create(
-            selectedGamePackage = selectedGamePackage,
-            selectedProfile = selectedProfile,
-            device = device,
-            diagnostics = diagnostics,
-            capabilities = capabilities
-        )
+        val baseAiContext = VoiceAiContextFactory.create(selectedGamePackage, selectedProfile, device, diagnostics, capabilities)
         val aiContext =
             VoiceOptimizationFeedbackContext.enrichBlockingOrBase(baseAiContext, context, device)
         val status = VoiceDeviceStatus(
