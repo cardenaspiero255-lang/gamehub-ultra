@@ -7620,3 +7620,36 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "generic bear definition survives provider rate limiting without a model",
+  async () => {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        return jsonResponse({}, 429);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "¿Qué es un oso?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected stable bear knowledge during provider throttling");
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("mamífer") || !answer.includes("urs")) {
+      throw new Error("expected a biological bear definition");
+    }
+    if (networkCalls !== 0) {
+      throw new Error("basic bear knowledge should not require network access");
+    }
+  },
+);
