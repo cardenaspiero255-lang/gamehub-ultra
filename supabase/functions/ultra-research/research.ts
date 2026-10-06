@@ -2668,7 +2668,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
   ];
 
   for (const wrapper of wrappers) {
-    const match = value.match(wrapper) ?? cleanValue.match(wrapper);
+    const match = cleanValue.match(wrapper) ?? value.match(wrapper);
     if (match?.[1]?.trim()) return match[1].trim();
   }
   return cleanValue;
