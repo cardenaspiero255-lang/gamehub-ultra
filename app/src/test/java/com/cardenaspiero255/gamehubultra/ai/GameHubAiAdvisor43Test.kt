@@ -232,4 +232,61 @@ class GameHubAiAdvisor43Test {
         assertNull(result.recoveryExplanation)
     }
 
+    @Test
+    fun `single rejected proposed profile keeps recovery explanation`() {
+        val context = contextWithPoorX4History.copy(
+            selectedProfile = PerformanceProfile.BALANCED,
+            optimizationObservations = listOf(
+                OptimizationObservation(
+                    contextKey = "device|game",
+                    profile = PerformanceProfile.X4,
+                    timestampMillis = 1L,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED
+                )
+            )
+        )
+
+        val result = GameHubAiAdvisor().advise(
+            "¿qué perfil me recomiendas?",
+            context
+        )
+
+        assertEquals(PerformanceProfile.X4, result.suggestedProfile)
+        assertNotNull(result.recoveryExplanation)
+    }
+
+    @Test
+    fun `local model feedback is evaluated against proposed profile`() {
+        val context = contextWithPoorX4History.copy(
+            selectedProfile = PerformanceProfile.BALANCED,
+            optimizationObservations = listOf(
+                OptimizationObservation(
+                    contextKey = "device|game",
+                    profile = PerformanceProfile.X4,
+                    timestampMillis = 2L,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED
+                ),
+                OptimizationObservation(
+                    contextKey = "device|game",
+                    profile = PerformanceProfile.X4,
+                    timestampMillis = 1L,
+                    feedbackDecision = OptimizationFeedbackDecision.REJECTED
+                )
+            )
+        )
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+            override fun advise(question: String, context: GameHubAiContext) =
+                LocalAiActionCandidate(AiActionAllowlist.PROFILE_X4)
+        }
+
+        val result = GameHubAiAdvisor(modelAdapter = adapter).advise(
+            "¿qué perfil me recomiendas?",
+            context
+        )
+
+        assertEquals(PerformanceProfile.BALANCED, result.suggestedProfile)
+        assertNotNull(result.recoveryExplanation)
+    }
+
 }
