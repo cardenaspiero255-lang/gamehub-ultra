@@ -53,7 +53,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("androidx.baselineprofile")
     id("io.sentry.android.gradle")
-    id("jacoco")
 }
 
 abstract class GenerateExactLauncherIconTask : DefaultTask() {
