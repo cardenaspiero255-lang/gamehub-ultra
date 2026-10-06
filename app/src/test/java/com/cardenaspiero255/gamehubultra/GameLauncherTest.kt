@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -70,4 +71,57 @@ class GameLauncherTest {
             )
         )
     }
+    @Test
+    fun launchHooksStartMonitoringBeforeGameAndDoNotCleanupOnSuccess() {
+        val order = mutableListOf<String>()
+
+        assertTrue(
+            GameLauncher.resolveAndLaunch(
+                packageName = "game.package",
+                resolver = { "resolved-intent" },
+                starter = { order += "game" },
+                beforeStart = { order += "coach" },
+                onStartFailure = { order += "cleanup" }
+            )
+        )
+
+        assertEquals(listOf("coach", "game"), order)
+    }
+
+    @Test
+    fun launchFailureCleansUpCoachSession() {
+        val order = mutableListOf<String>()
+
+        assertFalse(
+            GameLauncher.resolveAndLaunch(
+                packageName = "game.package",
+                resolver = { "resolved-intent" },
+                starter = {
+                    order += "game"
+                    throw SecurityException("blocked")
+                },
+                beforeStart = { order += "coach" },
+                onStartFailure = { order += "cleanup" }
+            )
+        )
+
+        assertEquals(listOf("coach", "game", "cleanup"), order)
+    }
+
+    @Test
+    fun coachStartupFailureDoesNotBlockAValidGameLaunch() {
+        var gameStarted = false
+
+        assertTrue(
+            GameLauncher.resolveAndLaunch(
+                packageName = "game.package",
+                resolver = { "resolved-intent" },
+                starter = { gameStarted = true },
+                beforeStart = { error("coach unavailable") }
+            )
+        )
+
+        assertTrue(gameStarted)
+    }
+
 }
