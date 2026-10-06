@@ -56,13 +56,13 @@ object UltraGeneralQueryRouter {
         """\b(?:novedades|updates?|latest|newest|security patch|parche de seguridad|cuando sale|cuando se lanza|fecha de lanzamiento|fecha de salida|release date|launch date|coming out)\b"""
     )
     private val definitionPattern = Regex(
-        """\b(que es|que son|what is|what are|define)\b"""
+        """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|what is|what are|what does|meaning of|define)\b"""
     )
     private val broadFactualPattern = Regex(
         """\b(cuantos|cuantas|como se llama|como se llaman|how many|how old|what year|which country)\b"""
     )
     private val generalKnowledgePattern = Regex(
-        """\b(que es|que son|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|what does|how does|explain|define|where is|when was)\b"""
+        """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|quien es|quienes son|por que|para que sirve|como funciona|explicame|explica|define|cual es|cuales son|donde esta|cuando fue|what is|what are|who is|who are|what does|meaning of|how does|explain|define|where is|when was)\b"""
     )
     private val englishWhyQuestionPattern = Regex(
         """^(?:(?:hello|hi|please|and)\s+)?why\b"""
