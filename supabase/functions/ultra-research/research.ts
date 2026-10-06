@@ -4891,6 +4891,16 @@ function candidateMatchesKnowledgeTopic(
   const cleanQuery = normalize(query);
   const candidate = normalize(candidateText);
 
+  const genericBearIntent =
+    /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
+    !/\b(?:yogui|yogi|personaje)\b/.test(cleanQuery);
+  if (
+    genericBearIntent &&
+    /\b(?:oso|osos|ursid|mamifer|carnivor)\b/.test(candidate)
+  ) {
+    return true;
+  }
+
   if (/\b120\s*hz\b/.test(cleanQuery)) {
     const semanticRefreshRate =
       /\b(?:tasa|frecuencia) de (?:refresco|actualizacion)\b/.test(candidate) ||
