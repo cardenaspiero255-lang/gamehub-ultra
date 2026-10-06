@@ -18,6 +18,9 @@ const json = (body: unknown, status = 200) =>
     headers: { "Content-Type": "application/json; charset=utf-8" },
   });
 
+const quietRequestLogs =
+  Deno.env.get("ULTRA_QUIET_REQUEST_LOGS")?.trim() === "1";
+
 let vaultSql: ReturnType<typeof postgres> | null = null;
 
 async function vaultSecret(name: string): Promise<string | undefined> {
@@ -87,12 +90,14 @@ Deno.serve(async (req: Request) => {
   const kind = body.kind ?? "";
   const verificationMode = body.verificationMode ?? "";
 
-  console.info(JSON.stringify({
-    event: "ultra_research_started",
-    correlationId,
-    kind,
-    verificationMode,
-  }));
+  if (!quietRequestLogs) {
+    console.info(JSON.stringify({
+      event: "ultra_research_started",
+      correlationId,
+      kind,
+      verificationMode,
+    }));
+  }
 
   try {
     const result = await routeResearchQuery(
@@ -108,16 +113,18 @@ Deno.serve(async (req: Request) => {
       kind,
     );
 
-    console.info(JSON.stringify({
-      event: "ultra_research_finished",
-      correlationId,
-      kind,
-      verificationMode,
-      abstained: result.abstained === true,
-      reasonCode: result.reasonCode ?? null,
-      stage: result.stage ?? null,
-      sourceCount: result.sourceIds?.length ?? (result.sourceId ? 1 : 0),
-    }));
+    if (!quietRequestLogs) {
+      console.info(JSON.stringify({
+        event: "ultra_research_finished",
+        correlationId,
+        kind,
+        verificationMode,
+        abstained: result.abstained === true,
+        reasonCode: result.reasonCode ?? null,
+        stage: result.stage ?? null,
+        sourceCount: result.sourceIds?.length ?? (result.sourceId ? 1 : 0),
+      }));
+    }
 
     return json(result);
   } catch (error) {
