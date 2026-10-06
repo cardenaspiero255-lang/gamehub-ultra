@@ -6,8 +6,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
+import com.cardenaspiero255.gamehubultra.domain.OptimizationFingerprint
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Base64
@@ -155,6 +157,89 @@ class GameOptimizationMemoryCar43Test {
             val measured = store.observationsFlow(measuredKey).first()
             assertEquals(1, measured.size)
             assertEquals(60f, measured.single().measuredFps)
+        } finally {
+            scope.cancel()
+            file.delete()
+            File(file.absolutePath + ".corrupt").delete()
+            File(file.absolutePath + ".bak").delete()
+        }
+    }
+
+    @Test
+    fun `normalized no-gpu key still reads legacy pipe fingerprint history`() = runBlocking {
+        val file = File.createTempFile("gamehub-ultra-car43-legacy-gpu-", ".preferences_pb")
+            .also { it.delete() }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val dataStore: DataStore<Preferences> = PreferenceDataStoreFactory.create(
+                scope = scope,
+                produceFile = { file }
+            )
+            val device = DeviceInfo(
+                manufacturer = "Test",
+                model = "NoGpuFields",
+                androidVersion = "14",
+                sdkInt = 34,
+                supportedAbis = listOf("arm64-v8a"),
+                cpuModel = "cpu",
+                cpuCores = 8,
+                totalRamMb = 8192,
+                gpuVendor = null,
+                gpuRenderer = null
+            )
+            val currentKey = OptimizationContextKeyFactory.from(
+                device = device,
+                gamePackage = "game.a",
+                gameVersion = "1",
+                emulatorBackend = null
+            )
+            val legacyKey = OptimizationContextKey(
+                deviceFingerprint = OptimizationFingerprint.from(
+                    device = device,
+                    gamePackage = "game.a",
+                    gameVersion = "1",
+                    emulatorBackend = null,
+                    driverFingerprint = "|"
+                ),
+                gamePackage = "game.a",
+                gameVersion = "1",
+                emulatorBackend = null,
+                driverFingerprint = "|"
+            )
+            val legacyObservation = OptimizationObservation(
+                id = "legacy-no-gpu",
+                contextKey = legacyKey.serialized,
+                profile = PerformanceProfile.X4,
+                feedbackDecision = OptimizationFeedbackDecision.REJECTED,
+                timestampMillis = 99L
+            )
+            val encoded = listOf(
+                legacyObservation.id,
+                legacyObservation.contextKey,
+                legacyObservation.profile.name,
+                "",
+                "false",
+                "false",
+                "false",
+                "",
+                "",
+                "",
+                legacyObservation.timestampMillis.toString(),
+                legacyObservation.feedbackDecision.name
+            ).joinToString("|") { value ->
+                Base64.getEncoder().encodeToString(value.toByteArray(StandardCharsets.UTF_8))
+            }
+            dataStore.edit { preferences ->
+                preferences[stringPreferencesKey("observations_v1")] = encoded
+            }
+
+            val loaded = GameOptimizationMemoryStore(dataStore)
+                .observationsFlow(currentKey)
+                .first()
+
+            assertEquals(1, loaded.size)
+            assertEquals("legacy-no-gpu", loaded.single().id)
+            assertEquals(OptimizationFeedbackDecision.REJECTED, loaded.single().feedbackDecision)
         } finally {
             scope.cancel()
             file.delete()
