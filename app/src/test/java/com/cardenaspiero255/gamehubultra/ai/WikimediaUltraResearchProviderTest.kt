@@ -1321,4 +1321,26 @@ class WikimediaUltraResearchProviderTest {
     }
 
 
+
+    @Test
+    fun translatedEnglishDefinitionRequiresFullTopicCoverage() {
+        val provider = WikimediaUltraResearchProvider(
+            scriptedTransport(
+                searchBody =
+                    """{"query":{"search":[{"title":"Negro"}]}}""",
+                extractBody =
+                    """{"query":{"pages":{"1":{"title":"Negro","extract":"Negro es un color.","canonicalurl":"https://es.wikipedia.org/wiki/Negro"}}}}""",
+                englishTranslationBody =
+                    """{"query":{"pages":{"42":{"title":"Black","langlinks":[{"lang":"es","*":"Negro"}]}}}}"""
+            )
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, what is a black hole?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+    }
+
 }
