@@ -7621,7 +7621,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "generic bear definition survives provider rate limiting without a model",
   async () => {
