@@ -39,7 +39,9 @@ jobs:
     env:
       SMOKE_SEED: ${{ github.run_id }}
       SMOKE_STABLE_WORKERS: "24"
-      SMOKE_WARMUP_WORKERS: "2"
+      SMOKE_WARMUP_WORKERS: "1"
+      SMOKE_WARMUP_WAVE_COUNT: "4"
+      SMOKE_WARMUP_WAVE_DELAY_SECONDS: "2"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
       SMOKE_SHARD_COUNT: "32"
 
@@ -1009,6 +1011,20 @@ jobs:
                   f"{stable_workers}, got {warmup_workers}"
               )
 
+          warmup_wave_count = int(os.environ.get("SMOKE_WARMUP_WAVE_COUNT", "1"))
+          warmup_wave_delay_seconds = float(
+              os.environ.get("SMOKE_WARMUP_WAVE_DELAY_SECONDS", "0")
+          )
+          if warmup_wave_count < 1 or warmup_wave_count > physical_runner_count:
+              raise RuntimeError(
+                  f"SMOKE_WARMUP_WAVE_COUNT must be between 1 and "
+                  f"{physical_runner_count}, got {warmup_wave_count}"
+              )
+          if warmup_wave_delay_seconds < 0 or warmup_wave_delay_seconds > 10:
+              raise RuntimeError(
+                  "SMOKE_WARMUP_WAVE_DELAY_SECONDS must be between 0 and 10"
+              )
+
           stable_groups = {}
           for case in stable_rows:
               stable_groups.setdefault(case["routingKey"], []).append(case)
@@ -1027,10 +1043,19 @@ jobs:
               f"fresh={len(fresh_rows)} workers=1 expected={expected_executed}"
           )
 
-          # Warm one representative per semantic topic first. This keeps public
-          # providers below burst limits and fills Ultra's verified stable cache.
-          # Every remaining question still traverses the full HTTP endpoint and
-          # all 10,000 semantic/quality assertions remain unchanged.
+          # Warm one representative per semantic topic first. Stagger the
+          # physical runners into small deterministic waves so Wikipedia/Wikidata
+          # and model fallbacks are not hit by a 16-runner burst. This preserves
+          # all 10,000 cases and the 24-worker cached bulk phase.
+          warmup_wave = shard_index % warmup_wave_count
+          warmup_delay = warmup_wave * warmup_wave_delay_seconds
+          if warmup_delay > 0:
+              print(
+                  f"Warmup wave={warmup_wave + 1}/{warmup_wave_count} "
+                  f"delay={warmup_delay:.1f}s"
+              )
+              time.sleep(warmup_delay)
+
           with concurrent.futures.ThreadPoolExecutor(
               max_workers=warmup_workers
           ) as executor:
