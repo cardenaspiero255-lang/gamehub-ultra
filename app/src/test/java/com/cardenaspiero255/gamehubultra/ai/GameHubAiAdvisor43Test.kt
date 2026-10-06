@@ -394,4 +394,27 @@ class GameHubAiAdvisor43Test {
         assertEquals(AiAdviceReason.X4_READY, result.reason)
     }
 
+    @Test
+    fun `modern art does not trigger mode recovery from substring overlap`() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+            override fun advise(question: String, context: GameHubAiContext) =
+                LocalAiActionCandidate(AiActionAllowlist.PROFILE_BALANCED)
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ) = "El arte moderno abarca movimientos y enfoques artísticos de la era moderna."
+        }
+
+        val answer = GameHubAiAdvisor(modelAdapter = adapter).chat(
+            "What is modern art?",
+            contextWithPoorX4History,
+            emptyList()
+        )
+
+        assertTrue(answer.contains("arte moderno", ignoreCase = true))
+        assertFalse(answer.contains("perfil", ignoreCase = true))
+    }
+
 }
