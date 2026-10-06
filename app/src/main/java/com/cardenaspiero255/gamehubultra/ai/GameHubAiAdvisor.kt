@@ -790,7 +790,10 @@ class GameHubAiAdvisor(
 
     private fun isProfileRecommendationQuestion(normalized: String): Boolean {
         val tokens = normalized.split(Regex("""[^a-z0-9]+""")).filter(String::isNotBlank)
-        return tokens.any { it in PROFILE_RECOMMENDATION_TOKENS }
+        if (tokens.any { it in PROFILE_GAMING_SIGNAL_TOKENS }) return true
+        if (tokens.none { it in PROFILE_RECOMMENDATION_TOKENS }) return false
+        return tokens.any { it in PROFILE_RECOMMENDATION_INTENT_TOKENS } ||
+            PROFILE_RECOMMENDATION_PHRASES.any(normalized::contains)
     }
 
     private fun isSafetyConstrained(context: GameHubAiContext): Boolean =
@@ -821,7 +824,21 @@ class GameHubAiAdvisor(
 
     private companion object {
         const val MEMORY_RECALL_LIMIT = 6
-        val PROFILE_RECOMMENDATION_TOKENS = setOf("fps", "modo", "perfil", "mode", "profile")
+        val PROFILE_RECOMMENDATION_TOKENS = setOf("modo", "perfil", "mode", "profile")
+        val PROFILE_GAMING_SIGNAL_TOKENS = setOf(
+            "fps", "x4", "interpolacion", "interpolation", "balanceado", "balanced"
+        )
+        val PROFILE_RECOMMENDATION_INTENT_TOKENS = setOf(
+            "recomienda", "recomiendas", "recomendacion", "recomendado",
+            "recommend", "recommends", "recommendation", "recommended",
+            "mejor", "best", "usar", "use", "choose", "elegir", "elige",
+            "switch", "cambiar", "cambia", "activar", "activa", "set",
+            "gaming", "rendimiento", "performance", "gamehub", "ultra"
+        )
+        val PROFILE_RECOMMENDATION_PHRASES = setOf(
+            "which mode", "which profile", "que modo", "que perfil",
+            "qué modo", "qué perfil"
+        )
     }
 
     private fun normalize(value: String): String =
