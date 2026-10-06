@@ -23,6 +23,9 @@ import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 
 internal fun formatDuration(durationMillis: Long): String {
     val totalSeconds = durationMillis / 1000L
@@ -76,6 +79,72 @@ internal fun SessionCenterCard(
                     TextButton(onClick = onClear, modifier = Modifier.weight(1f)) {
                         Text(stringResource(R.string.session_clear))
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun AiSessionCoachCard(
+    preSession: SessionCoachMessage?,
+    liveSamples: List<SessionCoachSnapshot>,
+    observations: List<SessionCoachMessage>,
+    postSession: SessionCoachPostSessionReport?,
+    sessionActive: Boolean
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.session_coach_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            if (sessionActive) {
+                Text(
+                    stringResource(R.string.session_coach_live, liveSamples.size),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                if (observations.isEmpty()) {
+                    Text(
+                        stringResource(R.string.session_coach_stable),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    observations.takeLast(3).forEach { observation ->
+                        Text(
+                            "• ${observation.title}: ${observation.detail}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        observation.action?.let { action ->
+                            Text(action, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            } else {
+                preSession?.let { message ->
+                    Text(message.title, style = MaterialTheme.typography.labelLarge)
+                    Text(message.detail, style = MaterialTheme.typography.bodySmall)
+                    message.action?.let { action ->
+                        Text(action, style = MaterialTheme.typography.bodySmall)
+                    }
+                } ?: Text(
+                    stringResource(R.string.session_coach_waiting),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            postSession?.let { report ->
+                Text(
+                    stringResource(R.string.session_coach_last_session),
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(report.summary, style = MaterialTheme.typography.bodySmall)
+                report.nextSteps.take(3).forEach { step ->
+                    Text("• $step", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
