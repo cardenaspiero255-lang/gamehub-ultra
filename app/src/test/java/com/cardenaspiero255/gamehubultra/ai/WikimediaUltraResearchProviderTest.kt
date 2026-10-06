@@ -1274,4 +1274,45 @@ class WikimediaUltraResearchProviderTest {
         assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
     }
 
+    @Test
+    fun englishDefinitionRejectsUnrelatedTopResultWithoutVerifiedTranslation() {
+        var englishValidationCalls = 0
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, _ ->
+                when {
+                    url.contains("es.wikipedia.org") && url.contains("list=search") ->
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"search":[{"title":"Therapist"}]}}"""
+                        )
+
+                    url.contains("en.wikipedia.org") -> {
+                        englishValidationCalls += 1
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"pages":{"42":{"title":"Exoplanet","langlinks":[{"lang":"es","*":"Exoplaneta"}]}}}}"""
+                        )
+                    }
+
+                    url.contains("prop=extracts") ->
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"pages":{"1":{"title":"Therapist","extract":"A therapist is a trained professional who provides therapy.","canonicalurl":"https://es.wikipedia.org/wiki/Therapist"}}}}"""
+                        )
+
+                    else -> error("URL inesperada: $url")
+                }
+            }
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, what does exoplanet mean?")
+        )
+
+        val abstained = assertIs<UltraProviderResult.Abstained>(result)
+        assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
+        assertTrue(englishValidationCalls >= 1)
+    }
+
+
 }
