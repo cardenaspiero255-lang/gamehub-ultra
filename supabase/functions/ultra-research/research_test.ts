@@ -6543,3 +6543,232 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test("academic paper queries use keyless Semantic Scholar specialist", async () => {
+  let semanticCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.semanticscholar.org") {
+        semanticCalls += 1;
+        return jsonResponse({
+          data: [{
+            paperId: "S2-EXO-1",
+            title: "Atmospheres of Exoplanets",
+            year: 2026,
+            abstract:
+              "Exoplanet atmospheres can be studied with transit spectroscopy and thermal emission measurements.",
+            url: "https://www.semanticscholar.org/paper/S2-EXO-1",
+            citationCount: 42,
+            authors: [{ name: "A. Researcher" }],
+          }],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca papers científicos sobre atmósferas de exoplanetas",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Semantic Scholar evidence");
+  if (semanticCalls !== 1) throw new Error("expected one Semantic Scholar call");
+  if (!(result.sourceId ?? "").includes("semanticscholar.org")) {
+    throw new Error("expected Semantic Scholar source");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("exoplanet")) {
+    throw new Error("expected exoplanet paper evidence");
+  }
+});
+
+Deno.test("biomedical research queries use keyless Europe PMC specialist", async () => {
+  let europePmcCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "www.ebi.ac.uk") {
+        europePmcCalls += 1;
+        return jsonResponse({
+          resultList: {
+            result: [{
+              id: "PMC123",
+              source: "PMC",
+              title: "Immunotherapy advances in melanoma",
+              abstractText:
+                "Checkpoint inhibitors have changed the treatment landscape of melanoma and remain an active research area.",
+              authorString: "Researcher A et al.",
+              pubYear: "2026",
+              doi: "10.1000/melanoma",
+            }],
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca estudios biomédicos sobre inmunoterapia del melanoma",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Europe PMC evidence");
+  if (europePmcCalls !== 1) throw new Error("expected one Europe PMC call");
+  if (!(result.sourceId ?? "").includes("europepmc.org")) {
+    throw new Error("expected Europe PMC source");
+  }
+  if (!(result.displayText ?? "").toLowerCase().includes("melanoma")) {
+    throw new Error("expected melanoma research evidence");
+  }
+});
+
+Deno.test("DOI queries use public Crossref metadata", async () => {
+  let crossrefCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "api.crossref.org") {
+        crossrefCalls += 1;
+        return jsonResponse({
+          message: {
+            items: [{
+              DOI: "10.5555/attention",
+              title: ["Attention Is All You Need"],
+              publisher: "Test Publisher",
+              URL: "https://doi.org/10.5555/attention",
+              author: [
+                { given: "Ashish", family: "Vaswani" },
+              ],
+            }],
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Encuentra el DOI del paper Attention Is All You Need",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Crossref evidence");
+  if (crossrefCalls !== 1) throw new Error("expected one Crossref call");
+  if (!(result.displayText ?? "").includes("10.5555/attention")) {
+    throw new Error("expected DOI in answer");
+  }
+  if (!(result.sourceId ?? "").includes("doi.org")) {
+    throw new Error("expected DOI source");
+  }
+});
+
+Deno.test("book discovery queries use keyless Open Library specialist", async () => {
+  let openLibraryCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "openlibrary.org") {
+        openLibraryCalls += 1;
+        return jsonResponse({
+          docs: [{
+            key: "/works/OL123W",
+            title: "Kotlin in Action",
+            author_name: ["Dmitry Jemerov", "Svetlana Isakova"],
+            first_publish_year: 2017,
+            subject: ["Kotlin", "Computer programming"],
+          }],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Busca libros sobre programación en Kotlin",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) throw new Error("expected Open Library evidence");
+  if (openLibraryCalls !== 1) throw new Error("expected one Open Library call");
+  if (!(result.sourceId ?? "").includes("openlibrary.org/works/OL123W")) {
+    throw new Error("expected Open Library work source");
+  }
+  if (!(result.displayText ?? "").includes("Kotlin in Action")) {
+    throw new Error("expected book title");
+  }
+});
+
+Deno.test("World Bank indicator questions use keyless authoritative data", async () => {
+  let countryCalls = 0;
+  let indicatorCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname !== "api.worldbank.org") {
+        throw new Error("unexpected URL " + url);
+      }
+      if (url.pathname === "/v2/country") {
+        countryCalls += 1;
+        return jsonResponse([
+          { page: 1, pages: 1 },
+          [{ id: "CHL", iso2Code: "CL", name: "Chile" }],
+        ]);
+      }
+      if (
+        url.pathname ===
+          "/v2/country/CL/indicator/NY.GDP.PCAP.CD"
+      ) {
+        indicatorCalls += 1;
+        return jsonResponse([
+          { page: 1, pages: 1 },
+          [{
+            country: { value: "Chile" },
+            date: "2025",
+            value: 18000.5,
+          }],
+        ]);
+      }
+      throw new Error("unexpected World Bank URL " + url);
+    },
+    env: (name) =>
+      name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Cuál es el PIB per cápita de Chile según el Banco Mundial?",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) throw new Error("expected World Bank evidence");
+  if (countryCalls !== 1 || indicatorCalls !== 1) {
+    throw new Error("expected country resolution plus indicator lookup");
+  }
+  const answer = result.displayText ?? "";
+  if (!answer.includes("Chile") || !answer.includes("2025")) {
+    throw new Error("expected country and observation year");
+  }
+  if (!(result.sourceId ?? "").includes("api.worldbank.org")) {
+    throw new Error("expected World Bank source");
+  }
+});
