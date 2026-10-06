@@ -57,6 +57,9 @@ class SessionCoachMonitorService : Service() {
             if (cleanPackage.isEmpty()) return null
 
             val store = SessionCoachSessionStore(context)
+            store.finishActiveSession(nowMillis)?.let { previous ->
+                SessionCoachNotifications.postSummary(context, previous)
+            }
             if (!store.beginSession(sessionId, cleanPackage, nowMillis)) return null
 
             val intent = Intent(context, SessionCoachMonitorService::class.java)
