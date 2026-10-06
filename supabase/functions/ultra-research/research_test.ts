@@ -7469,14 +7469,23 @@ Deno.test(
                 "1": {
                   pageid: 1,
                   index: 1,
+                  title: "Fernando Jiménez del Oso",
+                  extract:
+                    "Fernando Jiménez del Oso fue un psiquiatra y periodista español especializado en misterio y parapsicología.",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Fernando_Jimenez_del_Oso",
+                },
+                "2": {
+                  pageid: 2,
+                  index: 2,
                   title: "El Oso Yogui",
                   extract:
                     "El Oso Yogui es un personaje ficticio de dibujos animados creado por Hanna-Barbera.",
                   canonicalurl: "https://es.wikipedia.org/wiki/El_Oso_Yogui",
                 },
-                "2": {
-                  pageid: 2,
-                  index: 2,
+                "3": {
+                  pageid: 3,
+                  index: 3,
                   title: "Ursidae",
                   extract:
                     "Los osos son mamíferos carnívoros de la familia Ursidae.",
