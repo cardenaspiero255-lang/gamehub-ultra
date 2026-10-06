@@ -60,10 +60,42 @@ class Car43LatestReviewRegressionTest {
 
     @Test
     fun `stable economic cost concepts remain general knowledge`() {
-        listOf("what is opportunity cost?", "what is marginal cost?").forEach { question ->
+        listOf(
+            "what is opportunity cost?",
+            "what is marginal cost?",
+            "what does opportunity cost mean?",
+            "what does sunk cost mean?"
+        ).forEach { question ->
             val request = UltraGeneralQueryRouter.classify(question)
             assertEquals(UltraGeneralQueryKind.GENERAL_KNOWLEDGE, request.kind, question)
             assertEquals(UltraVerificationMode.OPTIONAL, request.verificationMode, question)
+        }
+    }
+
+    @Test
+    fun `feedback recovery requires gaming recommendation intent for mode and profile`() {
+        val adapter = object : LocalAiModelAdapter {
+            override fun isAvailable() = true
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+            override fun chat(
+                message: String,
+                context: GameHubAiContext,
+                conversation: List<String>
+            ): String = "Respuesta estable del modelo."
+        }
+
+        listOf(
+            "What is profile likelihood?",
+            "What is the mode of this distribution?"
+        ).forEach { question ->
+            assertEquals(
+                "Respuesta estable del modelo.",
+                GameHubAiAdvisor(adapter).chat(question, healthyContext),
+                question
+            )
         }
     }
 
