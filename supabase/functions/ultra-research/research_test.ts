@@ -7429,13 +7429,13 @@ Deno.test(
 
     const [first, second] = await Promise.all([
       routeResearchQuery(
-        "¿Qué es un glaciar?",
+        "Explícame qué es un glaciar para un estudiante, en pocas frases.",
         deps,
         "",
         "GENERAL_KNOWLEDGE",
       ),
       routeResearchQuery(
-        "¿Qué es un glaciar?",
+        "Resume qué es un glaciar sin asumir conocimientos previos, y destaca una idea clave.",
         deps,
         "",
         "GENERAL_KNOWLEDGE",
