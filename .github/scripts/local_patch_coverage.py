@@ -110,11 +110,15 @@ def _looks_executable_source_line(line: str) -> bool:
         return False
     if re.match(
         r"^(?:(?:public|private|protected|internal)\s+)?(?:val|var)\s+"
-        r"[A-Za-z_][A-Za-z0-9_]*\s*=\s*"
+        r"[A-Za-z_][A-Za-z0-9_]*(?:\s*:\s*[^=]+)?\s*=\s*"
         r"(?:[-+]?\d+(?:\.\d+)?(?:[fFdDlL])?|true|false|null|"
         r"\"[^\"]*\"|'[^']*')\s*,?$",
         stripped,
     ):
+        return False
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:\{)?$", stripped):
+        return False
+    if re.match(r"^\"(?:[^\"\\]|\\.)*\"\s*,?$", stripped):
         return False
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+,?$", stripped):
         return False
