@@ -16,7 +16,6 @@ internal data class SmartRecommendationRejectionKey(
     val contextKey: OptimizationContextKey,
     val profile: PerformanceProfile,
     val currentProfile: PerformanceProfile,
-    val runtime: RuntimeDiagnostics?,
     val stableObservations: List<OptimizationObservation>
 )
 
@@ -60,7 +59,6 @@ internal object SmartRecommendationRevertPolicy {
             contextKey = contextKey,
             profile = profile,
             currentProfile = currentProfile,
-            runtime = runtime,
             stableObservations = rejectionStableObservations(profile, observations)
         )
 
