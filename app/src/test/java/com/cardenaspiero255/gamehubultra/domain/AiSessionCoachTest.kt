@@ -321,4 +321,81 @@ class AiSessionCoachTest {
         assertTrue(report.summary.contains("sin patrones repetidos relevantes"))
     }
 
+
+    @Test
+    fun postSessionReportsMeasuredBatteryDrainRate() {
+        val report = AiSessionCoach.postSession(
+            listOf(
+                SessionCoachSnapshot(
+                    timestampMillis = 0L,
+                    batteryPercent = 80,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 10 * 60_000L,
+                    batteryPercent = 76,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 20 * 60_000L,
+                    batteryPercent = 72,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                )
+            )
+        )
+
+        assertEquals(8, report.batteryDropPercent)
+        assertEquals(24f, report.batteryDrainPercentPerHour)
+        assertEquals(BatteryGamingRecommendation.BALANCED, report.batteryRecommendation)
+        assertTrue(report.summary.contains("24 %/h"))
+    }
+
+    @Test
+    fun chargingSessionDoesNotInventBatteryDrainRate() {
+        val report = AiSessionCoach.postSession(
+            listOf(
+                SessionCoachSnapshot(
+                    timestampMillis = 0L,
+                    batteryPercent = 20,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = true,
+                    powerSaveMode = false
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 10 * 60_000L,
+                    batteryPercent = 28,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = true,
+                    powerSaveMode = false
+                )
+            )
+        )
+
+        assertNull(report.batteryDrainPercentPerHour)
+        assertTrue(report.batteryChargingObserved)
+        assertEquals(BatteryGamingRecommendation.CHARGING, report.batteryRecommendation)
+        assertTrue(report.summary.contains("cargando", ignoreCase = true))
+    }
+
 }
