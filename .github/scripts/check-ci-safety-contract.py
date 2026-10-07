@@ -1163,12 +1163,25 @@ def main() -> None:
             ),
         )
 
+    debug_download = require_step(
+        android,
+        "build",
+        "Download exact-run debug artifact",
+        uses_prefix="actions/download-artifact@",
+    )
+    debug_download_with = debug_download.get("with")
+    if not isinstance(debug_download_with, dict):
+        fail("debug artifact consumer inputs are missing")
+    if debug_download_with.get("name") != "gamehub-ultra-debug":
+        fail("debug artifact consumer selected the wrong artifact")
+    if debug_download_with.get("run-id") != "${{ github.run_id }}":
+        fail("debug artifact consumer lost current-run binding")
+
     verifier = require_step(
         android,
-        "device-validation-shard",
-        "Verify Phase 3 artifact provenance locally",
+        "build",
+        "Verify Phase 3 artifact provenance",
         shell="bash",
-        allowed_if="matrix.shard == 'ui'",
     )
     for fragment in (
         'grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"',
