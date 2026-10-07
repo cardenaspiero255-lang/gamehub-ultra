@@ -77,10 +77,10 @@ object UltraFrontierWorldStateUpdater {
             .sortedBy { it.timestampMillis }
             .toList()
         val thermalPrediction = orderedSamples
-            .takeIf(List<SessionCoachSnapshot>::isNotEmpty)
+            .takeIf { it.isNotEmpty() }
             ?.let { ThermalPredictionEngine().predict(it) }
         val batteryAssessment = orderedSamples
-            .takeIf(List<SessionCoachSnapshot>::isNotEmpty)
+            .takeIf { it.isNotEmpty() }
             ?.let { BatteryAwareGamingEngine().assess(it) }
 
         return UltraFrontierWorldState.from(
