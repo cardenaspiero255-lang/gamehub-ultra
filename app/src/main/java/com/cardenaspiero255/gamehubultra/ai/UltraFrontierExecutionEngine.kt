@@ -647,9 +647,15 @@ class UltraFrontierExecutionEngine(
             attempt = attempt,
             executionStartedNanos = executionStartedNanos
         )
-        val researchTasks = plan.tasks.filter {
-            it.specialist == UltraFrontierSpecialist.RESEARCH
-        }
+        val researchTasks = plan.tasks
+            .filter {
+                it.specialist == UltraFrontierSpecialist.RESEARCH
+            }
+            .map {
+                // Routing/context prerequisites have already been resolved by
+                // the orchestrator before this research subgraph starts.
+                it.copy(dependsOn = emptySet())
+            }
         if (
             plan.lane != UltraFrontierLane.DEEP_RESEARCH ||
             researchTasks.size < 2
