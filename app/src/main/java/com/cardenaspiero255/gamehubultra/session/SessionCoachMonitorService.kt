@@ -49,6 +49,8 @@ internal enum class SessionCoachGamePresence {
 
 internal object SessionCoachGamePresenceDetector {
     private const val LOOKBACK_MS = 2L * 60L * 1_000L
+    private const val LEGACY_MOVE_TO_FOREGROUND = 1
+    private const val LEGACY_MOVE_TO_BACKGROUND = 2
 
     fun observe(
         context: Context,
@@ -74,7 +76,7 @@ internal object SessionCoachGamePresenceDetector {
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             when (event.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND,
+                LEGACY_MOVE_TO_FOREGROUND,
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
                     if (event.timeStamp >= latestForegroundAt) {
                         latestForegroundAt = event.timeStamp
@@ -82,7 +84,7 @@ internal object SessionCoachGamePresenceDetector {
                     }
                 }
 
-                UsageEvents.Event.MOVE_TO_BACKGROUND,
+                LEGACY_MOVE_TO_BACKGROUND,
                 UsageEvents.Event.ACTIVITY_PAUSED -> {
                     if (event.packageName == packageName) {
                         targetBackgroundAt = maxOf(targetBackgroundAt, event.timeStamp)
@@ -253,7 +255,7 @@ class SessionCoachMonitorService : Service() {
         }
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val store by lazy { SessionCoachSessionStore(applicationContext) }
     private var monitorJob: Job? = null
     private var activeMonitorSessionId: String? = null
@@ -276,7 +278,7 @@ class SessionCoachMonitorService : Service() {
                 )?.let { finished ->
                     SessionCoachNotifications.postSummary(this, finished)
                 }
-                stopMonitoring(expectedSessionId)
+                stopMonitoring(startId, expectedSessionId)
                 return START_NOT_STICKY
             }
 
@@ -284,7 +286,7 @@ class SessionCoachMonitorService : Service() {
                 val sessionId = intent.getStringExtra(EXTRA_SESSION_ID).orEmpty()
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME).orEmpty()
                 if (sessionId.isBlank() || packageName.isBlank()) {
-                    stopMonitoring()
+                    stopMonitoring(startId)
                     return START_NOT_STICKY
                 }
 
@@ -303,11 +305,11 @@ class SessionCoachMonitorService : Service() {
                 lastLatencyCheckAt = 0L
                 lastLatencyNetworkHandle = null
                 monitorJob = serviceScope.launch {
-                    monitorSession(sessionId, packageName)
+                    monitorSession(sessionId, packageName, startId)
                 }
             }
 
-            else -> stopMonitoring()
+            else -> stopMonitoring(startId)
         }
         return START_NOT_STICKY
     }
@@ -322,13 +324,14 @@ class SessionCoachMonitorService : Service() {
 
     private suspend fun monitorSession(
         sessionId: String,
-        packageName: String
+        packageName: String,
+        startId: Int
     ) {
         val startedAt = store.readActiveSession()
             ?.takeIf { it.sessionId == sessionId }
             ?.startedAtMillis
         if (startedAt == null) {
-            stopMonitoring(sessionId)
+            stopMonitoring(startId, sessionId)
             return
         }
 
@@ -343,19 +346,21 @@ class SessionCoachMonitorService : Service() {
         while (currentCoroutineContext().isActive) {
             val now = System.currentTimeMillis()
             if (now - startedAt >= MAX_SESSION_DURATION_MS) {
-                finishOwnedSession(sessionId, now)
+                finishOwnedSession(sessionId, now, startId)
                 return
             }
             if (store.readActiveSession()?.sessionId != sessionId) {
-                stopMonitoring(sessionId)
+                stopMonitoring(startId, sessionId)
                 return
             }
 
-            val presence = SessionCoachGamePresenceDetector.observe(
-                context = applicationContext,
-                packageName = packageName,
-                nowMillis = now
-            )
+            val presence = withContext(Dispatchers.IO) {
+                SessionCoachGamePresenceDetector.observe(
+                    context = applicationContext,
+                    packageName = packageName,
+                    nowMillis = now
+                )
+            }
             inactiveEvidenceCount = nextInactiveEvidenceCount(
                 presence = presence,
                 currentCount = inactiveEvidenceCount
@@ -368,7 +373,7 @@ class SessionCoachMonitorService : Service() {
                 shouldFinishForInactivity(inactiveEvidenceCount) ||
                 shouldFinishForUnknownPresence(unknownEvidenceCount)
             ) {
-                finishOwnedSession(sessionId, now)
+                finishOwnedSession(sessionId, now, startId)
                 return
             }
 
@@ -438,10 +443,12 @@ class SessionCoachMonitorService : Service() {
             nowMillis = nowMillis
         )
         if (shouldProbe) {
-            lastLatencyMs = ConnectivityLatencyProbe.measure(
-                context = applicationContext,
-                expectedNetworkHandle = checkNotNull(handle)
-            )
+            lastLatencyMs = withContext(Dispatchers.IO) {
+                ConnectivityLatencyProbe.measure(
+                    context = applicationContext,
+                    expectedNetworkHandle = checkNotNull(handle)
+                )
+            }
             lastLatencyCheckAt = nowMillis
             lastLatencyNetworkHandle = handle
         }
@@ -453,7 +460,8 @@ class SessionCoachMonitorService : Service() {
 
     private fun finishOwnedSession(
         sessionId: String,
-        nowMillis: Long
+        nowMillis: Long,
+        startId: Int
     ) {
         store.finishActiveSession(
             endedAtMillis = nowMillis,
@@ -461,7 +469,7 @@ class SessionCoachMonitorService : Service() {
         )?.let { finished ->
             SessionCoachNotifications.postSummary(this, finished)
         }
-        stopMonitoring(sessionId)
+        stopMonitoring(startId, sessionId)
     }
 
     private fun ensureForeground(notification: Notification) {
@@ -481,13 +489,17 @@ class SessionCoachMonitorService : Service() {
             ?.notify(SessionCoachNotifications.FOREGROUND_ID, notification)
     }
 
-    private fun stopMonitoring(expectedSessionId: String? = null) {
+    private fun stopMonitoring(
+        startId: Int,
+        expectedSessionId: String? = null
+    ) {
         if (!shouldStopOwnedMonitor(activeMonitorSessionId, expectedSessionId)) return
         monitorJob?.cancel()
         monitorJob = null
         activeMonitorSessionId = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        if (stopSelfResult(startId)) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
     }
 }
 

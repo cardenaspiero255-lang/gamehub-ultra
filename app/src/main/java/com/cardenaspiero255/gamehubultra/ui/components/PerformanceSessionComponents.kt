@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.R
@@ -99,8 +100,9 @@ internal fun AiSessionCoachCard(
         observations = observations,
         postSession = postSession,
         sessionActive = sessionActive,
-        activeSessionText = stringResource(
-            R.string.session_coach_live,
+        activeSessionText = pluralStringResource(
+            R.plurals.session_coach_live,
+            liveSamples.size,
             liveSamples.size
         ),
         stableText = stringResource(R.string.session_coach_stable)

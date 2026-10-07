@@ -262,7 +262,10 @@
     <string name="peripherals_audio_label">External audio outputs</string>
 
     <string name="session_coach_title">Ultra · Session Coach</string>
-    <string name="session_coach_live">Active session · %1$d samples analyzed</string>
+    <plurals name="session_coach_live">
+        <item quantity="one">Active session · %1$d sample analyzed</item>
+        <item quantity="other">Active session · %1$d samples analyzed</item>
+    </plurals>
     <string name="session_coach_stable">No meaningful changes: Ultra avoids alerts for insignificant variation.</string>
     <string name="session_coach_waiting">Waiting for real telemetry to evaluate the next session.</string>
     <string name="session_coach_last_session">Last analyzed session</string>
