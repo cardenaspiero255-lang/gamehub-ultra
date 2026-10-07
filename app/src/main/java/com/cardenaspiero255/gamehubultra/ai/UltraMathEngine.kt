@@ -76,7 +76,7 @@ object UltraMathEngine {
     }
 
     private fun solveQuadraticEquation(clean: String): UltraMathSolution? {
-        if (!Regex("""\bx\s*\^\s*2\b""").containsMatchIn(clean)) return null
+        if (!Regex("""(?<![a-z])x\s*\^\s*2\b""").containsMatchIn(clean)) return null
         val match = Regex(
             """([+-]?\s*(?:\d+(?:[.,]\d+)?)?)\s*x\s*\^\s*2\s*([+-])\s*(?:(\d+(?:[.,]\d+)?)\s*)?x\s*([+-])\s*(\d+(?:[.,]\d+)?)\s*=\s*0"""
         ).find(clean) ?: return null
