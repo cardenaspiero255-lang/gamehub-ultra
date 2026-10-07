@@ -528,4 +528,76 @@ class AiSessionCoachTest {
         assertTrue(report.patterns.none { it.signal == SessionCoachSignal.BATTERY })
     }
 
+
+    @Test
+    fun postSessionPreservesLegacyRunWhenHistoryMixesOldAndNewBatteryState() {
+        val report = AiSessionCoach.postSession(
+            listOf(
+                SessionCoachSnapshot(
+                    timestampMillis = 0L,
+                    batteryPercent = 80,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = null
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 10 * 60_000L,
+                    batteryPercent = 70,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = null
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 20 * 60_000L,
+                    batteryPercent = 65,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 30 * 60_000L,
+                    batteryPercent = 60,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false
+                )
+            )
+        )
+
+        assertEquals(20, report.batteryDropPercent)
+        assertEquals(40f, report.batteryDrainPercentPerHour)
+    }
+
+    @Test
+    fun preSessionDoesNotWarnForCriticalPercentageWhileCharging() {
+        val result = AiSessionCoach.preSession(
+            readiness = GamingReadiness(
+                score = 92,
+                label = "Listo",
+                reasons = emptyList()
+            ),
+            snapshot = SessionCoachSnapshot(
+                timestampMillis = 1L,
+                batteryPercent = 10,
+                thermalStatus = 1,
+                thermalHeadroom = 0.2f,
+                refreshRateHz = 120f,
+                latencyMs = 30L,
+                batteryCharging = true,
+                powerSaveMode = false
+            )
+        )
+
+        assertEquals(SessionCoachPriority.INFO, result.priority)
+        assertFalse(result.detail.contains("Batería baja", ignoreCase = true))
+    }
+
 }
