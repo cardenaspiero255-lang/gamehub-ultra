@@ -252,16 +252,16 @@ class UltraWeightedConsensusEngine(
         val ranked = groups.entries
             .map { entry ->
                 val evidence = entry.value
-                val weight = evidence.sumOf(::weight)
+                val weight = groupWeight(evidence)
                 Triple(entry.key, evidence, weight)
             }
             .sortedByDescending { it.third }
 
         val winner = ranked.first()
         val runnerWeight = ranked.getOrNull(1)?.third ?: 0.0
-        val independentSources = winner.second.sumOf {
-            it.independentSourceCount.coerceAtLeast(1)
-        }
+        val independentSources = independentSourceCount(
+            winner.second
+        )
         val ratioSatisfied =
             runnerWeight <= 0.0 ||
                 winner.third >= runnerWeight * minimumWinnerRatio
@@ -289,6 +289,41 @@ class UltraWeightedConsensusEngine(
             independentSourceCount = independentSources,
             confidence = confidence
         )
+    }
+
+    private fun groupWeight(
+        candidates: List<UltraWeightedEvidenceCandidate>
+    ): Double =
+        candidates.sumOf {
+            it.providerScore.coerceIn(0.0, 1.0) * 2.0 +
+                if (it.authoritative) 2.0 else 0.0
+        } + independentSourceCount(candidates).coerceAtMost(8) * 1.5
+
+    private fun independentSourceCount(
+        candidates: List<UltraWeightedEvidenceCandidate>
+    ): Int {
+        val identified = candidates
+            .flatMap { candidate ->
+                candidate.sourceIds
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .map { it.lowercase(Locale.ROOT) }
+            }
+            .toSet()
+        val unidentified = candidates.sumOf { candidate ->
+            val identifiedForCandidate = candidate.sourceIds
+                .asSequence()
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .map { it.lowercase(Locale.ROOT) }
+                .distinct()
+                .count()
+            (
+                candidate.independentSourceCount.coerceAtLeast(1) -
+                    identifiedForCandidate
+                ).coerceAtLeast(0)
+        }
+        return identified.size + unidentified
     }
 
     private fun weight(candidate: UltraWeightedEvidenceCandidate): Double =
