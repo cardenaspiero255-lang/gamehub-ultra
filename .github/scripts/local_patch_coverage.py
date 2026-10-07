@@ -143,6 +143,39 @@ def _looks_executable_source_line(line: str) -> bool:
     return True
 
 
+def _looks_like_multiline_function_type_signature(
+    source_lines: list[str],
+    number: int,
+) -> bool:
+    if not 0 < number <= len(source_lines):
+        return False
+
+    stripped = source_lines[number - 1].strip()
+    is_type_token = bool(
+        re.match(
+            r"^[A-Z][A-Za-z0-9_.]*(?:<[^>]+>)?\??,?$",
+            stripped,
+        )
+    )
+    is_return_type = bool(
+        re.match(
+            r"^\)\s*->\s*[A-Z][A-Za-z0-9_.]*(?:<[^>]+>)?\??,?$",
+            stripped,
+        )
+    )
+    if not (is_type_token or is_return_type):
+        return False
+
+    start = max(0, number - 8)
+    for previous in reversed(source_lines[start : number - 1]):
+        previous_stripped = previous.strip()
+        if re.search(r":\s*(?:suspend\s*)?\(\s*$", previous_stripped):
+            return True
+        if previous_stripped.endswith("{") or previous_stripped == "}":
+            break
+    return False
+
+
 def calculate_patch_line_coverage(
     report: ET.Element,
     added_lines: dict[str, set[int]],
@@ -174,7 +207,10 @@ def calculate_patch_line_coverage(
                         if 0 < number <= len(source)
                         else ""
                     )
-                    if _looks_executable_source_line(source_line):
+                    if (
+                        _looks_executable_source_line(source_line)
+                        and not _looks_like_multiline_function_type_signature(source, number)
+                    ):
                         unmapped.append(f"{path}:{number}")
                 continue
             missed, hit = counters
