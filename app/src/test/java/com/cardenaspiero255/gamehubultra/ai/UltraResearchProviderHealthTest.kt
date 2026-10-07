@@ -95,6 +95,43 @@ class UltraResearchProviderHealthTest {
     }
 
     @Test
+    fun semanticOutcomeResetsInfrastructureFailureStreak() {
+        val health = UltraResearchProviderHealth(
+            policy = UltraResearchProviderHealthPolicy(
+                failureThreshold = 2,
+                cooldownMillis = 60_000L
+            )
+        )
+
+        health.record(
+            providerId = "primary",
+            result = UltraProviderResult.Failure(
+                reasonCode = "UPSTREAM_UNAVAILABLE",
+                retryable = true
+            ),
+            nowMillis = 1_000L
+        )
+        health.record(
+            providerId = "primary",
+            result = UltraProviderResult.Abstained(
+                reasonCode = "INSUFFICIENT_CORROBORATION",
+                retryable = false
+            ),
+            nowMillis = 2_000L
+        )
+        health.record(
+            providerId = "primary",
+            result = UltraProviderResult.Failure(
+                reasonCode = "UPSTREAM_TIMEOUT",
+                retryable = true
+            ),
+            nowMillis = 3_000L
+        )
+
+        assertTrue(health.isAvailable("primary", 3_001L))
+    }
+
+    @Test
     fun researchEngineSkipsOpenProviderAndUsesHealthyFallback() {
         var primaryCalls = 0
         var fallbackCalls = 0
