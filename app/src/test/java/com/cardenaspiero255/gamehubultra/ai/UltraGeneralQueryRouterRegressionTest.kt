@@ -117,7 +117,7 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
-    fun gameTitleContainingWhyDoesNotTriggerResearch() {
+    fun conversationalGameTitleContainingWhyStaysAStableTopicRequest() {
         val title = UltraGeneralQueryRouter.classify(
             "Ultra, háblame de Tell Me Why"
         )
@@ -125,10 +125,11 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, why is the sky blue?"
         )
 
-        assertEquals(UltraVerificationMode.LOCAL, title.verificationMode)
+        assertEquals(UltraVerificationMode.OPTIONAL, title.verificationMode)
         assertEquals(UltraVerificationMode.OPTIONAL, actualQuestion.verificationMode)
         assertFalse(title.requiresInternet)
         assertFalse(actualQuestion.requiresInternet)
+        assertFalse(title.requiresFreshData)
     }
 
     @Test

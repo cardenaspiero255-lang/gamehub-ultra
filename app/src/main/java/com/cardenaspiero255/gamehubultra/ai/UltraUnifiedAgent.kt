@@ -63,16 +63,6 @@ object UltraUnifiedAgentRouter {
             return UltraAgentRoute.Chat(transcript.trim())
         }
 
-        if (UltraGeneralQueryRouter.isConversationalTopicRequest(transcript)) {
-            return UltraAgentRoute.Chat(
-                message = transcript.trim(),
-                query = UltraContextualQueryPlanner.plan(
-                    message = transcript,
-                    conversationHistory = conversationHistory
-                )
-            )
-        }
-
         val command = VoiceCommandParser.parse(
             transcript = transcript,
             optionalResolver = optionalResolver,
