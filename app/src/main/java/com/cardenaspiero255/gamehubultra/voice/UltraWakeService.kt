@@ -281,7 +281,16 @@ class UltraWakeService : Service() {
         ) {
             UltraWakeRecognitionDisposition.SUPPRESS -> return
 
-            UltraWakeRecognitionDisposition.STOP_TTS -> return stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) { finishCommandAndResume(it, playbackEnded = true) }
+            UltraWakeRecognitionDisposition.STOP_TTS -> {
+                val activeToken = speechGeneration.activeToken()
+                speechPlayback.stop()
+                if (activeToken != null) {
+                    finishCommandAndResume(activeToken, playbackEnded = true)
+                } else if (!keepRecognitionActive) {
+                    scheduleRestart()
+                }
+                return
+            }
 
             UltraWakeRecognitionDisposition.INTERRUPT_TTS -> {
                 val now = System.currentTimeMillis()
