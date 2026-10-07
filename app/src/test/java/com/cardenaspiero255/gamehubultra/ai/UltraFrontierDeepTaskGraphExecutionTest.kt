@@ -9,12 +9,15 @@ import kotlin.test.assertTrue
 class UltraFrontierDeepTaskGraphExecutionTest {
     @Test
     fun deepResearchExecutesDiversifiedResearchTasksFromThePlan() {
-        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        val partitions = Collections.synchronizedList(
+            mutableListOf<Pair<Int, Int?>>()
+        )
         val gateway = object : UltraResearchGateway {
             override val supportsProviderPartitioning: Boolean = true
 
             override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
-                offsets += request.researchProviderOffset
+                partitions +=
+                    request.researchProviderOffset to request.researchProviderBudget
                 return if (request.researchProviderOffset == 0) {
                     UltraVerifiedResearchResult(
                         message = "Candidato A",
@@ -47,8 +50,12 @@ class UltraFrontierDeepTaskGraphExecutionTest {
             )
         ) { null }
 
-        assertEquals(setOf(0, 1), offsets.toSet())
-        assertTrue(offsets.size >= 2)
+        val sorted = partitions.sortedBy { it.first }
+        assertTrue(sorted.size >= 2)
+        assertEquals(0, sorted.first().first)
+        val firstBudget = sorted.first().second ?: 0
+        assertTrue(firstBudget > 0)
+        assertTrue(sorted[1].first >= sorted[0].first + firstBudget)
         assertFalse(answer.abstained)
         assertTrue(answer.verified)
         assertEquals("Candidato A", answer.message)
