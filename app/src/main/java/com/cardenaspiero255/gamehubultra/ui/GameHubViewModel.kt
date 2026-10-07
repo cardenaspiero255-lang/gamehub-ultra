@@ -113,6 +113,12 @@ class GameHubViewModel(
         viewModelScope.launch { identityRepository.savePlayerName(rawName) }
     }
 
+    fun saveGameProfileConfig(packageName: String, config: GameProfileConfig) {
+        viewModelScope.launch {
+            repository.saveGameProfileConfig(packageName, config)
+        }
+    }
+
     fun selectGameProfile(packageName: String, profile: PerformanceProfile) {
         viewModelScope.launch {
             val current = repository.gameProfileConfigFlow(packageName).first()
