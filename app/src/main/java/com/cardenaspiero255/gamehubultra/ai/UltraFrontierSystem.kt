@@ -120,6 +120,7 @@ data class UltraFrontierPolicy(
 data class UltraFrontierPlan(
     val lane: UltraFrontierLane,
     val steps: List<UltraFrontierStep>,
+    val tasks: List<UltraFrontierTask> = emptyList(),
     val fallback: UltraFrontierFallback,
     val sourceBudget: Int,
     val maxSourceBudget: Int,
@@ -154,7 +155,9 @@ data class UltraFrontierPlan(
 }
 
 class UltraFrontierOrchestrator(
-    val policy: UltraFrontierPolicy = UltraFrontierPolicy()
+    val policy: UltraFrontierPolicy = UltraFrontierPolicy(),
+    private val evolution: UltraFrontierEvolutionController =
+        UltraFrontierEvolutionController()
 ) {
     fun plan(request: UltraFrontierRequest): UltraFrontierPlan {
         val query = request.query
@@ -172,7 +175,7 @@ class UltraFrontierOrchestrator(
             return blockedResearchPlan(request)
         }
 
-        val lane = when {
+        val baseLane = when {
             query.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH ->
                 UltraFrontierLane.DEEP_RESEARCH
 
@@ -185,6 +188,30 @@ class UltraFrontierOrchestrator(
             else ->
                 UltraFrontierLane.LOCAL_FAST
         }
+        val domain = evolution.domain(query)
+        val adaptiveCandidates = when {
+            query.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH ->
+                setOf(UltraFrontierLane.DEEP_RESEARCH)
+            researchRequired ->
+                setOf(UltraFrontierLane.VERIFIED_RESEARCH)
+            query.verificationMode == UltraVerificationMode.OPTIONAL &&
+                request.networkAvailable ->
+                setOf(
+                    baseLane,
+                    UltraFrontierLane.LOCAL_FAST,
+                    UltraFrontierLane.LOCAL_DELIBERATE,
+                    UltraFrontierLane.VERIFIED_RESEARCH
+                )
+            else ->
+                setOf(
+                    UltraFrontierLane.LOCAL_FAST,
+                    UltraFrontierLane.LOCAL_DELIBERATE
+                )
+        }
+        val lane = evolution.learning
+            .preferredLane(domain, adaptiveCandidates)
+            ?: baseLane
+        val adaptiveBudget = evolution.budget(query, policy)
 
         val steps = buildList {
             add(
@@ -294,18 +321,21 @@ class UltraFrontierOrchestrator(
         }.take(policy.maximumPlanSteps)
 
         val sourceBudget = when (lane) {
-            UltraFrontierLane.DEEP_RESEARCH -> policy.deepSourceBudget
-            UltraFrontierLane.VERIFIED_RESEARCH -> policy.verifiedSourceBudget
+            UltraFrontierLane.DEEP_RESEARCH,
+            UltraFrontierLane.VERIFIED_RESEARCH ->
+                adaptiveBudget.sourceBudget
             else -> policy.fastSourceBudget
         }
         val researchPassBudget = when (lane) {
-            UltraFrontierLane.DEEP_RESEARCH -> policy.deepResearchPassBudget
-            UltraFrontierLane.VERIFIED_RESEARCH -> policy.verifiedResearchPassBudget
+            UltraFrontierLane.DEEP_RESEARCH,
+            UltraFrontierLane.VERIFIED_RESEARCH ->
+                adaptiveBudget.passBudget
             else -> 0
         }
         val researchTimeBudgetMillis = when (lane) {
-            UltraFrontierLane.DEEP_RESEARCH -> policy.deepResearchTimeBudgetMillis
-            UltraFrontierLane.VERIFIED_RESEARCH -> policy.verifiedResearchTimeBudgetMillis
+            UltraFrontierLane.DEEP_RESEARCH,
+            UltraFrontierLane.VERIFIED_RESEARCH ->
+                adaptiveBudget.timeBudgetMillis
             else -> 0L
         }
         val maxSourceBudget = when (lane) {
@@ -319,15 +349,9 @@ class UltraFrontierOrchestrator(
             else -> 0
         }
         val minimumDistinctSources = when (lane) {
-            UltraFrontierLane.VERIFIED_RESEARCH -> if (query.requiresFreshData) {
-                maxOf(
-                    policy.minimumVerifiedSources,
-                    policy.minimumFreshSources
-                )
-            } else {
-                policy.minimumVerifiedSources
-            }
-            UltraFrontierLane.DEEP_RESEARCH -> policy.minimumDeepSources
+            UltraFrontierLane.VERIFIED_RESEARCH,
+            UltraFrontierLane.DEEP_RESEARCH ->
+                adaptiveBudget.minimumIndependentSources
             else -> 0
         }
         val fallback = when {
@@ -345,6 +369,7 @@ class UltraFrontierOrchestrator(
         return UltraFrontierPlan(
             lane = lane,
             steps = steps,
+            tasks = evolution.tasks(request, lane),
             fallback = fallback,
             sourceBudget = sourceBudget,
             maxSourceBudget = maxSourceBudget,
@@ -408,6 +433,10 @@ class UltraFrontierOrchestrator(
         return UltraFrontierPlan(
             lane = UltraFrontierLane.TOOL_ACTION,
             steps = steps,
+            tasks = evolution.tasks(
+                request,
+                UltraFrontierLane.TOOL_ACTION
+            ),
             fallback = UltraFrontierFallback.NONE,
             sourceBudget = 0,
             maxSourceBudget = 0,
@@ -452,6 +481,10 @@ class UltraFrontierOrchestrator(
         return UltraFrontierPlan(
             lane = UltraFrontierLane.BLOCKED,
             steps = steps,
+            tasks = evolution.tasks(
+                request,
+                UltraFrontierLane.BLOCKED
+            ),
             fallback = UltraFrontierFallback.ABSTAIN,
             sourceBudget = policy.verifiedSourceBudget,
             maxSourceBudget = policy.deepSourceBudget,
