@@ -5,6 +5,7 @@ import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveTrendSample
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveOptimizer
+import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePendingDecision
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -65,6 +66,25 @@ internal suspend fun processCompletedAdaptiveSession(
     recordPerformanceEvent: suspend (PerformanceEvent) -> Unit
 ): PerGameAdaptiveDecision? {
     val session = completed ?: return null
+    val pending = optimizer.readPendingDecision(session.sessionId)
+    if (pending != null) {
+        if (wasSessionHandled()) {
+            optimizer.restoreState(pending.key, pending.targetState)
+            optimizer.clearPendingDecision(session.sessionId)
+            return PerGameAdaptiveDecision(
+                profile = pending.targetProfile,
+                changed = true,
+                reason = pending.reason
+            )
+        }
+        return completePendingAdaptiveDecision(
+            pending = pending,
+            optimizer = optimizer,
+            persistProfile = persistProfile,
+            markSessionHandled = markSessionHandled,
+            recordPerformanceEvent = recordPerformanceEvent
+        )
+    }
     if (wasSessionHandled()) return null
 
     val key = adaptiveGameKey(session) ?: run {
@@ -77,7 +97,8 @@ internal suspend fun processCompletedAdaptiveSession(
         session = session,
         activeProfile = activeProfile,
         optimizer = optimizer,
-        nowMillis = nowMillis
+        nowMillis = nowMillis,
+        persistState = false
     )
 
     if (evaluated == null) {
@@ -85,35 +106,78 @@ internal suspend fun processCompletedAdaptiveSession(
         return null
     }
 
-    if (evaluated.decision.changed) {
-        var profilePersisted = false
-        try {
-            persistProfile(evaluated.packageName, evaluated.decision.profile)
-            profilePersisted = true
-            recordPerformanceEvent(
-                adaptivePerformanceEvent(
-                    session = session,
-                    decision = evaluated.decision,
-                    nowMillis = nowMillis
-                )
-            )
-        } catch (error: Throwable) {
-            if (profilePersisted) {
-                try {
-                    withContext(NonCancellable) {
-                        persistProfile(evaluated.packageName, activeProfile)
-                    }
-                } catch (rollbackError: Throwable) {
-                    error.addSuppressed(rollbackError)
-                }
-            }
-            optimizer.restoreState(key, snapshot)
-            throw error
-        }
+    if (!evaluated.decision.changed) {
+        optimizer.commitState(key)
+        markSessionHandled()
+        return evaluated.decision
     }
 
-    markSessionHandled()
-    return evaluated.decision
+    val targetState = checkNotNull(optimizer.snapshotState(key))
+    val pendingDecision = PerGameAdaptivePendingDecision(
+        sessionId = session.sessionId,
+        key = key,
+        previousProfile = activeProfile,
+        targetProfile = evaluated.decision.profile,
+        targetState = targetState,
+        eventTimestampMillis = nowMillis,
+        reason = evaluated.decision.reason
+    )
+    optimizer.writePendingDecision(pendingDecision)
+
+    return try {
+        completePendingAdaptiveDecision(
+            pending = pendingDecision,
+            optimizer = optimizer,
+            persistProfile = persistProfile,
+            markSessionHandled = markSessionHandled,
+            recordPerformanceEvent = recordPerformanceEvent
+        )
+    } catch (error: Throwable) {
+        optimizer.restoreState(key, snapshot)
+        throw error
+    }
+}
+
+private suspend fun completePendingAdaptiveDecision(
+    pending: PerGameAdaptivePendingDecision,
+    optimizer: PerGameAdaptiveOptimizer,
+    persistProfile: suspend (String, PerformanceProfile) -> Unit,
+    markSessionHandled: () -> Unit,
+    recordPerformanceEvent: suspend (PerformanceEvent) -> Unit
+): PerGameAdaptiveDecision {
+    var profilePersisted = false
+    try {
+        persistProfile(pending.key.packageName, pending.targetProfile)
+        profilePersisted = true
+        recordPerformanceEvent(
+            PerformanceEvent(
+                timestampMillis = pending.eventTimestampMillis,
+                type = PerformanceEventType.POLICY_CHANGED,
+                sessionId = pending.sessionId,
+                profile = pending.targetProfile,
+                detail = pending.reason
+            )
+        )
+        optimizer.restoreState(pending.key, pending.targetState)
+        markSessionHandled()
+        optimizer.clearPendingDecision(pending.sessionId)
+        return PerGameAdaptiveDecision(
+            profile = pending.targetProfile,
+            changed = true,
+            reason = pending.reason
+        )
+    } catch (error: Throwable) {
+        if (profilePersisted) {
+            try {
+                withContext(NonCancellable) {
+                    persistProfile(pending.key.packageName, pending.previousProfile)
+                }
+            } catch (rollbackError: Throwable) {
+                error.addSuppressed(rollbackError)
+            }
+        }
+        throw error
+    }
 }
 
 private data class EvaluatedAdaptiveSession(
@@ -125,15 +189,13 @@ private fun evaluateCompletedAdaptiveDecision(
     session: SessionCoachStoredSession,
     activeProfile: PerformanceProfile,
     optimizer: PerGameAdaptiveOptimizer,
-    nowMillis: Long
+    nowMillis: Long,
+    persistState: Boolean = true
 ): EvaluatedAdaptiveSession? {
     val key = adaptiveGameKey(session) ?: return null
     if (session.samples.isEmpty()) return null
 
-    val decision = optimizer.evaluate(
-        key = key,
-        activeProfile = activeProfile,
-        samples = session.samples.map { sample ->
+    val mappedSamples = session.samples.map { sample ->
             AdaptiveTrendSample(
                 thermalStatus = sample.thermalStatus,
                 batteryPercent = sample.batteryPercent,
@@ -143,9 +205,22 @@ private fun evaluateCompletedAdaptiveDecision(
                     ?.coerceIn(0L, Int.MAX_VALUE.toLong())
                     ?.toInt()
             )
-        },
-        nowMillis = nowMillis
-    )
+        }
+    val decision = if (persistState) {
+        optimizer.evaluate(
+            key = key,
+            activeProfile = activeProfile,
+            samples = mappedSamples,
+            nowMillis = nowMillis
+        )
+    } else {
+        optimizer.evaluateUncommitted(
+            key = key,
+            activeProfile = activeProfile,
+            samples = mappedSamples,
+            nowMillis = nowMillis
+        )
+    }
     return EvaluatedAdaptiveSession(
         packageName = key.packageName,
         decision = decision
