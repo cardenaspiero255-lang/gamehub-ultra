@@ -255,7 +255,7 @@ class SessionCoachMonitorService : Service() {
         }
     }
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
     private val store by lazy { SessionCoachSessionStore(applicationContext) }
     private var monitorJob: Job? = null
     private var activeMonitorSessionId: String? = null
