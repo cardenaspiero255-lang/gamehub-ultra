@@ -8216,10 +8216,10 @@ Deno.test(
       throw new Error("basic book knowledge must remain answerable");
     }
     const answer = (result.displayText ?? "").toLowerCase();
-    if (
-      !answer.includes("libro") ||
-      !(answer.includes("página") || answer.includes("paginas") || answer.includes("texto"))
-    ) {
+    const hasBookShape = ["página", "paginas", "texto"].some((token) =>
+      answer.includes(token)
+    );
+    if (!answer.includes("libro") || !hasBookShape) {
       throw new Error("expected a general book definition: " + answer);
     }
     if (networkCalls !== 0) {
