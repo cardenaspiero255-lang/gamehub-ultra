@@ -1827,9 +1827,14 @@ async function nominatimCoordinates(
   url.searchParams.set("limit", "1");
   url.searchParams.set("accept-language", "es");
 
-  const response = await fetchWithRetry(deps, url, {
-    headers: { "User-Agent": USER_AGENT },
-  });
+  const response = await fetchWithRetry(
+    deps,
+    url,
+    {
+      headers: { "User-Agent": USER_AGENT },
+    },
+    1,
+  );
   if (!response?.ok) return null;
 
   try {
@@ -1951,9 +1956,14 @@ async function weatherEvidence(
   geoUrl.searchParams.set("language", "es");
   geoUrl.searchParams.set("format", "json");
 
-  const geoResponse = await fetchWithRetry(deps, geoUrl, {
-    headers: { "User-Agent": USER_AGENT },
-  });
+  const geoResponse = await fetchWithRetry(
+    deps,
+    geoUrl,
+    {
+      headers: { "User-Agent": USER_AGENT },
+    },
+    2,
+  );
 
   let geo: JsonObject | null = null;
   if (geoResponse?.ok) {
@@ -2677,7 +2687,6 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^expl[ií]came qu[eé] es\s+(.+?)\.?$/i,
     /^describe\s+(.+?)\.?$/i,
     /^descr[ií]beme\s+(.+?)\.?$/i,
-    /^(?:h[aá]blame|cu[eé]ntame|dime(?:\s+algo)?|dime\s+qu[eé]\s+sabes|quiero\s+saber|quiero\s+que\s+me\s+hables|me\s+puedes\s+hablar|puedes\s+hablarme|podr[ií]as\s+hablarme|expl[ií]came(?:\s+algo)?|ens[eé][ñn]ame(?:\s+algo)?|qu[eé]\s+sabes|dame\s+informaci[oó]n|inf[oó]rmame)\s+(?:de|del|sobre|acerca\s+de)\s+(.+?)\.?$/i,
     /^para qu[eé] sirve o por qu[eé] importa\s+(.+?)\.?$/i,
     /^resume qu[eé] es\s+(.+?)\.?$/i,
     /^dime lo esencial sobre\s+(.+?)\.?$/i,
@@ -2700,6 +2709,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^cu[aá]ndo comenz[oó]\s+(.+?)\.?$/i,
     /^qui[eé]n fue\s+(.+?)\.?$/i,
     /^qu[eé] fue\s+(.+?)\.?$/i,
+    /^(?:h[aá]blame|cu[eé]ntame|dime(?:\s+algo)?|dime\s+qu[eé]\s+sabes|quiero\s+saber|quiero\s+que\s+me\s+hables|me\s+puedes\s+hablar|puedes\s+hablarme|podr[ií]as\s+hablarme|expl[ií]came(?:\s+algo)?|ens[eé][ñn]ame(?:\s+algo)?|qu[eé]\s+sabes|dame\s+informaci[oó]n|inf[oó]rmame)\s+(?:de|del|sobre|acerca\s+de)\s+(.+?)\.?$/i,
   ];
 
   for (const wrapper of wrappers) {
