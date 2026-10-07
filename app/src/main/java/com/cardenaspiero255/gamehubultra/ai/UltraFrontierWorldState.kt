@@ -73,10 +73,34 @@ object UltraFrontierWorldStateRegistry {
         context: GameHubAiContext,
         nowMillis: Long = System.currentTimeMillis()
     ) {
-        current = UltraFrontierWorldState.from(
+        val base = UltraFrontierWorldState.from(
             context = context,
             nowMillis = nowMillis
         )
+        val previous = current
+        val previousAge = previous?.let {
+            nowMillis - it.timestampMillis
+        }
+        val canReuseAdvanced =
+            previous != null &&
+                previous.selectedGamePackage == context.selectedGamePackage &&
+                previousAge != null &&
+                previousAge >= 0L &&
+                previousAge <= ADVANCED_SIGNAL_MAX_AGE_MILLIS
+
+        current = if (canReuseAdvanced) {
+            base.copy(
+                thermalTrend = previous?.thermalTrend,
+                thermalRisk = previous?.thermalRisk,
+                thermalConfidence = previous?.thermalConfidence,
+                batteryRecommendation = previous?.batteryRecommendation,
+                preventAggressiveProfiles =
+                    previous?.preventAggressiveProfiles ?: false,
+                adaptiveScore = previous?.adaptiveScore
+            )
+        } else {
+            base
+        }
     }
 
     fun snapshot(): UltraFrontierWorldState? = current
@@ -84,4 +108,6 @@ object UltraFrontierWorldStateRegistry {
     fun clear() {
         current = null
     }
+
+    private const val ADVANCED_SIGNAL_MAX_AGE_MILLIS = 2 * 60_000L
 }
