@@ -112,6 +112,10 @@ class UltraGeneralAssistantCar73Test {
             "Ultra, explícame sobre los volcanes",
             "Ultra, dame información sobre Nintendo"
         ).forEach { transcript ->
+            assertTrue(
+                UltraGeneralQueryRouter.isConversationalTopicRequest(transcript),
+                transcript
+            )
             val route = kotlin.test.assertIs<UltraAgentRoute.Chat>(
                 UltraUnifiedAgentRouter.route(transcript)
             )
