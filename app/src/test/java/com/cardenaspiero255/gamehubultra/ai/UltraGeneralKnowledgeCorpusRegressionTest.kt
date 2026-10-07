@@ -187,7 +187,16 @@ class UltraGeneralKnowledgeCorpusRegressionTest {
             "Ultra, ¿dónde está el monte Everest?",
             "Ultra, ¿cuándo fue la Revolución Francesa?",
             "Ultra, what is photosynthesis?",
-            "Ultra, what is a combustion engine?"
+            "Ultra, what is a combustion engine?",
+            "Ultra, ¿qué es Instagram?",
+            "Ultra, ¿qué es chat gpt?",
+            "Ultra, ¿qué es OpenAI?",
+            "Ultra, ¿qué es WhatsApp?",
+            "Ultra, ¿qué es Discord?",
+            "Ultra, ¿qué es Wikipedia?",
+            "Ultra, ¿qué es un modelo de lenguaje?",
+            "Ultra, ¿qué es la computación en la nube?",
+            "Ultra, ¿qué es Internet?"
         )
 
         val volatileQuestions = listOf(
