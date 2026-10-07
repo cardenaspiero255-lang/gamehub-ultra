@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 ANDROID = Path(".github/workflows/android.yml")
+SMOKE = Path(".github/workflows/supabase-research-smoke.yml")
 COVERAGE = Path(".github/workflows/coverage.yml")
 COVERAGE_POST = Path(".github/workflows/coverage-post-processing.yml")
 SHADOW_METRICS = Path(".github/workflows/ci-metrics-shadow.yml")
@@ -330,10 +331,12 @@ def require_concurrency(workflow: dict[str, Any], label: str) -> None:
 def main() -> None:
     """Fail closed if packed CI drops any blocking validation."""
     android = load_workflow(ANDROID)
+    smoke = load_workflow(SMOKE)
     coverage = load_workflow(COVERAGE)
     shadow_metrics = load_workflow(SHADOW_METRICS)
 
     require_concurrency(android, "Android workflow")
+    require_concurrency(smoke, "research smoke workflow")
     require_concurrency(coverage, "coverage workflow")
 
     android_jobs = android.get("jobs")
@@ -401,7 +404,7 @@ def main() -> None:
         args=(
             "--build-cache",
             "--parallel",
-            "--max-workers=8",
+            "--max-workers=12",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
             "--console=plain",
@@ -425,6 +428,7 @@ def main() -> None:
     if not isinstance(quality_needs, list) or set(quality_needs) != {
         "quality-contracts",
         "quality-lint",
+        "android-test-shards",
     }:
         fail("quality fan-in lost a required shard")
     if normalized_if(quality_job.get("if")) != "always()":
@@ -435,7 +439,7 @@ def main() -> None:
         "Verify quality shards",
         shell="bash",
     )
-    for dependency in ("quality-contracts", "quality-lint"):
+    for dependency in ("quality-contracts", "quality-lint", "android-test-shards"):
         require_shell_command(
             quality_gate,
             "quality fan-in result",
@@ -787,24 +791,126 @@ def main() -> None:
         ),
     )
 
+    smoke_job = job(smoke, "smoke")
+    smoke_strategy = smoke_job.get("strategy")
+    if not isinstance(smoke_strategy, dict):
+        fail("smoke shard strategy is missing")
+    if smoke_strategy.get("fail-fast") is not False:
+        fail("smoke shards must keep fail-fast disabled")
+    smoke_matrix = smoke_strategy.get("matrix")
+    expected_smoke_runners = set(range(16))
+    if (
+        not isinstance(smoke_matrix, dict)
+        or set(smoke_matrix.get("shard", [])) != expected_smoke_runners
+    ):
+        fail("smoke must keep 16 physical runners")
+    smoke_env = smoke_job.get("env")
+    if not isinstance(smoke_env, dict):
+        fail("smoke shard env is missing")
+    expected_smoke_env = {
+        "SMOKE_STABLE_WORKERS": "24",
+        "SMOKE_SHARD_COUNT": "64",
+    }
+    for key, expected in expected_smoke_env.items():
+        if smoke_env.get(key) != expected:
+            fail(f"smoke packed parallelism changed: {key}")
+    smoke_run = require_step(
+        smoke,
+        "smoke",
+        "Exercise 50000 stratified and runtime-generated questions",
+        shell="bash",
+    )
+    for fragment in (
+        "physical_runner_count = 16",
+        "logical_shards_per_runner = 4",
+        "shard_index + physical_runner_count * lane",
+        "max_workers=stable_workers",
+    ):
+        require_run_fragment(smoke_run, "smoke 64-logical-shard packing", fragment)
+
+    android_test_shard = job(android, "android-test-shard")
+    android_test_strategy = android_test_shard.get("strategy")
+    if not isinstance(android_test_strategy, dict):
+        fail("Android test shard strategy is missing")
+    if android_test_strategy.get("fail-fast") is not False:
+        fail("Android test shards must keep fail-fast disabled")
+    if android_test_strategy.get("max-parallel") != 8:
+        fail("Android tests must keep eight saturated physical runners")
+    android_test_matrix = android_test_strategy.get("matrix")
+    if (
+        not isinstance(android_test_matrix, dict)
+        or set(android_test_matrix.get("runner", [])) != set(range(8))
+    ):
+        fail("Android physical test runner matrix changed")
+    android_test_env = android_test_shard.get("env")
+    if not isinstance(android_test_env, dict):
+        fail("Android test shard env is missing")
+    expected_android_test_env = {
+        "GAMEHUB_UNIT_TEST_FORKS": "8",
+        "ANDROID_LOGICAL_SHARD_COUNT": "64",
+        "ANDROID_PHYSICAL_SHARD_COUNT": "8",
+    }
+    for key, expected in expected_android_test_env.items():
+        if android_test_env.get(key) != expected:
+            fail(f"Android packed test parallelism changed: {key}")
+    android_test_select = require_step(
+        android,
+        "android-test-shard",
+        "Select deterministic Android logical test shards",
+        shell="bash",
+    )
+    for fragment in (
+        "hashlib.sha256",
+        "logical_count // physical_count",
+        "runner + wave * physical_count",
+        "No Android unit tests selected",
+    ):
+        require_run_fragment(android_test_select, "Android logical shard selection", fragment)
+    android_test_run = require_step(
+        android,
+        "android-test-shard",
+        "Run packed Android unit shards",
+        shell="bash",
+    )
+    require_gradle_invocation(
+        android_test_run,
+        "Android packed unit tests",
+        tasks=(":app:testDebugUnitTest",),
+        args=(
+            "--build-cache",
+            "--parallel",
+            "--max-workers=12",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+        ),
+    )
+    android_test_fan_in = job(android, "android-test-shards")
+    if normalized_if(android_test_fan_in.get("if")) != "always()":
+        fail("Android test fan-in must use if: always()")
+    if android_test_fan_in.get("needs") != "android-test-shard":
+        fail("Android test fan-in lost packed shard dependency")
+
     coverage_shard_job = job(coverage, "coverage-shard")
     coverage_strategy = coverage_shard_job.get("strategy")
     if not isinstance(coverage_strategy, dict):
         fail("coverage shard strategy is missing")
     if coverage_strategy.get("fail-fast") is not False:
         fail("coverage shards must keep fail-fast disabled")
-    if coverage_strategy.get("max-parallel") != 2:
-        fail("coverage must keep two saturated physical runners")
+    if coverage_strategy.get("max-parallel") != 8:
+        fail("coverage must keep eight saturated physical runners")
     coverage_matrix = coverage_strategy.get("matrix")
-    if not isinstance(coverage_matrix, dict) or set(coverage_matrix.get("runner", [])) != {0, 1}:
+    if (
+        not isinstance(coverage_matrix, dict)
+        or set(coverage_matrix.get("runner", [])) != set(range(8))
+    ):
         fail("coverage physical runner matrix changed")
     coverage_env = coverage_shard_job.get("env")
     if not isinstance(coverage_env, dict):
         fail("coverage shard env is missing")
     expected_coverage_env = {
-        "GAMEHUB_UNIT_TEST_FORKS": "4",
-        "COVERAGE_LOGICAL_SHARD_COUNT": "8",
-        "COVERAGE_PHYSICAL_SHARD_COUNT": "2",
+        "GAMEHUB_UNIT_TEST_FORKS": "8",
+        "COVERAGE_LOGICAL_SHARD_COUNT": "64",
+        "COVERAGE_PHYSICAL_SHARD_COUNT": "8",
     }
     for key, expected in expected_coverage_env.items():
         if coverage_env.get(key) != expected:
@@ -896,7 +1002,7 @@ def main() -> None:
         args=(
             "--build-cache",
             "--parallel",
-            "--max-workers=8",
+            "--max-workers=12",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
         ),
