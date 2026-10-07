@@ -88,6 +88,8 @@ data class UltraFrontierPolicy(
     val deepSourceBudget: Int = 10,
     val verifiedResearchPassBudget: Int = 2,
     val deepResearchPassBudget: Int = 3,
+    val verifiedResearchTimeBudgetMillis: Long = 45_000L,
+    val deepResearchTimeBudgetMillis: Long = 120_000L,
     val researchRetrySourceBudgetStep: Int = 2,
     val minimumVerifiedSources: Int = 1,
     val minimumFreshSources: Int = 2,
@@ -102,6 +104,8 @@ data class UltraFrontierPolicy(
         require(deepSourceBudget >= verifiedSourceBudget)
         require(verifiedResearchPassBudget >= 1)
         require(deepResearchPassBudget >= verifiedResearchPassBudget)
+        require(verifiedResearchTimeBudgetMillis >= 1L)
+        require(deepResearchTimeBudgetMillis >= verifiedResearchTimeBudgetMillis)
         require(researchRetrySourceBudgetStep >= 0)
         require(minimumVerifiedSources >= 1)
         require(minimumFreshSources >= minimumVerifiedSources)
@@ -122,6 +126,7 @@ data class UltraFrontierPlan(
     val sourceBudgetStep: Int,
     val minimumDistinctSources: Int,
     val researchPassBudget: Int,
+    val researchTimeBudgetMillis: Long,
     val requiresFreshResearch: Boolean,
     val requiresUserConfirmation: Boolean,
     val autoExecuteMutation: Boolean,
@@ -134,6 +139,7 @@ data class UltraFrontierPlan(
         require(sourceBudgetStep >= 0)
         require(minimumDistinctSources >= 0)
         require(researchPassBudget >= 0)
+        require(researchTimeBudgetMillis >= 0L)
         if (lane == UltraFrontierLane.BLOCKED) {
             require(!blockedReason.isNullOrBlank()) {
                 "Blocked Frontier plans must explain why execution cannot proceed."
@@ -297,6 +303,11 @@ class UltraFrontierOrchestrator(
             UltraFrontierLane.VERIFIED_RESEARCH -> policy.verifiedResearchPassBudget
             else -> 0
         }
+        val researchTimeBudgetMillis = when (lane) {
+            UltraFrontierLane.DEEP_RESEARCH -> policy.deepResearchTimeBudgetMillis
+            UltraFrontierLane.VERIFIED_RESEARCH -> policy.verifiedResearchTimeBudgetMillis
+            else -> 0L
+        }
         val maxSourceBudget = when (lane) {
             UltraFrontierLane.VERIFIED_RESEARCH,
             UltraFrontierLane.DEEP_RESEARCH -> policy.deepSourceBudget
@@ -340,6 +351,7 @@ class UltraFrontierOrchestrator(
             sourceBudgetStep = sourceBudgetStep,
             minimumDistinctSources = minimumDistinctSources,
             researchPassBudget = researchPassBudget,
+            researchTimeBudgetMillis = researchTimeBudgetMillis,
             requiresFreshResearch = query.requiresFreshData,
             requiresUserConfirmation = false,
             autoExecuteMutation = false
@@ -402,6 +414,7 @@ class UltraFrontierOrchestrator(
             sourceBudgetStep = 0,
             minimumDistinctSources = 0,
             researchPassBudget = 0,
+            researchTimeBudgetMillis = 0L,
             requiresFreshResearch = false,
             requiresUserConfirmation = confirmationRequired,
             // Frontier never grants itself permission to mutate state. The caller must
@@ -452,6 +465,7 @@ class UltraFrontierOrchestrator(
                 policy.minimumVerifiedSources
             },
             researchPassBudget = 0,
+            researchTimeBudgetMillis = 0L,
             requiresFreshResearch = request.query.requiresFreshData,
             requiresUserConfirmation = false,
             autoExecuteMutation = false,
