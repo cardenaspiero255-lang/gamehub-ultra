@@ -53,6 +53,7 @@ internal object GameHubPresentation {
                     connectedAccountsRepository = bootstrap.connectedAccountsRepository,
                     storeLibraryRepository = bootstrap.storeLibraryRepository,
                     optimizationMemoryStore = bootstrap.optimizationMemoryRepository,
+                    aiProfileProposalStore = bootstrap.aiProfileProposalStore,
                     initialTab = initialTab,
                     onProfileApplied = { profile ->
                         bootstrap.performanceController.apply(profile, activity.window)
