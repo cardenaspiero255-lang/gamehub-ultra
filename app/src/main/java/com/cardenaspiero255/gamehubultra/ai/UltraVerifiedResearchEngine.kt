@@ -706,7 +706,10 @@ class UltraVerifiedResearchEngine(
         val requiredGeneralKnowledge =
             request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
                 request.verificationMode == UltraVerificationMode.REQUIRED
+        val winnerHasAuthoritativeEvidence =
+            consensus.evidence.any { it.authoritative }
         val minimumRequiredSources = when {
+            winnerHasAuthoritativeEvidence -> 1
             request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH -> 2
             requiredGeneralKnowledge -> 2
             else -> 1
