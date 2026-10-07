@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class AiProfileBuilderTest {
 
@@ -125,6 +126,140 @@ class AiProfileBuilderTest {
         assertEquals(current, proposal.proposedConfig)
         assertFalse(proposal.requiresExplicitApply)
         assertTrue(proposal.disabledSettings.isEmpty())
+    }
+
+    @Test
+    fun unsupportedFrameInterpolationIsDisabledAndExplained() {
+        val proposal = AiProfileBuilder.propose(
+            currentConfig = GameProfileConfig(
+                performanceProfile = PerformanceProfile.FRAME_INTERPOLATION
+            ),
+            observations = emptyList(),
+            sessionSamples = emptyList(),
+            capabilities = AiProfileCapabilities(
+                supportsFrameInterpolation = false
+            ),
+            version = 4
+        )
+
+        assertEquals(
+            PerformanceProfile.BALANCED,
+            proposal.proposedConfig.performanceProfile
+        )
+        assertTrue(
+            proposal.disabledSettings.any {
+                it.contains("Interpolación", ignoreCase = true)
+            }
+        )
+    }
+
+    @Test
+    fun unsupportedResolutionIsRemovedAndExplained() {
+        val requested = ResolutionTarget(2560, 1440)
+        val proposal = AiProfileBuilder.propose(
+            currentConfig = GameProfileConfig(
+                resolutionTarget = requested
+            ),
+            observations = emptyList(),
+            sessionSamples = emptyList(),
+            capabilities = AiProfileCapabilities(
+                supportedResolutions = setOf(
+                    ResolutionTarget(1920, 1080)
+                )
+            ),
+            version = 5
+        )
+
+        assertEquals(null, proposal.proposedConfig.resolutionTarget)
+        assertTrue(
+            proposal.disabledSettings.any {
+                it.contains("2560x1440")
+            }
+        )
+    }
+
+    @Test
+    fun acceptedStableHistoryCanProposeACompatibleProfile() {
+        val proposal = AiProfileBuilder.propose(
+            currentConfig = GameProfileConfig(
+                performanceProfile = PerformanceProfile.BALANCED
+            ),
+            observations = listOf(
+                observation(
+                    profile = PerformanceProfile.X4,
+                    stable = true,
+                    decision = OptimizationFeedbackDecision.ACCEPTED,
+                    at = 1L
+                ),
+                observation(
+                    profile = PerformanceProfile.X4,
+                    stable = true,
+                    decision = OptimizationFeedbackDecision.ACCEPTED,
+                    at = 2L
+                )
+            ),
+            sessionSamples = emptyList(),
+            capabilities = AiProfileCapabilities(
+                supportsSustainedPerformance = true
+            ),
+            version = 6
+        )
+
+        assertEquals(
+            PerformanceProfile.X4,
+            proposal.proposedConfig.performanceProfile
+        )
+        assertTrue(proposal.requiresExplicitApply)
+        assertTrue(
+            proposal.reasons.any {
+                it.contains("observaciones", ignoreCase = true)
+            }
+        )
+    }
+
+    @Test
+    fun stableMeasuredRefreshCanBeProposedWhenVerifiedByCapabilities() {
+        val samples = listOf(1L, 2L, 3L).map { timestamp ->
+            SessionCoachSnapshot(
+                timestampMillis = timestamp,
+                batteryPercent = 80,
+                thermalStatus = 1,
+                thermalHeadroom = 0.20f,
+                refreshRateHz = 120f,
+                latencyMs = 20L
+            )
+        }
+
+        val proposal = AiProfileBuilder.propose(
+            currentConfig = GameProfileConfig(),
+            observations = emptyList(),
+            sessionSamples = samples,
+            capabilities = AiProfileCapabilities(
+                supportedRefreshRatesHz = setOf(60, 90, 120)
+            ),
+            version = 8
+        )
+
+        assertEquals(120, proposal.proposedConfig.refreshRateTargetHz)
+        assertTrue(proposal.requiresExplicitApply)
+        assertTrue(
+            proposal.reasons.any {
+                it.contains("120 Hz")
+            }
+        )
+    }
+
+    @Test
+    fun proposalVersionMustBePositive() {
+        assertFailsWith<IllegalArgumentException> {
+            AiProfileBuilder.propose(
+                currentConfig = GameProfileConfig(),
+                observations = emptyList(),
+                sessionSamples = emptyList(),
+                capabilities = AiProfileCapabilities(),
+                version = 0
+            )
+        }
     }
 
     private fun observation(
