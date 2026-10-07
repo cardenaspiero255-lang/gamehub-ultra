@@ -1267,20 +1267,28 @@ class ArchitectureBoundaryGuardTest {
 
 
     @Test
-    fun aiProfileApplyAndRollbackRecordExplicitAdaptiveSelectionAfterSave() {
+    fun explicitAdaptiveOwnershipResetLivesAtSharedPersistenceBoundary() {
         val app = sourceFile(
             "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
         ).readText()
-
-        val expectedCallbacks = listOf(
-            "recordExplicitAdaptiveProfileSelection(\n                    selectedGameForMemory,\n                    proposal.proposedConfig.performanceProfile",
-            "recordExplicitAdaptiveProfileSelection(\n                    selectedGameForMemory,\n                    rollback.previousKnownGoodConfig.performanceProfile"
-        )
-        val missing = expectedCallbacks.filterNot(app::contains)
+        val contracts = sourceFile(
+            "com/cardenaspiero255/gamehubultra/data/GameStateOwnershipContracts.kt"
+        ).readText()
+        val composition = sourceFile(
+            "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
+        ).readText()
 
         assertTrue(
-            missing.isEmpty(),
-            "AI profile apply/rollback must clear adaptive recovery ownership after persistence"
+            !app.contains("recordExplicitAdaptiveProfileSelection("),
+            "Compose must not own adaptive profile-persistence side effects"
+        )
+        assertTrue(
+            contracts.contains("class AdaptiveAwareGameSelectionStateRepository"),
+            "Explicit profile writes must share one adaptive-aware persistence boundary"
+        )
+        assertTrue(
+            composition.contains("AdaptiveAwareGameSelectionStateRepository("),
+            "Production composition must install the adaptive-aware selection boundary"
         )
     }
 
