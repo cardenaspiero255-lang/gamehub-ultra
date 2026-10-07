@@ -10,7 +10,8 @@ class UltraFrontierExecutionEngine(
     private val coordinator: UltraQueryExecutionCoordinator,
     private val frontier: UltraFrontierOrchestrator = UltraFrontierOrchestrator(),
     private val critic: UltraFrontierCritic = UltraFrontierCritic(),
-    private val networkAvailable: () -> Boolean = { true }
+    private val networkAvailable: () -> Boolean = { true },
+    private val auditTrail: UltraFrontierAuditTrail = UltraFrontierAuditTrail()
 ) {
     fun answer(
         request: UltraGeneralQueryRequest,
@@ -23,8 +24,19 @@ class UltraFrontierExecutionEngine(
                 networkAvailable = networkAvailable()
             )
         )
+        auditTrail.record(
+            correlationId = request.correlationId,
+            lane = plan.lane,
+            event = UltraFrontierAuditEvent.PLAN_CREATED
+        )
 
         if (plan.lane == UltraFrontierLane.BLOCKED) {
+            auditTrail.record(
+                correlationId = request.correlationId,
+                lane = plan.lane,
+                event = UltraFrontierAuditEvent.ABSTAIN,
+                reasonCode = "FRONTIER_NETWORK_REQUIRED"
+            )
             return UltraQueryExecutionAnswer(
                 message = requireNotNull(plan.blockedReason),
                 verified = false,
@@ -36,24 +48,43 @@ class UltraFrontierExecutionEngine(
         }
 
         var attempt = 1
+        recordAttempt(request, plan, attempt)
         var answer = coordinator.answer(
             request = request,
             localChat = localChat
         )
 
         while (true) {
-            when (
-                critic.review(
-                    plan = plan,
-                    candidate = answer.toFrontierCandidate(attempt)
-                )
-            ) {
-                UltraFrontierVerdict.ACCEPT ->
+            val verdict = critic.review(
+                plan = plan,
+                candidate = answer.toFrontierCandidate(attempt)
+            )
+            when (verdict) {
+                UltraFrontierVerdict.ACCEPT -> {
+                    auditTrail.record(
+                        correlationId = request.correlationId,
+                        lane = plan.lane,
+                        event = UltraFrontierAuditEvent.ACCEPT,
+                        attempt = attempt,
+                        reasonCode = answer.reasonCode ?: if (answer.verified) {
+                            "VERIFIED"
+                        } else {
+                            "LOCAL"
+                        }
+                    )
                     return answer
+                }
 
                 UltraFrontierVerdict.FALLBACK_LOCAL -> {
                     val local = safeLocal(localChat)
                     if (local != null) {
+                        auditTrail.record(
+                            correlationId = request.correlationId,
+                            lane = plan.lane,
+                            event = UltraFrontierAuditEvent.FALLBACK_LOCAL,
+                            attempt = attempt,
+                            reasonCode = "FRONTIER_LOCAL_FALLBACK"
+                        )
                         return UltraQueryExecutionAnswer(
                             message = local,
                             verified = false,
@@ -63,24 +94,76 @@ class UltraFrontierExecutionEngine(
                             stage = "frontier"
                         )
                     }
-                    return answer
+                    auditTrail.record(
+                        correlationId = request.correlationId,
+                        lane = plan.lane,
+                        event = UltraFrontierAuditEvent.ABSTAIN,
+                        attempt = attempt,
+                        reasonCode = answer.reasonCode ?: "LOCAL_UNAVAILABLE"
+                    )
+                    return answer.asSafeAbstention()
                 }
 
                 UltraFrontierVerdict.RETRY_RESEARCH -> {
                     if (attempt >= plan.researchPassBudget) {
+                        auditTrail.record(
+                            correlationId = request.correlationId,
+                            lane = plan.lane,
+                            event = UltraFrontierAuditEvent.ABSTAIN,
+                            attempt = attempt,
+                            reasonCode = answer.reasonCode ?: "FRONTIER_BUDGET_EXHAUSTED"
+                        )
                         return answer.asSafeAbstention()
                     }
+                    auditTrail.record(
+                        correlationId = request.correlationId,
+                        lane = plan.lane,
+                        event = UltraFrontierAuditEvent.RETRY,
+                        attempt = attempt + 1,
+                        reasonCode = answer.reasonCode ?: "EVIDENCE_INSUFFICIENT"
+                    )
                     attempt += 1
+                    recordAttempt(request, plan, attempt)
                     answer = coordinator.answer(
                         request = request,
                         localChat = localChat
                     )
                 }
 
-                UltraFrontierVerdict.ABSTAIN ->
+                UltraFrontierVerdict.ABSTAIN -> {
+                    auditTrail.record(
+                        correlationId = request.correlationId,
+                        lane = plan.lane,
+                        event = UltraFrontierAuditEvent.ABSTAIN,
+                        attempt = attempt,
+                        reasonCode = answer.reasonCode ?: "FRONTIER_EVIDENCE_INSUFFICIENT"
+                    )
                     return answer.asSafeAbstention()
+                }
             }
         }
+    }
+
+    fun auditSnapshot(): List<UltraFrontierAuditRecord> = auditTrail.snapshot()
+
+    private fun recordAttempt(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        attempt: Int
+    ) {
+        val event = when (plan.lane) {
+            UltraFrontierLane.VERIFIED_RESEARCH,
+            UltraFrontierLane.DEEP_RESEARCH ->
+                UltraFrontierAuditEvent.RESEARCH_ATTEMPT
+            else ->
+                UltraFrontierAuditEvent.LOCAL_ATTEMPT
+        }
+        auditTrail.record(
+            correlationId = request.correlationId,
+            lane = plan.lane,
+            event = event,
+            attempt = attempt
+        )
     }
 
     private fun safeLocal(localChat: () -> String?): String? =
