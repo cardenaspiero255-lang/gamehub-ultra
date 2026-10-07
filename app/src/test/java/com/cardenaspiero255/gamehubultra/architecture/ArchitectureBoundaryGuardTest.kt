@@ -1246,4 +1246,24 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+    @Test
+    fun smartRecommendationProfileActionsUseAdaptiveAwareSelectionPath() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("recordSmartRecommendationFeedback, ::selectProfile"),
+            "Smart Recommendation apply/revert must not bypass adaptive manual-selection tracking"
+        )
+        val adaptiveCallbacks = Regex(
+            """recordSmartRecommendationFeedback,\s*::selectExternalProfile"""
+        ).findAll(app).count()
+        assertTrue(
+            adaptiveCallbacks >= 2,
+            "Smart Recommendation apply and revert must route through selectExternalProfile"
+        )
+    }
+
+
 }
