@@ -669,6 +669,8 @@ def main() -> None:
     coverage_post = load_workflow(COVERAGE_POST)
     post_on = coverage_post.get("on")
     if not isinstance(post_on, dict):
+        post_on = coverage_post.get(True)
+    if not isinstance(post_on, dict):
         fail("coverage post-processing trigger mapping is missing")
     workflow_run = post_on.get("workflow_run")
     if not isinstance(workflow_run, dict):
