@@ -471,10 +471,20 @@ class UltraFrontierCritic {
                 plan.lane == UltraFrontierLane.DEEP_RESEARCH
 
         if (verifiedResearchLane) {
+            val distinctSources = candidate.sources
+                .asSequence()
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .distinct()
+                .count()
             val evidenceInsufficient =
                 !candidate.verified ||
                     candidate.confidence == UltraAnswerConfidence.LOW ||
-                    candidate.sources.none(String::isNotBlank)
+                    distinctSources == 0 ||
+                    (
+                        plan.lane == UltraFrontierLane.DEEP_RESEARCH &&
+                            distinctSources < MIN_DEEP_RESEARCH_SOURCES
+                    )
             if (weak || evidenceInsufficient) {
                 return if (
                     candidate.attempt < plan.researchPassBudget &&
@@ -510,6 +520,7 @@ class UltraFrontierCritic {
     }
 
     private companion object {
+        const val MIN_DEEP_RESEARCH_SOURCES = 2
         val GENERIC_FAILURE_MARKERS = listOf(
             "no pude verificarlo con suficiente confianza",
             "no pudo verificarlo con suficiente confianza",
