@@ -7954,6 +7954,42 @@ Deno.test(
   },
 );
 
+Deno.test("basic algorithm knowledge never drifts to a specific algorithm subtype", async () => {
+  let networkCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      networkCalls += 1;
+      return jsonResponse({}, 429);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, ¿qué es un algoritmo?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("basic algorithm knowledge must remain answerable");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (
+    !answer.includes("algoritmo") ||
+    !answer.includes("pasos") ||
+    !answer.includes("problema")
+  ) {
+    throw new Error("expected a general algorithm definition: " + answer);
+  }
+  if (answer.includes("dijkstra")) {
+    throw new Error("generic algorithm definition must not drift to Dijkstra");
+  }
+  if (networkCalls !== 0) {
+    throw new Error("basic algorithm knowledge should not require network access");
+  }
+});
+
 Deno.test("basic star knowledge survives complete provider outage", async () => {
   for (
     const query of [
