@@ -27,6 +27,9 @@ data class UltraQueryExecutionAnswer(
 class UltraQueryExecutionCoordinator(
     private val researchGateway: UltraResearchGateway
 ) {
+    val supportsProviderPartitioning: Boolean
+        get() = researchGateway.supportsProviderPartitioning
+
     private fun safeLocalAnswer(localChat: () -> String?): String? =
         try {
             localChat()
