@@ -86,4 +86,63 @@ class BatteryAwareGamingEngineTest {
         batteryCharging = charging,
         powerSaveMode = powerSaveMode,
     )
+
+    @Test
+    fun `healthy battery without enough drain history stays normal`() {
+        val assessment = engine.assess(
+            listOf(snapshot(minutes = 0, percent = 80, charging = false)),
+        )
+
+        assertEquals(BatteryGamingRecommendation.NORMAL, assessment.recommendation)
+        assertFalse(assessment.preventAggressiveProfiles)
+        assertNull(assessment.drainPercentPerHour)
+    }
+
+    @Test
+    fun `constrained battery threshold recommends balanced mode`() {
+        val assessment = engine.assess(
+            listOf(snapshot(minutes = 0, percent = 35, charging = false)),
+        )
+
+        assertEquals(BatteryGamingRecommendation.BALANCED, assessment.recommendation)
+        assertTrue(assessment.preventAggressiveProfiles)
+        assertTrue(assessment.reason.contains("35"))
+    }
+
+    @Test
+    fun `short drain window is not extrapolated into an hourly rate`() {
+        val assessment = engine.assess(
+            listOf(
+                snapshot(minutes = 0, percent = 80, charging = false),
+                SessionCoachSnapshot(
+                    timestampMillis = 60_000L,
+                    batteryPercent = 79,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false,
+                    powerSaveMode = false,
+                ),
+            ),
+        )
+
+        assertNull(assessment.drainPercentPerHour)
+        assertEquals(BatteryGamingRecommendation.NORMAL, assessment.recommendation)
+    }
+
+    @Test
+    fun `policy rejects invalid thresholds`() {
+        var failed = false
+        try {
+            BatteryAwareGamingPolicy(
+                criticalBatteryPercent = 40,
+                constrainedBatteryPercent = 20,
+            )
+        } catch (_: IllegalArgumentException) {
+            failed = true
+        }
+        assertTrue(failed)
+    }
+
 }
