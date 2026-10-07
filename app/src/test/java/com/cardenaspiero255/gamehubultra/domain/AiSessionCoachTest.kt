@@ -467,4 +467,48 @@ class AiSessionCoachTest {
         assertTrue(report.patterns.any { it.signal == SessionCoachSignal.BATTERY })
     }
 
+
+    @Test
+    fun postSessionPreservesCompletedDischargeRateWhenSessionEndsCharging() {
+        val report = AiSessionCoach.postSession(
+            listOf(
+                SessionCoachSnapshot(
+                    timestampMillis = 0L,
+                    batteryPercent = 80,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 60 * 60_000L,
+                    batteryPercent = 60,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                SessionCoachSnapshot(
+                    timestampMillis = 70 * 60_000L,
+                    batteryPercent = 65,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.2f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = true,
+                    powerSaveMode = false
+                )
+            )
+        )
+
+        assertEquals(20, report.batteryDropPercent)
+        assertEquals(20f, report.batteryDrainPercentPerHour)
+        assertEquals(BatteryGamingRecommendation.CHARGING, report.batteryRecommendation)
+        assertTrue(report.batteryChargingObserved)
+    }
+
 }
