@@ -718,7 +718,7 @@ class UltraFrontierExecutionEngine(
                 answer to (latencies[task.id] ?: 0L)
             }
         }
-        return evolution.selectResearchEnsemble(candidates)
+        return evolution.synthesizeResearch(candidates)
             ?: coordinator.answer(
                 request = attemptRequest,
                 localChat = localChat
