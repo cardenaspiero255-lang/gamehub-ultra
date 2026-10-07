@@ -335,6 +335,18 @@ jobs:
                   ("¿Qué es un adjetivo?", ["sustant", "cualidad"]),
                   ("¿Qué es la media aritmética?", ["sum", "divid", "promedio"]),
               ],
+              "study_science_humanities": [
+                  ("¿Qué es un libro?", ["obra", "página", "texto"]),
+                  ("¿Qué es una célula?", ["unidad", "seres vivos"]),
+                  ("¿Qué es un átomo?", ["materia", "núcleo", "electr"]),
+                  ("¿Qué es la fotosíntesis?", ["luz", "energ", "oxígeno"]),
+                  ("¿Qué es la mitosis?", ["división", "célula"]),
+                  ("¿Qué es un ecosistema?", ["organism", "ambiente"]),
+                  ("¿Qué son las leyes de Newton?", ["fuerza", "movimiento"]),
+                  ("¿Qué fue la Revolución Industrial?", ["industrial", "fábrica"]),
+                  ("¿Qué es una metáfora?", ["figura", "lenguaje"]),
+                  ("¿Qué es un sustantivo?", ["palabra", "nombra"]),
+              ],
               "weather": [
                   ("¿Cómo está el clima hoy en Rancagua?", []),
                   ("Temperatura actual en Santiago", []),
