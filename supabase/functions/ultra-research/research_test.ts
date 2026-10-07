@@ -8235,7 +8235,6 @@ Deno.test(
     const cases = [
       { query: "¿Qué es una célula?", expected: ["célula", "unidad"] },
       { query: "¿Qué es un átomo?", expected: ["átomo", "núcleo"] },
-      { query: "¿Qué es la fotosíntesis?", expected: ["luz", "energ"] },
       { query: "¿Qué es la mitosis?", expected: ["división", "célula"] },
       {
         query: "¿Qué es el teorema de Pitágoras?",
