@@ -28,7 +28,7 @@ class PerGameAdaptiveOptimizer(
         var candidate: PerformanceProfile? = null,
         var confirmations: Int = 0,
         var lastChange: Long? = null,
-        var ownsBalancedDownshift: Boolean = false
+        var recoveryProfile: PerformanceProfile? = null
     )
 
     private val states = mutableMapOf<AdaptiveGameKey, State>()
@@ -51,7 +51,7 @@ class PerGameAdaptiveOptimizer(
             state.candidate = null
             state.confirmations = 0
             state.lastChange = null
-            state.ownsBalancedDownshift = false
+            state.recoveryProfile = null
             return PerGameAdaptiveDecision(
                 profile = activeProfile,
                 changed = false,
@@ -108,10 +108,12 @@ class PerGameAdaptiveOptimizer(
         state.candidate = null
         state.confirmations = 0
         state.lastChange = nowMillis
-        state.ownsBalancedDownshift = when {
-            previous == PerformanceProfile.X4 && target == PerformanceProfile.BALANCED -> true
-            target == PerformanceProfile.X4 -> false
-            else -> state.ownsBalancedDownshift
+        state.recoveryProfile = when {
+            target == PerformanceProfile.BALANCED &&
+                previous != PerformanceProfile.BALANCED -> previous
+            state.recoveryProfile != null &&
+                target == state.recoveryProfile -> null
+            else -> state.recoveryProfile
         }
 
         return PerGameAdaptiveDecision(
@@ -148,7 +150,7 @@ class PerGameAdaptiveOptimizer(
         ).count { it != null }
 
         val stableRecovery =
-            state.ownsBalancedDownshift &&
+            state.recoveryProfile != null &&
                 samples.size >= 3 &&
                 knownSignals >= 3 &&
                 latest.thermalStatus?.let { it <= 1 } != false &&
@@ -158,7 +160,7 @@ class PerGameAdaptiveOptimizer(
                 refreshTrend >= -10f &&
                 latencyTrend <= 30f
 
-        return if (stableRecovery) PerformanceProfile.X4 else state.profile
+        return if (stableRecovery) checkNotNull(state.recoveryProfile) else state.profile
     }
 
     private fun trend(values: List<Float>): Float =
