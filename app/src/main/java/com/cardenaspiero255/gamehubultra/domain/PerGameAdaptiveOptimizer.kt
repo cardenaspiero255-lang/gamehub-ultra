@@ -1,34 +1,198 @@
 package com.cardenaspiero255.gamehubultra.domain
 
-data class AdaptiveGameKey(val packageName: String, val version: String)
-data class AdaptiveTrendSample(val thermalStatus: Int?, val batteryPercent: Int?, val refreshRateHz: Float?, val memoryUsedPercent: Int?, val latencyMs: Int?)
-data class PerGameAdaptiveDecision(val profile: PerformanceProfile, val changed: Boolean, val reason: String)
+data class AdaptiveGameKey(
+    val packageName: String,
+    val version: String
+)
 
-class PerGameAdaptiveOptimizer(private val confirmationsRequired: Int = 2, private val cooldownMillis: Long = 30000L) {
- private data class State(var profile: PerformanceProfile, var candidate: PerformanceProfile? = null, var confirmations: Int = 0, var lastChange: Long? = null)
- private val states = mutableMapOf<AdaptiveGameKey, State>()
- init { require(confirmationsRequired >= 1); require(cooldownMillis >= 0) }
- fun evaluate(key: AdaptiveGameKey, activeProfile: PerformanceProfile, samples: List<AdaptiveTrendSample>, nowMillis: Long): PerGameAdaptiveDecision {
-  val state = states.getOrPut(key) { State(activeProfile) }
-  val target = target(samples)
-  if (target == state.profile) { state.candidate = null; state.confirmations = 0; return PerGameAdaptiveDecision(state.profile, false, reason(samples, false)) }
-  if (state.lastChange?.let { nowMillis - it < cooldownMillis } == true) return PerGameAdaptiveDecision(state.profile, false, "Periodo de enfriamiento activo: se evita una oscilación rápida de perfil.")
-  if (state.candidate != target) { state.candidate = target; state.confirmations = 1 } else state.confirmations++
-  if (state.confirmations < confirmationsRequired) return PerGameAdaptiveDecision(state.profile, false, "La tendencia requiere confirmación antes de cambiar automáticamente el perfil.")
-  state.profile = target; state.candidate = null; state.confirmations = 0; state.lastChange = nowMillis
-  return PerGameAdaptiveDecision(target, true, reason(samples, true))
- }
- private fun target(samples: List<AdaptiveTrendSample>): PerformanceProfile {
-  if (samples.isEmpty()) return PerformanceProfile.BALANCED
-  val x = samples.last()
-  val pressure = x.thermalStatus?.let { it >= 3 } == true || x.batteryPercent?.let { it <= 45 } == true || x.memoryUsedPercent?.let { it >= 88 } == true || x.latencyMs?.let { it >= 120 } == true || trend(samples.mapNotNull { it.refreshRateHz }) < -15f || trend(samples.mapNotNull { it.latencyMs?.toFloat() }) > 50f
-  return if (pressure) PerformanceProfile.BALANCED else PerformanceProfile.X4
- }
- private fun trend(values: List<Float>) = if (values.size < 2) 0f else values.last() - values.first()
- private fun reason(samples: List<AdaptiveTrendSample>, changed: Boolean): String {
-  if (samples.isEmpty()) return "Sin muestras suficientes: se mantiene una decisión conservadora."
-  val x = samples.last(); val signals = mutableListOf<String>()
-  if (x.thermalStatus?.let { it >= 3 } == true) signals += "térmica"; if (x.batteryPercent?.let { it <= 45 } == true) signals += "batería"; if (trend(samples.mapNotNull { it.refreshRateHz }) < -15f) signals += "refresco"; if (x.memoryUsedPercent?.let { it >= 88 } == true) signals += "memoria"; if (x.latencyMs?.let { it >= 120 } == true || trend(samples.mapNotNull { it.latencyMs?.toFloat() }) > 50f) signals += "latencia"
-  return if (signals.isEmpty()) "Tendencia estable: se mantiene la histéresis adaptativa." else "La tendencia de ${signals.joinToString(", ")} justifica ${if (changed) "el cambio automático" else "mantener el perfil"}."
- }
+data class AdaptiveTrendSample(
+    val thermalStatus: Int?,
+    val batteryPercent: Int?,
+    val refreshRateHz: Float?,
+    val memoryUsedPercent: Int?,
+    val latencyMs: Int?
+)
+
+data class PerGameAdaptiveDecision(
+    val profile: PerformanceProfile,
+    val changed: Boolean,
+    val reason: String
+)
+
+class PerGameAdaptiveOptimizer(
+    private val confirmationsRequired: Int = 2,
+    private val cooldownMillis: Long = 30_000L
+) {
+    private data class State(
+        var profile: PerformanceProfile,
+        var candidate: PerformanceProfile? = null,
+        var confirmations: Int = 0,
+        var lastChange: Long? = null,
+        var ownsBalancedDownshift: Boolean = false
+    )
+
+    private val states = mutableMapOf<AdaptiveGameKey, State>()
+
+    init {
+        require(confirmationsRequired >= 1)
+        require(cooldownMillis >= 0)
+    }
+
+    fun evaluate(
+        key: AdaptiveGameKey,
+        activeProfile: PerformanceProfile,
+        samples: List<AdaptiveTrendSample>,
+        nowMillis: Long
+    ): PerGameAdaptiveDecision {
+        val state = states.getOrPut(key) { State(activeProfile) }
+
+        if (state.profile != activeProfile) {
+            state.profile = activeProfile
+            state.candidate = null
+            state.confirmations = 0
+            state.lastChange = null
+            state.ownsBalancedDownshift = false
+            return PerGameAdaptiveDecision(
+                profile = activeProfile,
+                changed = false,
+                reason = "Se detectó un cambio externo de perfil; se respeta y se reinicia la adaptación automática."
+            )
+        }
+
+        if (samples.isEmpty()) {
+            state.candidate = null
+            state.confirmations = 0
+            return PerGameAdaptiveDecision(
+                profile = activeProfile,
+                changed = false,
+                reason = "Sin muestras suficientes: se mantiene el perfil activo."
+            )
+        }
+
+        val target = target(state, samples)
+        if (target == state.profile) {
+            state.candidate = null
+            state.confirmations = 0
+            return PerGameAdaptiveDecision(
+                profile = state.profile,
+                changed = false,
+                reason = reason(samples, changed = false)
+            )
+        }
+
+        if (state.lastChange?.let { nowMillis - it < cooldownMillis } == true) {
+            return PerGameAdaptiveDecision(
+                profile = state.profile,
+                changed = false,
+                reason = "Periodo de enfriamiento activo: se evita una oscilación rápida de perfil."
+            )
+        }
+
+        if (state.candidate != target) {
+            state.candidate = target
+            state.confirmations = 1
+        } else {
+            state.confirmations++
+        }
+
+        if (state.confirmations < confirmationsRequired) {
+            return PerGameAdaptiveDecision(
+                profile = state.profile,
+                changed = false,
+                reason = "La tendencia requiere confirmación antes de cambiar automáticamente el perfil."
+            )
+        }
+
+        val previous = state.profile
+        state.profile = target
+        state.candidate = null
+        state.confirmations = 0
+        state.lastChange = nowMillis
+        state.ownsBalancedDownshift = when {
+            previous == PerformanceProfile.X4 && target == PerformanceProfile.BALANCED -> true
+            target == PerformanceProfile.X4 -> false
+            else -> state.ownsBalancedDownshift
+        }
+
+        return PerGameAdaptiveDecision(
+            profile = target,
+            changed = true,
+            reason = reason(samples, changed = true)
+        )
+    }
+
+    private fun target(
+        state: State,
+        samples: List<AdaptiveTrendSample>
+    ): PerformanceProfile {
+        val latest = samples.last()
+        val refreshTrend = trend(samples.mapNotNull { it.refreshRateHz })
+        val latencyTrend = trend(samples.mapNotNull { it.latencyMs?.toFloat() })
+
+        val pressure =
+            latest.thermalStatus?.let { it >= 3 } == true ||
+                latest.batteryPercent?.let { it <= 45 } == true ||
+                latest.memoryUsedPercent?.let { it >= 88 } == true ||
+                latest.latencyMs?.let { it >= 120 } == true ||
+                refreshTrend < -15f ||
+                latencyTrend > 50f
+
+        if (pressure) return PerformanceProfile.BALANCED
+
+        val knownSignals = listOf(
+            latest.thermalStatus,
+            latest.batteryPercent,
+            latest.refreshRateHz,
+            latest.memoryUsedPercent,
+            latest.latencyMs
+        ).count { it != null }
+
+        val stableRecovery =
+            state.ownsBalancedDownshift &&
+                samples.size >= 3 &&
+                knownSignals >= 3 &&
+                latest.thermalStatus?.let { it <= 1 } != false &&
+                latest.batteryPercent?.let { it >= 55 } != false &&
+                latest.memoryUsedPercent?.let { it <= 80 } != false &&
+                latest.latencyMs?.let { it <= 80 } != false &&
+                refreshTrend >= -10f &&
+                latencyTrend <= 30f
+
+        return if (stableRecovery) PerformanceProfile.X4 else state.profile
+    }
+
+    private fun trend(values: List<Float>): Float =
+        if (values.size < 2) 0f else values.last() - values.first()
+
+    private fun reason(
+        samples: List<AdaptiveTrendSample>,
+        changed: Boolean
+    ): String {
+        if (samples.isEmpty()) {
+            return "Sin muestras suficientes: se mantiene el perfil activo."
+        }
+
+        val latest = samples.last()
+        val signals = mutableListOf<String>()
+        if (latest.thermalStatus?.let { it >= 3 } == true) signals += "térmica"
+        if (latest.batteryPercent?.let { it <= 45 } == true) signals += "batería"
+        if (trend(samples.mapNotNull { it.refreshRateHz }) < -15f) signals += "refresco"
+        if (latest.memoryUsedPercent?.let { it >= 88 } == true) signals += "memoria"
+        if (
+            latest.latencyMs?.let { it >= 120 } == true ||
+            trend(samples.mapNotNull { it.latencyMs?.toFloat() }) > 50f
+        ) {
+            signals += "latencia"
+        }
+
+        return if (signals.isEmpty()) {
+            if (changed) {
+                "La tendencia volvió a ser estable y permite recuperar el perfil gestionado por Ultra."
+            } else {
+                "Tendencia estable: se mantiene la histéresis adaptativa."
+            }
+        } else {
+            "La tendencia de ${signals.joinToString(", ")} justifica ${if (changed) "el cambio automático" else "mantener el perfil"}."
+        }
+    }
 }
