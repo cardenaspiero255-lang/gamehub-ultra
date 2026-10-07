@@ -88,6 +88,27 @@ class SessionCoachPresentationTest {
         assertTrue(lines.any { it.contains("perfil menos exigente") })
     }
 
+    @Test
+    fun presentationUsesCallerLocalizedLiveAndStableLabels() {
+        val lines = SessionCoachPresentation.lines(
+            preSession = null,
+            liveSamples = emptyList(),
+            observations = emptyList(),
+            postSession = null,
+            sessionActive = true,
+            activeSessionText = "Active session · 0 samples analyzed",
+            stableText = "No meaningful changes."
+        )
+
+        assertEquals(
+            listOf(
+                "Active session · 0 samples analyzed",
+                "No meaningful changes."
+            ),
+            lines
+        )
+    }
+
     private fun message(title: String, detail: String, action: String?) =
         SessionCoachMessage(
             signal = SessionCoachSignal.GENERAL,
