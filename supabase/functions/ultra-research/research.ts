@@ -50,7 +50,7 @@ const STABLE_KNOWLEDGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 2048;
 
 const USER_AGENT =
-  "GameHub-Ultra-CAR73/1.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
+  "GameHub-Ultra-Research-V20/20.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
 
 function abstain(
   message: string,

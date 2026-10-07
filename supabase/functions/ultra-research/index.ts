@@ -3,8 +3,11 @@ import postgres from "npm:postgres@3.4.5";
 
 import { routeResearchQuery } from "./research.ts";
 
+const ULTRA_RESEARCH_ENGINE_VERSION = "20";
+
 type ResearchRequest = {
   query?: string;
+  clientEngineVersion?: string;
   context?: string;
   kind?: string;
   verificationMode?: string;
@@ -81,6 +84,25 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Invalid query" }, 400);
   }
 
+  if (
+    typeof body.clientEngineVersion === "string" &&
+    body.clientEngineVersion.trim() &&
+    body.clientEngineVersion.trim() !== ULTRA_RESEARCH_ENGINE_VERSION
+  ) {
+    return json(
+      {
+        engineVersion: ULTRA_RESEARCH_ENGINE_VERSION,
+        abstained: true,
+        reasonCode: "CLIENT_VERSION_MISMATCH",
+        retryable: false,
+        stage: "protocol",
+        message:
+          `Ultra Research V${ULTRA_RESEARCH_ENGINE_VERSION} requiere un cliente compatible.`,
+      },
+      409,
+    );
+  }
+
   const correlationId = (
     typeof body.correlationId === "string" &&
       /^[a-zA-Z0-9-]{8,80}$/.test(body.correlationId)
@@ -126,7 +148,10 @@ Deno.serve(async (req: Request) => {
       }));
     }
 
-    return json(result);
+    return json({
+      ...result,
+      engineVersion: ULTRA_RESEARCH_ENGINE_VERSION,
+    });
   } catch (error) {
     console.error(JSON.stringify({
       event: "ultra_research_failed",
@@ -141,6 +166,7 @@ Deno.serve(async (req: Request) => {
 
     return json(
       {
+        engineVersion: ULTRA_RESEARCH_ENGINE_VERSION,
         abstained: true,
         reasonCode: "BACKEND_FAILURE",
         retryable: true,

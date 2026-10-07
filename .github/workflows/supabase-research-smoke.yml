@@ -836,6 +836,7 @@ jobs:
           def run_case_once(case):
               body = json.dumps({
                   "query": case["query"],
+                  "clientEngineVersion": "20",
                   "kind": case["kind"],
                   "verificationMode": "STRICT",
                   "requiresFreshData": case["fresh"],
@@ -865,6 +866,12 @@ jobs:
                   payload = json.loads(raw)
               except json.JSONDecodeError:
                   return case, "FAIL", "invalid JSON"
+
+              if str(payload.get("engineVersion") or "") != "20":
+                  return case, "FAIL", (
+                      "research protocol mismatch: "
+                      f"expected=20 actual={payload.get('engineVersion')!r}"
+                  )
 
               if payload.get("abstained") is True:
                   reason = payload.get("reasonCode") or payload.get("message") or "unspecified"
