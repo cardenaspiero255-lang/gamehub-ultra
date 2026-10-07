@@ -816,6 +816,88 @@ class UltraFrontierEvolutionTest {
         })
     }
 
+    @Test
+    fun researchPartitionCapabilityIsExplicitAndForwardedByCoordinator() {
+        val generic = object : UltraResearchGateway {
+            override fun answer(
+                request: UltraGeneralQueryRequest
+            ): UltraVerifiedResearchResult =
+                UltraVerifiedResearchResult(
+                    message = "generic",
+                    confidence = UltraAnswerConfidence.MEDIUM,
+                    abstained = false
+                )
+        }
+
+        assertFalse(generic.supportsProviderPartitioning)
+        UltraVerifiedResearchEngine(
+            providers = listOf(fakeProvider("partitioned"))
+        ).use { engine ->
+            assertTrue(engine.supportsProviderPartitioning)
+            assertTrue(
+                UltraQueryExecutionCoordinator(engine)
+                    .supportsProviderPartitioning
+            )
+        }
+    }
+
+    @Test
+    fun weightedConsensusUsesDeclaredIndependenceWhenSourceIdsAreUnavailable() {
+        val decision = UltraWeightedConsensusEngine().decide(
+            listOf(
+                UltraWeightedEvidenceCandidate(
+                    providerId = "opaque-provider",
+                    claimKey = "claim",
+                    value = "same",
+                    displayText = "Dato corroborado.",
+                    sourceIds = emptySet(),
+                    independentSourceCount = 2,
+                    authoritative = false,
+                    providerScore = 0.8
+                )
+            )
+        )
+
+        assertTrue(decision.accepted)
+        assertEquals(2, decision.independentSourceCount)
+        assertEquals(UltraAnswerConfidence.HIGH, decision.confidence)
+    }
+
+    @Test
+    fun temporalKnowledgeGraphSnapshotAndConfidenceOrderingStayDeterministic() {
+        val graph = UltraTemporalKnowledgeGraph()
+        graph.upsert(
+            UltraTemporalFact(
+                subject = "chatgpt",
+                predicate = "answer",
+                value = "low",
+                validFromMillis = 1_000L,
+                validUntilMillis = 10_000L,
+                confidence = UltraAnswerConfidence.LOW
+            )
+        )
+        graph.upsert(
+            UltraTemporalFact(
+                subject = "chatgpt",
+                predicate = "answer",
+                value = "high",
+                validFromMillis = 2_000L,
+                validUntilMillis = 10_000L,
+                confidence = UltraAnswerConfidence.HIGH
+            )
+        )
+
+        assertEquals(2, graph.snapshot().size)
+        assertEquals(
+            "high",
+            graph.resolve(
+                subject = "chatgpt",
+                predicate = "answer",
+                atMillis = 3_000L
+            )?.value
+        )
+    }
+
     private fun fakeProvider(providerId: String): UltraResearchProvider =
         object : UltraResearchProvider {
             override val id: String = providerId
