@@ -128,7 +128,7 @@ class UltraFrontierExecutionEngine(
                     attempt += 1
                     recordAttempt(request, plan, attempt)
                     answer = coordinator.answer(
-                        request = request,
+                        request = executionRequest,
                         localChat = localChat
                     )
                 }
