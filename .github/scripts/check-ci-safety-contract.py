@@ -498,9 +498,41 @@ def main() -> None:
         "Required performance tests were skipped",
     ):
         require_run_fragment(validate, "device validation coverage", fragment)
+    require_gradle_invocation(
+        validate,
+        "device validation/UI instrumentation",
+        tasks=(":app:connectedDebugAndroidTest",),
+        args=(
+            "--build-cache",
+            "--max-workers=8",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+        ),
+    )
+    require_gradle_invocation(
+        validate,
+        "device validation/performance instrumentation",
+        tasks=(":baseline-profile:connectedNonMinifiedReleaseAndroidTest",),
+        args=(
+            "--build-cache",
+            "--max-workers=8",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+        ),
+    )
     validate_run = str(validate.get("run", ""))
     if validate_run.count(":baseline-profile:connectedNonMinifiedReleaseAndroidTest") != 1:
         fail("performance shard script must contain exactly one instrumentation command")
+    for expected_command in (
+        ("adb", "install", "$APK"),
+        ("adb", "install", "-r", "$APK"),
+        ("adb", "uninstall", "com.cardenaspiero255.gamehubultra"),
+    ):
+        require_shell_command(
+            validate,
+            "device validation/release install lifecycle",
+            expected_command,
+        )
 
     noise = require_step(
         android,
