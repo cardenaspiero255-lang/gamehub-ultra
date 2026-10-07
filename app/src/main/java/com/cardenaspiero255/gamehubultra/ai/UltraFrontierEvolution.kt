@@ -224,7 +224,7 @@ data class UltraWeightedConsensusDecision(
 
 class UltraWeightedConsensusEngine(
     private val minimumWinnerRatio: Double = 1.35,
-    private val minimumIndependentSources: Int = 2
+    private val minimumIndependentSources: Int = 1
 ) {
     init {
         require(minimumWinnerRatio >= 1.0)
