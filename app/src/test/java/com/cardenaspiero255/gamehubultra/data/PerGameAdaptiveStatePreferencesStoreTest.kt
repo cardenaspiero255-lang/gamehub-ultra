@@ -11,7 +11,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -58,4 +60,14 @@ class PerGameAdaptiveStatePreferencesStoreTest {
 
         assertNull(PerGameAdaptiveStatePreferencesStore(context).read(key))
     }
+    @Test
+    fun handledSessionIdSurvivesStoreRecreation() {
+        val first = PerGameAdaptiveStatePreferencesStore(context)
+        first.markSessionHandled("session-47")
+
+        val recreated = PerGameAdaptiveStatePreferencesStore(context)
+        assertTrue(recreated.wasSessionHandled("session-47"))
+        assertFalse(recreated.wasSessionHandled("session-other"))
+    }
+
 }
