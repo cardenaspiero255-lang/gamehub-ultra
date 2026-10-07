@@ -401,6 +401,7 @@ class PerGameAdaptiveRuntimeIntegrationTest {
                 onError = { error("cancellation must not be swallowed") }
             )
         }
+        Unit
     }
 
 
