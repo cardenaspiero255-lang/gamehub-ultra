@@ -2658,6 +2658,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^expl[ií]came de forma sencilla qu[eé] es\s+(.+?)\.?$/i,
     /^para qu[eé] sirve o por qu[eé] es importante\s+(.+?)\.?$/i,
     /^por qu[eé] es importante\s+(?:(?:el|la|los|las|un|una)\s+)?(.+?)\.?$/i,
+    /^por qu[eé] son importantes\s+(?:(?:el|la|los|las|un|una|unos|unas)\s+)?(.+?)\.?$/i,
     /^qu[eé] significa\s+(.+?)\.?$/i,
     /^qu[eé] diferencia hay entre\s+(.+?)\.?$/i,
     /^qu[eé] productos fabrica\s+(.+?)\.?$/i,

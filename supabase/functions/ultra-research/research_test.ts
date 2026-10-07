@@ -4892,10 +4892,11 @@ Deno.test(
           "Una emulsión es una mezcla de dos líquidos que normalmente no se mezclan.",
       },
       {
-        query: "¿Qué es el matchmaking?",
-        expectedSearch: "matchmaking",
-        title: "Matchmaking",
-        extract: "El matchmaking empareja jugadores para formar partidas.",
+        query: "¿Qué es un telescopio?",
+        expectedSearch: "telescopio",
+        title: "Telescopio",
+        extract:
+          "Un telescopio es un instrumento óptico para observar objetos lejanos.",
       },
       {
         query: "Explícame de forma sencilla qué es la presión arterial.",
