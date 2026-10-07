@@ -258,10 +258,10 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "debug artifact current-run binding removed",
+        "local debug provenance verification removed",
         android_replace=(
-            "          run-id: ${{ github.run_id }}\n",
-            "          run-id: 1\n",
+            "      - name: Verify Phase 3 artifact provenance locally\n",
+            "      - name: Verify Phase 3 artifact provenance locally disabled\n",
         ),
     )
     reject_mutation(
@@ -274,8 +274,8 @@ def main() -> None:
     reject_mutation(
         "smoke logical lanes reduced",
         smoke_replace=(
+            "          logical_shards_per_runner = 8\n",
             "          logical_shards_per_runner = 4\n",
-            "          logical_shards_per_runner = 2\n",
         ),
     )
     reject_mutation(
@@ -300,6 +300,13 @@ def main() -> None:
         ),
     )
     reject_mutation(
+        "Android unit coverage instrumentation re-enabled",
+        android_replace=(
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "false"\n',
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "true"\n',
+        ),
+    )
+    reject_mutation(
         "coverage physical runner removed",
         coverage_replace=(
             "        runner: [0, 1, 2, 3, 4, 5, 6, 7]\n",
@@ -311,6 +318,27 @@ def main() -> None:
         coverage_replace=(
             '      COVERAGE_LOGICAL_SHARD_COUNT: "64"\n',
             '      COVERAGE_LOGICAL_SHARD_COUNT: "32"\n',
+        ),
+    )
+    reject_mutation(
+        "coverage unit instrumentation disabled",
+        coverage_replace=(
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "true"\n',
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "false"\n',
+        ),
+    )
+    reject_mutation(
+        "compiled coverage class artifact removed",
+        coverage_replace=(
+            "      - name: Upload compiled coverage classes\n",
+            "      - name: Upload compiled coverage classes disabled\n",
+        ),
+    )
+    reject_mutation(
+        "coverage class reuse root removed",
+        coverage_replace=(
+            '          GAMEHUB_COVERAGE_CLASS_ROOT: ${{ runner.temp }}/coverage-classes\n',
+            "",
         ),
     )
     reject_mutation(
