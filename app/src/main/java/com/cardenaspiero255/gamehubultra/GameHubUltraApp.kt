@@ -754,6 +754,10 @@ internal fun GameHubUltraApp(
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
                 onApplySmartGameAssistant = ::applyExternalSmartGameAssistantSuggestion,
+                aiProfileProposal = aiProfileProposal,
+                canRollbackAiProfileProposal = aiProfileRollbackState != null,
+                onApplyAiProfileProposal = ::applyAiProfileProposal,
+                onRollbackAiProfileProposal = ::rollbackAiProfileProposal,
                 optimizationObservations = optimizationObservations,
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) {
