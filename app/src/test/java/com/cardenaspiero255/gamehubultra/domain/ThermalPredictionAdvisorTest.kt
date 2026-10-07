@@ -35,6 +35,31 @@ class ThermalPredictionAdvisorTest {
     }
 
     @Test
+    fun `recovering prediction closes an active preventive warning`() {
+        val warning = assertNotNull(
+            ThermalPredictionAdvisor.message(
+                prediction = prediction(allowPreventiveSignal = true),
+                previousObservation = null,
+            )
+        )
+
+        val recovery = assertNotNull(
+            ThermalPredictionAdvisor.message(
+                prediction = prediction(
+                    allowPreventiveSignal = false,
+                    recovering = true,
+                ),
+                previousObservation = warning,
+            )
+        )
+
+        assertEquals(SessionCoachSignal.THERMAL, recovery.signal)
+        assertEquals(SessionCoachPriority.INFO, recovery.priority)
+        assertTrue(recovery.title.contains("recuperación", ignoreCase = true))
+        assertNull(recovery.action)
+    }
+
+    @Test
     fun `same active thermal prediction is not emitted repeatedly`() {
         val first = assertNotNull(
             ThermalPredictionAdvisor.message(
@@ -51,7 +76,10 @@ class ThermalPredictionAdvisorTest {
         )
     }
 
-    private fun prediction(allowPreventiveSignal: Boolean) =
+    private fun prediction(
+        allowPreventiveSignal: Boolean,
+        recovering: Boolean = false,
+    ) =
         ThermalPrediction(
             trend = ThermalTrend.RISING_FAST,
             risk = ThermalRisk.HIGH,
@@ -62,7 +90,7 @@ class ThermalPredictionAdvisorTest {
             latestMeasuredHeadroom = 0.70f,
             projectedHeadroom = 0.84f,
             allowPreventiveSignal = allowPreventiveSignal,
-            recovering = false,
+            recovering = recovering,
             evidence = emptyList(),
             reason = "Tendencia térmica ascendente."
         )
