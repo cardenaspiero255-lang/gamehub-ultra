@@ -679,7 +679,7 @@ class WikimediaUltraResearchProvider(
             )
             .replace(
                 Regex(
-                    """^(?:un|una|unos|unas|ser|a|an)\s+""",
+                    """^(?:el|la|los|las|un|una|unos|unas|ser|a|an)\s+""",
                     RegexOption.IGNORE_CASE
                 ),
                 ""
