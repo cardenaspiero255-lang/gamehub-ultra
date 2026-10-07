@@ -51,11 +51,11 @@ internal object SessionCoachGamePresenceDetector {
     private const val LOOKBACK_MS = 2L * 60L * 1_000L
     private const val LEGACY_MOVE_TO_FOREGROUND = 1
     private const val LEGACY_MOVE_TO_BACKGROUND = 2
-    @Volatile private var lastKnownPresence = SessionCoachGamePresence.UNKNOWN
 
     fun observe(
         context: Context,
         packageName: String,
+        previousPresence: SessionCoachGamePresence = SessionCoachGamePresence.UNKNOWN,
         nowMillis: Long = System.currentTimeMillis()
     ): SessionCoachGamePresence {
         val powerManager = context.getSystemService(PowerManager::class.java)
@@ -94,15 +94,13 @@ internal object SessionCoachGamePresenceDetector {
             }
         }
 
-        val resolved = resolvePresence(
+        return resolvePresence(
             latestForegroundPackage = latestForegroundPackage,
             latestForegroundAt = latestForegroundAt,
             targetBackgroundAt = targetBackgroundAt,
-            previousPresence = lastKnownPresence,
+            previousPresence = previousPresence,
             targetPackage = packageName
         )
-        lastKnownPresence = resolved
-        return resolved
     }
 
     internal fun resolvePresence(
@@ -362,6 +360,7 @@ class SessionCoachMonitorService : Service() {
         var firstSample = previous == null
         var inactiveEvidenceCount = 0
         var unknownEvidenceCount = 0
+        var previousGamePresence = SessionCoachGamePresence.UNKNOWN
 
         while (currentCoroutineContext().isActive) {
             val now = System.currentTimeMillis()
@@ -378,9 +377,11 @@ class SessionCoachMonitorService : Service() {
                 SessionCoachGamePresenceDetector.observe(
                     context = applicationContext,
                     packageName = packageName,
+                    previousPresence = previousGamePresence,
                     nowMillis = now
                 )
             }
+            previousGamePresence = presence
             inactiveEvidenceCount = nextInactiveEvidenceCount(
                 presence = presence,
                 currentCount = inactiveEvidenceCount
