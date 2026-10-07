@@ -17,20 +17,18 @@ class UltraFrontierExecutionEngine(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
     ): UltraQueryExecutionAnswer {
+        val initialNetworkAvailable = networkAvailable()
         val plan = frontier.plan(
             UltraFrontierRequest(
                 message = request.originalText,
                 query = request,
-                networkAvailable = networkAvailable()
+                networkAvailable = initialNetworkAvailable
             )
         )
         auditTrail.record(
             correlationId = request.correlationId,
             lane = plan.lane,
             event = UltraFrontierAuditEvent.PLAN_CREATED
-        )
-        val executionRequest = request.copy(
-            researchProviderBudget = plan.sourceBudget.takeIf { it > 0 }
         )
 
         if (plan.lane == UltraFrontierLane.BLOCKED) {
@@ -40,20 +38,17 @@ class UltraFrontierExecutionEngine(
                 event = UltraFrontierAuditEvent.ABSTAIN,
                 reasonCode = "FRONTIER_NETWORK_REQUIRED"
             )
-            return UltraQueryExecutionAnswer(
+            return networkAbstention(
                 message = requireNotNull(plan.blockedReason),
-                verified = false,
-                abstained = true,
-                reasonCode = "FRONTIER_NETWORK_REQUIRED",
-                retryable = true,
-                stage = "frontier"
+                reasonCode = "FRONTIER_NETWORK_REQUIRED"
             )
         }
 
         var attempt = 1
+        var previousRetryFingerprint: String? = null
         recordAttempt(request, plan, attempt)
         var answer = coordinator.answer(
-            request = executionRequest,
+            request = requestForAttempt(request, plan, attempt),
             localChat = localChat
         )
 
@@ -116,8 +111,38 @@ class UltraFrontierExecutionEngine(
                             attempt = attempt,
                             reasonCode = answer.reasonCode ?: "FRONTIER_BUDGET_EXHAUSTED"
                         )
-                        return answer.asSafeAbstention()
+                        return answer.asSafeAbstention("FRONTIER_BUDGET_EXHAUSTED")
                     }
+
+                    val fingerprint = answer.retryFingerprint()
+                    if (previousRetryFingerprint == fingerprint) {
+                        auditTrail.record(
+                            correlationId = request.correlationId,
+                            lane = plan.lane,
+                            event = UltraFrontierAuditEvent.ABSTAIN,
+                            attempt = attempt,
+                            reasonCode = "FRONTIER_NO_PROGRESS"
+                        )
+                        return answer.asSafeAbstention("FRONTIER_NO_PROGRESS")
+                    }
+                    previousRetryFingerprint = fingerprint
+
+                    if (isResearchLane(plan) && !networkAvailable()) {
+                        auditTrail.record(
+                            correlationId = request.correlationId,
+                            lane = plan.lane,
+                            event = UltraFrontierAuditEvent.ABSTAIN,
+                            attempt = attempt,
+                            reasonCode = "FRONTIER_NETWORK_LOST"
+                        )
+                        return networkAbstention(
+                            message =
+                                "Perdí la conexión antes de poder completar la verificación. " +
+                                    "No voy a usar datos locales potencialmente desactualizados.",
+                            reasonCode = "FRONTIER_NETWORK_LOST"
+                        )
+                    }
+
                     auditTrail.record(
                         correlationId = request.correlationId,
                         lane = plan.lane,
@@ -128,7 +153,7 @@ class UltraFrontierExecutionEngine(
                     attempt += 1
                     recordAttempt(request, plan, attempt)
                     answer = coordinator.answer(
-                        request = executionRequest,
+                        request = requestForAttempt(request, plan, attempt),
                         localChat = localChat
                     )
                 }
@@ -148,6 +173,24 @@ class UltraFrontierExecutionEngine(
     }
 
     fun auditSnapshot(): List<UltraFrontierAuditRecord> = auditTrail.snapshot()
+
+    private fun requestForAttempt(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        attempt: Int
+    ): UltraGeneralQueryRequest {
+        val budget = if (plan.sourceBudget > 0) {
+            (
+                plan.sourceBudget +
+                    ((attempt - 1) * plan.sourceBudgetStep)
+                ).coerceAtMost(plan.maxSourceBudget)
+        } else {
+            0
+        }
+        return request.copy(
+            researchProviderBudget = budget.takeIf { it > 0 }
+        )
+    }
 
     private fun recordAttempt(
         request: UltraGeneralQueryRequest,
@@ -169,6 +212,10 @@ class UltraFrontierExecutionEngine(
         )
     }
 
+    private fun isResearchLane(plan: UltraFrontierPlan): Boolean =
+        plan.lane == UltraFrontierLane.VERIFIED_RESEARCH ||
+            plan.lane == UltraFrontierLane.DEEP_RESEARCH
+
     private fun safeLocal(localChat: () -> String?): String? =
         try {
             localChat()
@@ -187,17 +234,68 @@ class UltraFrontierExecutionEngine(
             confidence = confidence,
             sources = sources,
             abstained = abstained,
+            retryable = abstained && retryable,
             attempt = attempt
         )
 
-    private fun UltraQueryExecutionAnswer.asSafeAbstention(): UltraQueryExecutionAnswer =
+    private fun UltraQueryExecutionAnswer.retryFingerprint(): String =
+        buildString {
+            append(message.trim().lowercase())
+            append('|')
+            append(confidence?.name.orEmpty())
+            append('|')
+            append(abstained)
+            append('|')
+            append(reasonCode.orEmpty())
+            append('|')
+            sources
+                .asSequence()
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .map(String::lowercase)
+                .distinct()
+                .sorted()
+                .forEach {
+                    append(it)
+                    append(';')
+                }
+        }
+
+    private fun networkAbstention(
+        message: String,
+        reasonCode: String
+    ): UltraQueryExecutionAnswer =
+        UltraQueryExecutionAnswer(
+            message = message,
+            verified = false,
+            sources = emptyList(),
+            abstained = true,
+            reasonCode = reasonCode,
+            retryable = true,
+            stage = "frontier"
+        )
+
+    private fun UltraQueryExecutionAnswer.asSafeAbstention(
+        overrideReasonCode: String? = null
+    ): UltraQueryExecutionAnswer =
         if (abstained) {
-            copy(verified = false)
-        } else {
             copy(
                 verified = false,
+                retryable = false,
+                reasonCode = overrideReasonCode ?: reasonCode,
+                stage = stage ?: "frontier"
+            )
+        } else {
+            copy(
+                message =
+                    "Encontré información, pero no pude corroborarla con suficiente " +
+                        "evidencia fiable. Prefiero no presentarla como un hecho.",
+                verified = false,
+                sources = emptyList(),
                 abstained = true,
-                reasonCode = reasonCode ?: "FRONTIER_EVIDENCE_INSUFFICIENT",
+                retryable = false,
+                reasonCode =
+                    overrideReasonCode ?: reasonCode ?: "FRONTIER_EVIDENCE_INSUFFICIENT",
                 stage = stage ?: "frontier"
             )
         }
