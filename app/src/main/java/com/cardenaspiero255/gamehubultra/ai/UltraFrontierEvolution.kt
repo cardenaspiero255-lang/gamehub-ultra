@@ -302,28 +302,64 @@ class UltraWeightedConsensusEngine(
     private fun independentSourceCount(
         candidates: List<UltraWeightedEvidenceCandidate>
     ): Int {
-        val identified = candidates
-            .flatMap { candidate ->
-                candidate.sourceIds
-                    .map(String::trim)
-                    .filter(String::isNotBlank)
-                    .map { it.lowercase(Locale.ROOT) }
-            }
-            .toSet()
-        val unidentified = candidates.sumOf { candidate ->
-            val identifiedForCandidate = candidate.sourceIds
+        if (candidates.isEmpty()) return 0
+
+        val sourceSets = candidates.map { candidate ->
+            candidate.sourceIds
                 .asSequence()
                 .map(String::trim)
                 .filter(String::isNotBlank)
                 .map { it.lowercase(Locale.ROOT) }
-                .distinct()
-                .count()
-            (
-                candidate.independentSourceCount.coerceAtLeast(1) -
-                    identifiedForCandidate
-                ).coerceAtLeast(0)
+                .toSet()
         }
-        return identified.size + unidentified
+        val visited = BooleanArray(candidates.size)
+        var total = 0
+        var unidentifiedMaximum = 0
+
+        candidates.indices.forEach { start ->
+            if (visited[start]) return@forEach
+            if (sourceSets[start].isEmpty()) {
+                unidentifiedMaximum = maxOf(
+                    unidentifiedMaximum,
+                    candidates[start].independentSourceCount.coerceAtLeast(1)
+                )
+                visited[start] = true
+                return@forEach
+            }
+
+            val component = ArrayDeque<Int>()
+            val componentSources = sourceSets[start].toMutableSet()
+            var componentIndependentMaximum =
+                candidates[start].independentSourceCount.coerceAtLeast(1)
+            visited[start] = true
+            component.addLast(start)
+
+            while (component.isNotEmpty()) {
+                component.removeFirst()
+                candidates.indices.forEach { candidateIndex ->
+                    if (visited[candidateIndex]) return@forEach
+                    val candidateSources = sourceSets[candidateIndex]
+                    if (
+                        candidateSources.isNotEmpty() &&
+                        candidateSources.any(componentSources::contains)
+                    ) {
+                        visited[candidateIndex] = true
+                        component.addLast(candidateIndex)
+                        componentSources += candidateSources
+                        componentIndependentMaximum = maxOf(
+                            componentIndependentMaximum,
+                            candidates[candidateIndex]
+                                .independentSourceCount
+                                .coerceAtLeast(1)
+                        )
+                    }
+                }
+            }
+
+            total += componentIndependentMaximum
+        }
+
+        return total + unidentifiedMaximum
     }
 
     private fun weight(candidate: UltraWeightedEvidenceCandidate): Double =
