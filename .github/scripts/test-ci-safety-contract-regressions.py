@@ -128,27 +128,31 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "quality Configuration Cache removed",
+        "packed quality worker removed",
         android_replace=(
-            "              --configuration-cache \\\n"
-            "              --configuration-cache-problems=fail \\\n"
-            "              --console=plain \\\n",
-            "              --configuration-cache-problems=fail \\\n"
-            "              --console=plain \\\n",
+            "          logical_shards=(0 1 2 3 4 5)\n",
+            "          logical_shards=(0 1 2 3 4)\n",
         ),
     )
     reject_mutation(
-        "macro settings shard removed",
+        "packed quality failure propagation removed",
         android_replace=(
-            "        shard: [release, ui, baseline, macro-startup, macro-library, macro-settings]\n",
-            "        shard: [release, ui, baseline, macro-startup, macro-library]\n",
+            '          exit "$status"\n',
+            '          echo "$status"\n',
         ),
     )
     reject_mutation(
-        "device parallelism reduced",
+        "performance physical shard removed",
         android_replace=(
-            "      max-parallel: 6\n",
-            "      max-parallel: 3\n",
+            "        shard: [release-apk, ui, performance-a, performance-b]\n",
+            "        shard: [release-apk, ui, performance-a]\n",
+        ),
+    )
+    reject_mutation(
+        "device physical parallelism reduced",
+        android_replace=(
+            "      max-parallel: 4\n",
+            "      max-parallel: 2\n",
         ),
     )
     reject_mutation(
@@ -175,15 +179,29 @@ def main() -> None:
     reject_mutation(
         "baseline rule disabled",
         android_replace=(
-            '                RULE="BaselineProfile"\n',
-            '                RULE="DisabledBaseline"\n',
+            '                  RULE="BaselineProfile"\n',
+            '                  RULE="DisabledBaseline"\n',
         ),
     )
     reject_mutation(
         "macrobenchmark rule disabled",
         android_replace=(
-            '                RULE="Macrobenchmark"\n',
-            '                RULE="DisabledMacro"\n',
+            '                  RULE="Macrobenchmark"\n',
+            '                  RULE="DisabledMacro"\n',
+        ),
+    )
+    reject_mutation(
+        "packed startup macro removed",
+        android_replace=(
+            "                  LOGICAL_SHARDS=(baseline macro-startup)\n",
+            "                  LOGICAL_SHARDS=(baseline)\n",
+        ),
+    )
+    reject_mutation(
+        "packed settings macro removed",
+        android_replace=(
+            "                  LOGICAL_SHARDS=(macro-library macro-settings)\n",
+            "                  LOGICAL_SHARDS=(macro-library)\n",
         ),
     )
     reject_mutation(
@@ -201,10 +219,17 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "release artifact research guard removed",
+        "release APK artifact research guard removed",
         android_replace=(
-            "        if: matrix.shard == 'release' && env.RESEARCH_RELEASE_READY == 'true'\n",
-            "        if: matrix.shard == 'release'\n",
+            "        if: matrix.shard == 'release-apk' && env.RESEARCH_RELEASE_READY == 'true'\n",
+            "        if: matrix.shard == 'release-apk'\n",
+        ),
+    )
+    reject_mutation(
+        "release bundle Gradle task removed",
+        android_replace=(
+            "          gradle :app:bundleRelease \\\n",
+            "          echo :app:bundleRelease \\\n",
         ),
     )
     reject_mutation(
@@ -215,9 +240,9 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "build fan-in loses device-validation result",
+        "build fan-in loses release bundle result",
         android_replace=(
-            '          test "${{ needs.device-validation.result }}" = "success"\n',
+            '          test "${{ needs.release-bundle.result }}" = "success"\n',
             "",
         ),
     )
@@ -229,20 +254,47 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "coverage made advisory",
+        "coverage physical runner removed",
         coverage_replace=(
-            "      - name: Generate debug unit-test coverage\n"
-            "        shell: bash\n",
-            "      - name: Generate debug unit-test coverage\n"
+            "        runner: [0, 1]\n",
+            "        runner: [0]\n",
+        ),
+    )
+    reject_mutation(
+        "coverage logical shard count reduced",
+        coverage_replace=(
+            '      COVERAGE_LOGICAL_SHARD_COUNT: "8"\n',
+            '      COVERAGE_LOGICAL_SHARD_COUNT: "4"\n',
+        ),
+    )
+    reject_mutation(
+        "coverage packed tests made advisory",
+        coverage_replace=(
+            "      - name: Run packed coverage shards\n        shell: bash\n",
+            "      - name: Run packed coverage shards\n"
             "        continue-on-error: true\n"
             "        shell: bash\n",
         ),
     )
     reject_mutation(
-        "coverage command replaced by inert text",
+        "coverage test command replaced by inert text",
         coverage_replace=(
-            "          gradle :app:createDebugUnitTestCoverageReport \\\n",
-            "          echo :app:createDebugUnitTestCoverageReport \\\n",
+            "          gradle :app:testDebugUnitTest \\\n",
+            "          echo :app:testDebugUnitTest \\\n",
+        ),
+    )
+    reject_mutation(
+        "coverage aggregation command replaced by inert text",
+        coverage_replace=(
+            "          gradle :app:createShardedDebugUnitTestCoverageReport \\\n",
+            "          echo :app:createShardedDebugUnitTestCoverageReport \\\n",
+        ),
+    )
+    reject_mutation(
+        "coverage patch threshold weakened",
+        coverage_replace=(
+            "            --min-patch-line 90\n",
+            "            --min-patch-line 50\n",
         ),
     )
     reject_mutation(
@@ -254,7 +306,7 @@ def main() -> None:
     )
 
     print(
-        "CI safety regression suite passed: accelerated parallel gates fail closed."
+        "CI safety regression suite passed: packed parallel gates fail closed."
     )
 
 
