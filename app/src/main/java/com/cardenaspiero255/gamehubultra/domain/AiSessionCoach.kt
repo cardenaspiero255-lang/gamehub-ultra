@@ -171,9 +171,13 @@ object AiSessionCoach {
         }
 
         val batteryValues = ordered.mapNotNull { it.batteryPercent }
-        val batteryDrop = batteryValues.firstOrNull()?.let { first ->
+        val legacyBatteryDrop = batteryValues.firstOrNull()?.let { first ->
             batteryValues.lastOrNull()?.let { last -> (first - last).coerceAtLeast(0) }
         }
+        val hasBatteryStateTelemetry = ordered.any { it.batteryCharging != null }
+        val batteryAssessment = BatteryAwareGamingEngine().assess(ordered)
+        val batteryDrop = batteryAssessment.observedDropPercent
+            ?: legacyBatteryDrop.takeIf { !hasBatteryStateTelemetry }
         val recurringBatteryDrop =
             batteryValues.size >= RECURRING_EVIDENCE_COUNT &&
                 batteryDrop != null &&
@@ -237,8 +241,11 @@ object AiSessionCoach {
         val legacyBatteryDrop = batteryValues.firstOrNull()?.let { first ->
             batteryValues.lastOrNull()?.let { last -> (first - last).coerceAtLeast(0) }
         }
+        val hasBatteryStateTelemetry = ordered.any { it.batteryCharging != null }
+        val chargingObserved = ordered.any { it.batteryCharging == true }
         val batteryAssessment = BatteryAwareGamingEngine().assess(ordered)
-        val batteryDrop = batteryAssessment.observedDropPercent ?: legacyBatteryDrop
+        val batteryDrop = batteryAssessment.observedDropPercent
+            ?: legacyBatteryDrop.takeIf { !hasBatteryStateTelemetry }
         val patterns = recurringPatterns(ordered)
         val batteryNextStep = if (batteryAssessment.preventAggressiveProfiles) {
             "Para priorizar autonomía, evita perfiles agresivos hasta que mejore el estado de batería."
@@ -255,8 +262,8 @@ object AiSessionCoach {
             batteryAssessment.drainPercentPerHour?.let {
                 append(" · drenaje estimado ~${it.toInt()} %/h")
             }
-            if (batteryAssessment.charging) {
-                append(" · el dispositivo terminó la sesión cargando")
+            if (chargingObserved) {
+                append(" · se observó carga conectada durante la sesión")
             }
             if (patterns.isEmpty()) {
                 append(" · sin patrones repetidos relevantes.")
@@ -271,7 +278,7 @@ object AiSessionCoach {
             patterns = patterns,
             batteryDropPercent = batteryDrop,
             batteryDrainPercentPerHour = batteryAssessment.drainPercentPerHour,
-            batteryChargingObserved = ordered.any { it.batteryCharging == true },
+            batteryChargingObserved = chargingObserved,
             batteryRecommendation = batteryAssessment.recommendation
         )
     }
