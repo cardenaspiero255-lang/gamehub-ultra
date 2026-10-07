@@ -8300,7 +8300,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "standalone Open Library query keeps book specialist routing",
   async () => {
