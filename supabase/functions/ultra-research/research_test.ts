@@ -8250,6 +8250,8 @@ Deno.test(
       },
       { query: "¿Qué es una metáfora?", expected: ["figura", "lenguaje"] },
       { query: "¿Qué es un sustantivo?", expected: ["palabra", "nombra"] },
+      { query: "¿Qué es un verbo?", expected: ["palabra", "acción"] },
+      { query: "¿Qué es un parlamento?", expected: ["legislativo", "leyes"] },
       {
         query: "¿Qué son los números primos?",
         expected: ["divisores", "exactamente dos"],
