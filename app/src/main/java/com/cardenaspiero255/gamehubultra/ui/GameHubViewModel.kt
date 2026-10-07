@@ -104,6 +104,10 @@ class GameHubViewModel(
         GameHubUiState()
     )
 
+    suspend fun effectiveProfileForGame(packageName: String): PerformanceProfile =
+        repository.profileForGameFlow(packageName).first()
+            ?: repository.selectedProfileFlow().first()
+
     fun selectGlobalProfile(profile: PerformanceProfile) {
         viewModelScope.launch { repository.saveSelectedProfile(profile) }
     }
