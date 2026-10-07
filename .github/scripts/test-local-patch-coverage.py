@@ -190,6 +190,31 @@ internal fun ExampleCard(
         self.assertEqual(stats.covered, 1)
 
 
+    def test_kotlin_structural_if_and_enum_continuations_are_not_false_unmapped(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+if (
+PackageManager.PERMISSION_GRANTED
+LEGACY_MOVE_TO_FOREGROUND,
+SessionCoachGamePresence.ACTIVE,
+realCall()
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 7))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(
+            stats.unmapped_files,
+            ("app/src/main/java/com/example/Foo.kt:6",),
+        )
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
     def test_threshold_is_blocking_below_minimum(self) -> None:
         stats = gate.PatchCoverage(executable=10, covered=8)
         self.assertFalse(gate.meets_threshold(stats, 90.0))
