@@ -3,8 +3,10 @@ package com.cardenaspiero255.gamehubultra.data
 import android.content.Context
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePersistedState
+import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePendingDecision
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveStateStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import java.util.Base64
 
 class PerGameAdaptiveStatePreferencesStore(
     context: Context
@@ -55,14 +57,39 @@ class PerGameAdaptiveStatePreferencesStore(
         ).joinToString("|")
         preferences.edit()
             .putString(preferenceKey(key), encoded)
-            .apply()
+            .commit()
     }
 
 
     override fun delete(key: AdaptiveGameKey) {
         preferences.edit()
             .remove(preferenceKey(key))
-            .apply()
+            .commit()
+    }
+
+    override fun readPendingDecision(
+        sessionId: String
+    ): PerGameAdaptivePendingDecision? {
+        val cleanSession = sessionId.trim()
+        if (cleanSession.isEmpty()) return null
+        val raw = preferences.getString(PENDING_DECISION_KEY, null) ?: return null
+        return decodePendingDecision(raw)
+            ?.takeIf { it.sessionId == cleanSession }
+    }
+
+    override fun writePendingDecision(decision: PerGameAdaptivePendingDecision) {
+        preferences.edit()
+            .putString(PENDING_DECISION_KEY, encodePendingDecision(decision))
+            .commit()
+    }
+
+    override fun clearPendingDecision(sessionId: String) {
+        val current = preferences.getString(PENDING_DECISION_KEY, null)
+            ?.let(::decodePendingDecision)
+        if (current?.sessionId != sessionId.trim()) return
+        preferences.edit()
+            .remove(PENDING_DECISION_KEY)
+            .commit()
     }
 
     fun wasSessionHandled(sessionId: String): Boolean =
@@ -74,8 +101,81 @@ class PerGameAdaptiveStatePreferencesStore(
         if (clean.isEmpty()) return
         preferences.edit()
             .putString(LAST_HANDLED_SESSION_ID, clean)
-            .apply()
+            .commit()
     }
+
+    private fun encodePendingDecision(
+        decision: PerGameAdaptivePendingDecision
+    ): String =
+        listOf(
+            encodeText(decision.sessionId),
+            encodeText(decision.key.packageName),
+            encodeText(decision.key.version),
+            decision.previousProfile.name,
+            decision.targetProfile.name,
+            decision.targetState.profile.name,
+            decision.targetState.candidate?.name.orEmpty(),
+            decision.targetState.confirmations.coerceAtLeast(0).toString(),
+            decision.targetState.lastChangeMillis
+                ?.takeIf { it >= 0L }
+                ?.toString()
+                .orEmpty(),
+            decision.targetState.recoveryProfile?.name.orEmpty(),
+            decision.eventTimestampMillis.coerceAtLeast(0L).toString(),
+            encodeText(decision.reason)
+        ).joinToString("|")
+
+    private fun decodePendingDecision(raw: String): PerGameAdaptivePendingDecision? {
+        val fields = raw.split("|")
+        if (fields.size != 12) return null
+        val sessionId = decodeText(fields[0])?.takeIf(String::isNotBlank) ?: return null
+        val packageName = decodeText(fields[1])?.takeIf(String::isNotBlank) ?: return null
+        val version = decodeText(fields[2])?.takeIf(String::isNotBlank) ?: return null
+        val previousProfile = fields[3].toProfile() ?: return null
+        val targetProfile = fields[4].toProfile() ?: return null
+        val stateProfile = fields[5].toProfile() ?: return null
+        val candidate = fields[6].takeIf(String::isNotBlank)?.toProfile()
+            ?: if (fields[6].isBlank()) null else return null
+        val confirmations = fields[7].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+        val lastChangeMillis = fields[8]
+            .takeIf(String::isNotBlank)
+            ?.toLongOrNull()
+            ?.takeIf { it >= 0L }
+            ?: if (fields[8].isBlank()) null else return null
+        val recoveryProfile = fields[9].takeIf(String::isNotBlank)?.toProfile()
+            ?: if (fields[9].isBlank()) null else return null
+        val eventTimestampMillis = fields[10].toLongOrNull()?.takeIf { it >= 0L } ?: return null
+        val reason = decodeText(fields[11]) ?: return null
+
+        return PerGameAdaptivePendingDecision(
+            sessionId = sessionId,
+            key = AdaptiveGameKey(packageName, version),
+            previousProfile = previousProfile,
+            targetProfile = targetProfile,
+            targetState = PerGameAdaptivePersistedState(
+                profile = stateProfile,
+                candidate = candidate,
+                confirmations = confirmations,
+                lastChangeMillis = lastChangeMillis,
+                recoveryProfile = recoveryProfile
+            ),
+            eventTimestampMillis = eventTimestampMillis,
+            reason = reason
+        )
+    }
+
+    private fun encodeText(value: String): String =
+        Base64.getUrlEncoder()
+            .withoutPadding()
+            .encodeToString(value.toByteArray(Charsets.UTF_8))
+
+    private fun decodeText(value: String): String? =
+        runCatching {
+            String(
+                Base64.getUrlDecoder().decode(value),
+                Charsets.UTF_8
+            )
+        }.getOrNull()
 
     private fun decodeState(raw: String): PerGameAdaptivePersistedState? {
         val fields = raw.split("|")
@@ -105,6 +205,7 @@ class PerGameAdaptiveStatePreferencesStore(
     companion object {
         private const val PREFERENCES_NAME = "gamehub_ultra_adaptive_optimizer"
         private const val LAST_HANDLED_SESSION_ID = "last_handled_session_id"
+        private const val PENDING_DECISION_KEY = "pending_decision"
 
         internal fun preferenceKey(key: AdaptiveGameKey): String =
             "state:${key.packageName.trim()}:${key.version.trim()}"
