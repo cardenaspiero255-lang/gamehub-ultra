@@ -76,9 +76,9 @@ object UltraMathEngine {
     }
 
     private fun solveQuadraticEquation(clean: String): UltraMathSolution? {
-        if (!Regex("""\\bx\\s*\\^\\s*2\\b""").containsMatchIn(clean)) return null
+        if (!Regex("""\bx\s*\^\s*2\b""").containsMatchIn(clean)) return null
         val match = Regex(
-            """([+-]?\\s*(?:\\d+(?:[.,]\\d+)?)?)\\s*x\\s*\\^\\s*2\\s*([+-])\\s*(?:(\\d+(?:[.,]\\d+)?)\\s*)?x\\s*([+-])\\s*(\\d+(?:[.,]\\d+)?)\\s*=\\s*0"""
+            """([+-]?\s*(?:\d+(?:[.,]\d+)?)?)\s*x\s*\^\s*2\s*([+-])\s*(?:(\d+(?:[.,]\d+)?)\s*)?x\s*([+-])\s*(\d+(?:[.,]\d+)?)\s*=\s*0"""
         ).find(clean) ?: return null
 
         val a = signedCoefficient(match.groupValues[1]) ?: return null
@@ -130,11 +130,11 @@ object UltraMathEngine {
 
     private fun solveGreatestCommonDivisorOrMultiple(clean: String): UltraMathSolution? {
         val mode = when {
-            Regex("""\\b(mcd|maximo comun divisor|gcd)\\b""").containsMatchIn(clean) -> "gcd"
-            Regex("""\\b(mcm|minimo comun multiplo|lcm)\\b""").containsMatchIn(clean) -> "lcm"
+            Regex("""\b(mcd|maximo comun divisor|gcd)\b""").containsMatchIn(clean) -> "gcd"
+            Regex("""\b(mcm|minimo comun multiplo|lcm)\b""").containsMatchIn(clean) -> "lcm"
             else -> return null
         }
-        val values = Regex("""-?\\d+""")
+        val values = Regex("""-?\d+""")
             .findAll(clean)
             .mapNotNull { it.value.toBigIntegerOrNull() }
             .take(2)
@@ -171,7 +171,7 @@ object UltraMathEngine {
                 clean.contains("pythagorean")
         if (!pythagoreanSignal || !clean.contains("hipotenusa")) return null
 
-        val values = Regex("""-?\\d+(?:[.,]\\d+)?""")
+        val values = Regex("""-?\d+(?:[.,]\d+)?""")
             .findAll(clean)
             .mapNotNull { it.value.toDecimalOrNull() }
             .take(2)
@@ -195,7 +195,7 @@ object UltraMathEngine {
 
     private fun solveTemperatureConversion(clean: String): UltraMathSolution? {
         val match = Regex(
-            """(-?\\d+(?:[.,]\\d+)?)\\s*(?:grados?\\s*)?(celsius|centigrados?|°c|fahrenheit|°f|kelvin)\\s*(?:a|en|to)\\s*(celsius|centigrados?|°c|fahrenheit|°f|kelvin)"""
+            """(-?\d+(?:[.,]\d+)?)\s*(?:grados?\s*)?(celsius|centigrados?|°c|fahrenheit|°f|kelvin)\s*(?:a|en|to)\s*(celsius|centigrados?|°c|fahrenheit|°f|kelvin)"""
         ).find(clean) ?: return null
 
         val value = match.groupValues[1].toDecimalOrNull() ?: return null
