@@ -22,18 +22,9 @@ permissions:
 
 jobs:
   quality-contract-shard:
-    name: quality-contract-shard-${{ matrix.runner }}
+    name: quality-contract-shard
     runs-on: ubuntu-22.04
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix:
-        runner: [0, 1, 2]
-    env:
-      QUALITY_LOGICAL_SHARD_COUNT: "6"
-      QUALITY_PHYSICAL_SHARD_COUNT: "3"
-      QUALITY_RUNNER_INDEX: "${{ matrix.runner }}"
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -44,9 +35,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          runner="$QUALITY_RUNNER_INDEX"
-          physical="$QUALITY_PHYSICAL_SHARD_COUNT"
-          logical_shards=("$runner" "$((runner + physical))")
+          logical_shards=(0 1 2 3 4 5)
           log_dir="$RUNNER_TEMP/quality-contracts"
           mkdir -p "$log_dir"
 
@@ -87,7 +76,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: gamehub-ultra-quality-contracts-${{ matrix.runner }}
+          name: gamehub-ultra-quality-contracts
           path: ${{ runner.temp }}/quality-contracts/*.log
           if-no-files-found: ignore
           compression-level: 1
