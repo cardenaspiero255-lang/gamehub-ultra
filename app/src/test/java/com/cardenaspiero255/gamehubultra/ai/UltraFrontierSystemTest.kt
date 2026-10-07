@@ -147,6 +147,7 @@ class UltraFrontierSystemTest {
                 confidence = UltraAnswerConfidence.LOW,
                 sources = emptyList(),
                 abstained = true,
+                retryable = true,
                 attempt = 1
             )
         )
@@ -158,6 +159,7 @@ class UltraFrontierSystemTest {
                 confidence = UltraAnswerConfidence.LOW,
                 sources = emptyList(),
                 abstained = true,
+                retryable = true,
                 attempt = plan.researchPassBudget
             )
         )
@@ -215,7 +217,7 @@ class UltraFrontierSystemTest {
             )
         )
 
-        assertEquals(UltraFrontierVerdict.RETRY_RESEARCH, verdict)
+        assertEquals(UltraFrontierVerdict.ABSTAIN, verdict)
     }
 
     @Test
