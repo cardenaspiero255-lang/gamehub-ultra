@@ -1266,4 +1266,23 @@ class ArchitectureBoundaryGuardTest {
     }
 
 
+    @Test
+    fun aiProfileApplyAndRollbackRecordExplicitAdaptiveSelectionAfterSave() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        val expectedCallbacks = listOf(
+            "recordExplicitAdaptiveProfileSelection(\n                    selectedGameForMemory,\n                    proposal.proposedConfig.performanceProfile",
+            "recordExplicitAdaptiveProfileSelection(\n                    selectedGameForMemory,\n                    rollback.previousKnownGoodConfig.performanceProfile"
+        )
+        val missing = expectedCallbacks.filterNot(app::contains)
+
+        assertTrue(
+            missing.isEmpty(),
+            "AI profile apply/rollback must clear adaptive recovery ownership after persistence"
+        )
+    }
+
+
 }
