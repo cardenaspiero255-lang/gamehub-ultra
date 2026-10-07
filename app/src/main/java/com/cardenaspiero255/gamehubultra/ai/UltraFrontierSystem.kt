@@ -491,6 +491,7 @@ data class UltraFrontierCandidate(
     val verified: Boolean,
     val confidence: UltraAnswerConfidence?,
     val sources: List<String>,
+    val independentSourceCount: Int = 0,
     val abstained: Boolean,
     val retryable: Boolean = false,
     val attempt: Int = 1
@@ -536,10 +537,14 @@ class UltraFrontierCritic {
                 .map { it.lowercase(Locale.ROOT) }
                 .distinct()
                 .count()
+            val independentSources =
+                candidate.independentSourceCount
+                    .takeIf { it > 0 }
+                    ?: distinctSources
             val evidenceInsufficient =
                 !candidate.verified ||
                     candidate.confidence == UltraAnswerConfidence.LOW ||
-                    distinctSources < plan.minimumDistinctSources
+                    independentSources < plan.minimumDistinctSources
             if (weak || evidenceInsufficient) {
                 return if (
                     candidate.retryable &&
