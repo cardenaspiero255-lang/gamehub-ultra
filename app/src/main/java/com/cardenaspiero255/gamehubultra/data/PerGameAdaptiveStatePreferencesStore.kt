@@ -45,19 +45,42 @@ class PerGameAdaptiveStatePreferencesStore(
         key: AdaptiveGameKey,
         state: PerGameAdaptivePersistedState
     ) {
-        val encoded = listOf(
-            state.profile.name,
-            state.candidate?.name.orEmpty(),
-            state.confirmations.coerceAtLeast(0).toString(),
-            state.lastChangeMillis
-                ?.takeIf { it >= 0L }
-                ?.toString()
-                .orEmpty(),
-            state.recoveryProfile?.name.orEmpty()
-        ).joinToString("|")
         preferences.edit()
-            .putString(preferenceKey(key), encoded)
+            .putString(preferenceKey(key), encodeState(state))
             .commit()
+    }
+
+    fun recordExplicitProfileSelection(
+        key: AdaptiveGameKey,
+        profile: PerformanceProfile
+    ) {
+        val cleanPackage = key.packageName.trim()
+        if (cleanPackage.isEmpty()) return
+        val prefix = "state:$cleanPackage:"
+        val editor = preferences.edit()
+        preferences.all.keys
+            .filter { it.startsWith(prefix) }
+            .forEach(editor::remove)
+
+        val pending = preferences.getString(PENDING_DECISION_KEY, null)
+            ?.let(::decodePendingDecision)
+        if (pending?.key?.packageName == cleanPackage) {
+            editor.remove(PENDING_DECISION_KEY)
+        }
+
+        editor.putString(
+            preferenceKey(key),
+            encodeState(
+                PerGameAdaptivePersistedState(
+                    profile = profile,
+                    candidate = null,
+                    confirmations = 0,
+                    lastChangeMillis = null,
+                    recoveryProfile = null
+                )
+            )
+        )
+        editor.commit()
     }
 
 
@@ -103,6 +126,20 @@ class PerGameAdaptiveStatePreferencesStore(
             .putString(LAST_HANDLED_SESSION_ID, clean)
             .commit()
     }
+
+    private fun encodeState(
+        state: PerGameAdaptivePersistedState
+    ): String =
+        listOf(
+            state.profile.name,
+            state.candidate?.name.orEmpty(),
+            state.confirmations.coerceAtLeast(0).toString(),
+            state.lastChangeMillis
+                ?.takeIf { it >= 0L }
+                ?.toString()
+                .orEmpty(),
+            state.recoveryProfile?.name.orEmpty()
+        ).joinToString("|")
 
     private fun encodePendingDecision(
         decision: PerGameAdaptivePendingDecision
