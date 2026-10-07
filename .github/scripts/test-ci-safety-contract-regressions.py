@@ -373,11 +373,13 @@ def mask_quality_gradle_plain_or_true(android: str, coverage: str):
     return android[:start] + replacement + android[end:], coverage
 
 def remove_configuration_cache_reuse_assertion(android: str, coverage: str):
-    """Remove the assertion proving Configuration Cache reuse."""
-    needle = '          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"\n'
-    if needle not in android:
-        raise SystemExit("Fixture drift: Configuration Cache reuse assertion not found")
-    return android.replace(needle, "", 1), coverage
+    """Remove Configuration Cache from the real quality graph."""
+    start, end = quality_step_bounds(android)
+    step = android[start:end]
+    needle = "              --configuration-cache \\\n"
+    if needle not in step:
+        raise SystemExit("Fixture drift: quality Configuration Cache flag not found")
+    return android[:start] + step.replace(needle, "", 1) + android[end:], coverage
 
 
 def remove_release_configuration_cache_reuse_assertion(android: str, coverage: str):
@@ -616,7 +618,7 @@ def main() -> None:
     run_mutation("connected validation hidden inside echo", hide_connected_validation_inside_echo)
     run_mutation("connected validation loses Configuration Cache enablement", remove_connected_configuration_cache_flag)
     run_mutation("connected cache flags moved to dry-run only", move_connected_cache_flags_to_dry_run)
-    run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
+    run_mutation("quality loses Configuration Cache enablement", remove_configuration_cache_reuse_assertion)
     run_mutation("Partial release/performance graph duplicated", duplicate_partial_release_graph)
     run_mutation("Full release graph duplicated without Configuration Cache flags", duplicate_full_release_graph_without_configuration_cache)
 
