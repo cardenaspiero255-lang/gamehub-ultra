@@ -846,6 +846,41 @@ class UltraFrontierEvolutionController(
         evaluation.record(outcome)
     }
 
+    fun selectEnsemble(
+        local: UltraQueryExecutionAnswer?,
+        research: UltraQueryExecutionAnswer?,
+        localLatencyMillis: Long,
+        researchLatencyMillis: Long,
+        requiresFreshData: Boolean
+    ): UltraQueryExecutionAnswer? {
+        val pairs = listOfNotNull(
+            local?.let { answer ->
+                UltraFrontierEnsembleCandidate(
+                    message = answer.message,
+                    verified = answer.verified,
+                    confidence = answer.confidence,
+                    independentSourceCount = answer.independentSourceCount,
+                    latencyMillis = localLatencyMillis,
+                    fresh = !requiresFreshData,
+                    abstained = answer.abstained
+                ) to answer
+            },
+            research?.let { answer ->
+                UltraFrontierEnsembleCandidate(
+                    message = answer.message,
+                    verified = answer.verified,
+                    confidence = answer.confidence,
+                    independentSourceCount = answer.independentSourceCount,
+                    latencyMillis = researchLatencyMillis,
+                    fresh = true,
+                    abstained = answer.abstained
+                ) to answer
+            }
+        )
+        val selected = ensemble.select(pairs.map { it.first }) ?: return null
+        return pairs.firstOrNull { it.first == selected }?.second
+    }
+
     fun finalGate(
         request: UltraGeneralQueryRequest,
         plan: UltraFrontierPlan,
