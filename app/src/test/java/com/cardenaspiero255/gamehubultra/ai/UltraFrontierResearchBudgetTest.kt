@@ -110,7 +110,7 @@ class UltraFrontierResearchBudgetTest {
         ) { null }
 
         assertTrue(answer.verified)
-        assertEquals(listOf(7, 7), budgets)
+        assertEquals(listOf<Int?>(7, 7), budgets)
     }
 
 }
