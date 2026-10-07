@@ -154,6 +154,21 @@ internal fun chooseCoachReport(
     storedReport ?: dashboardReport
 
 
+internal fun aiProfileSamplesForSelectedGame(
+    completed: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession?,
+    selectedPackage: String?,
+    activeSessionPackage: String?,
+    dashboardSamples: List<SessionCoachSnapshot>
+): List<SessionCoachSnapshot> {
+    val selected = selectedPackage?.trim()?.takeIf(String::isNotEmpty)
+        ?: return emptyList()
+    if (completed?.packageName == selected && completed.samples.isNotEmpty()) {
+        return completed.samples
+    }
+    return if (activeSessionPackage == selected) dashboardSamples else emptyList()
+}
+
+
 internal fun buildAiProfileProposalForSelectedGame(
     packageName: String?,
     selectedConfig: GameProfileConfig?,
@@ -255,6 +270,9 @@ internal fun GameHubUltraApp(
     var sessionCoachSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot>>(emptyList()) }
     var sessionCoachObservations by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage>>(emptyList()) }
     var lastSessionCoachReport by remember { mutableStateOf<com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?>(null) }
+    var lastCompletedCoachSession by remember {
+        mutableStateOf<com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession?>(null)
+    }
     var hydratedCoachSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
@@ -286,11 +304,24 @@ internal fun GameHubUltraApp(
         .observationsFlow(currentOptimizationKey)
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val aiProfileSessionSamples = remember(
+        lastCompletedCoachSession,
+        selectedGameForMemory,
+        activeSessionPackage,
+        sessionCoachSamples
+    ) {
+        aiProfileSamplesForSelectedGame(
+            completed = lastCompletedCoachSession,
+            selectedPackage = selectedGameForMemory,
+            activeSessionPackage = activeSessionPackage,
+            dashboardSamples = sessionCoachSamples
+        )
+    }
     val aiProfileProposal = remember(
         selectedGameForMemory,
         uiState.selectedGameConfig,
         optimizationObservations,
-        sessionCoachSamples,
+        aiProfileSessionSamples,
         runtimeDiagnostics,
         initialState.capabilities,
         aiProfileRevision
@@ -300,7 +331,7 @@ internal fun GameHubUltraApp(
             selectedConfig = uiState.selectedGameConfig,
             effectiveProfile = uiState.effectiveProfile,
             observations = optimizationObservations,
-            sessionSamples = sessionCoachSamples,
+            sessionSamples = aiProfileSessionSamples,
             supportedRefreshRatesHz = runtimeDiagnostics?.refresh?.supportedRefreshRatesHz,
             supportsSustainedPerformance =
                 initialState.capabilities?.sustainedPerformanceSupported == true,
@@ -579,6 +610,7 @@ internal fun GameHubUltraApp(
             com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
                 .readLastCompletedSession()
         }
+        lastCompletedCoachSession = completed
         if (completed != null) {
             val activeRuntimeRecord = sessionHistory.firstOrNull { session ->
                 session.id == runtimeGameSession?.id

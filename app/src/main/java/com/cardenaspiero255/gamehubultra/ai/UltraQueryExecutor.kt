@@ -72,6 +72,12 @@ class DefaultUltraQueryExecutor(
     private fun isUsefulEmergencyLocalAnswer(value: String): Boolean {
         if (value.length < 20) return false
         val normalized = value.lowercase()
+        if (
+            normalized.startsWith("soy ultra") &&
+            normalized.contains("puedo ayudarte")
+        ) {
+            return false
+        }
         val blocked = listOf(
             "no pude verificar",
             "no pudo verificar",
