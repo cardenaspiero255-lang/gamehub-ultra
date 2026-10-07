@@ -335,9 +335,11 @@ jobs:
     name: device-validation-${{ matrix.shard }}
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 4
       matrix:
-        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]
+        # Four logical performance checks are packed into two physical emulator
+        # runners so Android boot/setup is reused instead of repeated four times.
+        shard: [release-apk, ui, performance-a, performance-b]
     runs-on: ubuntu-22.04
     env:
       VALIDATION_SHARD: ${{ matrix.shard }}
@@ -419,7 +421,7 @@ jobs:
         with:
           gradle-version: "8.13"
           cache-disabled: false
-          cache-read-only: ${{ matrix.shard != 'release' }}
+          cache-read-only: ${{ matrix.shard != 'release-apk' }}
 
       - name: Verify release research configuration
         if: matrix.shard == 'release-apk'
@@ -498,7 +500,7 @@ jobs:
                   --configuration-cache --configuration-cache-problems=fail \
                   --stacktrace
                 ;;
-              baseline|macro-*)
+              performance-*)
                 gradle :app:assembleNonMinifiedRelease :baseline-profile:assembleNonMinifiedRelease \
                   --build-cache --parallel --max-workers=8 \
                   --configuration-cache --configuration-cache-problems=fail \
@@ -667,42 +669,65 @@ jobs:
                 --configuration-cache-problems=fail \
                 --stacktrace
               ;;
-            baseline|macro-*)
-              rm -rf \
-                baseline-profile/build/outputs/androidTest-results \
-                baseline-profile/build/reports/androidTests
-              TEST_FILTER_ARGS=()
-              if [ "$VALIDATION_SHARD" = "baseline" ]; then
-                RULE="BaselineProfile"
-                EXPECTED_METHOD=""
-              else
-                RULE="Macrobenchmark"
-                case "$VALIDATION_SHARD" in
-                  macro-startup) EXPECTED_METHOD="coldStartup" ;;
-                  macro-library) EXPECTED_METHOD="navigationToLibrary" ;;
-                  macro-settings) EXPECTED_METHOD="navigationToSettings" ;;
-                  *) echo "Unknown macro shard: $VALIDATION_SHARD"; exit 2 ;;
-                esac
-                TEST_FILTER_ARGS+=(
-                  "-Pandroid.testInstrumentationRunnerArguments.class=com.cardenaspiero255.gamehubultra.baselineprofile.GameHubMacrobenchmark#$EXPECTED_METHOD"
-                )
-              fi
-              export EXPECTED_METHOD
-              LOG="$RUNNER_TEMP/performance-validation.log"
-              gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
-                -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules="$RULE" \
-                "${TEST_FILTER_ARGS[@]}" \
-                -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
-                -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
-                --build-cache \
-                --max-workers=8 \
-                --configuration-cache \
-                --configuration-cache-problems=fail \
-                --stacktrace 2>&1 | tee "$LOG"
-              if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$LOG"; then
-                exit 1
-              fi
-              VALIDATION_SHARD="$VALIDATION_SHARD" python3 - <<'PY'
+            performance-*)
+              case "$VALIDATION_SHARD" in
+                performance-a)
+                  LOGICAL_SHARDS=(baseline macro-startup)
+                  ;;
+                performance-b)
+                  LOGICAL_SHARDS=(macro-library macro-settings)
+                  ;;
+                *)
+                  echo "Unknown packed performance shard: $VALIDATION_SHARD"
+                  exit 2
+                  ;;
+              esac
+
+              AGGREGATE_LOG="$RUNNER_TEMP/performance-validation.log"
+              : > "$AGGREGATE_LOG"
+              PERF_ARCHIVE="$RUNNER_TEMP/performance-reports"
+              mkdir -p "$PERF_ARCHIVE"
+
+              for LOGICAL_SHARD in "${LOGICAL_SHARDS[@]}"; do
+                rm -rf \
+                  baseline-profile/build/outputs/androidTest-results \
+                  baseline-profile/build/reports/androidTests
+
+                TEST_FILTER_ARGS=()
+                if [ "$LOGICAL_SHARD" = "baseline" ]; then
+                  RULE="BaselineProfile"
+                  EXPECTED_METHOD=""
+                else
+                  RULE="Macrobenchmark"
+                  case "$LOGICAL_SHARD" in
+                    macro-startup) EXPECTED_METHOD="coldStartup" ;;
+                    macro-library) EXPECTED_METHOD="navigationToLibrary" ;;
+                    macro-settings) EXPECTED_METHOD="navigationToSettings" ;;
+                    *) echo "Unknown logical performance shard: $LOGICAL_SHARD"; exit 2 ;;
+                  esac
+                  TEST_FILTER_ARGS+=(
+                    "-Pandroid.testInstrumentationRunnerArguments.class=com.cardenaspiero255.gamehubultra.baselineprofile.GameHubMacrobenchmark#$EXPECTED_METHOD"
+                  )
+                fi
+                export EXPECTED_METHOD LOGICAL_SHARD
+
+                echo "=== logical performance shard: $LOGICAL_SHARD ===" | tee -a "$AGGREGATE_LOG"
+                gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
+                  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules="$RULE" \
+                  "${TEST_FILTER_ARGS[@]}" \
+                  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
+                  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
+                  --build-cache \
+                  --max-workers=8 \
+                  --configuration-cache \
+                  --configuration-cache-problems=fail \
+                  --stacktrace 2>&1 | tee -a "$AGGREGATE_LOG"
+
+                if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$AGGREGATE_LOG"; then
+                  exit 1
+                fi
+
+                python3 - <<'PY'
           from pathlib import Path
           import os
           import xml.etree.ElementTree as ET
@@ -724,18 +749,12 @@ jobs:
                   if classname.endswith("GameHubMacrobenchmark"):
                       macro_cases.append(case)
 
-          shard = os.environ["VALIDATION_SHARD"]
+          shard = os.environ["LOGICAL_SHARD"]
           required = baseline_cases if shard == "baseline" else macro_cases
-          minimum = 1
-          label = (
-              "BaselineProfileGenerator"
-              if shard == "baseline"
-              else "GameHubMacrobenchmark"
-          )
-          if len(required) < minimum:
-              raise SystemExit(
-                  f"Expected at least {minimum} {label} cases, found {len(required)}"
-              )
+          label = "BaselineProfileGenerator" if shard == "baseline" else "GameHubMacrobenchmark"
+          if len(required) < 1:
+              raise SystemExit(f"Expected at least one {label} case for {shard}, found {len(required)}")
+
           expected_method = os.environ.get("EXPECTED_METHOD", "")
           if expected_method:
               names = [case.attrib.get("name", "") for case in required]
@@ -743,6 +762,7 @@ jobs:
                   raise SystemExit(
                       f"Expected macrobenchmark {expected_method}, found {names}"
                   )
+
           skipped = [
               f"{case.attrib.get('classname', '<unknown>')}#{case.attrib.get('name', '<unknown>')}"
               for case in required
@@ -750,11 +770,22 @@ jobs:
           ]
           if skipped:
               raise SystemExit(f"Required performance tests were skipped: {skipped}")
+
           print(
-              f"Executed {label} cases:",
+              f"Executed {label} cases for {shard}:",
               [case.attrib.get("name") for case in required],
           )
           PY
+
+                archive="$PERF_ARCHIVE/$LOGICAL_SHARD"
+                mkdir -p "$archive"
+                if [ -d baseline-profile/build/outputs/androidTest-results ]; then
+                  cp -R baseline-profile/build/outputs/androidTest-results "$archive/"
+                fi
+                if [ -d baseline-profile/build/reports/androidTests ]; then
+                  cp -R baseline-profile/build/reports/androidTests "$archive/"
+                fi
+              done
               ;;
           esac
 
@@ -876,11 +907,12 @@ jobs:
           compression-level: 1
 
       - name: Upload benchmark reports
-        if: always() && (matrix.shard == 'baseline' || startsWith(matrix.shard, 'macro-'))
+        if: always() && startsWith(matrix.shard, 'performance-')
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-benchmark-reports-${{ matrix.shard }}
           path: |
+            ${{ runner.temp }}/performance-reports/**
             baseline-profile/build/outputs/**
             app/build/reports/**
           if-no-files-found: ignore
