@@ -1432,4 +1432,37 @@ class WikimediaUltraResearchProviderTest {
         assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
     }
 
+    @Test
+    fun conversationalTalkAboutPromptUsesCleanTopicInPublicFallback() {
+        var searchUrl = ""
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, _ ->
+                if (url.contains("list=search")) {
+                    searchUrl = url
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"search":[{"title":"Nike"}]}}"""
+                    )
+                } else {
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"pages":{"1":{"title":"Nike","extract":"Nike es una empresa estadounidense de ropa y equipamiento deportivo.","canonicalurl":"https://es.wikipedia.org/wiki/Nike"}}}}"""
+                    )
+                }
+            }
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify(
+                "Ultra, háblame de la marca Nike"
+            )
+        )
+
+        assertIs<UltraProviderResult.Evidence>(result)
+        assertTrue(searchUrl.contains("srsearch=Nike"), searchUrl)
+        assertFalse(searchUrl.contains("h%C3%A1blame"), searchUrl)
+        assertFalse(searchUrl.contains("marca"), searchUrl)
+    }
+
+
 }
