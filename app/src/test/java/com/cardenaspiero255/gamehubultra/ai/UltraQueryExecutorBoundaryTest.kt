@@ -134,7 +134,7 @@ class UltraQueryExecutorBoundaryTest {
 
 
     @Test
-    fun stableKnowledgeNetworkFailureNeverLeaksGenericServiceUnavailableMessage() {
+    fun stableKnowledgeNetworkFailureUsesUsefulLocalAnswerAsLastResort() {
         val failingProvider = object : UltraResearchProvider {
             override val id = "offline-network"
 
@@ -167,19 +167,21 @@ class UltraQueryExecutorBoundaryTest {
             val answer = executor.answer(
                 route = route,
                 stableKnowledgeFallback = { null },
-                localChat = { "chat local genérico" }
+                localChat = {
+                    "La fotosíntesis transforma energía luminosa en energía química en organismos fotosintéticos."
+                }
             )
 
-            kotlin.test.assertFalse(
-                answer.contains(
-                    "El servicio de consulta no está disponible ahora",
-                    ignoreCase = true
-                ),
+            kotlin.test.assertTrue(
+                answer.startsWith("Respuesta local", ignoreCase = true),
                 answer
             )
             kotlin.test.assertTrue(
-                answer.contains("verificar", ignoreCase = true) ||
-                    answer.contains("fiable", ignoreCase = true),
+                answer.contains("fotosíntesis", ignoreCase = true),
+                answer
+            )
+            kotlin.test.assertFalse(
+                answer.contains("no pude verificar", ignoreCase = true),
                 answer
             )
         } finally {
