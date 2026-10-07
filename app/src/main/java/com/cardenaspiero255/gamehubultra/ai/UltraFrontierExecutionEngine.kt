@@ -41,6 +41,8 @@ class UltraFrontierExecutionEngine(
     private val frontier: UltraFrontierOrchestrator =
         UltraFrontierOrchestrator(evolution = evolution),
     private val critic: UltraFrontierCritic = UltraFrontierCritic(),
+    private val specialistExecutor: UltraFrontierSpecialistExecutor =
+        UltraFrontierSpecialistExecutor(),
     private val networkAvailable: () -> Boolean = { true },
     private val auditTrail: UltraFrontierAuditTrail = UltraFrontierAuditTrail(),
     private val nanoTime: () -> Long = System::nanoTime,
@@ -104,6 +106,21 @@ class UltraFrontierExecutionEngine(
                 ),
                 executionStartedNanos = executionStartedNanos
             )
+        }
+
+        if (
+            evolution.shouldRunEnsemble(
+                request = request,
+                lane = plan.lane,
+                networkAvailable = initialNetworkAvailable
+            )
+        ) {
+            adaptiveEnsembleAnswer(
+                request = request,
+                localPlan = plan,
+                localChat = localChat,
+                executionStartedNanos = executionStartedNanos
+            )?.let { return it }
         }
 
         var attempt = 1
@@ -338,6 +355,126 @@ class UltraFrontierExecutionEngine(
 
     fun auditSnapshot(): List<UltraFrontierAuditRecord> = auditTrail.snapshot()
 
+    private fun adaptiveEnsembleAnswer(
+        request: UltraGeneralQueryRequest,
+        localPlan: UltraFrontierPlan,
+        localChat: () -> String?,
+        executionStartedNanos: Long
+    ): UltraQueryExecutionAnswer? {
+        val researchRequest = request
+            .escalatedResearchRequest()
+            .copy(
+                timeoutMillis = minOf(
+                    request.timeoutMillis.coerceAtLeast(1L),
+                    ENSEMBLE_RESEARCH_TIMEOUT_MS
+                )
+            )
+        val researchPlan = frontier.plan(
+            UltraFrontierRequest(
+                message = researchRequest.originalText,
+                query = researchRequest,
+                networkAvailable = true
+            )
+        )
+        if (!isResearchLane(researchPlan)) return null
+
+        val localTask = UltraFrontierTask(
+            id = "ensemble-local",
+            specialist = UltraFrontierSpecialist.LOCAL_REASONER,
+            parallelGroup = "ensemble"
+        )
+        val researchTask = UltraFrontierTask(
+            id = "ensemble-research",
+            specialist = UltraFrontierSpecialist.RESEARCH,
+            parallelGroup = "ensemble"
+        )
+        val latencies = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+        val results = try {
+            specialistExecutor.execute(
+                tasks = listOf(localTask, researchTask),
+                maxParallelism = 2,
+                timeoutMillis = maxOf(
+                    request.timeoutMillis.coerceAtLeast(1L),
+                    ENSEMBLE_EXECUTION_FLOOR_MS
+                )
+            ) { task ->
+                val started = nanoTime()
+                val result = when (task.id) {
+                    localTask.id -> coordinator.answer(
+                        request = request,
+                        localChat = localChat
+                    )
+                    researchTask.id -> coordinator.answer(
+                        request = researchRequest,
+                        localChat = { null }
+                    )
+                    else -> error("Unknown Frontier ensemble task: ${task.id}")
+                }
+                latencies[task.id] = TimeUnit.NANOSECONDS.toMillis(
+                    (nanoTime() - started).coerceAtLeast(0L)
+                )
+                result
+            }
+        } catch (_: Exception) {
+            return null
+        }
+
+        val local = results[localTask.id]
+        val research = results[researchTask.id]
+        val selected = evolution.selectEnsemble(
+            local = local,
+            research = research,
+            localLatencyMillis = latencies[localTask.id] ?: 0L,
+            researchLatencyMillis = latencies[researchTask.id] ?: 0L,
+            requiresFreshData = request.requiresFreshData
+        ) ?: return null
+
+        auditTrail.record(
+            correlationId = request.correlationId,
+            lane = localPlan.lane,
+            event = UltraFrontierAuditEvent.ENSEMBLE_COMPARE,
+            reasonCode = if (selected == research) {
+                "FRONTIER_ENSEMBLE_RESEARCH"
+            } else {
+                "FRONTIER_ENSEMBLE_LOCAL"
+            }
+        )
+
+        if (local != null && selected != local) {
+            recordEvolutionOutcome(
+                request = request,
+                plan = localPlan,
+                answer = local,
+                executionStartedNanos = executionStartedNanos
+            )
+        }
+        if (research != null && selected != research) {
+            recordEvolutionOutcome(
+                request = researchRequest,
+                plan = researchPlan,
+                answer = research,
+                executionStartedNanos = executionStartedNanos
+            )
+        }
+
+        return if (selected == research) {
+            complete(
+                request = researchRequest,
+                plan = researchPlan,
+                answer = selected,
+                executionStartedNanos = executionStartedNanos
+            )
+        } else {
+            complete(
+                request = request,
+                plan = localPlan,
+                answer = selected,
+                executionStartedNanos = executionStartedNanos
+            )
+        }
+    }
+
     private fun complete(
         request: UltraGeneralQueryRequest,
         plan: UltraFrontierPlan,
@@ -548,5 +685,7 @@ class UltraFrontierExecutionEngine(
 
     private companion object {
         const val LOCAL_ESCALATION_TIMEOUT_MS = 60_000L
+        const val ENSEMBLE_RESEARCH_TIMEOUT_MS = 20_000L
+        const val ENSEMBLE_EXECUTION_FLOOR_MS = 25_000L
     }
 }
