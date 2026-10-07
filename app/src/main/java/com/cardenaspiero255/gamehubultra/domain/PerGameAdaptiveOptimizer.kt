@@ -10,7 +10,8 @@ data class AdaptiveTrendSample(
     val batteryPercent: Int?,
     val refreshRateHz: Float?,
     val memoryUsedPercent: Int?,
-    val latencyMs: Int?
+    val latencyMs: Int?,
+    val thermalPrediction: ThermalPrediction? = null
 )
 
 data class PerGameAdaptiveDecision(
@@ -287,7 +288,8 @@ class PerGameAdaptiveOptimizer(
         val latencyTrend = trend(samples.mapNotNull { it.latencyMs?.toFloat() })
 
         val pressure =
-            latest.thermalStatus?.let { it >= 3 } == true ||
+            latest.thermalPrediction?.allowPreventiveSignal == true ||
+                latest.thermalStatus?.let { it >= 3 } == true ||
                 latest.batteryPercent?.let { it <= 45 } == true ||
                 latest.memoryUsedPercent?.let { it >= 88 } == true ||
                 latest.latencyMs?.let { it >= 120 } == true ||
@@ -367,6 +369,9 @@ class PerGameAdaptiveOptimizer(
 
         val latest = samples.last()
         val signals = mutableListOf<String>()
+        if (latest.thermalPrediction?.allowPreventiveSignal == true) {
+            signals += "predicción térmica"
+        }
         if (latest.thermalStatus?.let { it >= 3 } == true) signals += "térmica"
         if (latest.batteryPercent?.let { it <= 45 } == true) signals += "batería"
         if (trend(samples.mapNotNull { it.refreshRateHz }) < -15f) signals += "refresco"
