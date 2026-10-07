@@ -458,6 +458,37 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun evolutionFinalGateRejectsVerifiedAnswerThatDoesNotMeetClaimQuorum() {
+        val evolution = UltraFrontierEvolutionController()
+        val query = UltraGeneralQueryRouter.classify("noticias de Android hoy")
+        val plan = UltraFrontierOrchestrator(evolution = evolution).plan(
+            UltraFrontierRequest(
+                message = query.originalText,
+                query = query,
+                networkAvailable = true
+            )
+        )
+
+        val gated = evolution.finalGate(
+            request = query,
+            plan = plan,
+            answer = UltraQueryExecutionAnswer(
+                message = "Dato candidato",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("one"),
+                independentSourceCount = 1,
+                abstained = false
+            ),
+            nowMillis = 1_000L
+        )
+
+        assertTrue(gated.abstained)
+        assertFalse(gated.verified)
+        assertEquals("FRONTIER_CLAIM_QUORUM", gated.reasonCode)
+    }
+
+    @Test
     fun evolutionControllerExposesExecutableTaskGraphForTheChosenLane() {
         val evolution = UltraFrontierEvolutionController()
         val query = UltraGeneralQueryRouter.classify(
