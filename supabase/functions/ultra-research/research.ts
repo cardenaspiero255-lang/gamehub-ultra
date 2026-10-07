@@ -1939,6 +1939,68 @@ async function metNorwayWeatherEvidence(
   };
 }
 
+async function wttrWeatherEvidence(
+  location: string,
+  placeLabel: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const url = new URL(
+    "https://wttr.in/" + encodeURIComponent(location),
+  );
+  url.searchParams.set("format", "j1");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const conditions = Array.isArray(payload?.current_condition)
+    ? payload.current_condition
+    : [];
+  const current = conditions[0] && typeof conditions[0] === "object"
+    ? conditions[0] as JsonObject
+    : null;
+
+  const temperature = Number(stringValue(current?.temp_C));
+  const feelsLike = Number(stringValue(current?.FeelsLikeC));
+  const descriptions = Array.isArray(current?.weatherDesc)
+    ? current.weatherDesc
+    : [];
+  const firstDescription =
+    descriptions[0] && typeof descriptions[0] === "object"
+      ? descriptions[0] as JsonObject
+      : null;
+  const description =
+    stringValue(firstDescription?.value) ?? "condiciones actuales";
+  const observedAt = stringValue(current?.localObsDateTime);
+
+  if (!Number.isFinite(temperature)) {
+    return abstain(
+      "La fuente meteorológica terciaria no devolvió datos verificables.",
+      {
+        reasonCode: "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "wttr",
+      },
+    );
+  }
+
+  const feelsLikeText =
+    Number.isFinite(feelsLike) && Math.abs(feelsLike - temperature) >= 1
+      ? `, sensación térmica de ${feelsLike} °C`
+      : "";
+
+  return {
+    claimKey: `weather:wttr:${slug(placeLabel || location)}`,
+    value: `${temperature}|${normalize(description)}|${observedAt ?? ""}`,
+    displayText:
+      `En ${placeLabel || location}: ${temperature} °C, ${description}${feelsLikeText}.`,
+    sourceId: url.toString(),
+    sourceIds: [url.toString()],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt,
+  };
+}
+
 async function weatherEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -1948,6 +2010,63 @@ async function weatherEvidence(
     return abstain(
       "Necesito una ciudad o ubicación en la pregunta para verificar el clima.",
     );
+  }
+
+  const knownLocation = knownWeatherCoordinates(location);
+  if (knownLocation) {
+    const latitude = knownLocation.latitude;
+    const longitude = knownLocation.longitude;
+    const placeLabel = knownLocation.label;
+
+    const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
+    forecastUrl.searchParams.set("latitude", String(latitude));
+    forecastUrl.searchParams.set("longitude", String(longitude));
+    forecastUrl.searchParams.set(
+      "current",
+      "temperature_2m,apparent_temperature,weather_code",
+    );
+    forecastUrl.searchParams.set("timezone", "auto");
+
+    const forecast = await fetchJson(deps, forecastUrl, {
+      headers: { "User-Agent": USER_AGENT },
+    });
+    const current = forecast?.current as JsonObject | undefined;
+    const temperature = numberValue(current?.temperature_2m);
+    const apparent = numberValue(current?.apparent_temperature);
+    const weatherCode = numberValue(current?.weather_code);
+
+    if (temperature != null && weatherCode != null) {
+      const description = weatherDescription(weatherCode);
+      const feelsLike = apparent != null && Math.abs(apparent - temperature) >= 1
+        ? `, sensación térmica de ${apparent} °C`
+        : "";
+      const observedAt = stringValue(current?.time);
+
+      return {
+        claimKey: `weather:${latitude.toFixed(3)},${longitude.toFixed(3)}`,
+        value: `${temperature}|${weatherCode}|${observedAt ?? ""}`,
+        displayText:
+          `En ${placeLabel}: ${temperature} °C, ${description}${feelsLike}.`,
+        sourceId: forecastUrl.toString(),
+        sourceIds: [forecastUrl.toString()],
+        independentSourceCount: 1,
+        authoritative: true,
+        observedAt,
+      };
+    }
+
+    const met = await metNorwayWeatherEvidence(
+      latitude,
+      longitude,
+      placeLabel,
+      deps,
+    );
+    if (!met.abstained) return met;
+
+    const wttr = await wttrWeatherEvidence(location, placeLabel, deps);
+    if (!wttr.abstained) return wttr;
+
+    return met.reasonCode ? met : wttr;
   }
 
   const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
@@ -2040,12 +2159,22 @@ async function weatherEvidence(
     };
   }
 
-  return await metNorwayWeatherEvidence(
+  const met = await metNorwayWeatherEvidence(
     latitude,
     longitude,
     placeLabel || location,
     deps,
   );
+  if (!met.abstained) return met;
+
+  const wttr = await wttrWeatherEvidence(
+    location,
+    placeLabel || location,
+    deps,
+  );
+  if (!wttr.abstained) return wttr;
+
+  return met.reasonCode ? met : wttr;
 }
 
 function extractNewsTopic(query: string): string {
