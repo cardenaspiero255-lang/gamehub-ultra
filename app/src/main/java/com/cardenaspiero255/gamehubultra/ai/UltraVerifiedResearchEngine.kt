@@ -218,6 +218,8 @@ class UltraVerifiedResearchEngine(
         UltraWeightedConsensusEngine()
 ) : UltraResearchGateway {
 
+    override val supportsProviderPartitioning: Boolean = true
+
     private data class ProviderAttempt(
         val index: Int,
         val providerId: String,
