@@ -968,26 +968,6 @@ jobs:
             printf 'apk_sha256=%s\n' "$APK_SHA256"
           } > "$PROVENANCE"
 
-      - name: Verify Phase 3 artifact provenance locally
-        if: matrix.shard == 'ui'
-        shell: bash
-        env:
-          EXPECTED_RUN_ID: ${{ github.run_id }}
-          EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          ARTIFACT_DIR="app/build/outputs/apk/debug"
-          APK="$ARTIFACT_DIR/app-debug.apk"
-          PROVENANCE="$ARTIFACT_DIR/phase3-artifact-provenance.env"
-          test -f "$APK"
-          test -f "$PROVENANCE"
-          grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"
-          grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"
-          RECORDED_SHA256="$(sed -n 's/^apk_sha256=//p' "$PROVENANCE")"
-          test -n "$RECORDED_SHA256"
-          ACTUAL_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
-          test "$ACTUAL_SHA256" = "$RECORDED_SHA256"
-
       - name: Stop API 35 emulator without noisy console shutdown
         if: always()
         shell: bash
@@ -1141,4 +1121,33 @@ jobs:
           test "${{ needs.quality.result }}" = "success"
           test "${{ needs.device-validation.result }}" = "success"
           test "${{ needs.release-bundle.result }}" = "success"
+
+      - name: Download exact-run debug artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gamehub-ultra-debug
+          path: ${{ runner.temp }}/phase3-debug-reuse
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: false
+
+      - name: Verify Phase 3 artifact provenance
+        shell: bash
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="${RUNNER_TEMP}/phase3-debug-reuse"
+          APK="$ARTIFACT_DIR/app-debug.apk"
+          PROVENANCE="$ARTIFACT_DIR/phase3-artifact-provenance.env"
+          test -f "$APK"
+          test -f "$PROVENANCE"
+          grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"
+          grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"
+          RECORDED_SHA256="$(sed -n 's/^apk_sha256=//p' "$PROVENANCE")"
+          test -n "$RECORDED_SHA256"
+          test "$(printf '%s' "$RECORDED_SHA256" | wc -l)" -eq 0
+          ACTUAL_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          test "$ACTUAL_SHA256" = "$RECORDED_SHA256"
 
