@@ -176,9 +176,6 @@ jobs:
     needs: coverage-shard
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      GAMEHUB_COVERAGE_EXECUTION_DATA_DIR: ${{ runner.temp }}/coverage-shards
-
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -230,7 +227,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          count="$(find "$GAMEHUB_COVERAGE_EXECUTION_DATA_DIR" -type f \( -name '*.exec' -o -name '*.ec' \) -size +0c | wc -l)"
+          coverage_dir="$RUNNER_TEMP/coverage-shards"
+          count="$(find "$coverage_dir" -type f \( -name '*.exec' -o -name '*.ec' \) -size +0c | wc -l)"
           if [ "$count" -lt 4 ]; then
             echo "::error::Expected JaCoCo data from 4 physical coverage runners; found $count file(s)."
             exit 1
@@ -238,6 +236,8 @@ jobs:
           echo "JaCoCo execution files ready: $count"
 
       - name: Aggregate sharded debug unit-test coverage
+        env:
+          GAMEHUB_COVERAGE_EXECUTION_DATA_DIR: ${{ runner.temp }}/coverage-shards
         shell: bash
         run: |
           set -euo pipefail
