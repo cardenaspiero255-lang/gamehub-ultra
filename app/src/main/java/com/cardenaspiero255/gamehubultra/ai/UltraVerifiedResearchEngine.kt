@@ -71,6 +71,7 @@ data class UltraVerifiedResearchResult(
     val message: String,
     val confidence: UltraAnswerConfidence,
     val sources: List<String> = emptyList(),
+    val independentSourceCount: Int = 0,
     val abstained: Boolean,
     val fromCache: Boolean = false,
     val timedOut: Boolean = false,
@@ -532,6 +533,7 @@ class UltraVerifiedResearchEngine(
                 message = selectedEvidence.displayText,
                 confidence = confidence,
                 sources = sources,
+                independentSourceCount = corroborationCount,
                 abstained = false,
                 timedOut = false,
                 fallbackUsed = selectedAttempt.index > 0
@@ -673,6 +675,7 @@ class UltraVerifiedResearchEngine(
             message = evidence.displayText,
             confidence = confidence,
             sources = sources,
+            independentSourceCount = corroborationCount,
             abstained = false,
             timedOut = timedOut,
             fallbackUsed = fallbackUsed
