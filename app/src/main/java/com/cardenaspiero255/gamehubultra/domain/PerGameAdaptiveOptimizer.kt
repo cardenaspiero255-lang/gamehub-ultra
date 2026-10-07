@@ -30,6 +30,7 @@ data class PerGameAdaptivePersistedState(
 interface PerGameAdaptiveStateStore {
     fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState?
     fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState)
+    fun delete(key: AdaptiveGameKey) = Unit
 }
 
 class PerGameAdaptiveOptimizer(
@@ -50,6 +51,39 @@ class PerGameAdaptiveOptimizer(
     init {
         require(confirmationsRequired >= 1)
         require(cooldownMillis >= 0)
+    }
+
+    fun recordExplicitProfileSelection(
+        key: AdaptiveGameKey,
+        profile: PerformanceProfile
+    ) {
+        val state = states.getOrPut(key) {
+            stateStore?.read(key)?.toRuntimeState() ?: State(profile)
+        }
+        state.profile = profile
+        state.candidate = null
+        state.confirmations = 0
+        state.lastChange = null
+        state.recoveryProfile = null
+        stateStore?.write(key, state.toPersistedState())
+    }
+
+    internal fun snapshotState(
+        key: AdaptiveGameKey
+    ): PerGameAdaptivePersistedState? =
+        states[key]?.toPersistedState() ?: stateStore?.read(key)
+
+    internal fun restoreState(
+        key: AdaptiveGameKey,
+        snapshot: PerGameAdaptivePersistedState?
+    ) {
+        if (snapshot == null) {
+            states.remove(key)
+            stateStore?.delete(key)
+        } else {
+            states[key] = snapshot.toRuntimeState()
+            stateStore?.write(key, snapshot)
+        }
     }
 
     fun evaluate(
