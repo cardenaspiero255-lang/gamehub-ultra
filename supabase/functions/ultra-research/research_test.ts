@@ -8262,6 +8262,10 @@ Deno.test(
         query: "¿Qué son los ecosistemas?",
         expected: ["organismos", "factores"],
       },
+      {
+        query: "Explica el teorema de Pitágoras",
+        expected: ["hipotenusa", "catetos"],
+      },
     ];
 
     for (const testCase of cases) {
