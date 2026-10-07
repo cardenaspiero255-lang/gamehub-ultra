@@ -491,7 +491,7 @@ def main() -> None:
         args=(
             "--build-cache",
             "--parallel",
-            "--max-workers=8",
+            "--max-workers=12",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
         ),
@@ -558,7 +558,7 @@ def main() -> None:
         ":app:assembleNonMinifiedRelease",
         ":baseline-profile:assembleNonMinifiedRelease",
         "performance-*",
-        "--max-workers=8",
+        "--max-workers=12",
         "EMULATOR_LAUNCH_EPOCH=",
         "-no-window",
         "-no-snapshot-load",
@@ -614,7 +614,7 @@ def main() -> None:
         tasks=(":app:connectedDebugAndroidTest",),
         args=(
             "--build-cache",
-            "--max-workers=8",
+            "--max-workers=12",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
         ),
@@ -625,7 +625,7 @@ def main() -> None:
         tasks=(":baseline-profile:connectedNonMinifiedReleaseAndroidTest",),
         args=(
             "--build-cache",
-            "--max-workers=8",
+            "--max-workers=12",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
         ),
@@ -943,7 +943,7 @@ def main() -> None:
         args=(
             "--build-cache",
             "--parallel",
-            "--max-workers=8",
+            "--max-workers=12",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
         ),
