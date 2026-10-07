@@ -846,6 +846,25 @@ class UltraFrontierEvolutionController(
         evaluation.record(outcome)
     }
 
+    fun shouldRunEnsemble(
+        request: UltraGeneralQueryRequest,
+        lane: UltraFrontierLane,
+        networkAvailable: Boolean
+    ): Boolean {
+        if (!networkAvailable) return false
+        if (request.verificationMode != UltraVerificationMode.OPTIONAL) {
+            return false
+        }
+        if (
+            lane != UltraFrontierLane.LOCAL_FAST &&
+            lane != UltraFrontierLane.LOCAL_DELIBERATE
+        ) {
+            return false
+        }
+        return learning.failurePressure(domain(request)) >=
+            ENSEMBLE_FAILURE_PRESSURE
+    }
+
     fun selectEnsemble(
         local: UltraQueryExecutionAnswer?,
         research: UltraQueryExecutionAnswer?,
@@ -991,5 +1010,9 @@ class UltraFrontierEvolutionController(
     private fun safeAdd(left: Long, right: Long): Long {
         val remaining = Long.MAX_VALUE - left
         return if (right > remaining) Long.MAX_VALUE else left + right
+    }
+
+    private companion object {
+        const val ENSEMBLE_FAILURE_PRESSURE = 2
     }
 }
