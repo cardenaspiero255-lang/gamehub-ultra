@@ -626,15 +626,24 @@ class UltraVerifiedResearchEngine(
             else -> UltraAnswerConfidence.LOW
         }
 
+        val requiredGeneralKnowledge =
+            request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
+                request.verificationMode == UltraVerificationMode.REQUIRED
         if (
             confidence == UltraAnswerConfidence.LOW &&
-            request.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE
+            (
+                request.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE ||
+                    requiredGeneralKnowledge
+                )
         ) {
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
                 sources = sources,
-                reasonCode = "INSUFFICIENT_CORROBORATION"
+                reasonCode = "INSUFFICIENT_CORROBORATION",
+                retryable =
+                    requiredGeneralKnowledge &&
+                        activeProviders.size < providers.size
             )
         }
 
