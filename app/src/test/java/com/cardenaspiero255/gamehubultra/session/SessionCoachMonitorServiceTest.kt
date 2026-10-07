@@ -970,4 +970,27 @@ class SessionCoachMonitorServiceTest {
     }
 
 
+    @Test
+    fun thermalPredictionObservationUsesRecentRealSamplesBeforeSevereStatus() {
+        val samples = listOf(
+            SessionCoachSnapshot(0L, 80, 1, 0.46f, 120f, 30L),
+            SessionCoachSnapshot(10_000L, 80, 1, 0.52f, 120f, 30L),
+            SessionCoachSnapshot(20_000L, 80, 1, 0.59f, 120f, 30L),
+            SessionCoachSnapshot(30_000L, 80, 2, 0.66f, 120f, 30L),
+            SessionCoachSnapshot(40_000L, 80, 2, 0.74f, 120f, 30L),
+        )
+
+        val message = assertNotNull(
+            SessionCoachMonitorService.thermalPredictionObservation(
+                samples = samples,
+                previousObservation = null,
+            )
+        )
+
+        assertEquals(SessionCoachSignal.THERMAL, message.signal)
+        assertEquals(SessionCoachPriority.ACTION, message.priority)
+        assertTrue(message.detail.contains("estimación", ignoreCase = true))
+    }
+
+
 }
