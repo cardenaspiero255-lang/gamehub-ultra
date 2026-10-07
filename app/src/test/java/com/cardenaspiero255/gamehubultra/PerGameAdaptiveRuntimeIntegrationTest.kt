@@ -11,6 +11,7 @@ import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -168,4 +169,59 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         latencyMs = 30L,
         memoryUsedPercent = memory
     )
+    @Test
+    fun failedProfilePersistenceDoesNotMarkSessionHandledAndCanRetry() = kotlinx.coroutines.runBlocking {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-retry",
+            packageName = "game.a",
+            startedAtMillis = 1L,
+            endedAtMillis = 2L,
+            samples = listOf(snapshot(2L, memory = 95)),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "9#42"
+        )
+        var handled = false
+        var persistAttempts = 0
+
+        assertFailsWith<IllegalStateException> {
+            processCompletedAdaptiveSession(
+                completed = completed,
+                optimizer = optimizer,
+                nowMillis = 3L,
+                wasSessionHandled = { handled },
+                resolveActiveProfile = { PerformanceProfile.X4 },
+                persistProfile = { _, _ ->
+                    persistAttempts++
+                    error("simulated persistence failure")
+                },
+                markSessionHandled = { handled = true },
+                recordPerformanceEvent = {}
+            )
+        }
+
+        assertFalse(handled)
+        assertEquals(1, persistAttempts)
+
+        val retried = processCompletedAdaptiveSession(
+            completed = completed,
+            optimizer = optimizer,
+            nowMillis = 4L,
+            wasSessionHandled = { handled },
+            resolveActiveProfile = { PerformanceProfile.X4 },
+            persistProfile = { _, _ -> persistAttempts++ },
+            markSessionHandled = { handled = true },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(retried)
+        assertTrue(retried.changed)
+        assertTrue(handled)
+        assertEquals(2, persistAttempts)
+    }
+
 }
