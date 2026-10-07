@@ -38,6 +38,20 @@ class UltraConversationalTopicPromptTest {
     }
 
     @Test
+    fun conversationalTopicWinsOverProfileAndNetworkCommandKeywords() {
+        val phrases = listOf(
+            "Ultra, háblame de X4",
+            "Ultra, háblame del modo competitivo",
+            "Ultra, cuéntame sobre Gaming Router"
+        )
+
+        phrases.forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(transcript)
+            assertIs<UltraAgentRoute.Chat>(route, transcript)
+        }
+    }
+
+    @Test
     fun talkAboutBearsCanUseStableLocalKnowledgeWithoutInternet() {
         val advisor = GameHubAiAdvisor()
 
