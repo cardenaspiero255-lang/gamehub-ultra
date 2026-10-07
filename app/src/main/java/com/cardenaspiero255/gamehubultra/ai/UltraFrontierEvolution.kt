@@ -1086,6 +1086,53 @@ class UltraFrontierEvolutionController(
             }
     }
 
+    fun synthesizeResearch(
+        candidates: List<Pair<UltraQueryExecutionAnswer, Long>>
+    ): UltraQueryExecutionAnswer? {
+        val selected = selectBestResearch(candidates) ?: return null
+        val selectedText = selected.message
+            .trim()
+            .lowercase(Locale.ROOT)
+        val compatible = candidates
+            .map { it.first }
+            .filter {
+                it.message.trim().lowercase(Locale.ROOT) == selectedText &&
+                    !it.abstained
+            }
+        if (compatible.size <= 1) {
+            return selected.copy(stage = "frontier-synthesizer")
+        }
+
+        val sources = compatible
+            .flatMap { it.sources }
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinctBy { it.lowercase(Locale.ROOT) }
+        val independentSources = maxOf(
+            sources.size,
+            compatible.maxOfOrNull {
+                it.independentSourceCount.coerceAtLeast(0)
+            } ?: 0
+        )
+        val confidence = compatible
+            .mapNotNull { it.confidence }
+            .maxByOrNull {
+                when (it) {
+                    UltraAnswerConfidence.HIGH -> 3
+                    UltraAnswerConfidence.MEDIUM -> 2
+                    UltraAnswerConfidence.LOW -> 1
+                }
+            } ?: selected.confidence
+
+        return selected.copy(
+            verified = compatible.any { it.verified },
+            confidence = confidence,
+            sources = sources,
+            independentSourceCount = independentSources,
+            stage = "frontier-synthesizer"
+        )
+    }
+
     fun selectBestResearch(
         candidates: List<Pair<UltraQueryExecutionAnswer, Long>>
     ): UltraQueryExecutionAnswer? {
