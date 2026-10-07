@@ -58,6 +58,7 @@ class SharedPreferencesUltraResearchPersistentStore(
             .put("message", result.message)
             .put("confidence", result.confidence.name)
             .put("sources", JSONArray(result.sources))
+            .put("independentSourceCount", result.independentSourceCount)
             .put("timedOut", result.timedOut)
             .put("fallbackUsed", result.fallbackUsed)
             .toString()
@@ -87,6 +88,8 @@ class SharedPreferencesUltraResearchPersistentStore(
                 message = message,
                 confidence = confidence,
                 sources = sources,
+                independentSourceCount =
+                    json.optInt("independentSourceCount", 0).coerceAtLeast(0),
                 abstained = false,
                 fromCache = false,
                 timedOut = json.optBoolean("timedOut", false),
