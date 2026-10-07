@@ -1959,8 +1959,10 @@ async function wttrWeatherEvidence(
     ? conditions[0] as JsonObject
     : null;
 
-  const temperature = Number(stringValue(current?.temp_C));
-  const feelsLike = Number(stringValue(current?.FeelsLikeC));
+  const temperatureText = stringValue(current?.temp_C);
+  const feelsLikeTextValue = stringValue(current?.FeelsLikeC);
+  const temperature = temperatureText == null ? null : Number(temperatureText);
+  const feelsLike = feelsLikeTextValue == null ? null : Number(feelsLikeTextValue);
   const descriptions = Array.isArray(current?.weatherDesc)
     ? current.weatherDesc
     : [];
@@ -1972,7 +1974,7 @@ async function wttrWeatherEvidence(
     stringValue(firstDescription?.value) ?? "condiciones actuales";
   const observedAt = stringValue(current?.localObsDateTime);
 
-  if (!Number.isFinite(temperature)) {
+  if (temperature == null || !Number.isFinite(temperature)) {
     return abstain(
       "La fuente meteorológica terciaria no devolvió datos verificables.",
       {
@@ -1984,7 +1986,9 @@ async function wttrWeatherEvidence(
   }
 
   const feelsLikeText =
-    Number.isFinite(feelsLike) && Math.abs(feelsLike - temperature) >= 1
+    feelsLike != null &&
+      Number.isFinite(feelsLike) &&
+      Math.abs(feelsLike - temperature) >= 1
       ? `, sensación térmica de ${feelsLike} °C`
       : "";
 
