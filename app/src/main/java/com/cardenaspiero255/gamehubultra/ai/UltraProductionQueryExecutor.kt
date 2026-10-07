@@ -9,12 +9,16 @@ package com.cardenaspiero255.gamehubultra.ai
  */
 object UltraProductionQueryExecutor : UltraQueryExecutor {
     private val researchCache = UltraResearchCache()
+    private val coordinator = UltraQueryExecutionCoordinator(
+        researchGateway = UltraVerifiedResearchEngine(
+            providers = UltraProductionResearchProviderSource.providers(),
+            cache = researchCache
+        )
+    )
     private val delegate: UltraQueryExecutor = DefaultUltraQueryExecutor(
-        coordinator = UltraQueryExecutionCoordinator(
-            researchGateway = UltraVerifiedResearchEngine(
-                providers = UltraProductionResearchProviderSource.providers(),
-                cache = researchCache
-            )
+        coordinator = coordinator,
+        frontierExecutionEngine = UltraFrontierExecutionEngine(
+            coordinator = coordinator
         )
     )
 
