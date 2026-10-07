@@ -276,81 +276,99 @@ object AiSessionCoach {
         )
     }
 
+    private data class BatteryDischargeSegment(
+        val dropPercent: Int,
+        val durationMillis: Long
+    )
+
     private fun wholeSessionBatteryDrop(
         samples: List<SessionCoachSnapshot>
     ): Int? {
-        val ordered = samples.sortedBy { it.timestampMillis }
-        val batteryValues = ordered.mapNotNull { it.batteryPercent }
-        if (batteryValues.isEmpty()) return null
-
-        val hasChargingTelemetry = ordered.any { it.batteryCharging != null }
-        if (!hasChargingTelemetry) {
-            val first = batteryValues.firstOrNull() ?: return null
-            val last = batteryValues.lastOrNull() ?: return null
-            return (first - last).coerceAtLeast(0)
-        }
-
-        var totalDrop = 0
-        var observedUnchargedPair = false
-        ordered.zipWithNext().forEach { (previous, current) ->
-            val before = previous.batteryPercent
-            val after = current.batteryPercent
-            if (
-                previous.batteryCharging == false &&
-                current.batteryCharging == false &&
-                before != null &&
-                after != null
-            ) {
-                observedUnchargedPair = true
-                totalDrop += (before - after).coerceAtLeast(0)
-            }
-        }
-        return totalDrop.takeIf { observedUnchargedPair }
+        val segments = batteryDischargeSegments(samples) ?: return null
+        return segments.sumOf(BatteryDischargeSegment::dropPercent)
     }
 
     private fun wholeSessionBatteryDrainPercentPerHour(
         samples: List<SessionCoachSnapshot>,
         minimumWindowMillis: Long
     ): Float? {
-        val ordered = samples.sortedBy { it.timestampMillis }
-        if (ordered.size < 2) return null
+        val segments = batteryDischargeSegments(samples) ?: return null
+        return drainRate(
+            dropPercent = segments.sumOf(BatteryDischargeSegment::dropPercent),
+            durationMillis = segments.sumOf(BatteryDischargeSegment::durationMillis),
+            minimumWindowMillis = minimumWindowMillis
+        )
+    }
 
-        val hasChargingTelemetry = ordered.any { it.batteryCharging != null }
-        if (!hasChargingTelemetry) {
-            val first = ordered.firstOrNull { it.batteryPercent != null } ?: return null
-            val last = ordered.lastOrNull { it.batteryPercent != null } ?: return null
-            val duration = (last.timestampMillis - first.timestampMillis).coerceAtLeast(0L)
-            val drop = (
-                checkNotNull(first.batteryPercent) - checkNotNull(last.batteryPercent)
-                ).coerceAtLeast(0)
-            return drainRate(
-                dropPercent = drop,
-                durationMillis = duration,
-                minimumWindowMillis = minimumWindowMillis
+    private fun batteryDischargeSegments(
+        samples: List<SessionCoachSnapshot>
+    ): List<BatteryDischargeSegment>? {
+        val ordered = samples.sortedBy { it.timestampMillis }
+        val batterySamples = ordered.filter { it.batteryPercent != null }
+        if (batterySamples.isEmpty()) return null
+
+        if (ordered.none { it.batteryCharging != null }) {
+            val first = batterySamples.first()
+            val last = batterySamples.last()
+            return listOf(
+                BatteryDischargeSegment(
+                    dropPercent = (
+                        checkNotNull(first.batteryPercent) -
+                            checkNotNull(last.batteryPercent)
+                        ).coerceAtLeast(0),
+                    durationMillis = (
+                        last.timestampMillis - first.timestampMillis
+                        ).coerceAtLeast(0L)
+                )
             )
         }
 
-        var totalDrop = 0
-        var totalDuration = 0L
-        ordered.zipWithNext().forEach { (previous, current) ->
-            val before = previous.batteryPercent
-            val after = current.batteryPercent
+        val segments = mutableListOf<BatteryDischargeSegment>()
+        var firstPercent: Int? = null
+        var firstTimestamp: Long? = null
+        var lastPercent: Int? = null
+        var lastTimestamp: Long? = null
+
+        fun flushSegment() {
+            val startPercent = firstPercent
+            val startTimestamp = firstTimestamp
+            val endPercent = lastPercent
+            val endTimestamp = lastTimestamp
             if (
-                previous.batteryCharging == false &&
-                current.batteryCharging == false &&
-                before != null &&
-                after != null
+                startPercent != null &&
+                startTimestamp != null &&
+                endPercent != null &&
+                endTimestamp != null &&
+                endTimestamp > startTimestamp
             ) {
-                totalDrop += (before - after).coerceAtLeast(0)
-                totalDuration += (current.timestampMillis - previous.timestampMillis)
-                    .coerceAtLeast(0L)
+                segments += BatteryDischargeSegment(
+                    dropPercent = (startPercent - endPercent).coerceAtLeast(0),
+                    durationMillis = endTimestamp - startTimestamp
+                )
             }
+            firstPercent = null
+            firstTimestamp = null
+            lastPercent = null
+            lastTimestamp = null
         }
-        return drainRate(
-            dropPercent = totalDrop,
-            durationMillis = totalDuration,
-            minimumWindowMillis = minimumWindowMillis
-        )
+
+        ordered.forEach { sample ->
+            if (sample.batteryCharging != false) {
+                flushSegment()
+                return@forEach
+            }
+
+            val percent = sample.batteryPercent ?: return@forEach
+            if (firstPercent == null) {
+                firstPercent = percent
+                firstTimestamp = sample.timestampMillis
+            }
+            lastPercent = percent
+            lastTimestamp = sample.timestampMillis
+        }
+        flushSegment()
+
+        return segments.takeIf { it.isNotEmpty() }
     }
 
     private fun drainRate(
