@@ -712,6 +712,8 @@ class UltraFrontierEvolutionTest {
             mutableListOf<Pair<Int, Int?>>()
         )
         val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+
             override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
                 observed += request.researchProviderOffset to request.researchProviderBudget
                 return UltraVerifiedResearchResult(
