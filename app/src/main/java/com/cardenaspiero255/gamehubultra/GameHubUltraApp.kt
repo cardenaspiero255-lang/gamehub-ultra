@@ -58,7 +58,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
-import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.AiProfileBuilder
 import com.cardenaspiero255.gamehubultra.domain.AiProfileCapabilities
 import com.cardenaspiero255.gamehubultra.domain.AiProfileProposal
@@ -90,7 +89,6 @@ import com.cardenaspiero255.gamehubultra.ui.runtime.RuntimeSessionMetrics
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.ui.voice.VoiceAssistantCard
 import com.cardenaspiero255.gamehubultra.ui.share.shareSessionHistory
-import com.cardenaspiero255.gamehubultra.session.installedGameVersionKey
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
@@ -568,18 +566,6 @@ internal fun GameHubUltraApp(
         )
     }
 
-    fun recordExplicitAdaptiveProfileSelection(
-        packageName: String?,
-        profile: PerformanceProfile
-    ) {
-        val cleanPackage = packageName?.trim()?.takeIf(String::isNotEmpty) ?: return
-        val version = installedGameVersionKey(context, cleanPackage) ?: "unknown"
-        perGameAdaptiveOptimizer.recordExplicitProfileSelection(
-            key = AdaptiveGameKey(cleanPackage, version),
-            profile = profile
-        )
-    }
-
     fun applyAiProfileProposal() {
         val proposal = aiProfileProposal ?: return
         applyAiProfileProposalForSelectedGame(
@@ -588,10 +574,6 @@ internal fun GameHubUltraApp(
             save = viewModel::saveGameProfileConfig,
             recordApplied = aiProfileProposalStore::recordApplied,
             onApplied = {
-                recordExplicitAdaptiveProfileSelection(
-                    selectedGameForMemory,
-                    proposal.proposedConfig.performanceProfile
-                )
                 aiProfileRevision += 1
             }
         )
@@ -605,10 +587,6 @@ internal fun GameHubUltraApp(
             save = viewModel::saveGameProfileConfig,
             clearRollback = aiProfileProposalStore::clearRollback,
             onRolledBack = {
-                recordExplicitAdaptiveProfileSelection(
-                    selectedGameForMemory,
-                    rollback.previousKnownGoodConfig.performanceProfile
-                )
                 aiProfileRevision += 1
             }
         )
@@ -743,7 +721,6 @@ internal fun GameHubUltraApp(
 
     fun selectExternalProfile(profile: PerformanceProfile) {
         clearSmartRecommendationRevertForExternalProfileChange()
-        recordExplicitAdaptiveProfileSelection(selectedGameForMemory, profile)
         selectProfile(profile)
     }
 
@@ -751,10 +728,6 @@ internal fun GameHubUltraApp(
         suggestion: SmartGameAssistantSuggestion
     ) {
         clearSmartRecommendationRevertForExternalProfileChange()
-        recordExplicitAdaptiveProfileSelection(
-            selectedGameForMemory,
-            suggestion.profile
-        )
         applySmartGameAssistantSuggestion(suggestion)
     }
 
@@ -768,7 +741,6 @@ internal fun GameHubUltraApp(
         profile: PerformanceProfile
     ) {
         clearSmartRecommendationRevertForExternalProfileChange()
-        recordExplicitAdaptiveProfileSelection(packageName, profile)
         viewModel.persistVoiceSelectedGameWithProfile(packageName, profile)
     }
 
