@@ -83,6 +83,29 @@ class SessionCoachMonitorServiceTest {
     }
 
     @Test
+    fun startPersistsInstalledPackageVersionAtLaunch() {
+        val packageName = context.packageName
+        val expectedVersion = context.packageManager
+            .getPackageInfo(packageName, 0)
+            .versionName
+
+        val id = SessionCoachMonitorService.start(
+            context = context,
+            packageName = packageName,
+            nowMillis = 1_500L,
+            sessionId = "versioned-session"
+        )
+
+        assertEquals("versioned-session", id)
+        assertEquals(
+            expectedVersion,
+            SessionCoachSessionStore(context).readActiveSession()?.gameVersion
+        )
+
+        SessionCoachMonitorService.cancelLaunch(context)
+    }
+
+    @Test
     fun finishOnReturnPersistsCompletedSessionAndPostsSummary() {
         val store = SessionCoachSessionStore(context)
         assertTrue(store.beginSession("session", "game.a", 1_000L))
