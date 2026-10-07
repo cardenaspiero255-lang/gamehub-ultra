@@ -147,4 +147,22 @@ class BatteryAwareGamingEngineTest {
         assertTrue(failed)
     }
 
+
+    @Test
+    fun `charging overrides critical percentage when power save is off`() {
+        val assessment = engine.assess(
+            listOf(
+                snapshot(
+                    minutes = 0,
+                    percent = 10,
+                    charging = true,
+                    powerSaveMode = false,
+                ),
+            ),
+        )
+
+        assertEquals(BatteryGamingRecommendation.CHARGING, assessment.recommendation)
+        assertFalse(assessment.preventAggressiveProfiles)
+    }
+
 }
