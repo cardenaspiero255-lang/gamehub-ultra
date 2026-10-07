@@ -42,6 +42,23 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal fun installedGameVersionKey(
+    context: Context,
+    packageName: String
+): String? = runCatching {
+    val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.packageManager.getPackageInfo(
+            packageName,
+            PackageManager.PackageInfoFlags.of(0L)
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        context.packageManager.getPackageInfo(packageName, 0)
+    }
+    val versionName = info.versionName.orEmpty().trim()
+    "${versionName}#${info.longVersionCode}"
+}.getOrNull()
+
 internal enum class SessionCoachGamePresence {
     ACTIVE,
     INACTIVE,
@@ -234,7 +251,7 @@ class SessionCoachMonitorService : Service() {
             store.finishActiveSession(nowMillis)?.let { previous ->
                 SessionCoachNotifications.postSummary(context, previous)
             }
-            val gameVersion = installedVersionName(context, cleanPackage)
+            val gameVersion = installedGameVersionKey(context, cleanPackage)
             if (!store.beginSession(
                     sessionId = sessionId,
                     packageName = cleanPackage,
@@ -258,22 +275,6 @@ class SessionCoachMonitorService : Service() {
                 null
             }
         }
-
-        @Suppress("DEPRECATION")
-        private fun installedVersionName(
-            context: Context,
-            packageName: String
-        ): String? = runCatching {
-            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.getPackageInfo(
-                    packageName,
-                    PackageManager.PackageInfoFlags.of(0L)
-                )
-            } else {
-                context.packageManager.getPackageInfo(packageName, 0)
-            }
-            info.versionName?.trim()?.takeIf(String::isNotEmpty)
-        }.getOrNull()
 
         internal fun cancelLaunch(context: Context) {
             SessionCoachSessionStore(context).discardActiveSession()
