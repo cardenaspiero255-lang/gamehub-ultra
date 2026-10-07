@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra
 
 import android.content.Context
+import android.os.Looper
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -9,6 +10,7 @@ import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -68,6 +70,7 @@ class MainActivityRobolectricTest {
             .resume()
 
         assertNotNull(controller.get())
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
 
         controller.pause().stop().destroy()
     }

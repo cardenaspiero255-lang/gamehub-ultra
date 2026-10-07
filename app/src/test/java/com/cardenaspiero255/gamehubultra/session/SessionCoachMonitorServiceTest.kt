@@ -11,6 +11,9 @@ import android.content.Intent
 import android.os.PowerManager
 import android.os.Process
 import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachPriority
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSignal
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import org.junit.Before
@@ -580,6 +583,49 @@ class SessionCoachMonitorServiceTest {
                 SessionCoachGamePresence.ACTIVE,
                 count
             )
+        )
+    }
+
+    @Test
+    fun actionNotificationPublishesExplicitActionAndFallsBackToDetail() {
+        val manager = context.getSystemService(NotificationManager::class.java)
+
+        SessionCoachNotifications.postAction(
+            context,
+            SessionCoachMessage(
+                signal = SessionCoachSignal.LATENCY,
+                priority = SessionCoachPriority.ACTION,
+                title = "Pico de latencia",
+                detail = "Detalle diagnóstico",
+                action = "Revisa la conexión"
+            )
+        )
+
+        val explicit = assertNotNull(shadowOf(manager).getNotification(45_003))
+        assertEquals(
+            "Pico de latencia",
+            explicit.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+        )
+        assertEquals(
+            "Revisa la conexión",
+            explicit.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+        )
+
+        manager.cancel(45_003)
+        SessionCoachNotifications.postAction(
+            context,
+            SessionCoachMessage(
+                signal = SessionCoachSignal.GENERAL,
+                priority = SessionCoachPriority.WATCH,
+                title = "Observación",
+                detail = "Solo detalle"
+            )
+        )
+
+        val fallback = assertNotNull(shadowOf(manager).getNotification(45_003))
+        assertEquals(
+            "Solo detalle",
+            fallback.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
         )
     }
 
