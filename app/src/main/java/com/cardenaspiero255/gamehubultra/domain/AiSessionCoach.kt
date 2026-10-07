@@ -67,7 +67,11 @@ object AiSessionCoach {
     ): SessionCoachMessage {
         val coveredFamilies = mutableSetOf<String>()
         val concerns = buildList {
-            if (snapshot.batteryPercent != null && snapshot.batteryPercent <= 15) {
+            if (
+                snapshot.batteryCharging != true &&
+                snapshot.batteryPercent != null &&
+                snapshot.batteryPercent <= 15
+            ) {
                 add("Batería baja: ${snapshot.batteryPercent} %.")
                 coveredFamilies += "batería"
             }
@@ -307,22 +311,6 @@ object AiSessionCoach {
         val batterySamples = ordered.filter { it.batteryPercent != null }
         if (batterySamples.isEmpty()) return null
 
-        if (ordered.none { it.batteryCharging != null }) {
-            val first = batterySamples.first()
-            val last = batterySamples.last()
-            return listOf(
-                BatteryDischargeSegment(
-                    dropPercent = (
-                        checkNotNull(first.batteryPercent) -
-                            checkNotNull(last.batteryPercent)
-                        ).coerceAtLeast(0),
-                    durationMillis = (
-                        last.timestampMillis - first.timestampMillis
-                        ).coerceAtLeast(0L)
-                )
-            )
-        }
-
         val segments = mutableListOf<BatteryDischargeSegment>()
         var firstPercent: Int? = null
         var firstTimestamp: Long? = null
@@ -353,7 +341,7 @@ object AiSessionCoach {
         }
 
         ordered.forEach { sample ->
-            if (sample.batteryCharging != false) {
+            if (sample.batteryCharging == true) {
                 flushSegment()
                 return@forEach
             }
