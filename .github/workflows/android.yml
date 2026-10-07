@@ -46,6 +46,10 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-ci-safety-contract.sh
 
+      - name: Verify Phase 2 workflow contract
+        shell: bash
+        run: python3 .github/scripts/test-phase2-workflow-contract.py
+
       - name: Test Sentry release auth fallback
         shell: bash
         run: python3 .github/scripts/test-sentry-release-auth-fallback.py
