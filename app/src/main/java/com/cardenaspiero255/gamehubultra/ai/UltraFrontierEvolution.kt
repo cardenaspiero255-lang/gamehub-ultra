@@ -846,6 +846,33 @@ class UltraFrontierEvolutionController(
         evaluation.record(outcome)
     }
 
+    fun recallVerified(
+        request: UltraGeneralQueryRequest,
+        nowMillis: Long
+    ): UltraQueryExecutionAnswer? {
+        if (request.requiresFreshData) return null
+        val subject = request.originalText
+            .trim()
+            .lowercase(Locale.ROOT)
+        val fact = knowledgeGraph.resolve(
+            subject = subject,
+            predicate = "answer",
+            atMillis = nowMillis
+        ) ?: return null
+        if (fact.confidence == UltraAnswerConfidence.LOW) return null
+
+        return UltraQueryExecutionAnswer(
+            message = fact.value,
+            verified = true,
+            confidence = fact.confidence,
+            sources = fact.sourceIds.toList(),
+            independentSourceCount = fact.sourceIds.size,
+            abstained = false,
+            retryable = false,
+            stage = "frontier-knowledge-graph"
+        )
+    }
+
     fun rememberVerified(
         request: UltraGeneralQueryRequest,
         result: UltraQueryExecutionAnswer,
