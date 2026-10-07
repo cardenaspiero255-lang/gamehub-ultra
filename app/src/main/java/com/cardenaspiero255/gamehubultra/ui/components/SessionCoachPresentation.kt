@@ -22,10 +22,16 @@ internal object SessionCoachPresentation {
                     observation.action?.let(::add)
                 }
             }
-        } else if (preSession != null) {
-            add(preSession.title)
-            add(preSession.detail)
-            preSession.action?.let(::add)
+        } else {
+            preSession?.let { message ->
+                add(message.title)
+                add(message.detail)
+                message.action?.let(::add)
+            }
+            observations.takeLast(1).forEach { observation ->
+                add("• ${observation.title}: ${observation.detail}")
+                observation.action?.let(::add)
+            }
         }
 
         postSession?.let { report ->
