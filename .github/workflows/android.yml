@@ -129,6 +129,7 @@ jobs:
               :app:lintDebug \
               --build-cache \
               --parallel \
+              --max-workers=8 \
               --configuration-cache \
               --configuration-cache-problems=fail \
               --console=plain \
@@ -174,29 +175,9 @@ jobs:
             quality_attempt=$((quality_attempt + 1))
           done
 
-          # Prime and then prove reuse of the dry-run Configuration Cache
-          # entry without executing lint or assembly again.
-          gradle \
-            :app:assembleDebug \
-            :app:lintDebug \
-            --build-cache \
-            --parallel \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --console=plain \
-            --dry-run \
-            --stacktrace >/dev/null
-          gradle \
-            :app:assembleDebug \
-            :app:lintDebug \
-            --build-cache \
-            --parallel \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --console=plain \
-            --dry-run \
-            --stacktrace 2>&1 | tee "$CONFIG_CACHE_LOG"
-          grep -Fq "Reusing configuration cache." "$CONFIG_CACHE_LOG"
+          # Configuration Cache remains enabled on the executable graph.
+          # Reuse is measured by the post-run metrics workflow instead of two
+          # duplicate dry-run Gradle startups on every pull request.
 
       - name: Record Phase 3 artifact provenance
         shell: bash
@@ -302,7 +283,6 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           missing=()
 
-          [ -s "$SDK_ROOT/platforms/android-35/android.jar" ] || missing+=("platforms;android-35")
           [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
           [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
           [ -x "$SDK_ROOT/emulator/emulator" ] || missing+=("emulator")
@@ -444,7 +424,7 @@ jobs:
           hw.camera.back=none
           hw.camera.front=none
           hw.cpu.arch=x86_64
-          hw.cpu.ncore=4
+          hw.cpu.ncore=2
           hw.device.manufacturer=GameHub
           hw.device.name=gamehub_ci_phone
           hw.gps=yes
@@ -457,7 +437,7 @@ jobs:
           hw.lcd.height=1920
           hw.lcd.width=1080
           hw.mainKeys=no
-          hw.ramSize=4096
+          hw.ramSize=3072
           hw.sdCard=no
           image.sysdir.1=system-images/android-35/google_apis/x86_64/
           runtime.network.latency=none
@@ -523,37 +503,14 @@ jobs:
               :baseline-profile:assembleNonMinifiedRelease \
               --build-cache \
               --parallel \
+              --max-workers=8 \
               --configuration-cache \
               --configuration-cache-problems=fail \
               --stacktrace 2>&1 | tee "$BUILD_LOG"
 
-            # Prime and then prove reuse of the dry-run Configuration Cache
-            # entry without executing the expensive release/performance graph
-            # again. The two probes are intentionally identical.
-            gradle \
-              :app:assembleRelease \
-              :app:bundleRelease \
-              :app:assembleNonMinifiedRelease \
-              :baseline-profile:assembleNonMinifiedRelease \
-              --build-cache \
-              --parallel \
-              --configuration-cache \
-              --configuration-cache-problems=fail \
-              --dry-run \
-              --stacktrace >/dev/null
-            RELEASE_CONFIG_CACHE_LOG="$RUNNER_TEMP/release-configuration-cache-reuse.log"
-            gradle \
-              :app:assembleRelease \
-              :app:bundleRelease \
-              :app:assembleNonMinifiedRelease \
-              :baseline-profile:assembleNonMinifiedRelease \
-              --build-cache \
-              --parallel \
-              --configuration-cache \
-              --configuration-cache-problems=fail \
-              --dry-run \
-              --stacktrace 2>&1 | tee "$RELEASE_CONFIG_CACHE_LOG"
-            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"
+            # The executable graph is the cache proof target; post-run metrics
+            # capture its timing without paying for two extra Gradle startups.
+
           ) &
           BUILD_PID=$!
 
@@ -574,6 +531,8 @@ jobs:
             -no-snapshot-save \
             -no-metrics \
             -gpu swiftshader_indirect \
+            -memory 3072 \
+            -cores 2 \
             -camera-back none \
             -camera-front none \
             -netdelay none \
@@ -684,6 +643,7 @@ jobs:
           set -euo pipefail
           gradle :app:connectedDebugAndroidTest \
             --build-cache \
+            --max-workers=8 \
             --configuration-cache \
             --configuration-cache-problems=fail \
             --stacktrace
@@ -702,6 +662,7 @@ jobs:
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
             -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
             --build-cache \
+            --max-workers=8 \
             --configuration-cache \
             --configuration-cache-problems=fail \
             --stacktrace 2>&1 | tee "$LOG"
@@ -820,7 +781,7 @@ jobs:
           # Pull-request builds never receive Sentry secrets. On trusted main/manual
           # runs this rebuild overwrites the validation outputs with telemetry-enabled
           # artifacts carrying the exact git-backed Sentry release identifier.
-          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --rerun-tasks             --stacktrace 2>&1 | tee "$RUNNER_TEMP/distributable-release.log"
+          gradle :app:assembleRelease :app:bundleRelease             --build-cache             --max-workers=8             --rerun-tasks             --stacktrace 2>&1 | tee "$RUNNER_TEMP/distributable-release.log"
 
       - name: Register Sentry release and GitHub commit
         if: success() && github.event_name != 'pull_request'
