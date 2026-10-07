@@ -568,4 +568,53 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         assertTrue(decision.reason.contains("memoria", ignoreCase = true))
     }
 
+
+    @Test
+    fun completedSessionBatteryConstraintFlowsIntoAdaptiveDecisionReason() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-battery-constraint",
+            packageName = "game.battery",
+            startedAtMillis = 0L,
+            endedAtMillis = 20 * 60_000L,
+            samples = listOf(
+                snapshot(0L, memory = 40).copy(
+                    batteryPercent = 80,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                snapshot(10 * 60_000L, memory = 40).copy(
+                    batteryPercent = 76,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                snapshot(20 * 60_000L, memory = 40).copy(
+                    batteryPercent = 72,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                )
+            ),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1"
+        )
+
+        val decision = applyCompletedAdaptiveDecision(
+            completed = completed,
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 21 * 60_000L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(decision)
+        assertTrue(decision.changed)
+        assertEquals(PerformanceProfile.BALANCED, decision.profile)
+        assertTrue(decision.reason.contains("drenaje", ignoreCase = true))
+    }
+
 }
