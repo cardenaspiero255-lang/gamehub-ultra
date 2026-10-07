@@ -33,6 +33,26 @@ class UltraWakeStopSpeakingCar44Test {
     }
 
     @Test
+    fun `stop phrase has absolute priority even when playback state is stale`() {
+        assertEquals(
+            UltraWakeRecognitionDisposition.STOP_TTS,
+            UltraWakeBargeInPolicy.decide(
+                playbackActive = false,
+                transcript = "Ultra, stop",
+                playbackEcho = false
+            )
+        )
+        assertEquals(
+            UltraWakeRecognitionDisposition.STOP_TTS,
+            UltraWakeBargeInPolicy.decide(
+                playbackActive = true,
+                transcript = "Ultra, para",
+                playbackEcho = true
+            )
+        )
+    }
+
+    @Test
     fun `stop phrase interrupts playback without becoming another command`() {
         assertEquals(
             UltraWakeRecognitionDisposition.STOP_TTS,
