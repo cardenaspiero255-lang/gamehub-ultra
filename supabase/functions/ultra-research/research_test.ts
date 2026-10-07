@@ -7886,3 +7886,109 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test("Requinoa weather survives primary geocoder and forecast outages", async () => {
+  let nominatimCalls = 0;
+  let metCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "geocoding-api.open-meteo.com") {
+        throw new Error("primary geocoder unavailable");
+      }
+      if (url.hostname === "nominatim.openstreetmap.org") {
+        nominatimCalls += 1;
+        return jsonResponse([
+          {
+            lat: "-34.2833",
+            lon: "-70.8167",
+            display_name: "Requínoa, Región de O'Higgins, Chile",
+          },
+        ]);
+      }
+      if (url.hostname === "api.open-meteo.com") {
+        return new Response("forecast unavailable", { status: 503 });
+      }
+      if (url.hostname === "api.met.no") {
+        metCalls += 1;
+        return jsonResponse({
+          properties: {
+            timeseries: [{
+              time: "2026-10-07T03:00:00Z",
+              data: {
+                instant: { details: { air_temperature: 13.7 } },
+                next_1_hours: { summary: { symbol_code: "partlycloudy_night" } },
+              },
+            }],
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => {
+      if (name === "ULTRA_FETCH_RETRY_ATTEMPTS") return "1";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "50";
+      return undefined;
+    },
+    sleep: () => Promise.resolve(),
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, clima en Requínoa",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected authoritative Requinoa weather fallback");
+  }
+  if (result.authoritative !== true) {
+    throw new Error("weather fallback must remain authoritative");
+  }
+  if (nominatimCalls < 1 || metCalls < 1) {
+    throw new Error("expected Nominatim and MET Norway fallback chain");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("requínoa") || !answer.includes("13.7")) {
+    throw new Error("fallback lost requested location or temperature: " + answer);
+  }
+});
+
+Deno.test("basic star knowledge survives complete provider outage", async () => {
+  for (const query of [
+    "Ultra, ¿qué es una estrella?",
+    "Ultra, háblame de las estrellas",
+  ]) {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        return jsonResponse({}, 429);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("stable star knowledge must remain answerable: " + query);
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (
+      !answer.includes("estrella") ||
+      !(answer.includes("plasma") || answer.includes("energ"))
+    ) {
+      throw new Error("expected an astronomical star definition: " + answer);
+    }
+    if (networkCalls !== 0) {
+      throw new Error("basic star knowledge should not require network access");
+    }
+  }
+});
