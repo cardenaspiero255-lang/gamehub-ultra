@@ -344,18 +344,25 @@ class UltraFrontierExecutionEngine(
         answer: UltraQueryExecutionAnswer,
         executionStartedNanos: Long
     ): UltraQueryExecutionAnswer {
-        recordEvolutionOutcome(
+        val completedAtMillis = nowMillis()
+        val gatedAnswer = evolution.finalGate(
             request = request,
             plan = plan,
             answer = answer,
+            nowMillis = completedAtMillis
+        )
+        recordEvolutionOutcome(
+            request = request,
+            plan = plan,
+            answer = gatedAnswer,
             executionStartedNanos = executionStartedNanos
         )
         evolution.rememberVerified(
             request = request,
-            result = answer,
-            nowMillis = nowMillis()
+            result = gatedAnswer,
+            nowMillis = completedAtMillis
         )
-        return answer
+        return gatedAnswer
     }
 
     private fun recordEvolutionOutcome(
