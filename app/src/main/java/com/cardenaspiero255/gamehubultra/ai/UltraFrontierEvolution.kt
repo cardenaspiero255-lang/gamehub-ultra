@@ -1003,6 +1003,24 @@ class UltraFrontierEvolutionController(
             }
     }
 
+    fun selectBestResearch(
+        candidates: List<Pair<UltraQueryExecutionAnswer, Long>>
+    ): UltraQueryExecutionAnswer? {
+        val pairs = candidates.map { (answer, latencyMillis) ->
+            UltraFrontierEnsembleCandidate(
+                message = answer.message,
+                verified = answer.verified,
+                confidence = answer.confidence,
+                independentSourceCount = answer.independentSourceCount,
+                latencyMillis = latencyMillis,
+                fresh = true,
+                abstained = answer.abstained
+            ) to answer
+        }
+        val selected = ensemble.select(pairs.map { it.first }) ?: return null
+        return pairs.firstOrNull { it.first == selected }?.second
+    }
+
     fun finalGate(
         request: UltraGeneralQueryRequest,
         plan: UltraFrontierPlan,
