@@ -8192,7 +8192,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "basic book definition stays in general knowledge instead of Open Library discovery",
   async () => {
