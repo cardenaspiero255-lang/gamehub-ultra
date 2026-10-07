@@ -153,6 +153,8 @@ def _looks_executable_source_line(line: str) -> bool:
         return False
     if re.match(r"^(?:if|when)\s*\($", stripped):
         return False
+    if re.fullmatch(r"(?:try|\}?\s*finally)\s*\{", stripped):
+        return False
     if re.match(
         r"^(?:(?:[A-Za-z_][A-Za-z0-9_]*\.)+)?[A-Z][A-Z0-9_]*,?$",
         stripped,
@@ -286,16 +288,37 @@ def _multiline_expression_continuation_lines(
         stripped = line.strip()
         if not stripped:
             continue
+        following = _next_nonblank(source_lines, index)
         if stripped.startswith(".") and re.fullmatch(
             r"\.[A-Za-z_][A-Za-z0-9_]*(?:\([^)]*\))?,?",
             stripped,
         ):
             structural.add(index + 1)
             continue
+        if (
+            re.match(
+                r"^(?:val|var)\s+[A-Za-z_][A-Za-z0-9_]*"
+                r"(?:\s*:\s*[^=]+)?\s*=\s*"
+                r"[A-Za-z_][A-Za-z0-9_.]*\s*\($",
+                stripped,
+            )
+            and following
+        ):
+            structural.add(index + 1)
+            continue
+        if (
+            following.startswith(".")
+            and re.match(
+                r"^(?:val|var)\s+[A-Za-z_][A-Za-z0-9_]*"
+                r"(?:\s*:\s*[^=]+)?\s*=\s*.+$",
+                stripped,
+            )
+        ):
+            structural.add(index + 1)
+            continue
         if not reference.fullmatch(stripped):
             continue
         previous = _previous_nonblank(source_lines, index)
-        following = _next_nonblank(source_lines, index)
         if (
             previous.endswith(("(", ",", "+", "-", "*", "/", "%", "="))
             or following.startswith(".")
@@ -309,6 +332,7 @@ def _compose_dispose_synthetic_call_lines(
 ) -> set[int]:
     """Compose onDispose bodies are compiled into synthetic callback classes."""
     structural: set[int] = set()
+    effect_header: int | None = None
     inside = False
     depth = 0
     simple_call = re.compile(
@@ -316,11 +340,22 @@ def _compose_dispose_synthetic_call_lines(
     )
     for number, line in enumerate(source_lines, start=1):
         stripped = line.strip()
+        if (
+            not inside
+            and re.fullmatch(r"DisposableEffect\s*\([^)]*\)\s*\{", stripped)
+        ):
+            effect_header = number
+            continue
         if not inside and re.fullmatch(r"onDispose\s*\{", stripped):
             inside = True
             depth = 1
+            structural.add(number)
+            if effect_header is not None:
+                structural.add(effect_header)
             continue
         if not inside:
+            if stripped == "}":
+                effect_header = None
             continue
         depth += stripped.count("{") - stripped.count("}")
         if simple_call.fullmatch(stripped):
