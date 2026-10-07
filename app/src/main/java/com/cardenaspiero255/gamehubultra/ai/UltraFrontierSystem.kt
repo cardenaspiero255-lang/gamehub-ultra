@@ -548,6 +548,9 @@ class UltraFrontierCritic {
         return UltraFrontierVerdict.ACCEPT
     }
 
+    fun isUsefulLocalAnswer(message: String): Boolean =
+        message.isNotBlank() && !isGenericFailure(message)
+
     private fun isGenericFailure(message: String): Boolean {
         val normalized = message.lowercase()
             .replace(Regex("\\s+"), " ")
