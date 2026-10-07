@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.MathContext
 import java.math.RoundingMode
 import java.text.Normalizer
@@ -53,6 +54,10 @@ object UltraMathEngine {
         val clean = normalize(transcript)
         if (clean.isBlank()) return null
 
+        solveQuadraticEquation(clean)?.let { return it }
+        solveGreatestCommonDivisorOrMultiple(clean)?.let { return it }
+        solvePythagoreanTheorem(clean)?.let { return it }
+        solveTemperatureConversion(clean)?.let { return it }
         solveLinearSystem(clean)?.let { return it }
         solveGeometry(clean)?.let { return it }
         solveTrigonometry(clean)?.let { return it }
@@ -69,6 +74,184 @@ object UltraMathEngine {
         solveArithmetic(clean)?.let { return it }
         return null
     }
+
+    private fun solveQuadraticEquation(clean: String): UltraMathSolution? {
+        if (!Regex("""\\bx\\s*\\^\\s*2\\b""").containsMatchIn(clean)) return null
+        val match = Regex(
+            """([+-]?\\s*(?:\\d+(?:[.,]\\d+)?)?)\\s*x\\s*\\^\\s*2\\s*([+-])\\s*(?:(\\d+(?:[.,]\\d+)?)\\s*)?x\\s*([+-])\\s*(\\d+(?:[.,]\\d+)?)\\s*=\\s*0"""
+        ).find(clean) ?: return null
+
+        val a = signedCoefficient(match.groupValues[1]) ?: return null
+        if (a.compareTo(BigDecimal.ZERO) == 0) return null
+        val bMagnitude = match.groupValues[3]
+            .takeIf(String::isNotBlank)
+            ?.toDecimalOrNull()
+            ?: BigDecimal.ONE
+        val b = if (match.groupValues[2] == "-") bMagnitude.negate() else bMagnitude
+        val cMagnitude = match.groupValues[5].toDecimalOrNull() ?: return null
+        val constant = if (match.groupValues[4] == "-") cMagnitude.negate() else cMagnitude
+
+        val discriminant = b.multiply(b, mathContext).subtract(
+            BigDecimal("4").multiply(a, mathContext).multiply(constant, mathContext),
+            mathContext
+        )
+        if (discriminant < BigDecimal.ZERO) return null
+
+        val sqrtDiscriminant = BigDecimal.valueOf(
+            kotlin.math.sqrt(discriminant.toDouble())
+        ).round(mathContext)
+        val denominator = BigDecimal("2").multiply(a, mathContext)
+        val rootA = b.negate()
+            .add(sqrtDiscriminant, mathContext)
+            .divide(denominator, mathContext)
+        val rootB = b.negate()
+            .subtract(sqrtDiscriminant, mathContext)
+            .divide(denominator, mathContext)
+        val roots = listOf(rootA, rootB).sorted()
+        val first = formatNumber(roots[0])
+        val second = formatNumber(roots[1])
+
+        return UltraMathSolution(
+            resultText = if (first == second) {
+                "x = " + first
+            } else {
+                "x = " + first + " o x = " + second
+            },
+            explanation =
+                "Usé la fórmula cuadrática con discriminante " +
+                    formatNumber(discriminant) + ". " +
+                    if (first == second) {
+                        "La ecuación tiene una raíz real doble: x = " + first + "."
+                    } else {
+                        "Las raíces reales son x = " + first + " y x = " + second + "."
+                    }
+        )
+    }
+
+    private fun solveGreatestCommonDivisorOrMultiple(clean: String): UltraMathSolution? {
+        val mode = when {
+            Regex("""\\b(mcd|maximo comun divisor|gcd)\\b""").containsMatchIn(clean) -> "gcd"
+            Regex("""\\b(mcm|minimo comun multiplo|lcm)\\b""").containsMatchIn(clean) -> "lcm"
+            else -> return null
+        }
+        val values = Regex("""-?\\d+""")
+            .findAll(clean)
+            .mapNotNull { it.value.toBigIntegerOrNull() }
+            .take(2)
+            .toList()
+        if (values.size != 2) return null
+
+        val left = values[0].abs()
+        val right = values[1].abs()
+        val gcd = left.gcd(right)
+        val result = if (mode == "gcd") {
+            gcd
+        } else {
+            if (left == BigInteger.ZERO || right == BigInteger.ZERO) {
+                BigInteger.ZERO
+            } else {
+                left.divide(gcd).multiply(right)
+            }
+        }
+
+        return UltraMathSolution(
+            resultText = result.toString(),
+            explanation = if (mode == "gcd") {
+                "El máximo común divisor de " + left + " y " + right + " es " + result + "."
+            } else {
+                "El mínimo común múltiplo de " + left + " y " + right + " es " + result + "."
+            }
+        )
+    }
+
+    private fun solvePythagoreanTheorem(clean: String): UltraMathSolution? {
+        val pythagoreanSignal =
+            clean.contains("pitagoras") ||
+                clean.contains("pythagoras") ||
+                clean.contains("pythagorean")
+        if (!pythagoreanSignal || !clean.contains("hipotenusa")) return null
+
+        val values = Regex("""-?\\d+(?:[.,]\\d+)?""")
+            .findAll(clean)
+            .mapNotNull { it.value.toDecimalOrNull() }
+            .take(2)
+            .toList()
+        if (values.size != 2 || values.any { it <= BigDecimal.ZERO }) return null
+
+        val squared = values[0].multiply(values[0], mathContext)
+            .add(values[1].multiply(values[1], mathContext), mathContext)
+        val hypotenuse = BigDecimal.valueOf(
+            kotlin.math.sqrt(squared.toDouble())
+        ).round(mathContext)
+
+        return UltraMathSolution(
+            resultText = formatNumber(hypotenuse),
+            explanation =
+                "Por Pitágoras, c² = a² + b². Con " + formatNumber(values[0]) +
+                    " y " + formatNumber(values[1]) + ", la hipotenusa es " +
+                    formatNumber(hypotenuse) + "."
+        )
+    }
+
+    private fun solveTemperatureConversion(clean: String): UltraMathSolution? {
+        val match = Regex(
+            """(-?\\d+(?:[.,]\\d+)?)\\s*(?:grados?\\s*)?(celsius|centigrados?|°c|fahrenheit|°f|kelvin)\\s*(?:a|en|to)\\s*(celsius|centigrados?|°c|fahrenheit|°f|kelvin)"""
+        ).find(clean) ?: return null
+
+        val value = match.groupValues[1].toDecimalOrNull() ?: return null
+        val from = canonicalTemperatureUnit(match.groupValues[2]) ?: return null
+        val to = canonicalTemperatureUnit(match.groupValues[3]) ?: return null
+        if (!isPhysicalTemperature(value, from)) return null
+
+        val celsius = when (from) {
+            "C" -> value
+            "F" -> value.subtract(BigDecimal("32"), mathContext)
+                .multiply(BigDecimal("5"), mathContext)
+                .divide(BigDecimal("9"), mathContext)
+            "K" -> value.subtract(BigDecimal("273.15"), mathContext)
+            else -> return null
+        }
+        val converted = when (to) {
+            "C" -> celsius
+            "F" -> celsius.multiply(BigDecimal("9"), mathContext)
+                .divide(BigDecimal("5"), mathContext)
+                .add(BigDecimal("32"), mathContext)
+            "K" -> celsius.add(BigDecimal("273.15"), mathContext)
+            else -> return null
+        }
+        if (!isPhysicalTemperature(converted, to)) return null
+
+        val symbol = temperatureSymbol(to)
+        return UltraMathSolution(
+            resultText = formatNumber(converted) + " " + symbol,
+            explanation =
+                formatNumber(value) + " " + temperatureSymbol(from) + " = " +
+                    formatNumber(converted) + " " + symbol + "."
+        )
+    }
+
+    private fun canonicalTemperatureUnit(raw: String): String? =
+        when (raw) {
+            "celsius", "centigrado", "centigrados", "°c" -> "C"
+            "fahrenheit", "°f" -> "F"
+            "kelvin" -> "K"
+            else -> null
+        }
+
+    private fun temperatureSymbol(unit: String): String =
+        when (unit) {
+            "C" -> "°C"
+            "F" -> "°F"
+            else -> "K"
+        }
+
+    private fun isPhysicalTemperature(value: BigDecimal, unit: String): Boolean =
+        when (unit) {
+            "C" -> value >= BigDecimal("-273.15")
+            "F" -> value >= BigDecimal("-459.67")
+            "K" -> value >= BigDecimal.ZERO
+            else -> false
+        }
 
     private data class LinearEquation2(
         val xCoefficient: BigDecimal,
@@ -661,7 +844,7 @@ object UltraMathEngine {
             .replace(Regex("\\p{M}+"), "")
             .replace('×', 'x')
             .replace('÷', '/')
-            .replace(Regex("[^a-z0-9+\\-*/=.,° ]"), " ")
+            .replace(Regex("[^a-z0-9+\\-*/=.,°^ ]"), " ")
             .replace(Regex("^\\s*(?:gamehub\\s+ultra|gamehub|ultra)\\s*[,;:.-]?\\s*"), "")
             .replace(Regex("\\s+"), " ")
             .trim()
