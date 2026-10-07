@@ -7701,25 +7701,28 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "high-frequency stable smoke concepts survive complete provider throttling",
   async () => {
     const cases = [
       {
-        query: "Dime lo esencial sobre un seguro de viaje en lenguaje cotidiano, y destaca una idea clave.",
+        query:
+          "Dime lo esencial sobre un seguro de viaje en lenguaje cotidiano, y destaca una idea clave.",
         expected: ["viaje", "seguro", "cobertura"],
       },
       {
-        query: "¿Para qué sirve o por qué importa la educación técnica? sin jerga innecesaria, en pocas frases.",
+        query:
+          "¿Para qué sirve o por qué importa la educación técnica? sin jerga innecesaria, en pocas frases.",
         expected: ["educación", "técn", "habil"],
       },
       {
-        query: "¿Cómo explicarías la separación de poderes? sin asumir conocimientos previos, y explica por qué es relevante.",
+        query:
+          "¿Cómo explicarías la separación de poderes? sin asumir conocimientos previos, y explica por qué es relevante.",
         expected: ["ejecut", "legisl", "judicial"],
       },
       {
-        query: "Explícame qué es el interés compuesto sin asumir conocimientos previos, sin inventar datos.",
+        query:
+          "Explícame qué es el interés compuesto sin asumir conocimientos previos, sin inventar datos.",
         expected: ["interés", "capital"],
       },
     ];
