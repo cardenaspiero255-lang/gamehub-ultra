@@ -285,6 +285,7 @@ class SessionCoachMonitorServiceTest {
         assertFalse(
             SessionCoachMonitorService.shouldProbeLatency(
                 healthy,
+                lastNetworkHandle = 7L,
                 lastLatencyCheckAt = 1_000L,
                 nowMillis = 10_000L
             )
@@ -292,6 +293,7 @@ class SessionCoachMonitorServiceTest {
         assertTrue(
             SessionCoachMonitorService.shouldProbeLatency(
                 healthy,
+                lastNetworkHandle = 7L,
                 lastLatencyCheckAt = 1_000L,
                 nowMillis = 31_000L
             )
