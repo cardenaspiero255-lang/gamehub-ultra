@@ -403,4 +403,88 @@ class PerGameAdaptiveRuntimeIntegrationTest {
     }
 
 
+    @Test
+    fun pendingDecisionReplaysAfterOptimizerRecreationWithoutLosingReason() = kotlinx.coroutines.runBlocking {
+        val persisted = mutableMapOf<AdaptiveGameKey, PerGameAdaptivePersistedState>()
+        var pending: com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePendingDecision? = null
+        val store = object : PerGameAdaptiveStateStore {
+            override fun read(key: AdaptiveGameKey) = persisted[key]
+            override fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState) {
+                persisted[key] = state
+            }
+            override fun readPendingDecision(sessionId: String) =
+                pending?.takeIf { it.sessionId == sessionId }
+            override fun writePendingDecision(
+                decision: com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePendingDecision
+            ) {
+                pending = decision
+            }
+            override fun clearPendingDecision(sessionId: String) {
+                if (pending?.sessionId == sessionId) pending = null
+            }
+        }
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-crash-safe",
+            packageName = "game.a",
+            startedAtMillis = 1L,
+            endedAtMillis = 2L,
+            samples = listOf(snapshot(2L, memory = 95)),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1#1"
+        )
+        var handled = false
+        var currentProfile = PerformanceProfile.X4
+        val events = mutableListOf<PerformanceEvent>()
+
+        assertFailsWith<IllegalStateException> {
+            processCompletedAdaptiveSession(
+                completed = completed,
+                optimizer = PerGameAdaptiveOptimizer(
+                    confirmationsRequired = 1,
+                    cooldownMillis = 0,
+                    stateStore = store
+                ),
+                nowMillis = 3L,
+                wasSessionHandled = { handled },
+                resolveActiveProfile = { currentProfile },
+                persistProfile = { _, profile -> currentProfile = profile },
+                markSessionHandled = { handled = true },
+                recordPerformanceEvent = { error("simulated event store outage") }
+            )
+        }
+
+        assertFalse(handled)
+        assertEquals(PerformanceProfile.X4, currentProfile)
+        assertNotNull(pending)
+
+        val replayed = processCompletedAdaptiveSession(
+            completed = completed,
+            optimizer = PerGameAdaptiveOptimizer(
+                confirmationsRequired = 1,
+                cooldownMillis = 0,
+                stateStore = store
+            ),
+            nowMillis = 4L,
+            wasSessionHandled = { handled },
+            resolveActiveProfile = { currentProfile },
+            persistProfile = { _, profile -> currentProfile = profile },
+            markSessionHandled = { handled = true },
+            recordPerformanceEvent = events::add
+        )
+
+        assertNotNull(replayed)
+        assertTrue(replayed.changed)
+        assertTrue(handled)
+        assertEquals(PerformanceProfile.BALANCED, currentProfile)
+        assertEquals("session-crash-safe", events.single().sessionId)
+        assertTrue(events.single().detail.contains("memoria"))
+        assertNull(pending)
+        assertEquals(
+            PerformanceProfile.BALANCED,
+            persisted[AdaptiveGameKey("game.a", "1#1")]?.profile
+        )
+    }
+
+
 }
