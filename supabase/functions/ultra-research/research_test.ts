@@ -4892,12 +4892,6 @@ Deno.test(
           "Una emulsión es una mezcla de dos líquidos que normalmente no se mezclan.",
       },
       {
-        query: "¿Qué es el matchmaking?",
-        expectedSearch: "matchmaking",
-        title: "Matchmaking",
-        extract: "El matchmaking empareja jugadores para formar partidas.",
-      },
-      {
         query: "Explícame de forma sencilla qué es la presión arterial.",
         expectedSearch: "presión arterial",
         title: "Presión arterial",
@@ -7697,6 +7691,160 @@ Deno.test(
     }
     if (networkCalls !== 0) {
       throw new Error("basic bear knowledge should not require network access");
+    }
+  },
+);
+
+Deno.test(
+  "high-frequency stable smoke concepts survive complete provider throttling",
+  async () => {
+    const cases = [
+      {
+        query:
+          "Dime lo esencial sobre un seguro de viaje en lenguaje cotidiano, y destaca una idea clave.",
+        expected: ["viaje", "seguro", "cobertura"],
+      },
+      {
+        query:
+          "¿Para qué sirve o por qué importa la educación técnica? sin jerga innecesaria, en pocas frases.",
+        expected: ["educación", "técn", "habil"],
+      },
+      {
+        query:
+          "¿Cómo explicarías la separación de poderes? sin asumir conocimientos previos, y explica por qué es relevante.",
+        expected: ["ejecut", "legisl", "judicial"],
+      },
+      {
+        query:
+          "Explícame qué es el interés compuesto sin asumir conocimientos previos, sin inventar datos.",
+        expected: ["interés", "capital"],
+      },
+      {
+        query: "¿Qué es un psicópata?",
+        expected: ["rasgo", "empat", "remord"],
+      },
+      {
+        query: "¿Qué es la energía cinética?",
+        expected: ["movimiento"],
+      },
+      {
+        query: "¿Qué es un agujero negro?",
+        expected: ["gravedad", "luz"],
+      },
+      {
+        query: "¿Para qué sirve un taladro?",
+        expected: ["perfor", "aguj"],
+      },
+      {
+        query: "¿Qué es una novela literaria?",
+        expected: ["narr", "ficc"],
+      },
+      {
+        query: "¿Qué es la Fórmula 1?",
+        expected: ["automovil", "carrera", "monoplaza"],
+      },
+      {
+        query: "¿Qué es una linterna?",
+        expected: ["luz", "ilumin"],
+      },
+      {
+        query: "¿Qué es el cine?",
+        expected: ["películ", "audiovisual"],
+      },
+      {
+        query: "¿Qué es OIS en la cámara de un teléfono?",
+        expected: ["estabil", "óptic"],
+      },
+      {
+        query: "¿Qué es un adjetivo?",
+        expected: ["sustant", "cualidad"],
+      },
+      {
+        query: "¿Qué es un volcán?",
+        expected: ["magma", "corteza"],
+      },
+      {
+        query: "¿Qué es un pulpo?",
+        expected: ["molus", "tent"],
+      },
+      {
+        query: "¿Qué es un fuera de juego en fútbol?",
+        expected: ["posición", "balón", "defens"],
+      },
+      {
+        query: "¿Qué es un mamífero?",
+        expected: ["leche", "vertebr"],
+      },
+      {
+        query: "¿Por qué son importantes las abejas?",
+        expected: ["polin"],
+      },
+      {
+        query: "¿Qué es el matchmaking?",
+        expected: ["jugador", "partida"],
+      },
+      {
+        query: "¿Qué es un documental?",
+        expected: ["real", "hecho", "audiovisual"],
+      },
+      {
+        query: "¿Qué es un escritorio?",
+        expected: ["trabaj", "estudi"],
+      },
+      {
+        query: "¿Qué es un tiburón?",
+        expected: ["pez", "cartíl"],
+      },
+      {
+        query: "¿Qué diferencia hay entre hornear y freír?",
+        expected: ["horno", "aceite"],
+      },
+      {
+        query: "¿Qué función tiene un airbag?",
+        expected: ["impact", "seguridad", "bolsa"],
+      },
+      {
+        query: "¿Qué es un smartphone?",
+        expected: ["teléfono", "aplic"],
+      },
+    ];
+
+    for (const testCase of cases) {
+      let networkCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: () => {
+          networkCalls += 1;
+          return jsonResponse({}, 429);
+        },
+        env: () => undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error(
+          "stable concept must remain answerable during provider throttling: " +
+            testCase.query,
+        );
+      }
+      const answer = (result.displayText ?? "").toLowerCase();
+      if (!testCase.expected.some((token) => answer.includes(token))) {
+        throw new Error(
+          "stable fallback lost semantic relevance for " + testCase.query +
+            ": " + answer,
+        );
+      }
+      if (networkCalls !== 0) {
+        throw new Error(
+          "high-frequency stable concept should not require network access: " +
+            testCase.query,
+        );
+      }
     }
   },
 );

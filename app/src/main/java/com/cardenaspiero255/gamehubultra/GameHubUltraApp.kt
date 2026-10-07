@@ -100,6 +100,50 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val MAX_CHAT_HISTORY = 8
+private const val COACH_RUNTIME_START_TOLERANCE_MS = 5_000L
+
+internal fun completedCoachBelongsToRuntimeSession(
+    completed: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession,
+    active: GameSessionRecord?
+): Boolean {
+    val runtime = active ?: return false
+    if (completed.packageName != runtime.packageName) return false
+    val startDelta = kotlin.math.abs(completed.startedAtMillis - runtime.startedAtMillis)
+    if (startDelta > COACH_RUNTIME_START_TOLERANCE_MS) return false
+    val completedAt = completed.endedAtMillis ?: return false
+    return completedAt >= runtime.startedAtMillis
+}
+
+internal data class CompletedCoachHydration(
+    val report: com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport,
+    val observations: List<com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage>,
+    val shouldMarkHydrated: Boolean,
+    val shouldEndRuntimeSession: Boolean
+)
+
+internal fun buildCompletedCoachHydration(
+    completed: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession,
+    hydratedSessionId: String?,
+    activeRuntimeRecord: GameSessionRecord?
+): CompletedCoachHydration {
+    val shouldMarkHydrated = completed.sessionId != hydratedSessionId
+    return CompletedCoachHydration(
+        report = com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.postSession(
+            completed.samples
+        ),
+        observations = listOfNotNull(completed.latestObservation),
+        shouldMarkHydrated = shouldMarkHydrated,
+        shouldEndRuntimeSession =
+            shouldMarkHydrated &&
+                completedCoachBelongsToRuntimeSession(completed, activeRuntimeRecord)
+    )
+}
+
+internal fun chooseCoachReport(
+    storedReport: com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?,
+    dashboardReport: com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?
+): com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport? =
+    storedReport ?: dashboardReport
 
 private val UltraHomeRed = Color(0xFFFF1630)
 private val UltraHomeBlack = Color(0xFF030303)
@@ -141,6 +185,10 @@ internal fun GameHubUltraApp(
     var adaptiveDecision by remember { mutableStateOf<AdaptiveDecision?>(null) }
     var telemetryTrend by remember { mutableStateOf<List<RuntimeDiagnostics>>(emptyList()) }
     var performanceTimelineSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.PerformanceTimelineSample>>(emptyList()) }
+    var sessionCoachSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot>>(emptyList()) }
+    var sessionCoachObservations by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage>>(emptyList()) }
+    var lastSessionCoachReport by remember { mutableStateOf<com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?>(null) }
+    var hydratedCoachSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
@@ -280,6 +328,14 @@ internal fun GameHubUltraApp(
                     runtimeDiagnostics = update.diagnostics
                     telemetryTrend = update.telemetryTrend
                     performanceTimelineSamples = update.timelineSamples
+                    sessionCoachSamples = update.coachSamples
+                    if (sessionId != null) {
+                        sessionCoachObservations = update.coachObservations
+                    }
+                    lastSessionCoachReport = chooseCoachReport(
+                        storedReport = lastSessionCoachReport,
+                        dashboardReport = update.lastCompletedCoachReport
+                    )
                     adaptiveDecision = update.adaptiveDecision
                     delay(10_000)
                 }
@@ -398,6 +454,43 @@ internal fun GameHubUltraApp(
         }
     }
 
+    LaunchedEffect(appResumeRefreshToken) {
+        val completed = withContext(Dispatchers.IO) {
+            com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
+                .readLastCompletedSession()
+        }
+        if (completed != null) {
+            val activeRuntimeRecord = sessionHistory.firstOrNull { session ->
+                session.id == runtimeGameSession?.id
+            }
+            val hydration = buildCompletedCoachHydration(
+                completed = completed,
+                hydratedSessionId = hydratedCoachSessionId,
+                activeRuntimeRecord = activeRuntimeRecord
+            )
+            lastSessionCoachReport = hydration.report
+            sessionCoachObservations = hydration.observations
+            if (hydration.shouldMarkHydrated) {
+                hydratedCoachSessionId = completed.sessionId
+            }
+            if (hydration.shouldEndRuntimeSession) {
+                val last = completed.samples.lastOrNull()
+                runtimeCoordinator.endGameSession(
+                    runtimeSnapshot().copy(
+                        metrics = RuntimeSessionMetrics(
+                            batteryPercent = last?.batteryPercent
+                                ?: runtimeDiagnostics?.battery?.percent,
+                            thermalStatus = last?.thermalStatus
+                                ?: runtimeDiagnostics?.thermal?.status,
+                            ramUsedPercent = runtimeDiagnostics?.memory?.usedPercent,
+                            diagnosticsAvailable = last != null || runtimeDiagnostics != null
+                        )
+                    )
+                )
+            }
+        }
+    }
+
     val selectedProfileName = uiState.effectiveProfile.name
     val selectedGamePackage = uiState.selectedGamePackage
     val favoriteGames = uiState.favoriteGames
@@ -408,6 +501,21 @@ internal fun GameHubUltraApp(
         events = performanceHistory,
         activeSessionId = activeSessionId
     )
+
+    val sessionCoachPreMessage = runtimeDiagnostics?.let { diagnostics ->
+        com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.preSession(
+            readiness =
+                com.cardenaspiero255.gamehubultra.session.SessionCoachTelemetryMapper.readiness(
+                    device,
+                    diagnostics
+                ),
+            snapshot =
+                com.cardenaspiero255.gamehubultra.session.SessionCoachTelemetryMapper.snapshot(
+                    timestampMillis = 0L,
+                    diagnostics = diagnostics
+                )
+        )
+    }
 
     var smartRecommendationRevertTarget by remember(selectedGamePackage) { mutableStateOf<SmartRecommendationRevertTarget?>(null) }
 
@@ -556,6 +664,10 @@ internal fun GameHubUltraApp(
                 telemetryTrend = telemetryTrend,
                 performanceTimeline = performanceTimeline,
                 sessionHistory = sessionHistory,
+                sessionCoachPreMessage = sessionCoachPreMessage,
+                sessionCoachSamples = sessionCoachSamples,
+                sessionCoachObservations = sessionCoachObservations,
+                lastSessionCoachReport = lastSessionCoachReport,
                 onClearSessions = {
                     viewModel.clearSessionHistory()
                 },

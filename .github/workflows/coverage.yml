@@ -19,7 +19,10 @@ concurrency:
 jobs:
   coverage:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    env:
+      GAMEHUB_UNIT_TEST_FORKS: "3"
+      GAMEHUB_UNIT_TEST_HEAP: "1024m"
 
     steps:
       - name: Checkout
@@ -27,19 +30,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Check Codecov token availability
-        id: codecov_token
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        shell: bash
-        run: |
-          if [ -n "$CODECOV_TOKEN" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::CODECOV_TOKEN is unavailable; coverage will still run, but upload will be skipped."
-          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
@@ -78,14 +68,19 @@ jobs:
 
       - name: Generate debug unit-test coverage
         shell: bash
-        run: gradle :app:createDebugUnitTestCoverageReport --build-cache --parallel --stacktrace
+        run: |
+          gradle :app:createDebugUnitTestCoverageReport \
+            --build-cache \
+            --parallel \
+            --max-workers=4 \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --console=plain \
+            --stacktrace
 
       - name: Verify coverage XML report
         shell: bash
-        run: |
-          set -euo pipefail
-          find app/build/reports/coverage -type f -maxdepth 8 -print | sort
-          test -s app/build/reports/coverage/test/debug/report.xml
+        run: test -s app/build/reports/coverage/test/debug/report.xml
 
       - name: Enforce local patch coverage
         env:
@@ -105,69 +100,6 @@ jobs:
             --head "$head_sha" \
             --min-patch-line 90
 
-      - name: Probe Codecov ingest availability
-        id: codecov_probe
-        if: steps.codecov_token.outputs.available == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          status="$(curl --connect-timeout 5 --max-time 8 -sS -o /dev/null -w '%{http_code}' https://ingest.codecov.io/ || true)"
-          if [ "$status" = "000" ] || [ -z "$status" ]; then
-            echo "reachable=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Codecov ingest is unreachable from this runner; local patch coverage remains authoritative."
-          else
-            echo "reachable=true" >> "$GITHUB_OUTPUT"
-            echo "Codecov ingest reachable (HTTP $status)."
-          fi
-
-      - name: Upload coverage to Codecov
-        id: codecov_upload
-        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_probe.outputs.reachable == 'true'
-        continue-on-error: true
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          files: app/build/reports/coverage/test/debug/report.xml
-          disable_search: true
-          flags: unit-tests
-          name: gamehub-ultra-unit-tests
-          fail_ci_if_error: true
-          verbose: true
-
-      - name: Retry Codecov through legacy endpoint
-        id: codecov_retry
-        if: steps.codecov_token.outputs.available == 'true' && steps.codecov_probe.outputs.reachable == 'true' && steps.codecov_upload.outcome != 'success'
-        continue-on-error: true
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          files: app/build/reports/coverage/test/debug/report.xml
-          disable_search: true
-          flags: unit-tests
-          name: gamehub-ultra-unit-tests-legacy-retry
-          fail_ci_if_error: true
-          use_legacy_upload_endpoint: true
-          verbose: true
-
-      - name: Report Codecov upload status
-        if: always() && steps.codecov_token.outputs.available == 'true'
-        env:
-          PROBE_REACHABLE: ${{ steps.codecov_probe.outputs.reachable }}
-          UPLOAD_OUTCOME: ${{ steps.codecov_upload.outcome }}
-          RETRY_OUTCOME: ${{ steps.codecov_retry.outcome }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "$UPLOAD_OUTCOME" = "success" ] || [ "$RETRY_OUTCOME" = "success" ]; then
-            echo "Codecov upload confirmed."
-          elif [ "$PROBE_REACHABLE" != "true" ]; then
-            echo "::notice::Codecov transport unavailable; blocking local patch coverage passed independently."
-          else
-            echo "::notice::Codecov upload failed after retry; blocking local patch coverage remains authoritative and the XML artifact is preserved."
-          fi
-
       - name: Preserve coverage report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -175,44 +107,4 @@ jobs:
           name: gamehub-ultra-coverage-report
           path: app/build/reports/coverage/test/debug/report.xml
           if-no-files-found: error
-
-  metrics:
-    name: metrics
-    if: always()
-    needs:
-      - coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    continue-on-error: true
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-
-      - name: Collect CI performance metrics
-        env:
-          GH_METRICS_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/ci-performance-metrics.py \
-            --repository "$GITHUB_REPOSITORY" \
-            --run-id "$GITHUB_RUN_ID" \
-            --token "$GH_METRICS_TOKEN" \
-            --history 20 \
-            --json-out "$RUNNER_TEMP/ci-performance.json" \
-            --summary-out "$RUNNER_TEMP/ci-performance.md"
-          cat "$RUNNER_TEMP/ci-performance.md" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload CI performance metrics
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: gamehub-ultra-ci-metrics-coverage
-          path: |
-            ${{ runner.temp }}/ci-performance.json
-            ${{ runner.temp }}/ci-performance.md
-          if-no-files-found: error
+          compression-level: 1

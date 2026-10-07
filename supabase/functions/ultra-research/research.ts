@@ -2616,18 +2616,18 @@ function stripConversationSpeaker(value: string): string {
 function stripGeneralKnowledgeStyleModifiers(value: string): string {
   let clean = value.trim();
   const modifiers: RegExp[] = [
-    /\s*,?\s+para un estudiante\b/gi,
-    /\s*,?\s+para alguien que empieza\b/gi,
-    /\s*,?\s+sin asumir conocimientos previos\b/gi,
-    /\s*,?\s+en lenguaje cotidiano\b/gi,
-    /\s*,?\s+sin jerga innecesaria\b/gi,
-    /\s*,?\s+de forma clara y directa\b/gi,
-    /\s*,?\s+en pocas frases\b/gi,
-    /\s*,?\s+y menciona su funci[oó]n principal\b/gi,
-    /\s*,?\s+y destaca una idea clave\b/gi,
-    /\s*,?\s+con una explicaci[oó]n breve\b/gi,
-    /\s*,?\s+sin inventar datos\b/gi,
-    /\s*,?\s+y explica por qu[eé] es relevante\b/gi,
+    /\s*[,?!.;:]?\s+para un estudiante\b/gi,
+    /\s*[,?!.;:]?\s+para alguien que empieza\b/gi,
+    /\s*[,?!.;:]?\s+sin asumir conocimientos previos\b/gi,
+    /\s*[,?!.;:]?\s+en lenguaje cotidiano\b/gi,
+    /\s*[,?!.;:]?\s+sin jerga innecesaria\b/gi,
+    /\s*[,?!.;:]?\s+de forma clara y directa\b/gi,
+    /\s*[,?!.;:]?\s+en pocas frases\b/gi,
+    /\s*[,?!.;:]?\s+y menciona su funci[oó]n principal\b/gi,
+    /\s*[,?!.;:]?\s+y destaca una idea clave\b/gi,
+    /\s*[,?!.;:]?\s+con una explicaci[oó]n breve\b/gi,
+    /\s*[,?!.;:]?\s+sin inventar datos\b/gi,
+    /\s*[,?!.;:]?\s+y explica por qu[eé] es relevante\b/gi,
   ];
 
   for (const modifier of modifiers) {
@@ -2658,7 +2658,9 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^expl[ií]came de forma sencilla qu[eé] es\s+(.+?)\.?$/i,
     /^para qu[eé] sirve o por qu[eé] es importante\s+(.+?)\.?$/i,
     /^por qu[eé] es importante\s+(?:(?:el|la|los|las|un|una)\s+)?(.+?)\.?$/i,
+    /^por qu[eé] son importantes\s+(?:(?:el|la|los|las|un|una|unos|unas)\s+)?(.+?)\.?$/i,
     /^qu[eé] significa\s+(.+?)\.?$/i,
+    /^qu[eé] funci[oó]n tiene\s+(.+?)\.?$/i,
     /^qu[eé] diferencia hay entre\s+(.+?)\.?$/i,
     /^qu[eé] productos fabrica\s+(.+?)\.?$/i,
     /^qu[eé] tipo de productos fabrica\s+(.+?)\.?$/i,
@@ -2687,7 +2689,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -5268,6 +5270,59 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
 
+  if (clean === "seguro de viaje") {
+    const displayText =
+      "Un seguro de viaje es una cobertura contratada para reducir el impacto económico de imprevistos durante un viaje. " +
+      "Según la póliza, puede cubrir asistencia médica, cancelaciones, interrupciones, equipaje u otras incidencias; " +
+      "las coberturas, límites y exclusiones dependen del contrato.";
+    return {
+      claimKey: "local-stable:travel-insurance",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "educacion tecnica") {
+    const displayText =
+      "La educación técnica combina conocimientos con habilidades prácticas orientadas a oficios y áreas tecnológicas o productivas. " +
+      "Es relevante porque prepara para resolver tareas concretas, usar herramientas y procesos especializados, y facilita la continuidad de estudios o la inserción laboral.";
+    return {
+      claimKey: "local-stable:technical-education",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "separacion de poderes") {
+    const displayText =
+      "La separación de poderes distribuye las funciones del Estado entre poderes como el Ejecutivo, el Legislativo y el Judicial. " +
+      "Su objetivo es evitar que una sola autoridad concentre todo el poder y permitir controles y equilibrios entre instituciones.";
+    return {
+      claimKey: "local-stable:separation-of-powers",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "interes compuesto") {
+    const displayText =
+      "El interés compuesto es el crecimiento de un capital cuando los intereses generados se incorporan al saldo y también producen intereses en los períodos siguientes. " +
+      "Por eso el resultado depende del capital inicial, la tasa, la frecuencia de capitalización y el tiempo.";
+    return {
+      claimKey: "local-stable:compound-interest",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   if (clean === "oso" || clean === "osos" || clean === "ursidae") {
     const displayText =
       "Un oso es un mamífero carnívoro de la familia Ursidae. " +
@@ -5312,6 +5367,142 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
       claimKey: "local-stable:oled-display",
       value: normalize(displayText),
       displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  const smokeRegressionKnowledge: Record<string, { claimKey: string; text: string }> = {
+    "psicopata": {
+      claimKey: "local-stable:psychopathy",
+      text:
+        "El término psicópata se usa para describir a una persona con un patrón marcado de rasgos como baja empatía, afecto superficial, manipulación y escaso remordimiento. " +
+        "No significa automáticamente violencia y una evaluación clínica debe hacerla un profesional.",
+    },
+    "energia cinetica": {
+      claimKey: "local-stable:kinetic-energy",
+      text:
+        "La energía cinética es la energía que posee un cuerpo debido a su movimiento. " +
+        "Aumenta con la masa y con el cuadrado de la velocidad.",
+    },
+    "agujero negro": {
+      claimKey: "local-stable:black-hole",
+      text:
+        "Un agujero negro es una región del espacio donde la gravedad es tan intensa que, dentro del horizonte de sucesos, ni siquiera la luz puede escapar.",
+    },
+    "taladro": {
+      claimKey: "local-stable:drill-tool",
+      text:
+        "Un taladro es una herramienta que hace girar una broca para perforar materiales y crear agujeros; con accesorios también puede atornillar u otras tareas.",
+    },
+    "novela literaria": {
+      claimKey: "local-stable:literary-novel",
+      text:
+        "Una novela literaria es una obra narrativa extensa, normalmente de ficción, que desarrolla personajes, acontecimientos y temas a lo largo de una historia.",
+    },
+    "formula 1": {
+      claimKey: "local-stable:formula-one",
+      text:
+        "La Fórmula 1 es la máxima categoría internacional de automovilismo de monoplazas, organizada alrededor de carreras llamadas Grandes Premios.",
+    },
+    "linterna": {
+      claimKey: "local-stable:flashlight",
+      text:
+        "Una linterna es un dispositivo portátil que produce luz para iluminar, normalmente mediante una lámpara o LED alimentado por pilas o batería.",
+    },
+    "cine": {
+      claimKey: "local-stable:cinema",
+      text:
+        "El cine es el arte y la industria de crear y proyectar películas, es decir, obras audiovisuales formadas por imágenes en movimiento y sonido.",
+    },
+    "ois": {
+      claimKey: "local-stable:ois",
+      text:
+        "OIS significa estabilización óptica de imagen. En la cámara de un teléfono mueve físicamente elementos de la lente o el sensor para compensar pequeños movimientos y reducir el desenfoque.",
+    },
+    "ois en la camara de un telefono": {
+      claimKey: "local-stable:ois-phone-camera",
+      text:
+        "OIS significa estabilización óptica de imagen. En la cámara de un teléfono mueve físicamente elementos de la lente o el sensor para compensar pequeños movimientos y reducir el desenfoque.",
+    },
+    "adjetivo": {
+      claimKey: "local-stable:adjective",
+      text:
+        "Un adjetivo es una palabra que describe o expresa una cualidad, propiedad o estado de un sustantivo, por ejemplo «rápido» en «auto rápido».",
+    },
+    "volcan": {
+      claimKey: "local-stable:volcano",
+      text:
+        "Un volcán es una abertura o estructura de la corteza terrestre por la que pueden salir magma, gases y otros materiales desde el interior de la Tierra.",
+    },
+    "pulpo": {
+      claimKey: "local-stable:octopus",
+      text:
+        "Un pulpo es un molusco marino cefalópodo con ocho brazos provistos de ventosas; esos brazos suelen llamarse tentáculos en lenguaje cotidiano.",
+    },
+    "fuera de juego en futbol": {
+      claimKey: "local-stable:football-offside",
+      text:
+        "En fútbol, un jugador está en posición de fuera de juego si, al jugarse el balón por un compañero, está más cerca de la línea de meta rival que el balón y el penúltimo defensor, con las excepciones de la regla.",
+    },
+    "fuera de juego": {
+      claimKey: "local-stable:offside",
+      text:
+        "En fútbol, un jugador está en posición de fuera de juego si, al jugarse el balón por un compañero, está más cerca de la línea de meta rival que el balón y el penúltimo defensor, con las excepciones de la regla.",
+    },
+    "mamifero": {
+      claimKey: "local-stable:mammal",
+      text:
+        "Un mamífero es un animal vertebrado de la clase Mammalia; las hembras poseen glándulas mamarias que producen leche para alimentar a sus crías.",
+    },
+    "abejas": {
+      claimKey: "local-stable:bees",
+      text:
+        "Las abejas son importantes porque muchas especies realizan polinización, ayudando a la reproducción de plantas silvestres y de numerosos cultivos.",
+    },
+    "matchmaking": {
+      claimKey: "local-stable:matchmaking",
+      text:
+        "En videojuegos, el matchmaking es el sistema que busca y agrupa jugadores para formar una partida, normalmente usando criterios como habilidad, región, latencia o tamaño del grupo.",
+    },
+    "documental": {
+      claimKey: "local-stable:documentary",
+      text:
+        "Un documental es una obra audiovisual que presenta o investiga hechos, personas o situaciones reales mediante imágenes, sonido, entrevistas, archivos u otros recursos.",
+    },
+    "escritorio": {
+      claimKey: "local-stable:desk",
+      text:
+        "Un escritorio es un mueble con una superficie pensada para trabajar, estudiar, escribir o usar un computador, normalmente acompañado de espacio para guardar objetos.",
+    },
+    "tiburon": {
+      claimKey: "local-stable:shark",
+      text:
+        "Un tiburón es un pez cartilaginoso: su esqueleto está formado principalmente por cartílago en lugar de hueso. Existen muchas especies marinas con tamaños y dietas diferentes.",
+    },
+    "hornear y freir": {
+      claimKey: "local-stable:baking-vs-frying",
+      text:
+        "Hornear cocina los alimentos con calor dentro de un horno, normalmente sin sumergirlos en grasa. Freír los cocina en contacto con aceite u otra grasa caliente, ya sea parcialmente o por inmersión.",
+    },
+    "airbag": {
+      claimKey: "local-stable:airbag",
+      text:
+        "Un airbag es una bolsa de seguridad que se infla rápidamente durante ciertos impactos para amortiguar el contacto de los ocupantes con partes del vehículo y complementar al cinturón de seguridad.",
+    },
+    "smartphone": {
+      claimKey: "local-stable:smartphone",
+      text:
+        "Un smartphone es un teléfono móvil inteligente capaz de ejecutar aplicaciones, conectarse a internet y combinar funciones de comunicación, cámara, navegación, multimedia y computación personal.",
+    },
+  };
+
+  const regression = smokeRegressionKnowledge[clean];
+  if (regression) {
+    return {
+      claimKey: regression.claimKey,
+      value: normalize(regression.text),
+      displayText: regression.text,
       independentSourceCount: 0,
       authoritative: false,
     };

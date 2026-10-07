@@ -26,6 +26,9 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
 import com.cardenaspiero255.gamehubultra.domain.PerformanceTimeline
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistantSuggestion
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnostics
 import com.cardenaspiero255.gamehubultra.ui.components.*
@@ -58,6 +61,10 @@ internal fun HomeScreen(
     telemetryTrend: List<RuntimeDiagnostics>,
     performanceTimeline: PerformanceTimeline,
     sessionHistory: List<GameSessionRecord>,
+    sessionCoachPreMessage: SessionCoachMessage?,
+    sessionCoachSamples: List<SessionCoachSnapshot>,
+    sessionCoachObservations: List<SessionCoachMessage>,
+    lastSessionCoachReport: SessionCoachPostSessionReport?,
     onClearSessions: () -> Unit,
     onShareSessions: () -> Unit,
     adaptiveDecision: AdaptiveDecision?,
@@ -222,6 +229,15 @@ internal fun HomeScreen(
                 sessions = sessionHistory,
                 onClear = onClearSessions,
                 onShare = onShareSessions
+            )
+        }
+        item {
+            AiSessionCoachCard(
+                preSession = sessionCoachPreMessage,
+                liveSamples = sessionCoachSamples,
+                observations = sessionCoachObservations,
+                postSession = lastSessionCoachReport,
+                sessionActive = aiContext.sessionActive
             )
         }
         item {

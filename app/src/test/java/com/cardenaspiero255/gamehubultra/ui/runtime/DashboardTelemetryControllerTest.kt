@@ -238,6 +238,105 @@ class DashboardTelemetryControllerTest {
     }
 
     @Test
+    fun sessionCoachIgnoresNoiseAndReportsMeaningfulChanges() = runBlocking {
+        var now = 10_000L
+        val controller = DashboardTelemetryController(
+            adaptiveEvaluator = { unchangedDecision() },
+            latencyProbe = { null },
+            recordPerformanceEvent = {},
+            nowMillis = { now }
+        )
+
+        val first = controller.sample(
+            diagnostics = diagnostics(
+                thermalStatus = 1,
+                thermalHeadroom = 0.30f,
+                batteryPercent = 80
+            ),
+            activeGamePackage = "game.a",
+            sessionId = "session-a",
+            sustainedPerformanceSupported = true,
+            performanceHintsAvailable = true
+        )
+        now = 20_000L
+        val noise = controller.sample(
+            diagnostics = diagnostics(
+                thermalStatus = 1,
+                thermalHeadroom = 0.38f,
+                batteryPercent = 79
+            ),
+            activeGamePackage = "game.a",
+            sessionId = "session-a",
+            sustainedPerformanceSupported = true,
+            performanceHintsAvailable = true
+        )
+        now = 30_000L
+        val meaningful = controller.sample(
+            diagnostics = diagnostics(
+                thermalStatus = 3,
+                thermalHeadroom = 0.84f,
+                batteryPercent = 73
+            ),
+            activeGamePackage = "game.a",
+            sessionId = "session-a",
+            sustainedPerformanceSupported = true,
+            performanceHintsAvailable = true
+        )
+
+        assertEquals(1, first.coachSamples.size)
+        assertTrue(first.coachObservations.isEmpty())
+        assertEquals(2, noise.coachSamples.size)
+        assertTrue(noise.coachObservations.isEmpty())
+        assertEquals(3, meaningful.coachSamples.size)
+        assertTrue(meaningful.coachObservations.any { it.signal.name == "THERMAL" })
+        assertTrue(meaningful.coachObservations.any { it.signal.name == "BATTERY" })
+    }
+
+    @Test
+    fun completedSessionKeepsPostSessionCoachReportAndResetsLiveSamples() = runBlocking {
+        var now = 10_000L
+        val controller = DashboardTelemetryController(
+            adaptiveEvaluator = { unchangedDecision() },
+            latencyProbe = { null },
+            recordPerformanceEvent = {},
+            nowMillis = { now }
+        )
+
+        repeat(3) { index ->
+            controller.sample(
+                diagnostics = diagnostics(
+                    thermalStatus = 3,
+                    thermalHeadroom = 0.85f,
+                    batteryPercent = 90 - index * 10
+                ),
+                activeGamePackage = "game.a",
+                sessionId = "session-a",
+                sustainedPerformanceSupported = true,
+                performanceHintsAvailable = true
+            )
+            now += 10_000L
+        }
+
+        val idle = controller.sample(
+            diagnostics = diagnostics(
+                thermalStatus = 1,
+                thermalHeadroom = 0.20f,
+                batteryPercent = 69
+            ),
+            activeGamePackage = null,
+            sessionId = null,
+            sustainedPerformanceSupported = true,
+            performanceHintsAvailable = true
+        )
+
+        assertTrue(idle.coachSamples.isEmpty())
+        val report = assertNotNull(idle.lastCompletedCoachReport)
+        assertEquals(20, report.batteryDropPercent)
+        assertTrue(report.patterns.any { it.signal.name == "THERMAL" })
+        assertTrue(report.patterns.any { it.signal.name == "BATTERY" })
+    }
+
+    @Test
     fun telemetryTrendIsBoundedToTwelveSamples() = runBlocking {
         var now = 0L
         val controller = DashboardTelemetryController(

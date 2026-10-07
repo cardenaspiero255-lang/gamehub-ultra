@@ -30,7 +30,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    # All 10,000 cases are generated identically. We keep 32 logical shards but
+    # All 50,000 cases are generated identically. We keep 32 logical shards but
     # pack two logical shards into each of 16 GitHub runners so runner queuing
     # does not serialize half the matrix. Each runner uses 24 stable workers,
     # preserving the same theoretical 32x12 parallelism. Fresh-data checks stay
@@ -41,7 +41,7 @@ jobs:
       SMOKE_STABLE_WORKERS: "24"
       SMOKE_WARMUP_WORKERS: "1"
       SMOKE_WARMUP_WAVE_COUNT: "16"
-      SMOKE_WARMUP_WAVE_DELAY_SECONDS: "2"
+      SMOKE_WARMUP_WAVE_DELAY_SECONDS: "4"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
       SMOKE_SHARD_COUNT: "32"
 
@@ -74,7 +74,7 @@ jobs:
           ULTRA_PRIMARY_EVIDENCE_TIMEOUT_MS: "4000"
           # CI performance profile: fail fast on a slow/throttled upstream so one
           # provider cannot pin a worker for 6+ seconds. The smoke still validates
-          # the same 10,000 answers and treats stable abstentions as hard failures.
+          # the same 50,000 answers and treats stable abstentions as hard failures.
           ULTRA_FETCH_ATTEMPT_TIMEOUT_MS: "1500"
           ULTRA_FETCH_RETRY_BUDGET_MS: "4000"
           ULTRA_SPECIALIST_EVIDENCE_TIMEOUT_MS: "2500"
@@ -104,7 +104,7 @@ jobs:
           cat "$log" || true
           exit 1
 
-      - name: Build reproducible 10000-question broad-spectrum smoke plan
+      - name: Build reproducible 50000-question broad-spectrum smoke plan
         shell: bash
         run: |
           set -euo pipefail
@@ -389,6 +389,7 @@ jobs:
               "sin inventar datos",
               "y explica por qué es relevante",
           ]
+          dynamic_endings = [".", "!", "?"]
 
           dynamic_domains = {
               "health_general": [
@@ -725,14 +726,14 @@ jobs:
                       f"Pool {label} only produced {added}/8 unique smoke questions"
                   )
 
-          target_cases = 10_000
+          target_cases = 50_000
           minimum_per_dynamic_domain = 100
           remaining_dynamic = []
           for domain, topics in dynamic_domains.items():
               candidates = [
                   (
                       f"dyn_{domain}",
-                      f"{stem.format(topic=topic)} {audience}, {focus}.",
+                      f"{stem.format(topic=topic)} {audience}, {focus}{ending}",
                       "GENERAL_KNOWLEDGE",
                       False,
                       expected,
@@ -741,6 +742,7 @@ jobs:
                   for stem in dynamic_stems
                   for audience in dynamic_audiences
                   for focus in dynamic_focus
+                  for ending in dynamic_endings
               ]
               rng.shuffle(candidates)
               added = 0
@@ -756,7 +758,7 @@ jobs:
                   )
               remaining_dynamic.extend(candidates)
 
-          # Fill to exactly 10,000 unique cases from unused runtime combinations.
+          # Fill to exactly 50,000 unique cases from unused runtime combinations.
           # This keeps 70+ labels represented while heavily varying wording.
           rng.shuffle(remaining_dynamic)
           for case in remaining_dynamic:
@@ -801,7 +803,7 @@ jobs:
           PY
 
           head -n 1 "$RUNNER_TEMP/smoke-cases.jsonl"
-          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "10000"
+          test "$(tail -n +2 "$RUNNER_TEMP/smoke-cases.jsonl" | wc -l | tr -d ' ')" = "50000"
           test "$(python3 - <<'PY'
           import json, os
           path = os.path.join(os.environ["RUNNER_TEMP"], "smoke-cases.jsonl")
@@ -810,7 +812,7 @@ jobs:
           PY
           )" -ge "70"
 
-      - name: Exercise 10000 stratified and runtime-generated questions
+      - name: Exercise 50000 stratified and runtime-generated questions
         shell: bash
         run: |
           set -euo pipefail
@@ -897,7 +899,10 @@ jobs:
                   return re.sub(r"[^a-z0-9]+", " ", ascii_value).strip()
 
               normalized_answer = normalize_semantic(display)
-              answer_words = set(normalized_answer.split())
+              normalized_query = normalize_semantic(case["query"])
+              if normalized_answer == normalized_query:
+                  return case, "FAIL", "answer merely echoes the question"
+
               expected = [
                   normalize_semantic(token)
                   for token in case.get("expectedAny", [])
@@ -905,27 +910,13 @@ jobs:
               ]
               expected_match = any(token in normalized_answer for token in expected)
 
-              stop_words = {
-                  "que", "como", "para", "sirve", "porque", "por", "una", "uno",
-                  "unos", "unas", "del", "las", "los", "con", "sin", "sobre",
-                  "dame", "explicacion", "clara", "funcion", "principal", "deberia",
-                  "saber", "persona", "alguien", "pregunta", "explicarias", "pocas",
-                  "frases", "resume", "asumir", "conocimientos", "tecnicos", "forma",
-                  "sencilla", "importante", "explicame", "esto", "esta", "este",
-                  "son", "hace", "hacer", "significa", "tipo", "productos", "producto",
-                  "diferencia", "hay", "entre", "actual", "hoy", "ahora",
-              }
-              query_tokens = {
-                  token
-                  for token in normalize_semantic(case["query"]).split()
-                  if len(token) >= 4 and token not in stop_words
-              }
-              query_match = any(token in answer_words for token in query_tokens)
-
-              if expected and not expected_match and not query_match:
+              # When the corpus provides semantic evidence, require it. Do not
+              # let a response pass merely because it repeats a word from the
+              # question.
+              if expected and not expected_match:
                   return case, "FAIL", (
-                      f"semantic relevance mismatch: expected={expected}; "
-                      f"query_tokens={sorted(query_tokens)}; answer={display[:300]}"
+                      f"semantic evidence mismatch: expected={expected}; "
+                      f"answer={display[:300]}"
                   )
 
               return case, "PASS", "ok"
@@ -934,7 +925,7 @@ jobs:
               # Safe abstentions can be transient when public sources throttle or
               # briefly fail. Retry only ABSTAIN results; never hide semantic,
               # payload, HTTP or network FAIL verdicts. Rate limits get a slightly
-              # longer bounded retry window so a single 429 cannot make the 10k
+              # longer bounded retry window so a single 429 cannot make the 50k
               # corpus flaky, while the final abstention still hard-fails.
               max_attempts = 5
               last_result = None
@@ -1046,7 +1037,7 @@ jobs:
           # Warm one representative per semantic topic first. Stagger the
           # physical runners into small deterministic waves so Wikipedia/Wikidata
           # and model fallbacks are not hit by a 16-runner burst. This preserves
-          # all 10,000 cases and the 24-worker cached bulk phase.
+          # all 50,000 cases and the 24-worker cached bulk phase.
           warmup_wave = shard_index % warmup_wave_count
           warmup_delay = warmup_wave * warmup_wave_delay_seconds
           if warmup_delay > 0:
@@ -1098,10 +1089,10 @@ jobs:
           passed = sum(1 for _, verdict, _ in results if verdict == "PASS")
           answered = passed
           # Stable failures are hard failures on their owning shard. Fresh
-          # abstentions are evaluated against the original 10,000-case denominator,
+          # abstentions are evaluated against the original 50,000-case denominator,
           # preserving the pre-sharding global 99.8% SSS gate exactly.
           answer_rate = (
-              (10000 - fresh_abstentions) / 10000
+              (50000 - fresh_abstentions) / 50000
               if shard_index == 0
               else 1.0
           )

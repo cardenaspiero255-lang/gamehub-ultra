@@ -10,6 +10,7 @@ from typing import Any
 
 ANDROID = Path(".github/workflows/android.yml")
 COVERAGE = Path(".github/workflows/coverage.yml")
+COVERAGE_POST = Path(".github/workflows/coverage-post-processing.yml")
 SHADOW_METRICS = Path(".github/workflows/ci-metrics-shadow.yml")
 
 
@@ -327,269 +328,270 @@ def require_concurrency(workflow: dict[str, Any], label: str) -> None:
 
 
 def main() -> None:
-    """Validate that CI optimization preserves every required blocking gate."""
+    """Fail closed if the accelerated CI drops any blocking validation."""
     android = load_workflow(ANDROID)
     coverage = load_workflow(COVERAGE)
     shadow_metrics = load_workflow(SHADOW_METRICS)
 
-    quality = require_step(
+    require_concurrency(android, "Android workflow")
+    require_concurrency(coverage, "coverage workflow")
+
+    android_jobs = android.get("jobs")
+    if not isinstance(android_jobs, dict):
+        fail("Android workflow jobs mapping is missing")
+    if "metrics" in android_jobs:
+        fail("Android metrics must stay post-run and off the blocking path")
+
+    for step_name in (
+        "Verify benchmark fast-path contract",
+        "Verify CI safety contract regression coverage",
+        "Test local patch coverage gate",
+        "Verify CI safety contract",
+        "Test Sentry release auth fallback",
+        "Test CI performance metrics",
+    ):
+        require_step(
+            android,
+            "quality-contracts",
+            step_name,
+            shell="bash",
+        )
+
+    lint = require_step(
         android,
-        "quality",
+        "quality-lint",
         "Run fast quality gates",
         shell="bash",
     )
     require_gradle_invocation(
-        quality,
-        "quality/Run fast quality gates",
-        tasks=(":app:assembleDebug", ":app:lintDebug"),
-        args=("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail", "--console=plain"),
+        lint,
+        "quality-lint/Run fast quality gates",
+        tasks=(":app:lintDebug",),
+        args=(
+            "--build-cache",
+            "--parallel",
+            "--max-workers=8",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+            "--console=plain",
+        ),
     )
-    quality_run = str(quality.get("run", ""))
-    quality_retry_fragments = (
+    lint_run = str(lint.get("run", ""))
+    for fragment in (
+        "QUALITY_MAX_ATTEMPTS=3",
         "QUALITY_RETRY_BASE_SECONDS=5",
         'QUALITY_TERMINAL_LOG="$RUNNER_TEMP/quality-gates-terminal.log"',
-        "QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'",
-        "/^\\* What went wrong:$/",
-        "/^\\* Try:$/",
+        'QUALITY_TRANSIENT_RE=',
         'if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_TERMINAL_LOG"; then',
-        'if (( quality_attempt >= QUALITY_MAX_ATTEMPTS )); then',
         'exit "$quality_status"',
-    )
-    for fragment in quality_retry_fragments:
-        require_run_fragment(quality, "quality/bounded transient dependency retry", fragment)
+    ):
+        require_run_fragment(lint, "quality bounded transient retry", fragment)
+    if "--dry-run" in lint_run:
+        fail("Quality lint must stay single-pass without duplicate dry-run Gradle probes")
 
-    active_retry_bounds: list[str] = []
-    for line in quality_run.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("QUALITY_MAX_ATTEMPTS="):
-            value = stripped.split("=", 1)[1].split("#", 1)[0].strip().strip("'\"")
-            active_retry_bounds.append(value)
-    if active_retry_bounds != ["3"]:
-        fail(
-            "Quality retry bound must have exactly one active shell assignment "
-            f"QUALITY_MAX_ATTEMPTS=3; found {active_retry_bounds!r}"
-        )
-    quality_matches = [
-        tokens
-        for tokens in gradle_commands(str(quality.get("run", "")))
-        if all(task in set(tokens) for task in (":app:assembleDebug", ":app:lintDebug"))
-        and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail", "--console=plain"))
-    ]
-    executable_quality_matches = [tokens for tokens in quality_matches if "--dry-run" not in set(tokens)]
-    probe_quality_matches = [tokens for tokens in quality_matches if "--dry-run" in set(tokens)]
-    if len(executable_quality_matches) != 1 or len(probe_quality_matches) != 2:
-        fail(
-            "Configuration Cache proof requires one executable quality graph and "
-            "two non-executing --dry-run reuse probes; found "
-            f"{len(executable_quality_matches)} executable and "
-            f"{len(probe_quality_matches)} probes"
-        )
-    if normalized_gradle_invocation(probe_quality_matches[0]) != normalized_gradle_invocation(probe_quality_matches[1]):
-        fail("Quality --dry-run Configuration Cache probes differ")
-    require_shell_command(
-        quality,
-        "quality/Configuration Cache reuse",
-        ("grep", "-Fq", "Reusing configuration cache.", "$CONFIG_CACHE_LOG"),
-    )
-
-    release = require_step(
+    quality_job = job(android, "quality")
+    quality_needs = quality_job.get("needs")
+    if not isinstance(quality_needs, list) or set(quality_needs) != {
+        "quality-contracts",
+        "quality-lint",
+    }:
+        fail("quality fan-in lost a required shard")
+    if normalized_if(quality_job.get("if")) != "always()":
+        fail("quality fan-in must use if: always()")
+    quality_gate = require_step(
         android,
-        "device-validation",
-        "Build telemetry-disabled release APK and AAB for validation",
+        "quality",
+        "Verify quality shards",
         shell="bash",
     )
-    require_gradle_invocation(
-        release,
-        "device-validation/Build telemetry-disabled release APK and AAB for validation",
-        tasks=(
-            ":app:assembleRelease",
-            ":app:bundleRelease",
-            ":app:assembleNonMinifiedRelease",
-            ":baseline-profile:assembleNonMinifiedRelease",
-        ),
-        args=("--build-cache", "--parallel"),
+    for dependency in ("quality-contracts", "quality-lint"):
+        require_shell_command(
+            quality_gate,
+            "quality fan-in result",
+            (
+                "test",
+                f"${{{{ needs.{dependency}.result }}}}",
+                "=",
+                "success",
+            ),
+        )
+
+    shard_job = job(android, "device-validation-shard")
+    strategy = shard_job.get("strategy")
+    if not isinstance(strategy, dict):
+        fail("device validation strategy is missing")
+    if strategy.get("fail-fast") is not False:
+        fail("device validation matrix must keep fail-fast disabled")
+    if strategy.get("max-parallel") != 6:
+        fail("device validation matrix must keep six-way parallel execution")
+    matrix = strategy.get("matrix")
+    if not isinstance(matrix, dict):
+        fail("device validation matrix definition is missing")
+    if set(matrix.get("shard", [])) != {
+        "release",
+        "ui",
+        "baseline",
+        "macro-startup",
+        "macro-library",
+        "macro-settings",
+    }:
+        fail("device validation lost release/ui/baseline/split-macro coverage")
+
+    retry_test = require_step(
+        android,
+        "device-validation-shard",
+        "Test Android SDK retry safety",
+        shell="bash",
+        allowed_if="matrix.shard == 'release'",
+    )
+    require_run_fragment(
+        retry_test,
+        "runtime SDK retry safety",
+        "test-android-sdk-retry-safety.sh",
     )
 
-    release_tasks = (
+    prebuild = require_step(
+        android,
+        "device-validation-shard",
+        "Build shard while installing emulator runtime",
+        shell="bash",
+    )
+    for fragment in (
+        "install-android-runtime-sdk.sh",
+        "SDK_PID=$!",
+        "BUILD_PID=$!",
         ":app:assembleRelease",
         ":app:bundleRelease",
+        ":app:assembleDebug",
+        ":app:assembleDebugAndroidTest",
         ":app:assembleNonMinifiedRelease",
         ":baseline-profile:assembleNonMinifiedRelease",
-    )
-    release_args = (
-        "--build-cache",
-        "--parallel",
-        "--configuration-cache",
-        "--configuration-cache-problems=fail",
-    )
-    # Count complete release graphs independently of their flags so an extra
-    # expensive invocation cannot hide by dropping Configuration Cache options.
-    release_graphs = [
-        tokens
-        for tokens in gradle_commands(str(release.get("run", "")))
-        if all(task in set(tokens) for task in release_tasks)
-    ]
-    executable_release_graphs = [
-        tokens for tokens in release_graphs if "--dry-run" not in set(tokens)
-    ]
-    probe_release_graphs = [
-        tokens for tokens in release_graphs if "--dry-run" in set(tokens)
-    ]
-    if len(executable_release_graphs) != 1 or len(probe_release_graphs) != 2:
-        fail(
-            "Configuration Cache proof requires exactly one executable "
-            "release/performance graph and two identical non-executing --dry-run "
-            "probes; found "
-            f"{len(executable_release_graphs)} executable and "
-            f"{len(probe_release_graphs)} probes"
-        )
-    if normalized_gradle_invocation(probe_release_graphs[0]) != normalized_gradle_invocation(probe_release_graphs[1]):
-        fail("Release/performance --dry-run Configuration Cache probes differ")
-    for label, tokens in (
-        ("executable release/performance graph", executable_release_graphs[0]),
-        ("first release/performance --dry-run probe", probe_release_graphs[0]),
-        ("second release/performance --dry-run probe", probe_release_graphs[1]),
+        "--max-workers=8",
+        "EMULATOR_LAUNCH_EPOCH=",
+        "-no-window",
+        "-no-snapshot-load",
+        "-no-snapshot-save",
     ):
-        token_set = set(tokens)
-        missing_args = [arg for arg in release_args if arg not in token_set]
-        if missing_args:
-            fail(f"{label} is missing required arguments: {missing_args!r}")
-    release_task_set = set(release_tasks)
-    for tokens in gradle_commands(str(release.get("run", ""))):
-        token_set = set(tokens)
-        present_release_tasks = release_task_set.intersection(token_set)
-        if present_release_tasks and present_release_tasks != release_task_set:
-            fail(
-                "Release/performance Gradle invocations must not execute a partial "
-                "required task graph; found "
-                f"{sorted(present_release_tasks)!r}"
-            )
-    require_shell_command(
-        release,
-        "device-validation/Configuration Cache reuse",
-        ("grep", "-Fq", "Reusing configuration cache.", "$RELEASE_CONFIG_CACHE_LOG"),
-    )
+        require_run_fragment(prebuild, "parallel device prebuild", fragment)
 
-    connected = require_step(
+    readiness = require_step(
         android,
-        "device-validation",
-        "Verify MainActivity presentation wiring on API 35",
+        "device-validation-shard",
+        "Wait for API 35 emulator readiness",
         shell="bash",
     )
+    for fragment in (
+        "sys.boot_completed",
+        "ro.build.version.sdk",
+        'grep -Fxq "35"',
+    ):
+        require_run_fragment(readiness, "API 35 readiness", fragment)
+
+    validate = require_step(
+        android,
+        "device-validation-shard",
+        "Validate shard on API 35",
+        shell="bash",
+    )
+    for fragment in (
+        "adb install",
+        "adb install -r",
+        "adb uninstall",
+        ":app:connectedDebugAndroidTest",
+        ":baseline-profile:connectedNonMinifiedReleaseAndroidTest",
+        'RULE="BaselineProfile"',
+        'RULE="Macrobenchmark"',
+        "macro-startup",
+        "macro-library",
+        "macro-settings",
+        "coldStartup",
+        "navigationToLibrary",
+        "navigationToSettings",
+        "android.testInstrumentationRunnerArguments.class",
+        "Expected at least {minimum} {label} cases",
+        "Required performance tests were skipped",
+    ):
+        require_run_fragment(validate, "device validation coverage", fragment)
     require_gradle_invocation(
-        connected,
-        "device-validation/Verify MainActivity presentation wiring on API 35",
+        validate,
+        "device validation/UI instrumentation",
         tasks=(":app:connectedDebugAndroidTest",),
         args=(
             "--build-cache",
+            "--max-workers=8",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
         ),
     )
-    connected_commands = [
-        tokens
-        for tokens in gradle_commands(str(connected.get("run", "")))
-        if ":app:connectedDebugAndroidTest" in set(tokens)
-    ]
-    executable_connected = [
-        tokens for tokens in connected_commands if "--dry-run" not in set(tokens)
-    ]
-    if len(executable_connected) != 1:
-        fail(
-            "Connected API 35 validation requires exactly one executable Gradle "
-            f"invocation; found {len(executable_connected)}"
-        )
-
-    connected_required_args = {
-        "--build-cache",
-        "--configuration-cache",
-        "--configuration-cache-problems=fail",
-    }
-    executable_connected_args = set(executable_connected[0])
-    missing_connected_args = sorted(
-        connected_required_args.difference(executable_connected_args)
-    )
-    if missing_connected_args:
-        fail(
-            "Executable connected API 35 validation is missing required arguments: "
-            f"{missing_connected_args!r}"
-        )
-
-    # Phase 2 block 2 must remain a measurable A/B experiment: the candidate
-    # starts the emulator immediately and emits timestamps used to compare
-    # end-to-end device-validation latency against main.
-    for fragment in (
-        "EXCLUSIVE_BUILD_SECONDS=0",
-        "EMULATOR_LAUNCH_EPOCH=",
-        "BUILD_COMPLETE_EPOCH=",
-        "emulator-startup-ab.md",
-    ):
-        require_run_fragment(release, "Phase 2 emulator startup A/B telemetry", fragment)
-
-    ab_upload = require_step(
-        android,
-        "device-validation",
-        "Upload emulator startup A/B metrics",
-        uses_prefix="actions/upload-artifact@",
-        allowed_if="always()",
-    )
-    if "${{ runner.temp }}/emulator-startup-ab.md" not in str(ab_upload.get("with", {}).get("path", "")):
-        fail("Phase 2 emulator startup A/B metrics artifact lost its metrics file")
-
-    readiness = require_step(
-        android,
-        "device-validation",
-        "Wait for API 35 emulator readiness",
-        shell="bash",
-    )
-    for fragment in ("sys.boot_completed", "ro.build.version.sdk", 'grep -Fxq "35"'):
-        require_run_fragment(readiness, "API 35 readiness", fragment)
-
-    install = require_step(
-        android,
-        "device-validation",
-        "Validate release APK install-update-uninstall on API 35",
-        shell="bash",
-    )
-    for fragment in ("adb install", "adb install -r", "adb uninstall"):
-        require_run_fragment(install, "API 35 install/update/uninstall", fragment)
-
-    performance = require_step(
-        android,
-        "device-validation",
-        "Run baseline profile and macrobenchmarks on API 35",
-        shell="bash",
-    )
     require_gradle_invocation(
-        performance,
-        "device-validation/Run baseline profile and macrobenchmarks on API 35",
+        validate,
+        "device validation/performance instrumentation",
         tasks=(":baseline-profile:connectedNonMinifiedReleaseAndroidTest",),
+        args=(
+            "--build-cache",
+            "--max-workers=8",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+        ),
     )
-    for fragment in (
-        "enabledRules=BaselineProfile,Macrobenchmark",
-        "BaselineProfileGenerator",
-        "GameHubMacrobenchmark",
-        "Expected at least 3 GameHubMacrobenchmark cases",
-        "Required performance tests were skipped",
+    validate_run = str(validate.get("run", ""))
+    if validate_run.count(":baseline-profile:connectedNonMinifiedReleaseAndroidTest") != 1:
+        fail("performance shard script must contain exactly one instrumentation command")
+    for expected_command in (
+        ("adb", "install", "$APK"),
+        ("adb", "install", "-r", "$APK"),
+        ("adb", "uninstall", "com.cardenaspiero255.gamehubultra"),
     ):
-        require_run_fragment(performance, "performance report verification", fragment)
+        require_shell_command(
+            validate,
+            "device validation/release install lifecycle",
+            expected_command,
+        )
 
     noise = require_step(
         android,
-        "device-validation",
+        "device-validation-shard",
         "Reject known CAR-29 emulator noise",
         shell="bash",
         allowed_if="always()",
     )
-    for fragment in ("Failed to start Emulator console", "stop: Not implemented"):
+    for fragment in (
+        "Failed to start Emulator console",
+        "stop: Not implemented",
+    ):
         require_run_fragment(noise, "CAR-29 emulator-noise gate", fragment)
+
+    research = require_step(
+        android,
+        "device-validation-shard",
+        "Verify release research configuration",
+        shell="bash",
+        allowed_if="matrix.shard == 'release'",
+    )
+    research_env = research.get("env")
+    expected_trusted_release_context = (
+        "${{ github.event_name != 'pull_request' || "
+        "(github.actor != 'dependabot[bot]' && "
+        "github.event.pull_request.head.repo.full_name == github.repository) }}"
+    )
+    if not isinstance(research_env, dict):
+        fail("release research configuration env is missing")
+    if research_env.get("TRUSTED_RELEASE_CONTEXT") != expected_trusted_release_context:
+        fail("TRUSTED_RELEASE_CONTEXT guard changed")
+    for fragment in (
+        'RESEARCH_RELEASE_READY=false',
+        'research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"',
+        'exit 1',
+        'RESEARCH_RELEASE_READY=true',
+    ):
+        require_run_fragment(research, "release research-key guard", fragment)
 
     sentry_build = require_step(
         android,
-        "device-validation",
+        "device-validation-shard",
         "Build distributable release APK and AAB with Sentry",
         shell="bash",
-        allowed_if="success() && github.event_name != 'pull_request'",
+        allowed_if="success() && matrix.shard == 'release' && github.event_name != 'pull_request'",
     )
     require_gradle_invocation(
         sentry_build,
@@ -597,74 +599,87 @@ def main() -> None:
         tasks=(":app:assembleRelease", ":app:bundleRelease"),
         args=("--rerun-tasks",),
     )
-
-    sentry_register = require_step(
+    require_step(
         android,
-        "device-validation",
+        "device-validation-shard",
         "Register Sentry release and GitHub commit",
         shell="bash",
-        allowed_if="success() && github.event_name != 'pull_request'",
+        allowed_if="success() && matrix.shard == 'release' && github.event_name != 'pull_request'",
         best_effort=True,
     )
-    require_run_fragment(
-        sentry_register,
-        "trusted Sentry release registration",
-        "register_sentry_release.py",
-    )
 
-    research_config = require_step(
+    provenance = require_step(
         android,
-        "device-validation",
-        "Verify release research configuration",
+        "device-validation-shard",
+        "Record Phase 3 artifact provenance",
         shell="bash",
+        allowed_if="matrix.shard == 'ui'",
     )
-    research_env = research_config.get("env")
-    if not isinstance(research_env, dict):
-        fail("Release research configuration env is missing")
-    trusted_release_context = str(
-        research_env.get("TRUSTED_RELEASE_CONTEXT", "")
-    )
-    expected_trusted_release_context = (
-        "${{ github.event_name != 'pull_request' || "
-        "(github.actor != 'dependabot[bot]' && "
-        "github.event.pull_request.head.repo.full_name == github.repository) }}"
-    )
-    if trusted_release_context != expected_trusted_release_context:
-        fail(
-            "TRUSTED_RELEASE_CONTEXT must keep Dependabot pull requests "
-            "on the untrusted validation path"
-        )
+    provenance_env = provenance.get("env")
+    if not isinstance(provenance_env, dict):
+        fail("debug artifact provenance env is missing")
+    if provenance_env.get("PHASE3_RUN_ID") != "${{ github.run_id }}":
+        fail("debug artifact provenance lost current run binding")
+    if provenance_env.get("PHASE3_SHA") != "${{ github.sha }}":
+        fail("debug artifact provenance lost current SHA binding")
 
-    for fragment in (
-        'RESEARCH_RELEASE_READY=false',
-        'research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"',
-        'if [ "${TRUSTED_RELEASE_CONTEXT}" = "true" ]; then',
-        'exit 1',
-        'RESEARCH_RELEASE_READY=true',
-    ):
-        require_run_fragment(
-            research_config,
-            "whitespace-safe release research configuration",
-            fragment,
-        )
+    debug_upload = require_step(
+        android,
+        "device-validation-shard",
+        "Upload debug APK",
+        uses_prefix="actions/upload-artifact@",
+        allowed_if="matrix.shard == 'ui'",
+    )
+    debug_with = debug_upload.get("with")
+    if not isinstance(debug_with, dict):
+        fail("debug artifact upload inputs are missing")
+    if debug_with.get("name") != "gamehub-ultra-debug":
+        fail("debug artifact name changed")
+    if debug_with.get("compression-level") != 0:
+        fail("debug APK must keep redundant compression disabled")
 
     release_upload = require_step(
         android,
-        "device-validation",
+        "device-validation-shard",
         "Upload installable release outputs",
         uses_prefix="actions/upload-artifact@",
-        allowed_if="env.RESEARCH_RELEASE_READY == 'true'",
+        allowed_if="matrix.shard == 'release' && env.RESEARCH_RELEASE_READY == 'true'",
     )
-    release_upload_with = release_upload.get("with")
-    if not isinstance(release_upload_with, dict):
-        fail("Release artifact upload configuration is missing")
-    release_upload_paths = str(release_upload_with.get("path", ""))
+    release_with = release_upload.get("with")
+    if not isinstance(release_with, dict):
+        fail("release artifact upload inputs are missing")
+    release_paths = str(release_with.get("path", ""))
     for required_path in (
         "app/build/outputs/apk/release/**/*.apk",
         "app/build/outputs/bundle/release/**/*.aab",
     ):
-        if required_path not in release_upload_paths:
-            fail(f"Release artifact upload lost required output: {required_path}")
+        if required_path not in release_paths:
+            fail(f"release artifact output lost: {required_path}")
+
+    device_job = job(android, "device-validation")
+    device_needs = device_job.get("needs")
+    if not isinstance(device_needs, list) or set(device_needs) != {
+        "device-validation-shard"
+    }:
+        fail("device-validation fan-in lost matrix dependency")
+    if normalized_if(device_job.get("if")) != "always()":
+        fail("device-validation fan-in must use if: always()")
+    device_gate = require_step(
+        android,
+        "device-validation",
+        "Verify device validation shards",
+        shell="bash",
+    )
+    require_shell_command(
+        device_gate,
+        "device fan-in result",
+        (
+            "test",
+            "${{ needs.device-validation-shard.result }}",
+            "=",
+            "success",
+        ),
+    )
 
     coverage_generate = require_step(
         coverage,
@@ -678,7 +693,6 @@ def main() -> None:
         tasks=(":app:createDebugUnitTestCoverageReport",),
         args=("--build-cache", "--parallel"),
     )
-
     coverage_verify = require_step(
         coverage,
         "coverage",
@@ -686,9 +700,12 @@ def main() -> None:
         shell="bash",
     )
     for fragment in ("report.xml", "test -s"):
-        require_run_fragment(coverage_verify, "coverage XML verification", fragment)
-
-    local_patch_coverage = require_step(
+        require_run_fragment(
+            coverage_verify,
+            "coverage XML verification",
+            fragment,
+        )
+    local_patch = require_step(
         coverage,
         "coverage",
         "Enforce local patch coverage",
@@ -697,186 +714,137 @@ def main() -> None:
     for fragment in (
         ".github/scripts/local_patch_coverage.py",
         "report.xml",
-        "--base",
-        "--head",
         "--min-patch-line 90",
     ):
-        require_run_fragment(
-            local_patch_coverage,
-            "blocking local patch coverage gate",
-            fragment,
-        )
+        require_run_fragment(local_patch, "local patch coverage", fragment)
 
-    local_patch_run = local_patch_coverage.get("run")
-    if not isinstance(local_patch_run, str):
-        fail("blocking local patch coverage gate must execute the Python coverage checker")
+    coverage_text = COVERAGE.read_text(encoding="utf-8")
+    if "codecov/codecov-action@" in coverage_text:
+        fail("Codecov publishing must stay off the blocking coverage path")
 
-    coverage_tokens: list[str] | None = None
-    for command in logical_shell_commands(local_patch_run):
-        lexer = shlex.shlex(command, posix=True, punctuation_chars="|;&")
-        lexer.whitespace_split = True
-        try:
-            tokens = list(lexer)
-        except ValueError as exc:
-            fail(f"Unable to parse local patch coverage command: {exc}: {command!r}")
-        if tokens[:2] != ["python3", ".github/scripts/local_patch_coverage.py"]:
-            continue
-        if any(token in {"|", "||", ";", "&", "&&"} for token in tokens):
-            fail(f"blocking local patch coverage gate masks or redirects failure: {command!r}")
-        coverage_tokens = tokens
-        break
-
-    if coverage_tokens is None:
-        fail("blocking local patch coverage gate must execute the Python coverage checker")
-
-    codecov_probe = require_step(
-        coverage,
-        "coverage",
-        "Probe Codecov ingest availability",
-        shell="bash",
-        allowed_if="steps.codecov_token.outputs.available == 'true'",
+    coverage_post = load_workflow(COVERAGE_POST)
+    post_on = coverage_post.get("on")
+    if not isinstance(post_on, dict):
+        post_on = coverage_post.get("true")
+    if not isinstance(post_on, dict):
+        post_on = coverage_post.get(True)
+    if not isinstance(post_on, dict):
+        fail("coverage post-processing trigger mapping is missing")
+    workflow_run = post_on.get("workflow_run")
+    if not isinstance(workflow_run, dict):
+        fail("coverage post-processing workflow_run trigger is missing")
+    if workflow_run.get("workflows") != ["Unit Test Coverage"]:
+        fail("coverage post-processing target workflow changed")
+    if workflow_run.get("types") != ["completed"]:
+        fail("coverage post-processing must trigger only on completion")
+    publish_job = job(coverage_post, "publish")
+    download = step(
+        publish_job,
+        "publish",
+        "Download exact coverage artifact",
     )
-    for fragment in (
-        "https://ingest.codecov.io/",
-        "reachable=false",
-        "reachable=true",
-    ):
-        require_run_fragment(codecov_probe, "Codecov availability probe", fragment)
+    if not str(download.get("uses", "")).startswith("actions/download-artifact@"):
+        fail("coverage report download action is missing")
+    download_with = download.get("with")
+    if not isinstance(download_with, dict):
+        fail("coverage report download inputs are missing")
+    if download_with.get("run-id") != "${{ github.event.workflow_run.id }}":
+        fail("coverage report download lost triggering-run binding")
 
-    codecov = require_step(
-        coverage,
-        "coverage",
+    codecov = step(
+        publish_job,
+        "publish",
         "Upload coverage to Codecov",
-        uses_prefix="codecov/codecov-action@",
-        allowed_if=(
-            "steps.codecov_token.outputs.available == 'true' && "
-            "steps.codecov_probe.outputs.reachable == 'true'"
-        ),
-        best_effort=True,
     )
-    with_values = codecov.get("with")
-    if not isinstance(with_values, dict) or with_values.get("fail_ci_if_error") is not True:
-        fail("Codecov upload no longer reports upload failures")
-
-    codecov_retry = require_step(
-        coverage,
-        "coverage",
-        "Retry Codecov through legacy endpoint",
-        uses_prefix="codecov/codecov-action@",
-        allowed_if=(
-            "steps.codecov_token.outputs.available == 'true' && "
-            "steps.codecov_probe.outputs.reachable == 'true' && "
-            "steps.codecov_upload.outcome != 'success'"
-        ),
-        best_effort=True,
-    )
-    retry_with = codecov_retry.get("with")
-    if not isinstance(retry_with, dict) or retry_with.get("fail_ci_if_error") is not True:
-        fail("Codecov retry no longer reports upload failures")
-    if retry_with.get("use_legacy_upload_endpoint") is not True:
-        fail("Codecov retry must preserve the independent legacy endpoint")
-
-    codecov_status = require_step(
-        coverage,
-        "coverage",
-        "Report Codecov upload status",
-        shell="bash",
-        allowed_if="always() && steps.codecov_token.outputs.available == 'true'",
-    )
-    for fragment in (
-        "$PROBE_REACHABLE",
-        "$UPLOAD_OUTCOME",
-        "$RETRY_OUTCOME",
-        "local patch coverage",
-    ):
-        require_run_fragment(codecov_status, "Codecov status reporting", fragment)
-
-    android_jobs = android.get("jobs")
-    if not isinstance(android_jobs, dict):
-        fail("Android workflow jobs mapping is missing")
-    if "metrics" in android_jobs:
-        fail("Phase 3 block 4 requires Android metrics to run only post-run in shadow mode")
+    if not str(codecov.get("uses", "")).startswith("codecov/codecov-action@"):
+        fail("Codecov post-processing action is missing")
+    require_continue_on_error_true(codecov, "Codecov post-processing upload")
+    codecov_with = codecov.get("with")
+    if not isinstance(codecov_with, dict):
+        fail("Codecov inputs are missing")
+    expected_codecov = {
+        "override_commit": "${{ github.event.workflow_run.head_sha }}",
+        "override_branch": "${{ github.event.workflow_run.head_branch }}",
+        "override_pr": "${{ github.event.workflow_run.pull_requests[0].number || '' }}",
+        "override_build": "${{ github.event.workflow_run.id }}",
+    }
+    for key, expected in expected_codecov.items():
+        if codecov_with.get(key) != expected:
+            fail(f"Codecov {key} lost triggering-run provenance")
 
     build_job = job(android, "build")
     build_needs = build_job.get("needs")
-    if not isinstance(build_needs, list) or set(build_needs) != {"quality", "device-validation"}:
-        fail("Aggregate build gate must depend directly on quality and device-validation")
+    if not isinstance(build_needs, list) or set(build_needs) != {
+        "quality",
+        "device-validation",
+    }:
+        fail("aggregate build fan-in dependencies changed")
     if normalized_if(build_job.get("if")) != "always()":
-        fail("Aggregate build gate must use if: always() so failed dependencies remain observable")
-    if build_job.get("continue-on-error") not in (None, False):
-        fail("Aggregate build gate must remain blocking")
-
+        fail("aggregate build fan-in must use if: always()")
     aggregate_gate = require_step(
         android,
         "build",
         "Verify all Android CI gates",
         shell="bash",
     )
-    require_shell_command(
-        aggregate_gate,
-        "build/Verify all Android CI gates quality result",
-        ("test", "${{ needs.quality.result }}", "=", "success"),
+    for dependency in ("quality", "device-validation"):
+        require_shell_command(
+            aggregate_gate,
+            "aggregate build result",
+            (
+                "test",
+                f"${{{{ needs.{dependency}.result }}}}",
+                "=",
+                "success",
+            ),
+        )
+
+    debug_download = require_step(
+        android,
+        "build",
+        "Download exact-run debug artifact",
+        uses_prefix="actions/download-artifact@",
     )
-    require_shell_command(
-        aggregate_gate,
-        "build/Verify all Android CI gates device-validation result",
-        ("test", "${{ needs.device-validation.result }}", "=", "success"),
-    )
-    require_step(
+    debug_download_with = debug_download.get("with")
+    if not isinstance(debug_download_with, dict):
+        fail("debug artifact consumer inputs are missing")
+    if debug_download_with.get("name") != "gamehub-ultra-debug":
+        fail("debug artifact consumer selected the wrong artifact")
+    if debug_download_with.get("run-id") != "${{ github.run_id }}":
+        fail("debug artifact consumer lost current-run binding")
+
+    verifier = require_step(
         android,
         "build",
         "Verify Phase 3 artifact provenance",
         shell="bash",
     )
+    for fragment in (
+        'grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"',
+        'grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"',
+        'test "$ACTUAL_SHA256" = "$RECORDED_SHA256"',
+    ):
+        require_run_fragment(verifier, "debug artifact provenance", fragment)
 
-    shadow_collect = job(shadow_metrics, "collect")
-    if shadow_collect.get("continue-on-error") not in (None, False):
-        fail("Shadow metrics collector unexpectedly became advisory")
-    shadow_step = require_step(
+    shadow = require_step(
         shadow_metrics,
         "collect",
         "Collect completed parent metrics in shadow mode",
         shell="bash",
     )
-    shadow_run = str(shadow_step.get("run", ""))
     for fragment in (
         'REQUIRED_JOB="build"',
-        '--require-completed',
+        "--require-completed",
         '--require-job "$REQUIRED_JOB"',
-        '--expected-run-id "$PARENT_RUN_ID"',
-        '--expected-head-sha "$PARENT_HEAD_SHA"',
-        '--expected-workflow "$PARENT_WORKFLOW"',
+        "--expected-run-id",
+        "--expected-head-sha",
+        "--expected-workflow",
     ):
-        if fragment not in shadow_run:
-            fail(f"Shadow metrics lost required provenance fragment: {fragment}")
-
-    require_concurrency(android, "Android workflow")
-    require_concurrency(coverage, "coverage workflow")
-
-    # Exactly one real performance Gradle invocation must remain.
-    perf_invocations = 0
-    for job_name, job_value in android.get("jobs", {}).items():
-        if not isinstance(job_value, dict):
-            continue
-        for candidate in job_value.get("steps", []):
-            if not isinstance(candidate, dict):
-                continue
-            run = candidate.get("run")
-            if not isinstance(run, str):
-                continue
-            for tokens in gradle_commands(run):
-                if ":baseline-profile:connectedNonMinifiedReleaseAndroidTest" in tokens:
-                    perf_invocations += 1
-
-    if perf_invocations != 1:
-        fail(
-            "Android performance validation must use exactly one executable "
-            f"instrumentation invocation; found {perf_invocations}"
-        )
+        require_run_fragment(shadow, "shadow metrics provenance", fragment)
 
     print(
-        "CI safety contract verified with real YAML parsing: "
-        "required gates execute and preserve failure semantics."
+        "CI safety contract verified: parallel quality/device validation preserves "
+        "all blocking lint, device, release, benchmark, coverage and provenance gates."
     )
 
 

@@ -1,6 +1,10 @@
 package com.cardenaspiero255.gamehubultra.ui.runtime
 
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.AiSessionCoach
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveRuntimeSnapshot
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
@@ -12,7 +16,10 @@ internal data class DashboardTelemetryUpdate(
     val diagnostics: RuntimeDiagnostics,
     val telemetryTrend: List<RuntimeDiagnostics>,
     val timelineSamples: List<PerformanceTimelineSample>,
-    val adaptiveDecision: AdaptiveDecision
+    val adaptiveDecision: AdaptiveDecision,
+    val coachSamples: List<SessionCoachSnapshot>,
+    val coachObservations: List<SessionCoachMessage>,
+    val lastCompletedCoachReport: SessionCoachPostSessionReport?
 )
 
 internal class DashboardTelemetryController(
@@ -29,6 +36,9 @@ internal class DashboardTelemetryController(
     private var activeSessionId: String? = null
     private var telemetryTrend = emptyList<RuntimeDiagnostics>()
     private var timelineSamples = emptyList<PerformanceTimelineSample>()
+    private var coachSamples = emptyList<SessionCoachSnapshot>()
+    private var coachObservations = emptyList<SessionCoachMessage>()
+    private var lastCompletedCoachReport: SessionCoachPostSessionReport? = null
 
     suspend fun sample(
         diagnostics: RuntimeDiagnostics,
@@ -40,8 +50,13 @@ internal class DashboardTelemetryController(
         val now = nowMillis()
 
         if (sessionId != activeSessionId) {
+            if (activeSessionId != null && coachSamples.isNotEmpty()) {
+                lastCompletedCoachReport = AiSessionCoach.postSession(coachSamples)
+            }
             activeSessionId = sessionId
             timelineSamples = emptyList()
+            coachSamples = emptyList()
+            coachObservations = emptyList()
             lastThermalStatus = null
             initializedThermalStatus = false
         }
@@ -84,6 +99,21 @@ internal class DashboardTelemetryController(
                 )
             ).takeLast(MAX_TIMELINE_SAMPLES)
 
+            val coachSnapshot = SessionCoachSnapshot(
+                timestampMillis = now,
+                batteryPercent = enrichedDiagnostics.battery.percent,
+                thermalStatus = enrichedDiagnostics.thermal.status,
+                thermalHeadroom = enrichedDiagnostics.thermal.headroom,
+                refreshRateHz = enrichedDiagnostics.refresh.currentRefreshRateHz,
+                latencyMs = enrichedDiagnostics.connectivity.latencyMs
+            )
+            coachSamples.lastOrNull()?.let { previous ->
+                coachObservations = (
+                    coachObservations + AiSessionCoach.midSession(previous, coachSnapshot)
+                ).takeLast(MAX_COACH_OBSERVATIONS)
+            }
+            coachSamples = (coachSamples + coachSnapshot).takeLast(MAX_COACH_SAMPLES)
+
             if (
                 initializedThermalStatus &&
                 diagnostics.thermal.status != lastThermalStatus
@@ -99,6 +129,8 @@ internal class DashboardTelemetryController(
             }
         } else {
             timelineSamples = emptyList()
+            coachSamples = emptyList()
+            coachObservations = emptyList()
         }
 
         lastThermalStatus = diagnostics.thermal.status
@@ -134,7 +166,10 @@ internal class DashboardTelemetryController(
             diagnostics = enrichedDiagnostics,
             telemetryTrend = telemetryTrend,
             timelineSamples = timelineSamples,
-            adaptiveDecision = decision
+            adaptiveDecision = decision,
+            coachSamples = coachSamples,
+            coachObservations = coachObservations,
+            lastCompletedCoachReport = lastCompletedCoachReport
         )
     }
 
@@ -142,5 +177,7 @@ internal class DashboardTelemetryController(
         const val LATENCY_RECHECK_INTERVAL_MILLIS = 30_000L
         const val MAX_TELEMETRY_TREND_SAMPLES = 12
         const val MAX_TIMELINE_SAMPLES = 24
+        const val MAX_COACH_SAMPLES = 180
+        const val MAX_COACH_OBSERVATIONS = 12
     }
 }

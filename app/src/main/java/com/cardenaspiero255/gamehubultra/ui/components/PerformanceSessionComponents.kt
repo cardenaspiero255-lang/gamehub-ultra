@@ -17,12 +17,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 
 internal fun formatDuration(durationMillis: Long): String {
     val totalSeconds = durationMillis / 1000L
@@ -77,6 +81,43 @@ internal fun SessionCenterCard(
                         Text(stringResource(R.string.session_clear))
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun AiSessionCoachCard(
+    preSession: SessionCoachMessage?,
+    liveSamples: List<SessionCoachSnapshot>,
+    observations: List<SessionCoachMessage>,
+    postSession: SessionCoachPostSessionReport?,
+    sessionActive: Boolean
+) {
+    val lines = SessionCoachPresentation.lines(
+        preSession = preSession,
+        liveSamples = liveSamples,
+        observations = observations,
+        postSession = postSession,
+        sessionActive = sessionActive,
+        activeSessionText = pluralStringResource(
+            R.plurals.session_coach_live,
+            liveSamples.size,
+            liveSamples.size
+        ),
+        stableText = stringResource(R.string.session_coach_stable)
+    )
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.session_coach_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+            lines.forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
