@@ -16,7 +16,8 @@ data class SessionCoachStoredSession(
     val samples: List<SessionCoachSnapshot>,
     val preSessionMessage: SessionCoachMessage?,
     val latestObservation: SessionCoachMessage?,
-    val gameVersion: String? = null
+    val gameVersion: String? = null,
+    val latestThermalPredictionObservation: SessionCoachMessage? = null
 )
 
 internal object SessionCoachSnapshotCodec {
@@ -163,7 +164,8 @@ class SessionCoachSessionStore(
     fun appendSnapshot(
         sessionId: String,
         snapshot: SessionCoachSnapshot,
-        observations: List<SessionCoachMessage> = emptyList()
+        observations: List<SessionCoachMessage> = emptyList(),
+        thermalPredictionObservation: SessionCoachMessage? = null
     ): SessionCoachSnapshot? {
         if (preferences.getString(ACTIVE_ID, null) != sessionId) return null
 
@@ -181,6 +183,12 @@ class SessionCoachSessionStore(
         observations.maxByOrNull { it.priority.ordinal }?.let { message ->
             editor.putString(
                 ACTIVE_LATEST,
+                SessionCoachMessageCodec.encode(message)
+            )
+        }
+        thermalPredictionObservation?.let { message ->
+            editor.putString(
+                ACTIVE_LATEST_THERMAL_PREDICTION,
                 SessionCoachMessageCodec.encode(message)
             )
         }
@@ -249,7 +257,10 @@ class SessionCoachSessionStore(
             ),
             gameVersion = preferences.getString(prefix + KEY_VERSION, null)
                 ?.trim()
-                ?.takeIf(String::isNotEmpty)
+                ?.takeIf(String::isNotEmpty),
+            latestThermalPredictionObservation = SessionCoachMessageCodec.decode(
+                preferences.getString(prefix + KEY_LATEST_THERMAL_PREDICTION, null)
+            )
         )
     }
 
@@ -277,6 +288,12 @@ class SessionCoachSessionStore(
         session.latestObservation?.let {
             editor.putString(prefix + KEY_LATEST, SessionCoachMessageCodec.encode(it))
         }
+        session.latestThermalPredictionObservation?.let {
+            editor.putString(
+                prefix + KEY_LATEST_THERMAL_PREDICTION,
+                SessionCoachMessageCodec.encode(it)
+            )
+        }
     }
 
     private fun decodeSamples(raw: String?): List<SessionCoachSnapshot> =
@@ -298,6 +315,7 @@ class SessionCoachSessionStore(
         const val KEY_SAMPLES = "samples"
         const val KEY_PRE = "pre"
         const val KEY_LATEST = "latest"
+        const val KEY_LATEST_THERMAL_PREDICTION = "latest_thermal_prediction"
 
         const val ACTIVE_ID = ACTIVE_PREFIX + KEY_ID
         const val ACTIVE_PACKAGE = ACTIVE_PREFIX + KEY_PACKAGE
@@ -307,6 +325,8 @@ class SessionCoachSessionStore(
         const val ACTIVE_SAMPLES = ACTIVE_PREFIX + KEY_SAMPLES
         const val ACTIVE_PRE = ACTIVE_PREFIX + KEY_PRE
         const val ACTIVE_LATEST = ACTIVE_PREFIX + KEY_LATEST
+        const val ACTIVE_LATEST_THERMAL_PREDICTION =
+            ACTIVE_PREFIX + KEY_LATEST_THERMAL_PREDICTION
 
         const val LAST_ID = LAST_PREFIX + KEY_ID
         const val LAST_PACKAGE = LAST_PREFIX + KEY_PACKAGE
@@ -316,6 +336,8 @@ class SessionCoachSessionStore(
         const val LAST_SAMPLES = LAST_PREFIX + KEY_SAMPLES
         const val LAST_PRE = LAST_PREFIX + KEY_PRE
         const val LAST_LATEST = LAST_PREFIX + KEY_LATEST
+        const val LAST_LATEST_THERMAL_PREDICTION =
+            LAST_PREFIX + KEY_LATEST_THERMAL_PREDICTION
 
         const val DEFAULT_MAX_SAMPLES = 960
         const val ABSOLUTE_MAX_SAMPLES = 1_440
@@ -328,7 +350,8 @@ class SessionCoachSessionStore(
             ACTIVE_ENDED,
             ACTIVE_SAMPLES,
             ACTIVE_PRE,
-            ACTIVE_LATEST
+            ACTIVE_LATEST,
+            ACTIVE_LATEST_THERMAL_PREDICTION
         )
         val LAST_KEYS = listOf(
             LAST_ID,
@@ -338,7 +361,8 @@ class SessionCoachSessionStore(
             LAST_ENDED,
             LAST_SAMPLES,
             LAST_PRE,
-            LAST_LATEST
+            LAST_LATEST,
+            LAST_LATEST_THERMAL_PREDICTION
         )
     }
 }

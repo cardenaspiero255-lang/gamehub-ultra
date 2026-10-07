@@ -13,6 +13,7 @@ import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -191,4 +192,53 @@ class SessionCoachSessionStoreTest {
             latencyMs = 30L,
             memoryUsedPercent = 55
         )
+    @Test
+    fun predictiveThermalObservationSurvivesUnrelatedLatestObservation() {
+        val store = SessionCoachSessionStore(context)
+        assertTrue(store.beginSession("thermal-state", "game.test", 0L))
+
+        val warning = SessionCoachMessage(
+            signal = SessionCoachSignal.THERMAL,
+            priority = SessionCoachPriority.ACTION,
+            title = "Riesgo térmico previsto",
+            detail = "Predicción preventiva.",
+            action = "Considera un perfil menos exigente."
+        )
+        val latency = SessionCoachMessage(
+            signal = SessionCoachSignal.LATENCY,
+            priority = SessionCoachPriority.INFO,
+            title = "Latencia estable",
+            detail = "La red se mantiene estable.",
+            action = null
+        )
+
+        store.appendSnapshot(
+            sessionId = "thermal-state",
+            snapshot = snapshot(10_000L, 80),
+            observations = listOf(warning),
+            thermalPredictionObservation = warning
+        )
+        store.appendSnapshot(
+            sessionId = "thermal-state",
+            snapshot = snapshot(20_000L, 80),
+            observations = listOf(latency)
+        )
+
+        val active = assertNotNull(store.readActiveSession())
+        assertEquals(latency, active.latestObservation)
+        assertEquals(warning, active.latestThermalPredictionObservation)
+
+        val finished = assertNotNull(
+            store.finishActiveSession(
+                endedAtMillis = 30_000L,
+                expectedSessionId = "thermal-state"
+            )
+        )
+        assertEquals(warning, finished.latestThermalPredictionObservation)
+        assertEquals(
+            warning,
+            assertNotNull(store.readLastCompletedSession()).latestThermalPredictionObservation
+        )
+    }
+
 }

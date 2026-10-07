@@ -489,4 +489,46 @@ class PerGameAdaptiveRuntimeIntegrationTest {
     }
 
 
+    @Test
+    fun completedSessionThermalPredictionFlowsThroughCar47BeforeMeasuredSevereStatus() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-thermal-prediction",
+            packageName = "game.thermal",
+            startedAtMillis = 0L,
+            endedAtMillis = 40_000L,
+            samples = listOf(
+                snapshot(0L, memory = 50).copy(thermalHeadroom = 0.46f),
+                snapshot(10_000L, memory = 50).copy(thermalHeadroom = 0.52f),
+                snapshot(20_000L, memory = 50).copy(thermalHeadroom = 0.59f),
+                snapshot(30_000L, memory = 50).copy(thermalHeadroom = 0.66f),
+                snapshot(40_000L, memory = 50).copy(thermalHeadroom = 0.74f)
+            ),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1#1"
+        )
+        var applied: Pair<String, PerformanceProfile>? = null
+
+        val decision = applyCompletedAdaptiveDecision(
+            completed = completed,
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 41_000L,
+            applyProfile = { packageName, profile ->
+                applied = packageName to profile
+            },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(decision)
+        assertTrue(decision.changed)
+        assertEquals(PerformanceProfile.BALANCED, decision.profile)
+        assertEquals("game.thermal" to PerformanceProfile.BALANCED, applied)
+        assertTrue(decision.reason.contains("predicción térmica", ignoreCase = true))
+    }
+
 }

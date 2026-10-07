@@ -8191,3 +8191,202 @@ Deno.test(
     }
   },
 );
+
+Deno.test(
+  "basic book definition stays in general knowledge instead of Open Library discovery",
+  async () => {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        throw new Error(
+          "network should not be required for a basic book definition",
+        );
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un libro?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("basic book knowledge must remain answerable");
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    const hasBookShape = ["página", "paginas", "texto"].some((token) =>
+      answer.includes(token)
+    );
+    if (!answer.includes("libro") || !hasBookShape) {
+      throw new Error("expected a general book definition: " + answer);
+    }
+    if (networkCalls !== 0) {
+      throw new Error("basic book knowledge should not enter book discovery");
+    }
+  },
+);
+
+Deno.test(
+  "core school subjects remain answerable without external providers",
+  async () => {
+    const cases = [
+      { query: "¿Qué es una célula?", expected: ["célula", "unidad"] },
+      { query: "¿Qué es un átomo?", expected: ["átomo", "núcleo"] },
+      { query: "¿Qué es la mitosis?", expected: ["división", "célula"] },
+      {
+        query: "¿Qué es el teorema de Pitágoras?",
+        expected: ["hipotenusa", "catetos"],
+      },
+      {
+        query: "¿Qué es un número primo?",
+        expected: ["divisores", "exactamente dos"],
+      },
+      {
+        query: "¿Qué fue la Revolución Industrial?",
+        expected: ["industrial", "fábricas"],
+      },
+      { query: "¿Qué es una metáfora?", expected: ["figura", "lenguaje"] },
+      { query: "¿Qué es un sustantivo?", expected: ["palabra", "nombra"] },
+      { query: "¿Qué es un verbo?", expected: ["palabra", "acción"] },
+      { query: "¿Qué es un parlamento?", expected: ["legislativo", "leyes"] },
+      {
+        query: "¿Qué son los números primos?",
+        expected: ["divisores", "exactamente dos"],
+      },
+      {
+        query: "¿Qué son las tres leyes de Newton?",
+        expected: ["fuerza", "movimiento"],
+      },
+      {
+        query: "¿Qué son los ecosistemas?",
+        expected: ["organismos", "factores"],
+      },
+      {
+        query: "Explica el teorema de Pitágoras",
+        expected: ["hipotenusa", "catetos"],
+      },
+    ];
+
+    for (const testCase of cases) {
+      let networkCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: () => {
+          networkCalls += 1;
+          throw new Error("stable school knowledge should stay local");
+        },
+        env: () => undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error(
+          "study concept unexpectedly abstained: " + testCase.query,
+        );
+      }
+      const answer = (result.displayText ?? "").toLowerCase();
+      if (!testCase.expected.every((token) => answer.includes(token))) {
+        throw new Error(
+          "study concept lost semantic relevance for " + testCase.query + ": " +
+            answer,
+        );
+      }
+      if (networkCalls !== 0) {
+        throw new Error("stable school concept unexpectedly used the network");
+      }
+    }
+  },
+);
+
+Deno.test(
+  "standalone Open Library query keeps book specialist routing",
+  async () => {
+    let openLibraryCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname !== "openlibrary.org") {
+          throw new Error("unexpected URL " + url);
+        }
+        openLibraryCalls += 1;
+        return jsonResponse({
+          docs: [{
+            key: "/works/OLKOTLINW",
+            title: "Kotlin in Action",
+            author_name: ["Dmitry Jemerov", "Svetlana Isakova"],
+            subject: ["Kotlin", "Computer programming"],
+          }],
+        });
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Open Library Kotlin",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained || openLibraryCalls !== 1) {
+      throw new Error("standalone Open Library query must use book specialist");
+    }
+    if (!(result.displayText ?? "").includes("Kotlin in Action")) {
+      throw new Error("expected Open Library book result");
+    }
+  },
+);
+
+Deno.test(
+  "ISBN query keeps book specialist routing and exact identifier matching",
+  async () => {
+    let requestedQuery = "";
+    const isbn = "9781617299605";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname !== "openlibrary.org") {
+          throw new Error("unexpected URL " + url);
+        }
+        requestedQuery = url.searchParams.get("q") ?? "";
+        return jsonResponse({
+          docs: [{
+            key: "/works/OLISBNW",
+            title: "Kotlin in Action",
+            author_name: ["Dmitry Jemerov", "Svetlana Isakova"],
+            isbn: [isbn],
+            subject: ["Kotlin", "Computer programming"],
+          }],
+        });
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "ISBN " + isbn,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("ISBN lookup must return the matching book");
+    }
+    if (!requestedQuery.toLowerCase().includes("isbn")) {
+      throw new Error("ISBN lookup should use an identifier-specific query");
+    }
+    if (!(result.displayText ?? "").includes("Kotlin in Action")) {
+      throw new Error("expected exact ISBN book result");
+    }
+  },
+);

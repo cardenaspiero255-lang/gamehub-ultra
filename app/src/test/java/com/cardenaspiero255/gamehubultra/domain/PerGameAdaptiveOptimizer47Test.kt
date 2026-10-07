@@ -354,4 +354,71 @@ class PerGameAdaptiveOptimizer47Test {
     }
 
 
+    @Test
+    fun thermalPredictionSignalStillRequiresCar47Confirmations() {
+        val optimizer = PerGameAdaptiveOptimizer(confirmationsRequired = 2, cooldownMillis = 0)
+        val key = AdaptiveGameKey("game.thermal", "1#1")
+        val samples = listOf(
+            AdaptiveTrendSample(
+                thermalStatus = 1,
+                batteryPercent = 80,
+                refreshRateHz = 120f,
+                memoryUsedPercent = 45,
+                latencyMs = 30,
+                thermalPrediction = preventiveThermalPrediction()
+            )
+        )
+
+        val first = optimizer.evaluate(key, PerformanceProfile.X4, samples, 1_000L)
+        assertFalse(first.changed)
+        assertEquals(PerformanceProfile.X4, first.profile)
+
+        val second = optimizer.evaluate(key, PerformanceProfile.X4, samples, 2_000L)
+        assertTrue(second.changed)
+        assertEquals(PerformanceProfile.BALANCED, second.profile)
+        assertTrue(second.reason.contains("predicción térmica", ignoreCase = true))
+    }
+
+    @Test
+    fun nonActionableThermalPredictionNeverBypassesCar47Policy() {
+        val optimizer = PerGameAdaptiveOptimizer(confirmationsRequired = 1, cooldownMillis = 0)
+        val key = AdaptiveGameKey("game.thermal", "1#1")
+        val samples = listOf(
+            AdaptiveTrendSample(
+                thermalStatus = 1,
+                batteryPercent = 80,
+                refreshRateHz = 120f,
+                memoryUsedPercent = 45,
+                latencyMs = 30,
+                thermalPrediction = preventiveThermalPrediction(
+                    confidence = 0.60f,
+                    allowPreventiveSignal = false
+                )
+            )
+        )
+
+        val result = optimizer.evaluate(key, PerformanceProfile.X4, samples, 1_000L)
+
+        assertFalse(result.changed)
+        assertEquals(PerformanceProfile.X4, result.profile)
+    }
+
+    private fun preventiveThermalPrediction(
+        confidence: Float = 0.90f,
+        allowPreventiveSignal: Boolean = true
+    ) = ThermalPrediction(
+        trend = ThermalTrend.RISING,
+        risk = ThermalRisk.HIGH,
+        confidence = confidence,
+        signalMode = ThermalSignalMode.HEADROOM_AND_STATUS,
+        slopePerMinute = 0.20f,
+        accelerationPerMinuteSquared = 0f,
+        latestMeasuredHeadroom = 0.70f,
+        projectedHeadroom = 0.82f,
+        allowPreventiveSignal = allowPreventiveSignal,
+        recovering = false,
+        evidence = emptyList(),
+        reason = "Predicción térmica preventiva de prueba."
+    )
+
 }

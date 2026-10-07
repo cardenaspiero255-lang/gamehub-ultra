@@ -1,5 +1,7 @@
 name: Unit Test Coverage
-# Review hardening: coverage always runs; upload is secret-gated and actions are SHA-pinned.
+# Sharded coverage: 8 logical shards are packed into 2 physical runners.
+# Each runner executes four deterministic logical shards with 4 parallel test forks.
+# A final aggregation job generates the single JaCoCo XML consumed by the gate/Codecov.
 
 on:
   workflow_dispatch:
@@ -17,12 +19,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  coverage:
+  coverage-shard:
+    name: coverage-shard-${{ matrix.runner }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        runner: [0, 1]
     env:
-      GAMEHUB_UNIT_TEST_FORKS: "3"
-      GAMEHUB_UNIT_TEST_HEAP: "1024m"
+      GAMEHUB_UNIT_TEST_FORKS: "4"
+      GAMEHUB_UNIT_TEST_HEAP: "768m"
+      COVERAGE_LOGICAL_SHARD_COUNT: "8"
+      COVERAGE_PHYSICAL_SHARD_COUNT: "2"
+      COVERAGE_RUNNER_INDEX: "${{ matrix.runner }}"
 
     steps:
       - name: Checkout
@@ -62,21 +73,188 @@ jobs:
         with:
           gradle-version: "8.13"
           cache-disabled: false
-          # Android device-validation owns cache writes on normal CI events.
-          # Avoid duplicate cache uploads from the parallel coverage workflow.
-          cache-read-only: ${{ github.event_name != 'workflow_dispatch' }}
+          cache-read-only: true
 
-      - name: Generate debug unit-test coverage
+      - name: Select deterministic logical test shards
         shell: bash
         run: |
-          gradle :app:createDebugUnitTestCoverageReport \
+          set -euo pipefail
+          python3 - <<'PY' > "$RUNNER_TEMP/coverage-test-classes.txt"
+          import hashlib
+          import os
+          import re
+          from pathlib import Path
+
+          logical_count = int(os.environ["COVERAGE_LOGICAL_SHARD_COUNT"])
+          physical_count = int(os.environ["COVERAGE_PHYSICAL_SHARD_COUNT"])
+          runner = int(os.environ["COVERAGE_RUNNER_INDEX"])
+          if logical_count % physical_count != 0:
+              raise SystemExit("Logical coverage shards must divide evenly across physical runners")
+          owned = {
+              runner + wave * physical_count
+              for wave in range(logical_count // physical_count)
+          }
+          roots = [Path("app/src/test/java"), Path("app/src/test/kotlin")]
+          selected = []
+
+          for root in roots:
+              if not root.exists():
+                  continue
+              for path in sorted(root.rglob("*.kt")):
+                  text = path.read_text(encoding="utf-8")
+                  package_match = re.search(r"(?m)^\s*package\s+([A-Za-z0-9_.]+)", text)
+                  if not package_match:
+                      continue
+                  package_name = package_match.group(1)
+                  class_names = re.findall(
+                      r"(?m)^\s*(?:public\s+|internal\s+|private\s+|protected\s+)?"
+                      r"(?:abstract\s+|open\s+|final\s+)?(?:class|object)\s+"
+                      r"([A-Za-z_][A-Za-z0-9_]*(?:Test|Tests))\b",
+                      text,
+                  )
+                  for class_name in class_names:
+                      fqcn = f"{package_name}.{class_name}"
+                      logical_shard = int.from_bytes(
+                          hashlib.sha256(fqcn.encode("utf-8")).digest()[:8],
+                          "big",
+                      ) % logical_count
+                      if logical_shard in owned:
+                          selected.append((logical_shard, fqcn))
+
+          if not selected:
+              raise SystemExit(
+                  f"No unit tests selected for physical runner {runner}; owned={sorted(owned)}"
+              )
+
+          for logical_shard, fqcn in sorted(set(selected)):
+              print(fqcn)
+
+          print(
+              f"runner={runner} logical_shards={sorted(owned)} tests={len(set(selected))}",
+              file=os.sys.stderr,
+          )
+          PY
+          test -s "$RUNNER_TEMP/coverage-test-classes.txt"
+          wc -l "$RUNNER_TEMP/coverage-test-classes.txt"
+
+      - name: Run packed coverage shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t TEST_CLASSES < "$RUNNER_TEMP/coverage-test-classes.txt"
+          TEST_ARGS=()
+          for test_class in "${TEST_CLASSES[@]}"; do
+            TEST_ARGS+=(--tests "$test_class")
+          done
+
+          gradle :app:testDebugUnitTest \
+            "${TEST_ARGS[@]}" \
             --build-cache \
             --parallel \
-            --max-workers=4 \
+            --max-workers=8 \
             --configuration-cache \
             --configuration-cache-problems=fail \
             --console=plain \
             --stacktrace
+
+      - name: Collect JaCoCo execution data
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/coverage-exec"
+          mkdir -p "$out"
+          count=0
+          while IFS= read -r file; do
+            count=$((count + 1))
+            cp "$file" "$out/shard-${COVERAGE_RUNNER_INDEX}-$count-$(basename "$file")"
+          done < <(
+            find app/build -type f \( -name '*.exec' -o -name '*.ec' \) -size +0c -print
+          )
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No JaCoCo execution data produced by coverage shard ${COVERAGE_RUNNER_INDEX}."
+            exit 1
+          fi
+          echo "Collected $count JaCoCo execution file(s)."
+
+      - name: Upload coverage execution shard
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-coverage-exec-${{ matrix.runner }}
+          path: ${{ runner.temp }}/coverage-exec/**
+          if-no-files-found: error
+          compression-level: 1
+
+  coverage:
+    name: coverage
+    needs: coverage-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Install Android SDK packages only when missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "Coverage SDK packages already present; skipping sdkmanager."
+            exit 0
+          fi
+          sdkmanager "${missing[@]}"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: "8.13"
+          cache-disabled: false
+          cache-read-only: ${{ github.event_name != 'workflow_dispatch' }}
+
+      - name: Download packed JaCoCo execution shards
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: gamehub-ultra-coverage-exec-*
+          path: ${{ runner.temp }}/coverage-shards
+          merge-multiple: true
+
+      - name: Verify all physical coverage shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          coverage_dir="$RUNNER_TEMP/coverage-shards"
+          count="$(find "$coverage_dir" -type f \( -name '*.exec' -o -name '*.ec' \) -size +0c | wc -l)"
+          if [ "$count" -lt 2 ]; then
+            echo "::error::Expected JaCoCo data from 2 physical coverage runners; found $count file(s)."
+            exit 1
+          fi
+          echo "JaCoCo execution files ready: $count"
+
+      - name: Aggregate sharded debug unit-test coverage
+        env:
+          GAMEHUB_COVERAGE_EXECUTION_DATA_DIR: ${{ runner.temp }}/coverage-shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:createShardedDebugUnitTestCoverageReport             --build-cache             --parallel             --max-workers=8             --configuration-cache             --configuration-cache-problems=fail             --console=plain             --stacktrace
 
       - name: Verify coverage XML report
         shell: bash
@@ -94,11 +272,7 @@ jobs:
           if [ -z "$base_sha" ] || [[ "$base_sha" =~ ^0+$ ]]; then
             base_sha="$(git rev-parse "$head_sha^")"
           fi
-          python3 .github/scripts/local_patch_coverage.py \
-            --xml app/build/reports/coverage/test/debug/report.xml \
-            --base "$base_sha" \
-            --head "$head_sha" \
-            --min-patch-line 90
+          python3 .github/scripts/local_patch_coverage.py             --xml app/build/reports/coverage/test/debug/report.xml             --base "$base_sha"             --head "$head_sha"             --min-patch-line 90
 
       - name: Preserve coverage report
         if: always()

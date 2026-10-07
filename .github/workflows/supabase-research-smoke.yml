@@ -335,6 +335,18 @@ jobs:
                   ("¿Qué es un adjetivo?", ["sustant", "cualidad"]),
                   ("¿Qué es la media aritmética?", ["sum", "divid", "promedio"]),
               ],
+              "study_science_humanities": [
+                  ("Define un libro", ["obra", "página", "texto"]),
+                  ("Define una célula", ["unidad", "seres vivos"]),
+                  ("Define un átomo", ["materia", "núcleo", "electr"]),
+                  ("Define la mitosis", ["división", "célula"]),
+                  ("Define un ecosistema", ["organism", "ambiente"]),
+                  ("Explica las leyes de Newton", ["fuerza", "movimiento"]),
+                  ("Define la Revolución Industrial", ["industrial", "fábrica"]),
+                  ("Define una metáfora", ["figura", "lenguaje"]),
+                  ("Define un sustantivo", ["palabra", "nombra"]),
+                  ("Explica el teorema de Pitágoras", ["hipoten", "cateto"]),
+              ],
               "weather": [
                   ("¿Cómo está el clima hoy en Rancagua?", []),
                   ("Temperatura actual en Santiago", []),

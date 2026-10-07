@@ -92,6 +92,31 @@ private companion object {
         self.assertEqual(stats.unmapped_files, ())
 
 
+    def test_multiline_const_initializer_marks_operator_continuations_and_final_expression_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+private const val WINDOW_MS =
+    1_000L +
+    500L +
+    EXTRA_WINDOW_MS
+RuntimeObject
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 7))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(
+            stats.unmapped_files,
+            ("app/src/main/java/com/example/Foo.kt:6",),
+        )
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
     def test_jacoco_omitted_line_in_mapped_file_is_not_assumed_executable(self) -> None:
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
@@ -195,6 +220,18 @@ class AdaptiveAwareGameSelectionStateRepository(
         self.assertEqual(stats.executable, 2)
         self.assertEqual(stats.covered, 2)
 
+
+    def test_multiline_const_initializer_tracks_operator_ended_continuations(self) -> None:
+        source = """private const val COMBINED_LIMIT =
+    BASE_LIMIT +
+    2 *
+    SCALE_LIMIT
+val runtime = expensiveCall()
+"""
+        self.assertEqual(
+            gate._multiline_const_initializer_lines(source.splitlines()),
+            {2, 3, 4},
+        )
 
     def test_mapped_compose_body_remains_blocking_patch_coverage(self) -> None:
         source = """@Composable
@@ -358,6 +395,47 @@ realCall()
             stats.unmapped_files,
             ("app/src/main/java/com/example/Foo.kt:3",),
         )
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
+    def test_multiline_string_concatenation_without_jacoco_counter_is_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/>'
+            '<line nr="4" mi="0" ci="1"/>'
+            '</sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+val explanation =
+    "Usé la fórmula cuadrática con discriminante " +
+    formatNumber(discriminant)
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2, 3, 4}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual(stats.executable, 2)
+        self.assertEqual(stats.covered, 2)
+
+
+    def test_multiline_const_initializer_continuation_without_jacoco_counter_is_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+const val ACTIVE_LATEST_THERMAL_PREDICTION =
+    ACTIVE_PREFIX + KEY_LATEST_THERMAL_PREDICTION
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2, 3}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
         self.assertEqual(stats.executable, 1)
         self.assertEqual(stats.covered, 1)
 

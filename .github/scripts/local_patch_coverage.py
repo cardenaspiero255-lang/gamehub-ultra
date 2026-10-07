@@ -119,11 +119,17 @@ def _looks_executable_source_line(line: str) -> bool:
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:\{)?$", stripped):
         return False
     if re.match(
+        r"^(?:(?:public|private|protected|internal)\s+)?(?:val|var)\s+"
+        r"[A-Za-z_][A-Za-z0-9_]*(?:\s*:\s*[^=]+)?\s*=\s*$",
+        stripped,
+    ):
+        return False
+    if re.match(
         r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{[^{}]*->\s*$",
         stripped,
     ):
         return False
-    if re.match(r"^\"(?:[^\"\\]|\\.)*\"\s*,?$", stripped):
+    if re.match(r"^\"(?:[^\"\\]|\\.)*\"\s*(?:\+\s*)?,?$", stripped):
         return False
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+,?$", stripped):
         return False
@@ -187,6 +193,35 @@ def _multiline_function_type_signature_lines(source_lines: list[str]) -> set[int
     return structural
 
 
+def _multiline_const_initializer_lines(source_lines: list[str]) -> set[int]:
+    structural: set[int] = set()
+    const_header = re.compile(
+        r"^(?:(?:public|private|protected|internal)\s+)?const\s+val\s+"
+        r"[A-Za-z_][A-Za-z0-9_]*\s*=\s*$"
+    )
+    const_atom = r"(?:[A-Z][A-Z0-9_]*|[-+]?\d+(?:_\d+)*(?:\.\d+(?:_\d+)*)?(?:[fFdDlL])?|true|false|\"[^\"]*\"|'[^']*')"
+    const_expression = re.compile(
+        rf"^{const_atom}(?:\s*[+*/%\-]\s*{const_atom})*\s*$"
+    )
+    const_continuation = re.compile(
+        rf"^{const_atom}(?:\s*[+*/%\-]\s*{const_atom})*\s*[+*/%\-]\s*$"
+    )
+
+    for number, line in enumerate(source_lines, start=1):
+        if not const_header.fullmatch(line.strip()):
+            continue
+
+        for next_number in range(number + 1, len(source_lines) + 1):
+            continuation = source_lines[next_number - 1].strip()
+            if const_continuation.fullmatch(continuation):
+                structural.add(next_number)
+                continue
+            if const_expression.fullmatch(continuation):
+                structural.add(next_number)
+            break
+    return structural
+
+
 def calculate_patch_line_coverage(
     report: ET.Element,
     added_lines: dict[str, set[int]],
@@ -203,6 +238,7 @@ def calculate_patch_line_coverage(
 
         source = (source_text_by_path or {}).get(path, "").splitlines()
         signature_lines = _multiline_function_type_signature_lines(source)
+        const_initializer_lines = _multiline_const_initializer_lines(source)
         source_lines = report_by_path.get(path)
         if source_lines is None:
             if line_numbers:
@@ -221,6 +257,7 @@ def calculate_patch_line_coverage(
                     if (
                         _looks_executable_source_line(source_line)
                         and number not in signature_lines
+                        and number not in const_initializer_lines
                     ):
                         unmapped.append(f"{path}:{number}")
                 continue
