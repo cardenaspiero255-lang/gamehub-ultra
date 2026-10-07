@@ -99,32 +99,36 @@ class PerGameAdaptiveRuntimeIntegrationTest {
     }
 
     @Test
-    fun completedSessionForAnotherGameNeverMutatesSelectedProfile() {
+    fun completedSessionOptimizesTheGameThatProducedIt() {
         val optimizer = PerGameAdaptiveOptimizer(confirmationsRequired = 1, cooldownMillis = 0)
-        var applied = false
+        var applied: Pair<String, PerformanceProfile>? = null
         val events = mutableListOf<PerformanceEvent>()
 
         val decision = applyCompletedAdaptiveDecision(
             completed = SessionCoachStoredSession(
-                sessionId = "session-other",
-                packageName = "game.other",
+                sessionId = "session-owning-game",
+                packageName = "game.a",
                 startedAtMillis = 1L,
                 endedAtMillis = 2L,
                 samples = listOf(snapshot(2L, memory = 95)),
                 preSessionMessage = null,
-                latestObservation = null
+                latestObservation = null,
+                gameVersion = "3.0"
             ),
-            selectedPackage = "game.a",
+            selectedPackage = "game.other",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 3L,
-            applyProfile = { _, _ -> applied = true },
+            applyProfile = { packageName, profile ->
+                applied = packageName to profile
+            },
             recordPerformanceEvent = events::add
         )
 
-        assertNull(decision)
-        assertFalse(applied)
-        assertTrue(events.isEmpty())
+        assertNotNull(decision)
+        assertTrue(decision.changed)
+        assertEquals("game.a" to PerformanceProfile.BALANCED, applied)
+        assertEquals("session-owning-game", events.single().sessionId)
     }
 
     @Test
