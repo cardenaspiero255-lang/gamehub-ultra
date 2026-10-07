@@ -108,14 +108,6 @@ class UltraFrontierExecutionEngine(
             )
         }
 
-        if (plan.lane == UltraFrontierLane.DEEP_RESEARCH) {
-            deepTaskGraphAnswer(
-                request = request,
-                plan = plan,
-                executionStartedNanos = executionStartedNanos
-            )?.let { return it }
-        }
-
         if (
             evolution.shouldRunEnsemble(
                 request = request,
@@ -663,7 +655,8 @@ class UltraFrontierExecutionEngine(
             }
         if (
             plan.lane != UltraFrontierLane.DEEP_RESEARCH ||
-            researchTasks.size < 2
+            researchTasks.size < 2 ||
+            !coordinator.supportsProviderPartitioning
         ) {
             return coordinator.answer(
                 request = attemptRequest,
