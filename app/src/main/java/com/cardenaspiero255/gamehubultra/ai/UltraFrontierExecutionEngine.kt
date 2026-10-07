@@ -126,13 +126,11 @@ class UltraFrontierExecutionEngine(
         var attempt = 1
         var previousRetryProgress: UltraFrontierRetryProgress? = null
         recordAttempt(request, plan, attempt)
-        var answer = coordinator.answer(
-            request = requestForAttempt(
-                request = request,
-                plan = plan,
-                attempt = attempt,
-                executionStartedNanos = executionStartedNanos
-            ),
+        var answer = executePlannedAttempt(
+            request = request,
+            plan = plan,
+            attempt = attempt,
+            executionStartedNanos = executionStartedNanos,
             localChat = localChat
         )
 
@@ -323,13 +321,11 @@ class UltraFrontierExecutionEngine(
                     )
                     attempt += 1
                     recordAttempt(request, plan, attempt)
-                    answer = coordinator.answer(
-                        request = requestForAttempt(
-                            request = request,
-                            plan = plan,
-                            attempt = attempt,
-                            executionStartedNanos = executionStartedNanos
-                        ),
+                    answer = executePlannedAttempt(
+                        request = request,
+                        plan = plan,
+                        attempt = attempt,
+                        executionStartedNanos = executionStartedNanos,
                         localChat = localChat
                     )
                 }
@@ -532,6 +528,84 @@ class UltraFrontierExecutionEngine(
             verificationMode = UltraVerificationMode.REQUIRED,
             researchProviderBudget = null
         )
+
+    private fun executePlannedAttempt(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        attempt: Int,
+        executionStartedNanos: Long,
+        localChat: () -> String?
+    ): UltraQueryExecutionAnswer {
+        val attemptRequest = requestForAttempt(
+            request = request,
+            plan = plan,
+            attempt = attempt,
+            executionStartedNanos = executionStartedNanos
+        )
+        val researchTasks = plan.tasks.filter {
+            it.specialist == UltraFrontierSpecialist.RESEARCH
+        }
+        if (
+            plan.lane != UltraFrontierLane.DEEP_RESEARCH ||
+            researchTasks.size < 2
+        ) {
+            return coordinator.answer(
+                request = attemptRequest,
+                localChat = localChat
+            )
+        }
+
+        val taskIndexes = researchTasks
+            .mapIndexed { index, task -> task.id to index }
+            .toMap()
+        val latencies = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        val remainingMillis = remainingResearchMillis(
+            plan = plan,
+            executionStartedNanos = executionStartedNanos
+        ).coerceAtLeast(1L)
+        val maxParallelism = evolution
+            .budget(request, frontier.policy)
+            .maxParallelism
+            .coerceIn(1, researchTasks.size)
+
+        val results = try {
+            specialistExecutor.execute(
+                tasks = researchTasks,
+                maxParallelism = maxParallelism,
+                timeoutMillis = remainingMillis
+            ) { task ->
+                val branchIndex = taskIndexes.getValue(task.id)
+                val branchRequest = attemptRequest.copy(
+                    researchProviderOffset = branchIndex
+                )
+                val started = nanoTime()
+                val result = coordinator.answer(
+                    request = branchRequest,
+                    localChat = { null }
+                )
+                latencies[task.id] = TimeUnit.NANOSECONDS.toMillis(
+                    (nanoTime() - started).coerceAtLeast(0L)
+                )
+                result
+            }
+        } catch (_: Exception) {
+            return coordinator.answer(
+                request = attemptRequest,
+                localChat = localChat
+            )
+        }
+
+        val candidates = researchTasks.mapNotNull { task ->
+            results[task.id]?.let { answer ->
+                answer to (latencies[task.id] ?: 0L)
+            }
+        }
+        return evolution.selectResearchEnsemble(candidates)
+            ?: coordinator.answer(
+                request = attemptRequest,
+                localChat = localChat
+            )
+    }
 
     private fun requestForAttempt(
         request: UltraGeneralQueryRequest,
