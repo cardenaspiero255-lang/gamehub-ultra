@@ -6,7 +6,8 @@ import com.cardenaspiero255.gamehubultra.tools.UltraToolResult
 import com.cardenaspiero255.gamehubultra.tools.UltraToolSideEffect
 
 data class UltraFrontierToolAuthorization(
-    val userConfirmedMutation: Boolean = false
+    val userConfirmedMutation: Boolean = false,
+    val confirmedToolId: String? = null
 )
 
 /**
@@ -24,10 +25,16 @@ class UltraFrontierToolGateway {
         val requiresConfirmation =
             tool.descriptor.sideEffect != UltraToolSideEffect.READ_ONLY
 
-        if (requiresConfirmation && !authorization.userConfirmedMutation) {
+        val confirmationMatchesTool =
+            authorization.userConfirmedMutation &&
+                authorization.confirmedToolId == tool.descriptor.id
+
+        if (requiresConfirmation && !confirmationMatchesTool) {
             return UltraToolExecution.invalidInput(
                 descriptor = tool.descriptor,
-                message = "Esta acción puede cambiar el estado del dispositivo o de GameHub y requiere confirmación explícita."
+                message =
+                    "Esta acción puede cambiar el estado del dispositivo o de GameHub y " +
+                        "requiere confirmación explícita para esta herramienta concreta."
             )
         }
 
