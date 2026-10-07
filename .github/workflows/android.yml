@@ -827,7 +827,7 @@ jobs:
         shell: bash
         run: python3 .github/scripts/register_sentry_release.py --discover-only
 
-      - name: Build distributable release APK and AAB with Sentry
+      - name: Build distributable release APK with Sentry
         if: success() && matrix.shard == 'release-apk' && github.event_name != 'pull_request'
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -836,7 +836,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:assembleRelease :app:bundleRelease \
+          gradle :app:assembleRelease \
             --build-cache \
             --max-workers=8 \
             --rerun-tasks \
