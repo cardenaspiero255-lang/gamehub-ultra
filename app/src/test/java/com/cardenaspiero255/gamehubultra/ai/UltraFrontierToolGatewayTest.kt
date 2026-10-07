@@ -33,7 +33,10 @@ class UltraFrontierToolGatewayTest {
         val allowed = gateway.execute(
             tool = tool,
             request = "apply",
-            authorization = UltraFrontierToolAuthorization(userConfirmedMutation = true)
+            authorization = UltraFrontierToolAuthorization(
+                userConfirmedMutation = true,
+                confirmedToolId = "frontier.test"
+            )
         )
 
         assertEquals("changed", assertIs<UltraToolResult.Success<String>>(allowed).value)
@@ -66,6 +69,30 @@ class UltraFrontierToolGatewayTest {
         )
 
         assertEquals("observed", assertIs<UltraToolResult.Success<String>>(result).value)
+    }
+
+
+    @Test
+    fun confirmationForAnotherToolDoesNotAuthorizeMutation() {
+        var executions = 0
+        val tool = fakeTool(UltraToolSideEffect.MUTATES_STATE) {
+            executions += 1
+            "changed"
+        }
+        val gateway = UltraFrontierToolGateway()
+
+        val result = gateway.execute(
+            tool = tool,
+            request = "apply",
+            authorization = UltraFrontierToolAuthorization(
+                userConfirmedMutation = true,
+                confirmedToolId = "optimizer.other"
+            )
+        )
+
+        val failure = assertIs<UltraToolResult.Failure>(result)
+        assertEquals(UltraToolFailureCode.INVALID_INPUT, failure.failure.code)
+        assertEquals(0, executions)
     }
 
     private fun fakeTool(
