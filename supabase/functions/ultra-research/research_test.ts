@@ -8055,7 +8055,6 @@ Deno.test(
   },
 );
 
-
 Deno.test(
   "V20 weather falls back to wttr when Open-Meteo and MET Norway are unavailable",
   async () => {
