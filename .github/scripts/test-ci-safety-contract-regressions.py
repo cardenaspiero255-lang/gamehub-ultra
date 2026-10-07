@@ -279,15 +279,15 @@ def main() -> None:
     reject_mutation(
         "coverage test command replaced by inert text",
         coverage_replace=(
-            "          gradle :app:testDebugUnitTest \\\n",
-            "          echo :app:testDebugUnitTest \\\n",
+            "          gradle :app:testDebugUnitTest",
+            "          echo :app:testDebugUnitTest",
         ),
     )
     reject_mutation(
         "coverage aggregation command replaced by inert text",
         coverage_replace=(
-            "          gradle :app:createShardedDebugUnitTestCoverageReport \\\n",
-            "          echo :app:createShardedDebugUnitTestCoverageReport \\\n",
+            "          gradle :app:createShardedDebugUnitTestCoverageReport",
+            "          echo :app:createShardedDebugUnitTestCoverageReport",
         ),
     )
     reject_mutation(
