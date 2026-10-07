@@ -88,6 +88,7 @@ data class UltraFrontierPolicy(
     val deepResearchPassBudget: Int = 3,
     val researchRetrySourceBudgetStep: Int = 2,
     val minimumVerifiedSources: Int = 1,
+    val minimumFreshSources: Int = 2,
     val minimumDeepSources: Int = 2,
     val maximumPlanSteps: Int = 12,
     val alwaysCritiqueFinalAnswer: Boolean = true,
@@ -101,8 +102,10 @@ data class UltraFrontierPolicy(
         require(deepResearchPassBudget >= verifiedResearchPassBudget)
         require(researchRetrySourceBudgetStep >= 0)
         require(minimumVerifiedSources >= 1)
+        require(minimumFreshSources >= minimumVerifiedSources)
         require(minimumDeepSources >= minimumVerifiedSources)
         require(minimumVerifiedSources <= verifiedSourceBudget)
+        require(minimumFreshSources <= verifiedSourceBudget)
         require(minimumDeepSources <= deepSourceBudget)
         require(maximumPlanSteps >= 4)
     }
@@ -303,7 +306,14 @@ class UltraFrontierOrchestrator(
             else -> 0
         }
         val minimumDistinctSources = when (lane) {
-            UltraFrontierLane.VERIFIED_RESEARCH -> policy.minimumVerifiedSources
+            UltraFrontierLane.VERIFIED_RESEARCH -> if (query.requiresFreshData) {
+                maxOf(
+                    policy.minimumVerifiedSources,
+                    policy.minimumFreshSources
+                )
+            } else {
+                policy.minimumVerifiedSources
+            }
             UltraFrontierLane.DEEP_RESEARCH -> policy.minimumDeepSources
             else -> 0
         }
@@ -431,7 +441,14 @@ class UltraFrontierOrchestrator(
             sourceBudget = policy.verifiedSourceBudget,
             maxSourceBudget = policy.deepSourceBudget,
             sourceBudgetStep = 0,
-            minimumDistinctSources = policy.minimumVerifiedSources,
+            minimumDistinctSources = if (request.query.requiresFreshData) {
+                maxOf(
+                    policy.minimumVerifiedSources,
+                    policy.minimumFreshSources
+                )
+            } else {
+                policy.minimumVerifiedSources
+            },
             researchPassBudget = 0,
             requiresFreshResearch = request.query.requiresFreshData,
             requiresUserConfirmation = false,
