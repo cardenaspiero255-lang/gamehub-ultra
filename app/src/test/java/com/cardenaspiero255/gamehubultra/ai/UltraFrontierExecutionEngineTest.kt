@@ -265,4 +265,34 @@ class UltraFrontierExecutionEngineTest {
         assertFalse(answer.message.contains("dato local viejo"))
     }
 
+
+    @Test
+    fun genericLocalFailureIsNeverReturnedAsSuccessfulFallback() {
+        var localCalls = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult =
+                error("stable local knowledge must not call research")
+        }
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway)
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify("¿Qué es un libro?")
+        ) {
+            localCalls += 1
+            "No pude verificarlo con suficiente confianza."
+        }
+
+        assertEquals(2, localCalls)
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertFalse(
+            answer.message.contains(
+                "no pude verificarlo con suficiente confianza",
+                ignoreCase = true
+            )
+        )
+    }
+
 }
