@@ -227,6 +227,18 @@ class SessionCoachSessionStoreTest {
         val active = assertNotNull(store.readActiveSession())
         assertEquals(latency, active.latestObservation)
         assertEquals(warning, active.latestThermalPredictionObservation)
+
+        val finished = assertNotNull(
+            store.finishActiveSession(
+                endedAtMillis = 30_000L,
+                expectedSessionId = "thermal-state"
+            )
+        )
+        assertEquals(warning, finished.latestThermalPredictionObservation)
+        assertEquals(
+            warning,
+            assertNotNull(store.readLastCompletedSession()).latestThermalPredictionObservation
+        )
     }
 
 }
