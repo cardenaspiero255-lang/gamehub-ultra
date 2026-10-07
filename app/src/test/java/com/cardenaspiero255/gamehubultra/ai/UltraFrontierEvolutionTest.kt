@@ -612,6 +612,77 @@ class UltraFrontierEvolutionTest {
         assertEquals(2, calls)
     }
 
+    @Test
+    fun specialistExecutorHonorsDependenciesAcrossParallelResearchTasks() {
+        val query = UltraGeneralQueryRouter.classify(
+            "Compara dos teléfonos actuales y dime cuál es mejor"
+        )
+        val tasks = UltraFrontierTaskPlanner().plan(
+            request = UltraFrontierRequest(
+                message = query.originalText,
+                query = query,
+                networkAvailable = true
+            ),
+            lane = UltraFrontierLane.DEEP_RESEARCH
+        )
+        val completed = java.util.Collections.synchronizedSet(
+            linkedSetOf<String>()
+        )
+
+        val results = UltraFrontierSpecialistExecutor().execute(
+            tasks = tasks,
+            maxParallelism = 4,
+            timeoutMillis = 5_000L
+        ) { task ->
+            if (task.id == "synthesize") {
+                assertTrue("research-a" in completed)
+                assertTrue("research-b" in completed)
+            }
+            completed += task.id
+            task.specialist.name
+        }
+
+        assertEquals(tasks.size, results.size)
+        assertTrue("critic" in completed)
+    }
+
+    @Test
+    fun successfulVerifiedHistoryCanPromoteOptionalKnowledgeToResearchLane() {
+        val evolution = UltraFrontierEvolutionController(
+            learning = UltraFrontierLearningStore(
+                minSamplesForPreference = 2
+            )
+        )
+        repeat(2) {
+            evolution.record(
+                UltraFrontierExecutionOutcome(
+                    domain = UltraFrontierDomain.GENERAL_KNOWLEDGE,
+                    lane = UltraFrontierLane.VERIFIED_RESEARCH,
+                    accepted = true,
+                    verified = true,
+                    abstained = false,
+                    latencyMillis = 300L,
+                    reasonCode = null
+                )
+            )
+        }
+        val query = UltraGeneralQueryRouter.classify("¿Qué es un libro?")
+        val plan = UltraFrontierOrchestrator(
+            evolution = evolution
+        ).plan(
+            UltraFrontierRequest(
+                message = query.originalText,
+                query = query,
+                networkAvailable = true
+            )
+        )
+
+        assertEquals(UltraFrontierLane.VERIFIED_RESEARCH, plan.lane)
+        assertTrue(plan.tasks.any {
+            it.specialist == UltraFrontierSpecialist.RESEARCH
+        })
+    }
+
     private fun fakeProvider(providerId: String): UltraResearchProvider =
         object : UltraResearchProvider {
             override val id: String = providerId
