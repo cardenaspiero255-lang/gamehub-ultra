@@ -21,38 +21,89 @@ permissions:
   contents: read
 
 jobs:
-  quality-contracts:
+  quality-contract-shard:
+    name: quality-contract-shard-${{ matrix.runner }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        runner: [0, 1, 2]
+    env:
+      QUALITY_LOGICAL_SHARD_COUNT: "6"
+      QUALITY_PHYSICAL_SHARD_COUNT: "3"
+      QUALITY_RUNNER_INDEX: "${{ matrix.runner }}"
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Verify benchmark fast-path contract
+      - name: Run packed CI contract shards
         shell: bash
-        run: bash .github/scripts/test-benchmark-fast-path.sh
+        run: |
+          set -euo pipefail
+          runner="$QUALITY_RUNNER_INDEX"
+          physical="$QUALITY_PHYSICAL_SHARD_COUNT"
+          logical_shards=("$runner" "$((runner + physical))")
+          log_dir="$RUNNER_TEMP/quality-contracts"
+          mkdir -p "$log_dir"
 
-      - name: Verify CI safety contract regression coverage
-        shell: bash
-        run: python3 .github/scripts/test-ci-safety-contract-regressions.py
+          run_contract() {
+            case "$1" in
+              0) bash .github/scripts/test-benchmark-fast-path.sh ;;
+              1) python3 .github/scripts/test-ci-safety-contract-regressions.py ;;
+              2) python3 .github/scripts/test-local-patch-coverage.py ;;
+              3) bash .github/scripts/test-ci-safety-contract.sh ;;
+              4) python3 .github/scripts/test-sentry-release-auth-fallback.py ;;
+              5) python3 .github/scripts/test-ci-performance-metrics.py ;;
+              *) echo "Unknown quality logical shard: $1"; return 2 ;;
+            esac
+          }
 
-      - name: Test local patch coverage gate
-        shell: bash
-        run: python3 .github/scripts/test-local-patch-coverage.py
+          pids=()
+          for logical_shard in "${logical_shards[@]}"; do
+            (
+              set -euo pipefail
+              echo "Starting quality logical shard $logical_shard"
+              run_contract "$logical_shard"
+            ) >"$log_dir/shard-$logical_shard.log" 2>&1 &
+            pids+=("$!")
+          done
 
-      - name: Verify CI safety contract
-        shell: bash
-        run: bash .github/scripts/test-ci-safety-contract.sh
+          status=0
+          for index in "${!pids[@]}"; do
+            logical_shard="${logical_shards[$index]}"
+            if ! wait "${pids[$index]}"; then
+              echo "::error::Quality logical shard $logical_shard failed."
+              status=1
+            fi
+            cat "$log_dir/shard-$logical_shard.log"
+          done
+          exit "$status"
 
-      - name: Test Sentry release auth fallback
-        shell: bash
-        run: python3 .github/scripts/test-sentry-release-auth-fallback.py
+      - name: Upload quality contract diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-quality-contracts-${{ matrix.runner }}
+          path: ${{ runner.temp }}/quality-contracts/*.log
+          if-no-files-found: ignore
+          compression-level: 1
 
-      - name: Test CI performance metrics
+  quality-contracts:
+    name: quality-contracts
+    if: always()
+    needs: quality-contract-shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify packed quality contract shards
         shell: bash
-        run: python3 .github/scripts/test-ci-performance-metrics.py
+        run: |
+          set -euo pipefail
+          test "${{ needs.quality-contract-shard.result }}" = "success"
 
   quality-lint:
     runs-on: ubuntu-22.04
