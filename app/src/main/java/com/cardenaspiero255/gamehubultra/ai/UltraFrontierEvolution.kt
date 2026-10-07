@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import java.net.URI
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -1070,7 +1071,7 @@ class UltraFrontierEvolutionController(
                     confidence =
                         answer.confidence ?: UltraAnswerConfidence.LOW,
                     independentSourceCount =
-                        answer.independentSourceCount.coerceAtLeast(0),
+                        effectiveIndependentSourceCount(answer),
                     validUntilMillis = validUntil,
                     inferred = claimExtractor.isInference(text)
                 )
@@ -1256,6 +1257,30 @@ class UltraFrontierEvolutionController(
             retryable = false,
             stage = "frontier-knowledge-graph"
         )
+    }
+
+    private fun effectiveIndependentSourceCount(
+        answer: UltraQueryExecutionAnswer
+    ): Int {
+        if (answer.independentSourceCount > 0) {
+            return answer.independentSourceCount
+        }
+        return answer.sources
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .map(::sourceIdentity)
+            .distinct()
+            .count()
+    }
+
+    private fun sourceIdentity(source: String): String {
+        val normalized = source.trim().lowercase(Locale.ROOT)
+        val host = runCatching { URI(normalized).host }
+            .getOrNull()
+            ?.lowercase(Locale.ROOT)
+            ?.removePrefix("www.")
+        return host?.takeIf(String::isNotBlank) ?: normalized
     }
 
     fun rememberVerified(
