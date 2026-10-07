@@ -137,6 +137,17 @@ object UltraFrontierWorldStateRegistry {
 
     fun snapshot(): UltraFrontierWorldState? = current
 
+    fun snapshotForPlanning(
+        nowMillis: Long = System.currentTimeMillis()
+    ): UltraFrontierWorldState? {
+        val state = current ?: return null
+        val age = nowMillis - state.timestampMillis
+        if (age < 0L || age > ADVANCED_SIGNAL_MAX_AGE_MILLIS) {
+            return null
+        }
+        return state
+    }
+
     fun clear() {
         current = null
     }
