@@ -11,7 +11,6 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 
 internal fun applyCompletedAdaptiveDecision(
     completed: SessionCoachStoredSession?,
-    selectedPackage: String?,
     activeProfile: PerformanceProfile,
     optimizer: PerGameAdaptiveOptimizer,
     nowMillis: Long,
@@ -19,14 +18,14 @@ internal fun applyCompletedAdaptiveDecision(
     recordPerformanceEvent: (PerformanceEvent) -> Unit
 ): PerGameAdaptiveDecision? {
     val session = completed ?: return null
-    val selected = selectedPackage
-        ?.trim()
-        ?.takeIf(String::isNotEmpty)
+    val sessionPackage = session.packageName
+        .trim()
+        .takeIf(String::isNotEmpty)
         ?: return null
-    if (session.packageName != selected || session.samples.isEmpty()) return null
+    if (session.samples.isEmpty()) return null
 
     val key = AdaptiveGameKey(
-        packageName = selected,
+        packageName = sessionPackage,
         version = session.gameVersion
             ?.trim()
             ?.takeIf(String::isNotEmpty)
@@ -51,7 +50,7 @@ internal fun applyCompletedAdaptiveDecision(
     )
 
     if (decision.changed) {
-        applyProfile(selected, decision.profile)
+        applyProfile(sessionPackage, decision.profile)
         recordPerformanceEvent(
             PerformanceEvent(
                 timestampMillis = nowMillis,
