@@ -192,4 +192,28 @@ class BatteryAwareGamingEngineTest {
         assertTrue(assessment.preventAggressiveProfiles)
     }
 
+
+    @Test
+    fun `missing latest percentage falls back to latest known level in current unplugged window`() {
+        val assessment = engine.assess(
+            listOf(
+                snapshot(minutes = 0, percent = 12, charging = false),
+                SessionCoachSnapshot(
+                    timestampMillis = 10 * 60_000L,
+                    batteryPercent = null,
+                    thermalStatus = 1,
+                    thermalHeadroom = 0.20f,
+                    refreshRateHz = 120f,
+                    latencyMs = 30L,
+                    batteryCharging = false,
+                    powerSaveMode = false,
+                ),
+            ),
+        )
+
+        assertEquals(12, assessment.currentPercent)
+        assertEquals(BatteryGamingRecommendation.CONSERVE, assessment.recommendation)
+        assertTrue(assessment.preventAggressiveProfiles)
+    }
+
 }
