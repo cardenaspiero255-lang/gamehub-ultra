@@ -10,6 +10,43 @@ import kotlin.test.assertTrue
 
 class UltraFrontierWorldStateRuntimeTest {
     @Test
+    fun lightweightBackgroundContextCanRefreshPlanningState() {
+        UltraFrontierWorldStateRegistry.clear()
+        val context = GameHubAiContext(
+            selectedGamePackage = "voice.game",
+            sustainedPerformanceSupported = true,
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuAvailable = true,
+            thermalStatus = 2,
+            thermalHeadroom = 0.64f,
+            batteryPercent = 37,
+            charging = false,
+            refreshRateHz = 120f,
+            networkValidated = true,
+            networkLatencyMs = 35L,
+            downstreamBandwidthKbps = 300_000L,
+            storageFreePercent = 50,
+            inputDeviceCount = 1,
+            selectedProfile = PerformanceProfile.BALANCED,
+            sessionActive = true
+        )
+
+        UltraFrontierWorldStateRegistry.update(
+            context = context,
+            nowMillis = 10_000L
+        )
+
+        val state = assertNotNull(
+            UltraFrontierWorldStateRegistry.snapshotForPlanning(10_001L)
+        )
+        assertEquals("voice.game", state.selectedGamePackage)
+        assertEquals(37, state.batteryPercent)
+        assertEquals(35L, state.networkLatencyMs)
+        assertEquals(2, state.thermalStatus)
+    }
+
+    @Test
     fun telemetrySamplesAutomaticallyProduceAndPublishUnifiedWorldState() {
         UltraFrontierWorldStateRegistry.clear()
         val context = GameHubAiContext(
