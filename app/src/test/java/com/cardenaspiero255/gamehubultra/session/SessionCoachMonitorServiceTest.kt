@@ -85,9 +85,8 @@ class SessionCoachMonitorServiceTest {
     @Test
     fun startPersistsInstalledPackageVersionAtLaunch() {
         val packageName = context.packageName
-        val expectedVersion = context.packageManager
-            .getPackageInfo(packageName, 0)
-            .versionName
+        val info = context.packageManager.getPackageInfo(packageName, 0)
+        val expectedVersion = "${info.versionName.orEmpty()}#${info.longVersionCode}"
 
         val id = SessionCoachMonitorService.start(
             context = context,
