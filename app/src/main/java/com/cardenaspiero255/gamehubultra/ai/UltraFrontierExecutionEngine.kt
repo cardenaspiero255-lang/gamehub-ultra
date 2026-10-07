@@ -302,7 +302,12 @@ class UltraFrontierExecutionEngine(
                         attempt = attempt,
                         reasonCode = answer.reasonCode ?: "FRONTIER_EVIDENCE_INSUFFICIENT"
                     )
-                    return answer.asSafeAbstention()
+                    return complete(
+                        request = request,
+                        plan = plan,
+                        answer = answer.asSafeAbstention(),
+                        executionStartedNanos = executionStartedNanos
+                    )
                 }
             }
         }
