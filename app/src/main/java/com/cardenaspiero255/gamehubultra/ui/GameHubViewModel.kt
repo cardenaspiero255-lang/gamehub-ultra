@@ -263,8 +263,12 @@ class GameHubViewModel(
         viewModelScope.launch { libraryRepository.setManualGame(packageName, manual) }
     }
 
+    suspend fun persistPerformanceEvent(event: PerformanceEvent) {
+        performanceHistoryRepository.appendPerformanceEvent(event)
+    }
+
     fun recordPerformanceEvent(event: PerformanceEvent) {
-        viewModelScope.launch { performanceHistoryRepository.appendPerformanceEvent(event) }
+        viewModelScope.launch { persistPerformanceEvent(event) }
     }
 
     private fun reportVoiceSelectionPersistenceFailure(error: Throwable) {
