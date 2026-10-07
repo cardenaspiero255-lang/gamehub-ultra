@@ -260,4 +260,44 @@ class PerGameAdaptiveOptimizer47Test {
         assertEquals(PerformanceProfile.BALANCED, afterManualSelection.profile)
     }
 
+    @Test
+    fun restoringSnapshotRehydratesRuntimeAndPersistentState() {
+        val persisted = mutableMapOf<AdaptiveGameKey, PerGameAdaptivePersistedState>()
+        val store = object : PerGameAdaptiveStateStore {
+            override fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState? = persisted[key]
+            override fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState) {
+                persisted[key] = state
+            }
+        }
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0,
+            stateStore = store
+        )
+        val key = AdaptiveGameKey("game.restore", "1")
+        val hot = listOf(AdaptiveTrendSample(4, 40, 60f, 90, 120))
+
+        optimizer.evaluate(key, PerformanceProfile.X4, hot, 10L)
+        val snapshot = requireNotNull(optimizer.snapshotState(key))
+        optimizer.recordExplicitProfileSelection(key, PerformanceProfile.X4)
+
+        optimizer.restoreState(key, snapshot)
+
+        assertEquals(snapshot, persisted[key])
+        val stable = listOf(
+            AdaptiveTrendSample(0, 90, 120f, 30, 20),
+            AdaptiveTrendSample(0, 88, 120f, 31, 22),
+            AdaptiveTrendSample(0, 86, 120f, 32, 24)
+        )
+        val recovered = optimizer.evaluate(
+            key,
+            PerformanceProfile.BALANCED,
+            stable,
+            20L
+        )
+        assertTrue(recovered.changed)
+        assertEquals(PerformanceProfile.X4, recovered.profile)
+    }
+
+
 }
