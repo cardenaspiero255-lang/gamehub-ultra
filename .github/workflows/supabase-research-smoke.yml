@@ -812,7 +812,7 @@ jobs:
           PY
           )" -ge "70"
 
-      - name: Exercise 10000 stratified and runtime-generated questions
+      - name: Exercise 50000 stratified and runtime-generated questions
         shell: bash
         run: |
           set -euo pipefail
