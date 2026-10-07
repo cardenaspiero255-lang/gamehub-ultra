@@ -144,4 +144,65 @@ class ThermalPredictionEngineTest {
                 latencyMs = 30L,
             )
         }
+    @Test
+    fun `preventive boundary is centralized in policy and exact confidence limit is inclusive`() {
+        val calibrated = policy.copy(
+            minimumPreventiveConfidence = 0.78f,
+            preventiveRiskThreshold = ThermalRisk.HIGH,
+            preventiveTrends = setOf(ThermalTrend.RISING, ThermalTrend.RISING_FAST),
+        )
+
+        assertTrue(
+            calibrated.allowsPreventiveSignal(
+                risk = ThermalRisk.HIGH,
+                trend = ThermalTrend.RISING,
+                confidence = 0.78f,
+            )
+        )
+        assertFalse(
+            calibrated.allowsPreventiveSignal(
+                risk = ThermalRisk.HIGH,
+                trend = ThermalTrend.RISING,
+                confidence = 0.779f,
+            )
+        )
+        assertFalse(
+            calibrated.allowsPreventiveSignal(
+                risk = ThermalRisk.MODERATE,
+                trend = ThermalTrend.RISING,
+                confidence = 1f,
+            )
+        )
+        assertFalse(
+            calibrated.allowsPreventiveSignal(
+                risk = ThermalRisk.HIGH,
+                trend = ThermalTrend.STABLE,
+                confidence = 1f,
+            )
+        )
+    }
+
+    @Test
+    fun `preventive risk threshold can be recalibrated without rewriting engine`() {
+        val calibrated = policy.copy(
+            risingSlopePerMinute = 0.05f,
+            fastRisingSlopePerMinute = 0.20f,
+            highRiskHeadroom = 0.90f,
+            criticalRiskHeadroom = 1.00f,
+            minimumPreventiveConfidence = 0.50f,
+            noiseTolerance = 0.01f,
+            preventiveRiskThreshold = ThermalRisk.MODERATE,
+            preventiveTrends = setOf(ThermalTrend.RISING, ThermalTrend.RISING_FAST),
+        )
+
+        val result = ThermalPredictionEngine(calibrated).predict(
+            samples = samples(0.40f, 0.42f, 0.44f, 0.46f, 0.49f),
+        )
+
+        assertEquals(ThermalTrend.RISING, result.trend)
+        assertEquals(ThermalRisk.MODERATE, result.risk)
+        assertTrue(result.allowPreventiveSignal)
+    }
+
+
 }
