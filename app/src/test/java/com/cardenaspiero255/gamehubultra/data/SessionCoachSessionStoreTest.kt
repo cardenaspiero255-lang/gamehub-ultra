@@ -39,10 +39,21 @@ class SessionCoachSessionStoreTest {
             thermalHeadroom = 0.82f,
             refreshRateHz = 120f,
             latencyMs = 42L,
-            memoryUsedPercent = 67
+            memoryUsedPercent = 67,
+            batteryCharging = true,
+            powerSaveMode = true
         )
 
         assertEquals(valid, SessionCoachSnapshotCodec.decode(SessionCoachSnapshotCodec.encode(valid)))
+
+        val unplugged = valid.copy(
+            batteryCharging = false,
+            powerSaveMode = false
+        )
+        assertEquals(
+            unplugged,
+            SessionCoachSnapshotCodec.decode(SessionCoachSnapshotCodec.encode(unplugged))
+        )
 
         val invalid = SessionCoachSnapshotCodec.decode(
             "99|150|2|NaN|-1|-5|150"
@@ -59,6 +70,8 @@ class SessionCoachSessionStoreTest {
         assertEquals(100L, legacy?.timestampMillis)
         assertEquals(80, legacy?.batteryPercent)
         assertNull(legacy?.memoryUsedPercent)
+        assertNull(legacy?.batteryCharging)
+        assertNull(legacy?.powerSaveMode)
 
         assertNull(SessionCoachSnapshotCodec.decode("broken"))
         assertNull(SessionCoachSnapshotCodec.decode("bad|||||"))

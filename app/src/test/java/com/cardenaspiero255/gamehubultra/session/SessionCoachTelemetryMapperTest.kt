@@ -29,6 +29,8 @@ class SessionCoachTelemetryMapperTest {
         assertEquals(0.82f, snapshot.thermalHeadroom)
         assertEquals(120f, snapshot.refreshRateHz)
         assertEquals(45L, snapshot.latencyMs)
+        assertEquals(false, snapshot.batteryCharging)
+        assertEquals(false, snapshot.powerSaveMode)
     }
 
     @Test

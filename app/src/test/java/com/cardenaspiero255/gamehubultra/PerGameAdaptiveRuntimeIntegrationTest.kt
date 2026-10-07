@@ -531,4 +531,134 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         assertTrue(decision.reason.contains("predicción térmica", ignoreCase = true))
     }
 
+
+    @Test
+    fun completedSessionUsesTimestampLatestSampleWhenHistoryArrivesOutOfOrder() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-out-of-order",
+            packageName = "game.order",
+            startedAtMillis = 0L,
+            endedAtMillis = 30_000L,
+            samples = listOf(
+                snapshot(30_000L, memory = 95),
+                snapshot(10_000L, memory = 40),
+                snapshot(20_000L, memory = 40)
+            ),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1"
+        )
+
+        val decision = applyCompletedAdaptiveDecision(
+            completed = completed,
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 31_000L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(decision)
+        assertTrue(decision.changed)
+        assertEquals(PerformanceProfile.BALANCED, decision.profile)
+        assertTrue(decision.reason.contains("memoria", ignoreCase = true))
+    }
+
+
+    @Test
+    fun completedSessionBatteryConstraintFlowsIntoAdaptiveDecisionReason() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-battery-constraint",
+            packageName = "game.battery",
+            startedAtMillis = 0L,
+            endedAtMillis = 20 * 60_000L,
+            samples = listOf(
+                snapshot(0L, memory = 40).copy(
+                    batteryPercent = 80,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                snapshot(10 * 60_000L, memory = 40).copy(
+                    batteryPercent = 76,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                ),
+                snapshot(20 * 60_000L, memory = 40).copy(
+                    batteryPercent = 72,
+                    batteryCharging = false,
+                    powerSaveMode = false
+                )
+            ),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1"
+        )
+
+        val decision = applyCompletedAdaptiveDecision(
+            completed = completed,
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 21 * 60_000L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(decision)
+        assertTrue(decision.changed)
+        assertEquals(PerformanceProfile.BALANCED, decision.profile)
+        assertTrue(decision.reason.contains("drenaje", ignoreCase = true))
+    }
+
+
+    @Test
+    fun chargingAtCriticalBatteryDoesNotTriggerAdaptiveDownshift() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-charging-critical",
+            packageName = "game.charging",
+            startedAtMillis = 0L,
+            endedAtMillis = 10_000L,
+            samples = listOf(
+                snapshot(0L, memory = 40).copy(
+                    batteryPercent = 12,
+                    batteryCharging = true,
+                    powerSaveMode = false
+                ),
+                snapshot(10_000L, memory = 40).copy(
+                    batteryPercent = 10,
+                    batteryCharging = true,
+                    powerSaveMode = false
+                )
+            ),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1"
+        )
+
+        val decision = applyCompletedAdaptiveDecision(
+            completed = completed,
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 11_000L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(decision)
+        assertFalse(decision.changed)
+        assertEquals(PerformanceProfile.X4, decision.profile)
+        assertFalse(decision.reason.contains("batería crítica", ignoreCase = true))
+    }
+
 }

@@ -28,22 +28,24 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    # All 50,000 cases are generated identically. We keep 32 logical shards but
-    # pack two logical shards into each of 16 GitHub runners so runner queuing
-    # does not serialize half the matrix. Each runner uses 24 stable workers,
-    # preserving the same theoretical 32x12 parallelism. Fresh-data checks stay
-    # on the runner that owns logical shard 0 to avoid provider bursts.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    # All 50,000 cases are generated identically. We keep 64 logical shards and
+    # pack eight logical shards into each of 8 GitHub runners. This preserves the
+    # same logical coverage while avoiding the multi-minute runner queue observed
+    # with 16 physical jobs. Each runner keeps 32 stable workers. Fresh-data
+    # checks stay on the runner that
+    # owns logical shard 0 to avoid provider bursts.
     timeout-minutes: 60
     env:
       SMOKE_SEED: ${{ github.run_id }}
-      SMOKE_STABLE_WORKERS: "24"
+      SMOKE_STABLE_WORKERS: "32"
       SMOKE_WARMUP_WORKERS: "1"
-      SMOKE_WARMUP_WAVE_COUNT: "16"
+      SMOKE_WARMUP_WAVE_COUNT: "8"
       SMOKE_WARMUP_WAVE_DELAY_SECONDS: "4"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
-      SMOKE_SHARD_COUNT: "32"
+      SMOKE_SHARD_COUNT: "64"
 
     steps:
       - name: Checkout
@@ -975,8 +977,8 @@ jobs:
           execution_started = time.monotonic()
           shard_index = int(os.environ.get("SMOKE_SHARD_INDEX", "0"))
           shard_count = int(os.environ.get("SMOKE_SHARD_COUNT", "1"))
-          physical_runner_count = 16
-          logical_shards_per_runner = 2
+          physical_runner_count = 8
+          logical_shards_per_runner = 8
           if shard_count != physical_runner_count * logical_shards_per_runner:
               raise RuntimeError(
                   f"Expected {physical_runner_count * logical_shards_per_runner} "
@@ -1009,9 +1011,9 @@ jobs:
           ]
           expected_executed = len(stable_rows) + len(fresh_rows)
           stable_workers = int(os.environ.get("SMOKE_STABLE_WORKERS", "6"))
-          if stable_workers < 1 or stable_workers > 24:
+          if stable_workers < 1 or stable_workers > 32:
               raise RuntimeError(
-                  f"SMOKE_STABLE_WORKERS must be between 1 and 24, got {stable_workers}"
+                  f"SMOKE_STABLE_WORKERS must be between 1 and 32, got {stable_workers}"
               )
 
           warmup_workers = int(os.environ.get("SMOKE_WARMUP_WORKERS", "8"))
@@ -1055,8 +1057,8 @@ jobs:
 
           # Warm one representative per semantic topic first. Stagger the
           # physical runners into small deterministic waves so Wikipedia/Wikidata
-          # and model fallbacks are not hit by a 16-runner burst. This preserves
-          # all 50,000 cases and the 24-worker cached bulk phase.
+          # and model fallbacks are not hit by a 8-runner burst. This preserves
+          # all 50,000 cases and the 32-worker cached bulk phase.
           warmup_wave = shard_index % warmup_wave_count
           warmup_delay = warmup_wave * warmup_wave_delay_seconds
           if warmup_delay > 0:

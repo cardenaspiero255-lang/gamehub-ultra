@@ -421,4 +421,48 @@ class PerGameAdaptiveOptimizer47Test {
         reason = "Predicción térmica preventiva de prueba."
     )
 
+
+    @Test
+    fun chargingCanSatisfyBatteryRecoveryGateBelowFiftyFivePercent() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val key = AdaptiveGameKey("game.charging-recovery", "1")
+        val pressure = listOf(
+            AdaptiveTrendSample(
+                thermalStatus = 4,
+                batteryPercent = 40,
+                refreshRateHz = 120f,
+                memoryUsedPercent = 40,
+                latencyMs = 30,
+                batteryCharging = false
+            )
+        )
+
+        val downshift = optimizer.evaluate(
+            key = key,
+            activeProfile = PerformanceProfile.X4,
+            samples = pressure,
+            nowMillis = 1_000L
+        )
+        assertTrue(downshift.changed)
+        assertEquals(PerformanceProfile.BALANCED, downshift.profile)
+
+        val stableCharging = listOf(
+            AdaptiveTrendSample(0, 30, 120f, 30, 20, batteryCharging = true),
+            AdaptiveTrendSample(0, 32, 120f, 31, 22, batteryCharging = true),
+            AdaptiveTrendSample(0, 34, 120f, 32, 24, batteryCharging = true)
+        )
+        val recovered = optimizer.evaluate(
+            key = key,
+            activeProfile = PerformanceProfile.BALANCED,
+            samples = stableCharging,
+            nowMillis = 2_000L
+        )
+
+        assertTrue(recovered.changed)
+        assertEquals(PerformanceProfile.X4, recovered.profile)
+    }
+
 }

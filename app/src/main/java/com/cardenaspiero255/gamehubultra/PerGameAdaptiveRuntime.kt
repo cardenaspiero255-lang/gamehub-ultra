@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra
 import com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveTrendSample
+import com.cardenaspiero255.gamehubultra.domain.BatteryAwareGamingEngine
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveOptimizer
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePendingDecision
@@ -196,8 +197,11 @@ private fun evaluateCompletedAdaptiveDecision(
     val key = adaptiveGameKey(session) ?: return null
     if (session.samples.isEmpty()) return null
 
-    val thermalPrediction = ThermalPredictionEngine().predict(session.samples)
-    val mappedSamples = session.samples.mapIndexed { index, sample ->
+    val orderedSamples = session.samples.sortedBy { it.timestampMillis }
+    val thermalPrediction = ThermalPredictionEngine().predict(orderedSamples)
+    val batteryAssessment = BatteryAwareGamingEngine().assess(orderedSamples)
+    val mappedSamples = orderedSamples.mapIndexed { index, sample ->
+        val isLatest = index == orderedSamples.lastIndex
         AdaptiveTrendSample(
             thermalStatus = sample.thermalStatus,
             batteryPercent = sample.batteryPercent,
@@ -206,9 +210,12 @@ private fun evaluateCompletedAdaptiveDecision(
             latencyMs = sample.latencyMs
                 ?.coerceIn(0L, Int.MAX_VALUE.toLong())
                 ?.toInt(),
-            thermalPrediction = thermalPrediction.takeIf {
-                index == session.samples.lastIndex
-            }
+            thermalPrediction = thermalPrediction.takeIf { isLatest },
+            batteryConstrained = isLatest &&
+                batteryAssessment.preventAggressiveProfiles,
+            batteryConstraintReason = batteryAssessment.reason
+                .takeIf { isLatest && batteryAssessment.preventAggressiveProfiles },
+            batteryCharging = sample.batteryCharging
         )
     }
     val decision = if (persistState) {

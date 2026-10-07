@@ -39,6 +39,11 @@ val sentryMappingUploadEnabled = providers.environmentVariable("SENTRY_ENABLE_MA
     .map { it.equals("true", ignoreCase = true) }
     .orElse(false)
 
+val gameHubEnableUnitTestCoverage = providers
+    .environmentVariable("GAMEHUB_ENABLE_UNIT_TEST_COVERAGE")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
+
 val releaseKeystorePath = providers.environmentVariable("GAMEHUB_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("GAMEHUB_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("GAMEHUB_RELEASE_KEY_ALIAS").orNull
@@ -142,7 +147,7 @@ android {
 
     buildTypes {
         debug {
-            enableUnitTestCoverage = true
+            enableUnitTestCoverage = gameHubEnableUnitTestCoverage.get()
         }
         release {
             signingConfig = signingConfigs.findByName("secureRelease")
@@ -239,7 +244,7 @@ val gameHubUnitTestHeap = providers.environmentVariable("GAMEHUB_UNIT_TEST_HEAP"
     .orElse("1024m")
 
 tasks.withType<Test>().configureEach {
-    maxParallelForks = gameHubUnitTestForks.get().coerceIn(1, 4)
+    maxParallelForks = gameHubUnitTestForks.get().coerceIn(1, 8)
     forkEvery = 0L
     maxHeapSize = gameHubUnitTestHeap.get()
     jvmArgs("-XX:+UseParallelGC")
@@ -254,10 +259,18 @@ val gameHubCoverageExecutionDataDir = providers
     .environmentVariable("GAMEHUB_COVERAGE_EXECUTION_DATA_DIR")
     .orElse(layout.buildDirectory.dir("coverage-shards").map { it.asFile.absolutePath })
 
+val gameHubCoverageClassRoot = providers
+    .environmentVariable("GAMEHUB_COVERAGE_CLASS_ROOT")
+
 tasks.register<JacocoReport>("createShardedDebugUnitTestCoverageReport") {
     group = "verification"
     description = "Generates one debug JaCoCo report from distributed unit-test shard execution data."
-    dependsOn("assembleDebug")
+
+    val externalClassRoot = gameHubCoverageClassRoot.orNull
+        ?.takeIf { it.isNotBlank() }
+    if (externalClassRoot == null) {
+        dependsOn("assembleDebug")
+    }
 
     val coverageClassExcludes = listOf(
         "**/R.class",
@@ -266,15 +279,33 @@ tasks.register<JacocoReport>("createShardedDebugUnitTestCoverageReport") {
         "**/Manifest*.*"
     )
     classDirectories.setFrom(
-        fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
-            exclude(coverageClassExcludes)
-        },
-        fileTree(
-            layout.buildDirectory.dir(
-                "intermediates/javac/debug/compileDebugJavaWithJavac/classes"
+        if (externalClassRoot == null) {
+            files(
+                fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+                    exclude(coverageClassExcludes)
+                },
+                fileTree(
+                    layout.buildDirectory.dir(
+                        "intermediates/javac/debug/compileDebugJavaWithJavac/classes"
+                    )
+                ) {
+                    exclude(coverageClassExcludes)
+                }
             )
-        ) {
-            exclude(coverageClassExcludes)
+        } else {
+            files(
+                fileTree(file("$externalClassRoot/tmp/kotlin-classes/debug")) {
+                    exclude(coverageClassExcludes)
+                },
+                fileTree(
+                    file(
+                        "$externalClassRoot/intermediates/javac/debug/" +
+                            "compileDebugJavaWithJavac/classes"
+                    )
+                ) {
+                    exclude(coverageClassExcludes)
+                }
+            )
         }
     )
     sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))

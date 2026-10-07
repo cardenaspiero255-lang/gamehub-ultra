@@ -70,7 +70,16 @@ class UltraVoiceKnowledgeParityCar44Test {
             "¿Qué es una mitocondria?" to "energía",
             "¿Qué es un fósil?" to "resto",
             "¿Qué es una supernova?" to "estrella",
-            "¿Qué es una nube?" to "agua"
+            "¿Qué es una nube?" to "agua",
+            "¿Qué es Instagram?" to "red social",
+            "¿Qué es chat gpt?" to "modelo",
+            "¿Qué es OpenAI?" to "inteligencia artificial",
+            "¿Qué es WhatsApp?" to "mensajería",
+            "¿Qué es Discord?" to "comunicación",
+            "¿Qué es Wikipedia?" to "enciclopedia",
+            "¿Qué es un modelo de lenguaje?" to "texto",
+            "¿Qué es la computación en la nube?" to "servidores",
+            "¿Qué es Internet?" to "red"
         )
 
         cases.forEach { (question, expectedKeyword) ->

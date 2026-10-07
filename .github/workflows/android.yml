@@ -94,6 +94,164 @@ jobs:
           set -euo pipefail
           test "${{ needs.quality-contract-shard.result }}" = "success"
 
+  android-test-shard:
+    name: android-test-shard-${{ matrix.runner }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        runner: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      GAMEHUB_UNIT_TEST_FORKS: "8"
+      GAMEHUB_UNIT_TEST_HEAP: "512m"
+      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "false"
+      ANDROID_LOGICAL_SHARD_COUNT: "64"
+      ANDROID_PHYSICAL_SHARD_COUNT: "8"
+      ANDROID_RUNNER_INDEX: "${{ matrix.runner }}"
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Install Android SDK packages only when missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "Android shard SDK packages already present; skipping sdkmanager."
+            exit 0
+          fi
+          sdkmanager "${missing[@]}"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: "8.13"
+          cache-disabled: false
+          cache-read-only: true
+
+      - name: Select deterministic Android logical test shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > "$RUNNER_TEMP/android-test-classes.txt"
+          import hashlib
+          import os
+          import re
+          from pathlib import Path
+
+          logical_count = int(os.environ["ANDROID_LOGICAL_SHARD_COUNT"])
+          physical_count = int(os.environ["ANDROID_PHYSICAL_SHARD_COUNT"])
+          runner = int(os.environ["ANDROID_RUNNER_INDEX"])
+          if logical_count % physical_count != 0:
+              raise SystemExit("Logical Android shards must divide evenly across physical runners")
+
+          owned = {
+              runner + wave * physical_count
+              for wave in range(logical_count // physical_count)
+          }
+          selected = []
+          for root in (Path("app/src/test/java"), Path("app/src/test/kotlin")):
+              if not root.exists():
+                  continue
+              for source in sorted(root.rglob("*.kt")):
+                  content = source.read_text(encoding="utf-8")
+                  package_match = re.search(
+                      r"(?m)^\s*package\s+([A-Za-z0-9_.]+)",
+                      content,
+                  )
+                  if not package_match:
+                      continue
+                  package_name = package_match.group(1)
+                  class_names = re.findall(
+                      r"(?m)^\s*(?:public\s+|internal\s+|private\s+|protected\s+)?"
+                      r"(?:abstract\s+|open\s+|final\s+)?(?:class|object)\s+"
+                      r"([A-Za-z_][A-Za-z0-9_]*(?:Test|Tests))\b",
+                      content,
+                  )
+                  for class_name in class_names:
+                      fqcn = f"{package_name}.{class_name}"
+                      logical_shard = int.from_bytes(
+                          hashlib.sha256(fqcn.encode("utf-8")).digest()[:8],
+                          "big",
+                      ) % logical_count
+                      if logical_shard in owned:
+                          selected.append((logical_shard, fqcn))
+
+          if not selected:
+              raise SystemExit(
+                  f"No Android unit tests selected for physical runner {runner}; "
+                  f"owned={sorted(owned)}"
+              )
+
+          for _, fqcn in sorted(set(selected)):
+              print(fqcn)
+
+          print(
+              f"runner={runner} logical_shards={sorted(owned)} "
+              f"tests={len(set(selected))}",
+              file=os.sys.stderr,
+          )
+          PY
+          test -s "$RUNNER_TEMP/android-test-classes.txt"
+          wc -l "$RUNNER_TEMP/android-test-classes.txt"
+
+      - name: Run packed Android unit shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t TEST_CLASSES < "$RUNNER_TEMP/android-test-classes.txt"
+          TEST_ARGS=()
+          for test_class in "${TEST_CLASSES[@]}"; do
+            TEST_ARGS+=(--tests "$test_class")
+          done
+
+          gradle :app:testDebugUnitTest \
+            "${TEST_ARGS[@]}" \
+            --build-cache \
+            --parallel \
+            --max-workers=12 \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --console=plain \
+            --stacktrace
+
+  android-test-shards:
+    name: android-test-shards
+    if: always()
+    needs: android-test-shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify packed Android unit shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.android-test-shard.result }}" = "success"
+
   quality-lint:
     runs-on: ubuntu-22.04
     env:
@@ -164,7 +322,7 @@ jobs:
               :app:lintDebug \
               --build-cache \
               --parallel \
-              --max-workers=8 \
+              --max-workers=12 \
               --configuration-cache \
               --configuration-cache-problems=fail \
               --console=plain \
@@ -218,6 +376,7 @@ jobs:
     needs:
       - quality-contracts
       - quality-lint
+      - android-test-shards
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
@@ -227,6 +386,7 @@ jobs:
           set -euo pipefail
           test "${{ needs.quality-contracts.result }}" = "success"
           test "${{ needs.quality-lint.result }}" = "success"
+          test "${{ needs.android-test-shards.result }}" = "success"
 
   release-bundle:
     name: release-bundle
@@ -317,7 +477,7 @@ jobs:
           gradle :app:bundleRelease \
             --build-cache \
             --parallel \
-            --max-workers=8 \
+            --max-workers=12 \
             --configuration-cache \
             --configuration-cache-problems=fail \
             --console=plain \
@@ -490,19 +650,19 @@ jobs:
             case "$VALIDATION_SHARD" in
               release-apk)
                 gradle :app:assembleRelease \
-                  --build-cache --parallel --max-workers=8 \
+                  --build-cache --parallel --max-workers=12 \
                   --configuration-cache --configuration-cache-problems=fail \
                   --stacktrace
                 ;;
               ui)
                 gradle :app:assembleDebug :app:assembleDebugAndroidTest \
-                  --build-cache --parallel --max-workers=8 \
+                  --build-cache --parallel --max-workers=12 \
                   --configuration-cache --configuration-cache-problems=fail \
                   --stacktrace
                 ;;
               performance-*)
                 gradle :app:assembleNonMinifiedRelease :baseline-profile:assembleNonMinifiedRelease \
-                  --build-cache --parallel --max-workers=8 \
+                  --build-cache --parallel --max-workers=12 \
                   --configuration-cache --configuration-cache-problems=fail \
                   --stacktrace
                 ;;
@@ -664,7 +824,7 @@ jobs:
             ui)
               gradle :app:connectedDebugAndroidTest \
                 --build-cache \
-                --max-workers=8 \
+                --max-workers=12 \
                 --configuration-cache \
                 --configuration-cache-problems=fail \
                 --stacktrace
@@ -718,7 +878,7 @@ jobs:
                   -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
                   -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
                   --build-cache \
-                  --max-workers=8 \
+                  --max-workers=12 \
                   --configuration-cache \
                   --configuration-cache-problems=fail \
                   --stacktrace 2>&1 | tee -a "$AGGREGATE_LOG"
@@ -858,7 +1018,7 @@ jobs:
           set -euo pipefail
           gradle :app:assembleRelease \
             --build-cache \
-            --max-workers=8 \
+            --max-workers=12 \
             --rerun-tasks \
             --stacktrace 2>&1 | tee "$RUNNER_TEMP/distributable-release.log"
 
@@ -969,8 +1129,6 @@ jobs:
           path: ${{ runner.temp }}/phase3-debug-reuse
           run-id: ${{ github.run_id }}
           github-token: ${{ github.token }}
-          # Cut 3 keeps this gate verification-only: consume the exact artifact
-          # produced by device-validation UI shard and never invoke Gradle or rebuild it here.
           merge-multiple: false
 
       - name: Verify Phase 3 artifact provenance
@@ -992,3 +1150,4 @@ jobs:
           test "$(printf '%s' "$RECORDED_SHA256" | wc -l)" -eq 0
           ACTUAL_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
           test "$ACTUAL_SHA256" = "$RECORDED_SHA256"
+

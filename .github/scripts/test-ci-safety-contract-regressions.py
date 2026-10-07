@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ANDROID = ROOT / ".github/workflows/android.yml"
+SMOKE = ROOT / ".github/workflows/supabase-research-smoke.yml"
 COVERAGE = ROOT / ".github/workflows/coverage.yml"
 COVERAGE_POST = ROOT / ".github/workflows/coverage-post-processing.yml"
 SHADOW_METRICS = ROOT / ".github/workflows/ci-metrics-shadow.yml"
@@ -39,6 +40,7 @@ def reject_mutation(
     label: str,
     *,
     android_replace: tuple[str, str] | None = None,
+    smoke_replace: tuple[str, str] | None = None,
     coverage_replace: tuple[str, str] | None = None,
     post_replace: tuple[str, str] | None = None,
 ) -> None:
@@ -48,11 +50,13 @@ def reject_mutation(
         (temp / ".github/scripts").mkdir(parents=True)
 
         android = ANDROID.read_text(encoding="utf-8")
+        smoke = SMOKE.read_text(encoding="utf-8")
         coverage = COVERAGE.read_text(encoding="utf-8")
         post = COVERAGE_POST.read_text(encoding="utf-8")
 
         for replacement, target_name in (
             (android_replace, "android"),
+            (smoke_replace, "smoke"),
             (coverage_replace, "coverage"),
             (post_replace, "post"),
         ):
@@ -61,6 +65,7 @@ def reject_mutation(
             old, new = replacement
             source = {
                 "android": android,
+                "smoke": smoke,
                 "coverage": coverage,
                 "post": post,
             }[target_name]
@@ -71,6 +76,8 @@ def reject_mutation(
             source = source.replace(old, new, 1)
             if target_name == "android":
                 android = source
+            elif target_name == "smoke":
+                smoke = source
             elif target_name == "coverage":
                 coverage = source
             else:
@@ -78,6 +85,10 @@ def reject_mutation(
 
         (temp / ".github/workflows/android.yml").write_text(
             android,
+            encoding="utf-8",
+        )
+        (temp / ".github/workflows/supabase-research-smoke.yml").write_text(
+            smoke,
             encoding="utf-8",
         )
         (temp / ".github/workflows/coverage.yml").write_text(
@@ -151,8 +162,16 @@ def main() -> None:
     reject_mutation(
         "device physical parallelism reduced",
         android_replace=(
-            "      max-parallel: 4\n",
-            "      max-parallel: 2\n",
+            "      max-parallel: 4\n"
+            "      matrix:\n"
+            "        # Four logical performance checks are packed into two physical emulator\n"
+            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
+            "        shard: [release-apk, ui, performance-a, performance-b]\n",
+            "      max-parallel: 2\n"
+            "      matrix:\n"
+            "        # Four logical performance checks are packed into two physical emulator\n"
+            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
+            "        shard: [release-apk, ui, performance-a, performance-b]\n",
         ),
     )
     reject_mutation(
@@ -254,17 +273,101 @@ def main() -> None:
         ),
     )
     reject_mutation(
+        "smoke physical concurrency raised",
+        smoke_replace=(
+            "      max-parallel: 4\n",
+            "      max-parallel: 8\n",
+        ),
+    )
+    reject_mutation(
+        "smoke logical shard count reduced",
+        smoke_replace=(
+            '      SMOKE_SHARD_COUNT: "64"\n',
+            '      SMOKE_SHARD_COUNT: "32"\n',
+        ),
+    )
+    reject_mutation(
+        "smoke logical lanes reduced",
+        smoke_replace=(
+            "          logical_shards_per_runner = 8\n",
+            "          logical_shards_per_runner = 4\n",
+        ),
+    )
+    reject_mutation(
+        "Android test physical concurrency raised",
+        android_replace=(
+            "      max-parallel: 4\n",
+            "      max-parallel: 8\n",
+        ),
+    )
+    reject_mutation(
+        "Android physical unit runner removed",
+        android_replace=(
+            "        runner: [0, 1, 2, 3, 4, 5, 6, 7]\n",
+            "        runner: [0, 1, 2, 3, 4, 5, 6]\n",
+        ),
+    )
+    reject_mutation(
+        "Android logical unit shard count reduced",
+        android_replace=(
+            '      ANDROID_LOGICAL_SHARD_COUNT: "64"\n',
+            '      ANDROID_LOGICAL_SHARD_COUNT: "32"\n',
+        ),
+    )
+    reject_mutation(
+        "Android unit fork count reduced",
+        android_replace=(
+            '      GAMEHUB_UNIT_TEST_FORKS: "8"\n',
+            '      GAMEHUB_UNIT_TEST_FORKS: "4"\n',
+        ),
+    )
+    reject_mutation(
+        "Android unit coverage instrumentation re-enabled",
+        android_replace=(
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "false"\n',
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "true"\n',
+        ),
+    )
+    reject_mutation(
+        "coverage physical concurrency raised",
+        coverage_replace=(
+            "      max-parallel: 4\n",
+            "      max-parallel: 8\n",
+        ),
+    )
+    reject_mutation(
         "coverage physical runner removed",
         coverage_replace=(
-            "        runner: [0, 1]\n",
-            "        runner: [0]\n",
+            "        runner: [0, 1, 2, 3, 4, 5, 6, 7]\n",
+            "        runner: [0, 1, 2, 3, 4, 5, 6]\n",
         ),
     )
     reject_mutation(
         "coverage logical shard count reduced",
         coverage_replace=(
-            '      COVERAGE_LOGICAL_SHARD_COUNT: "8"\n',
-            '      COVERAGE_LOGICAL_SHARD_COUNT: "4"\n',
+            '      COVERAGE_LOGICAL_SHARD_COUNT: "64"\n',
+            '      COVERAGE_LOGICAL_SHARD_COUNT: "32"\n',
+        ),
+    )
+    reject_mutation(
+        "coverage unit instrumentation disabled",
+        coverage_replace=(
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "true"\n',
+            '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "false"\n',
+        ),
+    )
+    reject_mutation(
+        "compiled coverage class artifact removed",
+        coverage_replace=(
+            "      - name: Upload compiled coverage classes\n",
+            "      - name: Upload compiled coverage classes disabled\n",
+        ),
+    )
+    reject_mutation(
+        "coverage class reuse root removed",
+        coverage_replace=(
+            '          GAMEHUB_COVERAGE_CLASS_ROOT: ${{ runner.temp }}/coverage-classes\n',
+            "",
         ),
     )
     reject_mutation(

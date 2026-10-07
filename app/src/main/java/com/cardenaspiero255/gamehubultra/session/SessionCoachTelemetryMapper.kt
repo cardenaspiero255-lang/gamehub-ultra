@@ -19,7 +19,9 @@ internal object SessionCoachTelemetryMapper {
             thermalHeadroom = diagnostics.thermal.headroom,
             refreshRateHz = diagnostics.refresh.currentRefreshRateHz,
             latencyMs = diagnostics.connectivity.latencyMs,
-            memoryUsedPercent = diagnostics.memory.usedPercent
+            memoryUsedPercent = diagnostics.memory.usedPercent,
+            batteryCharging = diagnostics.battery.charging,
+            powerSaveMode = diagnostics.battery.powerSaveMode
         )
 
     fun readiness(
