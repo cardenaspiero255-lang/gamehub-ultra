@@ -1,7 +1,7 @@
 name: Unit Test Coverage
-# Sharded coverage: 8 logical shards are packed into 2 physical runners.
-# Each runner executes four deterministic logical shards with 4 parallel test forks.
-# A final aggregation job generates the single JaCoCo XML consumed by the gate/Codecov.
+# Sharded coverage: 64 logical shards are packed into 8 physical runners.
+# Each runner owns eight deterministic logical shards with up to 8 parallel test forks.
+# A final aggregation job merges all JaCoCo execution data into one blocking report.
 
 on:
   workflow_dispatch:
@@ -25,14 +25,14 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 8
       matrix:
-        runner: [0, 1]
+        runner: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
-      GAMEHUB_UNIT_TEST_FORKS: "4"
-      GAMEHUB_UNIT_TEST_HEAP: "768m"
-      COVERAGE_LOGICAL_SHARD_COUNT: "8"
-      COVERAGE_PHYSICAL_SHARD_COUNT: "2"
+      GAMEHUB_UNIT_TEST_FORKS: "8"
+      GAMEHUB_UNIT_TEST_HEAP: "512m"
+      COVERAGE_LOGICAL_SHARD_COUNT: "64"
+      COVERAGE_PHYSICAL_SHARD_COUNT: "8"
       COVERAGE_RUNNER_INDEX: "${{ matrix.runner }}"
 
     steps:
@@ -151,7 +151,7 @@ jobs:
             "${TEST_ARGS[@]}" \
             --build-cache \
             --parallel \
-            --max-workers=8 \
+            --max-workers=12 \
             --configuration-cache \
             --configuration-cache-problems=fail \
             --console=plain \
@@ -242,8 +242,8 @@ jobs:
           set -euo pipefail
           coverage_dir="$RUNNER_TEMP/coverage-shards"
           count="$(find "$coverage_dir" -type f \( -name '*.exec' -o -name '*.ec' \) -size +0c | wc -l)"
-          if [ "$count" -lt 2 ]; then
-            echo "::error::Expected JaCoCo data from 2 physical coverage runners; found $count file(s)."
+          if [ "$count" -lt 8 ]; then
+            echo "::error::Expected JaCoCo data from 8 physical coverage runners; found $count file(s)."
             exit 1
           fi
           echo "JaCoCo execution files ready: $count"
@@ -254,7 +254,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gradle :app:createShardedDebugUnitTestCoverageReport             --build-cache             --parallel             --max-workers=8             --configuration-cache             --configuration-cache-problems=fail             --console=plain             --stacktrace
+          gradle :app:createShardedDebugUnitTestCoverageReport             --build-cache             --parallel             --max-workers=12             --configuration-cache             --configuration-cache-problems=fail             --console=plain             --stacktrace
 
       - name: Verify coverage XML report
         shell: bash
