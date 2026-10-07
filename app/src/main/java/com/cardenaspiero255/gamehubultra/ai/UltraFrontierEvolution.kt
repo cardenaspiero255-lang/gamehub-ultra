@@ -348,7 +348,8 @@ data class UltraTemporalFact(
     val validFromMillis: Long,
     val validUntilMillis: Long? = null,
     val confidence: UltraAnswerConfidence,
-    val sourceIds: Set<String> = emptySet()
+    val sourceIds: Set<String> = emptySet(),
+    val independentSourceCount: Int = 0
 )
 
 class UltraTemporalKnowledgeGraph(
@@ -965,7 +966,10 @@ class UltraFrontierEvolutionController(
             verified = true,
             confidence = fact.confidence,
             sources = fact.sourceIds.toList(),
-            independentSourceCount = fact.sourceIds.size,
+            independentSourceCount =
+                fact.independentSourceCount
+                    .takeIf { it > 0 }
+                    ?: fact.sourceIds.size,
             abstained = false,
             retryable = false,
             stage = "frontier-knowledge-graph"
@@ -1002,7 +1006,9 @@ class UltraFrontierEvolutionController(
                 validFromMillis = nowMillis,
                 validUntilMillis = safeAdd(nowMillis, ttl),
                 confidence = result.confidence ?: UltraAnswerConfidence.MEDIUM,
-                sourceIds = result.sources.toSet()
+                sourceIds = result.sources.toSet(),
+                independentSourceCount =
+                    result.independentSourceCount.coerceAtLeast(0)
             )
         )
     }
