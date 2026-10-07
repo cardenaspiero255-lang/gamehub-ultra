@@ -152,6 +152,13 @@ class GameHubPreferencesRepository(
         }
     }
 
+    override suspend fun saveAdaptiveProfileForGame(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        saveProfileForGame(packageName, profile)
+    }
+
     override suspend fun saveGameProfileConfig(
         packageName: String,
         config: GameProfileConfig
