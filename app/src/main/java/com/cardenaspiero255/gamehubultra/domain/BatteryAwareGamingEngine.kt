@@ -85,10 +85,10 @@ class BatteryAwareGamingEngine(
 
         val recommendation = when {
             powerSaveMode -> BatteryGamingRecommendation.CONSERVE
+            charging -> BatteryGamingRecommendation.CHARGING
             currentPercent != null &&
                 currentPercent <= policy.criticalBatteryPercent ->
                 BatteryGamingRecommendation.CONSERVE
-            charging -> BatteryGamingRecommendation.CHARGING
             currentPercent != null &&
                 currentPercent <= policy.constrainedBatteryPercent ->
                 BatteryGamingRecommendation.BALANCED
