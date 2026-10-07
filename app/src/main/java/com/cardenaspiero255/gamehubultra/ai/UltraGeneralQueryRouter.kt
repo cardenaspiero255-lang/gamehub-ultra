@@ -61,6 +61,9 @@ object UltraGeneralQueryRouter {
     private val definitionPattern = Regex(
         """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|what is|what are|what does|meaning of|define)\b"""
     )
+    private val conversationalTopicPattern = Regex(
+        """^(?:(?:por favor|please)\s+)?(?:hablame|cuentame|dime(?:\s+algo)?|quiero\s+saber|que\s+sabes|dame\s+informacion|informame|describeme|tell\s+me|tell\s+me\s+about|talk\s+to\s+me|describe)\b(?:\s+(?:de|del|sobre|acerca\s+de|about))?\s+\S.+$"""
+    )
     private val broadFactualPattern = Regex(
         """\b(cuantos|cuantas|como se llama|como se llaman|how many|how old|what year|which country)\b"""
     )
@@ -160,7 +163,8 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
-            definitionPattern.containsMatchIn(clean) ->
+            definitionPattern.containsMatchIn(clean) ||
+                conversationalTopicPattern.containsMatchIn(clean) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
