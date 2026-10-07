@@ -59,8 +59,22 @@ class PerGameAdaptiveStatePreferencesStore(
             .apply()
     }
 
+
+    fun wasSessionHandled(sessionId: String): Boolean =
+        sessionId.isNotBlank() &&
+            preferences.getString(LAST_HANDLED_SESSION_ID, null) == sessionId
+
+    fun markSessionHandled(sessionId: String) {
+        val clean = sessionId.trim()
+        if (clean.isEmpty()) return
+        preferences.edit()
+            .putString(LAST_HANDLED_SESSION_ID, clean)
+            .apply()
+    }
+
     companion object {
         private const val PREFERENCES_NAME = "gamehub_ultra_adaptive_optimizer"
+        private const val LAST_HANDLED_SESSION_ID = "last_handled_session_id"
 
         internal fun preferenceKey(key: AdaptiveGameKey): String =
             "state:${key.packageName.trim()}:${key.version.trim()}"
