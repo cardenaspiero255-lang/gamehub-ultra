@@ -111,20 +111,12 @@ object UltraMathEngine {
         val first = formatNumber(roots[0])
         val second = formatNumber(roots[1])
 
+        val resultText = if (first == second) "x = " + first else "x = " + first + " o x = " + second
+        val rootExplanation = if (first == second) "La ecuación tiene una raíz real doble: x = " + first + "." else "Las raíces reales son x = " + first + " y x = " + second + "."
+        val explanation = "Usé la fórmula cuadrática con discriminante " + formatNumber(discriminant) + ". " + rootExplanation
         return UltraMathSolution(
-            resultText = if (first == second) {
-                "x = " + first
-            } else {
-                "x = " + first + " o x = " + second
-            },
-            explanation =
-                "Usé la fórmula cuadrática con discriminante " +
-                    formatNumber(discriminant) + ". " +
-                    if (first == second) {
-                        "La ecuación tiene una raíz real doble: x = " + first + "."
-                    } else {
-                        "Las raíces reales son x = " + first + " y x = " + second + "."
-                    }
+            resultText = resultText,
+            explanation = explanation
         )
     }
 
