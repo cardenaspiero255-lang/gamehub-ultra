@@ -239,7 +239,7 @@ val gameHubUnitTestHeap = providers.environmentVariable("GAMEHUB_UNIT_TEST_HEAP"
     .orElse("1024m")
 
 tasks.withType<Test>().configureEach {
-    maxParallelForks = gameHubUnitTestForks.get().coerceIn(1, 4)
+    maxParallelForks = gameHubUnitTestForks.get().coerceIn(1, 8)
     forkEvery = 0L
     maxHeapSize = gameHubUnitTestHeap.get()
     jvmArgs("-XX:+UseParallelGC")
