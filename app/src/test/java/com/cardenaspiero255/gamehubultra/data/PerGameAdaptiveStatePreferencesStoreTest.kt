@@ -60,6 +60,48 @@ class PerGameAdaptiveStatePreferencesStoreTest {
 
         assertNull(PerGameAdaptiveStatePreferencesStore(context).read(key))
     }
+
+    @Test
+    fun deleteRemovesPersistedState() {
+        val key = AdaptiveGameKey("game.delete", "1")
+        val store = PerGameAdaptiveStatePreferencesStore(context)
+        store.write(
+            key,
+            PerGameAdaptivePersistedState(
+                profile = PerformanceProfile.BALANCED,
+                candidate = null,
+                confirmations = 0,
+                lastChangeMillis = null,
+                recoveryProfile = null
+            )
+        )
+        assertEquals(PerformanceProfile.BALANCED, store.read(key)?.profile)
+
+        store.delete(key)
+
+        assertNull(store.read(key))
+    }
+
+    @Test
+    fun malformedOptionalStateFieldsFailClosed() {
+        val key = AdaptiveGameKey("game.corrupt", "1")
+        val preferences = context.getSharedPreferences(
+            "gamehub_ultra_adaptive_optimizer",
+            Context.MODE_PRIVATE
+        )
+        val storageKey = PerGameAdaptiveStatePreferencesStore.preferenceKey(key)
+        val store = PerGameAdaptiveStatePreferencesStore(context)
+
+        preferences.edit().putString(storageKey, "BALANCED|BAD|0||").commit()
+        assertNull(store.read(key))
+
+        preferences.edit().putString(storageKey, "BALANCED||0|BAD|").commit()
+        assertNull(store.read(key))
+
+        preferences.edit().putString(storageKey, "BALANCED||0||BAD").commit()
+        assertNull(store.read(key))
+    }
+
     @Test
     fun handledSessionIdSurvivesStoreRecreation() {
         val first = PerGameAdaptiveStatePreferencesStore(context)
