@@ -281,8 +281,10 @@ class SessionCoachMonitorService : Service() {
                         detail = "Preparando análisis para $packageName…"
                     )
                 )
-                monitorJob?.cancel()
+                val previousMonitorJob = monitorJob
                 activeMonitorSessionId = sessionId
+                monitorJob = null
+                previousMonitorJob?.cancel()
                 lastLatencyMs = null
                 lastLatencyCheckAt = 0L
                 lastLatencyNetworkHandle = null
