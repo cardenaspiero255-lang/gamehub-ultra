@@ -171,13 +171,7 @@ object AiSessionCoach {
         }
 
         val batteryValues = ordered.mapNotNull { it.batteryPercent }
-        val legacyBatteryDrop = batteryValues.firstOrNull()?.let { first ->
-            batteryValues.lastOrNull()?.let { last -> (first - last).coerceAtLeast(0) }
-        }
-        val hasBatteryStateTelemetry = ordered.any { it.batteryCharging != null }
-        val batteryAssessment = BatteryAwareGamingEngine().assess(ordered)
-        val batteryDrop = batteryAssessment.observedDropPercent
-            ?: legacyBatteryDrop.takeIf { !hasBatteryStateTelemetry }
+        val batteryDrop = wholeSessionBatteryDrop(ordered)
         val recurringBatteryDrop =
             batteryValues.size >= RECURRING_EVIDENCE_COUNT &&
                 batteryDrop != null &&
@@ -238,14 +232,9 @@ object AiSessionCoach {
         }
 
         val batteryValues = ordered.mapNotNull { it.batteryPercent }
-        val legacyBatteryDrop = batteryValues.firstOrNull()?.let { first ->
-            batteryValues.lastOrNull()?.let { last -> (first - last).coerceAtLeast(0) }
-        }
-        val hasBatteryStateTelemetry = ordered.any { it.batteryCharging != null }
         val chargingObserved = ordered.any { it.batteryCharging == true }
         val batteryAssessment = BatteryAwareGamingEngine().assess(ordered)
-        val batteryDrop = batteryAssessment.observedDropPercent
-            ?: legacyBatteryDrop.takeIf { !hasBatteryStateTelemetry }
+        val batteryDrop = wholeSessionBatteryDrop(ordered)
         val patterns = recurringPatterns(ordered)
         val batteryNextStep = if (batteryAssessment.preventAggressiveProfiles) {
             "Para priorizar autonomía, evita perfiles agresivos hasta que mejore el estado de batería."
@@ -281,6 +270,38 @@ object AiSessionCoach {
             batteryChargingObserved = chargingObserved,
             batteryRecommendation = batteryAssessment.recommendation
         )
+    }
+
+    private fun wholeSessionBatteryDrop(
+        samples: List<SessionCoachSnapshot>
+    ): Int? {
+        val ordered = samples.sortedBy { it.timestampMillis }
+        val batteryValues = ordered.mapNotNull { it.batteryPercent }
+        if (batteryValues.isEmpty()) return null
+
+        val hasChargingTelemetry = ordered.any { it.batteryCharging != null }
+        if (!hasChargingTelemetry) {
+            val first = batteryValues.firstOrNull() ?: return null
+            val last = batteryValues.lastOrNull() ?: return null
+            return (first - last).coerceAtLeast(0)
+        }
+
+        var totalDrop = 0
+        var observedUnchargedPair = false
+        ordered.zipWithNext().forEach { (previous, current) ->
+            val before = previous.batteryPercent
+            val after = current.batteryPercent
+            if (
+                previous.batteryCharging == false &&
+                current.batteryCharging == false &&
+                before != null &&
+                after != null
+            ) {
+                observedUnchargedPair = true
+                totalDrop += (before - after).coerceAtLeast(0)
+            }
+        }
+        return totalDrop.takeIf { observedUnchargedPair }
     }
 
     private fun thermalObservation(
