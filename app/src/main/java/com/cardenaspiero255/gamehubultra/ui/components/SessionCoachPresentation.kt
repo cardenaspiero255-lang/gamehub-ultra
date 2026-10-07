@@ -10,12 +10,14 @@ internal object SessionCoachPresentation {
         liveSamples: List<SessionCoachSnapshot>,
         observations: List<SessionCoachMessage>,
         postSession: SessionCoachPostSessionReport?,
-        sessionActive: Boolean
+        sessionActive: Boolean,
+        activeSessionText: String,
+        stableText: String
     ): List<String> = buildList {
         if (sessionActive) {
-            add("Sesión activa · ${liveSamples.size} muestras")
+            add(activeSessionText)
             if (observations.isEmpty()) {
-                add("Sin cambios relevantes.")
+                add(stableText)
             } else {
                 observations.takeLast(3).forEach { observation ->
                     add("• ${observation.title}: ${observation.detail}")
