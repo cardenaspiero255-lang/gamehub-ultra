@@ -616,6 +616,47 @@ class SessionCoachMonitorServiceTest {
     }
 
     @Test
+    fun knownActivePresenceSurvivesAnEmptyUsageWindow() {
+        assertEquals(
+            SessionCoachGamePresence.ACTIVE,
+            SessionCoachGamePresenceDetector.resolvePresence(
+                latestForegroundPackage = null,
+                latestForegroundAt = Long.MIN_VALUE,
+                targetBackgroundAt = Long.MIN_VALUE,
+                previousPresence = SessionCoachGamePresence.ACTIVE
+            )
+        )
+    }
+
+    @Test
+    fun notificationPermissionIsNotRepeatedAfterARecordedDenial() {
+        assertFalse(
+            SessionCoachNotificationPermission.shouldRequest(
+                sdkInt = 35,
+                granted = false,
+                hasRequestedBefore = true,
+                shouldShowRationale = false
+            )
+        )
+        assertFalse(
+            SessionCoachNotificationPermission.shouldRequest(
+                sdkInt = 35,
+                granted = false,
+                hasRequestedBefore = true,
+                shouldShowRationale = true
+            )
+        )
+        assertTrue(
+            SessionCoachNotificationPermission.shouldRequest(
+                sdkInt = 35,
+                granted = false,
+                hasRequestedBefore = false,
+                shouldShowRationale = false
+            )
+        )
+    }
+
+    @Test
     fun unknownPresenceIsBoundedInsteadOfRunningForFourHours() {
         var count = 0
         repeat(SessionCoachMonitorService.UNKNOWN_EVIDENCE_REQUIRED) {
