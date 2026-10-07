@@ -31,6 +31,11 @@ interface PerGameAdaptiveStateStore {
     fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState?
     fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState)
     fun delete(key: AdaptiveGameKey) = Unit
+    fun ownedRecoveryProfileForPackage(
+        packageName: String,
+        excludingVersion: String,
+        activeProfile: PerformanceProfile
+    ): PerformanceProfile? = null
 }
 
 class PerGameAdaptiveOptimizer(
@@ -58,7 +63,7 @@ class PerGameAdaptiveOptimizer(
         profile: PerformanceProfile
     ) {
         val state = states.getOrPut(key) {
-            stateStore?.read(key)?.toRuntimeState() ?: State(profile)
+            initialState(key, profile)
         }
         state.profile = profile
         state.candidate = null
@@ -92,8 +97,15 @@ class PerGameAdaptiveOptimizer(
         samples: List<AdaptiveTrendSample>,
         nowMillis: Long
     ): PerGameAdaptiveDecision {
-        val state = states.getOrPut(key) {
-            stateStore?.read(key)?.toRuntimeState() ?: State(activeProfile)
+        val persisted = stateStore?.read(key)
+        val state = when {
+            persisted != null &&
+                states[key]?.toPersistedState() != persisted -> {
+                persisted.toRuntimeState().also { states[key] = it }
+            }
+            else -> states.getOrPut(key) {
+                initialState(key, activeProfile)
+            }
         }
 
         if (state.profile != activeProfile) {
@@ -182,6 +194,22 @@ class PerGameAdaptiveOptimizer(
             profile = target,
             changed = true,
             reason = reason(samples, changed = true)
+        )
+    }
+
+    private fun initialState(
+        key: AdaptiveGameKey,
+        activeProfile: PerformanceProfile
+    ): State {
+        stateStore?.read(key)?.let { return it.toRuntimeState() }
+        val migratedRecovery = stateStore?.ownedRecoveryProfileForPackage(
+            packageName = key.packageName,
+            excludingVersion = key.version,
+            activeProfile = activeProfile
+        )
+        return State(
+            profile = activeProfile,
+            recoveryProfile = migratedRecovery
         )
     }
 
