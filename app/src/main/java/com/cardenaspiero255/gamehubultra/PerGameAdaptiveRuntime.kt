@@ -197,10 +197,11 @@ private fun evaluateCompletedAdaptiveDecision(
     val key = adaptiveGameKey(session) ?: return null
     if (session.samples.isEmpty()) return null
 
-    val thermalPrediction = ThermalPredictionEngine().predict(session.samples)
-    val batteryAssessment = BatteryAwareGamingEngine().assess(session.samples)
-    val mappedSamples = session.samples.mapIndexed { index, sample ->
-        val isLatest = index == session.samples.lastIndex
+    val orderedSamples = session.samples.sortedBy { it.timestampMillis }
+    val thermalPrediction = ThermalPredictionEngine().predict(orderedSamples)
+    val batteryAssessment = BatteryAwareGamingEngine().assess(orderedSamples)
+    val mappedSamples = orderedSamples.mapIndexed { index, sample ->
+        val isLatest = index == orderedSamples.lastIndex
         AdaptiveTrendSample(
             thermalStatus = sample.thermalStatus,
             batteryPercent = sample.batteryPercent,
