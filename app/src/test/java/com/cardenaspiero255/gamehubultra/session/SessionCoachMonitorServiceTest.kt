@@ -614,4 +614,48 @@ class SessionCoachMonitorServiceTest {
         assertNull(service.onBind(null))
         controller.destroy()
     }
+
+    @Test
+    fun unknownPresenceIsBoundedInsteadOfRunningForFourHours() {
+        var count = 0
+        repeat(SessionCoachMonitorService.UNKNOWN_EVIDENCE_REQUIRED) {
+            count = SessionCoachMonitorService.nextUnknownEvidenceCount(
+                SessionCoachGamePresence.UNKNOWN,
+                count
+            )
+        }
+
+        assertTrue(SessionCoachMonitorService.shouldFinishForUnknownPresence(count))
+        assertEquals(
+            0,
+            SessionCoachMonitorService.nextUnknownEvidenceCount(
+                SessionCoachGamePresence.ACTIVE,
+                count
+            )
+        )
+    }
+
+    @Test
+    fun notificationPermissionIsRequestedOnlyWhenAndroidRequiresItAndItIsMissing() {
+        assertFalse(
+            SessionCoachNotificationPermission.shouldRequest(
+                sdkInt = 32,
+                granted = false
+            )
+        )
+        assertFalse(
+            SessionCoachNotificationPermission.shouldRequest(
+                sdkInt = 35,
+                granted = true
+            )
+        )
+        assertTrue(
+            SessionCoachNotificationPermission.shouldRequest(
+                sdkInt = 35,
+                granted = false
+            )
+        )
+    }
+
+
 }
