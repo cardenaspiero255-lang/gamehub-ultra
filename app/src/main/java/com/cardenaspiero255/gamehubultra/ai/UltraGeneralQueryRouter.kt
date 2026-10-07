@@ -62,7 +62,7 @@ object UltraGeneralQueryRouter {
         """\b(que es|que son|que significa|cual es el significado de|significado de|definicion de|what is|what are|what does|meaning of|define)\b"""
     )
     private val conversationalTopicPattern = Regex(
-        """^(?:(?:por favor|please)\s+)?(?:hablame|cuentame|dime(?:\s+algo)?|quiero\s+saber|que\s+sabes|dame\s+informacion|informame|describeme|tell\s+me|tell\s+me\s+about|talk\s+to\s+me|describe)\b(?:\s+(?:de|del|sobre|acerca\s+de|about))?\s+\S.+$"""
+        """^(?:(?:por favor|please)\s+)?(?:hablame|cuentame|dime(?:\s+algo)?|dime\s+que\s+sabes|quiero\s+saber|quiero\s+que\s+me\s+hables|me\s+puedes\s+hablar|puedes\s+hablarme|podrias\s+hablarme|explicame(?:\s+algo)?|ensename(?:\s+algo)?|que\s+sabes|dame\s+informacion|informame|describeme|tell\s+me|tell\s+me\s+about|talk\s+to\s+me|can\s+you\s+tell\s+me|could\s+you\s+tell\s+me|describe)\b(?:\s+(?:de|del|sobre|acerca\s+de|about))?\s+\S.+$"""
     )
     private val conversationalFreshTopicPattern = Regex(
         """\b(noticias|news|novedades|updates?|latest|newest|precio|precios|price|prices|cuanto cuesta|cuanto cuestan|how much|actual|actualmente|ahora|hoy|current|currently|today|release date|fecha de lanzamiento|fecha de salida|cuando sale|cuando se lanza)\b"""
