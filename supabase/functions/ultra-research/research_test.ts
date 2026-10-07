@@ -7992,3 +7992,61 @@ Deno.test("basic star knowledge survives complete provider outage", async () => 
     }
   }
 });
+
+
+Deno.test("Rancagua weather survives complete geocoder outage with local coordinates", async () => {
+  let metCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "geocoding-api.open-meteo.com" ||
+        url.hostname === "nominatim.openstreetmap.org"
+      ) {
+        throw new Error("geocoder unavailable");
+      }
+      if (url.hostname === "api.open-meteo.com") {
+        return new Response("forecast unavailable", { status: 503 });
+      }
+      if (url.hostname === "api.met.no") {
+        metCalls += 1;
+        return jsonResponse({
+          properties: {
+            timeseries: [{
+              time: "2026-10-07T03:00:00Z",
+              data: {
+                instant: { details: { air_temperature: 15.4 } },
+                next_1_hours: { summary: { symbol_code: "cloudy" } },
+              },
+            }],
+          },
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: (name) => {
+      if (name === "ULTRA_FETCH_RETRY_ATTEMPTS") return "1";
+      if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "50";
+      return undefined;
+    },
+    sleep: () => Promise.resolve(),
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, clima en Rancagua",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (result.abstained) {
+    throw new Error("expected Rancagua weather through local coordinate fallback");
+  }
+  if (result.authoritative !== true || metCalls < 1) {
+    throw new Error("expected authoritative MET Norway weather after geocoder outage");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (!answer.includes("rancagua") || !answer.includes("15.4")) {
+    throw new Error("local coordinate fallback lost requested city: " + answer);
+  }
+});
