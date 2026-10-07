@@ -515,11 +515,14 @@ class UltraVerifiedResearchEngine(
                 ?: return@mapNotNull null
             attempt to evidence
         }
+        val configuredPrimaryId = providers.firstOrNull()?.id
         val primarySucceeded = evidenceAttempts.any { (attempt, _) ->
-            attempt.index == 0
+            attempt.providerId == configuredPrimaryId
         }
         val fallbackUsed = !primarySucceeded &&
-            evidenceAttempts.any { (attempt, _) -> attempt.index > 0 }
+            evidenceAttempts.any { (attempt, _) ->
+                attempt.providerId != configuredPrimaryId
+            }
 
         if (
             optionalStableKnowledge &&
@@ -572,7 +575,8 @@ class UltraVerifiedResearchEngine(
                 independentSourceCount = corroborationCount,
                 abstained = false,
                 timedOut = false,
-                fallbackUsed = selectedAttempt.index > 0
+                fallbackUsed =
+                    selectedAttempt.providerId != configuredPrimaryId
             )
 
             val allProvidersSettled = attempts.size >= activeProviders.size
@@ -702,6 +706,20 @@ class UltraVerifiedResearchEngine(
         val requiredGeneralKnowledge =
             request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
                 request.verificationMode == UltraVerificationMode.REQUIRED
+        val minimumRequiredSources = when {
+            request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH -> 2
+            requiredGeneralKnowledge -> 2
+            else -> 1
+        }
+        if (corroborationCount < minimumRequiredSources) {
+            return abstention(
+                timedOut = timedOut,
+                fallbackUsed = fallbackUsed,
+                sources = sources,
+                reasonCode = "INSUFFICIENT_CORROBORATION",
+                retryable = activeProviders.size < partitionedProviderCount(request)
+            )
+        }
         if (
             confidence == UltraAnswerConfidence.LOW &&
             (
@@ -716,7 +734,7 @@ class UltraVerifiedResearchEngine(
                 reasonCode = "INSUFFICIENT_CORROBORATION",
                 retryable =
                     requiredGeneralKnowledge &&
-                        activeProviders.size < providers.size
+                        activeProviders.size < partitionedProviderCount(request)
             )
         }
 
@@ -739,6 +757,11 @@ class UltraVerifiedResearchEngine(
         return result
 
     }
+
+    private fun partitionedProviderCount(
+        request: UltraGeneralQueryRequest
+    ): Int =
+        (providers.size - request.researchProviderOffset).coerceAtLeast(0)
 
     private fun abstention(
         timedOut: Boolean,
