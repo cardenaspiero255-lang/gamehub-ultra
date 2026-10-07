@@ -278,7 +278,6 @@ internal fun GameHubUltraApp(
         mutableStateOf<com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession?>(null)
     }
     var hydratedCoachSessionId by rememberSaveable { mutableStateOf<String?>(null) }
-    var adaptiveHandledCoachSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var aiProfileRevision by rememberSaveable { mutableIntStateOf(0) }
@@ -634,23 +633,19 @@ internal fun GameHubUltraApp(
             )
             lastSessionCoachReport = hydration.report
             sessionCoachObservations = hydration.observations
-            if (
-                uiState.selectedGameHydrated &&
-                adaptiveHandledCoachSessionId != completed.sessionId &&
-                selectedGameForMemory == completed.packageName
-            ) {
-                val adaptiveResult = applyCompletedAdaptiveDecision(
+            if (!perGameAdaptiveStateStore.wasSessionHandled(completed.sessionId)) {
+                val completedGameProfile = withContext(Dispatchers.IO) {
+                    viewModel.effectiveProfileForGame(completed.packageName)
+                }
+                applyCompletedAdaptiveDecision(
                     completed = completed,
-                    selectedPackage = selectedGameForMemory,
-                    activeProfile = uiState.effectiveProfile,
+                    activeProfile = completedGameProfile,
                     optimizer = perGameAdaptiveOptimizer,
                     nowMillis = System.currentTimeMillis(),
                     applyProfile = viewModel::selectGameProfile,
                     recordPerformanceEvent = viewModel::recordPerformanceEvent
                 )
-                if (adaptiveResult != null) {
-                    adaptiveHandledCoachSessionId = completed.sessionId
-                }
+                perGameAdaptiveStateStore.markSessionHandled(completed.sessionId)
             }
             if (hydration.shouldMarkHydrated) {
                 hydratedCoachSessionId = completed.sessionId
