@@ -169,6 +169,65 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         latencyMs = 30L,
         memoryUsedPercent = memory
     )
+
+    @Test
+    fun processMarksEmptyCompletedSessionHandledWithoutPersisting() = kotlinx.coroutines.runBlocking {
+        var handled = false
+        var persisted = false
+        val result = processCompletedAdaptiveSession(
+            completed = SessionCoachStoredSession(
+                sessionId = "session-empty-process",
+                packageName = "game.a",
+                startedAtMillis = 1L,
+                endedAtMillis = 2L,
+                samples = emptyList(),
+                preSessionMessage = null,
+                latestObservation = null,
+                gameVersion = "1#1"
+            ),
+            optimizer = PerGameAdaptiveOptimizer(confirmationsRequired = 1, cooldownMillis = 0),
+            nowMillis = 3L,
+            wasSessionHandled = { handled },
+            resolveActiveProfile = { PerformanceProfile.X4 },
+            persistProfile = { _, _ -> persisted = true },
+            markSessionHandled = { handled = true },
+            recordPerformanceEvent = {}
+        )
+
+        assertNull(result)
+        assertTrue(handled)
+        assertFalse(persisted)
+    }
+
+    @Test
+    fun processMarksMalformedPackageHandledWithoutPersisting() = kotlinx.coroutines.runBlocking {
+        var handled = false
+        var persisted = false
+        val result = processCompletedAdaptiveSession(
+            completed = SessionCoachStoredSession(
+                sessionId = "session-bad-package",
+                packageName = "   ",
+                startedAtMillis = 1L,
+                endedAtMillis = 2L,
+                samples = listOf(snapshot(2L, memory = 95)),
+                preSessionMessage = null,
+                latestObservation = null,
+                gameVersion = "1#1"
+            ),
+            optimizer = PerGameAdaptiveOptimizer(confirmationsRequired = 1, cooldownMillis = 0),
+            nowMillis = 3L,
+            wasSessionHandled = { handled },
+            resolveActiveProfile = { PerformanceProfile.X4 },
+            persistProfile = { _, _ -> persisted = true },
+            markSessionHandled = { handled = true },
+            recordPerformanceEvent = {}
+        )
+
+        assertNull(result)
+        assertTrue(handled)
+        assertFalse(persisted)
+    }
+
     @Test
     fun failedProfilePersistenceDoesNotMarkSessionHandledAndCanRetry() = kotlinx.coroutines.runBlocking {
         val optimizer = PerGameAdaptiveOptimizer(
