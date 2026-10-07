@@ -32,12 +32,16 @@ internal object SessionCoachSnapshotCodec {
                 ?.takeIf { it.isFinite() }
                 ?.toString()
                 .orEmpty(),
-            snapshot.latencyMs?.toString().orEmpty()
+            snapshot.latencyMs?.toString().orEmpty(),
+            snapshot.memoryUsedPercent
+                ?.takeIf { it in 0..100 }
+                ?.toString()
+                .orEmpty()
         ).joinToString("|")
 
     fun decode(raw: String): SessionCoachSnapshot? {
         val fields = raw.split("|")
-        if (fields.size != 6) return null
+        if (fields.size !in 6..7) return null
 
         val timestamp = fields[0].toLongOrNull() ?: return null
         val battery = fields[1].takeIf(String::isNotBlank)
@@ -53,6 +57,10 @@ internal object SessionCoachSnapshotCodec {
         val latency = fields[5].takeIf(String::isNotBlank)
             ?.toLongOrNull()
             ?.takeIf { it >= 0L }
+        val memoryUsedPercent = fields.getOrNull(6)
+            ?.takeIf(String::isNotBlank)
+            ?.toIntOrNull()
+            ?.takeIf { it in 0..100 }
 
         return SessionCoachSnapshot(
             timestampMillis = timestamp,
@@ -60,7 +68,8 @@ internal object SessionCoachSnapshotCodec {
             thermalStatus = thermal,
             thermalHeadroom = headroom,
             refreshRateHz = refresh,
-            latencyMs = latency
+            latencyMs = latency,
+            memoryUsedPercent = memoryUsedPercent
         )
     }
 }
