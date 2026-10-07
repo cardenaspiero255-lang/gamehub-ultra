@@ -460,7 +460,7 @@ class SessionCoachMonitorService : Service() {
                 .orEmpty()
             val thermalPrediction = thermalPredictionObservation(
                 samples = activeSession.samples + current,
-                previousObservation = activeSession.latestObservation
+                previousObservation = activeSession.latestThermalPredictionObservation
             )
             val observations = buildList {
                 addAll(measuredObservations)
@@ -470,7 +470,8 @@ class SessionCoachMonitorService : Service() {
             store.appendSnapshot(
                 sessionId = sessionId,
                 snapshot = current,
-                observations = observations
+                observations = observations,
+                thermalPredictionObservation = thermalPrediction
             )
 
             if (firstSample) {
