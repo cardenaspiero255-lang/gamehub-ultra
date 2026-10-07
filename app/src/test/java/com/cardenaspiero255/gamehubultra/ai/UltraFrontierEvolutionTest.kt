@@ -707,6 +707,43 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun deepResearchBranchesUseDisjointProviderPartitions() {
+        val observed = java.util.Collections.synchronizedList(
+            mutableListOf<Pair<Int, Int?>>()
+        )
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                observed += request.researchProviderOffset to request.researchProviderBudget
+                return UltraVerifiedResearchResult(
+                    message = "Respuesta corroborada.",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-" + request.researchProviderOffset),
+                    independentSourceCount = 2,
+                    abstained = false
+                )
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = UltraFrontierOrchestrator(evolution = evolution)
+        )
+
+        engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos teléfonos actuales"
+            )
+        ) { null }
+
+        val sorted = observed.sortedBy { it.first }
+        assertTrue(sorted.size >= 2)
+        val firstBudget = assertNotNull(sorted[0].second)
+        assertTrue(firstBudget > 0)
+        assertTrue(sorted[1].first >= sorted[0].first + firstBudget)
+    }
+
+    @Test
     fun specialistExecutorHonorsDependenciesAcrossParallelResearchTasks() {
         val query = UltraGeneralQueryRouter.classify(
             "Compara dos teléfonos actuales y dime cuál es mejor"
