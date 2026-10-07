@@ -221,4 +221,43 @@ class PerGameAdaptiveOptimizer47Test {
         assertEquals(PerformanceProfile.FRAME_INTERPOLATION, recovered.profile)
     }
 
+    @Test
+    fun explicitSameProfileSelectionCancelsOwnedRecovery() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 1_000
+        )
+        val key = AdaptiveGameKey("game.a", "1")
+        val hot = listOf(AdaptiveTrendSample(4, 40, 60f, 90, 120))
+
+        val downshift = optimizer.evaluate(
+            key,
+            PerformanceProfile.X4,
+            hot,
+            0
+        )
+        assertTrue(downshift.changed)
+        assertEquals(PerformanceProfile.BALANCED, downshift.profile)
+
+        optimizer.recordExplicitProfileSelection(
+            key = key,
+            profile = PerformanceProfile.BALANCED
+        )
+
+        val stable = listOf(
+            AdaptiveTrendSample(0, 90, 120f, 30, 20),
+            AdaptiveTrendSample(0, 88, 120f, 31, 22),
+            AdaptiveTrendSample(0, 86, 120f, 32, 24)
+        )
+        val afterManualSelection = optimizer.evaluate(
+            key,
+            PerformanceProfile.BALANCED,
+            stable,
+            2_000
+        )
+
+        assertFalse(afterManualSelection.changed)
+        assertEquals(PerformanceProfile.BALANCED, afterManualSelection.profile)
+    }
+
 }
