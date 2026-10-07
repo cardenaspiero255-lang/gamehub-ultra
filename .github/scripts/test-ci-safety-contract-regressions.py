@@ -162,8 +162,8 @@ def main() -> None:
     reject_mutation(
         "device physical parallelism reduced",
         android_replace=(
-            "      max-parallel: 4\n",
-            "      max-parallel: 2\n",
+            "      max-parallel: 4\n      matrix:\n        shard: [release-apk, ui, performance-a, performance-b]\n",
+            "      max-parallel: 2\n      matrix:\n        shard: [release-apk, ui, performance-a, performance-b]\n",
         ),
     )
     reject_mutation(
@@ -258,10 +258,10 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "local debug provenance verification removed",
+        "debug artifact current-run binding removed",
         android_replace=(
-            "      - name: Verify Phase 3 artifact provenance locally\n",
-            "      - name: Verify Phase 3 artifact provenance locally disabled\n",
+            "          run-id: ${{ github.run_id }}\n",
+            "          run-id: 1\n",
         ),
     )
     reject_mutation(
