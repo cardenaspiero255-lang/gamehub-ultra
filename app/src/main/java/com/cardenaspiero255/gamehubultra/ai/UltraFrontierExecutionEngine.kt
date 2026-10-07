@@ -29,6 +29,9 @@ class UltraFrontierExecutionEngine(
             lane = plan.lane,
             event = UltraFrontierAuditEvent.PLAN_CREATED
         )
+        val executionRequest = request.copy(
+            researchProviderBudget = plan.sourceBudget.takeIf { it > 0 }
+        )
 
         if (plan.lane == UltraFrontierLane.BLOCKED) {
             auditTrail.record(
@@ -50,7 +53,7 @@ class UltraFrontierExecutionEngine(
         var attempt = 1
         recordAttempt(request, plan, attempt)
         var answer = coordinator.answer(
-            request = request,
+            request = executionRequest,
             localChat = localChat
         )
 
