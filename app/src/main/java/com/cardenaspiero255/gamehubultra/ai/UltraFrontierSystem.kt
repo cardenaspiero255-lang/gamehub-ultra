@@ -582,10 +582,15 @@ class UltraFrontierCritic {
         val GENERIC_FAILURE_MARKERS = listOf(
             "no pude verificarlo con suficiente confianza",
             "no pudo verificarlo con suficiente confianza",
+            "no estoy seguro de esa respuesta",
             "servicio de consulta no está disponible",
             "servicio de consulta no esta disponible",
             "asistente general online no está disponible",
-            "asistente general online no esta disponible"
+            "asistente general online no esta disponible",
+            "hola, soy ultra",
+            "hola soy ultra",
+            "puedo ayudarte con juegos y optimización",
+            "puedo ayudarte con juegos y optimizacion"
         )
     }
 }
