@@ -1291,6 +1291,40 @@ class UltraVerifiedResearchEngineTest {
     }
 
 
+
+    @Test
+    fun requiredGeneralKnowledgeLowConfidenceCanRequestMoreProviders() {
+        val first = fixedProvider(
+            providerId = "provider-0",
+            claimKey = "general:chatgpt",
+            value = "chatgpt",
+            text = "ChatGPT es un asistente de inteligencia artificial."
+        )
+        val second = fixedProvider(
+            providerId = "provider-1",
+            claimKey = "general:chatgpt",
+            value = "chatgpt",
+            text = "ChatGPT es un asistente de inteligencia artificial."
+        )
+        val engine = UltraVerifiedResearchEngine(listOf(first, second))
+
+        val request = UltraGeneralQueryRouter
+            .classify("¿Qué es ChatGPT?")
+            .copy(
+                verificationMode = UltraVerificationMode.REQUIRED,
+                requiresInternet = true,
+                researchProviderBudget = 1
+            )
+
+        val result = engine.answer(request)
+
+        assertTrue(result.abstained)
+        assertTrue(result.retryable)
+        assertEquals("INSUFFICIENT_CORROBORATION", result.reasonCode)
+        assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+        engine.close()
+    }
+
     private fun evidence(
         claimKey: String,
         value: String,
