@@ -1,6 +1,9 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.BatteryAwareGamingEngine
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
+import com.cardenaspiero255.gamehubultra.domain.ThermalPredictionEngine
 import com.cardenaspiero255.gamehubultra.domain.BatteryGamingAssessment
 import com.cardenaspiero255.gamehubultra.domain.BatteryGamingRecommendation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -58,6 +61,35 @@ data class UltraFrontierWorldState(
                 adaptiveScore = adaptiveDecision?.score,
                 timestampMillis = nowMillis
             )
+    }
+}
+
+object UltraFrontierWorldStateUpdater {
+    fun update(
+        context: GameHubAiContext,
+        sessionSamples: List<SessionCoachSnapshot>,
+        adaptiveDecision: AdaptiveDecision?,
+        nowMillis: Long = System.currentTimeMillis()
+    ): UltraFrontierWorldState {
+        val orderedSamples = sessionSamples
+            .asSequence()
+            .filter { it.timestampMillis >= 0L }
+            .sortedBy { it.timestampMillis }
+            .toList()
+        val thermalPrediction = orderedSamples
+            .takeIf(List<SessionCoachSnapshot>::isNotEmpty)
+            ?.let { ThermalPredictionEngine().predict(it) }
+        val batteryAssessment = orderedSamples
+            .takeIf(List<SessionCoachSnapshot>::isNotEmpty)
+            ?.let { BatteryAwareGamingEngine().assess(it) }
+
+        return UltraFrontierWorldState.from(
+            context = context,
+            thermalPrediction = thermalPrediction,
+            batteryAssessment = batteryAssessment,
+            adaptiveDecision = adaptiveDecision,
+            nowMillis = nowMillis
+        ).also(UltraFrontierWorldStateRegistry::update)
     }
 }
 
