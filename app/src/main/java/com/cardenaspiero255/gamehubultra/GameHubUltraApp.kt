@@ -569,22 +569,36 @@ internal fun GameHubUltraApp(
     }
 
     fun applyAiProfileProposal() {
+        val proposal = aiProfileProposal ?: return
         applyAiProfileProposalForSelectedGame(
             packageName = selectedGameForMemory,
-            proposal = aiProfileProposal,
+            proposal = proposal,
             save = viewModel::saveGameProfileConfig,
             recordApplied = aiProfileProposalStore::recordApplied,
-            onApplied = { aiProfileRevision += 1 }
+            onApplied = {
+                recordExplicitAdaptiveProfileSelection(
+                    selectedGameForMemory,
+                    proposal.proposedConfig.performanceProfile
+                )
+                aiProfileRevision += 1
+            }
         )
     }
 
     fun rollbackAiProfileProposal() {
+        val rollback = aiProfileRollbackState ?: return
         rollbackAiProfileProposalForSelectedGame(
             packageName = selectedGameForMemory,
-            rollback = aiProfileRollbackState,
+            rollback = rollback,
             save = viewModel::saveGameProfileConfig,
             clearRollback = aiProfileProposalStore::clearRollback,
-            onRolledBack = { aiProfileRevision += 1 }
+            onRolledBack = {
+                recordExplicitAdaptiveProfileSelection(
+                    selectedGameForMemory,
+                    rollback.previousKnownGoodConfig.performanceProfile
+                )
+                aiProfileRevision += 1
+            }
         )
     }
 
