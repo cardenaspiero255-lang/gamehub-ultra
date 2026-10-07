@@ -617,4 +617,48 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         assertTrue(decision.reason.contains("drenaje", ignoreCase = true))
     }
 
+
+    @Test
+    fun chargingAtCriticalBatteryDoesNotTriggerAdaptiveDownshift() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-charging-critical",
+            packageName = "game.charging",
+            startedAtMillis = 0L,
+            endedAtMillis = 10_000L,
+            samples = listOf(
+                snapshot(0L, memory = 40).copy(
+                    batteryPercent = 12,
+                    batteryCharging = true,
+                    powerSaveMode = false
+                ),
+                snapshot(10_000L, memory = 40).copy(
+                    batteryPercent = 10,
+                    batteryCharging = true,
+                    powerSaveMode = false
+                )
+            ),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1"
+        )
+
+        val decision = applyCompletedAdaptiveDecision(
+            completed = completed,
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 11_000L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(decision)
+        assertFalse(decision.changed)
+        assertEquals(PerformanceProfile.X4, decision.profile)
+        assertFalse(decision.reason.contains("batería crítica", ignoreCase = true))
+    }
+
 }
