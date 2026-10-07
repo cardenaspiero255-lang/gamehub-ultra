@@ -93,6 +93,22 @@ class UltraFrontierExecutionEngine(
                             stage = "frontier"
                         )
                     }
+                    if (
+                        initialNetworkAvailable &&
+                        request.verificationMode != UltraVerificationMode.REQUIRED
+                    ) {
+                        auditTrail.record(
+                            correlationId = request.correlationId,
+                            lane = plan.lane,
+                            event = UltraFrontierAuditEvent.ESCALATE_RESEARCH,
+                            attempt = attempt,
+                            reasonCode = "FRONTIER_LOCAL_UNANSWERABLE"
+                        )
+                        return answer(
+                            request = request.escalatedResearchRequest(),
+                            localChat = { null }
+                        )
+                    }
                     auditTrail.record(
                         correlationId = request.correlationId,
                         lane = plan.lane,
@@ -174,6 +190,15 @@ class UltraFrontierExecutionEngine(
     }
 
     fun auditSnapshot(): List<UltraFrontierAuditRecord> = auditTrail.snapshot()
+
+    private fun UltraGeneralQueryRequest.escalatedResearchRequest():
+        UltraGeneralQueryRequest =
+        copy(
+            requiresInternet = true,
+            timeoutMillis = maxOf(timeoutMillis, LOCAL_ESCALATION_TIMEOUT_MS),
+            verificationMode = UltraVerificationMode.REQUIRED,
+            researchProviderBudget = null
+        )
 
     private fun requestForAttempt(
         request: UltraGeneralQueryRequest,
@@ -300,4 +325,8 @@ class UltraFrontierExecutionEngine(
                 stage = stage ?: "frontier"
             )
         }
+
+    private companion object {
+        const val LOCAL_ESCALATION_TIMEOUT_MS = 60_000L
+    }
 }
