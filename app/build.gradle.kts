@@ -7,6 +7,7 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.testing.Test
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
+import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 val epicAuthBackendUrl = providers.environmentVariable("EPIC_AUTH_BACKEND_URL")
@@ -245,5 +246,56 @@ tasks.withType<Test>().configureEach {
     extensions.configure<JacocoTaskExtension> {
         isIncludeNoLocationClasses = true
         excludes = listOf("jdk.internal.*")
+    }
+}
+
+
+val gameHubCoverageExecutionDataDir = providers
+    .environmentVariable("GAMEHUB_COVERAGE_EXECUTION_DATA_DIR")
+    .orElse(layout.buildDirectory.dir("coverage-shards").map { it.asFile.absolutePath })
+
+tasks.register<JacocoReport>("createShardedDebugUnitTestCoverageReport") {
+    group = "verification"
+    description = "Generates one debug JaCoCo report from distributed unit-test shard execution data."
+    dependsOn("assembleDebug")
+
+    val coverageClassExcludes = listOf(
+        "**/R.class",
+        "**/R$*.class",
+        "**/BuildConfig.*",
+        "**/Manifest*.*"
+    )
+    classDirectories.setFrom(
+        fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+            exclude(coverageClassExcludes)
+        },
+        fileTree(
+            layout.buildDirectory.dir(
+                "intermediates/javac/debug/compileDebugJavaWithJavac/classes"
+            )
+        ) {
+            exclude(coverageClassExcludes)
+        }
+    )
+    sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
+    executionData.setFrom(
+        fileTree(gameHubCoverageExecutionDataDir.get()) {
+            include("**/*.exec", "**/*.ec")
+        }
+    )
+
+    reports {
+        xml.required.set(true)
+        xml.outputLocation.set(
+            layout.buildDirectory.file("reports/coverage/test/debug/report.xml")
+        )
+        html.required.set(false)
+        csv.required.set(false)
+    }
+
+    doFirst {
+        require(executionData.files.any { it.isFile && it.length() > 0L }) {
+            "No JaCoCo execution data was found for sharded coverage."
+        }
     }
 }
