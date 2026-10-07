@@ -8,6 +8,7 @@ import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
+import com.cardenaspiero255.gamehubultra.data.AiProfileProposalStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import android.os.Build
@@ -56,6 +57,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.AiProfileBuilder
+import com.cardenaspiero255.gamehubultra.domain.AiProfileCapabilities
+import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -165,6 +169,7 @@ internal fun GameHubUltraApp(
     connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     storeLibraryRepository: StoreLibraryStateRepository,
     optimizationMemoryStore: GameOptimizationMemoryStateRepository,
+    aiProfileProposalStore: AiProfileProposalStore,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
