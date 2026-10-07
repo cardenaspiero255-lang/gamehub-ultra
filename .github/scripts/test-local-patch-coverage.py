@@ -196,6 +196,18 @@ class AdaptiveAwareGameSelectionStateRepository(
         self.assertEqual(stats.covered, 2)
 
 
+    def test_multiline_const_initializer_tracks_operator_ended_continuations(self) -> None:
+        source = """private const val COMBINED_LIMIT =
+    BASE_LIMIT +
+    2 *
+    SCALE_LIMIT
+val runtime = expensiveCall()
+"""
+        self.assertEqual(
+            gate._multiline_const_initializer_lines(source.splitlines()),
+            {2, 3, 4},
+        )
+
     def test_mapped_compose_body_remains_blocking_patch_coverage(self) -> None:
         source = """@Composable
 internal fun ExampleCard(
