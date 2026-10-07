@@ -104,4 +104,52 @@ class UltraStudyMathCar73CompletionTest {
 
         assertEquals("4", solution.resultText)
     }
+    @Test
+    fun quadraticEquationWithTwoRealRootsRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, resuelve x^2 - 5x + 6 = 0")
+        )
+
+        assertEquals("x = 2 o x = 3", solution.resultText)
+        assertFalse(solution.requiresInternet)
+    }
+
+    @Test
+    fun greatestCommonDivisorRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, calcula el MCD de 48 y 18")
+        )
+
+        assertEquals("6", solution.resultText)
+    }
+
+    @Test
+    fun leastCommonMultipleRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, calcula el MCM de 48 y 18")
+        )
+
+        assertEquals("144", solution.resultText)
+    }
+
+    @Test
+    fun pythagoreanHypotenuseRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve(
+                "Ultra, por Pitágoras calcula la hipotenusa con catetos 3 y 4"
+            )
+        )
+
+        assertEquals("5", solution.resultText)
+    }
+
+    @Test
+    fun celsiusToFahrenheitRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, convierte 25 grados Celsius a Fahrenheit")
+        )
+
+        assertEquals("77 °F", solution.resultText)
+    }
+
 }
