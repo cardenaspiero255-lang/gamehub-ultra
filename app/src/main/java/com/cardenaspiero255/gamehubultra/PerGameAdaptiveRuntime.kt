@@ -214,7 +214,8 @@ private fun evaluateCompletedAdaptiveDecision(
             batteryConstrained = isLatest &&
                 batteryAssessment.preventAggressiveProfiles,
             batteryConstraintReason = batteryAssessment.reason
-                .takeIf { isLatest && batteryAssessment.preventAggressiveProfiles }
+                .takeIf { isLatest && batteryAssessment.preventAggressiveProfiles },
+            batteryCharging = sample.batteryCharging
         )
     }
     val decision = if (persistState) {
