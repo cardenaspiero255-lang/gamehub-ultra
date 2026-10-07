@@ -13,6 +13,7 @@ import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
@@ -213,13 +214,13 @@ class SessionCoachSessionStoreTest {
 
         store.appendSnapshot(
             sessionId = "thermal-state",
-            snapshot = snapshot(10_000L),
+            snapshot = snapshot(10_000L, 80),
             observations = listOf(warning),
             thermalPredictionObservation = warning
         )
         store.appendSnapshot(
             sessionId = "thermal-state",
-            snapshot = snapshot(20_000L),
+            snapshot = snapshot(20_000L, 80),
             observations = listOf(latency)
         )
 
