@@ -492,6 +492,66 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun deepResearchSynthesizerCombinesCompatibleIndependentEvidence() {
+        val evolution = UltraFrontierEvolutionController()
+        val synthesized = evolution.synthesizeResearch(
+            candidates = listOf(
+                UltraQueryExecutionAnswer(
+                    message = "La respuesta corroborada.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-a"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 300L,
+                UltraQueryExecutionAnswer(
+                    message = "La respuesta corroborada.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-b"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 400L
+            )
+        )
+
+        assertNotNull(synthesized)
+        assertTrue(synthesized.verified)
+        assertEquals(2, synthesized.independentSourceCount)
+        assertEquals(setOf("source-a", "source-b"), synthesized.sources.toSet())
+        assertEquals("frontier-synthesizer", synthesized.stage)
+    }
+
+    @Test
+    fun deepResearchSynthesizerNeverMergesContradictoryAnswers() {
+        val evolution = UltraFrontierEvolutionController()
+        val synthesized = evolution.synthesizeResearch(
+            candidates = listOf(
+                UltraQueryExecutionAnswer(
+                    message = "A",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-a"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 300L,
+                UltraQueryExecutionAnswer(
+                    message = "B",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-b"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 400L
+            )
+        )
+
+        assertNotNull(synthesized)
+        assertEquals(1, synthesized.independentSourceCount)
+        assertTrue(synthesized.sources.size == 1)
+    }
+
+    @Test
     fun evolutionEnsemblePrefersVerifiedResearchOverWeakLocalCandidate() {
         val evolution = UltraFrontierEvolutionController()
 
