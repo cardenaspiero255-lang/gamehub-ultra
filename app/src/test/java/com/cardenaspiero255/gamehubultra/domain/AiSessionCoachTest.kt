@@ -173,6 +173,15 @@ class AiSessionCoachTest {
         assertTrue(result.detail.contains("Batería baja"))
         assertTrue(result.detail.contains("Estado térmico elevado"))
         assertTrue(result.detail.contains("Latencia elevada"))
+        assertEquals(
+            1,
+            Regex("Batería", RegexOption.IGNORE_CASE).findAll(result.detail).count()
+        )
+        assertEquals(
+            1,
+            Regex("Latencia", RegexOption.IGNORE_CASE).findAll(result.detail).count()
+        )
+        assertTrue(result.detail.contains("Almacenamiento"))
     }
 
     @Test

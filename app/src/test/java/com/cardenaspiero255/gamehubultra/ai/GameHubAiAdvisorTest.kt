@@ -305,6 +305,20 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun tsunamiDefinitionWinsWhenEarthquakeIsOnlyTheCause() {
+        val answer = GameHubAiAdvisor().generalKnowledgeChatOrNull(
+            message = "¿Qué es un tsunami causado por un terremoto?",
+            context = healthyContext,
+            conversation = emptyList()
+        )
+
+        assertNotNull(answer)
+        assertTrue(answer.contains("tsunami", ignoreCase = true))
+        assertTrue(answer.contains("olas", ignoreCase = true))
+        assertFalse(answer.startsWith("Un terremoto", ignoreCase = true))
+    }
+
+    @Test
     fun commonStableKnowledgeCorpusHasOfflineFallbacks() {
         val cases = listOf(
             "¿Qué es un motor?" to "energía",
