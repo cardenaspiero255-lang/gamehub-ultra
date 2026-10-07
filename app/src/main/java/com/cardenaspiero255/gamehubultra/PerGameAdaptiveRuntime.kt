@@ -8,6 +8,22 @@ import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveOptimizer
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+
+internal suspend fun <T> runAdaptiveSessionProcessing(
+    process: suspend () -> T,
+    onError: (Throwable) -> Unit
+): T? =
+    try {
+        process()
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Exception) {
+        onError(error)
+        null
+    }
 
 internal fun applyCompletedAdaptiveDecision(
     completed: SessionCoachStoredSession?,
@@ -84,7 +100,9 @@ internal suspend fun processCompletedAdaptiveSession(
         } catch (error: Throwable) {
             if (profilePersisted) {
                 try {
-                    persistProfile(evaluated.packageName, activeProfile)
+                    withContext(NonCancellable) {
+                        persistProfile(evaluated.packageName, activeProfile)
+                    }
                 } catch (rollbackError: Throwable) {
                     error.addSuppressed(rollbackError)
                 }
