@@ -9,6 +9,7 @@ package com.cardenaspiero255.gamehubultra.ai
 private data class UltraFrontierRetryProgress(
     val verified: Boolean,
     val confidenceRank: Int,
+    val independentSourceCount: Int,
     val sources: Set<String>,
     val abstained: Boolean
 ) {
@@ -16,11 +17,13 @@ private data class UltraFrontierRetryProgress(
         val qualityScore =
             (if (verified) 1_000 else 0) +
                 confidenceRank * 100 +
+                independentSourceCount * 20 +
                 sources.size * 10 +
                 (if (!abstained) 1 else 0)
         val previousScore =
             (if (previous.verified) 1_000 else 0) +
                 previous.confidenceRank * 100 +
+                previous.independentSourceCount * 20 +
                 previous.sources.size * 10 +
                 (if (!previous.abstained) 1 else 0)
 
@@ -286,6 +289,7 @@ class UltraFrontierExecutionEngine(
             verified = verified,
             confidence = confidence,
             sources = sources,
+            independentSourceCount = independentSourceCount,
             abstained = abstained,
             retryable = abstained && retryable,
             attempt = attempt
@@ -301,6 +305,7 @@ class UltraFrontierExecutionEngine(
                 UltraAnswerConfidence.LOW -> 1
                 null -> 0
             },
+            independentSourceCount = independentSourceCount.coerceAtLeast(0),
             sources = sources
                 .asSequence()
                 .map(String::trim)
