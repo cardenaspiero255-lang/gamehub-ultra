@@ -434,7 +434,10 @@ internal fun GameHubUltraApp(
                     completed.samples
                 )
             sessionCoachObservations = listOfNotNull(completed.latestObservation)
-            if (completedCoachBelongsToRuntimeSession(completed, runtimeGameSession)) {
+            val activeRuntimeRecord = sessionHistory.firstOrNull { session ->
+                session.id == runtimeGameSession?.id
+            }
+            if (completedCoachBelongsToRuntimeSession(completed, activeRuntimeRecord)) {
                 val last = completed.samples.lastOrNull()
                 runtimeCoordinator.endGameSession(
                     runtimeSnapshot().copy(
