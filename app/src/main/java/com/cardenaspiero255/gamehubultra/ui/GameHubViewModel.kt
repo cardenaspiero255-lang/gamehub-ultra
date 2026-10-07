@@ -132,17 +132,12 @@ class GameHubViewModel(
         packageName: String,
         profile: PerformanceProfile
     ) {
-        val current = repository.gameProfileConfigFlow(packageName).first()
-            ?: GameProfileConfig()
-        repository.saveGameProfileConfig(
-            packageName,
-            current.copy(performanceProfile = profile)
-        )
+        repository.saveAdaptiveProfileForGame(packageName, profile)
     }
 
     fun selectGameProfile(packageName: String, profile: PerformanceProfile) {
         viewModelScope.launch {
-            persistGameProfile(packageName, profile)
+            repository.saveProfileForGame(packageName, profile)
         }
     }
 
