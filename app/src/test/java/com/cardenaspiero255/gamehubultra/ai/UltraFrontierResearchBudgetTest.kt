@@ -67,4 +67,50 @@ class UltraFrontierResearchBudgetTest {
         assertEquals(2, calls.distinct().size)
         assertTrue(calls.all { it == "provider-0" || it == "provider-1" })
     }
+
+    @Test
+    fun frontierResearchRetriesKeepTheSameProviderBudget() {
+        val budgets = mutableListOf<Int?>()
+        var attempt = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                budgets += request.researchProviderBudget
+                attempt += 1
+                return if (attempt == 1) {
+                    UltraVerifiedResearchResult(
+                        message = "insuficiente",
+                        confidence = UltraAnswerConfidence.LOW,
+                        sources = emptyList(),
+                        abstained = true,
+                        retryable = true
+                    )
+                } else {
+                    UltraVerifiedResearchResult(
+                        message = "verificado",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("a", "b"),
+                        abstained = false
+                    )
+                }
+            }
+        }
+        val frontier = UltraFrontierOrchestrator(
+            UltraFrontierPolicy(
+                verifiedSourceBudget = 7,
+                deepSourceBudget = 11
+            )
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            frontier = frontier
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify("noticias de Android hoy")
+        ) { null }
+
+        assertTrue(answer.verified)
+        assertEquals(listOf(7, 7), budgets)
+    }
+
 }
