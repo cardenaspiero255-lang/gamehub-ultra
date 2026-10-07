@@ -2647,7 +2647,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^expl[ií]came qu[eé] es\s+(.+?)\.?$/i,
     /^describe\s+(.+?)\.?$/i,
     /^descr[ií]beme\s+(.+?)\.?$/i,
-    /^(?:h[aá]blame|cu[eé]ntame|dime(?:\s+algo)?|quiero\s+saber|qu[eé]\s+sabes|dame\s+informaci[oó]n|inf[oó]rmame)\s+(?:de|del|sobre|acerca\s+de)\s+(.+?)\.?$/i,
+    /^(?:h[aá]blame|cu[eé]ntame|dime(?:\s+algo)?|dime\s+qu[eé]\s+sabes|quiero\s+saber|quiero\s+que\s+me\s+hables|me\s+puedes\s+hablar|puedes\s+hablarme|podr[ií]as\s+hablarme|expl[ií]came(?:\s+algo)?|ens[eé][ñn]ame(?:\s+algo)?|qu[eé]\s+sabes|dame\s+informaci[oó]n|inf[oó]rmame)\s+(?:de|del|sobre|acerca\s+de)\s+(.+?)\.?$/i,
     /^para qu[eé] sirve o por qu[eé] importa\s+(.+?)\.?$/i,
     /^resume qu[eé] es\s+(.+?)\.?$/i,
     /^dime lo esencial sobre\s+(.+?)\.?$/i,
@@ -2696,7 +2696,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame del|háblame del|hablame sobre|háblame sobre|hablame acerca de|háblame acerca de|cuentame de|cuéntame de|cuentame sobre|cuéntame sobre|cuentame acerca de|cuéntame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|qué sabes de|que sabes sobre|qué sabes sobre|dame informacion de|dame información de|dame informacion sobre|dame información sobre|informame de|infórmame de|informame sobre|infórmame sobre|informame acerca de|infórmame acerca de|describeme|descríbeme)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame del|háblame del|hablame sobre|háblame sobre|hablame acerca de|háblame acerca de|cuentame de|cuéntame de|cuentame sobre|cuéntame sobre|cuentame acerca de|cuéntame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|qué sabes de|que sabes sobre|qué sabes sobre|dame informacion de|dame información de|dame informacion sobre|dame información sobre|informame de|infórmame de|informame sobre|infórmame sobre|informame acerca de|infórmame acerca de|describeme|descríbeme|dime que sabes de|dime qué sabes de|quiero que me hables de|quiero que me hables sobre|me puedes hablar de|me puedes hablar sobre|puedes hablarme de|puedes hablarme sobre|podrias hablarme de|podrías hablarme de|explicame sobre|explícame sobre|ensename sobre|enséñame sobre)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -2722,7 +2722,7 @@ function isExplicitNewKnowledgeTopic(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|hablame del|hablame sobre|hablame acerca de|cuentame de|cuentame sobre|cuentame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|que sabes sobre|dame informacion de|dame informacion sobre|informame de|informame sobre|informame acerca de|describeme|que significa|por que es|define|explicame que es|explica que es|como se calcula|what is|what are|who is|who was|who are|why is|define|explain|tell me about|talk to me about|describe)\s+\S+/.test(
+  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|hablame del|hablame sobre|hablame acerca de|cuentame de|cuentame sobre|cuentame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|que sabes sobre|dame informacion de|dame informacion sobre|informame de|informame sobre|informame acerca de|describeme|dime que sabes de|quiero que me hables de|quiero que me hables sobre|me puedes hablar de|me puedes hablar sobre|puedes hablarme de|puedes hablarme sobre|podrias hablarme de|explicame sobre|ensename sobre|que significa|por que es|define|explicame que es|explica que es|como se calcula|what is|what are|who is|who was|who are|why is|define|explain|tell me about|talk to me about|describe)\s+\S+/.test(
     clean,
   );
 }
