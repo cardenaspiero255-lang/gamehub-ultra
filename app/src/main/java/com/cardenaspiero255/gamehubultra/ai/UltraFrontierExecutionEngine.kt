@@ -75,6 +75,7 @@ class UltraFrontierExecutionEngine(
 
                 UltraFrontierVerdict.FALLBACK_LOCAL -> {
                     val local = safeLocal(localChat)
+                        ?.takeIf(critic::isUsefulLocalAnswer)
                     if (local != null) {
                         auditTrail.record(
                             correlationId = request.correlationId,
