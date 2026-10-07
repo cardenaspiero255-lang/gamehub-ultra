@@ -101,7 +101,7 @@ class SessionCoachSessionStoreTest {
         assertFalse(store.beginSession("", "game.a", 1L))
         assertFalse(store.beginSession("id", "", 1L))
 
-        assertTrue(store.beginSession("session-1", "game.a", 1_000L))
+        assertTrue(store.beginSession("session-1", "game.a", 1_000L, gameVersion = "1.2.3"))
         assertTrue(store.hasActiveSession())
 
         val pre = SessionCoachMessage(
@@ -136,6 +136,7 @@ class SessionCoachSessionStoreTest {
         val active = store.readActiveSession()
         assertEquals("session-1", active?.sessionId)
         assertEquals("game.a", active?.packageName)
+        assertEquals("1.2.3", active?.gameVersion)
         assertEquals(pre, active?.preSessionMessage)
         assertEquals(mid, active?.latestObservation)
         assertEquals(listOf(first, second), active?.samples)
@@ -147,6 +148,7 @@ class SessionCoachSessionStoreTest {
 
         val completed = store.readLastCompletedSession()
         assertEquals("session-1", completed?.sessionId)
+        assertEquals("1.2.3", completed?.gameVersion)
         assertEquals(1_000L, completed?.endedAtMillis)
         assertEquals(mid, completed?.latestObservation)
         assertEquals(2, completed?.samples?.size)
