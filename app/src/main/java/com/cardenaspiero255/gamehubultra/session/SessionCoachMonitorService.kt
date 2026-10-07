@@ -138,6 +138,7 @@ class SessionCoachMonitorService : Service() {
         private const val MAX_SESSION_DURATION_MS = 4L * 60L * 60L * 1_000L
 
         private const val INACTIVE_EVIDENCE_REQUIRED = 3
+        internal const val UNKNOWN_EVIDENCE_REQUIRED = 20
 
         internal fun shouldProbeLatency(
             network: ConnectivityTelemetry,
@@ -185,6 +186,19 @@ class SessionCoachMonitorService : Service() {
 
         internal fun shouldFinishForInactivity(evidenceCount: Int): Boolean =
             evidenceCount >= INACTIVE_EVIDENCE_REQUIRED
+
+        internal fun nextUnknownEvidenceCount(
+            presence: SessionCoachGamePresence,
+            currentCount: Int
+        ): Int =
+            when (presence) {
+                SessionCoachGamePresence.UNKNOWN -> currentCount + 1
+                SessionCoachGamePresence.ACTIVE,
+                SessionCoachGamePresence.INACTIVE -> 0
+            }
+
+        internal fun shouldFinishForUnknownPresence(evidenceCount: Int): Boolean =
+            evidenceCount >= UNKNOWN_EVIDENCE_REQUIRED
 
         internal fun start(
             context: Context,
@@ -324,6 +338,7 @@ class SessionCoachMonitorService : Service() {
         var previous = store.readActiveSession()?.samples?.lastOrNull()
         var firstSample = previous == null
         var inactiveEvidenceCount = 0
+        var unknownEvidenceCount = 0
 
         while (currentCoroutineContext().isActive) {
             val now = System.currentTimeMillis()
@@ -336,15 +351,23 @@ class SessionCoachMonitorService : Service() {
                 return
             }
 
+            val presence = SessionCoachGamePresenceDetector.observe(
+                context = applicationContext,
+                packageName = packageName,
+                nowMillis = now
+            )
             inactiveEvidenceCount = nextInactiveEvidenceCount(
-                presence = SessionCoachGamePresenceDetector.observe(
-                    context = applicationContext,
-                    packageName = packageName,
-                    nowMillis = now
-                ),
+                presence = presence,
                 currentCount = inactiveEvidenceCount
             )
-            if (shouldFinishForInactivity(inactiveEvidenceCount)) {
+            unknownEvidenceCount = nextUnknownEvidenceCount(
+                presence = presence,
+                currentCount = unknownEvidenceCount
+            )
+            if (
+                shouldFinishForInactivity(inactiveEvidenceCount) ||
+                shouldFinishForUnknownPresence(unknownEvidenceCount)
+            ) {
                 finishOwnedSession(sessionId, now)
                 return
             }
@@ -466,6 +489,14 @@ class SessionCoachMonitorService : Service() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
+}
+
+internal object SessionCoachNotificationPermission {
+    fun shouldRequest(
+        sdkInt: Int,
+        granted: Boolean
+    ): Boolean =
+        sdkInt >= Build.VERSION_CODES.TIRAMISU && !granted
 }
 
 internal object SessionCoachNotifications {
