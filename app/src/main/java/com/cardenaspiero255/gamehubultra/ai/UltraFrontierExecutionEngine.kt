@@ -425,7 +425,7 @@ class UltraFrontierExecutionEngine(
         }
         if (accepted.isEmpty()) return null
 
-        val selected = evolution.selectBestResearch(accepted)
+        val selected = evolution.synthesizeResearch(accepted)
             ?: return null
 
         auditTrail.record(
