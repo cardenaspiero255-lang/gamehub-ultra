@@ -238,7 +238,8 @@ internal fun GameHubUltraApp(
         if (packageName == null || diagnostics == null) {
             null
         } else {
-            val currentConfig = uiState.selectedGameConfig ?: GameProfileConfig()
+            val currentConfig = uiState.selectedGameConfig
+                ?: GameProfileConfig(performanceProfile = uiState.effectiveProfile)
             AiProfileBuilder.propose(
                 currentConfig = currentConfig,
                 observations = optimizationObservations,
