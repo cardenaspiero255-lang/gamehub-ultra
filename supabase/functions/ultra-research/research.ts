@@ -1770,6 +1770,41 @@ function extractWeatherLocation(query: string): string | null {
   return null;
 }
 
+function knownWeatherCoordinates(
+  location: string,
+): { latitude: number; longitude: number; label: string } | null {
+  const clean = normalize(location);
+  const known = [
+    {
+      aliases: ["requinoa"],
+      latitude: -34.28486,
+      longitude: -70.81751,
+      label: "Requínoa, Región de O'Higgins, Chile",
+    },
+    {
+      aliases: ["rancagua"],
+      latitude: -34.1702,
+      longitude: -70.7407,
+      label: "Rancagua, Región de O'Higgins, Chile",
+    },
+  ];
+
+  const match = known.find((place) =>
+    place.aliases.some((alias) =>
+      clean === alias ||
+      clean.startsWith(alias + " ") ||
+      clean.endsWith(" " + alias)
+    )
+  );
+  return match
+    ? {
+      latitude: match.latitude,
+      longitude: match.longitude,
+      label: match.label,
+    }
+    : null;
+}
+
 function weatherDescription(code: number): string {
   if (code === 0) return "despejado";
   if ([1, 2].includes(code)) return "parcialmente nublado";
@@ -1919,16 +1954,9 @@ async function weatherEvidence(
   const geoResponse = await fetchWithRetry(deps, geoUrl, {
     headers: { "User-Agent": USER_AGENT },
   });
-  if (!geoResponse) {
-    return abstain("La fuente de ubicación no respondió a tiempo.", {
-      reasonCode: "UPSTREAM_UNAVAILABLE",
-      retryable: true,
-      stage: "weather_geocoding",
-    });
-  }
 
   let geo: JsonObject | null = null;
-  if (geoResponse.ok) {
+  if (geoResponse?.ok) {
     try {
       const parsed = await geoResponse.json();
       geo = parsed && typeof parsed === "object"
@@ -1950,7 +1978,9 @@ async function weatherEvidence(
   ].filter(Boolean).join(", ");
 
   if (latitude == null || longitude == null) {
-    const fallbackLocation = await nominatimCoordinates(location, deps);
+    const fallbackLocation =
+      await nominatimCoordinates(location, deps) ??
+      knownWeatherCoordinates(location);
     if (!fallbackLocation) {
       return abstain("No pude encontrar esa ubicación.", {
         reasonCode: "UPSTREAM_UNAVAILABLE",
@@ -5323,6 +5353,19 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
       "Por eso el resultado depende del capital inicial, la tasa, la frecuencia de capitalización y el tiempo.";
     return {
       claimKey: "local-stable:compound-interest",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "estrella" || clean === "estrellas") {
+    const displayText =
+      "Una estrella es un astro formado principalmente por plasma que produce energía mediante fusión nuclear en su interior. " +
+      "Esa energía se libera en forma de radiación, incluida luz y calor; el Sol es la estrella más cercana a la Tierra.";
+    return {
+      claimKey: "local-stable:star",
       value: normalize(displayText),
       displayText,
       independentSourceCount: 0,
