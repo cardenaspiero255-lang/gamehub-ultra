@@ -46,7 +46,7 @@ internal suspend fun processCompletedAdaptiveSession(
     resolveActiveProfile: suspend () -> PerformanceProfile,
     persistProfile: suspend (String, PerformanceProfile) -> Unit,
     markSessionHandled: () -> Unit,
-    recordPerformanceEvent: (PerformanceEvent) -> Unit
+    recordPerformanceEvent: suspend (PerformanceEvent) -> Unit
 ): PerGameAdaptiveDecision? {
     val session = completed ?: return null
     if (wasSessionHandled()) return null
@@ -70,19 +70,28 @@ internal suspend fun processCompletedAdaptiveSession(
     }
 
     if (evaluated.decision.changed) {
+        var profilePersisted = false
         try {
             persistProfile(evaluated.packageName, evaluated.decision.profile)
+            profilePersisted = true
+            recordPerformanceEvent(
+                adaptivePerformanceEvent(
+                    session = session,
+                    decision = evaluated.decision,
+                    nowMillis = nowMillis
+                )
+            )
         } catch (error: Throwable) {
+            if (profilePersisted) {
+                try {
+                    persistProfile(evaluated.packageName, activeProfile)
+                } catch (rollbackError: Throwable) {
+                    error.addSuppressed(rollbackError)
+                }
+            }
             optimizer.restoreState(key, snapshot)
             throw error
         }
-        recordPerformanceEvent(
-            adaptivePerformanceEvent(
-                session = session,
-                decision = evaluated.decision,
-                nowMillis = nowMillis
-            )
-        )
     }
 
     markSessionHandled()
