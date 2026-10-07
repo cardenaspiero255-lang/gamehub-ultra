@@ -10,6 +10,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -233,7 +234,16 @@ class SessionCoachMonitorService : Service() {
             store.finishActiveSession(nowMillis)?.let { previous ->
                 SessionCoachNotifications.postSummary(context, previous)
             }
-            if (!store.beginSession(sessionId, cleanPackage, nowMillis)) return null
+            val gameVersion = installedVersionName(context, cleanPackage)
+            if (!store.beginSession(
+                    sessionId = sessionId,
+                    packageName = cleanPackage,
+                    startedAtMillis = nowMillis,
+                    gameVersion = gameVersion
+                )
+            ) {
+                return null
+            }
 
             val intent = Intent(context, SessionCoachMonitorService::class.java)
                 .setAction(ACTION_START)
@@ -248,6 +258,22 @@ class SessionCoachMonitorService : Service() {
                 null
             }
         }
+
+        @Suppress("DEPRECATION")
+        private fun installedVersionName(
+            context: Context,
+            packageName: String
+        ): String? = runCatching {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(0L)
+                )
+            } else {
+                context.packageManager.getPackageInfo(packageName, 0)
+            }
+            info.versionName?.trim()?.takeIf(String::isNotEmpty)
+        }.getOrNull()
 
         internal fun cancelLaunch(context: Context) {
             SessionCoachSessionStore(context).discardActiveSession()
