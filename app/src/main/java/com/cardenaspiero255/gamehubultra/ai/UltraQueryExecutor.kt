@@ -82,5 +82,4 @@ class DefaultUltraQueryExecutor(
         )
         return blocked.none(normalized::contains)
     }
-    }
 }
