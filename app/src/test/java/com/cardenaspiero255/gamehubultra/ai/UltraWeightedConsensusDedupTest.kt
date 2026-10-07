@@ -40,6 +40,29 @@ class UltraWeightedConsensusDedupTest {
     }
 
     @Test
+    fun multipleUrlsFromOneUnderlyingSourceStillCountAsOne() {
+        val decision = UltraWeightedConsensusEngine(
+            minimumIndependentSources = 2
+        ).decide(
+            listOf(
+                UltraWeightedEvidenceCandidate(
+                    providerId = "provider-a",
+                    claimKey = "claim",
+                    value = "same",
+                    displayText = "same",
+                    sourceIds = setOf("page-a", "page-b"),
+                    independentSourceCount = 1,
+                    authoritative = true,
+                    providerScore = 0.9
+                )
+            )
+        )
+
+        assertEquals(1, decision.independentSourceCount)
+        assertFalse(decision.accepted)
+    }
+
+    @Test
     fun distinctUnderlyingSourcesStillSatisfyConsensusQuorum() {
         val decision = UltraWeightedConsensusEngine(
             minimumIndependentSources = 2
