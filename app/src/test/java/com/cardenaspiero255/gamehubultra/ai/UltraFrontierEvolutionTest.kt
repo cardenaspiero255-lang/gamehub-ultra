@@ -457,6 +457,75 @@ class UltraFrontierEvolutionTest {
         assertEquals("corroborada", selected.message)
     }
 
+    @Test
+    fun productionEvolutionUsesVerifiedTemporalKnowledgeBeforeCallingResearchAgain() {
+        var calls = 0
+        var now = 1_000L
+        val evolution = UltraFrontierEvolutionController()
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                calls += 1
+                return UltraVerifiedResearchResult(
+                    message = "ChatGPT es un asistente de IA.",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("official"),
+                    independentSourceCount = 2,
+                    abstained = false
+                )
+            }
+        }
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = UltraFrontierOrchestrator(evolution = evolution),
+            nowMillis = { now }
+        )
+        val request = UltraGeneralQueryRouter
+            .classify("¿Qué es ChatGPT?")
+            .copy(verificationMode = UltraVerificationMode.REQUIRED)
+
+        val first = engine.answer(request) { null }
+        now += 1_000L
+        val second = engine.answer(request) { null }
+
+        assertTrue(first.verified)
+        assertTrue(second.verified)
+        assertEquals(1, calls)
+        assertEquals("frontier-knowledge-graph", second.stage)
+    }
+
+    @Test
+    fun productionEvolutionDoesNotReuseExpiredTemporalKnowledge() {
+        var calls = 0
+        var now = 1_000L
+        val evolution = UltraFrontierEvolutionController()
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                calls += 1
+                return UltraVerifiedResearchResult(
+                    message = "Actualización $calls",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("official-$calls"),
+                    independentSourceCount = 2,
+                    abstained = false
+                )
+            }
+        }
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = UltraFrontierOrchestrator(evolution = evolution),
+            nowMillis = { now }
+        )
+        val request = UltraGeneralQueryRouter.classify("noticias de Android hoy")
+
+        engine.answer(request) { null }
+        now += UltraResearchCache.CURRENT_DATA_TTL_MS + 1L
+        engine.answer(request) { null }
+
+        assertEquals(2, calls)
+    }
+
     private fun fakeProvider(providerId: String): UltraResearchProvider =
         object : UltraResearchProvider {
             override val id: String = providerId
