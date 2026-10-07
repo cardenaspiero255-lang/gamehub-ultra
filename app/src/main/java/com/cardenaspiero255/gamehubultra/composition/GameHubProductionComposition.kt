@@ -129,7 +129,8 @@ internal object GameHubProductionComposition {
             viewModelDependencyFactory = viewModelDependencyFactory,
             connectedAccountsRepository = connectedAccountsRepository,
             storeLibraryRepository = storeLibraryRepository,
-            optimizationMemoryRepository = optimizationMemoryRepository
+            optimizationMemoryRepository = optimizationMemoryRepository,
+            aiProfileProposalStore = aiProfileProposalStore
         )
     }
 
