@@ -20,6 +20,7 @@ class GameStateOwnershipContractsTest {
             listOf(
                 "gameProfileConfigFlow",
                 "profileForGameFlow",
+                "saveAdaptiveProfileForGame",
                 "saveGameProfileConfig",
                 "saveProfileForGame",
                 "saveSelectedGame",
