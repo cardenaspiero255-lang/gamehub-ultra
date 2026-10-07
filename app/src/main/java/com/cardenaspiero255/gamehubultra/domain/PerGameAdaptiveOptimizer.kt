@@ -319,7 +319,10 @@ class PerGameAdaptiveOptimizer(
                 knownSignals >= 3 &&
                 latest.thermalStatus?.let { it <= 1 } != false &&
                 !latest.batteryConstrained &&
-                latest.batteryPercent?.let { it >= 55 } != false &&
+                (
+                    latest.batteryCharging == true ||
+                        latest.batteryPercent?.let { it >= 55 } != false
+                    ) &&
                 latest.memoryUsedPercent?.let { it <= 80 } != false &&
                 latest.latencyMs?.let { it <= 80 } != false &&
                 refreshTrend >= -10f &&
