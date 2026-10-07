@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -7,6 +8,25 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class UltraConversationalTopicPromptTest {
+    private val aiContext = GameHubAiContext(
+        selectedGamePackage = null,
+        sustainedPerformanceSupported = false,
+        cpuCores = 8,
+        totalRamMb = 8192,
+        gpuAvailable = true,
+        thermalStatus = 0,
+        thermalHeadroom = 0.2f,
+        batteryPercent = 80,
+        charging = false,
+        refreshRateHz = 120f,
+        networkValidated = true,
+        networkLatencyMs = 30L,
+        downstreamBandwidthKbps = 100_000L,
+        storageFreePercent = 40,
+        inputDeviceCount = 0,
+        selectedProfile = PerformanceProfile.BALANCED,
+        sessionActive = false
+    )
     @Test
     fun conversationalTopicPhrasesRouteToGeneralKnowledgeChat() {
         val phrases = listOf(
@@ -57,7 +77,7 @@ class UltraConversationalTopicPromptTest {
 
         val answer = advisor.generalKnowledgeChatOrNull(
             message = "Ultra, háblame de los osos",
-            context = GameHubAiContext(),
+            context = aiContext,
             conversation = emptyList()
         )
 
