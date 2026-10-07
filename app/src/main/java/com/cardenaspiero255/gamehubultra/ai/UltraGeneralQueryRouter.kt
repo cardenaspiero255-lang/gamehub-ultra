@@ -64,6 +64,9 @@ object UltraGeneralQueryRouter {
     private val conversationalTopicPattern = Regex(
         """^(?:(?:por favor|please)\s+)?(?:hablame|cuentame|dime(?:\s+algo)?|quiero\s+saber|que\s+sabes|dame\s+informacion|informame|describeme|tell\s+me|tell\s+me\s+about|talk\s+to\s+me|describe)\b(?:\s+(?:de|del|sobre|acerca\s+de|about))?\s+\S.+$"""
     )
+    private val conversationalFreshTopicPattern = Regex(
+        """\b(noticias|news|novedades|updates?|latest|newest|precio|precios|price|prices|cuanto cuesta|cuanto cuestan|how much|actual|actualmente|ahora|hoy|current|currently|today|release date|fecha de lanzamiento|fecha de salida|cuando sale|cuando se lanza)\b"""
+    )
     private val broadFactualPattern = Regex(
         """\b(cuantos|cuantas|como se llama|como se llaman|how many|how old|what year|which country)\b"""
     )
@@ -88,6 +91,11 @@ object UltraGeneralQueryRouter {
     private val casualConversationPattern = Regex(
         """\b(hola|hello|buenas|buenos dias|buenas tardes|buenas noches|como estas|how are you|que tal|gracias|thanks|estoy aburrido|estoy aburrida|conversa conmigo|habla conmigo)\b"""
     )
+
+    internal fun isConversationalTopicRequest(transcript: String): Boolean =
+        conversationalTopicPattern.containsMatchIn(
+            VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
+        )
 
     private fun request(
         transcript: String,
@@ -164,7 +172,10 @@ object UltraGeneralQueryRouter {
                 )
 
             definitionPattern.containsMatchIn(clean) ||
-                conversationalTopicPattern.containsMatchIn(clean) ->
+                (
+                    conversationalTopicPattern.containsMatchIn(clean) &&
+                        !conversationalFreshTopicPattern.containsMatchIn(clean)
+                    ) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
