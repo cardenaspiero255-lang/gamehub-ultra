@@ -639,21 +639,32 @@ internal fun GameHubUltraApp(
             )
             lastSessionCoachReport = hydration.report
             sessionCoachObservations = hydration.observations
-            processCompletedAdaptiveSession(
-                completed = completed,
-                optimizer = perGameAdaptiveOptimizer,
-                nowMillis = System.currentTimeMillis(),
-                wasSessionHandled = {
-                    perGameAdaptiveStateStore.wasSessionHandled(completed.sessionId)
+            runAdaptiveSessionProcessing(
+                process = {
+                    processCompletedAdaptiveSession(
+                        completed = completed,
+                        optimizer = perGameAdaptiveOptimizer,
+                        nowMillis = System.currentTimeMillis(),
+                        wasSessionHandled = {
+                            perGameAdaptiveStateStore.wasSessionHandled(completed.sessionId)
+                        },
+                        resolveActiveProfile = {
+                            viewModel.effectiveProfileForGame(completed.packageName)
+                        },
+                        persistProfile = viewModel::persistGameProfile,
+                        markSessionHandled = {
+                            perGameAdaptiveStateStore.markSessionHandled(completed.sessionId)
+                        },
+                        recordPerformanceEvent = viewModel::persistPerformanceEvent
+                    )
                 },
-                resolveActiveProfile = {
-                    viewModel.effectiveProfileForGame(completed.packageName)
-                },
-                persistProfile = viewModel::persistGameProfile,
-                markSessionHandled = {
-                    perGameAdaptiveStateStore.markSessionHandled(completed.sessionId)
-                },
-                recordPerformanceEvent = viewModel::persistPerformanceEvent
+                onError = { error ->
+                    android.util.Log.w(
+                        "GameHubUltraApp",
+                        "Adaptive session processing failed; will retry",
+                        error
+                    )
+                }
             )
             if (hydration.shouldMarkHydrated) {
                 hydratedCoachSessionId = completed.sessionId
