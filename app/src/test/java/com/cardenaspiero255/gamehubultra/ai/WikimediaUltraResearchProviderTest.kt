@@ -1433,6 +1433,45 @@ class WikimediaUltraResearchProviderTest {
     }
 
     @Test
+    fun englishAndDescribeConversationalPromptsUseCleanTopicsInPublicFallback() {
+        val prompts = listOf(
+            "Ultra, tell me about bears" to "bears",
+            "Ultra, talk to me about bears" to "bears",
+            "Ultra, describe bears" to "bears",
+            "Ultra, descríbeme los osos" to "osos"
+        )
+
+        prompts.forEach { (prompt, expectedTopic) ->
+            var searchUrl = ""
+            val provider = WikimediaUltraResearchProvider(
+                UltraPublicKnowledgeTransport { url, _ ->
+                    if (url.contains("list=search")) {
+                        searchUrl = url
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"search":[{"title":"Osos"}]}}"""
+                        )
+                    } else {
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"pages":{"1":{"title":"Osos","extract":"Los osos son mamíferos de la familia Ursidae.","canonicalurl":"https://es.wikipedia.org/wiki/Ursidae"}}}}"""
+                        )
+                    }
+                }
+            )
+
+            provider.fetchResult(UltraGeneralQueryRouter.classify(prompt))
+
+            val decoded = java.net.URLDecoder.decode(searchUrl, "UTF-8")
+            assertTrue(decoded.contains("srsearch=$expectedTopic"), decoded)
+            assertFalse(decoded.contains("tell me about"), decoded)
+            assertFalse(decoded.contains("talk to me about"), decoded)
+            assertFalse(decoded.contains("describe "), decoded)
+            assertFalse(decoded.contains("descríbeme"), decoded)
+        }
+    }
+
+    @Test
     fun conversationalTalkAboutPromptUsesCleanTopicInPublicFallback() {
         var searchUrl = ""
         val provider = WikimediaUltraResearchProvider(
