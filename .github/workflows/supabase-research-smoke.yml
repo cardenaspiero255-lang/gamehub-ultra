@@ -30,11 +30,11 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    # All 50,000 cases are generated identically. We keep 32 logical shards but
-    # pack two logical shards into each of 16 GitHub runners so runner queuing
-    # does not serialize half the matrix. Each runner uses 24 stable workers,
-    # preserving the same theoretical 32x12 parallelism. Fresh-data checks stay
-    # on the runner that owns logical shard 0 to avoid provider bursts.
+    # All 50,000 cases are generated identically. We keep 64 logical shards and
+    # pack four logical shards into each of 16 GitHub runners so queue pressure
+    # stays bounded while each runner owns a smaller deterministic slice. Each
+    # runner keeps 24 stable workers. Fresh-data checks stay on the runner that
+    # owns logical shard 0 to avoid provider bursts.
     timeout-minutes: 60
     env:
       SMOKE_SEED: ${{ github.run_id }}
@@ -43,7 +43,7 @@ jobs:
       SMOKE_WARMUP_WAVE_COUNT: "16"
       SMOKE_WARMUP_WAVE_DELAY_SECONDS: "4"
       SMOKE_SHARD_INDEX: "${{ matrix.shard }}"
-      SMOKE_SHARD_COUNT: "32"
+      SMOKE_SHARD_COUNT: "64"
 
     steps:
       - name: Checkout
@@ -976,7 +976,7 @@ jobs:
           shard_index = int(os.environ.get("SMOKE_SHARD_INDEX", "0"))
           shard_count = int(os.environ.get("SMOKE_SHARD_COUNT", "1"))
           physical_runner_count = 16
-          logical_shards_per_runner = 2
+          logical_shards_per_runner = 4
           if shard_count != physical_runner_count * logical_shards_per_runner:
               raise RuntimeError(
                   f"Expected {physical_runner_count * logical_shards_per_runner} "
