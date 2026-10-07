@@ -450,4 +450,21 @@ class AiSessionCoachTest {
         )
     }
 
+
+    @Test
+    fun postSessionAggregatesDropAcrossUnchargedSegmentsWithoutCountingChargeGain() {
+        val samples = listOf(
+            SessionCoachSnapshot(0L, 80, 1, 0.2f, 120f, 30L, batteryCharging = false),
+            SessionCoachSnapshot(10 * 60_000L, 70, 1, 0.2f, 120f, 30L, batteryCharging = false),
+            SessionCoachSnapshot(20 * 60_000L, 90, 1, 0.2f, 120f, 30L, batteryCharging = true),
+            SessionCoachSnapshot(30 * 60_000L, 90, 1, 0.2f, 120f, 30L, batteryCharging = false),
+            SessionCoachSnapshot(40 * 60_000L, 85, 1, 0.2f, 120f, 30L, batteryCharging = false)
+        )
+
+        val report = AiSessionCoach.postSession(samples)
+
+        assertEquals(15, report.batteryDropPercent)
+        assertTrue(report.patterns.any { it.signal == SessionCoachSignal.BATTERY })
+    }
+
 }
