@@ -3,6 +3,7 @@ package com.cardenaspiero255.gamehubultra.data
 import android.content.Context
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePersistedState
+import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePendingDecision
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import org.junit.Before
 import org.junit.Test
@@ -100,6 +101,83 @@ class PerGameAdaptiveStatePreferencesStoreTest {
 
         preferences.edit().putString(storageKey, "BALANCED||0||BAD").commit()
         assertNull(store.read(key))
+    }
+
+
+    @Test
+    fun ownedRecoveryIsFoundAcrossVersionsButNotForDifferentActiveProfile() {
+        val store = PerGameAdaptiveStatePreferencesStore(context)
+        store.write(
+            AdaptiveGameKey("game.versioned", "1#10"),
+            PerGameAdaptivePersistedState(
+                profile = PerformanceProfile.BALANCED,
+                candidate = null,
+                confirmations = 0,
+                lastChangeMillis = 500L,
+                recoveryProfile = PerformanceProfile.X4
+            )
+        )
+        store.write(
+            AdaptiveGameKey("game.versioned", "2#20"),
+            PerGameAdaptivePersistedState(
+                profile = PerformanceProfile.BALANCED,
+                candidate = null,
+                confirmations = 0,
+                lastChangeMillis = 900L,
+                recoveryProfile = PerformanceProfile.FRAME_INTERPOLATION
+            )
+        )
+
+        assertEquals(
+            PerformanceProfile.X4,
+            store.ownedRecoveryProfileForPackage(
+                packageName = "game.versioned",
+                excludingVersion = "2#20",
+                activeProfile = PerformanceProfile.BALANCED
+            )
+        )
+        assertNull(
+            store.ownedRecoveryProfileForPackage(
+                packageName = "game.versioned",
+                excludingVersion = "2#20",
+                activeProfile = PerformanceProfile.X4
+            )
+        )
+    }
+
+    @Test
+    fun pendingDecisionRoundTripsAndClearsDurably() {
+        val store = PerGameAdaptiveStatePreferencesStore(context)
+        val pending = PerGameAdaptivePendingDecision(
+            sessionId = "session-pending",
+            key = AdaptiveGameKey("game.pending", "3#30"),
+            previousProfile = PerformanceProfile.X4,
+            targetProfile = PerformanceProfile.BALANCED,
+            targetState = PerGameAdaptivePersistedState(
+                profile = PerformanceProfile.BALANCED,
+                candidate = null,
+                confirmations = 0,
+                lastChangeMillis = 123L,
+                recoveryProfile = PerformanceProfile.X4
+            ),
+            eventTimestampMillis = 456L,
+            reason = "memoria | térmica"
+        )
+
+        store.writePendingDecision(pending)
+
+        assertEquals(
+            pending,
+            PerGameAdaptiveStatePreferencesStore(context)
+                .readPendingDecision("session-pending")
+        )
+        assertNull(store.readPendingDecision("otra-sesion"))
+
+        store.clearPendingDecision("otra-sesion")
+        assertEquals(pending, store.readPendingDecision("session-pending"))
+
+        store.clearPendingDecision("session-pending")
+        assertNull(store.readPendingDecision("session-pending"))
     }
 
     @Test
