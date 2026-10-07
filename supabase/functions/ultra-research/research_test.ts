@@ -8227,3 +8227,52 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "core school subjects remain answerable without external providers",
+  async () => {
+    const cases = [
+      { query: "¿Qué es una célula?", expected: ["célula", "unidad"] },
+      { query: "¿Qué es un átomo?", expected: ["átomo", "núcleo"] },
+      { query: "¿Qué es la fotosíntesis?", expected: ["luz", "energ"] },
+      { query: "¿Qué es la mitosis?", expected: ["división", "célula"] },
+      { query: "¿Qué es el teorema de Pitágoras?", expected: ["hipotenusa", "catetos"] },
+      { query: "¿Qué es un número primo?", expected: ["divisores", "1"] },
+      { query: "¿Qué fue la Revolución Industrial?", expected: ["industrial", "fábricas"] },
+      { query: "¿Qué es una metáfora?", expected: ["figura", "lenguaje"] },
+      { query: "¿Qué es un sustantivo?", expected: ["palabra", "nombra"] },
+    ];
+
+    for (const testCase of cases) {
+      let networkCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: () => {
+          networkCalls += 1;
+          throw new Error("stable school knowledge should stay local");
+        },
+        env: () => undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error("study concept unexpectedly abstained: " + testCase.query);
+      }
+      const answer = (result.displayText ?? "").toLowerCase();
+      if (!testCase.expected.every((token) => answer.includes(token))) {
+        throw new Error(
+          "study concept lost semantic relevance for " + testCase.query + ": " + answer,
+        );
+      }
+      if (networkCalls !== 0) {
+        throw new Error("stable school concept unexpectedly used the network");
+      }
+    }
+  },
+);
