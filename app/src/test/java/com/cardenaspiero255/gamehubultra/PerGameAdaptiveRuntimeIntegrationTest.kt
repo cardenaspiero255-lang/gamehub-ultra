@@ -41,7 +41,6 @@ class PerGameAdaptiveRuntimeIntegrationTest {
 
         val decision = applyCompletedAdaptiveDecision(
             completed = completed,
-            selectedPackage = "game.a",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 6_000L,
@@ -87,7 +86,6 @@ class PerGameAdaptiveRuntimeIntegrationTest {
                 latestObservation = null,
                 gameVersion = "7.4.2"
             ),
-            selectedPackage = "game.a",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 3L,
@@ -115,7 +113,6 @@ class PerGameAdaptiveRuntimeIntegrationTest {
                 latestObservation = null,
                 gameVersion = "3.0"
             ),
-            selectedPackage = "game.other",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 3L,
@@ -147,7 +144,6 @@ class PerGameAdaptiveRuntimeIntegrationTest {
                 preSessionMessage = null,
                 latestObservation = null
             ),
-            selectedPackage = "game.a",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 3L,
