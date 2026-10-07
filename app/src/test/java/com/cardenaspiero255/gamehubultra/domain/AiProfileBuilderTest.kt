@@ -241,6 +241,40 @@ class AiProfileBuilderTest {
     }
 
     @Test
+    fun rejectedAndRevertedHistoryDoNotPromoteAggressiveProfile() {
+        val proposal = AiProfileBuilder.propose(
+            currentConfig = GameProfileConfig(
+                performanceProfile = PerformanceProfile.BALANCED
+            ),
+            observations = listOf(
+                observation(
+                    profile = PerformanceProfile.X4,
+                    stable = true,
+                    decision = OptimizationFeedbackDecision.REJECTED,
+                    at = 1L
+                ),
+                observation(
+                    profile = PerformanceProfile.X4,
+                    stable = true,
+                    decision = OptimizationFeedbackDecision.REVERTED,
+                    at = 2L
+                )
+            ),
+            sessionSamples = emptyList(),
+            capabilities = AiProfileCapabilities(
+                supportsSustainedPerformance = true
+            ),
+            version = 10
+        )
+
+        assertEquals(
+            PerformanceProfile.BALANCED,
+            proposal.proposedConfig.performanceProfile
+        )
+        assertFalse(proposal.requiresExplicitApply)
+    }
+
+    @Test
     fun stableMeasuredRefreshCanBeProposedWhenVerifiedByCapabilities() {
         val samples = listOf(1L, 2L, 3L).map { timestamp ->
             SessionCoachSnapshot(
