@@ -124,4 +124,145 @@ class UltraFrontierExecutionEngineTest {
         assertTrue(answer.message.contains("conex", ignoreCase = true))
         assertFalse(answer.message.contains("Precio antiguo local"))
     }
+
+    @Test
+    fun nonRetryableResearchFailureStopsAfterFirstAttempt() {
+        var calls = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                calls += 1
+                return UltraVerifiedResearchResult(
+                    message = "No hay proveedores configurados.",
+                    confidence = UltraAnswerConfidence.LOW,
+                    sources = emptyList(),
+                    abstained = true,
+                    reasonCode = "NO_PROVIDERS",
+                    retryable = false
+                )
+            }
+        }
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway)
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify("noticias de Android hoy")
+        ) { null }
+
+        assertEquals(1, calls)
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+    }
+
+    @Test
+    fun rejectedNonAbstainedResearchNeverLeaksRejectedClaimOrSources() {
+        var calls = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                calls += 1
+                return UltraVerifiedResearchResult(
+                    message = "Afirmación no corroborada que no debe mostrarse.",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("single-source"),
+                    abstained = false,
+                    retryable = false
+                )
+            }
+        }
+        val frontier = UltraFrontierOrchestrator(
+            UltraFrontierPolicy(
+                verifiedResearchPassBudget = 1,
+                deepResearchPassBudget = 1
+            )
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            frontier = frontier
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara dos teléfonos actuales y dime cuál es mejor"
+            )
+        ) { null }
+
+        assertEquals(1, calls)
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertFalse(answer.message.contains("Afirmación no corroborada"))
+        assertTrue(answer.sources.isEmpty())
+        assertTrue(answer.message.contains("corrobor", ignoreCase = true))
+    }
+
+    @Test
+    fun repeatedRetryableEvidenceStopsBeforeExhaustingDeepBudget() {
+        var calls = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                calls += 1
+                return UltraVerifiedResearchResult(
+                    message = "Todavía insuficiente.",
+                    confidence = UltraAnswerConfidence.LOW,
+                    sources = listOf("same-source"),
+                    abstained = true,
+                    reasonCode = "TEMPORARY_INSUFFICIENT_EVIDENCE",
+                    retryable = true
+                )
+            }
+        }
+        val frontier = UltraFrontierOrchestrator(
+            UltraFrontierPolicy(
+                deepResearchPassBudget = 3
+            )
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            frontier = frontier
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara dos teléfonos actuales y dime cuál es mejor"
+            )
+        ) { null }
+
+        assertEquals(2, calls)
+        assertTrue(answer.abstained)
+    }
+
+    @Test
+    fun networkLossBetweenResearchAttemptsFailsClosedWithoutAnotherProviderCall() {
+        var calls = 0
+        var networkChecks = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                calls += 1
+                return UltraVerifiedResearchResult(
+                    message = "Evidencia temporalmente insuficiente.",
+                    confidence = UltraAnswerConfidence.LOW,
+                    sources = emptyList(),
+                    abstained = true,
+                    retryable = true
+                )
+            }
+        }
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            networkAvailable = {
+                networkChecks += 1
+                networkChecks == 1
+            }
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify("noticias de Android hoy")
+        ) { "dato local viejo" }
+
+        assertEquals(1, calls)
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertTrue(answer.message.contains("conex", ignoreCase = true))
+        assertFalse(answer.message.contains("dato local viejo"))
+    }
+
 }
