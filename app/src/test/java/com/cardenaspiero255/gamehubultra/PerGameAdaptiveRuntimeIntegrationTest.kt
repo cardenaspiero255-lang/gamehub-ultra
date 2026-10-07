@@ -531,4 +531,41 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         assertTrue(decision.reason.contains("predicción térmica", ignoreCase = true))
     }
 
+
+    @Test
+    fun completedSessionUsesTimestampLatestSampleWhenHistoryArrivesOutOfOrder() {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-out-of-order",
+            packageName = "game.order",
+            startedAtMillis = 0L,
+            endedAtMillis = 30_000L,
+            samples = listOf(
+                snapshot(30_000L, memory = 95),
+                snapshot(10_000L, memory = 40),
+                snapshot(20_000L, memory = 40)
+            ),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1"
+        )
+
+        val decision = applyCompletedAdaptiveDecision(
+            completed = completed,
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 31_000L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        assertNotNull(decision)
+        assertTrue(decision.changed)
+        assertEquals(PerformanceProfile.BALANCED, decision.profile)
+        assertTrue(decision.reason.contains("memoria", ignoreCase = true))
+    }
+
 }
