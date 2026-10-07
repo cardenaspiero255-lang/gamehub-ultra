@@ -102,6 +102,29 @@ class AiProfileBuilderTest {
     }
 
     @Test
+    fun emptyDisplayCapabilitiesAreUnverifiedAndDisableTargets() {
+        val proposal = AiProfileBuilder.propose(
+            currentConfig = GameProfileConfig(
+                refreshRateTargetHz = 120,
+                resolutionTarget = ResolutionTarget(1920, 1080)
+            ),
+            observations = emptyList(),
+            sessionSamples = emptyList(),
+            capabilities = AiProfileCapabilities(
+                supportedRefreshRatesHz = emptySet(),
+                supportedResolutions = emptySet()
+            ),
+            version = 9
+        )
+
+        assertEquals(null, proposal.proposedConfig.refreshRateTargetHz)
+        assertEquals(null, proposal.proposedConfig.resolutionTarget)
+        assertTrue(proposal.disabledSettings.any { it.contains("120") })
+        assertTrue(proposal.disabledSettings.any { it.contains("1920x1080") })
+        assertTrue(proposal.requiresExplicitApply)
+    }
+
+    @Test
     fun unchangedKnownGoodProfileDoesNotDemandAnApplyAction() {
         val current = GameProfileConfig(
             performanceProfile = PerformanceProfile.BALANCED,
