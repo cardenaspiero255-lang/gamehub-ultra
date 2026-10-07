@@ -386,7 +386,7 @@ class UltraSupabaseResearchProviderTest {
 
         val failure = assertIs<UltraProviderResult.Failure>(result)
         assertEquals("BACKEND_VERSION_MISMATCH", failure.reasonCode)
-        assertTrue(failure.message.contains("sin versión"))
+        assertTrue(failure.message?.contains("sin versión") == true)
     }
 
     @Test
