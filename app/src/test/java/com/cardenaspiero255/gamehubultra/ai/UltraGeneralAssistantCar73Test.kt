@@ -99,4 +99,28 @@ class UltraGeneralAssistantCar73Test {
         assertEquals(UltraGeneralQueryKind.CURRENT_DATA, query.kind)
         assertTrue(query.requiresFreshData)
     }
+
+    @Test
+    fun conversationalTopicVariantsRouteToGeneralKnowledgeChat() {
+        listOf(
+            "Ultra, háblame de la marca Nike",
+            "Ultra, háblame de los osos",
+            "Ultra, cuéntame sobre los tiburones",
+            "Ultra, dime qué sabes de Saturno",
+            "Ultra, quiero que me hables de Adidas",
+            "Ultra, ¿me puedes hablar de los lobos?",
+            "Ultra, explícame sobre los volcanes",
+            "Ultra, dame información sobre Nintendo"
+        ).forEach { transcript ->
+            val route = kotlin.test.assertIs<UltraAgentRoute.Chat>(
+                UltraUnifiedAgentRouter.route(transcript)
+            )
+            assertEquals(
+                UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                route.query?.kind,
+                transcript
+            )
+        }
+    }
+
 }
