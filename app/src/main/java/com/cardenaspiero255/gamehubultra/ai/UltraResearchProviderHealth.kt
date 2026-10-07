@@ -56,6 +56,7 @@ class UltraResearchProviderHealth(
         }
 
         if (!isInfrastructureFailure(result)) {
+            states.remove(id)
             return
         }
 
