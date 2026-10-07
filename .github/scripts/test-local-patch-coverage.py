@@ -215,6 +215,24 @@ realCall()
         self.assertEqual(stats.covered, 1)
 
 
+    def test_multiline_kotlin_when_condition_arrow_is_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+) ->
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
     def test_threshold_is_blocking_below_minimum(self) -> None:
         stats = gate.PatchCoverage(executable=10, covered=8)
         self.assertFalse(gate.meets_threshold(stats, 90.0))
