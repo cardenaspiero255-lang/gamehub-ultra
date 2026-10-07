@@ -797,6 +797,8 @@ def main() -> None:
         fail("smoke shard strategy is missing")
     if smoke_strategy.get("fail-fast") is not False:
         fail("smoke shards must keep fail-fast disabled")
+    if smoke_strategy.get("max-parallel") != 4:
+        fail("smoke physical concurrency changed")
     smoke_matrix = smoke_strategy.get("matrix")
     expected_smoke_runners = set(range(8))
     if (
@@ -834,8 +836,8 @@ def main() -> None:
         fail("Android test shard strategy is missing")
     if android_test_strategy.get("fail-fast") is not False:
         fail("Android test shards must keep fail-fast disabled")
-    if android_test_strategy.get("max-parallel") != 8:
-        fail("Android tests must keep eight saturated physical runners")
+    if android_test_strategy.get("max-parallel") != 4:
+        fail("Android test physical concurrency changed")
     android_test_matrix = android_test_strategy.get("matrix")
     if (
         not isinstance(android_test_matrix, dict)
@@ -897,8 +899,8 @@ def main() -> None:
         fail("coverage shard strategy is missing")
     if coverage_strategy.get("fail-fast") is not False:
         fail("coverage shards must keep fail-fast disabled")
-    if coverage_strategy.get("max-parallel") != 8:
-        fail("coverage must keep eight saturated physical runners")
+    if coverage_strategy.get("max-parallel") != 4:
+        fail("coverage physical concurrency changed")
     coverage_matrix = coverage_strategy.get("matrix")
     if (
         not isinstance(coverage_matrix, dict)
