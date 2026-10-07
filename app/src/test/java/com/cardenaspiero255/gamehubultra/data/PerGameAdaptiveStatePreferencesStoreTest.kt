@@ -180,6 +180,57 @@ class PerGameAdaptiveStatePreferencesStoreTest {
         assertNull(store.readPendingDecision("session-pending"))
     }
 
+
+    @Test
+    fun explicitSelectionClearsOldVersionOwnershipAndPendingDecision() {
+        val store = PerGameAdaptiveStatePreferencesStore(context)
+        store.write(
+            AdaptiveGameKey("game.explicit", "1#10"),
+            PerGameAdaptivePersistedState(
+                profile = PerformanceProfile.BALANCED,
+                candidate = null,
+                confirmations = 0,
+                lastChangeMillis = 100L,
+                recoveryProfile = PerformanceProfile.X4
+            )
+        )
+        store.writePendingDecision(
+            PerGameAdaptivePendingDecision(
+                sessionId = "session-old",
+                key = AdaptiveGameKey("game.explicit", "1#10"),
+                previousProfile = PerformanceProfile.X4,
+                targetProfile = PerformanceProfile.BALANCED,
+                targetState = PerGameAdaptivePersistedState(
+                    profile = PerformanceProfile.BALANCED,
+                    candidate = null,
+                    confirmations = 0,
+                    lastChangeMillis = 100L,
+                    recoveryProfile = PerformanceProfile.X4
+                ),
+                eventTimestampMillis = 101L,
+                reason = "old automatic decision"
+            )
+        )
+
+        store.recordExplicitProfileSelection(
+            AdaptiveGameKey("game.explicit", "2#20"),
+            PerformanceProfile.BALANCED
+        )
+
+        assertNull(store.read(AdaptiveGameKey("game.explicit", "1#10")))
+        assertEquals(
+            PerGameAdaptivePersistedState(
+                profile = PerformanceProfile.BALANCED,
+                candidate = null,
+                confirmations = 0,
+                lastChangeMillis = null,
+                recoveryProfile = null
+            ),
+            store.read(AdaptiveGameKey("game.explicit", "2#20"))
+        )
+        assertNull(store.readPendingDecision("session-old"))
+    }
+
     @Test
     fun handledSessionIdSurvivesStoreRecreation() {
         val first = PerGameAdaptiveStatePreferencesStore(context)
