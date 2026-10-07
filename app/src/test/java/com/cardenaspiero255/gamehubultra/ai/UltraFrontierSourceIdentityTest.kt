@@ -8,8 +8,7 @@ class UltraFrontierSourceIdentityTest {
     fun sourceQuorumTreatsCaseAndWhitespaceVariantsAsTheSameSource() {
         val frontier = UltraFrontierOrchestrator(
             UltraFrontierPolicy(
-                minimumDeepSources = 2,
-                deepResearchPassBudget = 1
+                minimumDeepSources = 2
             )
         )
         val query = UltraGeneralQueryRouter.classify(
