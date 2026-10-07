@@ -1,0 +1,469 @@
+package com.cardenaspiero255.gamehubultra.ai
+
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.BatteryGamingRecommendation
+import com.cardenaspiero255.gamehubultra.domain.BatteryGamingAssessment
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.ThermalPrediction
+import com.cardenaspiero255.gamehubultra.domain.ThermalRisk
+import com.cardenaspiero255.gamehubultra.domain.ThermalSignalMode
+import com.cardenaspiero255.gamehubultra.domain.ThermalTrend
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class UltraFrontierEvolutionTest {
+    @Test
+    fun learningStorePrefersLaneWithBetterObservedOutcomes() {
+        val learning = UltraFrontierLearningStore(minSamplesForPreference = 2)
+        repeat(3) {
+            learning.record(
+                UltraFrontierExecutionOutcome(
+                    domain = UltraFrontierDomain.COMPARISON,
+                    lane = UltraFrontierLane.DEEP_RESEARCH,
+                    accepted = true,
+                    verified = true,
+                    abstained = false,
+                    latencyMillis = 900L,
+                    reasonCode = null
+                )
+            )
+        }
+        repeat(2) {
+            learning.record(
+                UltraFrontierExecutionOutcome(
+                    domain = UltraFrontierDomain.COMPARISON,
+                    lane = UltraFrontierLane.VERIFIED_RESEARCH,
+                    accepted = false,
+                    verified = false,
+                    abstained = true,
+                    latencyMillis = 2_500L,
+                    reasonCode = "INSUFFICIENT_CORROBORATION"
+                )
+            )
+        }
+
+        assertEquals(
+            UltraFrontierLane.DEEP_RESEARCH,
+            learning.preferredLane(
+                UltraFrontierDomain.COMPARISON,
+                setOf(
+                    UltraFrontierLane.DEEP_RESEARCH,
+                    UltraFrontierLane.VERIFIED_RESEARCH
+                )
+            )
+        )
+        assertTrue(
+            learning.failurePressure(UltraFrontierDomain.COMPARISON) >= 1
+        )
+    }
+
+    @Test
+    fun providerRankerLearnsReliabilityLatencyAndDomain() {
+        val ranker = UltraAdaptiveProviderRanker()
+        repeat(3) {
+            ranker.record(
+                providerId = "fast-good",
+                domain = UltraFrontierDomain.CURRENT_DATA,
+                result = UltraProviderResult.Evidence(
+                    UltraResearchEvidence(
+                        claimKey = "weather",
+                        value = "sunny",
+                        displayText = "Soleado",
+                        sourceId = "official",
+                        independentSourceCount = 2,
+                        authoritative = true
+                    )
+                ),
+                latencyMillis = 120L
+            )
+        }
+        repeat(3) {
+            ranker.record(
+                providerId = "slow-bad",
+                domain = UltraFrontierDomain.CURRENT_DATA,
+                result = UltraProviderResult.Failure(
+                    reasonCode = "UPSTREAM_TIMEOUT",
+                    retryable = true
+                ),
+                latencyMillis = 3_000L
+            )
+        }
+
+        val providers = listOf(
+            fakeProvider("slow-bad"),
+            fakeProvider("fast-good")
+        )
+
+        assertEquals(
+            listOf("fast-good", "slow-bad"),
+            ranker.rank(providers, UltraFrontierDomain.CURRENT_DATA).map { it.id }
+        )
+    }
+
+    @Test
+    fun weightedConsensusPrefersIndependentAuthoritativeEvidence() {
+        val decision = UltraWeightedConsensusEngine().decide(
+            listOf(
+                UltraWeightedEvidenceCandidate(
+                    providerId = "official-a",
+                    claimKey = "price",
+                    value = "100",
+                    displayText = "100",
+                    sourceIds = setOf("a", "b"),
+                    independentSourceCount = 2,
+                    authoritative = true,
+                    providerScore = 0.90
+                ),
+                UltraWeightedEvidenceCandidate(
+                    providerId = "official-b",
+                    claimKey = "price",
+                    value = "100",
+                    displayText = "100",
+                    sourceIds = setOf("c"),
+                    independentSourceCount = 1,
+                    authoritative = true,
+                    providerScore = 0.85
+                ),
+                UltraWeightedEvidenceCandidate(
+                    providerId = "weak",
+                    claimKey = "price",
+                    value = "999",
+                    displayText = "999",
+                    sourceIds = setOf("x"),
+                    independentSourceCount = 1,
+                    authoritative = false,
+                    providerScore = 0.15
+                )
+            )
+        )
+
+        assertTrue(decision.accepted)
+        assertEquals("100", decision.value)
+        assertTrue(decision.independentSourceCount >= 3)
+        assertEquals(UltraAnswerConfidence.HIGH, decision.confidence)
+    }
+
+    @Test
+    fun claimVerifierSeparatesVerifiedWeakStaleAndInference() {
+        val verifier = UltraClaimVerifier()
+        val now = 10_000L
+
+        assertEquals(
+            UltraClaimStatus.VERIFIED,
+            verifier.verify(
+                UltraFrontierClaim(
+                    id = "verified",
+                    text = "dato",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    independentSourceCount = 2,
+                    validUntilMillis = now + 1_000L
+                ),
+                minimumIndependentSources = 2,
+                nowMillis = now
+            )
+        )
+        assertEquals(
+            UltraClaimStatus.WEAK,
+            verifier.verify(
+                UltraFrontierClaim(
+                    id = "weak",
+                    text = "dato",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    independentSourceCount = 1
+                ),
+                minimumIndependentSources = 2,
+                nowMillis = now
+            )
+        )
+        assertEquals(
+            UltraClaimStatus.STALE,
+            verifier.verify(
+                UltraFrontierClaim(
+                    id = "stale",
+                    text = "dato",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    independentSourceCount = 3,
+                    validUntilMillis = now - 1L
+                ),
+                minimumIndependentSources = 2,
+                nowMillis = now
+            )
+        )
+        assertEquals(
+            UltraClaimStatus.INFERRED,
+            verifier.verify(
+                UltraFrontierClaim(
+                    id = "inferred",
+                    text = "estimación",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    independentSourceCount = 3,
+                    inferred = true
+                ),
+                minimumIndependentSources = 2,
+                nowMillis = now
+            )
+        )
+    }
+
+    @Test
+    fun temporalKnowledgeGraphResolvesFactValidAtRequestedTime() {
+        val graph = UltraTemporalKnowledgeGraph()
+        graph.upsert(
+            UltraTemporalFact(
+                subject = "device",
+                predicate = "price",
+                value = "100",
+                validFromMillis = 1_000L,
+                validUntilMillis = 1_999L,
+                confidence = UltraAnswerConfidence.HIGH,
+                sourceIds = setOf("a", "b")
+            )
+        )
+        graph.upsert(
+            UltraTemporalFact(
+                subject = "device",
+                predicate = "price",
+                value = "120",
+                validFromMillis = 2_000L,
+                validUntilMillis = 3_000L,
+                confidence = UltraAnswerConfidence.HIGH,
+                sourceIds = setOf("c", "d")
+            )
+        )
+
+        assertEquals("100", graph.resolve("device", "price", 1_500L)?.value)
+        assertEquals("120", graph.resolve("device", "price", 2_500L)?.value)
+        assertEquals(null, graph.resolve("device", "price", 4_000L))
+    }
+
+    @Test
+    fun multiStagePlannerBuildsParallelResearchThenSynthesisAndVerification() {
+        val planner = UltraFrontierTaskPlanner()
+        val query = UltraGeneralQueryRouter.classify(
+            "Compara dos teléfonos actuales y dime cuál es mejor"
+        )
+        val tasks = planner.plan(
+            request = UltraFrontierRequest(
+                message = query.originalText,
+                query = query,
+                networkAvailable = true
+            ),
+            lane = UltraFrontierLane.DEEP_RESEARCH
+        )
+
+        val researchTasks = tasks.filter {
+            it.specialist == UltraFrontierSpecialist.RESEARCH
+        }
+        assertTrue(researchTasks.size >= 2)
+        assertTrue(researchTasks.mapNotNull { it.parallelGroup }.distinct().size == 1)
+
+        val synthesis = tasks.single {
+            it.specialist == UltraFrontierSpecialist.SYNTHESIZER
+        }
+        assertTrue(researchTasks.all { it.id in synthesis.dependsOn })
+
+        val verifier = tasks.single {
+            it.specialist == UltraFrontierSpecialist.VERIFIER
+        }
+        assertTrue(synthesis.id in verifier.dependsOn)
+    }
+
+    @Test
+    fun adaptiveComputeBudgetSpendsMoreOnHardQueriesButRespectsDevicePressure() {
+        val budgeter = UltraAdaptiveComputeBudgeter()
+        val policy = UltraFrontierPolicy()
+        val hard = UltraGeneralQueryRouter.classify(
+            "Compara profundamente dos teléfonos actuales y analiza diferencias"
+        )
+        val easy = UltraGeneralQueryRouter.classify("¿Qué es un libro?")
+
+        val hardBudget = budgeter.budget(
+            request = hard,
+            policy = policy,
+            failurePressure = 2,
+            worldState = null
+        )
+        val easyBudget = budgeter.budget(
+            request = easy,
+            policy = policy,
+            failurePressure = 0,
+            worldState = null
+        )
+
+        assertTrue(hardBudget.sourceBudget >= easyBudget.sourceBudget)
+        assertTrue(hardBudget.passBudget >= easyBudget.passBudget)
+        assertTrue(hardBudget.timeBudgetMillis >= easyBudget.timeBudgetMillis)
+
+        val constrained = budgeter.budget(
+            request = hard,
+            policy = policy,
+            failurePressure = 2,
+            worldState = UltraFrontierWorldState(
+                selectedGamePackage = "game",
+                sessionActive = true,
+                selectedProfile = PerformanceProfile.X4,
+                networkValidated = true,
+                networkLatencyMs = 30L,
+                batteryPercent = 12,
+                charging = false,
+                thermalStatus = 4,
+                thermalHeadroom = 0.9f,
+                thermalTrend = ThermalTrend.RISING_FAST,
+                thermalRisk = ThermalRisk.CRITICAL,
+                thermalConfidence = 0.95f,
+                batteryRecommendation = BatteryGamingRecommendation.CONSERVE,
+                preventAggressiveProfiles = true,
+                adaptiveScore = 30,
+                timestampMillis = 1_000L
+            )
+        )
+
+        assertEquals(1, constrained.maxParallelism)
+        assertTrue(constrained.sourceBudget <= hardBudget.sourceBudget)
+    }
+
+    @Test
+    fun worldStateCombinesAiThermalBatteryAndAdaptiveSignals() {
+        val context = GameHubAiContext(
+            selectedGamePackage = "game.pkg",
+            sustainedPerformanceSupported = true,
+            cpuCores = 8,
+            totalRamMb = 8192,
+            gpuAvailable = true,
+            thermalStatus = 3,
+            thermalHeadroom = 0.75f,
+            batteryPercent = 32,
+            charging = false,
+            refreshRateHz = 120f,
+            networkValidated = true,
+            networkLatencyMs = 28L,
+            downstreamBandwidthKbps = 500_000L,
+            storageFreePercent = 50,
+            inputDeviceCount = 1,
+            selectedProfile = PerformanceProfile.X4,
+            sessionActive = true
+        )
+        val thermal = ThermalPrediction(
+            trend = ThermalTrend.RISING,
+            risk = ThermalRisk.HIGH,
+            confidence = 0.88f,
+            signalMode = ThermalSignalMode.HEADROOM_AND_STATUS,
+            slopePerMinute = 0.1f,
+            accelerationPerMinuteSquared = 0.02f,
+            latestMeasuredHeadroom = 0.75f,
+            projectedHeadroom = 0.82f,
+            allowPreventiveSignal = true,
+            recovering = false,
+            evidence = emptyList(),
+            reason = "test"
+        )
+        val battery = BatteryGamingAssessment(
+            currentPercent = 32,
+            charging = false,
+            powerSaveMode = false,
+            observedDropPercent = 5,
+            observedDurationMillis = 600_000L,
+            drainPercentPerHour = 30f,
+            recommendation = BatteryGamingRecommendation.BALANCED,
+            preventAggressiveProfiles = true,
+            reason = "test"
+        )
+        val adaptive = AdaptiveDecision(
+            profile = PerformanceProfile.BALANCED,
+            enableSustainedPerformance = false,
+            score = 55,
+            reason = "test",
+            changed = true
+        )
+
+        val world = UltraFrontierWorldState.from(
+            context = context,
+            thermalPrediction = thermal,
+            batteryAssessment = battery,
+            adaptiveDecision = adaptive,
+            nowMillis = 5_000L
+        )
+
+        assertEquals("game.pkg", world.selectedGamePackage)
+        assertEquals(ThermalRisk.HIGH, world.thermalRisk)
+        assertEquals(BatteryGamingRecommendation.BALANCED, world.batteryRecommendation)
+        assertEquals(55, world.adaptiveScore)
+        assertTrue(world.preventAggressiveProfiles)
+    }
+
+    @Test
+    fun continuousEvaluationTracksVerificationAbstentionLatencyAndFailures() {
+        val evaluation = UltraFrontierEvaluationRegistry()
+        evaluation.record(
+            UltraFrontierExecutionOutcome(
+                domain = UltraFrontierDomain.CURRENT_DATA,
+                lane = UltraFrontierLane.VERIFIED_RESEARCH,
+                accepted = true,
+                verified = true,
+                abstained = false,
+                latencyMillis = 100L,
+                reasonCode = null
+            )
+        )
+        evaluation.record(
+            UltraFrontierExecutionOutcome(
+                domain = UltraFrontierDomain.CURRENT_DATA,
+                lane = UltraFrontierLane.VERIFIED_RESEARCH,
+                accepted = false,
+                verified = false,
+                abstained = true,
+                latencyMillis = 300L,
+                reasonCode = "UPSTREAM_TIMEOUT"
+            )
+        )
+
+        val snapshot = evaluation.snapshot(UltraFrontierDomain.CURRENT_DATA)
+        assertEquals(2, snapshot.total)
+        assertEquals(1, snapshot.verified)
+        assertEquals(1, snapshot.abstained)
+        assertEquals(200L, snapshot.averageLatencyMillis)
+        assertEquals(1, snapshot.failureReasons["UPSTREAM_TIMEOUT"])
+    }
+
+    @Test
+    fun ensembleSelectorPrefersCorroboratedVerifiedCandidateOverFastWeakCandidate() {
+        val selected = UltraFrontierEnsembleSelector().select(
+            listOf(
+                UltraFrontierEnsembleCandidate(
+                    message = "rápida",
+                    verified = false,
+                    confidence = UltraAnswerConfidence.MEDIUM,
+                    independentSourceCount = 0,
+                    latencyMillis = 20L,
+                    fresh = true,
+                    abstained = false
+                ),
+                UltraFrontierEnsembleCandidate(
+                    message = "corroborada",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    independentSourceCount = 3,
+                    latencyMillis = 500L,
+                    fresh = true,
+                    abstained = false
+                )
+            )
+        )
+
+        assertNotNull(selected)
+        assertEquals("corroborada", selected.message)
+    }
+
+    private fun fakeProvider(providerId: String): UltraResearchProvider =
+        object : UltraResearchProvider {
+            override val id: String = providerId
+
+            override fun fetch(
+                request: UltraGeneralQueryRequest
+            ): UltraResearchEvidence =
+                error("not used")
+        }
+}
