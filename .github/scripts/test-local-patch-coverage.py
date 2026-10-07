@@ -147,6 +147,29 @@ private var lastReport: Report? = null
         self.assertEqual(stats.covered, 1)
 
 
+    def test_multiline_function_type_constructor_parameter_is_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+class Holder(
+    private val callback: suspend (
+        String,
+        PerformanceProfile
+    ) -> Unit
+)
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 8))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
     def test_mapped_compose_body_remains_blocking_patch_coverage(self) -> None:
         source = """@Composable
 internal fun ExampleCard(
