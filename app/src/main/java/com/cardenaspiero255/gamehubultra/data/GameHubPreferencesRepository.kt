@@ -202,13 +202,16 @@ class GameHubPreferencesRepository(
     }
 
     override suspend fun appendPerformanceEvent(event: PerformanceEvent) {
+        val encoded = PerformanceEventCodec.encode(event)
         dataStore.edit { preferences ->
             val current = preferences[performanceHistoryKey]
                 .orEmpty()
                 .lineSequence()
                 .filter(String::isNotBlank)
                 .toMutableList()
-            current += PerformanceEventCodec.encode(event)
+            if (encoded !in current) {
+                current += encoded
+            }
             preferences[performanceHistoryKey] = current.takeLast(50).joinToString("\n")
         }
     }
