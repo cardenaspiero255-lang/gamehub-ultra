@@ -560,9 +560,7 @@ internal fun GameHubUltraApp(
         applyAiProfileProposalForSelectedGame(
             packageName = selectedGameForMemory,
             proposal = aiProfileProposal,
-            save = { packageName, config, onSaved ->
-                viewModel.saveGameProfileConfig(packageName, config, onSaved)
-            },
+            save = viewModel::saveGameProfileConfig,
             recordApplied = aiProfileProposalStore::recordApplied,
             onApplied = { aiProfileRevision += 1 }
         )
@@ -572,9 +570,7 @@ internal fun GameHubUltraApp(
         rollbackAiProfileProposalForSelectedGame(
             packageName = selectedGameForMemory,
             rollback = aiProfileRollbackState,
-            save = { packageName, config, onSaved ->
-                viewModel.saveGameProfileConfig(packageName, config, onSaved)
-            },
+            save = viewModel::saveGameProfileConfig,
             clearRollback = aiProfileProposalStore::clearRollback,
             onRolledBack = { aiProfileRevision += 1 }
         )
