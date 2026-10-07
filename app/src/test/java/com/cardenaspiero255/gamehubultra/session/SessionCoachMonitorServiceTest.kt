@@ -827,6 +827,42 @@ class SessionCoachMonitorServiceTest {
     }
 
     @Test
+    fun presenceFromPreviousGameDoesNotLeakIntoNewSession() {
+        val appOps = context.getSystemService(AppOpsManager::class.java)
+        shadowOf(appOps).setMode(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName,
+            AppOpsManager.MODE_ALLOWED
+        )
+        val usage = context.getSystemService(UsageStatsManager::class.java)
+        shadowOf(usage).addEvent(
+            ShadowUsageStatsManager.EventBuilder.buildEvent()
+                .setPackage("game.a")
+                .setTimeStamp(100_000L)
+                .setEventType(UsageEvents.Event.ACTIVITY_RESUMED)
+                .build()
+        )
+
+        assertEquals(
+            SessionCoachGamePresence.ACTIVE,
+            SessionCoachGamePresenceDetector.observe(
+                context = context,
+                packageName = "game.a",
+                nowMillis = 110_000L
+            )
+        )
+        assertEquals(
+            SessionCoachGamePresence.UNKNOWN,
+            SessionCoachGamePresenceDetector.observe(
+                context = context,
+                packageName = "game.b",
+                nowMillis = 400_000L
+            )
+        )
+    }
+
+    @Test
     fun notificationPermissionIsNotRepeatedAfterARecordedDenial() {
         assertFalse(
             SessionCoachNotificationPermission.shouldRequest(
