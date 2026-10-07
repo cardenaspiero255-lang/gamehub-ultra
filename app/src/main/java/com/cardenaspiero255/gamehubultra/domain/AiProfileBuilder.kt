@@ -167,7 +167,6 @@ object AiProfileBuilder {
         val refresh = result.refreshRateTargetHz
         if (
             refresh != null &&
-            capabilities.supportedRefreshRatesHz.isNotEmpty() &&
             refresh !in capabilities.supportedRefreshRatesHz
         ) {
             disabledSettings +=
@@ -178,7 +177,6 @@ object AiProfileBuilder {
         val resolution = result.resolutionTarget
         if (
             resolution != null &&
-            capabilities.supportedResolutions.isNotEmpty() &&
             resolution !in capabilities.supportedResolutions
         ) {
             disabledSettings +=
