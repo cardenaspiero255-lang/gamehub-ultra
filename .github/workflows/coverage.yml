@@ -31,6 +31,7 @@ jobs:
     env:
       GAMEHUB_UNIT_TEST_FORKS: "8"
       GAMEHUB_UNIT_TEST_HEAP: "512m"
+      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "true"
       COVERAGE_LOGICAL_SHARD_COUNT: "64"
       COVERAGE_PHYSICAL_SHARD_COUNT: "8"
       COVERAGE_RUNNER_INDEX: "${{ matrix.runner }}"
@@ -176,6 +177,17 @@ jobs:
           fi
           echo "Collected $count JaCoCo execution file(s)."
 
+      - name: Upload compiled coverage classes
+        if: matrix.runner == 0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-coverage-classes
+          path: |
+            app/build/tmp/kotlin-classes/debug/**
+            app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/**
+          if-no-files-found: warn
+          compression-level: 0
+
       - name: Upload coverage execution shard
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -229,6 +241,22 @@ jobs:
           cache-disabled: false
           cache-read-only: ${{ github.event_name != 'workflow_dispatch' }}
 
+      - name: Download compiled coverage classes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gamehub-ultra-coverage-classes
+          path: ${{ runner.temp }}/coverage-classes
+
+      - name: Verify compiled coverage classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/coverage-classes"
+          if ! find "$root/tmp/kotlin-classes/debug" -type f -name '*.class' -print -quit | grep -q .; then
+            echo "::error::No compiled coverage classes were restored."
+            exit 1
+          fi
+
       - name: Download packed JaCoCo execution shards
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -251,6 +279,7 @@ jobs:
       - name: Aggregate sharded debug unit-test coverage
         env:
           GAMEHUB_COVERAGE_EXECUTION_DATA_DIR: ${{ runner.temp }}/coverage-shards
+          GAMEHUB_COVERAGE_CLASS_ROOT: ${{ runner.temp }}/coverage-classes
         shell: bash
         run: |
           set -euo pipefail
