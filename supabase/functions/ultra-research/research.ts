@@ -5516,6 +5516,19 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     };
   }
 
+  if (clean === "algoritmo" || clean === "algoritmos") {
+    const displayText =
+      "Un algoritmo es una secuencia ordenada y finita de pasos o instrucciones para resolver un problema o completar una tarea. " +
+      "Puede expresarse en lenguaje natural, pseudocódigo o código, y debe definir con claridad qué hacer y en qué orden.";
+    return {
+      claimKey: "local-stable:algorithm",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   if (clean === "oso" || clean === "osos" || clean === "ursidae") {
     const displayText =
       "Un oso es un mamífero carnívoro de la familia Ursidae. " +
