@@ -39,13 +39,16 @@ class BatteryAwareGamingEngine(
     fun assess(samples: List<SessionCoachSnapshot>): BatteryGamingAssessment {
         val ordered = samples.sortedBy { it.timestampMillis }
         val latest = ordered.lastOrNull()
-        val currentPercent = latest?.batteryPercent
         val charging = latest?.batteryCharging == true
         val powerSaveMode = latest?.powerSaveMode == true
 
-        val drainWindow = ordered
+        val currentBatteryWindow = ordered
             .asReversed()
             .takeWhile { it.batteryCharging != true }
+        val currentPercent = latest?.batteryPercent
+            ?: currentBatteryWindow.firstNotNullOfOrNull { it.batteryPercent }
+
+        val drainWindow = currentBatteryWindow
             .filter { it.batteryPercent != null }
             .asReversed()
 
