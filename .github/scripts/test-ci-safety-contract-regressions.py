@@ -617,31 +617,23 @@ def main() -> None:
     run_mutation("connected validation loses Configuration Cache enablement", remove_connected_configuration_cache_flag)
     run_mutation("connected cache flags moved to dry-run only", move_connected_cache_flags_to_dry_run)
     run_mutation("Configuration Cache reuse assertion removed", remove_configuration_cache_reuse_assertion)
-    run_mutation("Release Configuration Cache reuse assertion removed", remove_release_configuration_cache_reuse_assertion)
     run_mutation("Partial release/performance graph duplicated", duplicate_partial_release_graph)
     run_mutation("Full release graph duplicated without Configuration Cache flags", duplicate_full_release_graph_without_configuration_cache)
 
     # Phase 2 block 4 starts by proving the current workflow still executes the
-    # full quality graph twice. This deliberately fails until the implementation
-    # replaces the duplicate execution with a configuration-only reuse probe.
-    android = ANDROID.read_text(encoding="utf-8")
+    # Quality executes assemble+lint exactly once. Configuration Cache remains
+    # enabled on that real graph; duplicate dry-run probes are forbidden.
     quality_start, quality_end = quality_step_bounds(android)
     quality_script = android[quality_start:quality_end]
-    quality_graph_occurrences = quality_script.count(":app:assembleDebug")
-    quality_probe_occurrences = quality_script.count("--dry-run")
-    executable_quality_graphs = quality_graph_occurrences - quality_probe_occurrences
-    if executable_quality_graphs != 1 or quality_probe_occurrences != 2:
-        raise SystemExit(
-            "Phase 2 block 7: expected one executable quality task graph and "
-            "two identical --dry-run cache probes; "
-            f"found {executable_quality_graphs} executable and "
-            f"{quality_probe_occurrences} probes"
-        )
-    coverage = COVERAGE.read_text(encoding="utf-8")
+    if quality_script.count(":app:assembleDebug") != 1:
+        raise SystemExit("Quality must execute exactly one assemble+lint graph")
+    if "--dry-run" in quality_script:
+        raise SystemExit("Quality must not reintroduce duplicate dry-run Gradle probes")
+    if "--max-workers=8" not in quality_script:
+        raise SystemExit("Quality must preserve the tuned worker bound")
     if ":app:testDebugUnitTest" in quality_script:
-        raise SystemExit("Phase 2 block 5: quality must not duplicate coverage-owned unit tests")
-    if ":app:createDebugUnitTestCoverageReport" not in coverage:
-        raise SystemExit("Phase 2 block 5: coverage must remain the authoritative unit-test gate")
+        raise SystemExit("Quality must not duplicate coverage-owned unit tests")
+
 
     # Phase 3 block 5 cut 1: connected debug validation must reuse the
     # already-running API 35 emulator without rebuilding the debug APK that

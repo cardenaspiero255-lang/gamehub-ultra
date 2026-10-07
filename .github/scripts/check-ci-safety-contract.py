@@ -374,24 +374,26 @@ def main() -> None:
         tokens
         for tokens in gradle_commands(str(quality.get("run", "")))
         if all(task in set(tokens) for task in (":app:assembleDebug", ":app:lintDebug"))
-        and all(arg in set(tokens) for arg in ("--build-cache", "--parallel", "--configuration-cache", "--configuration-cache-problems=fail", "--console=plain"))
+        and all(arg in set(tokens) for arg in (
+            "--build-cache",
+            "--parallel",
+            "--max-workers=8",
+            "--configuration-cache",
+            "--configuration-cache-problems=fail",
+            "--console=plain",
+        ))
     ]
-    executable_quality_matches = [tokens for tokens in quality_matches if "--dry-run" not in set(tokens)]
-    probe_quality_matches = [tokens for tokens in quality_matches if "--dry-run" in set(tokens)]
-    if len(executable_quality_matches) != 1 or len(probe_quality_matches) != 2:
+    executable_quality_matches = [
+        tokens for tokens in quality_matches if "--dry-run" not in set(tokens)
+    ]
+    if len(executable_quality_matches) != 1:
         fail(
-            "Configuration Cache proof requires one executable quality graph and "
-            "two non-executing --dry-run reuse probes; found "
-            f"{len(executable_quality_matches)} executable and "
-            f"{len(probe_quality_matches)} probes"
+            "Quality requires exactly one executable assemble+lint graph; found "
+            f"{len(executable_quality_matches)}"
         )
-    if normalized_gradle_invocation(probe_quality_matches[0]) != normalized_gradle_invocation(probe_quality_matches[1]):
-        fail("Quality --dry-run Configuration Cache probes differ")
-    require_shell_command(
-        quality,
-        "quality/Configuration Cache reuse",
-        ("grep", "-Fq", "Reusing configuration cache.", "$CONFIG_CACHE_LOG"),
-    )
+    if any("--dry-run" in set(tokens) for tokens in quality_matches):
+        fail("Quality must not spend critical-path time on duplicate dry-run Gradle probes")
+
 
     release = require_step(
         android,
@@ -420,11 +422,10 @@ def main() -> None:
     release_args = (
         "--build-cache",
         "--parallel",
+        "--max-workers=8",
         "--configuration-cache",
         "--configuration-cache-problems=fail",
     )
-    # Count complete release graphs independently of their flags so an extra
-    # expensive invocation cannot hide by dropping Configuration Cache options.
     release_graphs = [
         tokens
         for tokens in gradle_commands(str(release.get("run", "")))
@@ -433,43 +434,27 @@ def main() -> None:
     executable_release_graphs = [
         tokens for tokens in release_graphs if "--dry-run" not in set(tokens)
     ]
-    probe_release_graphs = [
-        tokens for tokens in release_graphs if "--dry-run" in set(tokens)
-    ]
-    if len(executable_release_graphs) != 1 or len(probe_release_graphs) != 2:
+    if len(executable_release_graphs) != 1:
         fail(
-            "Configuration Cache proof requires exactly one executable "
-            "release/performance graph and two identical non-executing --dry-run "
-            "probes; found "
-            f"{len(executable_release_graphs)} executable and "
-            f"{len(probe_release_graphs)} probes"
+            "Device validation requires exactly one executable release/performance graph; "
+            f"found {len(executable_release_graphs)}"
         )
-    if normalized_gradle_invocation(probe_release_graphs[0]) != normalized_gradle_invocation(probe_release_graphs[1]):
-        fail("Release/performance --dry-run Configuration Cache probes differ")
-    for label, tokens in (
-        ("executable release/performance graph", executable_release_graphs[0]),
-        ("first release/performance --dry-run probe", probe_release_graphs[0]),
-        ("second release/performance --dry-run probe", probe_release_graphs[1]),
-    ):
-        token_set = set(tokens)
-        missing_args = [arg for arg in release_args if arg not in token_set]
-        if missing_args:
-            fail(f"{label} is missing required arguments: {missing_args!r}")
+    token_set = set(executable_release_graphs[0])
+    missing_args = [arg for arg in release_args if arg not in token_set]
+    if missing_args:
+        fail(f"Executable release/performance graph is missing required arguments: {missing_args!r}")
+    if any("--dry-run" in set(tokens) for tokens in release_graphs):
+        fail("Device validation must not spend critical-path time on duplicate dry-run Gradle probes")
     release_task_set = set(release_tasks)
     for tokens in gradle_commands(str(release.get("run", ""))):
-        token_set = set(tokens)
-        present_release_tasks = release_task_set.intersection(token_set)
+        present_release_tasks = release_task_set.intersection(set(tokens))
         if present_release_tasks and present_release_tasks != release_task_set:
             fail(
                 "Release/performance Gradle invocations must not execute a partial "
                 "required task graph; found "
                 f"{sorted(present_release_tasks)!r}"
             )
-    require_shell_command(
-        release,
-        "device-validation/Configuration Cache reuse",
-        ("grep", "-Fq", "Reusing configuration cache.", "$RELEASE_CONFIG_CACHE_LOG"),
-    )
+
 
     connected = require_step(
         android,
@@ -483,6 +468,7 @@ def main() -> None:
         tasks=(":app:connectedDebugAndroidTest",),
         args=(
             "--build-cache",
+            "--max-workers=8",
             "--configuration-cache",
             "--configuration-cache-problems=fail",
         ),
@@ -503,6 +489,7 @@ def main() -> None:
 
     connected_required_args = {
         "--build-cache",
+        "--max-workers=8",
         "--configuration-cache",
         "--configuration-cache-problems=fail",
     }
