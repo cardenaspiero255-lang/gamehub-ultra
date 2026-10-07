@@ -127,6 +127,8 @@ class BatteryAwareGamingEngineTest {
             ),
         )
 
+        assertEquals(1, assessment.observedDropPercent)
+        assertEquals(60_000L, assessment.observedDurationMillis)
         assertNull(assessment.drainPercentPerHour)
         assertEquals(BatteryGamingRecommendation.NORMAL, assessment.recommendation)
     }
