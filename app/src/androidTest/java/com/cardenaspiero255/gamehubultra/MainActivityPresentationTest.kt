@@ -1,7 +1,6 @@
 package com.cardenaspiero255.gamehubultra
 
 import android.Manifest
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -34,7 +33,7 @@ class MainActivityPresentationTest {
             }
             composeRule
                 .onNodeWithTag("nav_inicio", useUnmergedTree = true)
-                .assertExists()
+                .fetchSemanticsNode()
         }
     }
 }
