@@ -12,7 +12,6 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 internal fun applyCompletedAdaptiveDecision(
     completed: SessionCoachStoredSession?,
     selectedPackage: String?,
-    gameVersion: String?,
     activeProfile: PerformanceProfile,
     optimizer: PerGameAdaptiveOptimizer,
     nowMillis: Long,
@@ -28,7 +27,10 @@ internal fun applyCompletedAdaptiveDecision(
 
     val key = AdaptiveGameKey(
         packageName = selected,
-        version = gameVersion?.trim()?.takeIf(String::isNotEmpty) ?: "unknown"
+        version = session.gameVersion
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: "unknown"
     )
     val samples = session.samples.map { sample ->
         AdaptiveTrendSample(
