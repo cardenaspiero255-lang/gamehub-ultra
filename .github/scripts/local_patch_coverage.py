@@ -119,11 +119,17 @@ def _looks_executable_source_line(line: str) -> bool:
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:\{)?$", stripped):
         return False
     if re.match(
+        r"^(?:(?:public|private|protected|internal)\s+)?(?:val|var)\s+"
+        r"[A-Za-z_][A-Za-z0-9_]*(?:\s*:\s*[^=]+)?\s*=\s*$",
+        stripped,
+    ):
+        return False
+    if re.match(
         r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{[^{}]*->\s*$",
         stripped,
     ):
         return False
-    if re.match(r"^\"(?:[^\"\\]|\\.)*\"\s*,?$", stripped):
+    if re.match(r"^\"(?:[^\"\\]|\.)*\"\s*(?:\+\s*)?,?$", stripped):
         return False
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+,?$", stripped):
         return False
@@ -190,12 +196,12 @@ def _multiline_function_type_signature_lines(source_lines: list[str]) -> set[int
 def _multiline_const_initializer_lines(source_lines: list[str]) -> set[int]:
     structural: set[int] = set()
     const_header = re.compile(
-        r"^(?:(?:public|private|protected|internal)\\s+)?const\\s+val\\s+"
-        r"[A-Za-z_][A-Za-z0-9_]*\\s*=\\s*$"
+        r"^(?:(?:public|private|protected|internal)\s+)?const\s+val\s+"
+        r"[A-Za-z_][A-Za-z0-9_]*\s*=\s*$"
     )
-    const_atom = r"(?:[A-Z][A-Z0-9_]*|[-+]?\\d+(?:\\.\\d+)?(?:[fFdDlL])?|true|false|\\\"[^\\\"]*\\\"|'[^']*')"
+    const_atom = r"(?:[A-Z][A-Z0-9_]*|[-+]?\d+(?:\.\d+)?(?:[fFdDlL])?|true|false|\\\"[^\\\"]*\\\"|'[^']*')"
     const_expression = re.compile(
-        rf"^{const_atom}(?:\\s*[+*/%\\-]\\s*{const_atom})*\\s*$"
+        rf"^{const_atom}(?:\s*[+*/%\-]\s*{const_atom})*\s*$"
     )
 
     for number, line in enumerate(source_lines, start=1):
