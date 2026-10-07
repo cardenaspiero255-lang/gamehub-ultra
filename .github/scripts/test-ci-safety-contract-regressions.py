@@ -162,8 +162,16 @@ def main() -> None:
     reject_mutation(
         "device physical parallelism reduced",
         android_replace=(
-            "      max-parallel: 4\n      matrix:\n        shard: [release-apk, ui, performance-a, performance-b]\n",
-            "      max-parallel: 2\n      matrix:\n        shard: [release-apk, ui, performance-a, performance-b]\n",
+            "      max-parallel: 4\n"
+            "      matrix:\n"
+            "        # Four logical performance checks are packed into two physical emulator\n"
+            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
+            "        shard: [release-apk, ui, performance-a, performance-b]\n",
+            "      max-parallel: 2\n"
+            "      matrix:\n"
+            "        # Four logical performance checks are packed into two physical emulator\n"
+            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
+            "        shard: [release-apk, ui, performance-a, performance-b]\n",
         ),
     )
     reject_mutation(
