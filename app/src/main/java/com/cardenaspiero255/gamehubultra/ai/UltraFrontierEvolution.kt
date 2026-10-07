@@ -846,6 +846,51 @@ class UltraFrontierEvolutionController(
         evaluation.record(outcome)
     }
 
+    fun finalGate(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        answer: UltraQueryExecutionAnswer,
+        nowMillis: Long
+    ): UltraQueryExecutionAnswer {
+        if (answer.abstained || !answer.verified) return answer
+        if (
+            plan.lane != UltraFrontierLane.VERIFIED_RESEARCH &&
+            plan.lane != UltraFrontierLane.DEEP_RESEARCH
+        ) {
+            return answer
+        }
+
+        val status = claimVerifier.verify(
+            claim = UltraFrontierClaim(
+                id = request.correlationId,
+                text = answer.message,
+                confidence = answer.confidence ?: UltraAnswerConfidence.LOW,
+                independentSourceCount = answer.independentSourceCount,
+                validUntilMillis = if (request.requiresFreshData) {
+                    safeAdd(nowMillis, UltraResearchCache.CURRENT_DATA_TTL_MS)
+                } else {
+                    null
+                }
+            ),
+            minimumIndependentSources =
+                plan.minimumDistinctSources.coerceAtLeast(1),
+            nowMillis = nowMillis
+        )
+        if (status == UltraClaimStatus.VERIFIED) return answer
+
+        return answer.copy(
+            message =
+                "Encontré una respuesta candidata, pero una de sus afirmaciones no " +
+                    "alcanzó el nivel de corroboración exigido. Prefiero no presentarla como un hecho.",
+            verified = false,
+            sources = emptyList(),
+            abstained = true,
+            retryable = false,
+            reasonCode = "FRONTIER_CLAIM_QUORUM",
+            stage = "frontier-claim-verifier"
+        )
+    }
+
     fun recallVerified(
         request: UltraGeneralQueryRequest,
         nowMillis: Long
