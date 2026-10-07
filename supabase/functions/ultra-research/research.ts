@@ -5692,7 +5692,7 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     "parlamento": {
       claimKey: "local-study:parliament",
       text:
-        "Un parlamento es una institución legislativa formada por representantes que debate, aprueba o modifica leyes y ejerce funciones de control político según el sistema constitucional de cada país.",
+        "Un parlamento es un órgano legislativo formado por representantes que debate, aprueba o modifica leyes y ejerce funciones de control político según el sistema constitucional de cada país.",
     },
     "ecosistema": {
       claimKey: "local-study:ecosystem",
