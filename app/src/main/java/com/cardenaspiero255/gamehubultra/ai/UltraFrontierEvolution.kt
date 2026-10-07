@@ -108,7 +108,6 @@ class UltraFrontierLearningStore(
     @Synchronized
     fun failurePressure(domain: UltraFrontierDomain): Int =
         outcomes
-            .asSequence()
             .filter { it.domain == domain }
             .takeLast(12)
             .count { !it.accepted || it.abstained }
@@ -369,16 +368,10 @@ class UltraTemporalKnowledgeGraph(
             fact.validUntilMillis == null ||
                 fact.validUntilMillis >= fact.validFromMillis
         )
-        val iterator = facts.iterator()
-        while (iterator.hasNext()) {
-            val existing = iterator.next()
-            if (
-                existing.subject == fact.subject &&
+        facts.removeAll { existing ->
+            existing.subject == fact.subject &&
                 existing.predicate == fact.predicate &&
                 existing.validFromMillis == fact.validFromMillis
-            ) {
-                iterator.remove()
-            }
         }
         while (facts.size >= capacity) {
             facts.removeFirst()
