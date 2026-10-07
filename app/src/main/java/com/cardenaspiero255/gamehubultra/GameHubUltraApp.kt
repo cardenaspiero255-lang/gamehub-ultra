@@ -649,7 +649,7 @@ internal fun GameHubUltraApp(
                 markSessionHandled = {
                     perGameAdaptiveStateStore.markSessionHandled(completed.sessionId)
                 },
-                recordPerformanceEvent = viewModel::recordPerformanceEvent
+                recordPerformanceEvent = viewModel::persistPerformanceEvent
             )
             if (hydration.shouldMarkHydrated) {
                 hydratedCoachSessionId = completed.sessionId
@@ -875,13 +875,13 @@ internal fun GameHubUltraApp(
                 smartRecommendation = smartRecommendation,
                 canRevertSmartRecommendation = canRevertSmartRecommendation,
                 onApplySmartRecommendation = {
-                    smartRecommendationRevertTarget = SmartRecommendationActions.apply(selectedGamePackage, uiState.effectiveProfile, smartRecommendation.profile, recordSmartRecommendationFeedback, ::selectProfile, smartRecommendationRevertTarget)
+                    smartRecommendationRevertTarget = SmartRecommendationActions.apply(selectedGamePackage, uiState.effectiveProfile, smartRecommendation.profile, recordSmartRecommendationFeedback, ::selectExternalProfile, smartRecommendationRevertTarget)
                 },
                 onRejectSmartRecommendation = {
                     rejectedSmartRecommendation = SmartRecommendationActions.reject(rejectedSmartRecommendation, smartRecommendation.profile, recordSmartRecommendationFeedback)
                 },
                 onRevertSmartRecommendation = {
-                    smartRecommendationRevertTarget = SmartRecommendationActions.revert(smartRecommendationRevertTarget, selectedGamePackage, uiState.effectiveProfile, recordSmartRecommendationFeedback, ::selectProfile)
+                    smartRecommendationRevertTarget = SmartRecommendationActions.revert(smartRecommendationRevertTarget, selectedGamePackage, uiState.effectiveProfile, recordSmartRecommendationFeedback, ::selectExternalProfile)
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
                 onApplySmartGameAssistant = ::applyExternalSmartGameAssistantSuggestion,
