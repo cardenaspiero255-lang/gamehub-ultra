@@ -522,6 +522,32 @@ val key = prefix + request.originalText
         )
         self.assertEqual(stats.unmapped_files, ())
 
+    def test_unmapped_finally_shutdown_call_is_structural_but_normal_call_still_blocks(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+try {
+    work()
+} finally {
+    executor.shutdownNow()
+}
+realCall()
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 8))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(
+            stats.unmapped_files,
+            (
+                "app/src/main/java/com/example/Foo.kt:3",
+                "app/src/main/java/com/example/Foo.kt:7",
+            ),
+        )
+
     def test_compose_dispose_callback_call_can_be_marked_as_synthetic_callsite_only(self) -> None:
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
