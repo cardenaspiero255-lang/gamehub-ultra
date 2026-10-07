@@ -11,6 +11,8 @@ class UltraFrontierDeepTaskGraphExecutionTest {
     fun deepResearchExecutesDiversifiedResearchTasksFromThePlan() {
         val offsets = Collections.synchronizedList(mutableListOf<Int>())
         val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+
             override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
                 offsets += request.researchProviderOffset
                 return if (request.researchProviderOffset == 0) {
