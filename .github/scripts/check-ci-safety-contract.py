@@ -405,10 +405,15 @@ def main() -> None:
         shell="bash",
     )
     for dependency in ("quality-contracts", "quality-lint"):
-        require_run_fragment(
+        require_shell_command(
             quality_gate,
             "quality fan-in result",
-            f"needs.{dependency}.result",
+            (
+                "test",
+                f"${{{{ needs.{dependency}.result }}}}",
+                "=",
+                "success",
+            ),
         )
 
     shard_job = job(android, "device-validation-shard")
@@ -619,10 +624,15 @@ def main() -> None:
         "Verify device validation shards",
         shell="bash",
     )
-    require_run_fragment(
+    require_shell_command(
         device_gate,
         "device fan-in result",
-        "needs.device-validation-shard.result",
+        (
+            "test",
+            "${{ needs.device-validation-shard.result }}",
+            "=",
+            "success",
+        ),
     )
 
     coverage_generate = require_step(
@@ -732,10 +742,15 @@ def main() -> None:
         shell="bash",
     )
     for dependency in ("quality", "device-validation"):
-        require_run_fragment(
+        require_shell_command(
             aggregate_gate,
             "aggregate build result",
-            f"needs.{dependency}.result",
+            (
+                "test",
+                f"${{{{ needs.{dependency}.result }}}}",
+                "=",
+                "success",
+            ),
         )
 
     debug_download = require_step(
