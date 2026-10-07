@@ -45,7 +45,8 @@ class BatteryAwareGamingEngine(
 
         val drainWindow = ordered
             .asReversed()
-            .takeWhile { it.batteryCharging == false && it.batteryPercent != null }
+            .takeWhile { it.batteryCharging != true }
+            .filter { it.batteryPercent != null }
             .asReversed()
 
         val firstDrainSample = drainWindow.firstOrNull()
