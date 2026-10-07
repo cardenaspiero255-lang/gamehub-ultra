@@ -511,4 +511,21 @@ class AiSessionCoachTest {
         assertTrue(report.batteryChargingObserved)
     }
 
+
+    @Test
+    fun postSessionUsesNetDropPerUnchargedSegmentInsteadOfCountingGaugeNoiseTwice() {
+        val report = AiSessionCoach.postSession(
+            listOf(
+                SessionCoachSnapshot(0L, 80, 1, 0.2f, 120f, 30L, batteryCharging = false),
+                SessionCoachSnapshot(60 * 60_000L, 79, 1, 0.2f, 120f, 30L, batteryCharging = false),
+                SessionCoachSnapshot(120 * 60_000L, 80, 1, 0.2f, 120f, 30L, batteryCharging = false),
+                SessionCoachSnapshot(180 * 60_000L, 79, 1, 0.2f, 120f, 30L, batteryCharging = false)
+            )
+        )
+
+        assertEquals(1, report.batteryDropPercent)
+        assertEquals(1f / 3f, report.batteryDrainPercentPerHour)
+        assertTrue(report.patterns.none { it.signal == SessionCoachSignal.BATTERY })
+    }
+
 }
