@@ -27,6 +27,16 @@ data class PerGameAdaptivePersistedState(
     val recoveryProfile: PerformanceProfile?
 )
 
+data class PerGameAdaptivePendingDecision(
+    val sessionId: String,
+    val key: AdaptiveGameKey,
+    val previousProfile: PerformanceProfile,
+    val targetProfile: PerformanceProfile,
+    val targetState: PerGameAdaptivePersistedState,
+    val eventTimestampMillis: Long,
+    val reason: String
+)
+
 interface PerGameAdaptiveStateStore {
     fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState?
     fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState)
@@ -36,6 +46,9 @@ interface PerGameAdaptiveStateStore {
         excludingVersion: String,
         activeProfile: PerformanceProfile
     ): PerformanceProfile? = null
+    fun readPendingDecision(sessionId: String): PerGameAdaptivePendingDecision? = null
+    fun writePendingDecision(decision: PerGameAdaptivePendingDecision) = Unit
+    fun clearPendingDecision(sessionId: String) = Unit
 }
 
 class PerGameAdaptiveOptimizer(
@@ -91,11 +104,57 @@ class PerGameAdaptiveOptimizer(
         }
     }
 
+    internal fun commitState(key: AdaptiveGameKey) {
+        states[key]?.let { state ->
+            stateStore?.write(key, state.toPersistedState())
+        }
+    }
+
+    internal fun readPendingDecision(sessionId: String): PerGameAdaptivePendingDecision? =
+        stateStore?.readPendingDecision(sessionId)
+
+    internal fun writePendingDecision(decision: PerGameAdaptivePendingDecision) {
+        stateStore?.writePendingDecision(decision)
+    }
+
+    internal fun clearPendingDecision(sessionId: String) {
+        stateStore?.clearPendingDecision(sessionId)
+    }
+
     fun evaluate(
         key: AdaptiveGameKey,
         activeProfile: PerformanceProfile,
         samples: List<AdaptiveTrendSample>,
         nowMillis: Long
+    ): PerGameAdaptiveDecision =
+        evaluateInternal(
+            key = key,
+            activeProfile = activeProfile,
+            samples = samples,
+            nowMillis = nowMillis,
+            persistState = true
+        )
+
+    internal fun evaluateUncommitted(
+        key: AdaptiveGameKey,
+        activeProfile: PerformanceProfile,
+        samples: List<AdaptiveTrendSample>,
+        nowMillis: Long
+    ): PerGameAdaptiveDecision =
+        evaluateInternal(
+            key = key,
+            activeProfile = activeProfile,
+            samples = samples,
+            nowMillis = nowMillis,
+            persistState = false
+        )
+
+    private fun evaluateInternal(
+        key: AdaptiveGameKey,
+        activeProfile: PerformanceProfile,
+        samples: List<AdaptiveTrendSample>,
+        nowMillis: Long,
+        persistState: Boolean
     ): PerGameAdaptiveDecision {
         val persisted = stateStore?.read(key)
         val state = when {
@@ -117,6 +176,7 @@ class PerGameAdaptiveOptimizer(
             return decision(
                 key = key,
                 state = state,
+                persistState = persistState,
                 profile = activeProfile,
                 changed = false,
                 reason = "Se detectó un cambio externo de perfil; se respeta y se reinicia la adaptación automática."
@@ -129,6 +189,7 @@ class PerGameAdaptiveOptimizer(
             return decision(
                 key = key,
                 state = state,
+                persistState = persistState,
                 profile = activeProfile,
                 changed = false,
                 reason = "Sin muestras suficientes: se mantiene el perfil activo."
@@ -142,6 +203,7 @@ class PerGameAdaptiveOptimizer(
             return decision(
                 key = key,
                 state = state,
+                persistState = persistState,
                 profile = state.profile,
                 changed = false,
                 reason = reason(samples, changed = false)
@@ -152,6 +214,7 @@ class PerGameAdaptiveOptimizer(
             return decision(
                 key = key,
                 state = state,
+                persistState = persistState,
                 profile = state.profile,
                 changed = false,
                 reason = "Periodo de enfriamiento activo: se evita una oscilación rápida de perfil."
@@ -169,6 +232,7 @@ class PerGameAdaptiveOptimizer(
             return decision(
                 key = key,
                 state = state,
+                persistState = persistState,
                 profile = state.profile,
                 changed = false,
                 reason = "La tendencia requiere confirmación antes de cambiar automáticamente el perfil."
@@ -191,6 +255,7 @@ class PerGameAdaptiveOptimizer(
         return decision(
             key = key,
             state = state,
+            persistState = persistState,
             profile = target,
             changed = true,
             reason = reason(samples, changed = true)
@@ -256,11 +321,14 @@ class PerGameAdaptiveOptimizer(
     private fun decision(
         key: AdaptiveGameKey,
         state: State,
+        persistState: Boolean,
         profile: PerformanceProfile,
         changed: Boolean,
         reason: String
     ): PerGameAdaptiveDecision {
-        stateStore?.write(key, state.toPersistedState())
+        if (persistState) {
+            stateStore?.write(key, state.toPersistedState())
+        }
         return PerGameAdaptiveDecision(
             profile = profile,
             changed = changed,
