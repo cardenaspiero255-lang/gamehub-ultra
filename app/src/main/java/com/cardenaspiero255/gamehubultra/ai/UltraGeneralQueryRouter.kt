@@ -30,8 +30,20 @@ data class UltraGeneralQueryRequest(
         requiresInternet -> UltraVerificationMode.REQUIRED
         else -> UltraVerificationMode.LOCAL
     },
+    /**
+     * Optional upper bound on research providers started for this request.
+     * Null preserves the legacy behavior and lets the research engine use all
+     * configured providers. Frontier supplies a policy-derived value.
+     */
+    val researchProviderBudget: Int? = null,
     val correlationId: String = UUID.randomUUID().toString()
-)
+) {
+    init {
+        require(researchProviderBudget == null || researchProviderBudget >= 1) {
+            "Research provider budget must be positive when present."
+        }
+    }
+}
 
 object UltraGeneralQueryRouter {
     private const val FAST_QUERY_TIMEOUT_MS = 20_000L
