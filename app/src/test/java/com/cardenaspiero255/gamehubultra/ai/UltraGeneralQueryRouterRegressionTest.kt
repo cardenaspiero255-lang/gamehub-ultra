@@ -117,7 +117,7 @@ class UltraGeneralQueryRouterRegressionTest {
     }
 
     @Test
-    fun gameTitleContainingWhyDoesNotTriggerResearch() {
+    fun conversationalGameTitleContainingWhyStaysAStableTopicRequest() {
         val title = UltraGeneralQueryRouter.classify(
             "Ultra, háblame de Tell Me Why"
         )
@@ -125,10 +125,11 @@ class UltraGeneralQueryRouterRegressionTest {
             "Ultra, why is the sky blue?"
         )
 
-        assertEquals(UltraVerificationMode.LOCAL, title.verificationMode)
+        assertEquals(UltraVerificationMode.OPTIONAL, title.verificationMode)
         assertEquals(UltraVerificationMode.OPTIONAL, actualQuestion.verificationMode)
         assertFalse(title.requiresInternet)
         assertFalse(actualQuestion.requiresInternet)
+        assertFalse(title.requiresFreshData)
     }
 
     @Test
@@ -318,4 +319,17 @@ class UltraGeneralQueryRouterRegressionTest {
 
         assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
     }
+    @Test
+    fun conversationalWeatherPromptIsFreshRequiredData() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, háblame del clima en Madrid"
+        )
+
+        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
+        assertTrue(request.requiresInternet)
+        assertTrue(request.requiresFreshData)
+    }
+
+
 }

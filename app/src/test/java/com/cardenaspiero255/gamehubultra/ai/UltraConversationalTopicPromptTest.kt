@@ -1,0 +1,99 @@
+package com.cardenaspiero255.gamehubultra.ai
+
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class UltraConversationalTopicPromptTest {
+    private val aiContext = GameHubAiContext(
+        selectedGamePackage = null,
+        sustainedPerformanceSupported = false,
+        cpuCores = 8,
+        totalRamMb = 8192,
+        gpuAvailable = true,
+        thermalStatus = 0,
+        thermalHeadroom = 0.2f,
+        batteryPercent = 80,
+        charging = false,
+        refreshRateHz = 120f,
+        networkValidated = true,
+        networkLatencyMs = 30L,
+        downstreamBandwidthKbps = 100_000L,
+        storageFreePercent = 40,
+        inputDeviceCount = 0,
+        selectedProfile = PerformanceProfile.BALANCED,
+        sessionActive = false
+    )
+    @Test
+    fun conversationalTopicPhrasesRouteToGeneralKnowledgeChat() {
+        val phrases = listOf(
+            "Ultra, háblame de la marca Nike",
+            "Ultra, háblame de los osos",
+            "Ultra, cuéntame sobre los osos",
+            "Ultra, dime sobre los osos",
+            "Ultra, quiero saber sobre los osos",
+            "Ultra, qué sabes de los osos",
+            "Ultra, dame información sobre los osos",
+            "Ultra, infórmame acerca de los osos",
+            "Ultra, descríbeme los osos"
+        )
+
+        phrases.forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(transcript)
+            val chat = assertIs<UltraAgentRoute.Chat>(route, transcript)
+            assertEquals(
+                UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                chat.query?.kind,
+                transcript
+            )
+            assertEquals(
+                UltraVerificationMode.OPTIONAL,
+                chat.query?.verificationMode,
+                transcript
+            )
+        }
+    }
+
+    @Test
+    fun conversationalTopicWinsOverProfileAndNetworkCommandKeywords() {
+        val phrases = listOf(
+            "Ultra, háblame de X4",
+            "Ultra, háblame del modo competitivo",
+            "Ultra, cuéntame sobre Gaming Router"
+        )
+
+        phrases.forEach { transcript ->
+            val route = UltraUnifiedAgentRouter.route(transcript)
+            assertIs<UltraAgentRoute.Chat>(route, transcript)
+        }
+    }
+
+    @Test
+    fun talkAboutBearsCanUseStableLocalKnowledgeWithoutInternet() {
+        val advisor = GameHubAiAdvisor()
+
+        val answer = advisor.generalKnowledgeChatOrNull(
+            message = "Ultra, háblame de los osos",
+            context = aiContext,
+            conversation = emptyList()
+        )
+
+        assertNotNull(answer)
+        assertTrue(answer.contains("oso", ignoreCase = true), answer)
+        assertTrue(answer.contains("Ursidae", ignoreCase = true), answer)
+    }
+
+    @Test
+    fun freshConversationalTopicStillRequiresFreshVerification() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, háblame de las noticias actuales de Nike"
+        )
+
+        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
+        assertTrue(request.requiresFreshData)
+    }
+}

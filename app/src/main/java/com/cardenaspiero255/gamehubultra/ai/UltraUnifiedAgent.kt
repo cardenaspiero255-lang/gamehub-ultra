@@ -75,6 +75,25 @@ object UltraUnifiedAgentRouter {
         if (command is VoiceCommand.DefineGameAlias) {
             return UltraAgentRoute.Command(command)
         }
+
+        // Informational phrasing must win over command keywords. For example,
+        // "Ultra, háblame de X4" asks for an explanation; it must not activate
+        // X4. The same applies to "háblame del modo competitivo" and
+        // "cuéntame sobre Gaming Router". Explicit launch requests still keep
+        // command precedence.
+        if (
+            UltraGeneralQueryRouter.isConversationalTopicRequest(transcript) &&
+            !VoiceCommandParser.hasExplicitLaunchIntent(transcript)
+        ) {
+            return UltraAgentRoute.Chat(
+                message = transcript.trim(),
+                query = UltraContextualQueryPlanner.plan(
+                    message = transcript,
+                    conversationHistory = conversationHistory
+                )
+            )
+        }
+
         if (command is VoiceCommand.Network) {
             return UltraAgentRoute.Command(command)
         }

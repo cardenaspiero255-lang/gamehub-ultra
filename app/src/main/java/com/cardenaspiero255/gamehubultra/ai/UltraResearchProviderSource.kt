@@ -24,7 +24,8 @@ class ConfiguredUltraResearchProviderSource(
     private val transport: UltraResearchBackendTransport =
         HttpUrlConnectionUltraResearchTransport,
     private val publicKnowledgeTransport: UltraPublicKnowledgeTransport =
-        HttpUrlConnectionUltraPublicKnowledgeTransport
+        HttpUrlConnectionUltraPublicKnowledgeTransport,
+    private val requiredEngineVersion: String? = UltraResearchProtocol.ENGINE_VERSION
 ) : UltraResearchProviderSource {
 
     override fun providers(): List<UltraResearchProvider> =
@@ -34,7 +35,8 @@ class ConfiguredUltraResearchProviderSource(
                     SupabaseUltraResearchProvider(
                         supabaseUrl = supabaseUrl,
                         publishableKey = publishableKey,
-                        transport = transport
+                        transport = transport,
+                        requiredEngineVersion = requiredEngineVersion
                     )
                 )
             }

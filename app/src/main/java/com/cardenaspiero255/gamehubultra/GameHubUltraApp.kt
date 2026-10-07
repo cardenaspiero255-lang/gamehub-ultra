@@ -8,6 +8,8 @@ import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
+import com.cardenaspiero255.gamehubultra.data.AiProfileProposalStore
+import com.cardenaspiero255.gamehubultra.data.AppliedAiProfileProposalState
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import android.os.Build
@@ -56,6 +58,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.AiProfileBuilder
+import com.cardenaspiero255.gamehubultra.domain.AiProfileCapabilities
+import com.cardenaspiero255.gamehubultra.domain.AiProfileProposal
+import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -145,6 +153,79 @@ internal fun chooseCoachReport(
 ): com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport? =
     storedReport ?: dashboardReport
 
+
+internal fun aiProfileSamplesForSelectedGame(
+    completed: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession?,
+    selectedPackage: String?,
+    activeSessionPackage: String?,
+    dashboardSamples: List<SessionCoachSnapshot>
+): List<SessionCoachSnapshot> {
+    val selected = selectedPackage?.trim()?.takeIf(String::isNotEmpty)
+        ?: return emptyList()
+    if (completed?.packageName == selected && completed.samples.isNotEmpty()) {
+        return completed.samples
+    }
+    return if (activeSessionPackage == selected) dashboardSamples else emptyList()
+}
+
+
+internal fun buildAiProfileProposalForSelectedGame(
+    packageName: String?,
+    selectedConfig: GameProfileConfig?,
+    effectiveProfile: PerformanceProfile,
+    observations: List<OptimizationObservation>,
+    sessionSamples: List<SessionCoachSnapshot>,
+    supportedRefreshRatesHz: Set<Int>?,
+    supportsSustainedPerformance: Boolean,
+    nextVersion: (String) -> Int
+): AiProfileProposal? {
+    if (packageName.isNullOrBlank() || supportedRefreshRatesHz == null) return null
+    val currentConfig = selectedConfig
+        ?: GameProfileConfig(performanceProfile = effectiveProfile)
+    return AiProfileBuilder.propose(
+        currentConfig = currentConfig,
+        observations = observations,
+        sessionSamples = sessionSamples,
+        capabilities = AiProfileCapabilities(
+            supportsSustainedPerformance = supportsSustainedPerformance,
+            supportsFrameInterpolation = false,
+            supportedRefreshRatesHz = supportedRefreshRatesHz,
+            supportedResolutions = emptySet()
+        ),
+        version = nextVersion(packageName)
+    ).takeIf { it.requiresExplicitApply }
+}
+
+internal fun applyAiProfileProposalForSelectedGame(
+    packageName: String?,
+    proposal: AiProfileProposal?,
+    save: (String, GameProfileConfig, () -> Unit) -> Unit,
+    recordApplied: (String, AiProfileProposal) -> Unit,
+    onApplied: () -> Unit
+): Boolean {
+    if (packageName.isNullOrBlank() || proposal == null) return false
+    save(packageName, proposal.proposedConfig) {
+        recordApplied(packageName, proposal)
+        onApplied()
+    }
+    return true
+}
+
+internal fun rollbackAiProfileProposalForSelectedGame(
+    packageName: String?,
+    rollback: AppliedAiProfileProposalState?,
+    save: (String, GameProfileConfig, () -> Unit) -> Unit,
+    clearRollback: (String) -> Unit,
+    onRolledBack: () -> Unit
+): Boolean {
+    if (packageName.isNullOrBlank() || rollback == null) return false
+    save(packageName, rollback.previousKnownGoodConfig) {
+        clearRollback(packageName)
+        onRolledBack()
+    }
+    return true
+}
+
 private val UltraHomeRed = Color(0xFFFF1630)
 private val UltraHomeBlack = Color(0xFF030303)
 private val UltraHomePanel = Color(0xFF0B0B0E)
@@ -165,6 +246,7 @@ internal fun GameHubUltraApp(
     connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     storeLibraryRepository: StoreLibraryStateRepository,
     optimizationMemoryStore: GameOptimizationMemoryStateRepository,
+    aiProfileProposalStore: AiProfileProposalStore,
     initialTab: Int,
     onProfileApplied: (PerformanceProfile) -> PerformanceState
 ) {
@@ -188,9 +270,13 @@ internal fun GameHubUltraApp(
     var sessionCoachSamples by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot>>(emptyList()) }
     var sessionCoachObservations by remember { mutableStateOf<List<com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage>>(emptyList()) }
     var lastSessionCoachReport by remember { mutableStateOf<com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?>(null) }
+    var lastCompletedCoachSession by remember {
+        mutableStateOf<com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession?>(null)
+    }
     var hydratedCoachSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
+    var aiProfileRevision by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
     val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     val aiAdvisor = ultraRuntime.assistant
@@ -217,6 +303,47 @@ internal fun GameHubUltraApp(
     val optimizationObservations by optimizationMemoryStore
         .observationsFlow(currentOptimizationKey)
         .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val aiProfileSessionSamples = remember(
+        lastCompletedCoachSession,
+        selectedGameForMemory,
+        activeSessionPackage,
+        sessionCoachSamples
+    ) {
+        aiProfileSamplesForSelectedGame(
+            completed = lastCompletedCoachSession,
+            selectedPackage = selectedGameForMemory,
+            activeSessionPackage = activeSessionPackage,
+            dashboardSamples = sessionCoachSamples
+        )
+    }
+    val aiProfileProposal = remember(
+        selectedGameForMemory,
+        uiState.selectedGameConfig,
+        optimizationObservations,
+        aiProfileSessionSamples,
+        runtimeDiagnostics,
+        initialState.capabilities,
+        aiProfileRevision
+    ) {
+        buildAiProfileProposalForSelectedGame(
+            packageName = selectedGameForMemory,
+            selectedConfig = uiState.selectedGameConfig,
+            effectiveProfile = uiState.effectiveProfile,
+            observations = optimizationObservations,
+            sessionSamples = aiProfileSessionSamples,
+            supportedRefreshRatesHz = runtimeDiagnostics?.refresh?.supportedRefreshRatesHz,
+            supportsSustainedPerformance =
+                initialState.capabilities?.sustainedPerformanceSupported == true,
+            nextVersion = aiProfileProposalStore::nextVersion
+        )
+    }
+    val aiProfileRollbackState = remember(
+        selectedGameForMemory,
+        aiProfileRevision
+    ) {
+        selectedGameForMemory?.let(aiProfileProposalStore::rollbackState)
+    }
 
     LaunchedEffect(storeRefreshToken) {
         storeGames = withContext(Dispatchers.IO) {
@@ -429,6 +556,26 @@ internal fun GameHubUltraApp(
         )
     }
 
+    fun applyAiProfileProposal() {
+        applyAiProfileProposalForSelectedGame(
+            packageName = selectedGameForMemory,
+            proposal = aiProfileProposal,
+            save = viewModel::saveGameProfileConfig,
+            recordApplied = aiProfileProposalStore::recordApplied,
+            onApplied = { aiProfileRevision += 1 }
+        )
+    }
+
+    fun rollbackAiProfileProposal() {
+        rollbackAiProfileProposalForSelectedGame(
+            packageName = selectedGameForMemory,
+            rollback = aiProfileRollbackState,
+            save = viewModel::saveGameProfileConfig,
+            clearRollback = aiProfileProposalStore::clearRollback,
+            onRolledBack = { aiProfileRevision += 1 }
+        )
+    }
+
     fun endGameSession() {
         runtimeCoordinator.endGameSession(runtimeSnapshot())
     }
@@ -459,6 +606,7 @@ internal fun GameHubUltraApp(
             com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
                 .readLastCompletedSession()
         }
+        lastCompletedCoachSession = completed
         if (completed != null) {
             val activeRuntimeRecord = sessionHistory.firstOrNull { session ->
                 session.id == runtimeGameSession?.id
@@ -686,6 +834,10 @@ internal fun GameHubUltraApp(
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
                 onApplySmartGameAssistant = ::applyExternalSmartGameAssistantSuggestion,
+                aiProfileProposal = aiProfileProposal,
+                canRollbackAiProfileProposal = aiProfileRollbackState != null,
+                onApplyAiProfileProposal = ::applyAiProfileProposal,
+                onRollbackAiProfileProposal = ::rollbackAiProfileProposal,
                 optimizationObservations = optimizationObservations,
                 onClearOptimizationMemory = {
                     scope.launch(Dispatchers.IO) {

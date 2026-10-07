@@ -162,10 +162,10 @@ internal object UltraWakeBargeInPolicy {
         playbackEcho: Boolean = false
     ): UltraWakeRecognitionDisposition =
         when {
-            !playbackActive -> UltraWakeRecognitionDisposition.ACCEPT
-            playbackEcho -> UltraWakeRecognitionDisposition.SUPPRESS
             UltraWakeStopSpeakingIntent.matches(transcript) ->
                 UltraWakeRecognitionDisposition.STOP_TTS
+            !playbackActive -> UltraWakeRecognitionDisposition.ACCEPT
+            playbackEcho -> UltraWakeRecognitionDisposition.SUPPRESS
             UltraWakeWordMatcher.isExplicitInvocation(transcript) ->
                 UltraWakeRecognitionDisposition.INTERRUPT_TTS
             else -> UltraWakeRecognitionDisposition.SUPPRESS

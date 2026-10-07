@@ -1432,4 +1432,76 @@ class WikimediaUltraResearchProviderTest {
         assertEquals("PUBLIC_FALLBACK_IRRELEVANT_RESULT", abstained.reasonCode)
     }
 
+    @Test
+    fun englishAndDescribeConversationalPromptsUseCleanTopicsInPublicFallback() {
+        val prompts = listOf(
+            "Ultra, tell me about bears" to "bears",
+            "Ultra, talk to me about bears" to "bears",
+            "Ultra, describe bears" to "bears",
+            "Ultra, descríbeme los osos" to "osos"
+        )
+
+        prompts.forEach { (prompt, expectedTopic) ->
+            var searchUrl = ""
+            val provider = WikimediaUltraResearchProvider(
+                UltraPublicKnowledgeTransport { url, _ ->
+                    if (url.contains("list=search")) {
+                        searchUrl = url
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"search":[{"title":"Osos"}]}}"""
+                        )
+                    } else {
+                        UltraResearchHttpResponse(
+                            200,
+                            """{"query":{"pages":{"1":{"title":"Osos","extract":"Los osos son mamíferos de la familia Ursidae.","canonicalurl":"https://es.wikipedia.org/wiki/Ursidae"}}}}"""
+                        )
+                    }
+                }
+            )
+
+            provider.fetchResult(UltraGeneralQueryRouter.classify(prompt))
+
+            val decoded = java.net.URLDecoder.decode(searchUrl, "UTF-8")
+            assertTrue(decoded.contains("srsearch=$expectedTopic"), decoded)
+            assertFalse(decoded.contains("tell me about"), decoded)
+            assertFalse(decoded.contains("talk to me about"), decoded)
+            assertFalse(decoded.contains("describe "), decoded)
+            assertFalse(decoded.contains("descríbeme"), decoded)
+        }
+    }
+
+    @Test
+    fun conversationalTalkAboutPromptUsesCleanTopicInPublicFallback() {
+        var searchUrl = ""
+        val provider = WikimediaUltraResearchProvider(
+            UltraPublicKnowledgeTransport { url, _ ->
+                if (url.contains("list=search")) {
+                    searchUrl = url
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"search":[{"title":"Nike"}]}}"""
+                    )
+                } else {
+                    UltraResearchHttpResponse(
+                        200,
+                        """{"query":{"pages":{"1":{"title":"Nike","extract":"Nike es una empresa estadounidense de ropa y equipamiento deportivo.","canonicalurl":"https://es.wikipedia.org/wiki/Nike"}}}}"""
+                    )
+                }
+            }
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify(
+                "Ultra, háblame de la marca Nike"
+            )
+        )
+
+        assertIs<UltraProviderResult.Evidence>(result)
+        assertTrue(searchUrl.contains("srsearch=Nike"), searchUrl)
+        assertFalse(searchUrl.contains("h%C3%A1blame"), searchUrl)
+        assertFalse(searchUrl.contains("marca"), searchUrl)
+    }
+
+
 }

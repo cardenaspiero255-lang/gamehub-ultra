@@ -118,11 +118,16 @@ def _looks_executable_source_line(line: str) -> bool:
         return False
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:\{)?$", stripped):
         return False
+    if re.match(
+        r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{[^{}]*->\s*$",
+        stripped,
+    ):
+        return False
     if re.match(r"^\"(?:[^\"\\]|\\.)*\"\s*,?$", stripped):
         return False
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+,?$", stripped):
         return False
-    if re.match(r"^\)\s*(?::\s*[^=]+)?\s*(?:\{|=)?$", stripped):
+    if re.match(r"^\)\s*(?::\s*[^=]+)?\s*(?:\{|=|->)?$", stripped):
         return False
     if re.match(r"^(?:else\s*->(?:\s*\{)?|\}\s*else\s*\{)$", stripped):
         return False

@@ -201,7 +201,7 @@
     <string name="voice_result_profile_deferred_short">Profile %1$s saved for when GameHub Ultra is active.</string>
     <string name="voice_result_profile_unavailable">The requested profile is not available on this device.</string>
     <string name="voice_result_status">Status: battery %1$s%%, thermal %2$s.</string>
-    <string name="voice_result_help">You can say: open a game, set X4, prioritize interpolation, balanced FPS, or tell me the status.</string>
+    <string name="voice_result_help">You can say: open a game, set X4, tell me the status, tell me about bears, tell me about Nike, or describe a topic.</string>
     <string name="voice_status_unavailable">Not available.</string>
     <string name="voice_status_failed">Could not complete.</string>
     <string name="ai_advisor_title">AI advisor</string>

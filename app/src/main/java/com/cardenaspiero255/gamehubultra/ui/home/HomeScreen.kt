@@ -20,6 +20,7 @@ import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.AiProfileProposal
 import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -75,6 +76,10 @@ internal fun HomeScreen(
     onRevertSmartRecommendation: () -> Unit,
     smartGameAssistantSuggestions: List<SmartGameAssistantSuggestion>,
     onApplySmartGameAssistant: (SmartGameAssistantSuggestion) -> Unit,
+    aiProfileProposal: AiProfileProposal?,
+    canRollbackAiProfileProposal: Boolean,
+    onApplyAiProfileProposal: () -> Unit,
+    onRollbackAiProfileProposal: () -> Unit,
     optimizationObservations: List<OptimizationObservation>,
     onClearOptimizationMemory: () -> Unit,
     performanceHistory: List<PerformanceEvent>,
@@ -221,6 +226,14 @@ internal fun HomeScreen(
             SmartGameAssistantCard(
                 suggestions = smartGameAssistantSuggestions,
                 onApply = onApplySmartGameAssistant
+            )
+        }
+        item {
+            AiProfileBuilderCard(
+                proposal = aiProfileProposal,
+                canRollback = canRollbackAiProfileProposal,
+                onApply = onApplyAiProfileProposal,
+                onRollback = onRollbackAiProfileProposal
             )
         }
         item {
