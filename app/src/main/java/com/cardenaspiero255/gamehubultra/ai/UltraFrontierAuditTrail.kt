@@ -6,6 +6,7 @@ enum class UltraFrontierAuditEvent {
     RESEARCH_ATTEMPT,
     RETRY,
     ESCALATE_RESEARCH,
+    ENSEMBLE_COMPARE,
     ACCEPT,
     FALLBACK_LOCAL,
     ABSTAIN,
