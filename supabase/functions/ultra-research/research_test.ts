@@ -7986,7 +7986,9 @@ Deno.test("basic algorithm knowledge never drifts to a specific algorithm subtyp
     throw new Error("generic algorithm definition must not drift to Dijkstra");
   }
   if (networkCalls !== 0) {
-    throw new Error("basic algorithm knowledge should not require network access");
+    throw new Error(
+      "basic algorithm knowledge should not require network access",
+    );
   }
 });
 
