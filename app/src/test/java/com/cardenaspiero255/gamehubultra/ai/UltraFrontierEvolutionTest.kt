@@ -458,6 +458,31 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun evolutionControllerExposesExecutableTaskGraphForTheChosenLane() {
+        val evolution = UltraFrontierEvolutionController()
+        val query = UltraGeneralQueryRouter.classify(
+            "Compara profundamente dos teléfonos actuales"
+        )
+        val request = UltraFrontierRequest(
+            message = query.originalText,
+            query = query,
+            networkAvailable = true,
+            memoryAvailable = true,
+            telemetryAvailable = true
+        )
+
+        val tasks = evolution.tasks(
+            request = request,
+            lane = UltraFrontierLane.DEEP_RESEARCH
+        )
+
+        assertTrue(tasks.any { it.specialist == UltraFrontierSpecialist.RESEARCH })
+        assertTrue(tasks.any { it.specialist == UltraFrontierSpecialist.SYNTHESIZER })
+        assertTrue(tasks.any { it.specialist == UltraFrontierSpecialist.VERIFIER })
+        assertTrue(tasks.any { it.specialist == UltraFrontierSpecialist.CRITIC })
+    }
+
+    @Test
     fun productionEvolutionUsesVerifiedTemporalKnowledgeBeforeCallingResearchAgain() {
         var calls = 0
         var now = 1_000L
