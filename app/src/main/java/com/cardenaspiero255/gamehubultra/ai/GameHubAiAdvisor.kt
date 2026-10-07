@@ -293,6 +293,50 @@ class GameHubAiAdvisor(
             Regex("""\byou\s*tube\b|\byoutube\b""").containsMatchIn(normalized) ->
                 "YouTube es una plataforma de video en línea donde las personas pueden publicar, ver y compartir videos, transmisiones y otros contenidos audiovisuales."
 
+            normalized.contains("instagram") ->
+                "Instagram es una red social centrada en compartir fotos, videos, historias y mensajes, y permite seguir cuentas y descubrir contenido recomendado."
+
+            normalized.contains("chatgpt") || normalized.contains("chat gpt") ->
+                "ChatGPT es un asistente conversacional de inteligencia artificial de OpenAI basado en modelos de lenguaje. Puede comprender instrucciones y generar texto para responder preguntas, explicar temas, redactar, programar y ayudar con muchas otras tareas."
+
+            normalized.contains("openai") || normalized.contains("open ai") ->
+                "OpenAI es una organización dedicada a investigar y desarrollar sistemas de inteligencia artificial, incluidos modelos capaces de trabajar con lenguaje, imágenes y otras modalidades."
+
+            normalized.contains("whatsapp") || normalized.contains("whats app") ->
+                "WhatsApp es una aplicación de mensajería que permite enviar textos, archivos y mensajes de voz, además de realizar llamadas y videollamadas a través de Internet."
+
+            normalized.contains("discord") ->
+                "Discord es una plataforma de comunicación organizada en servidores y canales que permite conversar por texto, voz y video, y es muy usada por comunidades y grupos de juego."
+
+            normalized.contains("reddit") ->
+                "Reddit es una plataforma de comunidades temáticas donde las personas publican enlaces, textos, imágenes y comentarios que otros usuarios pueden votar y debatir."
+
+            normalized.contains("twitch") ->
+                "Twitch es una plataforma de transmisiones en directo especialmente conocida por videojuegos, aunque también alberga contenido de conversación, música y otras categorías."
+
+            normalized.contains("spotify") ->
+                "Spotify es un servicio de audio en streaming que permite escuchar música, podcasts y otros contenidos, con reproducción bajo demanda y recomendaciones personalizadas."
+
+            normalized.contains("netflix") ->
+                "Netflix es un servicio de streaming por suscripción que ofrece películas, series, documentales y otros contenidos audiovisuales a través de Internet."
+
+            normalized.contains("wikipedia") ->
+                "Wikipedia es una enciclopedia en línea colaborativa y de acceso libre cuyos artículos son creados y editados por voluntarios y suelen incluir referencias a fuentes externas."
+
+            normalized.contains("modelo de lenguaje") ||
+                normalized.contains("large language model") ||
+                normalized.contains(" llm") ->
+                "Un modelo de lenguaje es un sistema que aprende patrones del lenguaje a partir de grandes cantidades de texto para estimar, comprender y generar secuencias de palabras. Los modelos de lenguaje grandes o LLM usan muchos parámetros y datos para realizar tareas variadas."
+
+            normalized.contains("computacion en la nube") || normalized.contains("cloud computing") ->
+                "La computación en la nube consiste en usar servidores y servicios informáticos remotos a través de Internet para almacenar datos, ejecutar aplicaciones o disponer de capacidad de cómputo bajo demanda."
+
+            normalized.contains("sistema operativo") || normalized.contains("operating system") ->
+                "Un sistema operativo es el software principal que administra el hardware y los recursos de un dispositivo y ofrece servicios básicos para que las aplicaciones puedan ejecutarse."
+
+            normalized.contains("internet") ->
+                "Internet es una red mundial de redes informáticas interconectadas que usan protocolos comunes para intercambiar datos y ofrecer servicios como la Web, mensajería, streaming y comunicaciones."
+
             Regex("""\bpatogenos?\b|\bpathogens?\b""").containsMatchIn(normalized) ->
                 "Un patógeno es un agente biológico capaz de causar enfermedad, como ciertos virus, bacterias, hongos, parásitos u otros agentes infecciosos."
 
