@@ -128,14 +128,21 @@ class GameHubViewModel(
         }
     }
 
+    suspend fun persistGameProfile(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        val current = repository.gameProfileConfigFlow(packageName).first()
+            ?: GameProfileConfig()
+        repository.saveGameProfileConfig(
+            packageName,
+            current.copy(performanceProfile = profile)
+        )
+    }
+
     fun selectGameProfile(packageName: String, profile: PerformanceProfile) {
         viewModelScope.launch {
-            val current = repository.gameProfileConfigFlow(packageName).first()
-                ?: GameProfileConfig()
-            repository.saveGameProfileConfig(
-                packageName,
-                current.copy(performanceProfile = profile)
-            )
+            persistGameProfile(packageName, profile)
         }
     }
 
