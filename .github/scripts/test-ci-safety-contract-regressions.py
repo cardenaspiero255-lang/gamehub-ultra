@@ -437,7 +437,7 @@ def scan_full_quality_history_for_retry(android: str, coverage: str):
 
 def hide_connected_validation_inside_echo(android: str, coverage: str):
     """Replace the real connected Gradle invocation with inert echoed text."""
-    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
+    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --max-workers=8 \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
 """
     replacement = """          echo 'gradle :app:connectedDebugAndroidTest --build-cache --configuration-cache --configuration-cache-problems=fail --stacktrace'
 """
@@ -448,10 +448,10 @@ def hide_connected_validation_inside_echo(android: str, coverage: str):
 
 def move_connected_cache_flags_to_dry_run(android: str, coverage: str):
     """Keep cache flags only on a dry-run while weakening the real device test."""
-    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
+    needle = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --max-workers=8 \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --stacktrace
 """
-    replacement = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --dry-run \\\n            --stacktrace
-          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --stacktrace
+    replacement = """          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --max-workers=8 \\\n            --configuration-cache \\\n            --configuration-cache-problems=fail \\\n            --dry-run \\\n            --stacktrace
+          gradle :app:connectedDebugAndroidTest \\\n            --build-cache \\\n            --max-workers=8 \\\n            --stacktrace
 """
     if needle not in android:
         raise SystemExit("Fixture drift: connected validation invocation not found")
