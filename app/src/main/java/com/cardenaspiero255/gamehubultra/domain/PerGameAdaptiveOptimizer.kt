@@ -13,7 +13,8 @@ data class AdaptiveTrendSample(
     val latencyMs: Int?,
     val thermalPrediction: ThermalPrediction? = null,
     val batteryConstrained: Boolean = false,
-    val batteryConstraintReason: String? = null
+    val batteryConstraintReason: String? = null,
+    val batteryCharging: Boolean? = null
 )
 
 data class PerGameAdaptiveDecision(
@@ -293,7 +294,10 @@ class PerGameAdaptiveOptimizer(
             latest.thermalPrediction?.allowPreventiveSignal == true ||
                 latest.thermalStatus?.let { it >= 3 } == true ||
                 latest.batteryConstrained ||
-                latest.batteryPercent?.let { it <= 15 } == true ||
+                (
+                    latest.batteryCharging != true &&
+                        latest.batteryPercent?.let { it <= 15 } == true
+                    ) ||
                 latest.memoryUsedPercent?.let { it >= 88 } == true ||
                 latest.latencyMs?.let { it >= 120 } == true ||
                 refreshTrend < -15f ||
@@ -381,7 +385,10 @@ class PerGameAdaptiveOptimizer(
             signals += latest.batteryConstraintReason
                 ?.takeIf(String::isNotBlank)
                 ?: "restricción de batería"
-        } else if (latest.batteryPercent?.let { it <= 15 } == true) {
+        } else if (
+            latest.batteryCharging != true &&
+            latest.batteryPercent?.let { it <= 15 } == true
+        ) {
             signals += "batería crítica"
         }
         if (trend(samples.mapNotNull { it.refreshRateHz }) < -15f) signals += "refresco"
