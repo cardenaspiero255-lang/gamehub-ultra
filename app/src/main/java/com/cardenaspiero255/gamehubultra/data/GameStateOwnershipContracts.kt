@@ -28,9 +28,7 @@ interface GameSelectionStateRepository {
     suspend fun saveAdaptiveProfileForGame(
         packageName: String,
         profile: PerformanceProfile
-    ) {
-        saveProfileForGame(packageName, profile)
-    }
+    )
 }
 
 class AdaptiveAwareGameSelectionStateRepository(
