@@ -14,7 +14,6 @@ import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.persistence.SharedPreferencesUltraResearchPersistentStore
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
 import com.cardenaspiero255.gamehubultra.session.installedGameVersionKey
-import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePersistedState
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.data.PerGameAdaptiveStatePreferencesStore
 import com.cardenaspiero255.gamehubultra.data.AdaptiveAwareGameSelectionStateRepository
@@ -173,15 +172,9 @@ internal object GameHubProductionComposition {
             delegate = delegate,
             onExplicitGameProfileSelection = { packageName, profile ->
                 val version = installedGameVersionKey(appContext, packageName) ?: "unknown"
-                adaptiveStore.write(
-                    AdaptiveGameKey(packageName, version),
-                    PerGameAdaptivePersistedState(
-                        profile = profile,
-                        candidate = null,
-                        confirmations = 0,
-                        lastChangeMillis = null,
-                        recoveryProfile = null
-                    )
+                adaptiveStore.recordExplicitProfileSelection(
+                    key = AdaptiveGameKey(packageName, version),
+                    profile = profile
                 )
             }
         )
