@@ -265,6 +265,13 @@ def main() -> None:
         ),
     )
     reject_mutation(
+        "smoke physical concurrency raised",
+        smoke_replace=(
+            "      max-parallel: 4\n",
+            "      max-parallel: 8\n",
+        ),
+    )
+    reject_mutation(
         "smoke logical shard count reduced",
         smoke_replace=(
             '      SMOKE_SHARD_COUNT: "64"\n',
@@ -276,6 +283,13 @@ def main() -> None:
         smoke_replace=(
             "          logical_shards_per_runner = 8\n",
             "          logical_shards_per_runner = 4\n",
+        ),
+    )
+    reject_mutation(
+        "Android test physical concurrency raised",
+        android_replace=(
+            "      max-parallel: 4\n",
+            "      max-parallel: 8\n",
         ),
     )
     reject_mutation(
@@ -304,6 +318,13 @@ def main() -> None:
         android_replace=(
             '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "false"\n',
             '      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "true"\n',
+        ),
+    )
+    reject_mutation(
+        "coverage physical concurrency raised",
+        coverage_replace=(
+            "      max-parallel: 4\n",
+            "      max-parallel: 8\n",
         ),
     )
     reject_mutation(
