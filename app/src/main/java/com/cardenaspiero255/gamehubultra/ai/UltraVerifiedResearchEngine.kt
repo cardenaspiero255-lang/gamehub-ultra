@@ -270,10 +270,21 @@ class UltraVerifiedResearchEngine(
             )
         }
 
+        val partitionedProviders = healthyProviders
+            .drop(request.researchProviderOffset)
+        if (partitionedProviders.isEmpty()) {
+            return abstention(
+                timedOut = false,
+                fallbackUsed = false,
+                reasonCode = "PROVIDER_PARTITION_EMPTY",
+                retryable = false
+            )
+        }
+
         val providerBudget = request.researchProviderBudget
-            ?.coerceAtMost(healthyProviders.size)
-            ?: healthyProviders.size
-        val activeProviders = healthyProviders.take(providerBudget)
+            ?.coerceAtMost(partitionedProviders.size)
+            ?: partitionedProviders.size
+        val activeProviders = partitionedProviders.take(providerBudget)
         val requestExecutor = Executors.newFixedThreadPool(
             activeProviders.size.coerceIn(1, 4)
         )
@@ -759,6 +770,8 @@ class UltraVerifiedResearchEngine(
                     "El servicio de consulta todavía no está configurado para esa búsqueda."
                 reasonCode == "PROVIDERS_COOLDOWN" ->
                     "Las fuentes disponibles están temporalmente en recuperación tras fallos repetidos. Inténtalo de nuevo en unos segundos."
+                reasonCode == "PROVIDER_PARTITION_EMPTY" ->
+                    "No quedan fuentes independientes en esta rama de investigación."
                 sources.isEmpty() ->
                     "No encontré fuentes suficientes para confirmar ese dato."
                 else ->
@@ -985,7 +998,12 @@ class UltraVerifiedResearchEngine(
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
             request.verificationMode.name + ":" +
-            (if (request.requiresFreshData) "fresh" else "stable") + ":" +
+            (if (request.requiresFreshData) "fresh" else "stable") +
+            (if (request.researchProviderOffset > 0) {
+                ":partition=" + request.researchProviderOffset
+            } else {
+                ""
+            }) + ":" +
             request.originalText
                 .lowercase(Locale.ROOT)
                 .replace(Regex("""\s+"""), " ")
