@@ -86,6 +86,9 @@ data class UltraFrontierPolicy(
     val deepSourceBudget: Int = 10,
     val verifiedResearchPassBudget: Int = 2,
     val deepResearchPassBudget: Int = 3,
+    val researchRetrySourceBudgetStep: Int = 2,
+    val minimumVerifiedSources: Int = 1,
+    val minimumDeepSources: Int = 2,
     val maximumPlanSteps: Int = 12,
     val alwaysCritiqueFinalAnswer: Boolean = true,
     val requireConfirmationForMutations: Boolean = true
@@ -96,6 +99,11 @@ data class UltraFrontierPolicy(
         require(deepSourceBudget >= verifiedSourceBudget)
         require(verifiedResearchPassBudget >= 1)
         require(deepResearchPassBudget >= verifiedResearchPassBudget)
+        require(researchRetrySourceBudgetStep >= 0)
+        require(minimumVerifiedSources >= 1)
+        require(minimumDeepSources >= minimumVerifiedSources)
+        require(minimumVerifiedSources <= verifiedSourceBudget)
+        require(minimumDeepSources <= deepSourceBudget)
         require(maximumPlanSteps >= 4)
     }
 }
@@ -105,6 +113,9 @@ data class UltraFrontierPlan(
     val steps: List<UltraFrontierStep>,
     val fallback: UltraFrontierFallback,
     val sourceBudget: Int,
+    val maxSourceBudget: Int,
+    val sourceBudgetStep: Int,
+    val minimumDistinctSources: Int,
     val researchPassBudget: Int,
     val requiresFreshResearch: Boolean,
     val requiresUserConfirmation: Boolean,
@@ -114,6 +125,9 @@ data class UltraFrontierPlan(
     init {
         require(steps.isNotEmpty()) { "Frontier plan must contain at least one step." }
         require(sourceBudget >= 0)
+        require(maxSourceBudget >= sourceBudget)
+        require(sourceBudgetStep >= 0)
+        require(minimumDistinctSources >= 0)
         require(researchPassBudget >= 0)
         if (lane == UltraFrontierLane.BLOCKED) {
             require(!blockedReason.isNullOrBlank()) {
@@ -278,6 +292,21 @@ class UltraFrontierOrchestrator(
             UltraFrontierLane.VERIFIED_RESEARCH -> policy.verifiedResearchPassBudget
             else -> 0
         }
+        val maxSourceBudget = when (lane) {
+            UltraFrontierLane.VERIFIED_RESEARCH,
+            UltraFrontierLane.DEEP_RESEARCH -> policy.deepSourceBudget
+            else -> sourceBudget
+        }
+        val sourceBudgetStep = when (lane) {
+            UltraFrontierLane.VERIFIED_RESEARCH,
+            UltraFrontierLane.DEEP_RESEARCH -> policy.researchRetrySourceBudgetStep
+            else -> 0
+        }
+        val minimumDistinctSources = when (lane) {
+            UltraFrontierLane.VERIFIED_RESEARCH -> policy.minimumVerifiedSources
+            UltraFrontierLane.DEEP_RESEARCH -> policy.minimumDeepSources
+            else -> 0
+        }
         val fallback = when {
             lane == UltraFrontierLane.VERIFIED_RESEARCH ||
                 lane == UltraFrontierLane.DEEP_RESEARCH ->
@@ -295,6 +324,9 @@ class UltraFrontierOrchestrator(
             steps = steps,
             fallback = fallback,
             sourceBudget = sourceBudget,
+            maxSourceBudget = maxSourceBudget,
+            sourceBudgetStep = sourceBudgetStep,
+            minimumDistinctSources = minimumDistinctSources,
             researchPassBudget = researchPassBudget,
             requiresFreshResearch = query.requiresFreshData,
             requiresUserConfirmation = false,
@@ -354,6 +386,9 @@ class UltraFrontierOrchestrator(
             steps = steps,
             fallback = UltraFrontierFallback.NONE,
             sourceBudget = 0,
+            maxSourceBudget = 0,
+            sourceBudgetStep = 0,
+            minimumDistinctSources = 0,
             researchPassBudget = 0,
             requiresFreshResearch = false,
             requiresUserConfirmation = confirmationRequired,
@@ -394,6 +429,9 @@ class UltraFrontierOrchestrator(
             steps = steps,
             fallback = UltraFrontierFallback.ABSTAIN,
             sourceBudget = policy.verifiedSourceBudget,
+            maxSourceBudget = policy.deepSourceBudget,
+            sourceBudgetStep = 0,
+            minimumDistinctSources = policy.minimumVerifiedSources,
             researchPassBudget = 0,
             requiresFreshResearch = request.query.requiresFreshData,
             requiresUserConfirmation = false,
@@ -435,6 +473,7 @@ data class UltraFrontierCandidate(
     val confidence: UltraAnswerConfidence?,
     val sources: List<String>,
     val abstained: Boolean,
+    val retryable: Boolean = false,
     val attempt: Int = 1
 ) {
     init {
@@ -480,13 +519,10 @@ class UltraFrontierCritic {
             val evidenceInsufficient =
                 !candidate.verified ||
                     candidate.confidence == UltraAnswerConfidence.LOW ||
-                    distinctSources == 0 ||
-                    (
-                        plan.lane == UltraFrontierLane.DEEP_RESEARCH &&
-                            distinctSources < MIN_DEEP_RESEARCH_SOURCES
-                    )
+                    distinctSources < plan.minimumDistinctSources
             if (weak || evidenceInsufficient) {
                 return if (
+                    candidate.retryable &&
                     candidate.attempt < plan.researchPassBudget &&
                     plan.researchPassBudget > 1
                 ) {
@@ -520,7 +556,6 @@ class UltraFrontierCritic {
     }
 
     private companion object {
-        const val MIN_DEEP_RESEARCH_SOURCES = 2
         val GENERIC_FAILURE_MARKERS = listOf(
             "no pude verificarlo con suficiente confianza",
             "no pudo verificarlo con suficiente confianza",
