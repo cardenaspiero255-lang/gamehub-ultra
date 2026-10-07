@@ -8054,3 +8054,51 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test("V20 weather falls back to wttr when Open-Meteo and MET Norway are unavailable", async () => {
+  let wttrCalled = false;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "api.open-meteo.com") {
+        return new Response("unavailable", { status: 503 });
+      }
+      if (url.hostname === "api.met.no") {
+        return new Response("unavailable", { status: 503 });
+      }
+      if (url.hostname === "wttr.in") {
+        wttrCalled = true;
+        return jsonResponse({
+          current_condition: [{
+            temp_C: "18",
+            FeelsLikeC: "17",
+            weatherDesc: [{ value: "Partly cloudy" }],
+            localObsDateTime: "2026-10-07 00:00 AM",
+          }],
+        });
+      }
+      throw new Error("unexpected URL " + url);
+    },
+    env: () => undefined,
+    sleep: () => Promise.resolve(),
+    random: () => 0,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, clima en Requínoa",
+    deps,
+    "",
+    "CURRENT_DATA",
+  );
+
+  if (!wttrCalled) throw new Error("expected wttr V20 weather fallback");
+  if (result.abstained) throw new Error("expected live weather fallback answer");
+  if (!result.displayText?.includes("18")) {
+    throw new Error("expected wttr temperature in answer");
+  }
+  if (!result.sourceIds?.some((source) => source.includes("wttr.in"))) {
+    throw new Error("expected wttr source evidence");
+  }
+});
