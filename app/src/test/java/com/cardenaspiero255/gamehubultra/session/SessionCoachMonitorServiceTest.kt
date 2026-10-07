@@ -3,6 +3,8 @@ package com.cardenaspiero255.gamehubultra.session
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.AppOpsManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.app.Service
 import android.content.ComponentName
 import android.content.Context
@@ -24,6 +26,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowUsageStatsManager
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -704,6 +707,70 @@ class SessionCoachMonitorServiceTest {
                 targetBackgroundAt = Long.MIN_VALUE,
                 previousPresence = SessionCoachGamePresence.UNKNOWN,
                 targetPackage = "game.a"
+            )
+        )
+    }
+
+    @Test
+    fun presenceObservationConsumesForegroundAndBackgroundUsageEvents() {
+        val appOps = context.getSystemService(AppOpsManager::class.java)
+        shadowOf(appOps).setMode(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName,
+            AppOpsManager.MODE_ALLOWED
+        )
+        val usage = context.getSystemService(UsageStatsManager::class.java)
+        val shadowUsage = shadowOf(usage)
+        shadowUsage.addEvent(
+            ShadowUsageStatsManager.EventBuilder.buildEvent()
+                .setPackage("game.a")
+                .setTimeStamp(100_000L)
+                .setEventType(UsageEvents.Event.ACTIVITY_RESUMED)
+                .build()
+        )
+        shadowUsage.addEvent(
+            ShadowUsageStatsManager.EventBuilder.buildEvent()
+                .setPackage("game.a")
+                .setTimeStamp(110_000L)
+                .setEventType(UsageEvents.Event.ACTIVITY_PAUSED)
+                .build()
+        )
+        shadowUsage.addEvent(
+            ShadowUsageStatsManager.EventBuilder.buildEvent()
+                .setPackage("other.game")
+                .setTimeStamp(115_000L)
+                .setEventType(UsageEvents.Event.ACTIVITY_RESUMED)
+                .build()
+        )
+
+        assertEquals(
+            SessionCoachGamePresence.INACTIVE,
+            SessionCoachGamePresenceDetector.observe(
+                context = context,
+                packageName = "game.a",
+                nowMillis = 120_000L
+            )
+        )
+    }
+
+    @Test
+    @Config(sdk = [28])
+    fun legacyUsageAccessCheckUsesPreQAppOpsPath() {
+        val appOps = context.getSystemService(AppOpsManager::class.java)
+        shadowOf(appOps).setMode(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName,
+            AppOpsManager.MODE_IGNORED
+        )
+
+        assertEquals(
+            SessionCoachGamePresence.UNKNOWN,
+            SessionCoachGamePresenceDetector.observe(
+                context = context,
+                packageName = "game.a",
+                nowMillis = 120_000L
             )
         )
     }
