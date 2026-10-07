@@ -129,6 +129,14 @@ def _looks_executable_source_line(line: str) -> bool:
         stripped,
     ):
         return False
+    if re.match(r"^\)\s*\{\s*[^{}]*->\s*$", stripped):
+        return False
+    if re.fullmatch(
+        r"get\(\)\s*=\s*(?:[A-Za-z_][A-Za-z0-9_.]*|true|false|null|"
+        r"[-+]?\d+(?:\.\d+)?(?:[fFdDlL])?)",
+        stripped,
+    ):
+        return False
     if re.match(r"^\"(?:[^\"\\]|\\.)*\"\s*(?:\+\s*)?,?$", stripped):
         return False
     if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+,?$", stripped):
@@ -226,6 +234,126 @@ def _multiline_const_initializer_lines(source_lines: list[str]) -> set[int]:
     return structural
 
 
+
+def _previous_nonblank(source_lines: list[str], index: int) -> str:
+    for cursor in range(index - 1, -1, -1):
+        stripped = source_lines[cursor].strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def _next_nonblank(source_lines: list[str], index: int) -> str:
+    for cursor in range(index + 1, len(source_lines)):
+        stripped = source_lines[cursor].strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def _inline_comparator_lambda_lines(source_lines: list[str]) -> set[int]:
+    """Kotlin inline comparator lambdas can be absent from JaCoCo line tables."""
+    structural: set[int] = set()
+    inside = False
+    for number, line in enumerate(source_lines, start=1):
+        stripped = line.strip()
+        if not inside and re.search(
+            r"\bcompareBy(?:Descending)?(?:<[^>]+>)?\s*\{\s*$",
+            stripped,
+        ):
+            inside = True
+            structural.add(number)
+            continue
+        if inside:
+            structural.add(number)
+            if "}" in stripped:
+                inside = False
+    return structural
+
+
+def _multiline_expression_continuation_lines(
+    source_lines: list[str],
+) -> set[int]:
+    """Recognize non-call Kotlin continuation tokens JaCoCo maps to neighbors."""
+    structural: set[int] = set()
+    reference = re.compile(
+        r"^[A-Za-z_][A-Za-z0-9_]*"
+        r"(?:\[[A-Za-z_][A-Za-z0-9_.]*\])?"
+        r"(?:\.[A-Za-z_][A-Za-z0-9_]*"
+        r"(?:\[[A-Za-z_][A-Za-z0-9_.]*\])?)*,?$"
+    )
+    for index, line in enumerate(source_lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(".") and re.fullmatch(
+            r"\.[A-Za-z_][A-Za-z0-9_]*(?:\([^)]*\))?,?",
+            stripped,
+        ):
+            structural.add(index + 1)
+            continue
+        if not reference.fullmatch(stripped):
+            continue
+        previous = _previous_nonblank(source_lines, index)
+        following = _next_nonblank(source_lines, index)
+        if (
+            previous.endswith(("(", ",", "+", "-", "*", "/", "%", "="))
+            or following.startswith(".")
+        ):
+            structural.add(index + 1)
+    return structural
+
+
+def _compose_dispose_synthetic_call_lines(
+    source_lines: list[str],
+) -> set[int]:
+    """Compose onDispose bodies are compiled into synthetic callback classes."""
+    structural: set[int] = set()
+    inside = False
+    depth = 0
+    simple_call = re.compile(
+        r"^[A-Za-z_][A-Za-z0-9_.]*\.(?:clear|close|dispose)\(\)\s*$"
+    )
+    for number, line in enumerate(source_lines, start=1):
+        stripped = line.strip()
+        if not inside and re.fullmatch(r"onDispose\s*\{", stripped):
+            inside = True
+            depth = 1
+            continue
+        if not inside:
+            continue
+        depth += stripped.count("{") - stripped.count("}")
+        if simple_call.fullmatch(stripped):
+            structural.add(number)
+        if depth <= 0:
+            inside = False
+    return structural
+
+
+def _finally_synthetic_cleanup_lines(source_lines: list[str]) -> set[int]:
+    """Kotlin may duplicate finally cleanup bytecode without a stable line entry."""
+    structural: set[int] = set()
+    inside = False
+    depth = 0
+    shutdown = re.compile(
+        r"^[A-Za-z_][A-Za-z0-9_.]*\.shutdownNow\(\)\s*$"
+    )
+    for number, line in enumerate(source_lines, start=1):
+        stripped = line.strip()
+        if not inside and re.fullmatch(r"\}?\s*finally\s*\{", stripped):
+            inside = True
+            depth = 1
+            continue
+        if not inside:
+            continue
+        depth += stripped.count("{") - stripped.count("}")
+        if shutdown.fullmatch(stripped):
+            structural.add(number)
+        if depth <= 0:
+            inside = False
+    return structural
+
+
 def calculate_patch_line_coverage(
     report: ET.Element,
     added_lines: dict[str, set[int]],
@@ -243,6 +371,18 @@ def calculate_patch_line_coverage(
         source = (source_text_by_path or {}).get(path, "").splitlines()
         signature_lines = _multiline_function_type_signature_lines(source)
         const_initializer_lines = _multiline_const_initializer_lines(source)
+        inline_comparator_lines = _inline_comparator_lambda_lines(source)
+        continuation_lines = _multiline_expression_continuation_lines(source)
+        compose_dispose_lines = _compose_dispose_synthetic_call_lines(source)
+        finally_cleanup_lines = _finally_synthetic_cleanup_lines(source)
+        structural_lines = (
+            signature_lines
+            | const_initializer_lines
+            | inline_comparator_lines
+            | continuation_lines
+            | compose_dispose_lines
+            | finally_cleanup_lines
+        )
         source_lines = report_by_path.get(path)
         if source_lines is None:
             if line_numbers:
@@ -260,8 +400,7 @@ def calculate_patch_line_coverage(
                     )
                     if (
                         _looks_executable_source_line(source_line)
-                        and number not in signature_lines
-                        and number not in const_initializer_lines
+                        and number not in structural_lines
                     ):
                         unmapped.append(f"{path}:{number}")
                 continue
