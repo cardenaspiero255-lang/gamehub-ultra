@@ -36,11 +36,15 @@ private data class UltraFrontierRetryProgress(
 
 class UltraFrontierExecutionEngine(
     private val coordinator: UltraQueryExecutionCoordinator,
-    private val frontier: UltraFrontierOrchestrator = UltraFrontierOrchestrator(),
+    private val evolution: UltraFrontierEvolutionController =
+        UltraFrontierEvolutionController(),
+    private val frontier: UltraFrontierOrchestrator =
+        UltraFrontierOrchestrator(evolution = evolution),
     private val critic: UltraFrontierCritic = UltraFrontierCritic(),
     private val networkAvailable: () -> Boolean = { true },
     private val auditTrail: UltraFrontierAuditTrail = UltraFrontierAuditTrail(),
-    private val nanoTime: () -> Long = System::nanoTime
+    private val nanoTime: () -> Long = System::nanoTime,
+    private val nowMillis: () -> Long = System::currentTimeMillis
 ) {
     fun answer(
         request: UltraGeneralQueryRequest,
@@ -68,9 +72,14 @@ class UltraFrontierExecutionEngine(
                 event = UltraFrontierAuditEvent.ABSTAIN,
                 reasonCode = "FRONTIER_NETWORK_REQUIRED"
             )
-            return networkAbstention(
-                message = requireNotNull(plan.blockedReason),
-                reasonCode = "FRONTIER_NETWORK_REQUIRED"
+            return complete(
+                request = request,
+                plan = plan,
+                answer = networkAbstention(
+                    message = requireNotNull(plan.blockedReason),
+                    reasonCode = "FRONTIER_NETWORK_REQUIRED"
+                ),
+                executionStartedNanos = executionStartedNanos
             )
         }
 
@@ -105,7 +114,12 @@ class UltraFrontierExecutionEngine(
                             "LOCAL"
                         }
                     )
-                    return answer
+                    return complete(
+                        request = request,
+                        plan = plan,
+                        answer = answer,
+                        executionStartedNanos = executionStartedNanos
+                    )
                 }
 
                 UltraFrontierVerdict.FALLBACK_LOCAL -> {
@@ -119,13 +133,18 @@ class UltraFrontierExecutionEngine(
                             attempt = attempt,
                             reasonCode = "FRONTIER_LOCAL_FALLBACK"
                         )
-                        return UltraQueryExecutionAnswer(
-                            message = local,
-                            verified = false,
-                            fallbackUsed = true,
-                            abstained = false,
-                            reasonCode = "FRONTIER_LOCAL_FALLBACK",
-                            stage = "frontier"
+                        return complete(
+                            request = request,
+                            plan = plan,
+                            answer = UltraQueryExecutionAnswer(
+                                message = local,
+                                verified = false,
+                                fallbackUsed = true,
+                                abstained = false,
+                                reasonCode = "FRONTIER_LOCAL_FALLBACK",
+                                stage = "frontier"
+                            ),
+                            executionStartedNanos = executionStartedNanos
                         )
                     }
                     if (
@@ -139,6 +158,14 @@ class UltraFrontierExecutionEngine(
                             attempt = attempt,
                             reasonCode = "FRONTIER_LOCAL_UNANSWERABLE"
                         )
+                        recordEvolutionOutcome(
+                            request = request,
+                            plan = plan,
+                            answer = answer.asSafeAbstention(
+                                "FRONTIER_LOCAL_UNANSWERABLE"
+                            ),
+                            executionStartedNanos = executionStartedNanos
+                        )
                         return answer(
                             request = request.escalatedResearchRequest(),
                             localChat = { null }
@@ -151,7 +178,12 @@ class UltraFrontierExecutionEngine(
                         attempt = attempt,
                         reasonCode = answer.reasonCode ?: "LOCAL_UNAVAILABLE"
                     )
-                    return answer.asSafeAbstention()
+                    return complete(
+                        request = request,
+                        plan = plan,
+                        answer = answer.asSafeAbstention(),
+                        executionStartedNanos = executionStartedNanos
+                    )
                 }
 
                 UltraFrontierVerdict.RETRY_RESEARCH -> {
@@ -163,7 +195,14 @@ class UltraFrontierExecutionEngine(
                             attempt = attempt,
                             reasonCode = answer.reasonCode ?: "FRONTIER_BUDGET_EXHAUSTED"
                         )
-                        return answer.asSafeAbstention("FRONTIER_BUDGET_EXHAUSTED")
+                        return complete(
+                            request = request,
+                            plan = plan,
+                            answer = answer.asSafeAbstention(
+                                "FRONTIER_BUDGET_EXHAUSTED"
+                            ),
+                            executionStartedNanos = executionStartedNanos
+                        )
                     }
 
                     val progress = answer.retryProgress()
@@ -179,7 +218,14 @@ class UltraFrontierExecutionEngine(
                             attempt = attempt,
                             reasonCode = "FRONTIER_NO_PROGRESS"
                         )
-                        return answer.asSafeAbstention("FRONTIER_NO_PROGRESS")
+                        return complete(
+                            request = request,
+                            plan = plan,
+                            answer = answer.asSafeAbstention(
+                                "FRONTIER_NO_PROGRESS"
+                            ),
+                            executionStartedNanos = executionStartedNanos
+                        )
                     }
                     previousRetryProgress = progress
 
@@ -191,11 +237,16 @@ class UltraFrontierExecutionEngine(
                             attempt = attempt,
                             reasonCode = "FRONTIER_NETWORK_LOST"
                         )
-                        return networkAbstention(
-                            message =
-                                "Perdí la conexión antes de poder completar la verificación. " +
-                                    "No voy a usar datos locales potencialmente desactualizados.",
-                            reasonCode = "FRONTIER_NETWORK_LOST"
+                        return complete(
+                            request = request,
+                            plan = plan,
+                            answer = networkAbstention(
+                                message =
+                                    "Perdí la conexión antes de poder completar la verificación. " +
+                                        "No voy a usar datos locales potencialmente desactualizados.",
+                                reasonCode = "FRONTIER_NETWORK_LOST"
+                            ),
+                            executionStartedNanos = executionStartedNanos
                         )
                     }
 
@@ -213,8 +264,13 @@ class UltraFrontierExecutionEngine(
                             attempt = attempt,
                             reasonCode = "FRONTIER_TIME_BUDGET_EXHAUSTED"
                         )
-                        return answer.asSafeAbstention(
-                            "FRONTIER_TIME_BUDGET_EXHAUSTED"
+                        return complete(
+                            request = request,
+                            plan = plan,
+                            answer = answer.asSafeAbstention(
+                                "FRONTIER_TIME_BUDGET_EXHAUSTED"
+                            ),
+                            executionStartedNanos = executionStartedNanos
                         )
                     }
 
@@ -253,6 +309,48 @@ class UltraFrontierExecutionEngine(
     }
 
     fun auditSnapshot(): List<UltraFrontierAuditRecord> = auditTrail.snapshot()
+
+    private fun complete(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        answer: UltraQueryExecutionAnswer,
+        executionStartedNanos: Long
+    ): UltraQueryExecutionAnswer {
+        recordEvolutionOutcome(
+            request = request,
+            plan = plan,
+            answer = answer,
+            executionStartedNanos = executionStartedNanos
+        )
+        evolution.rememberVerified(
+            request = request,
+            result = answer,
+            nowMillis = nowMillis()
+        )
+        return answer
+    }
+
+    private fun recordEvolutionOutcome(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        answer: UltraQueryExecutionAnswer,
+        executionStartedNanos: Long
+    ) {
+        val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(
+            (nanoTime() - executionStartedNanos).coerceAtLeast(0L)
+        )
+        evolution.record(
+            UltraFrontierExecutionOutcome(
+                domain = evolution.domain(request),
+                lane = plan.lane,
+                accepted = !answer.abstained,
+                verified = answer.verified,
+                abstained = answer.abstained,
+                latencyMillis = elapsedMillis,
+                reasonCode = answer.reasonCode
+            )
+        )
+    }
 
     private fun UltraGeneralQueryRequest.escalatedResearchRequest():
         UltraGeneralQueryRequest =
