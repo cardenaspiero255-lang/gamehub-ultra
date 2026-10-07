@@ -36,11 +36,19 @@ data class UltraGeneralQueryRequest(
      * configured providers. Frontier supplies a policy-derived value.
      */
     val researchProviderBudget: Int? = null,
+    /**
+     * Zero-based provider offset used by Frontier deep-research branches to
+     * diversify provider sets without changing the public query semantics.
+     */
+    val researchProviderOffset: Int = 0,
     val correlationId: String = UUID.randomUUID().toString()
 ) {
     init {
         require(researchProviderBudget == null || researchProviderBudget >= 1) {
             "Research provider budget must be positive when present."
+        }
+        require(researchProviderOffset >= 0) {
+            "Research provider offset cannot be negative."
         }
     }
 }
