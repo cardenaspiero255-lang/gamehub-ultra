@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import java.util.Locale
+
 /**
  * Policy-driven orchestration layer that coordinates Ultra's existing local intelligence,
  * verified research, memory, telemetry and typed tool boundaries.
@@ -531,6 +533,7 @@ class UltraFrontierCritic {
                 .asSequence()
                 .map(String::trim)
                 .filter(String::isNotBlank)
+                .map { it.lowercase(Locale.ROOT) }
                 .distinct()
                 .count()
             val evidenceInsufficient =
