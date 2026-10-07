@@ -149,4 +149,76 @@ class PerGameAdaptiveOptimizer47Test {
         assertEquals(PerformanceProfile.FRAME_INTERPOLATION, recovered.profile)
     }
 
+    @Test
+    fun pendingConfirmationSurvivesOptimizerRecreation() {
+        val persisted = mutableMapOf<AdaptiveGameKey, PerGameAdaptivePersistedState>()
+        val store = object : PerGameAdaptiveStateStore {
+            override fun read(key: AdaptiveGameKey) = persisted[key]
+            override fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState) {
+                persisted[key] = state
+            }
+        }
+        val key = AdaptiveGameKey("game.a", "1")
+        val hot = listOf(AdaptiveTrendSample(4, 40, 60f, 90, 120))
+
+        val first = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 2,
+            cooldownMillis = 1000,
+            stateStore = store
+        )
+        assertFalse(first.evaluate(key, PerformanceProfile.X4, hot, 0).changed)
+
+        val recreated = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 2,
+            cooldownMillis = 1000,
+            stateStore = store
+        )
+        val second = recreated.evaluate(key, PerformanceProfile.X4, hot, 100)
+
+        assertTrue(second.changed)
+        assertEquals(PerformanceProfile.BALANCED, second.profile)
+    }
+
+    @Test
+    fun ownedRecoveryProfileSurvivesOptimizerRecreation() {
+        val persisted = mutableMapOf<AdaptiveGameKey, PerGameAdaptivePersistedState>()
+        val store = object : PerGameAdaptiveStateStore {
+            override fun read(key: AdaptiveGameKey) = persisted[key]
+            override fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState) {
+                persisted[key] = state
+            }
+        }
+        val key = AdaptiveGameKey("game.a", "1")
+        val hot = listOf(AdaptiveTrendSample(4, 40, 60f, 90, 120))
+        val first = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 1000,
+            stateStore = store
+        )
+        assertEquals(
+            PerformanceProfile.BALANCED,
+            first.evaluate(key, PerformanceProfile.FRAME_INTERPOLATION, hot, 0).profile
+        )
+
+        val stable = listOf(
+            AdaptiveTrendSample(0, 90, 120f, 30, 20),
+            AdaptiveTrendSample(0, 88, 120f, 31, 22),
+            AdaptiveTrendSample(0, 86, 120f, 32, 24)
+        )
+        val recreated = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 1000,
+            stateStore = store
+        )
+        val recovered = recreated.evaluate(
+            key,
+            PerformanceProfile.BALANCED,
+            stable,
+            1500
+        )
+
+        assertTrue(recovered.changed)
+        assertEquals(PerformanceProfile.FRAME_INTERPOLATION, recovered.profile)
+    }
+
 }
