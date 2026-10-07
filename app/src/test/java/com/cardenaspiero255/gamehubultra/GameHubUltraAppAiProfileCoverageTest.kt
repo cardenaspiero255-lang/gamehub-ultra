@@ -121,7 +121,7 @@ class GameHubUltraAppAiProfileCoverageTest {
             override suspend fun clearAll() = Unit
             override suspend fun clearGame(contextKey: OptimizationContextKey) = Unit
         }
-        val app = RuntimeEnvironment.getApplication<Application>()
+        val app: Application = RuntimeEnvironment.getApplication()
         val device = DeviceInfo(
             manufacturer = "test",
             model = "test",
