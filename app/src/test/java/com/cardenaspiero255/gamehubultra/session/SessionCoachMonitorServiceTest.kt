@@ -2,11 +2,14 @@ package com.cardenaspiero255.gamehubultra.session
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.AppOpsManager
 import android.app.Service
 import android.content.ComponentName
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.os.PowerManager
+import android.os.Process
 import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
@@ -613,6 +616,88 @@ class SessionCoachMonitorServiceTest {
         assertEquals(Service.START_NOT_STICKY, stopped)
         assertNull(service.onBind(null))
         controller.destroy()
+    }
+
+    @Test
+    fun presenceResolutionCoversForegroundBackgroundAndUnknownTransitions() {
+        assertEquals(
+            SessionCoachGamePresence.ACTIVE,
+            SessionCoachGamePresenceDetector.resolvePresence(
+                latestForegroundPackage = "game.a",
+                latestForegroundAt = 10L,
+                targetBackgroundAt = Long.MIN_VALUE,
+                previousPresence = SessionCoachGamePresence.UNKNOWN,
+                targetPackage = "game.a"
+            )
+        )
+        assertEquals(
+            SessionCoachGamePresence.INACTIVE,
+            SessionCoachGamePresenceDetector.resolvePresence(
+                latestForegroundPackage = "other.game",
+                latestForegroundAt = 20L,
+                targetBackgroundAt = 10L,
+                previousPresence = SessionCoachGamePresence.ACTIVE,
+                targetPackage = "game.a"
+            )
+        )
+        assertEquals(
+            SessionCoachGamePresence.INACTIVE,
+            SessionCoachGamePresenceDetector.resolvePresence(
+                latestForegroundPackage = null,
+                latestForegroundAt = Long.MIN_VALUE,
+                targetBackgroundAt = 30L,
+                previousPresence = SessionCoachGamePresence.ACTIVE,
+                targetPackage = "game.a"
+            )
+        )
+        assertEquals(
+            SessionCoachGamePresence.UNKNOWN,
+            SessionCoachGamePresenceDetector.resolvePresence(
+                latestForegroundPackage = null,
+                latestForegroundAt = Long.MIN_VALUE,
+                targetBackgroundAt = Long.MIN_VALUE,
+                previousPresence = SessionCoachGamePresence.UNKNOWN,
+                targetPackage = "game.a"
+            )
+        )
+    }
+
+    @Test
+    fun presenceObservationStopsImmediatelyWhenScreenIsNotInteractive() {
+        val power = context.getSystemService(PowerManager::class.java)
+        shadowOf(power).setIsInteractive(false)
+        try {
+            assertEquals(
+                SessionCoachGamePresence.INACTIVE,
+                SessionCoachGamePresenceDetector.observe(
+                    context = context,
+                    packageName = "game.a",
+                    nowMillis = 120_000L
+                )
+            )
+        } finally {
+            shadowOf(power).setIsInteractive(true)
+        }
+    }
+
+    @Test
+    fun presenceObservationReturnsUnknownWithoutUsageAccess() {
+        val appOps = context.getSystemService(AppOpsManager::class.java)
+        shadowOf(appOps).setMode(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            context.packageName,
+            AppOpsManager.MODE_IGNORED
+        )
+
+        assertEquals(
+            SessionCoachGamePresence.UNKNOWN,
+            SessionCoachGamePresenceDetector.observe(
+                context = context,
+                packageName = "game.a",
+                nowMillis = 120_000L
+            )
+        )
     }
 
     @Test

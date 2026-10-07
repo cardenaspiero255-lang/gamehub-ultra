@@ -391,21 +391,24 @@ def remove_release_configuration_cache_reuse_assertion(android: str, coverage: s
 
 
 def duplicate_partial_release_graph(android: str, coverage: str):
-    """Duplicate release/performance work without repeating assembleRelease."""
-    needle = '            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"\n'
+    """Inject duplicate partial release work before the single-pass graph exits."""
+    needle = """            # The executable graph is the cache proof target; post-run metrics
+            # capture its timing without paying for two extra Gradle startups.
+"""
     if needle not in android:
-        raise SystemExit("Fixture drift: release cache assertion not found")
-    duplicate = """            gradle \\\n              :app:bundleRelease \\\n              :app:assembleNonMinifiedRelease \\\n              :baseline-profile:assembleNonMinifiedRelease \\\n              --build-cache \\\n              --parallel \\\n              --configuration-cache \\\n              --configuration-cache-problems=fail \\\n              --stacktrace\n"""
+        raise SystemExit("Fixture drift: single-pass release anchor not found")
+    duplicate = """            gradle \\\n              :app:bundleRelease \\\n              :app:assembleNonMinifiedRelease \\\n              :baseline-profile:assembleNonMinifiedRelease \\\n              --build-cache \\\n              --parallel \\\n              --max-workers=8 \\\n              --configuration-cache \\\n              --configuration-cache-problems=fail \\\n              --stacktrace\n"""
     return android.replace(needle, duplicate + needle, 1), coverage
 
 
-
 def duplicate_full_release_graph_without_configuration_cache(android: str, coverage: str):
-    """Duplicate the full release graph while omitting Configuration Cache flags."""
-    needle = '            grep -Fq "Reusing configuration cache." "$RELEASE_CONFIG_CACHE_LOG"\n'
+    """Inject a second full release graph that drops Configuration Cache."""
+    needle = """            # The executable graph is the cache proof target; post-run metrics
+            # capture its timing without paying for two extra Gradle startups.
+"""
     if needle not in android:
-        raise SystemExit("Fixture drift: release cache assertion not found")
-    duplicate = """            gradle \\\n              :app:assembleRelease \\\n              :app:bundleRelease \\\n              :app:assembleNonMinifiedRelease \\\n              :baseline-profile:assembleNonMinifiedRelease \\\n              --build-cache \\\n              --parallel \\\n              --stacktrace\n"""
+        raise SystemExit("Fixture drift: single-pass release anchor not found")
+    duplicate = """            gradle \\\n              :app:assembleRelease \\\n              :app:bundleRelease \\\n              :app:assembleNonMinifiedRelease \\\n              :baseline-profile:assembleNonMinifiedRelease \\\n              --build-cache \\\n              --parallel \\\n              --max-workers=8 \\\n              --stacktrace\n"""
     return android.replace(needle, duplicate + needle, 1), coverage
 
 
@@ -710,7 +713,7 @@ def main() -> None:
         raise SystemExit("Phase 3 block 4 cut 2: shadow Android metrics lost required build provenance")
 
     # Phase 2 block 6 is enforced by the parsed CI safety contract above.
-    # Mutations prove both the reuse assertion and duplicate partial graphs fail.
+    # Mutations prove duplicate/partial release graphs still fail under the single-pass contract.
 
     print("CI safety contract regression tests passed.")
 
