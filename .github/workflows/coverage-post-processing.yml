@@ -68,6 +68,17 @@ jobs:
           fail_ci_if_error: false
           verbose: false
 
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+
+    steps:
+      - name: Checkout trusted default-branch tooling
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
       - name: Collect CI performance metrics
         env:
           GH_METRICS_TOKEN: ${{ github.token }}
