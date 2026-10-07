@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
+import java.util.concurrent.TimeUnit
+
 /**
  * Executes a planned Frontier query using the existing structured query coordinator.
  *
@@ -37,12 +39,14 @@ class UltraFrontierExecutionEngine(
     private val frontier: UltraFrontierOrchestrator = UltraFrontierOrchestrator(),
     private val critic: UltraFrontierCritic = UltraFrontierCritic(),
     private val networkAvailable: () -> Boolean = { true },
-    private val auditTrail: UltraFrontierAuditTrail = UltraFrontierAuditTrail()
+    private val auditTrail: UltraFrontierAuditTrail = UltraFrontierAuditTrail(),
+    private val nanoTime: () -> Long = System::nanoTime
 ) {
     fun answer(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
     ): UltraQueryExecutionAnswer {
+        val executionStartedNanos = nanoTime()
         val initialNetworkAvailable = networkAvailable()
         val plan = frontier.plan(
             UltraFrontierRequest(
@@ -74,7 +78,12 @@ class UltraFrontierExecutionEngine(
         var previousRetryProgress: UltraFrontierRetryProgress? = null
         recordAttempt(request, plan, attempt)
         var answer = coordinator.answer(
-            request = requestForAttempt(request, plan, attempt),
+            request = requestForAttempt(
+                request = request,
+                plan = plan,
+                attempt = attempt,
+                executionStartedNanos = executionStartedNanos
+            ),
             localChat = localChat
         )
 
@@ -190,6 +199,25 @@ class UltraFrontierExecutionEngine(
                         )
                     }
 
+                    if (
+                        isResearchLane(plan) &&
+                        remainingResearchMillis(
+                            plan = plan,
+                            executionStartedNanos = executionStartedNanos
+                        ) <= 0L
+                    ) {
+                        auditTrail.record(
+                            correlationId = request.correlationId,
+                            lane = plan.lane,
+                            event = UltraFrontierAuditEvent.ABSTAIN,
+                            attempt = attempt,
+                            reasonCode = "FRONTIER_TIME_BUDGET_EXHAUSTED"
+                        )
+                        return answer.asSafeAbstention(
+                            "FRONTIER_TIME_BUDGET_EXHAUSTED"
+                        )
+                    }
+
                     auditTrail.record(
                         correlationId = request.correlationId,
                         lane = plan.lane,
@@ -200,7 +228,12 @@ class UltraFrontierExecutionEngine(
                     attempt += 1
                     recordAttempt(request, plan, attempt)
                     answer = coordinator.answer(
-                        request = requestForAttempt(request, plan, attempt),
+                        request = requestForAttempt(
+                            request = request,
+                            plan = plan,
+                            attempt = attempt,
+                            executionStartedNanos = executionStartedNanos
+                        ),
                         localChat = localChat
                     )
                 }
@@ -233,7 +266,8 @@ class UltraFrontierExecutionEngine(
     private fun requestForAttempt(
         request: UltraGeneralQueryRequest,
         plan: UltraFrontierPlan,
-        attempt: Int
+        attempt: Int,
+        executionStartedNanos: Long
     ): UltraGeneralQueryRequest {
         val budget = if (plan.sourceBudget > 0) {
             (
@@ -243,9 +277,34 @@ class UltraFrontierExecutionEngine(
         } else {
             0
         }
+        val attemptTimeoutMillis = if (isResearchLane(plan)) {
+            remainingResearchMillis(
+                plan = plan,
+                executionStartedNanos = executionStartedNanos
+            )
+                .coerceAtLeast(1L)
+                .coerceAtMost(request.timeoutMillis)
+        } else {
+            request.timeoutMillis
+        }
         return request.copy(
+            timeoutMillis = attemptTimeoutMillis,
             researchProviderBudget = budget.takeIf { it > 0 }
         )
+    }
+
+    private fun remainingResearchMillis(
+        plan: UltraFrontierPlan,
+        executionStartedNanos: Long
+    ): Long {
+        if (!isResearchLane(plan) || plan.researchTimeBudgetMillis <= 0L) {
+            return Long.MAX_VALUE
+        }
+        val elapsedNanos =
+            (nanoTime() - executionStartedNanos).coerceAtLeast(0L)
+        val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(elapsedNanos)
+        return (plan.researchTimeBudgetMillis - elapsedMillis)
+            .coerceAtLeast(0L)
     }
 
     private fun recordAttempt(
