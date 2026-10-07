@@ -60,6 +60,12 @@ class PerGameAdaptiveStatePreferencesStore(
     }
 
 
+    override fun delete(key: AdaptiveGameKey) {
+        preferences.edit()
+            .remove(preferenceKey(key))
+            .apply()
+    }
+
     fun wasSessionHandled(sessionId: String): Boolean =
         sessionId.isNotBlank() &&
             preferences.getString(LAST_HANDLED_SESSION_ID, null) == sessionId
