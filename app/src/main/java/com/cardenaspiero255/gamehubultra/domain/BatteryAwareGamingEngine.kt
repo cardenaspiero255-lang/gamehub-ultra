@@ -56,7 +56,7 @@ class BatteryAwareGamingEngine(
             drainWindow.size >= 2
         ) {
             (lastDrainSample.timestampMillis - firstDrainSample.timestampMillis)
-                .takeIf { it >= policy.minimumDrainWindowMillis }
+                .coerceAtLeast(0L)
         } else {
             null
         }
@@ -69,6 +69,7 @@ class BatteryAwareGamingEngine(
 
         val drainPercentPerHour = if (
             observedDurationMillis != null &&
+            observedDurationMillis >= policy.minimumDrainWindowMillis &&
             observedDropPercent != null &&
             observedDropPercent > 0
         ) {
