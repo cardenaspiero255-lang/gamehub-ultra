@@ -362,6 +362,33 @@ class DashboardTelemetryControllerTest {
         assertEquals(14, latest?.telemetryTrend?.last()?.battery?.percent)
     }
 
+
+    @Test
+    fun dashboardCoachSnapshotPreservesChargingAndPowerSaveState() = runBlocking {
+        val controller = DashboardTelemetryController(
+            adaptiveEvaluator = { unchangedDecision() },
+            latencyProbe = { null },
+            recordPerformanceEvent = {},
+            nowMillis = { 12_000L }
+        )
+
+        val update = controller.sample(
+            diagnostics = diagnostics(
+                batteryPercent = 12,
+                charging = true,
+                powerSaveMode = true
+            ),
+            activeGamePackage = "game.a",
+            sessionId = "session-battery-state",
+            sustainedPerformanceSupported = true,
+            performanceHintsAvailable = true
+        )
+
+        val snapshot = update.coachSamples.single()
+        assertEquals(true, snapshot.batteryCharging)
+        assertEquals(true, snapshot.powerSaveMode)
+    }
+
     private fun unchangedDecision() =
         AdaptiveDecision(
             profile = PerformanceProfile.BALANCED,
@@ -378,7 +405,9 @@ class DashboardTelemetryControllerTest {
         metered: Boolean = false,
         thermalStatus: Int? = 1,
         thermalHeadroom: Float? = 0.2f,
-        batteryPercent: Int? = 80
+        batteryPercent: Int? = 80,
+        charging: Boolean = false,
+        powerSaveMode: Boolean = false
     ) = RuntimeDiagnostics(
         thermal = ThermalTelemetry(
             status = thermalStatus,
@@ -386,8 +415,8 @@ class DashboardTelemetryControllerTest {
         ),
         battery = BatteryRuntimeTelemetry(
             percent = batteryPercent,
-            charging = false,
-            powerSaveMode = false
+            charging = charging,
+            powerSaveMode = powerSaveMode
         ),
         refresh = RefreshTelemetry(
             supportedRefreshRatesHz = setOf(60, 120),
