@@ -15,7 +15,8 @@ data class SessionCoachStoredSession(
     val endedAtMillis: Long?,
     val samples: List<SessionCoachSnapshot>,
     val preSessionMessage: SessionCoachMessage?,
-    val latestObservation: SessionCoachMessage?
+    val latestObservation: SessionCoachMessage?,
+    val gameVersion: String? = null
 )
 
 internal object SessionCoachSnapshotCodec {
@@ -32,12 +33,16 @@ internal object SessionCoachSnapshotCodec {
                 ?.takeIf { it.isFinite() }
                 ?.toString()
                 .orEmpty(),
-            snapshot.latencyMs?.toString().orEmpty()
+            snapshot.latencyMs?.toString().orEmpty(),
+            snapshot.memoryUsedPercent
+                ?.takeIf { it in 0..100 }
+                ?.toString()
+                .orEmpty()
         ).joinToString("|")
 
     fun decode(raw: String): SessionCoachSnapshot? {
         val fields = raw.split("|")
-        if (fields.size != 6) return null
+        if (fields.size !in 6..7) return null
 
         val timestamp = fields[0].toLongOrNull() ?: return null
         val battery = fields[1].takeIf(String::isNotBlank)
@@ -53,6 +58,10 @@ internal object SessionCoachSnapshotCodec {
         val latency = fields[5].takeIf(String::isNotBlank)
             ?.toLongOrNull()
             ?.takeIf { it >= 0L }
+        val memoryUsedPercent = fields.getOrNull(6)
+            ?.takeIf(String::isNotBlank)
+            ?.toIntOrNull()
+            ?.takeIf { it in 0..100 }
 
         return SessionCoachSnapshot(
             timestampMillis = timestamp,
@@ -60,7 +69,8 @@ internal object SessionCoachSnapshotCodec {
             thermalStatus = thermal,
             thermalHeadroom = headroom,
             refreshRateHz = refresh,
-            latencyMs = latency
+            latencyMs = latency,
+            memoryUsedPercent = memoryUsedPercent
         )
     }
 }
@@ -118,7 +128,8 @@ class SessionCoachSessionStore(
     fun beginSession(
         sessionId: String,
         packageName: String,
-        startedAtMillis: Long
+        startedAtMillis: Long,
+        gameVersion: String? = null
     ): Boolean {
         val cleanId = sessionId.trim()
         val cleanPackage = packageName.trim()
@@ -129,6 +140,7 @@ class SessionCoachSessionStore(
         editor
             .putString(ACTIVE_ID, cleanId)
             .putString(ACTIVE_PACKAGE, cleanPackage)
+            .putString(ACTIVE_VERSION, gameVersion?.trim()?.takeIf(String::isNotEmpty))
             .putLong(ACTIVE_STARTED, startedAtMillis.coerceAtLeast(0L))
             .putString(ACTIVE_SAMPLES, "")
             .apply()
@@ -234,7 +246,10 @@ class SessionCoachSessionStore(
             ),
             latestObservation = SessionCoachMessageCodec.decode(
                 preferences.getString(prefix + KEY_LATEST, null)
-            )
+            ),
+            gameVersion = preferences.getString(prefix + KEY_VERSION, null)
+                ?.trim()
+                ?.takeIf(String::isNotEmpty)
         )
     }
 
@@ -246,6 +261,7 @@ class SessionCoachSessionStore(
         editor
             .putString(prefix + KEY_ID, session.sessionId)
             .putString(prefix + KEY_PACKAGE, session.packageName)
+            .putString(prefix + KEY_VERSION, session.gameVersion)
             .putLong(prefix + KEY_STARTED, session.startedAtMillis)
             .putString(
                 prefix + KEY_SAMPLES,
@@ -276,6 +292,7 @@ class SessionCoachSessionStore(
         const val LAST_PREFIX = "last_"
         const val KEY_ID = "id"
         const val KEY_PACKAGE = "package"
+        const val KEY_VERSION = "version"
         const val KEY_STARTED = "started"
         const val KEY_ENDED = "ended"
         const val KEY_SAMPLES = "samples"
@@ -284,6 +301,7 @@ class SessionCoachSessionStore(
 
         const val ACTIVE_ID = ACTIVE_PREFIX + KEY_ID
         const val ACTIVE_PACKAGE = ACTIVE_PREFIX + KEY_PACKAGE
+        const val ACTIVE_VERSION = ACTIVE_PREFIX + KEY_VERSION
         const val ACTIVE_STARTED = ACTIVE_PREFIX + KEY_STARTED
         const val ACTIVE_ENDED = ACTIVE_PREFIX + KEY_ENDED
         const val ACTIVE_SAMPLES = ACTIVE_PREFIX + KEY_SAMPLES
@@ -292,6 +310,7 @@ class SessionCoachSessionStore(
 
         const val LAST_ID = LAST_PREFIX + KEY_ID
         const val LAST_PACKAGE = LAST_PREFIX + KEY_PACKAGE
+        const val LAST_VERSION = LAST_PREFIX + KEY_VERSION
         const val LAST_STARTED = LAST_PREFIX + KEY_STARTED
         const val LAST_ENDED = LAST_PREFIX + KEY_ENDED
         const val LAST_SAMPLES = LAST_PREFIX + KEY_SAMPLES
@@ -304,6 +323,7 @@ class SessionCoachSessionStore(
         val ACTIVE_KEYS = listOf(
             ACTIVE_ID,
             ACTIVE_PACKAGE,
+            ACTIVE_VERSION,
             ACTIVE_STARTED,
             ACTIVE_ENDED,
             ACTIVE_SAMPLES,
@@ -313,6 +333,7 @@ class SessionCoachSessionStore(
         val LAST_KEYS = listOf(
             LAST_ID,
             LAST_PACKAGE,
+            LAST_VERSION,
             LAST_STARTED,
             LAST_ENDED,
             LAST_SAMPLES,

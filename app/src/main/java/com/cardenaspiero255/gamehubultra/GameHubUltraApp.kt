@@ -67,6 +67,8 @@ import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveOptimizer
+import com.cardenaspiero255.gamehubultra.data.PerGameAdaptiveStatePreferencesStore
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceAdvisor
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistant
@@ -132,9 +134,11 @@ internal data class CompletedCoachHydration(
 internal fun buildCompletedCoachHydration(
     completed: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession,
     hydratedSessionId: String?,
-    activeRuntimeRecord: GameSessionRecord?
+    activeRuntimeRecord: GameSessionRecord?,
+    selectionHydrated: Boolean = true
 ): CompletedCoachHydration {
-    val shouldMarkHydrated = completed.sessionId != hydratedSessionId
+    val shouldMarkHydrated =
+        selectionHydrated && completed.sessionId != hydratedSessionId
     return CompletedCoachHydration(
         report = com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.postSession(
             completed.samples
@@ -353,6 +357,12 @@ internal fun GameHubUltraApp(
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
+    val perGameAdaptiveStateStore = remember(context) {
+        PerGameAdaptiveStatePreferencesStore(context)
+    }
+    val perGameAdaptiveOptimizer = remember(perGameAdaptiveStateStore) {
+        PerGameAdaptiveOptimizer(stateStore = perGameAdaptiveStateStore)
+    }
     val adaptiveEngineState = rememberUpdatedState(adaptiveEngine)
     val dashboardTelemetryController = remember(context, viewModel) {
         DashboardTelemetryController(
@@ -557,22 +567,28 @@ internal fun GameHubUltraApp(
     }
 
     fun applyAiProfileProposal() {
+        val proposal = aiProfileProposal ?: return
         applyAiProfileProposalForSelectedGame(
             packageName = selectedGameForMemory,
-            proposal = aiProfileProposal,
+            proposal = proposal,
             save = viewModel::saveGameProfileConfig,
             recordApplied = aiProfileProposalStore::recordApplied,
-            onApplied = { aiProfileRevision += 1 }
+            onApplied = {
+                aiProfileRevision += 1
+            }
         )
     }
 
     fun rollbackAiProfileProposal() {
+        val rollback = aiProfileRollbackState ?: return
         rollbackAiProfileProposalForSelectedGame(
             packageName = selectedGameForMemory,
-            rollback = aiProfileRollbackState,
+            rollback = rollback,
             save = viewModel::saveGameProfileConfig,
             clearRollback = aiProfileProposalStore::clearRollback,
-            onRolledBack = { aiProfileRevision += 1 }
+            onRolledBack = {
+                aiProfileRevision += 1
+            }
         )
     }
 
@@ -601,7 +617,11 @@ internal fun GameHubUltraApp(
         }
     }
 
-    LaunchedEffect(appResumeRefreshToken) {
+    LaunchedEffect(
+        appResumeRefreshToken,
+        uiState.selectedGameHydrated,
+        selectedGameForMemory
+    ) {
         val completed = withContext(Dispatchers.IO) {
             com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
                 .readLastCompletedSession()
@@ -614,10 +634,38 @@ internal fun GameHubUltraApp(
             val hydration = buildCompletedCoachHydration(
                 completed = completed,
                 hydratedSessionId = hydratedCoachSessionId,
-                activeRuntimeRecord = activeRuntimeRecord
+                activeRuntimeRecord = activeRuntimeRecord,
+                selectionHydrated = uiState.selectedGameHydrated
             )
             lastSessionCoachReport = hydration.report
             sessionCoachObservations = hydration.observations
+            runAdaptiveSessionProcessing(
+                process = {
+                    processCompletedAdaptiveSession(
+                        completed = completed,
+                        optimizer = perGameAdaptiveOptimizer,
+                        nowMillis = System.currentTimeMillis(),
+                        wasSessionHandled = {
+                            perGameAdaptiveStateStore.wasSessionHandled(completed.sessionId)
+                        },
+                        resolveActiveProfile = {
+                            viewModel.effectiveProfileForGame(completed.packageName)
+                        },
+                        persistProfile = viewModel::persistGameProfile,
+                        markSessionHandled = {
+                            perGameAdaptiveStateStore.markSessionHandled(completed.sessionId)
+                        },
+                        recordPerformanceEvent = viewModel::persistPerformanceEvent
+                    )
+                },
+                onError = { error ->
+                    android.util.Log.w(
+                        "GameHubUltraApp",
+                        "Adaptive session processing failed; will retry",
+                        error
+                    )
+                }
+            )
             if (hydration.shouldMarkHydrated) {
                 hydratedCoachSessionId = completed.sessionId
             }
@@ -824,13 +872,13 @@ internal fun GameHubUltraApp(
                 smartRecommendation = smartRecommendation,
                 canRevertSmartRecommendation = canRevertSmartRecommendation,
                 onApplySmartRecommendation = {
-                    smartRecommendationRevertTarget = SmartRecommendationActions.apply(selectedGamePackage, uiState.effectiveProfile, smartRecommendation.profile, recordSmartRecommendationFeedback, ::selectProfile, smartRecommendationRevertTarget)
+                    smartRecommendationRevertTarget = SmartRecommendationActions.apply(selectedGamePackage, uiState.effectiveProfile, smartRecommendation.profile, recordSmartRecommendationFeedback, ::selectExternalProfile, smartRecommendationRevertTarget)
                 },
                 onRejectSmartRecommendation = {
                     rejectedSmartRecommendation = SmartRecommendationActions.reject(rejectedSmartRecommendation, smartRecommendation.profile, recordSmartRecommendationFeedback)
                 },
                 onRevertSmartRecommendation = {
-                    smartRecommendationRevertTarget = SmartRecommendationActions.revert(smartRecommendationRevertTarget, selectedGamePackage, uiState.effectiveProfile, recordSmartRecommendationFeedback, ::selectProfile)
+                    smartRecommendationRevertTarget = SmartRecommendationActions.revert(smartRecommendationRevertTarget, selectedGamePackage, uiState.effectiveProfile, recordSmartRecommendationFeedback, ::selectExternalProfile)
                 },
                 smartGameAssistantSuggestions = smartGameAssistantSuggestions,
                 onApplySmartGameAssistant = ::applyExternalSmartGameAssistantSuggestion,

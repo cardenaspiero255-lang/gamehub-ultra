@@ -104,6 +104,10 @@ class GameHubViewModel(
         GameHubUiState()
     )
 
+    suspend fun effectiveProfileForGame(packageName: String): PerformanceProfile =
+        repository.profileForGameFlow(packageName).first()
+            ?: repository.selectedProfileFlow().first()
+
     fun selectGlobalProfile(profile: PerformanceProfile) {
         viewModelScope.launch { repository.saveSelectedProfile(profile) }
     }
@@ -124,14 +128,16 @@ class GameHubViewModel(
         }
     }
 
+    suspend fun persistGameProfile(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        repository.saveAdaptiveProfileForGame(packageName, profile)
+    }
+
     fun selectGameProfile(packageName: String, profile: PerformanceProfile) {
         viewModelScope.launch {
-            val current = repository.gameProfileConfigFlow(packageName).first()
-                ?: GameProfileConfig()
-            repository.saveGameProfileConfig(
-                packageName,
-                current.copy(performanceProfile = profile)
-            )
+            repository.saveProfileForGame(packageName, profile)
         }
     }
 
@@ -252,8 +258,12 @@ class GameHubViewModel(
         viewModelScope.launch { libraryRepository.setManualGame(packageName, manual) }
     }
 
+    suspend fun persistPerformanceEvent(event: PerformanceEvent) {
+        performanceHistoryRepository.appendPerformanceEvent(event)
+    }
+
     fun recordPerformanceEvent(event: PerformanceEvent) {
-        viewModelScope.launch { performanceHistoryRepository.appendPerformanceEvent(event) }
+        viewModelScope.launch { persistPerformanceEvent(event) }
     }
 
     private fun reportVoiceSelectionPersistenceFailure(error: Throwable) {

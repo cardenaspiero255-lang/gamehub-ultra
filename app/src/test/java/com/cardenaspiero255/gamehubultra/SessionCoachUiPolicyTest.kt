@@ -74,6 +74,31 @@ class SessionCoachUiPolicyTest {
     }
 
     @Test
+    fun completedCoachSessionIsNotMarkedHandledBeforeSelectionHydrates() {
+        val completed = stored(
+            sessionId = "coach-cold-start",
+            packageName = "game.a",
+            startedAtMillis = 5_000L
+        )
+
+        val early = buildCompletedCoachHydration(
+            completed = completed,
+            hydratedSessionId = null,
+            activeRuntimeRecord = null,
+            selectionHydrated = false
+        )
+        assertFalse(early.shouldMarkHydrated)
+
+        val ready = buildCompletedCoachHydration(
+            completed = completed,
+            hydratedSessionId = null,
+            activeRuntimeRecord = null,
+            selectionHydrated = true
+        )
+        assertTrue(ready.shouldMarkHydrated)
+    }
+
+    @Test
     fun storedCoachReportWinsOverDashboardFallback() {
         val storedReport = com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.postSession(
             emptyList()

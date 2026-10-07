@@ -13,6 +13,10 @@ import com.cardenaspiero255.gamehubultra.ai.UltraProductionQueryExecutor
 import com.cardenaspiero255.gamehubultra.ai.UltraUnifiedAgentRouter
 import com.cardenaspiero255.gamehubultra.ai.persistence.SharedPreferencesUltraResearchPersistentStore
 import com.cardenaspiero255.gamehubultra.data.GameHubPreferencesRepository
+import com.cardenaspiero255.gamehubultra.session.installedGameVersionKey
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
+import com.cardenaspiero255.gamehubultra.data.PerGameAdaptiveStatePreferencesStore
+import com.cardenaspiero255.gamehubultra.data.AdaptiveAwareGameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameAliasStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSelectionStateRepository
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
@@ -66,6 +70,10 @@ internal object GameHubProductionComposition {
         val appContext = activity.applicationContext
         configureUltraResearchPersistence(appContext)
         val preferencesRepository = GameHubPreferencesRepository(appContext)
+        val selectionRepository = adaptiveAwareSelectionRepository(
+            appContext = appContext,
+            delegate = preferencesRepository
+        )
         val sessionRepository = GameSessionStore(appContext)
         val connectedAccountsRepository = connectedAccountsRepository(appContext)
         val storeLibraryRepository = storeLibraryRepository(appContext)
@@ -80,7 +88,7 @@ internal object GameHubProductionComposition {
         }
         val viewModelDependencyFactory = GameHubViewModelDependencyFactory {
             GameHubViewModelDependencies(
-                selectionRepository = preferencesRepository,
+                selectionRepository = selectionRepository,
                 libraryRepository = preferencesRepository,
                 performanceHistoryRepository = preferencesRepository,
                 sessionRepository = sessionRepository,
@@ -150,7 +158,27 @@ internal object GameHubProductionComposition {
         SharedPreferencesUltraVoicePreferenceRepository(appContext)
 
     fun selectionRepository(appContext: Context): GameSelectionStateRepository =
-        GameHubPreferencesRepository(appContext)
+        adaptiveAwareSelectionRepository(
+            appContext = appContext,
+            delegate = GameHubPreferencesRepository(appContext)
+        )
+
+    private fun adaptiveAwareSelectionRepository(
+        appContext: Context,
+        delegate: GameSelectionStateRepository
+    ): GameSelectionStateRepository {
+        val adaptiveStore = PerGameAdaptiveStatePreferencesStore(appContext)
+        return AdaptiveAwareGameSelectionStateRepository(
+            delegate = delegate,
+            onExplicitGameProfileSelection = { packageName, profile ->
+                val version = installedGameVersionKey(appContext, packageName) ?: "unknown"
+                adaptiveStore.recordExplicitProfileSelection(
+                    key = AdaptiveGameKey(packageName, version),
+                    profile = profile
+                )
+            }
+        )
+    }
 
     fun connectedAccountsRepository(appContext: Context): ConnectedGameAccountsStateRepository =
         ConnectedGameAccountsStore(appContext)

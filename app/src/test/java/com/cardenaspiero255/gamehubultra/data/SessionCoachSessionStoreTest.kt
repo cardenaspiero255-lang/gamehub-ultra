@@ -37,13 +37,14 @@ class SessionCoachSessionStoreTest {
             thermalStatus = 3,
             thermalHeadroom = 0.82f,
             refreshRateHz = 120f,
-            latencyMs = 42L
+            latencyMs = 42L,
+            memoryUsedPercent = 67
         )
 
         assertEquals(valid, SessionCoachSnapshotCodec.decode(SessionCoachSnapshotCodec.encode(valid)))
 
         val invalid = SessionCoachSnapshotCodec.decode(
-            "99|150|2|NaN|-1|-5"
+            "99|150|2|NaN|-1|-5|150"
         )
         assertEquals(99L, invalid?.timestampMillis)
         assertNull(invalid?.batteryPercent)
@@ -51,6 +52,12 @@ class SessionCoachSessionStoreTest {
         assertNull(invalid?.thermalHeadroom)
         assertNull(invalid?.refreshRateHz)
         assertNull(invalid?.latencyMs)
+        assertNull(invalid?.memoryUsedPercent)
+
+        val legacy = SessionCoachSnapshotCodec.decode("100|80|1|0.2|120|30")
+        assertEquals(100L, legacy?.timestampMillis)
+        assertEquals(80, legacy?.batteryPercent)
+        assertNull(legacy?.memoryUsedPercent)
 
         assertNull(SessionCoachSnapshotCodec.decode("broken"))
         assertNull(SessionCoachSnapshotCodec.decode("bad|||||"))
@@ -94,7 +101,7 @@ class SessionCoachSessionStoreTest {
         assertFalse(store.beginSession("", "game.a", 1L))
         assertFalse(store.beginSession("id", "", 1L))
 
-        assertTrue(store.beginSession("session-1", "game.a", 1_000L))
+        assertTrue(store.beginSession("session-1", "game.a", 1_000L, gameVersion = "1.2.3"))
         assertTrue(store.hasActiveSession())
 
         val pre = SessionCoachMessage(
@@ -129,6 +136,7 @@ class SessionCoachSessionStoreTest {
         val active = store.readActiveSession()
         assertEquals("session-1", active?.sessionId)
         assertEquals("game.a", active?.packageName)
+        assertEquals("1.2.3", active?.gameVersion)
         assertEquals(pre, active?.preSessionMessage)
         assertEquals(mid, active?.latestObservation)
         assertEquals(listOf(first, second), active?.samples)
@@ -140,6 +148,7 @@ class SessionCoachSessionStoreTest {
 
         val completed = store.readLastCompletedSession()
         assertEquals("session-1", completed?.sessionId)
+        assertEquals("1.2.3", completed?.gameVersion)
         assertEquals(1_000L, completed?.endedAtMillis)
         assertEquals(mid, completed?.latestObservation)
         assertEquals(2, completed?.samples?.size)
@@ -179,6 +188,7 @@ class SessionCoachSessionStoreTest {
             thermalStatus = 1,
             thermalHeadroom = 0.25f,
             refreshRateHz = 120f,
-            latencyMs = 30L
+            latencyMs = 30L,
+            memoryUsedPercent = 55
         )
 }

@@ -105,7 +105,8 @@ internal class DashboardTelemetryController(
                 thermalStatus = enrichedDiagnostics.thermal.status,
                 thermalHeadroom = enrichedDiagnostics.thermal.headroom,
                 refreshRateHz = enrichedDiagnostics.refresh.currentRefreshRateHz,
-                latencyMs = enrichedDiagnostics.connectivity.latencyMs
+                latencyMs = enrichedDiagnostics.connectivity.latencyMs,
+                memoryUsedPercent = enrichedDiagnostics.memory.usedPercent
             )
             coachSamples.lastOrNull()?.let { previous ->
                 coachObservations = (

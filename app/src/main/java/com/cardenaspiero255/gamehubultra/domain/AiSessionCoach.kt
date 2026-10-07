@@ -20,7 +20,8 @@ data class SessionCoachSnapshot(
     val thermalStatus: Int?,
     val thermalHeadroom: Float?,
     val refreshRateHz: Float?,
-    val latencyMs: Long?
+    val latencyMs: Long?,
+    val memoryUsedPercent: Int? = null
 )
 
 data class SessionCoachMessage(

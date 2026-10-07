@@ -82,6 +82,41 @@ class SessionCoachMonitorServiceTest {
         SessionCoachMonitorService.cancelLaunch(context)
     }
 
+
+    @Test
+    @Config(sdk = [27])
+    fun buildVersionKeyUsesLegacyVersionCodeBeforeAndroidP() {
+        val packageName = context.packageName
+        @Suppress("DEPRECATION")
+        val info = context.packageManager.getPackageInfo(packageName, 0)
+        @Suppress("DEPRECATION")
+        val expected = "${info.versionName.orEmpty()}#${info.versionCode.toLong()}"
+
+        assertEquals(expected, installedGameVersionKey(context, packageName))
+    }
+
+    @Test
+    fun startPersistsInstalledPackageVersionAtLaunch() {
+        val packageName = context.packageName
+        val info = context.packageManager.getPackageInfo(packageName, 0)
+        val expectedVersion = "${info.versionName.orEmpty()}#${info.longVersionCode}"
+
+        val id = SessionCoachMonitorService.start(
+            context = context,
+            packageName = packageName,
+            nowMillis = 1_500L,
+            sessionId = "versioned-session"
+        )
+
+        assertEquals("versioned-session", id)
+        assertEquals(
+            expectedVersion,
+            SessionCoachSessionStore(context).readActiveSession()?.gameVersion
+        )
+
+        SessionCoachMonitorService.cancelLaunch(context)
+    }
+
     @Test
     fun finishOnReturnPersistsCompletedSessionAndPostsSummary() {
         val store = SessionCoachSessionStore(context)

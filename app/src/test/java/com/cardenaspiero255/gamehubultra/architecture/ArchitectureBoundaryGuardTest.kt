@@ -1246,4 +1246,51 @@ class ArchitectureBoundaryGuardTest {
         )
     }
 
+    @Test
+    fun smartRecommendationProfileActionsUseAdaptiveAwareSelectionPath() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("recordSmartRecommendationFeedback, ::selectProfile"),
+            "Smart Recommendation apply/revert must not bypass adaptive manual-selection tracking"
+        )
+        val adaptiveCallbacks = Regex(
+            """recordSmartRecommendationFeedback,\s*::selectExternalProfile"""
+        ).findAll(app).count()
+        assertTrue(
+            adaptiveCallbacks >= 2,
+            "Smart Recommendation apply and revert must route through selectExternalProfile"
+        )
+    }
+
+
+    @Test
+    fun explicitAdaptiveOwnershipResetLivesAtSharedPersistenceBoundary() {
+        val app = sourceFile(
+            "com/cardenaspiero255/gamehubultra/GameHubUltraApp.kt"
+        ).readText()
+        val contracts = sourceFile(
+            "com/cardenaspiero255/gamehubultra/data/GameStateOwnershipContracts.kt"
+        ).readText()
+        val composition = sourceFile(
+            "com/cardenaspiero255/gamehubultra/composition/GameHubProductionComposition.kt"
+        ).readText()
+
+        assertTrue(
+            !app.contains("recordExplicitAdaptiveProfileSelection("),
+            "Compose must not own adaptive profile-persistence side effects"
+        )
+        assertTrue(
+            contracts.contains("class AdaptiveAwareGameSelectionStateRepository"),
+            "Explicit profile writes must share one adaptive-aware persistence boundary"
+        )
+        assertTrue(
+            composition.contains("AdaptiveAwareGameSelectionStateRepository("),
+            "Production composition must install the adaptive-aware selection boundary"
+        )
+    }
+
+
 }

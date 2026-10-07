@@ -73,6 +73,11 @@ class GameSelectionStateRepositoryTest {
             profile: PerformanceProfile,
         ) = Unit
 
+        override suspend fun saveAdaptiveProfileForGame(
+            packageName: String,
+            profile: PerformanceProfile,
+        ) = Unit
+
         override suspend fun saveGameProfileConfig(
             packageName: String,
             config: GameProfileConfig,

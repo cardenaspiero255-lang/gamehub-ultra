@@ -10,6 +10,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -40,6 +41,29 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+internal fun installedGameVersionKey(
+    context: Context,
+    packageName: String
+): String? = runCatching {
+    val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.packageManager.getPackageInfo(
+            packageName,
+            PackageManager.PackageInfoFlags.of(0L)
+        )
+    } else {
+        @Suppress("DEPRECATION")
+        context.packageManager.getPackageInfo(packageName, 0)
+    }
+    val versionName = info.versionName.orEmpty().trim()
+    val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        info.longVersionCode
+    } else {
+        @Suppress("DEPRECATION")
+        info.versionCode.toLong()
+    }
+    "${versionName}#${versionCode}"
+}.getOrNull()
 
 internal enum class SessionCoachGamePresence {
     ACTIVE,
@@ -233,7 +257,16 @@ class SessionCoachMonitorService : Service() {
             store.finishActiveSession(nowMillis)?.let { previous ->
                 SessionCoachNotifications.postSummary(context, previous)
             }
-            if (!store.beginSession(sessionId, cleanPackage, nowMillis)) return null
+            val gameVersion = installedGameVersionKey(context, cleanPackage)
+            if (!store.beginSession(
+                    sessionId = sessionId,
+                    packageName = cleanPackage,
+                    startedAtMillis = nowMillis,
+                    gameVersion = gameVersion
+                )
+            ) {
+                return null
+            }
 
             val intent = Intent(context, SessionCoachMonitorService::class.java)
                 .setAction(ACTION_START)
