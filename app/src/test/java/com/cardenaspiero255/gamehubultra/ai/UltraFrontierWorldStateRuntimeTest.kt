@@ -20,7 +20,7 @@ class UltraFrontierWorldStateRuntimeTest {
             gpuAvailable = true,
             thermalStatus = 3,
             thermalHeadroom = 0.82f,
-            batteryPercent = 72,
+            batteryPercent = 12,
             charging = false,
             refreshRateHz = 120f,
             networkValidated = true,
@@ -32,11 +32,11 @@ class UltraFrontierWorldStateRuntimeTest {
             sessionActive = true
         )
         val samples = listOf(
-            SessionCoachSnapshot(0L, 80, 1, 0.50f, 120f, 28L, batteryCharging = false),
-            SessionCoachSnapshot(10_000L, 78, 1, 0.58f, 120f, 28L, batteryCharging = false),
-            SessionCoachSnapshot(20_000L, 76, 2, 0.66f, 120f, 29L, batteryCharging = false),
-            SessionCoachSnapshot(30_000L, 74, 2, 0.74f, 120f, 29L, batteryCharging = false),
-            SessionCoachSnapshot(40_000L, 72, 3, 0.82f, 120f, 30L, batteryCharging = false)
+            SessionCoachSnapshot(0L, 16, 1, 0.50f, 120f, 28L, batteryCharging = false),
+            SessionCoachSnapshot(10_000L, 15, 1, 0.58f, 120f, 28L, batteryCharging = false),
+            SessionCoachSnapshot(20_000L, 14, 2, 0.66f, 120f, 29L, batteryCharging = false),
+            SessionCoachSnapshot(30_000L, 13, 2, 0.74f, 120f, 29L, batteryCharging = false),
+            SessionCoachSnapshot(40_000L, 12, 3, 0.82f, 120f, 30L, batteryCharging = false)
         )
         val adaptive = AdaptiveDecision(
             profile = PerformanceProfile.BALANCED,
