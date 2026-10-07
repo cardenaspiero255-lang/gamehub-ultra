@@ -143,37 +143,48 @@ def _looks_executable_source_line(line: str) -> bool:
     return True
 
 
-def _looks_like_multiline_function_type_signature(
-    source_lines: list[str],
-    number: int,
-) -> bool:
-    if not 0 < number <= len(source_lines):
+def _looks_like_type_reference(text: str) -> bool:
+    # Only type syntax: calls, assignments and lambda bodies must stay executable.
+    text = text.removesuffix(",").strip()
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*(?:<[A-Za-z0-9_.,<>?*\s]+>)?\??", text):
         return False
+    depth = 0
+    for char in text:
+        if char == "<":
+            depth += 1
+        elif char == ">":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
 
-    stripped = source_lines[number - 1].strip()
-    is_type_token = bool(
-        re.match(
-            r"^[A-Z][A-Za-z0-9_.]*(?:<[^>]+>)?\??,?$",
-            stripped,
-        )
-    )
-    is_return_type = bool(
-        re.match(
-            r"^\)\s*->\s*[A-Z][A-Za-z0-9_.]*(?:<[^>]+>)?\??,?$",
-            stripped,
-        )
-    )
-    if not (is_type_token or is_return_type):
-        return False
 
-    start = max(0, number - 8)
-    for previous in reversed(source_lines[start : number - 1]):
-        previous_stripped = previous.strip()
-        if re.search(r":\s*(?:suspend\s*)?\(\s*$", previous_stripped):
-            return True
-        if previous_stripped.endswith("{") or previous_stripped == "}":
-            break
-    return False
+def _multiline_function_type_signature_lines(source_lines: list[str]) -> set[int]:
+    structural: set[int] = set()
+    start: int | None = None
+    for number, line in enumerate(source_lines, start=1):
+        stripped = line.strip()
+        if start is None:
+            if re.fullmatch(
+                r"(?:(?:public|private|protected|internal|override|val|var|"
+                r"crossinline|noinline|vararg)\s+)*"
+                r"[A-Za-z_][A-Za-z0-9_]*\s*:\s*(?:suspend\s+)?\(",
+                stripped,
+            ):
+                start = number
+            continue
+
+        closing = re.fullmatch(r"\)\s*->\s*(.+)", stripped)
+        if closing and _looks_like_type_reference(closing.group(1)):
+            # Include the declaration header, but stop at this signature's end.
+            structural.update(range(start, number + 1))
+            start = None
+        elif not stripped or stripped.startswith("//"):
+            continue
+        elif not _looks_like_type_reference(stripped):
+            # Unsupported syntax fails closed instead of swallowing executable code.
+            start = None
+    return structural
 
 
 def calculate_patch_line_coverage(
@@ -190,7 +201,8 @@ def calculate_patch_line_coverage(
         if not path.startswith(SOURCE_ROOTS):
             continue
 
-        source_text = (source_text_by_path or {}).get(path, "")
+        source = (source_text_by_path or {}).get(path, "").splitlines()
+        signature_lines = _multiline_function_type_signature_lines(source)
         source_lines = report_by_path.get(path)
         if source_lines is None:
             if line_numbers:
@@ -201,7 +213,6 @@ def calculate_patch_line_coverage(
             counters = source_lines.get(number)
             if counters is None:
                 if source_text_by_path is not None:
-                    source = source_text_by_path.get(path, "").splitlines()
                     source_line = (
                         source[number - 1]
                         if 0 < number <= len(source)
@@ -209,7 +220,7 @@ def calculate_patch_line_coverage(
                     )
                     if (
                         _looks_executable_source_line(source_line)
-                        and not _looks_like_multiline_function_type_signature(source, number)
+                        and number not in signature_lines
                     ):
                         unmapped.append(f"{path}:{number}")
                 continue

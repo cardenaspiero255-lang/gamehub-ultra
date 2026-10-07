@@ -197,6 +197,63 @@ internal fun ExampleCard(
         self.assertEqual(stats.covered, 0)
         self.assertAlmostEqual(stats.percent, 0.0)
 
+    def test_multiline_function_type_boundaries_and_nested_generics(self) -> None:
+        source = """val covered = expensiveCall()
+class Holder(
+    private val callback: suspend (
+        Map<String, List<PerformanceProfile>>,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+        PerformanceProfile
+    ) -> Map<String, List<PerformanceProfile>>
+)
+RuntimeObject
+"""
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 16))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ("app/src/main/java/com/example/Foo.kt:15",))
+        self.assertFalse(gate.meets_threshold(stats, 90.0))
+
+    def test_function_type_does_not_hide_initializer_or_later_expressions(self) -> None:
+        for ending in (
+            ") -> Unit = createCallback()",
+            ") -> Unit\nRuntimeObject",
+        ):
+            with self.subTest(ending=ending):
+                source = "val callback: (\nString\n" + ending
+                self.assertNotIn(
+                    len(source.splitlines()),
+                    gate._multiline_function_type_signature_lines(source.splitlines()),
+                )
+
+    def test_function_type_never_hides_mapped_uncovered_code(self) -> None:
+        source = "private val callback: (\nString\n) -> Unit"
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="4" ci="0"/></sourcefile></package></report>'
+        )
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2, 3}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 0)
+        self.assertFalse(gate.meets_threshold(stats, 90.0))
+
     def test_enum_when_branch_label_omitted_by_jacoco_is_not_false_unmapped(self) -> None:
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
