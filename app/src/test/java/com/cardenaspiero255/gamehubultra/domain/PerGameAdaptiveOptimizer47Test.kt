@@ -300,4 +300,58 @@ class PerGameAdaptiveOptimizer47Test {
     }
 
 
+    @Test
+    fun ownedRecoveryMigratesToNewGameVersionWithoutSharingHysteresis() {
+        val persisted = mutableMapOf(
+            AdaptiveGameKey("game.a", "1#10") to PerGameAdaptivePersistedState(
+                profile = PerformanceProfile.BALANCED,
+                candidate = PerformanceProfile.BALANCED,
+                confirmations = 9,
+                lastChangeMillis = 123L,
+                recoveryProfile = PerformanceProfile.X4
+            )
+        )
+        val store = object : PerGameAdaptiveStateStore {
+            override fun read(key: AdaptiveGameKey) = persisted[key]
+            override fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState) {
+                persisted[key] = state
+            }
+            override fun ownedRecoveryProfileForPackage(
+                packageName: String,
+                excludingVersion: String,
+                activeProfile: PerformanceProfile
+            ): PerformanceProfile? =
+                persisted.entries
+                    .firstOrNull { (key, state) ->
+                        key.packageName == packageName &&
+                            key.version != excludingVersion &&
+                            state.profile == activeProfile &&
+                            state.recoveryProfile != null
+                    }
+                    ?.value
+                    ?.recoveryProfile
+        }
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 30_000L,
+            stateStore = store
+        )
+        val stable = listOf(
+            AdaptiveTrendSample(0, 90, 120f, 30, 20),
+            AdaptiveTrendSample(0, 88, 120f, 31, 22),
+            AdaptiveTrendSample(0, 86, 120f, 32, 24)
+        )
+
+        val recovered = optimizer.evaluate(
+            AdaptiveGameKey("game.a", "2#20"),
+            PerformanceProfile.BALANCED,
+            stable,
+            1_000L
+        )
+
+        assertTrue(recovered.changed)
+        assertEquals(PerformanceProfile.X4, recovered.profile)
+    }
+
+
 }
