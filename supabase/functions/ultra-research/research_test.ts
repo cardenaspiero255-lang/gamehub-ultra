@@ -4923,15 +4923,13 @@ Deno.test(
         query: "Quiero que me hables de Adidas.",
         expectedSearch: "Adidas",
         title: "Adidas",
-        extract:
-          "Adidas es una empresa de ropa y calzado deportivo.",
+        extract: "Adidas es una empresa de ropa y calzado deportivo.",
       },
       {
         query: "¿Me puedes hablar de los lobos?",
         expectedSearch: "los lobos",
         title: "Lobo",
-        extract:
-          "Los lobos son mamíferos carnívoros de la familia Canidae.",
+        extract: "Los lobos son mamíferos carnívoros de la familia Canidae.",
       },
       {
         query: "Explícame sobre los volcanes.",
