@@ -196,6 +196,7 @@ internal fun GameHubUltraApp(
     var hydratedCoachSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var storeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
     var appResumeRefreshToken by rememberSaveable { mutableIntStateOf(0) }
+    var aiProfileRevision by rememberSaveable { mutableIntStateOf(0) }
     var storeGames by remember { mutableStateOf<List<StoreLibraryGame>>(emptyList()) }
     val sessionHistory by viewModel.sessionHistory.collectAsStateWithLifecycle(initialValue = emptyList())
     val aiAdvisor = ultraRuntime.assistant
@@ -222,6 +223,44 @@ internal fun GameHubUltraApp(
     val optimizationObservations by optimizationMemoryStore
         .observationsFlow(currentOptimizationKey)
         .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val aiProfileProposal = remember(
+        selectedGameForMemory,
+        uiState.selectedGameConfig,
+        optimizationObservations,
+        sessionCoachSamples,
+        runtimeDiagnostics,
+        initialState.capabilities,
+        aiProfileRevision
+    ) {
+        val packageName = selectedGameForMemory
+        val diagnostics = runtimeDiagnostics
+        if (packageName == null || diagnostics == null) {
+            null
+        } else {
+            val currentConfig = uiState.selectedGameConfig ?: GameProfileConfig()
+            AiProfileBuilder.propose(
+                currentConfig = currentConfig,
+                observations = optimizationObservations,
+                sessionSamples = sessionCoachSamples,
+                capabilities = AiProfileCapabilities(
+                    supportsSustainedPerformance =
+                        initialState.capabilities?.sustainedPerformanceSupported == true,
+                    supportsFrameInterpolation = false,
+                    supportedRefreshRatesHz =
+                        diagnostics.refresh.supportedRefreshRatesHz,
+                    supportedResolutions = emptySet()
+                ),
+                version = aiProfileProposalStore.nextVersion(packageName)
+            ).takeIf { it.requiresExplicitApply }
+        }
+    }
+    val aiProfileRollbackState = remember(
+        selectedGameForMemory,
+        aiProfileRevision
+    ) {
+        selectedGameForMemory?.let(aiProfileProposalStore::rollbackState)
+    }
 
     LaunchedEffect(storeRefreshToken) {
         storeGames = withContext(Dispatchers.IO) {
