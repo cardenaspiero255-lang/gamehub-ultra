@@ -1,5 +1,6 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldStateRegistry
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.BatteryRuntimeTelemetry
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
@@ -99,6 +100,11 @@ class VoiceAiContextFactoryTest {
         assertEquals(2, context.inputDeviceCount)
         assertEquals(PerformanceProfile.X4, context.selectedProfile)
         assertTrue(context.sessionActive)
+        val world = requireNotNull(UltraFrontierWorldStateRegistry.snapshot())
+        assertEquals("com.example.game", world.selectedGamePackage)
+        assertEquals(17, world.batteryPercent)
+        assertEquals(42L, world.networkLatencyMs)
+        UltraFrontierWorldStateRegistry.clear()
     }
 
     @Test
