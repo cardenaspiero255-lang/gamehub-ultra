@@ -56,7 +56,13 @@ internal fun installedGameVersionKey(
         context.packageManager.getPackageInfo(packageName, 0)
     }
     val versionName = info.versionName.orEmpty().trim()
-    "${versionName}#${info.longVersionCode}"
+    val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        info.longVersionCode
+    } else {
+        @Suppress("DEPRECATION")
+        info.versionCode.toLong()
+    }
+    "${versionName}#${versionCode}"
 }.getOrNull()
 
 internal enum class SessionCoachGamePresence {
