@@ -147,6 +147,40 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun atomicClaimGateFailsClosedWhenAnswerExceedsVerificationCapacity() {
+        val evolution = UltraFrontierEvolutionController(
+            claimExtractor = UltraAtomicClaimExtractor(maximumClaims = 3)
+        )
+        val query = UltraGeneralQueryRouter.classify("noticias de Android hoy")
+        val plan = UltraFrontierOrchestrator(evolution = evolution).plan(
+            UltraFrontierRequest(
+                message = query.originalText,
+                query = query,
+                networkAvailable = true
+            )
+        )
+        val answer = UltraQueryExecutionAnswer(
+            message = "Uno. Dos. Tres. Cuatro.",
+            verified = true,
+            confidence = UltraAnswerConfidence.HIGH,
+            sources = listOf("a", "b"),
+            independentSourceCount = 2,
+            abstained = false
+        )
+
+        val gated = evolution.finalGate(
+            request = query,
+            plan = plan,
+            answer = answer,
+            nowMillis = 1_000L
+        )
+
+        assertTrue(gated.abstained)
+        assertFalse(gated.verified)
+        assertEquals("FRONTIER_CLAIM_CAPACITY_EXCEEDED", gated.reasonCode)
+    }
+
+    @Test
     fun claimVerifierSeparatesVerifiedWeakStaleAndInference() {
         val verifier = UltraClaimVerifier()
         val now = 10_000L
