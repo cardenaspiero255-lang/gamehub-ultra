@@ -386,17 +386,19 @@ class SessionCoachMonitorServiceTest {
             1
         )
 
+        val manager = context.getSystemService(NotificationManager::class.java)
         withTimeout(5_000L) {
-            while (store.hasActiveSession()) {
+            while (
+                store.hasActiveSession() ||
+                store.readLastCompletedSession() == null ||
+                shadowOf(manager).getNotification(45_002) == null
+            ) {
                 delay(50)
             }
         }
 
         assertNotNull(store.readLastCompletedSession())
-        assertNotNull(
-            shadowOf(context.getSystemService(NotificationManager::class.java))
-                .getNotification(45_002)
-        )
+        assertNotNull(shadowOf(manager).getNotification(45_002))
         controller.destroy()
         Unit
     }
