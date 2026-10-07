@@ -915,7 +915,7 @@ class UltraFrontierEvolutionController(
             request = request,
             policy = policy,
             failurePressure = learning.failurePressure(domain),
-            worldState = UltraFrontierWorldStateRegistry.snapshot()
+            worldState = UltraFrontierWorldStateRegistry.snapshotForPlanning()
         )
     }
 
