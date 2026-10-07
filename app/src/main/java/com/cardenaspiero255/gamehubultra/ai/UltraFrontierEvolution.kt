@@ -316,28 +316,32 @@ class UltraWeightedConsensusEngine(
         var total = 0
         var unidentifiedMaximum = 0
 
-        candidates.indices.forEach { start ->
-            if (visited[start]) return@forEach
-            if (sourceSets[start].isEmpty()) {
+        for (startIndex in candidates.indices) {
+            if (visited[startIndex]) continue
+            if (sourceSets[startIndex].isEmpty()) {
                 unidentifiedMaximum = maxOf(
                     unidentifiedMaximum,
-                    candidates[start].independentSourceCount.coerceAtLeast(1)
+                    candidates[startIndex]
+                        .independentSourceCount
+                        .coerceAtLeast(1)
                 )
-                visited[start] = true
-                return@forEach
+                visited[startIndex] = true
+                continue
             }
 
             val component = ArrayDeque<Int>()
-            val componentSources = sourceSets[start].toMutableSet()
+            val componentSources = sourceSets[startIndex].toMutableSet()
             var componentIndependentMaximum =
-                candidates[start].independentSourceCount.coerceAtLeast(1)
-            visited[start] = true
-            component.addLast(start)
+                candidates[startIndex]
+                    .independentSourceCount
+                    .coerceAtLeast(1)
+            visited[startIndex] = true
+            component.addLast(startIndex)
 
             while (component.isNotEmpty()) {
                 component.removeFirst()
-                candidates.indices.forEach { candidateIndex ->
-                    if (visited[candidateIndex]) return@forEach
+                for (candidateIndex in candidates.indices) {
+                    if (visited[candidateIndex]) continue
                     val candidateSources = sourceSets[candidateIndex]
                     if (
                         candidateSources.isNotEmpty() &&
