@@ -113,9 +113,14 @@ class GameHubViewModel(
         viewModelScope.launch { identityRepository.savePlayerName(rawName) }
     }
 
-    fun saveGameProfileConfig(packageName: String, config: GameProfileConfig) {
+    fun saveGameProfileConfig(
+        packageName: String,
+        config: GameProfileConfig,
+        onSaved: () -> Unit = {}
+    ) {
         viewModelScope.launch {
             repository.saveGameProfileConfig(packageName, config)
+            onSaved()
         }
     }
 
