@@ -392,10 +392,62 @@ class AiSessionCoachTest {
             )
         )
 
+        assertNull(report.batteryDropPercent)
         assertNull(report.batteryDrainPercentPerHour)
         assertTrue(report.batteryChargingObserved)
         assertEquals(BatteryGamingRecommendation.CHARGING, report.batteryRecommendation)
-        assertTrue(report.summary.contains("cargando", ignoreCase = true))
+        assertTrue(report.summary.contains("carga conectada", ignoreCase = true))
+        assertTrue(
+            report.patterns.none { it.signal == SessionCoachSignal.BATTERY }
+        )
+    }
+
+
+    @Test
+    fun powerSaveModeIsVisibleBeforeSession() {
+        val result = AiSessionCoach.preSession(
+            readiness = GamingReadiness(
+                score = 85,
+                label = "Listo",
+                reasons = emptyList()
+            ),
+            snapshot = SessionCoachSnapshot(
+                timestampMillis = 1L,
+                batteryPercent = 70,
+                thermalStatus = 1,
+                thermalHeadroom = 0.2f,
+                refreshRateHz = 120f,
+                latencyMs = 30L,
+                batteryCharging = false,
+                powerSaveMode = true
+            )
+        )
+
+        assertEquals(SessionCoachPriority.WATCH, result.priority)
+        assertTrue(result.detail.contains("ahorro", ignoreCase = true))
+    }
+
+    @Test
+    fun chargingSuppressesBatteryDropObservation() {
+        val previous = SessionCoachSnapshot(
+            timestampMillis = 1L,
+            batteryPercent = 50,
+            thermalStatus = 1,
+            thermalHeadroom = 0.2f,
+            refreshRateHz = 120f,
+            latencyMs = 30L,
+            batteryCharging = false
+        )
+        val current = previous.copy(
+            timestampMillis = 2L,
+            batteryPercent = 40,
+            batteryCharging = true
+        )
+
+        assertTrue(
+            AiSessionCoach.midSession(previous, current)
+                .none { it.signal == SessionCoachSignal.BATTERY }
+        )
     }
 
 }
