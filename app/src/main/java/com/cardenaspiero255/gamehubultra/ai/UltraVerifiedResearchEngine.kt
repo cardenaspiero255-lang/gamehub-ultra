@@ -243,15 +243,20 @@ class UltraVerifiedResearchEngine(
             )
         }
 
+        val providerBudget = request.researchProviderBudget
+            ?.coerceAtMost(providers.size)
+            ?: providers.size
+        val activeProviders = providers.take(providerBudget)
         val requestExecutor = Executors.newFixedThreadPool(
-            providers.size.coerceIn(1, 4)
+            activeProviders.size.coerceIn(1, 4)
         )
         return try {
             answerWithProviders(
                 request = request,
                 key = key,
                 usePersistentCache = usePersistentCache,
-                requestExecutor = requestExecutor
+                requestExecutor = requestExecutor,
+                activeProviders = activeProviders
             )
         } finally {
             requestExecutor.shutdownNow()
@@ -296,7 +301,8 @@ class UltraVerifiedResearchEngine(
         request: UltraGeneralQueryRequest,
         key: String,
         usePersistentCache: Boolean,
-        requestExecutor: ExecutorService
+        requestExecutor: ExecutorService,
+        activeProviders: List<UltraResearchProvider>
     ): UltraVerifiedResearchResult {
         val optionalStableKnowledge =
             request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
@@ -304,10 +310,10 @@ class UltraVerifiedResearchEngine(
                 !request.requiresFreshData
 
         val completion = ExecutorCompletionService<ProviderAttempt>(requestExecutor)
-        val providerWorkers = providers.map {
+        val providerWorkers = activeProviders.map {
             AtomicReference<Thread?>(null)
         }
-        val submitted = providers.mapIndexed { index, provider ->
+        val submitted = activeProviders.mapIndexed { index, provider ->
             completion.submit {
                 val worker = Thread.currentThread()
                 providerWorkers[index].set(worker)
@@ -338,7 +344,7 @@ class UltraVerifiedResearchEngine(
         var stoppedAfterGrace = false
 
         try {
-            while (attempts.size < providers.size) {
+            while (attempts.size < activeProviders.size) {
                 val now = System.nanoTime()
                 val effectiveDeadline = minOf(
                     deadline,
@@ -393,7 +399,7 @@ class UltraVerifiedResearchEngine(
                 if (
                     optionalStableKnowledge &&
                     attempt.result is UltraProviderResult.Evidence &&
-                    attempts.size < providers.size &&
+                    attempts.size < activeProviders.size &&
                     graceDeadlineNanos == null
                 ) {
                     val graceDeadline = if (attempt.index == 0) {
@@ -422,7 +428,7 @@ class UltraVerifiedResearchEngine(
                 if (!future.isDone) {
                     providerWorkers[index].get()?.let { worker ->
                         runCatching {
-                            providers[index].cancelActiveRequest(worker)
+                            activeProviders[index].cancelActiveRequest(worker)
                         }
                     }
                     future.cancel(true)
@@ -437,7 +443,7 @@ class UltraVerifiedResearchEngine(
                 if (!future.isDone) {
                     providerWorkers[index].get()?.let { worker ->
                         runCatching {
-                            providers[index].cancelActiveRequest(worker)
+                            activeProviders[index].cancelActiveRequest(worker)
                         }
                     }
                     future.cancel(true)
@@ -509,7 +515,7 @@ class UltraVerifiedResearchEngine(
                 fallbackUsed = selectedAttempt.index > 0
             )
 
-            val allProvidersSettled = attempts.size >= providers.size
+            val allProvidersSettled = attempts.size >= activeProviders.size
             if (allProvidersSettled) {
                 cache.put(
                     key = key,
