@@ -798,17 +798,17 @@ def main() -> None:
     if smoke_strategy.get("fail-fast") is not False:
         fail("smoke shards must keep fail-fast disabled")
     smoke_matrix = smoke_strategy.get("matrix")
-    expected_smoke_runners = set(range(16))
+    expected_smoke_runners = set(range(8))
     if (
         not isinstance(smoke_matrix, dict)
         or set(smoke_matrix.get("shard", [])) != expected_smoke_runners
     ):
-        fail("smoke must keep 16 physical runners")
+        fail("smoke must keep 8 physical runners")
     smoke_env = smoke_job.get("env")
     if not isinstance(smoke_env, dict):
         fail("smoke shard env is missing")
     expected_smoke_env = {
-        "SMOKE_STABLE_WORKERS": "24",
+        "SMOKE_STABLE_WORKERS": "32",
         "SMOKE_SHARD_COUNT": "64",
     }
     for key, expected in expected_smoke_env.items():
@@ -821,8 +821,8 @@ def main() -> None:
         shell="bash",
     )
     for fragment in (
-        "physical_runner_count = 16",
-        "logical_shards_per_runner = 4",
+        "physical_runner_count = 8",
+        "logical_shards_per_runner = 8",
         "shard_index + physical_runner_count * lane",
         "max_workers=stable_workers",
     ):
@@ -847,6 +847,7 @@ def main() -> None:
         fail("Android test shard env is missing")
     expected_android_test_env = {
         "GAMEHUB_UNIT_TEST_FORKS": "8",
+        "GAMEHUB_ENABLE_UNIT_TEST_COVERAGE": "false",
         "ANDROID_LOGICAL_SHARD_COUNT": "64",
         "ANDROID_PHYSICAL_SHARD_COUNT": "8",
     }
@@ -909,6 +910,7 @@ def main() -> None:
         fail("coverage shard env is missing")
     expected_coverage_env = {
         "GAMEHUB_UNIT_TEST_FORKS": "8",
+        "GAMEHUB_ENABLE_UNIT_TEST_COVERAGE": "true",
         "COVERAGE_LOGICAL_SHARD_COUNT": "64",
         "COVERAGE_PHYSICAL_SHARD_COUNT": "8",
     }
@@ -963,6 +965,42 @@ def main() -> None:
     for fragment in ("*.exec", "*.ec", "No JaCoCo execution data produced"):
         require_run_fragment(coverage_collect, "coverage execution-data collection", fragment)
 
+    coverage_classes_upload = require_step(
+        coverage,
+        "coverage-shard",
+        "Upload compiled coverage classes",
+        uses_prefix="actions/upload-artifact@",
+        allowed_if="matrix.runner == 0",
+    )
+    classes_upload_with = coverage_classes_upload.get("with")
+    if not isinstance(classes_upload_with, dict):
+        fail("coverage class artifact inputs are missing")
+    if classes_upload_with.get("name") != "gamehub-ultra-coverage-classes":
+        fail("coverage class artifact name changed")
+    coverage_classes_download = require_step(
+        coverage,
+        "coverage",
+        "Download compiled coverage classes",
+        uses_prefix="actions/download-artifact@",
+    )
+    classes_download_with = coverage_classes_download.get("with")
+    if not isinstance(classes_download_with, dict):
+        fail("coverage compiled-class download inputs are missing")
+    if classes_download_with.get("name") != "gamehub-ultra-coverage-classes":
+        fail("coverage compiled-class download selected the wrong artifact")
+    coverage_classes_verify = require_step(
+        coverage,
+        "coverage",
+        "Verify compiled coverage classes",
+        shell="bash",
+    )
+    for fragment in ("tmp/kotlin-classes/debug", "No compiled coverage classes"):
+        require_run_fragment(
+            coverage_classes_verify,
+            "coverage compiled-class reuse",
+            fragment,
+        )
+
     coverage_exec_upload = require_step(
         coverage,
         "coverage-shard",
@@ -1012,6 +1050,8 @@ def main() -> None:
         fail("coverage aggregation env is missing")
     if aggregate_env.get("GAMEHUB_COVERAGE_EXECUTION_DATA_DIR") != "${{ runner.temp }}/coverage-shards":
         fail("coverage aggregation execution-data directory changed")
+    if aggregate_env.get("GAMEHUB_COVERAGE_CLASS_ROOT") != "${{ runner.temp }}/coverage-classes":
+        fail("coverage aggregation compiled-class root changed")
 
     coverage_verify = require_step(
         coverage,
@@ -1121,25 +1161,12 @@ def main() -> None:
             ),
         )
 
-    debug_download = require_step(
-        android,
-        "build",
-        "Download exact-run debug artifact",
-        uses_prefix="actions/download-artifact@",
-    )
-    debug_download_with = debug_download.get("with")
-    if not isinstance(debug_download_with, dict):
-        fail("debug artifact consumer inputs are missing")
-    if debug_download_with.get("name") != "gamehub-ultra-debug":
-        fail("debug artifact consumer selected the wrong artifact")
-    if debug_download_with.get("run-id") != "${{ github.run_id }}":
-        fail("debug artifact consumer lost current-run binding")
-
     verifier = require_step(
         android,
-        "build",
-        "Verify Phase 3 artifact provenance",
+        "device-validation-shard",
+        "Verify Phase 3 artifact provenance locally",
         shell="bash",
+        allowed_if="matrix.shard == 'ui'",
     )
     for fragment in (
         'grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"',
