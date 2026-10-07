@@ -199,7 +199,11 @@ def _multiline_const_initializer_lines(source_lines: list[str]) -> set[int]:
         r"^(?:(?:public|private|protected|internal)\s+)?const\s+val\s+"
         r"[A-Za-z_][A-Za-z0-9_]*\s*=\s*$"
     )
-    const_atom = r"(?:[A-Z][A-Z0-9_]*|[-+]?\d+(?:\.\d+)?(?:[fFdDlL])?|true|false|\"[^\"]*\"|'[^']*')"
+    const_atom = (
+        r"(?:[A-Z][A-Z0-9_]*|"
+        r"[-+]?\\d(?:[\\d_]*\\d)?(?:\\.\\d(?:[\\d_]*\\d)?)?(?:[fFdDlL])?|"
+        r"true|false|\\\"[^\\\"]*\\\"|'[^']*')"
+    )
     const_expression = re.compile(
         rf"^{const_atom}(?:\s*[+*/%\-]\s*{const_atom})*\s*$"
     )
