@@ -7700,3 +7700,66 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "high-frequency stable smoke concepts survive complete provider throttling",
+  async () => {
+    const cases = [
+      {
+        query: "Dime lo esencial sobre un seguro de viaje en lenguaje cotidiano, y destaca una idea clave.",
+        expected: ["viaje", "seguro", "cobertura"],
+      },
+      {
+        query: "¿Para qué sirve o por qué importa la educación técnica? sin jerga innecesaria, en pocas frases.",
+        expected: ["educación", "técn", "habil"],
+      },
+      {
+        query: "¿Cómo explicarías la separación de poderes? sin asumir conocimientos previos, y explica por qué es relevante.",
+        expected: ["ejecut", "legisl", "judicial"],
+      },
+      {
+        query: "Explícame qué es el interés compuesto sin asumir conocimientos previos, sin inventar datos.",
+        expected: ["interés", "capital"],
+      },
+    ];
+
+    for (const testCase of cases) {
+      let networkCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: () => {
+          networkCalls += 1;
+          return jsonResponse({}, 429);
+        },
+        env: () => undefined,
+      };
+
+      const result = await routeResearchQuery(
+        testCase.query,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+      );
+
+      if (result.abstained) {
+        throw new Error(
+          "stable concept must remain answerable during provider throttling: " +
+            testCase.query,
+        );
+      }
+      const answer = (result.displayText ?? "").toLowerCase();
+      if (!testCase.expected.some((token) => answer.includes(token))) {
+        throw new Error(
+          "stable fallback lost semantic relevance for " + testCase.query +
+            ": " + answer,
+        );
+      }
+      if (networkCalls !== 0) {
+        throw new Error(
+          "high-frequency stable concept should not require network access: " +
+            testCase.query,
+        );
+      }
+    }
+  },
+);
