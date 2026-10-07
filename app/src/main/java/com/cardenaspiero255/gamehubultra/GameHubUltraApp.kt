@@ -58,6 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.AiProfileBuilder
 import com.cardenaspiero255.gamehubultra.domain.AiProfileCapabilities
 import com.cardenaspiero255.gamehubultra.domain.AiProfileProposal
@@ -89,6 +90,7 @@ import com.cardenaspiero255.gamehubultra.ui.runtime.RuntimeSessionMetrics
 import com.cardenaspiero255.gamehubultra.ui.runtime.UltraUiRuntimeDependencies
 import com.cardenaspiero255.gamehubultra.ui.voice.VoiceAssistantCard
 import com.cardenaspiero255.gamehubultra.ui.share.shareSessionHistory
+import com.cardenaspiero255.gamehubultra.session.installedGameVersionKey
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cardenaspiero255.gamehubultra.domain.PerformanceState
@@ -633,20 +635,22 @@ internal fun GameHubUltraApp(
             )
             lastSessionCoachReport = hydration.report
             sessionCoachObservations = hydration.observations
-            if (!perGameAdaptiveStateStore.wasSessionHandled(completed.sessionId)) {
-                val completedGameProfile = withContext(Dispatchers.IO) {
+            processCompletedAdaptiveSession(
+                completed = completed,
+                optimizer = perGameAdaptiveOptimizer,
+                nowMillis = System.currentTimeMillis(),
+                wasSessionHandled = {
+                    perGameAdaptiveStateStore.wasSessionHandled(completed.sessionId)
+                },
+                resolveActiveProfile = {
                     viewModel.effectiveProfileForGame(completed.packageName)
-                }
-                applyCompletedAdaptiveDecision(
-                    completed = completed,
-                    activeProfile = completedGameProfile,
-                    optimizer = perGameAdaptiveOptimizer,
-                    nowMillis = System.currentTimeMillis(),
-                    applyProfile = viewModel::selectGameProfile,
-                    recordPerformanceEvent = viewModel::recordPerformanceEvent
-                )
-                perGameAdaptiveStateStore.markSessionHandled(completed.sessionId)
-            }
+                },
+                persistProfile = viewModel::persistGameProfile,
+                markSessionHandled = {
+                    perGameAdaptiveStateStore.markSessionHandled(completed.sessionId)
+                },
+                recordPerformanceEvent = viewModel::recordPerformanceEvent
+            )
             if (hydration.shouldMarkHydrated) {
                 hydratedCoachSessionId = completed.sessionId
             }
@@ -711,8 +715,21 @@ internal fun GameHubUltraApp(
             )
     }
 
+    fun recordExplicitAdaptiveProfileSelection(
+        packageName: String?,
+        profile: PerformanceProfile
+    ) {
+        val cleanPackage = packageName?.trim()?.takeIf(String::isNotEmpty) ?: return
+        val version = installedGameVersionKey(context, cleanPackage) ?: "unknown"
+        perGameAdaptiveOptimizer.recordExplicitProfileSelection(
+            key = AdaptiveGameKey(cleanPackage, version),
+            profile = profile
+        )
+    }
+
     fun selectExternalProfile(profile: PerformanceProfile) {
         clearSmartRecommendationRevertForExternalProfileChange()
+        recordExplicitAdaptiveProfileSelection(selectedGameForMemory, profile)
         selectProfile(profile)
     }
 
@@ -720,6 +737,10 @@ internal fun GameHubUltraApp(
         suggestion: SmartGameAssistantSuggestion
     ) {
         clearSmartRecommendationRevertForExternalProfileChange()
+        recordExplicitAdaptiveProfileSelection(
+            selectedGameForMemory,
+            suggestion.profile
+        )
         applySmartGameAssistantSuggestion(suggestion)
     }
 
@@ -733,6 +754,7 @@ internal fun GameHubUltraApp(
         profile: PerformanceProfile
     ) {
         clearSmartRecommendationRevertForExternalProfileChange()
+        recordExplicitAdaptiveProfileSelection(packageName, profile)
         viewModel.persistVoiceSelectedGameWithProfile(packageName, profile)
     }
 
