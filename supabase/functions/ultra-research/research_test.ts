@@ -4898,6 +4898,27 @@ Deno.test(
         extract:
           "La presión arterial es la presión que ejerce la sangre sobre las arterias.",
       },
+      {
+        query: "Háblame de la marca Nike.",
+        expectedSearch: "Nike",
+        title: "Nike",
+        extract:
+          "Nike es una empresa estadounidense de ropa, calzado y equipamiento deportivo.",
+      },
+      {
+        query: "Cuéntame sobre los osos.",
+        expectedSearch: "los osos",
+        title: "Oso",
+        extract:
+          "Los osos son mamíferos de la familia Ursidae.",
+      },
+      {
+        query: "Dame información sobre los osos.",
+        expectedSearch: "los osos",
+        title: "Oso",
+        extract:
+          "Los osos son mamíferos de la familia Ursidae.",
+      },
     ];
 
     for (const testCase of cases) {
