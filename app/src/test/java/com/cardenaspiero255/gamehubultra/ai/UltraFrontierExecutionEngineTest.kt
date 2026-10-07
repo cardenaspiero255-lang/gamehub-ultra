@@ -312,9 +312,11 @@ class UltraFrontierExecutionEngineTest {
                 )
             }
         }
+        val audit = UltraFrontierAuditTrail()
         val engine = UltraFrontierExecutionEngine(
             coordinator = UltraQueryExecutionCoordinator(gateway),
-            networkAvailable = { true }
+            networkAvailable = { true },
+            auditTrail = audit
         )
 
         val answer = engine.answer(
@@ -330,6 +332,11 @@ class UltraFrontierExecutionEngineTest {
         assertFalse(answer.abstained)
         assertTrue(answer.message.contains("ChatGPT", ignoreCase = true))
         assertTrue(answer.sources.isNotEmpty())
+        assertTrue(
+            audit.snapshot().any {
+                it.event == UltraFrontierAuditEvent.ESCALATE_RESEARCH
+            }
+        )
     }
 
 }
