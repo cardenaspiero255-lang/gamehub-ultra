@@ -8240,13 +8240,28 @@ Deno.test(
         query: "¿Qué es el teorema de Pitágoras?",
         expected: ["hipotenusa", "catetos"],
       },
-      { query: "¿Qué es un número primo?", expected: ["divisores", "1"] },
+      {
+        query: "¿Qué es un número primo?",
+        expected: ["divisores", "exactamente dos"],
+      },
       {
         query: "¿Qué fue la Revolución Industrial?",
         expected: ["industrial", "fábricas"],
       },
       { query: "¿Qué es una metáfora?", expected: ["figura", "lenguaje"] },
       { query: "¿Qué es un sustantivo?", expected: ["palabra", "nombra"] },
+      {
+        query: "¿Qué son los números primos?",
+        expected: ["divisores", "exactamente dos"],
+      },
+      {
+        query: "¿Qué son las tres leyes de Newton?",
+        expected: ["fuerza", "movimiento"],
+      },
+      {
+        query: "¿Qué son los ecosistemas?",
+        expected: ["organismos", "factores"],
+      },
     ];
 
     for (const testCase of cases) {
@@ -8281,6 +8296,92 @@ Deno.test(
       if (networkCalls !== 0) {
         throw new Error("stable school concept unexpectedly used the network");
       }
+    }
+  },
+);
+
+
+Deno.test(
+  "standalone Open Library query keeps book specialist routing",
+  async () => {
+    let openLibraryCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname !== "openlibrary.org") {
+          throw new Error("unexpected URL " + url);
+        }
+        openLibraryCalls += 1;
+        return jsonResponse({
+          docs: [{
+            key: "/works/OLKOTLINW",
+            title: "Kotlin in Action",
+            author_name: ["Dmitry Jemerov", "Svetlana Isakova"],
+            subject: ["Kotlin", "Computer programming"],
+          }],
+        });
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Open Library Kotlin",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained || openLibraryCalls !== 1) {
+      throw new Error("standalone Open Library query must use book specialist");
+    }
+    if (!(result.displayText ?? "").includes("Kotlin in Action")) {
+      throw new Error("expected Open Library book result");
+    }
+  },
+);
+
+Deno.test(
+  "ISBN query keeps book specialist routing and exact identifier matching",
+  async () => {
+    let requestedQuery = "";
+    const isbn = "9781617299605";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname !== "openlibrary.org") {
+          throw new Error("unexpected URL " + url);
+        }
+        requestedQuery = url.searchParams.get("q") ?? "";
+        return jsonResponse({
+          docs: [{
+            key: "/works/OLISBNW",
+            title: "Kotlin in Action",
+            author_name: ["Dmitry Jemerov", "Svetlana Isakova"],
+            isbn: [isbn],
+            subject: ["Kotlin", "Computer programming"],
+          }],
+        });
+      },
+      env: (name) =>
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "ISBN " + isbn,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("ISBN lookup must return the matching book");
+    }
+    if (!requestedQuery.toLowerCase().includes("isbn")) {
+      throw new Error("ISBN lookup should use an identifier-specific query");
+    }
+    if (!(result.displayText ?? "").includes("Kotlin in Action")) {
+      throw new Error("expected exact ISBN book result");
     }
   },
 );
