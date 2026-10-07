@@ -50,9 +50,9 @@ class UltraFrontierExecutionEngineTest {
             override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
                 calls += 1
                 return UltraVerifiedResearchResult(
-                    message = "No encontré evidencia suficiente.",
+                    message = "No encontré evidencia suficiente en intento $calls.",
                     confidence = UltraAnswerConfidence.LOW,
-                    sources = emptyList(),
+                    sources = listOf("source-$calls"),
                     abstained = true,
                     retryable = true
                 )
@@ -274,7 +274,8 @@ class UltraFrontierExecutionEngineTest {
                 error("stable local knowledge must not call research")
         }
         val engine = UltraFrontierExecutionEngine(
-            coordinator = UltraQueryExecutionCoordinator(gateway)
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            networkAvailable = { false }
         )
 
         val answer = engine.answer(
