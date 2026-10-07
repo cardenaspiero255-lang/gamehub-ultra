@@ -389,14 +389,19 @@ class UltraFrontierExecutionEngine(
                 val branchIndex = executableTasks.indexOfFirst {
                     it.id == task.id
                 }.coerceAtLeast(0)
+                val branchBudget = (
+                    plan.sourceBudget + executableTasks.size - 1
+                    ) / executableTasks.size
                 val branchRequest = requestForAttempt(
                     request = request,
                     plan = plan,
                     attempt = 1,
                     executionStartedNanos = executionStartedNanos
                 ).copy(
+                    researchProviderBudget = branchBudget.coerceAtLeast(1),
                     researchProviderOffset =
-                        request.researchProviderOffset + branchIndex
+                        request.researchProviderOffset +
+                            branchIndex * branchBudget.coerceAtLeast(1)
                 )
                 val started = nanoTime()
                 val result = coordinator.answer(
