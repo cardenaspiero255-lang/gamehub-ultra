@@ -59,32 +59,32 @@ object AiSessionCoach {
         readiness: GamingReadiness,
         snapshot: SessionCoachSnapshot
     ): SessionCoachMessage {
+        val coveredFamilies = mutableSetOf<String>()
         val concerns = buildList {
             if (snapshot.batteryPercent != null && snapshot.batteryPercent <= 15) {
                 add("Batería baja: ${snapshot.batteryPercent} %.")
+                coveredFamilies += "batería"
             }
             if (snapshot.thermalStatus != null && snapshot.thermalStatus >= 3) {
                 add("Estado térmico elevado (${snapshot.thermalStatus}).")
+                coveredFamilies += "térmica"
             }
             val highThermalHeadroom =
                 snapshot.thermalHeadroom?.let { !it.isNaN() && it >= HIGH_THERMAL_HEADROOM } == true
             if (highThermalHeadroom) {
                 add("Margen térmico reducido.")
+                coveredFamilies += "térmica"
             }
             if (snapshot.latencyMs != null && snapshot.latencyMs >= HIGH_LATENCY_MS) {
                 add("Latencia elevada: ${snapshot.latencyMs} ms.")
+                coveredFamilies += "latencia"
             }
 
             readiness.reasons
                 .asSequence()
                 .filter(::isReadinessConcern)
                 .filterNot { reason ->
-                    any { existing ->
-                        existing.substringBefore(":").equals(
-                            reason.substringBefore(":"),
-                            ignoreCase = true
-                        )
-                    }
+                    reason.substringBefore(":").trim().lowercase() in coveredFamilies
                 }
                 .take(3)
                 .forEach(::add)

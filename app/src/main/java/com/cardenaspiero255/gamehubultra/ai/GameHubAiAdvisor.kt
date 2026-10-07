@@ -308,11 +308,11 @@ class GameHubAiAdvisor(
             Regex("""\bdinosaurios?\b|\bdinosaurs?\b""").containsMatchIn(normalized) ->
                 "Los dinosaurios fueron un grupo diverso de reptiles que dominaron muchos ecosistemas terrestres durante gran parte de la era Mesozoica. Las aves modernas forman parte del linaje de los dinosaurios terópodos."
 
-            Regex("""\bterremotos?\b|\bearthquakes?\b""").containsMatchIn(normalized) ->
-                "Un terremoto es una liberación repentina de energía en la corteza terrestre que genera ondas sísmicas, normalmente por el movimiento de fallas asociado a las placas tectónicas."
-
             Regex("""\btsunamis?\b""").containsMatchIn(normalized) ->
                 "Un tsunami es una serie de olas de gran longitud de onda causada por un desplazamiento brusco de mucha agua, por ejemplo debido a un terremoto submarino, un deslizamiento o una erupción volcánica."
+
+            Regex("""\bterremotos?\b|\bearthquakes?\b""").containsMatchIn(normalized) ->
+                "Un terremoto es una liberación repentina de energía en la corteza terrestre que genera ondas sísmicas, normalmente por el movimiento de fallas asociado a las placas tectónicas."
 
             normalized.contains("efecto invernadero") || normalized.contains("greenhouse effect") ->
                 "El efecto invernadero es el proceso por el que ciertos gases de la atmósfera absorben y reemiten radiación infrarroja, reteniendo parte del calor. Es natural y necesario, pero su intensificación eleva la temperatura media del planeta."

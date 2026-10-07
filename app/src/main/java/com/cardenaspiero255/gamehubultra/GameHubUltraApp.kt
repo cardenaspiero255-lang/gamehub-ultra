@@ -114,6 +114,37 @@ internal fun completedCoachBelongsToRuntimeSession(
     return completedAt >= runtime.startedAtMillis
 }
 
+internal data class CompletedCoachHydration(
+    val report: com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport,
+    val observations: List<com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage>,
+    val shouldMarkHydrated: Boolean,
+    val shouldEndRuntimeSession: Boolean
+)
+
+internal fun buildCompletedCoachHydration(
+    completed: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession,
+    hydratedSessionId: String?,
+    activeRuntimeRecord: GameSessionRecord?
+): CompletedCoachHydration {
+    val shouldMarkHydrated = completed.sessionId != hydratedSessionId
+    return CompletedCoachHydration(
+        report = com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.postSession(
+            completed.samples
+        ),
+        observations = listOfNotNull(completed.latestObservation),
+        shouldMarkHydrated = shouldMarkHydrated,
+        shouldEndRuntimeSession =
+            shouldMarkHydrated &&
+                completedCoachBelongsToRuntimeSession(completed, activeRuntimeRecord)
+    )
+}
+
+internal fun chooseCoachReport(
+    storedReport: com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?,
+    dashboardReport: com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport?
+): com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport? =
+    storedReport ?: dashboardReport
+
 private val UltraHomeRed = Color(0xFFFF1630)
 private val UltraHomeBlack = Color(0xFF030303)
 private val UltraHomePanel = Color(0xFF0B0B0E)
@@ -301,9 +332,10 @@ internal fun GameHubUltraApp(
                     if (sessionId != null) {
                         sessionCoachObservations = update.coachObservations
                     }
-                    update.lastCompletedCoachReport?.let { report ->
-                        lastSessionCoachReport = report
-                    }
+                    lastSessionCoachReport = chooseCoachReport(
+                        storedReport = lastSessionCoachReport,
+                        dashboardReport = update.lastCompletedCoachReport
+                    )
                     adaptiveDecision = update.adaptiveDecision
                     delay(10_000)
                 }
@@ -427,17 +459,21 @@ internal fun GameHubUltraApp(
             com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore(context)
                 .readLastCompletedSession()
         }
-        if (completed != null && completed.sessionId != hydratedCoachSessionId) {
-            hydratedCoachSessionId = completed.sessionId
-            lastSessionCoachReport =
-                com.cardenaspiero255.gamehubultra.domain.AiSessionCoach.postSession(
-                    completed.samples
-                )
-            sessionCoachObservations = listOfNotNull(completed.latestObservation)
+        if (completed != null) {
             val activeRuntimeRecord = sessionHistory.firstOrNull { session ->
                 session.id == runtimeGameSession?.id
             }
-            if (completedCoachBelongsToRuntimeSession(completed, activeRuntimeRecord)) {
+            val hydration = buildCompletedCoachHydration(
+                completed = completed,
+                hydratedSessionId = hydratedCoachSessionId,
+                activeRuntimeRecord = activeRuntimeRecord
+            )
+            lastSessionCoachReport = hydration.report
+            sessionCoachObservations = hydration.observations
+            if (hydration.shouldMarkHydrated) {
+                hydratedCoachSessionId = completed.sessionId
+            }
+            if (hydration.shouldEndRuntimeSession) {
                 val last = completed.samples.lastOrNull()
                 runtimeCoordinator.endGameSession(
                     runtimeSnapshot().copy(
