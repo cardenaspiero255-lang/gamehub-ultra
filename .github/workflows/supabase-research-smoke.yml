@@ -29,16 +29,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     # All 50,000 cases are generated identically. We keep 64 logical shards and
-    # pack four logical shards into each of 16 GitHub runners so queue pressure
-    # stays bounded while each runner owns a smaller deterministic slice. Each
-    # runner keeps 24 stable workers. Fresh-data checks stay on the runner that
+    # pack eight logical shards into each of 8 GitHub runners. This preserves the
+    # same logical coverage while avoiding the multi-minute runner queue observed
+    # with 16 physical jobs. Each runner keeps 32 stable workers. Fresh-data
+    # checks stay on the runner that
     # owns logical shard 0 to avoid provider bursts.
     timeout-minutes: 60
     env:
       SMOKE_SEED: ${{ github.run_id }}
-      SMOKE_STABLE_WORKERS: "24"
+      SMOKE_STABLE_WORKERS: "32"
       SMOKE_WARMUP_WORKERS: "1"
       SMOKE_WARMUP_WAVE_COUNT: "16"
       SMOKE_WARMUP_WAVE_DELAY_SECONDS: "4"
@@ -975,8 +976,8 @@ jobs:
           execution_started = time.monotonic()
           shard_index = int(os.environ.get("SMOKE_SHARD_INDEX", "0"))
           shard_count = int(os.environ.get("SMOKE_SHARD_COUNT", "1"))
-          physical_runner_count = 16
-          logical_shards_per_runner = 4
+          physical_runner_count = 8
+          logical_shards_per_runner = 8
           if shard_count != physical_runner_count * logical_shards_per_runner:
               raise RuntimeError(
                   f"Expected {physical_runner_count * logical_shards_per_runner} "
