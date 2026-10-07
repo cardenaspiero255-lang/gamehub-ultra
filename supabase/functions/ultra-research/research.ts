@@ -2660,6 +2660,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^por qu[eé] es importante\s+(?:(?:el|la|los|las|un|una)\s+)?(.+?)\.?$/i,
     /^por qu[eé] son importantes\s+(?:(?:el|la|los|las|un|una|unos|unas)\s+)?(.+?)\.?$/i,
     /^qu[eé] significa\s+(.+?)\.?$/i,
+    /^qu[eé] funci[oó]n tiene\s+(.+?)\.?$/i,
     /^qu[eé] diferencia hay entre\s+(.+?)\.?$/i,
     /^qu[eé] productos fabrica\s+(.+?)\.?$/i,
     /^qu[eé] tipo de productos fabrica\s+(.+?)\.?$/i,
@@ -2688,7 +2689,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -5483,6 +5484,16 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
       claimKey: "local-stable:baking-vs-frying",
       text:
         "Hornear cocina los alimentos con calor dentro de un horno, normalmente sin sumergirlos en grasa. Freír los cocina en contacto con aceite u otra grasa caliente, ya sea parcialmente o por inmersión.",
+    },
+    "airbag": {
+      claimKey: "local-stable:airbag",
+      text:
+        "Un airbag es una bolsa de seguridad que se infla rápidamente durante ciertos impactos para amortiguar el contacto de los ocupantes con partes del vehículo y complementar al cinturón de seguridad.",
+    },
+    "smartphone": {
+      claimKey: "local-stable:smartphone",
+      text:
+        "Un smartphone es un teléfono móvil inteligente capaz de ejecutar aplicaciones, conectarse a internet y combinar funciones de comunicación, cámara, navegación, multimedia y computación personal.",
     },
   };
 

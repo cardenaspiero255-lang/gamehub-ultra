@@ -7799,6 +7799,14 @@ Deno.test(
         query: "¿Qué diferencia hay entre hornear y freír?",
         expected: ["horno", "aceite"],
       },
+      {
+        query: "¿Qué función tiene un airbag?",
+        expected: ["impact", "seguridad", "bolsa"],
+      },
+      {
+        query: "¿Qué es un smartphone?",
+        expected: ["teléfono", "aplic"],
+      },
     ];
 
     for (const testCase of cases) {
