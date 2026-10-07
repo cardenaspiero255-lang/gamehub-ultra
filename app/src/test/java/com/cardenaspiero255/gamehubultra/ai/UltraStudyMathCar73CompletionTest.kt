@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class UltraStudyMathCar73CompletionTest {
 
@@ -150,6 +151,65 @@ class UltraStudyMathCar73CompletionTest {
         )
 
         assertEquals("77 °F", solution.resultText)
+    }
+
+    @Test
+    fun quadraticEquationWithDoubleRootRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, resuelve x^2 - 2x + 1 = 0")
+        )
+
+        assertEquals("x = 1", solution.resultText)
+    }
+
+    @Test
+    fun quadraticEquationWithoutRealRootsDoesNotInventARealAnswer() {
+        assertNull(
+            UltraMathEngine.solve("Ultra, resuelve x^2 + x + 1 = 0")
+        )
+    }
+
+    @Test
+    fun leastCommonMultipleWithZeroIsZero() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, calcula el MCM de 0 y 18")
+        )
+
+        assertEquals("0", solution.resultText)
+    }
+
+    @Test
+    fun fahrenheitToCelsiusRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, convierte 32 Fahrenheit a Celsius")
+        )
+
+        assertEquals("0 °C", solution.resultText)
+    }
+
+    @Test
+    fun celsiusToKelvinRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, convierte 0 Celsius a Kelvin")
+        )
+
+        assertEquals("273.15 K", solution.resultText)
+    }
+
+    @Test
+    fun kelvinToCelsiusRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, convierte 273.15 Kelvin a Celsius")
+        )
+
+        assertEquals("0 °C", solution.resultText)
+    }
+
+    @Test
+    fun temperaturesBelowAbsoluteZeroAreRejected() {
+        assertNull(
+            UltraMathEngine.solve("Ultra, convierte -1 Kelvin a Celsius")
+        )
     }
 
 }
