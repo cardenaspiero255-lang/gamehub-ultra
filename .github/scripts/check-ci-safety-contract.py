@@ -448,6 +448,32 @@ def main() -> None:
         )
 
     bundle_job = job(android, "release-bundle")
+    bundle_research = require_step(
+        android,
+        "release-bundle",
+        "Verify release research configuration",
+        shell="bash",
+    )
+    bundle_research_env = bundle_research.get("env")
+    if not isinstance(bundle_research_env, dict):
+        fail("release bundle research configuration env is missing")
+    expected_bundle_trusted_context = (
+        "${{ github.event_name != 'pull_request' || "
+        "(github.actor != 'dependabot[bot]' && "
+        "github.event.pull_request.head.repo.full_name == github.repository) }}"
+    )
+    if bundle_research_env.get("TRUSTED_RELEASE_CONTEXT") != expected_bundle_trusted_context:
+        fail("release bundle TRUSTED_RELEASE_CONTEXT guard changed")
+    for fragment in (
+        'research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"',
+        'exit 1',
+    ):
+        require_run_fragment(
+            bundle_research,
+            "release bundle research-key guard",
+            fragment,
+        )
+
     bundle_build = require_step(
         android,
         "release-bundle",
