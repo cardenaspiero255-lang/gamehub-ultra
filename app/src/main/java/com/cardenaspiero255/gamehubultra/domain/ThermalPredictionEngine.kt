@@ -57,6 +57,9 @@ data class ThermalPredictionPolicy(
     val highRiskHeadroom: Float = 0.72f,
     val criticalRiskHeadroom: Float = 0.82f,
     val minimumPreventiveConfidence: Float = 0.78f,
+    val preventiveRiskThreshold: ThermalRisk = ThermalRisk.HIGH,
+    val preventiveTrends: Set<ThermalTrend> =
+        setOf(ThermalTrend.RISING, ThermalTrend.RISING_FAST),
     val noiseTolerance: Float = 0.04f,
     val minimumRisingFraction: Float = 0.70f,
     val recoveryHeadroom: Float = 0.58f,
@@ -75,6 +78,13 @@ data class ThermalPredictionPolicy(
         require(highRiskHeadroom >= 0f)
         require(criticalRiskHeadroom > highRiskHeadroom)
         require(minimumPreventiveConfidence in 0f..1f)
+        require(preventiveRiskThreshold >= ThermalRisk.MODERATE)
+        require(preventiveTrends.isNotEmpty())
+        require(
+            preventiveTrends.all {
+                it == ThermalTrend.RISING || it == ThermalTrend.RISING_FAST
+            }
+        )
         require(noiseTolerance >= 0f)
         require(minimumRisingFraction in 0.5f..1f)
         require(recoveryHeadroom >= 0f && recoveryHeadroom < highRiskHeadroom)
@@ -84,6 +94,15 @@ data class ThermalPredictionPolicy(
         require(predictionHorizonMillis > 0L)
         require(severeThermalStatus >= 0)
     }
+
+    fun allowsPreventiveSignal(
+        risk: ThermalRisk,
+        trend: ThermalTrend,
+        confidence: Float
+    ): Boolean =
+        risk >= preventiveRiskThreshold &&
+            trend in preventiveTrends &&
+            confidence >= minimumPreventiveConfidence
 }
 
 data class ThermalPrediction(
@@ -264,10 +283,11 @@ class ThermalPredictionEngine(
             predicted = true
         )
 
-        val allowPreventiveSignal =
-            risk >= ThermalRisk.HIGH &&
-                confidence >= policy.minimumPreventiveConfidence &&
-                trend in RISING_TRENDS
+        val allowPreventiveSignal = policy.allowsPreventiveSignal(
+            risk = risk,
+            trend = trend,
+            confidence = confidence
+        )
 
         return ThermalPrediction(
             trend = trend,
