@@ -8060,7 +8060,9 @@ Deno.test(
     }
     const answer = (result.displayText ?? "").toLowerCase();
     if (!answer.includes("rancagua") || !answer.includes("15.4")) {
-      throw new Error("local coordinate fallback lost requested city: " + answer);
+      throw new Error(
+        "local coordinate fallback lost requested city: " + answer,
+      );
     }
   },
 );
