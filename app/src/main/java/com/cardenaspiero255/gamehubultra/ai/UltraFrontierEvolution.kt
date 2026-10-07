@@ -317,6 +317,53 @@ data class UltraFrontierClaim(
     val inferred: Boolean = false
 )
 
+data class UltraAtomicClaimAssessment(
+    val claim: UltraFrontierClaim,
+    val status: UltraClaimStatus
+)
+
+class UltraAtomicClaimExtractor(
+    private val maximumClaims: Int = 12
+) {
+    init {
+        require(maximumClaims >= 1)
+    }
+
+    fun extract(message: String): List<String> =
+        message
+            .split(Regex("""(?<=[.!?;])\s+|\n+"""))
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .take(maximumClaims)
+            .toList()
+
+    fun isInference(text: String): Boolean {
+        val normalized = text.lowercase(Locale.ROOT)
+        return INFERENCE_MARKERS.any(normalized::contains)
+    }
+
+    private companion object {
+        val INFERENCE_MARKERS = listOf(
+            "probablemente",
+            "posiblemente",
+            "es probable",
+            "podría",
+            "podria",
+            "puede que",
+            "parece que",
+            "likely",
+            "probably",
+            "possibly",
+            "may ",
+            "might ",
+            "se estima",
+            "estimación",
+            "estimacion"
+        )
+    }
+}
+
 class UltraClaimVerifier {
     fun verify(
         claim: UltraFrontierClaim,
@@ -810,6 +857,7 @@ class UltraFrontierEvolutionController(
     val consensus: UltraWeightedConsensusEngine =
         UltraWeightedConsensusEngine(),
     val claimVerifier: UltraClaimVerifier = UltraClaimVerifier(),
+    val claimExtractor: UltraAtomicClaimExtractor = UltraAtomicClaimExtractor(),
     val knowledgeGraph: UltraTemporalKnowledgeGraph =
         UltraTemporalKnowledgeGraph(),
     val planner: UltraFrontierTaskPlanner = UltraFrontierTaskPlanner(),
@@ -919,6 +967,42 @@ class UltraFrontierEvolutionController(
         return pairs.firstOrNull { it.first == selected }?.second
     }
 
+    fun verifyAtomicClaims(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        answer: UltraQueryExecutionAnswer,
+        nowMillis: Long
+    ): List<UltraAtomicClaimAssessment> {
+        if (answer.message.isBlank()) return emptyList()
+        val validUntil = if (request.requiresFreshData) {
+            safeAdd(nowMillis, UltraResearchCache.CURRENT_DATA_TTL_MS)
+        } else {
+            null
+        }
+        return claimExtractor.extract(answer.message)
+            .mapIndexed { index, text ->
+                val claim = UltraFrontierClaim(
+                    id = request.correlationId + ":" + index,
+                    text = text,
+                    confidence =
+                        answer.confidence ?: UltraAnswerConfidence.LOW,
+                    independentSourceCount =
+                        answer.independentSourceCount.coerceAtLeast(0),
+                    validUntilMillis = validUntil,
+                    inferred = claimExtractor.isInference(text)
+                )
+                UltraAtomicClaimAssessment(
+                    claim = claim,
+                    status = claimVerifier.verify(
+                        claim = claim,
+                        minimumIndependentSources =
+                            plan.minimumDistinctSources.coerceAtLeast(1),
+                        nowMillis = nowMillis
+                    )
+                )
+            }
+    }
+
     fun finalGate(
         request: UltraGeneralQueryRequest,
         plan: UltraFrontierPlan,
@@ -933,35 +1017,52 @@ class UltraFrontierEvolutionController(
             return answer
         }
 
-        val status = claimVerifier.verify(
-            claim = UltraFrontierClaim(
-                id = request.correlationId,
-                text = answer.message,
-                confidence = answer.confidence ?: UltraAnswerConfidence.LOW,
-                independentSourceCount = answer.independentSourceCount,
-                validUntilMillis = if (request.requiresFreshData) {
-                    safeAdd(nowMillis, UltraResearchCache.CURRENT_DATA_TTL_MS)
-                } else {
-                    null
-                }
-            ),
-            minimumIndependentSources =
-                plan.minimumDistinctSources.coerceAtLeast(1),
+        val assessments = verifyAtomicClaims(
+            request = request,
+            plan = plan,
+            answer = answer,
             nowMillis = nowMillis
         )
-        if (status == UltraClaimStatus.VERIFIED) return answer
+        if (assessments.isEmpty()) {
+            return answer.copy(
+                verified = false,
+                abstained = true,
+                retryable = false,
+                reasonCode = "FRONTIER_EMPTY_CLAIMS",
+                stage = "frontier-claim-verifier"
+            )
+        }
 
-        return answer.copy(
-            message =
-                "Encontré una respuesta candidata, pero una de sus afirmaciones no " +
-                    "alcanzó el nivel de corroboración exigido. Prefiero no presentarla como un hecho.",
-            verified = false,
-            sources = emptyList(),
-            abstained = true,
-            retryable = false,
-            reasonCode = "FRONTIER_CLAIM_QUORUM",
-            stage = "frontier-claim-verifier"
-        )
+        if (
+            assessments.any {
+                it.status == UltraClaimStatus.WEAK ||
+                    it.status == UltraClaimStatus.STALE
+            }
+        ) {
+            return answer.copy(
+                message =
+                    "Encontré una respuesta candidata, pero una de sus afirmaciones no " +
+                        "alcanzó el nivel de corroboración exigido. Prefiero no presentarla como un hecho.",
+                verified = false,
+                sources = emptyList(),
+                abstained = true,
+                retryable = false,
+                reasonCode = "FRONTIER_CLAIM_QUORUM",
+                stage = "frontier-claim-verifier"
+            )
+        }
+
+        if (assessments.any { it.status == UltraClaimStatus.INFERRED }) {
+            return answer.copy(
+                verified = false,
+                abstained = false,
+                retryable = false,
+                reasonCode = "FRONTIER_INFERRED_CLAIMS",
+                stage = "frontier-claim-verifier"
+            )
+        }
+
+        return answer
     }
 
     fun recallVerified(
