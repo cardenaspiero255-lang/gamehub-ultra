@@ -342,4 +342,65 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         assertEquals(2, persistAttempts)
     }
 
+    @Test
+    fun cancellationAfterProfileWriteRollsBackInNonCancellableContext() = kotlinx.coroutines.runBlocking {
+        val optimizer = PerGameAdaptiveOptimizer(confirmationsRequired = 1, cooldownMillis = 0)
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-cancel",
+            packageName = "game.a",
+            startedAtMillis = 1L,
+            endedAtMillis = 2L,
+            samples = listOf(snapshot(2L, memory = 95)),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1#1"
+        )
+        var currentProfile = PerformanceProfile.X4
+        var handled = false
+
+        assertFailsWith<kotlinx.coroutines.CancellationException> {
+            processCompletedAdaptiveSession(
+                completed = completed,
+                optimizer = optimizer,
+                nowMillis = 3L,
+                wasSessionHandled = { handled },
+                resolveActiveProfile = { currentProfile },
+                persistProfile = { _, profile ->
+                    if (profile == PerformanceProfile.X4) {
+                        assertTrue(kotlinx.coroutines.currentCoroutineContext().isActive)
+                    }
+                    currentProfile = profile
+                },
+                markSessionHandled = { handled = true },
+                recordPerformanceEvent = {
+                    throw kotlinx.coroutines.CancellationException("cancel after profile write")
+                }
+            )
+        }
+
+        assertEquals(PerformanceProfile.X4, currentProfile)
+        assertFalse(handled)
+    }
+
+    @Test
+    fun safeAdaptiveProcessingKeepsCleanupRunningButRethrowsCancellation() = kotlinx.coroutines.runBlocking {
+        var reported: Throwable? = null
+
+        val result = runAdaptiveSessionProcessing(
+            process = { error("persistence failed") },
+            onError = { reported = it }
+        )
+
+        assertNull(result)
+        assertTrue(reported is IllegalStateException)
+
+        assertFailsWith<kotlinx.coroutines.CancellationException> {
+            runAdaptiveSessionProcessing(
+                process = { throw kotlinx.coroutines.CancellationException("cancel") },
+                onError = { error("cancellation must not be swallowed") }
+            )
+        }
+    }
+
+
 }
