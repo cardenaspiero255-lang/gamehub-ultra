@@ -203,16 +203,22 @@ def _multiline_const_initializer_lines(source_lines: list[str]) -> set[int]:
     const_expression = re.compile(
         rf"^{const_atom}(?:\s*[+*/%\-]\s*{const_atom})*\s*$"
     )
+    const_continuation = re.compile(
+        rf"^{const_atom}(?:\s*[+*/%\-]\s*{const_atom})*\s*[+*/%\-]\s*$"
+    )
 
     for number, line in enumerate(source_lines, start=1):
         if not const_header.fullmatch(line.strip()):
             continue
-        next_number = number + 1
-        if next_number > len(source_lines):
-            continue
-        continuation = source_lines[next_number - 1].strip()
-        if const_expression.fullmatch(continuation):
-            structural.add(next_number)
+
+        for next_number in range(number + 1, len(source_lines) + 1):
+            continuation = source_lines[next_number - 1].strip()
+            if const_continuation.fullmatch(continuation):
+                structural.add(next_number)
+                continue
+            if const_expression.fullmatch(continuation):
+                structural.add(next_number)
+            break
     return structural
 
 
