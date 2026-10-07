@@ -319,4 +319,17 @@ class UltraGeneralQueryRouterRegressionTest {
 
         assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
     }
+    @Test
+    fun conversationalWeatherPromptIsFreshRequiredData() {
+        val request = UltraGeneralQueryRouter.classify(
+            "Ultra, háblame del clima en Madrid"
+        )
+
+        assertEquals(UltraGeneralQueryKind.CURRENT_DATA, request.kind)
+        assertEquals(UltraVerificationMode.REQUIRED, request.verificationMode)
+        assertTrue(request.requiresInternet)
+        assertTrue(request.requiresFreshData)
+    }
+
+
 }
