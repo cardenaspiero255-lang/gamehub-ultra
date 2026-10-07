@@ -24,6 +24,52 @@ interface GameSelectionStateRepository {
     suspend fun saveSelectedGameAndProfile(packageName: String, profile: PerformanceProfile)
     suspend fun saveProfileForGame(packageName: String, profile: PerformanceProfile)
     suspend fun saveGameProfileConfig(packageName: String, config: GameProfileConfig)
+
+    suspend fun saveAdaptiveProfileForGame(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        saveProfileForGame(packageName, profile)
+    }
+}
+
+class AdaptiveAwareGameSelectionStateRepository(
+    private val delegate: GameSelectionStateRepository,
+    private val onExplicitGameProfileSelection: suspend (
+        String,
+        PerformanceProfile
+    ) -> Unit
+) : GameSelectionStateRepository by delegate {
+    override suspend fun saveSelectedGameAndProfile(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        delegate.saveSelectedGameAndProfile(packageName, profile)
+        onExplicitGameProfileSelection(packageName, profile)
+    }
+
+    override suspend fun saveProfileForGame(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        delegate.saveProfileForGame(packageName, profile)
+        onExplicitGameProfileSelection(packageName, profile)
+    }
+
+    override suspend fun saveGameProfileConfig(
+        packageName: String,
+        config: GameProfileConfig
+    ) {
+        delegate.saveGameProfileConfig(packageName, config)
+        onExplicitGameProfileSelection(packageName, config.performanceProfile)
+    }
+
+    override suspend fun saveAdaptiveProfileForGame(
+        packageName: String,
+        profile: PerformanceProfile
+    ) {
+        delegate.saveAdaptiveProfileForGame(packageName, profile)
+    }
 }
 
 /** Owns persisted Library collections independently from selection/profile state. */
