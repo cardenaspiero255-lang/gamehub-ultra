@@ -2,6 +2,8 @@ package com.cardenaspiero255.gamehubultra
 
 import android.content.Context
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
+import com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldStateRegistry
+import com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldStateUpdater
 import com.cardenaspiero255.gamehubultra.data.ConnectedGameAccountsStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionEndMetrics
@@ -802,6 +804,24 @@ internal fun GameHubUltraApp(
         sessionActive = activeSessionPackage != null,
         optimizationObservations = optimizationObservations
     )
+
+    LaunchedEffect(
+        aiContext,
+        sessionCoachSamples,
+        adaptiveDecision
+    ) {
+        UltraFrontierWorldStateUpdater.update(
+            context = aiContext,
+            sessionSamples = sessionCoachSamples,
+            adaptiveDecision = adaptiveDecision
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            UltraFrontierWorldStateRegistry.clear()
+        }
+    }
 
     val tabs = listOf(
         stringResource(R.string.nav_inicio),
