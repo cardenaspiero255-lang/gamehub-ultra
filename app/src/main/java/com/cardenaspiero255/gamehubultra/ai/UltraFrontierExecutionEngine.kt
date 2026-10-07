@@ -108,6 +108,14 @@ class UltraFrontierExecutionEngine(
             )
         }
 
+        if (plan.lane == UltraFrontierLane.DEEP_RESEARCH) {
+            deepTaskGraphAnswer(
+                request = request,
+                plan = plan,
+                executionStartedNanos = executionStartedNanos
+            )?.let { return it }
+        }
+
         if (
             evolution.shouldRunEnsemble(
                 request = request,
@@ -350,6 +358,103 @@ class UltraFrontierExecutionEngine(
     }
 
     fun auditSnapshot(): List<UltraFrontierAuditRecord> = auditTrail.snapshot()
+
+    private fun deepTaskGraphAnswer(
+        request: UltraGeneralQueryRequest,
+        plan: UltraFrontierPlan,
+        executionStartedNanos: Long
+    ): UltraQueryExecutionAnswer? {
+        val plannedResearchTasks = plan.tasks.filter {
+            it.specialist == UltraFrontierSpecialist.RESEARCH
+        }
+        if (plannedResearchTasks.size < 2) return null
+
+        val executableTasks = plannedResearchTasks.map {
+            it.copy(dependsOn = emptySet())
+        }
+        val latencies =
+            java.util.concurrent.ConcurrentHashMap<String, Long>()
+        val remainingMillis = remainingResearchMillis(
+            plan = plan,
+            executionStartedNanos = executionStartedNanos
+        )
+        if (remainingMillis <= 0L) return null
+
+        val results = try {
+            specialistExecutor.execute(
+                tasks = executableTasks,
+                maxParallelism = executableTasks.size.coerceIn(1, 4),
+                timeoutMillis = remainingMillis.coerceAtLeast(1L)
+            ) { task ->
+                val branchIndex = executableTasks.indexOfFirst {
+                    it.id == task.id
+                }.coerceAtLeast(0)
+                val branchRequest = requestForAttempt(
+                    request = request,
+                    plan = plan,
+                    attempt = 1,
+                    executionStartedNanos = executionStartedNanos
+                ).copy(
+                    researchProviderOffset =
+                        request.researchProviderOffset + branchIndex
+                )
+                val started = nanoTime()
+                val result = coordinator.answer(
+                    request = branchRequest,
+                    localChat = { null }
+                )
+                latencies[task.id] = TimeUnit.NANOSECONDS.toMillis(
+                    (nanoTime() - started).coerceAtLeast(0L)
+                )
+                result
+            }
+        } catch (_: Exception) {
+            return null
+        }
+
+        val accepted = executableTasks.mapNotNull { task ->
+            val answer = results[task.id] ?: return@mapNotNull null
+            val verdict = critic.review(
+                plan = plan,
+                candidate = answer.toFrontierCandidate(attempt = 1)
+            )
+            if (verdict != UltraFrontierVerdict.ACCEPT) {
+                return@mapNotNull null
+            }
+            answer to (latencies[task.id] ?: 0L)
+        }
+        if (accepted.isEmpty()) return null
+
+        val selected = evolution.selectBestResearch(accepted)
+            ?: return null
+
+        auditTrail.record(
+            correlationId = request.correlationId,
+            lane = plan.lane,
+            event = UltraFrontierAuditEvent.ENSEMBLE_COMPARE,
+            attempt = 1,
+            reasonCode = "FRONTIER_DEEP_TASK_GRAPH"
+        )
+        accepted
+            .asSequence()
+            .map { it.first }
+            .filter { it != selected }
+            .forEach { unselected ->
+                recordEvolutionOutcome(
+                    request = request,
+                    plan = plan,
+                    answer = unselected,
+                    executionStartedNanos = executionStartedNanos
+                )
+            }
+
+        return complete(
+            request = request,
+            plan = plan,
+            answer = selected,
+            executionStartedNanos = executionStartedNanos
+        )
+    }
 
     private fun adaptiveEnsembleAnswer(
         request: UltraGeneralQueryRequest,
