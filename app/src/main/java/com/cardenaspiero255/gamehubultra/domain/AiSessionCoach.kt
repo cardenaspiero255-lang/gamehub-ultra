@@ -231,10 +231,14 @@ object AiSessionCoach {
             )
         }
 
-        val batteryValues = ordered.mapNotNull { it.batteryPercent }
         val chargingObserved = ordered.any { it.batteryCharging == true }
-        val batteryAssessment = BatteryAwareGamingEngine().assess(ordered)
+        val batteryEngine = BatteryAwareGamingEngine()
+        val batteryAssessment = batteryEngine.assess(ordered)
         val batteryDrop = wholeSessionBatteryDrop(ordered)
+        val batteryDrainRate = wholeSessionBatteryDrainPercentPerHour(
+            samples = ordered,
+            minimumWindowMillis = batteryEngine.policy.minimumDrainWindowMillis
+        )
         val patterns = recurringPatterns(ordered)
         val batteryNextStep = if (batteryAssessment.preventAggressiveProfiles) {
             "Para priorizar autonomía, evita perfiles agresivos hasta que mejore el estado de batería."
@@ -248,7 +252,7 @@ object AiSessionCoach {
         val summary = buildString {
             append("Sesión analizada con ${ordered.size} muestras")
             batteryDrop?.let { append(" · batería -$it %") }
-            batteryAssessment.drainPercentPerHour?.let {
+            batteryDrainRate?.let {
                 append(" · drenaje estimado ~${it.toInt()} %/h")
             }
             if (chargingObserved) {
@@ -266,7 +270,7 @@ object AiSessionCoach {
             nextSteps = nextSteps,
             patterns = patterns,
             batteryDropPercent = batteryDrop,
-            batteryDrainPercentPerHour = batteryAssessment.drainPercentPerHour,
+            batteryDrainPercentPerHour = batteryDrainRate,
             batteryChargingObserved = chargingObserved,
             batteryRecommendation = batteryAssessment.recommendation
         )
@@ -302,6 +306,60 @@ object AiSessionCoach {
             }
         }
         return totalDrop.takeIf { observedUnchargedPair }
+    }
+
+    private fun wholeSessionBatteryDrainPercentPerHour(
+        samples: List<SessionCoachSnapshot>,
+        minimumWindowMillis: Long
+    ): Float? {
+        val ordered = samples.sortedBy { it.timestampMillis }
+        if (ordered.size < 2) return null
+
+        val hasChargingTelemetry = ordered.any { it.batteryCharging != null }
+        if (!hasChargingTelemetry) {
+            val first = ordered.firstOrNull { it.batteryPercent != null } ?: return null
+            val last = ordered.lastOrNull { it.batteryPercent != null } ?: return null
+            val duration = (last.timestampMillis - first.timestampMillis).coerceAtLeast(0L)
+            val drop = (
+                checkNotNull(first.batteryPercent) - checkNotNull(last.batteryPercent)
+                ).coerceAtLeast(0)
+            return drainRate(
+                dropPercent = drop,
+                durationMillis = duration,
+                minimumWindowMillis = minimumWindowMillis
+            )
+        }
+
+        var totalDrop = 0
+        var totalDuration = 0L
+        ordered.zipWithNext().forEach { (previous, current) ->
+            val before = previous.batteryPercent
+            val after = current.batteryPercent
+            if (
+                previous.batteryCharging == false &&
+                current.batteryCharging == false &&
+                before != null &&
+                after != null
+            ) {
+                totalDrop += (before - after).coerceAtLeast(0)
+                totalDuration += (current.timestampMillis - previous.timestampMillis)
+                    .coerceAtLeast(0L)
+            }
+        }
+        return drainRate(
+            dropPercent = totalDrop,
+            durationMillis = totalDuration,
+            minimumWindowMillis = minimumWindowMillis
+        )
+    }
+
+    private fun drainRate(
+        dropPercent: Int,
+        durationMillis: Long,
+        minimumWindowMillis: Long
+    ): Float? {
+        if (dropPercent <= 0 || durationMillis < minimumWindowMillis) return null
+        return dropPercent.toFloat() * 3_600_000f / durationMillis.toFloat()
     }
 
     private fun thermalObservation(
