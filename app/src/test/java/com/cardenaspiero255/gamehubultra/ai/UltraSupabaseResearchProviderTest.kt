@@ -305,4 +305,88 @@ class UltraSupabaseResearchProviderTest {
         }
     }
 
+    @Test
+    fun v20RequestAdvertisesProtocolVersionToBackend() {
+        val requestJson = UltraResearchJsonCodec.encodeRequest(
+            UltraGeneralQueryRouter.classify("Ultra, háblame de los osos")
+        )
+
+        assertTrue(
+            requestJson.contains(
+                "\"clientEngineVersion\":\"${UltraResearchProtocol.ENGINE_VERSION}\""
+            )
+        )
+        assertEquals("20", UltraResearchProtocol.ENGINE_VERSION)
+    }
+
+    @Test
+    fun productionContractRejectsOlderResearchBackendVersion() {
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "engineVersion":"19",
+                  "claimKey":"general:star",
+                  "value":"star",
+                  "displayText":"Una estrella produce energía por fusión nuclear.",
+                  "sourceId":"https://es.wikipedia.org/wiki/Estrella",
+                  "authoritative":true
+                }
+            """.trimIndent()
+        }
+
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, qué es una estrella")
+        )
+
+        val failure = assertIs<UltraProviderResult.Failure>(result)
+        assertEquals("BACKEND_VERSION_MISMATCH", failure.reasonCode)
+    }
+
+    @Test
+    fun productionContractAcceptsMatchingResearchV20Backend() {
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "engineVersion":"20",
+                  "claimKey":"general:star",
+                  "value":"star",
+                  "displayText":"Una estrella produce energía por fusión nuclear.",
+                  "sourceId":"https://es.wikipedia.org/wiki/Estrella",
+                  "authoritative":true
+                }
+            """.trimIndent()
+        }
+
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, qué es una estrella")
+        )
+
+        assertIs<UltraProviderResult.Evidence>(result)
+    }
+
+
 }
