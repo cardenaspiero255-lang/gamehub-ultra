@@ -212,4 +212,13 @@ class UltraStudyMathCar73CompletionTest {
         )
     }
 
+    @Test
+    fun quadraticEquationWithLeadingCoefficientRunsOffline() {
+        val solution = assertNotNull(
+            UltraMathEngine.solve("Ultra, resuelve 2x^2 - 3x + 1 = 0")
+        )
+
+        assertEquals("x = 0.5 o x = 1", solution.resultText)
+    }
+
 }
