@@ -3,7 +3,10 @@ package com.cardenaspiero255.gamehubultra
 import com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveOptimizer
+import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePersistedState
+import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveStateStore
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,7 +33,8 @@ class PerGameAdaptiveRuntimeIntegrationTest {
                 snapshot(5_000L, memory = 92)
             ),
             preSessionMessage = null,
-            latestObservation = null
+            latestObservation = null,
+            gameVersion = "1.2.3"
         )
         var applied: Pair<String, PerformanceProfile>? = null
         val events = mutableListOf<PerformanceEvent>()
@@ -38,7 +42,6 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         val decision = applyCompletedAdaptiveDecision(
             completed = completed,
             selectedPackage = "game.a",
-            gameVersion = "1.2.3",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 6_000L,
@@ -59,6 +62,43 @@ class PerGameAdaptiveRuntimeIntegrationTest {
     }
 
     @Test
+    fun adaptiveStateIsKeyedByVersionCapturedWithCompletedSession() {
+        val writtenKeys = mutableListOf<AdaptiveGameKey>()
+        val store = object : PerGameAdaptiveStateStore {
+            override fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState? = null
+            override fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState) {
+                writtenKeys += key
+            }
+        }
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0,
+            stateStore = store
+        )
+
+        applyCompletedAdaptiveDecision(
+            completed = SessionCoachStoredSession(
+                sessionId = "session-version",
+                packageName = "game.a",
+                startedAtMillis = 1L,
+                endedAtMillis = 2L,
+                samples = listOf(snapshot(2L, memory = 95)),
+                preSessionMessage = null,
+                latestObservation = null,
+                gameVersion = "7.4.2"
+            ),
+            selectedPackage = "game.a",
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 3L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        assertEquals("7.4.2", writtenKeys.single().version)
+    }
+
+    @Test
     fun completedSessionForAnotherGameNeverMutatesSelectedProfile() {
         val optimizer = PerGameAdaptiveOptimizer(confirmationsRequired = 1, cooldownMillis = 0)
         var applied = false
@@ -75,7 +115,6 @@ class PerGameAdaptiveRuntimeIntegrationTest {
                 latestObservation = null
             ),
             selectedPackage = "game.a",
-            gameVersion = "1",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 3L,
@@ -105,7 +144,6 @@ class PerGameAdaptiveRuntimeIntegrationTest {
                 latestObservation = null
             ),
             selectedPackage = "game.a",
-            gameVersion = "1",
             activeProfile = PerformanceProfile.X4,
             optimizer = optimizer,
             nowMillis = 3L,
