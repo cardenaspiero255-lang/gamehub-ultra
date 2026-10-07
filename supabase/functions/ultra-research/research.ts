@@ -5684,6 +5684,16 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
       text:
         "Un sustantivo es una palabra que nombra personas, animales, lugares, objetos, ideas o conceptos. Puede funcionar como núcleo de un grupo nominal.",
     },
+    "verbo": {
+      claimKey: "local-study:verb",
+      text:
+        "Un verbo es una palabra que expresa una acción, un estado, un proceso o un cambio. En una oración suele aportar el núcleo del predicado y puede variar según tiempo, persona, número y modo.",
+    },
+    "parlamento": {
+      claimKey: "local-study:parliament",
+      text:
+        "Un parlamento es una institución legislativa formada por representantes que debate, aprueba o modifica leyes y ejerce funciones de control político según el sistema constitucional de cada país.",
+    },
     "ecosistema": {
       claimKey: "local-study:ecosystem",
       text:
@@ -5699,6 +5709,10 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     academicCoreKnowledge["leyes de newton"];
   academicCoreKnowledge["tres leyes de newton"] =
     academicCoreKnowledge["leyes de newton"];
+  academicCoreKnowledge["verbos"] =
+    academicCoreKnowledge["verbo"];
+  academicCoreKnowledge["parlamentos"] =
+    academicCoreKnowledge["parlamento"];
 
   const academicCore = academicCoreKnowledge[clean];
   if (academicCore) {
