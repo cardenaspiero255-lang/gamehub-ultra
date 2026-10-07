@@ -568,6 +568,18 @@ internal fun GameHubUltraApp(
         )
     }
 
+    fun recordExplicitAdaptiveProfileSelection(
+        packageName: String?,
+        profile: PerformanceProfile
+    ) {
+        val cleanPackage = packageName?.trim()?.takeIf(String::isNotEmpty) ?: return
+        val version = installedGameVersionKey(context, cleanPackage) ?: "unknown"
+        perGameAdaptiveOptimizer.recordExplicitProfileSelection(
+            key = AdaptiveGameKey(cleanPackage, version),
+            profile = profile
+        )
+    }
+
     fun applyAiProfileProposal() {
         val proposal = aiProfileProposal ?: return
         applyAiProfileProposalForSelectedGame(
@@ -727,18 +739,6 @@ internal fun GameHubUltraApp(
             SmartRecommendationActions.onExternalProfileSelection(
                 smartRecommendationRevertTarget
             )
-    }
-
-    fun recordExplicitAdaptiveProfileSelection(
-        packageName: String?,
-        profile: PerformanceProfile
-    ) {
-        val cleanPackage = packageName?.trim()?.takeIf(String::isNotEmpty) ?: return
-        val version = installedGameVersionKey(context, cleanPackage) ?: "unknown"
-        perGameAdaptiveOptimizer.recordExplicitProfileSelection(
-            key = AdaptiveGameKey(cleanPackage, version),
-            profile = profile
-        )
     }
 
     fun selectExternalProfile(profile: PerformanceProfile) {
