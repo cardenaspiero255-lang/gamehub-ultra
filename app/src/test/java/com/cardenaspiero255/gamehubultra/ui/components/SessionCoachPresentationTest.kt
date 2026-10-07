@@ -21,7 +21,9 @@ class SessionCoachPresentationTest {
             liveSamples = listOf(snapshot()),
             observations = observations,
             postSession = null,
-            sessionActive = true
+            sessionActive = true,
+            activeSessionText = "Sesión activa · 1 muestras",
+            stableText = "Sin cambios relevantes."
         )
 
         assertTrue(lines.first().contains("1"))
@@ -44,7 +46,9 @@ class SessionCoachPresentationTest {
             liveSamples = emptyList(),
             observations = emptyList(),
             postSession = post,
-            sessionActive = false
+            sessionActive = false,
+            activeSessionText = "Sesión activa",
+            stableText = "Sin cambios relevantes."
         )
 
         assertEquals("Preparación 90/100", lines.first())
@@ -61,7 +65,9 @@ class SessionCoachPresentationTest {
             liveSamples = emptyList(),
             observations = emptyList(),
             postSession = null,
-            sessionActive = true
+            sessionActive = true,
+            activeSessionText = "Sesión activa · 0 muestras",
+            stableText = "Sin cambios relevantes."
         )
 
         assertEquals(listOf("Sesión activa · 0 muestras", "Sin cambios relevantes."), lines)
@@ -81,7 +87,9 @@ class SessionCoachPresentationTest {
             liveSamples = emptyList(),
             observations = listOf(observation),
             postSession = null,
-            sessionActive = false
+            sessionActive = false,
+            activeSessionText = "Sesión activa",
+            stableText = "Sin cambios relevantes."
         )
 
         assertTrue(lines.any { it.contains("Cambio térmico relevante") })
