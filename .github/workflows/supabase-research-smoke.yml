@@ -1010,9 +1010,9 @@ jobs:
           ]
           expected_executed = len(stable_rows) + len(fresh_rows)
           stable_workers = int(os.environ.get("SMOKE_STABLE_WORKERS", "6"))
-          if stable_workers < 1 or stable_workers > 24:
+          if stable_workers < 1 or stable_workers > 32:
               raise RuntimeError(
-                  f"SMOKE_STABLE_WORKERS must be between 1 and 24, got {stable_workers}"
+                  f"SMOKE_STABLE_WORKERS must be between 1 and 32, got {stable_workers}"
               )
 
           warmup_workers = int(os.environ.get("SMOKE_WARMUP_WORKERS", "8"))
