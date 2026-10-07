@@ -215,6 +215,25 @@ class GameHubPreferencesRepositoryTest {
         assertEquals(54L, history.last().timestampMillis)
     }
 
+
+    @Test
+    fun duplicatePerformanceEventIsStoredOnlyOnce() = runBlocking {
+        val event = PerformanceEvent(
+            timestampMillis = 777L,
+            type = PerformanceEventType.POLICY_CHANGED,
+            sessionId = "session-dedupe",
+            profile = PerformanceProfile.BALANCED,
+            detail = "adaptive-reason"
+        )
+
+        repository.appendPerformanceEvent(event)
+        repository.appendPerformanceEvent(event)
+
+        val history = repository.performanceHistoryFlow(limit = 50).first()
+        assertEquals(1, history.size)
+        assertEquals("session-dedupe", history.single().sessionId)
+    }
+
     @Test
     fun legacySharedPreferencesMigrationKeepsSelections() = runBlocking {
         val legacy = proxySharedPreferences(
