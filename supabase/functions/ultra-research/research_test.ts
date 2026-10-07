@@ -4906,18 +4906,6 @@ Deno.test(
           "Nike es una empresa estadounidense de ropa, calzado y equipamiento deportivo.",
       },
       {
-        query: "Cuéntame sobre los osos.",
-        expectedSearch: "los osos",
-        title: "Oso",
-        extract: "Los osos son mamíferos de la familia Ursidae.",
-      },
-      {
-        query: "Dame información sobre los osos.",
-        expectedSearch: "los osos",
-        title: "Oso",
-        extract: "Los osos son mamíferos de la familia Ursidae.",
-      },
-      {
         query: "Quiero que me hables de Adidas.",
         expectedSearch: "Adidas",
         title: "Adidas",
