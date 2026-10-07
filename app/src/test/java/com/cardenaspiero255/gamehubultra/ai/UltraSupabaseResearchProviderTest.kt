@@ -355,6 +355,41 @@ class UltraSupabaseResearchProviderTest {
     }
 
     @Test
+    fun productionContractRejectsMissingResearchBackendVersion() {
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "claimKey":"general:star",
+                  "value":"star",
+                  "displayText":"Una estrella produce energía por fusión nuclear.",
+                  "sourceId":"https://es.wikipedia.org/wiki/Estrella",
+                  "authoritative":true
+                }
+            """.trimIndent()
+        }
+
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+
+        val result = provider.fetchResult(
+            UltraGeneralQueryRouter.classify("Ultra, qué es una estrella")
+        )
+
+        val failure = assertIs<UltraProviderResult.Failure>(result)
+        assertEquals("BACKEND_VERSION_MISMATCH", failure.reasonCode)
+        assertTrue(failure.message.contains("sin versión"))
+    }
+
+    @Test
     fun productionContractAcceptsMatchingResearchV20Backend() {
         val transport = object : UltraResearchBackendTransport {
             override fun post(
