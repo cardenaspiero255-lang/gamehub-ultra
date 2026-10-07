@@ -201,7 +201,7 @@
     <string name="voice_result_profile_deferred_short">Perfil %1$s guardado para cuando GameHub Ultra esté activo.</string>
     <string name="voice_result_profile_unavailable">El perfil solicitado no está disponible en este dispositivo.</string>
     <string name="voice_result_status">Estado: batería %1$s%%, térmica %2$s.</string>
-    <string name="voice_result_help">Puedes decir: abre un juego, pon X4, prioriza interpolación, FPS balanceado o dime el estado.</string>
+    <string name="voice_result_help">Puedes decir: abre un juego, pon X4, dime el estado, háblame de los osos, háblame de Nike, cuéntame sobre un tema o dime qué sabes de algo.</string>
     <string name="voice_status_unavailable">No disponible.</string>
     <string name="voice_status_failed">No se pudo completar.</string>
     <string name="ai_advisor_title">Asesor IA</string>

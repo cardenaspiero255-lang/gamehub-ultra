@@ -108,7 +108,8 @@ class SupabaseUltraResearchProvider(
     private val supabaseUrl: String,
     private val publishableKey: String,
     private val transport: UltraResearchBackendTransport =
-        HttpUrlConnectionUltraResearchTransport
+        HttpUrlConnectionUltraResearchTransport,
+    private val requiredEngineVersion: String? = null
 ) : UltraResearchProvider {
     override val id: String = "supabase-ultra-research"
 
@@ -154,6 +155,20 @@ class SupabaseUltraResearchProvider(
 
         val decoded = UltraResearchJsonCodec.decodeResponse(httpResponse.body)
         val statusReason = reasonCodeForStatus(httpResponse.statusCode)
+
+        if (httpResponse.statusCode in 200..299 && requiredEngineVersion != null) {
+            val backendVersion = decoded.engineVersion?.trim()
+            if (backendVersion != requiredEngineVersion) {
+                return UltraProviderResult.Failure(
+                    reasonCode = "BACKEND_VERSION_MISMATCH",
+                    message =
+                        "Ultra Research requiere V$requiredEngineVersion pero el backend respondió " +
+                            (backendVersion?.let { "V$it" } ?: "sin versión"),
+                    retryable = false,
+                    stage = "protocol"
+                )
+            }
+        }
 
         if (decoded.abstained) {
             return UltraProviderResult.Abstained(

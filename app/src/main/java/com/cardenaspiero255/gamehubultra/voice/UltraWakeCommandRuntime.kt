@@ -206,7 +206,7 @@ internal class UltraWakeCommandRuntime(
         is VoiceActionResult.NetworkReport -> NetworkVoiceResponseText.format(result)
         is VoiceActionResult.AiAdvice -> AiAdviceFormatter.fullResponse(context, result.advice)
         VoiceActionResult.Help ->
-            "Puedes decir: Ultra, dime la hora. Ultra, dime la temperatura. Ultra, dime los Hz. Ultra, abre un juego. Ultra, pon X4."
+            "Puedes decir: Ultra, dime la hora; Ultra, abre un juego; Ultra, pon X4; Ultra, háblame de los osos; Ultra, háblame de Nike; Ultra, cuéntame sobre un tema; o Ultra, dime qué sabes de algo."
         is VoiceActionResult.NotAvailable -> "No disponible. ${result.detail}"
         VoiceActionResult.RequiresPermission -> "Necesito permiso de micrófono."
         is VoiceActionResult.Failed -> "No pude completar el comando. ${result.detail}"

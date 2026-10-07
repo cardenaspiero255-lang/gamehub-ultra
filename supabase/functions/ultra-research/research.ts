@@ -50,7 +50,7 @@ const STABLE_KNOWLEDGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 2048;
 
 const USER_AGENT =
-  "GameHub-Ultra-CAR73/1.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
+  "GameHub-Ultra-Research-V20/20.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
 
 function abstain(
   message: string,
@@ -1770,6 +1770,41 @@ function extractWeatherLocation(query: string): string | null {
   return null;
 }
 
+function knownWeatherCoordinates(
+  location: string,
+): { latitude: number; longitude: number; label: string } | null {
+  const clean = normalize(location);
+  const known = [
+    {
+      aliases: ["requinoa"],
+      latitude: -34.28486,
+      longitude: -70.81751,
+      label: "Requínoa, Región de O'Higgins, Chile",
+    },
+    {
+      aliases: ["rancagua"],
+      latitude: -34.1702,
+      longitude: -70.7407,
+      label: "Rancagua, Región de O'Higgins, Chile",
+    },
+  ];
+
+  const match = known.find((place) =>
+    place.aliases.some((alias) =>
+      clean === alias ||
+      clean.startsWith(alias + " ") ||
+      clean.endsWith(" " + alias)
+    )
+  );
+  return match
+    ? {
+      latitude: match.latitude,
+      longitude: match.longitude,
+      label: match.label,
+    }
+    : null;
+}
+
 function weatherDescription(code: number): string {
   if (code === 0) return "despejado";
   if ([1, 2].includes(code)) return "parcialmente nublado";
@@ -1792,9 +1827,14 @@ async function nominatimCoordinates(
   url.searchParams.set("limit", "1");
   url.searchParams.set("accept-language", "es");
 
-  const response = await fetchWithRetry(deps, url, {
-    headers: { "User-Agent": USER_AGENT },
-  });
+  const response = await fetchWithRetry(
+    deps,
+    url,
+    {
+      headers: { "User-Agent": USER_AGENT },
+    },
+    1,
+  );
   if (!response?.ok) return null;
 
   try {
@@ -1899,6 +1939,72 @@ async function metNorwayWeatherEvidence(
   };
 }
 
+async function wttrWeatherEvidence(
+  location: string,
+  placeLabel: string,
+  deps: ResearchDependencies,
+): Promise<ResearchResult> {
+  const url = new URL(
+    "https://wttr.in/" + encodeURIComponent(location),
+  );
+  url.searchParams.set("format", "j1");
+
+  const payload = await fetchJson(deps, url, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  const conditions = Array.isArray(payload?.current_condition)
+    ? payload.current_condition
+    : [];
+  const current = conditions[0] && typeof conditions[0] === "object"
+    ? conditions[0] as JsonObject
+    : null;
+
+  const temperatureText = stringValue(current?.temp_C);
+  const feelsLikeTextValue = stringValue(current?.FeelsLikeC);
+  const temperature = temperatureText == null ? null : Number(temperatureText);
+  const feelsLike = feelsLikeTextValue == null ? null : Number(feelsLikeTextValue);
+  const descriptions = Array.isArray(current?.weatherDesc)
+    ? current.weatherDesc
+    : [];
+  const firstDescription =
+    descriptions[0] && typeof descriptions[0] === "object"
+      ? descriptions[0] as JsonObject
+      : null;
+  const description =
+    stringValue(firstDescription?.value) ?? "condiciones actuales";
+  const observedAt = stringValue(current?.localObsDateTime);
+
+  if (temperature == null || !Number.isFinite(temperature)) {
+    return abstain(
+      "La fuente meteorológica terciaria no devolvió datos verificables.",
+      {
+        reasonCode: "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        stage: "wttr",
+      },
+    );
+  }
+
+  const feelsLikeText =
+    feelsLike != null &&
+      Number.isFinite(feelsLike) &&
+      Math.abs(feelsLike - temperature) >= 1
+      ? `, sensación térmica de ${feelsLike} °C`
+      : "";
+
+  return {
+    claimKey: `weather:wttr:${slug(placeLabel || location)}`,
+    value: `${temperature}|${normalize(description)}|${observedAt ?? ""}`,
+    displayText:
+      `En ${placeLabel || location}: ${temperature} °C, ${description}${feelsLikeText}.`,
+    sourceId: url.toString(),
+    sourceIds: [url.toString()],
+    independentSourceCount: 1,
+    authoritative: true,
+    observedAt,
+  };
+}
+
 async function weatherEvidence(
   query: string,
   deps: ResearchDependencies,
@@ -1910,25 +2016,80 @@ async function weatherEvidence(
     );
   }
 
+  const knownLocation = knownWeatherCoordinates(location);
+  if (knownLocation) {
+    const latitude = knownLocation.latitude;
+    const longitude = knownLocation.longitude;
+    const placeLabel = knownLocation.label;
+
+    const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
+    forecastUrl.searchParams.set("latitude", String(latitude));
+    forecastUrl.searchParams.set("longitude", String(longitude));
+    forecastUrl.searchParams.set(
+      "current",
+      "temperature_2m,apparent_temperature,weather_code",
+    );
+    forecastUrl.searchParams.set("timezone", "auto");
+
+    const forecast = await fetchJson(deps, forecastUrl, {
+      headers: { "User-Agent": USER_AGENT },
+    });
+    const current = forecast?.current as JsonObject | undefined;
+    const temperature = numberValue(current?.temperature_2m);
+    const apparent = numberValue(current?.apparent_temperature);
+    const weatherCode = numberValue(current?.weather_code);
+
+    if (temperature != null && weatherCode != null) {
+      const description = weatherDescription(weatherCode);
+      const feelsLike = apparent != null && Math.abs(apparent - temperature) >= 1
+        ? `, sensación térmica de ${apparent} °C`
+        : "";
+      const observedAt = stringValue(current?.time);
+
+      return {
+        claimKey: `weather:${latitude.toFixed(3)},${longitude.toFixed(3)}`,
+        value: `${temperature}|${weatherCode}|${observedAt ?? ""}`,
+        displayText:
+          `En ${placeLabel}: ${temperature} °C, ${description}${feelsLike}.`,
+        sourceId: forecastUrl.toString(),
+        sourceIds: [forecastUrl.toString()],
+        independentSourceCount: 1,
+        authoritative: true,
+        observedAt,
+      };
+    }
+
+    const met = await metNorwayWeatherEvidence(
+      latitude,
+      longitude,
+      placeLabel,
+      deps,
+    );
+    if (!met.abstained) return met;
+
+    const wttr = await wttrWeatherEvidence(location, placeLabel, deps);
+    if (!wttr.abstained) return wttr;
+
+    return met.reasonCode ? met : wttr;
+  }
+
   const geoUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
   geoUrl.searchParams.set("name", location);
   geoUrl.searchParams.set("count", "1");
   geoUrl.searchParams.set("language", "es");
   geoUrl.searchParams.set("format", "json");
 
-  const geoResponse = await fetchWithRetry(deps, geoUrl, {
-    headers: { "User-Agent": USER_AGENT },
-  });
-  if (!geoResponse) {
-    return abstain("La fuente de ubicación no respondió a tiempo.", {
-      reasonCode: "UPSTREAM_UNAVAILABLE",
-      retryable: true,
-      stage: "weather_geocoding",
-    });
-  }
+  const geoResponse = await fetchWithRetry(
+    deps,
+    geoUrl,
+    {
+      headers: { "User-Agent": USER_AGENT },
+    },
+    2,
+  );
 
   let geo: JsonObject | null = null;
-  if (geoResponse.ok) {
+  if (geoResponse?.ok) {
     try {
       const parsed = await geoResponse.json();
       geo = parsed && typeof parsed === "object"
@@ -1950,7 +2111,9 @@ async function weatherEvidence(
   ].filter(Boolean).join(", ");
 
   if (latitude == null || longitude == null) {
-    const fallbackLocation = await nominatimCoordinates(location, deps);
+    const fallbackLocation =
+      await nominatimCoordinates(location, deps) ??
+      knownWeatherCoordinates(location);
     if (!fallbackLocation) {
       return abstain("No pude encontrar esa ubicación.", {
         reasonCode: "UPSTREAM_UNAVAILABLE",
@@ -2000,12 +2163,22 @@ async function weatherEvidence(
     };
   }
 
-  return await metNorwayWeatherEvidence(
+  const met = await metNorwayWeatherEvidence(
     latitude,
     longitude,
     placeLabel || location,
     deps,
   );
+  if (!met.abstained) return met;
+
+  const wttr = await wttrWeatherEvidence(
+    location,
+    placeLabel || location,
+    deps,
+  );
+  if (!wttr.abstained) return wttr;
+
+  return met.reasonCode ? met : wttr;
 }
 
 function extractNewsTopic(query: string): string {
@@ -2646,6 +2819,7 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
   const wrappers: RegExp[] = [
     /^expl[ií]came qu[eé] es\s+(.+?)\.?$/i,
     /^describe\s+(.+?)\.?$/i,
+    /^descr[ií]beme\s+(.+?)\.?$/i,
     /^para qu[eé] sirve o por qu[eé] importa\s+(.+?)\.?$/i,
     /^resume qu[eé] es\s+(.+?)\.?$/i,
     /^dime lo esencial sobre\s+(.+?)\.?$/i,
@@ -2668,11 +2842,17 @@ function unwrapGeneralKnowledgePrompt(value: string): string {
     /^cu[aá]ndo comenz[oó]\s+(.+?)\.?$/i,
     /^qui[eé]n fue\s+(.+?)\.?$/i,
     /^qu[eé] fue\s+(.+?)\.?$/i,
+    /^(?:h[aá]blame|cu[eé]ntame|dime(?:\s+algo)?|dime\s+qu[eé]\s+sabes|quiero\s+saber|quiero\s+que\s+me\s+hables|me\s+puedes\s+hablar|puedes\s+hablarme|podr[ií]as\s+hablarme|expl[ií]came(?:\s+algo)?|ens[eé][ñn]ame(?:\s+algo)?|qu[eé]\s+sabes|dame\s+informaci[oó]n|inf[oó]rmame)\s+(?:de|del|sobre|acerca\s+de)\s+(.+?)\.?$/i,
   ];
 
   for (const wrapper of wrappers) {
     const match = cleanValue.match(wrapper) ?? value.match(wrapper);
-    if (match?.[1]?.trim()) return match[1].trim();
+    if (match?.[1]?.trim()) {
+      return match[1]
+        .trim()
+        .replace(/^(?:la|el)\s+marca\s+/i, "")
+        .trim();
+    }
   }
   return cleanValue;
 }
@@ -2689,7 +2869,7 @@ function extractGeneralKnowledgeQuery(query: string): string {
 
   const topic = clean
     .replace(
-      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame sobre|háblame sobre|cuentame sobre|cuéntame sobre)(?:\s+|$))+/i,
+      /^(?:(?:hola|hello|please|por favor|y|and|explicame|explícame|dime|que es|qué es|que son|qué son|quien es|quién es|por que|por qué|para que sirve|para qué sirve|que hace|qué hace|que funcion tiene|qué función tiene|como funciona|cómo funciona|como se calcula|cómo se calcula|cual es|cuál es|cuales son|cuáles son|donde esta|dónde está|cuando fue|cuándo fue|what is|what are|who is|who are|why|how does|explain|define|what does|where is|when was|hablame de|háblame de|hablame del|háblame del|hablame sobre|háblame sobre|hablame acerca de|háblame acerca de|cuentame de|cuéntame de|cuentame sobre|cuéntame sobre|cuentame acerca de|cuéntame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|qué sabes de|que sabes sobre|qué sabes sobre|dame informacion de|dame información de|dame informacion sobre|dame información sobre|informame de|infórmame de|informame sobre|infórmame sobre|informame acerca de|infórmame acerca de|describeme|descríbeme|dime que sabes de|dime qué sabes de|quiero que me hables de|quiero que me hables sobre|me puedes hablar de|me puedes hablar sobre|puedes hablarme de|puedes hablarme sobre|podrias hablarme de|podrías hablarme de|explicame sobre|explícame sobre|ensename sobre|enséñame sobre|tell me about|tell me something about|talk to me about|can you tell me about|could you tell me about|describe)(?:\s+|$))+/i,
       "",
     )
     .trim();
@@ -2715,7 +2895,7 @@ function isExplicitNewKnowledgeTopic(query: string): boolean {
   const clean = normalize(
     stripAssistantInvocation(stripConversationSpeaker(query)),
   ).replace(/^[¿?¡!\s]+|[¿?¡!\s]+$/g, "");
-  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|que significa|por que es|define|explicame que es|explica que es|como se calcula|what is|what are|who is|who was|who are|why is|define|explain)\s+\S+/.test(
+  return /^(?:y |and )?(?:que es|que son|que fue|quien es|quien fue|quienes son|cuando comenzo|hablame de|hablame del|hablame sobre|hablame acerca de|cuentame de|cuentame sobre|cuentame acerca de|dime sobre|dime algo de|dime algo sobre|quiero saber de|quiero saber sobre|quiero saber acerca de|que sabes de|que sabes sobre|dame informacion de|dame informacion sobre|informame de|informame sobre|informame acerca de|describeme|dime que sabes de|quiero que me hables de|quiero que me hables sobre|me puedes hablar de|me puedes hablar sobre|puedes hablarme de|puedes hablarme sobre|podrias hablarme de|explicame sobre|ensename sobre|que significa|por que es|define|explicame que es|explica que es|como se calcula|what is|what are|who is|who was|who are|why is|define|explain|tell me about|talk to me about|describe)\s+\S+/.test(
     clean,
   );
 }
@@ -5316,6 +5496,32 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
       "Por eso el resultado depende del capital inicial, la tasa, la frecuencia de capitalización y el tiempo.";
     return {
       claimKey: "local-stable:compound-interest",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "estrella" || clean === "estrellas") {
+    const displayText =
+      "Una estrella es un astro formado principalmente por plasma que produce energía mediante fusión nuclear en su interior. " +
+      "Esa energía se libera en forma de radiación, incluida luz y calor; el Sol es la estrella más cercana a la Tierra.";
+    return {
+      claimKey: "local-stable:star",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "algoritmo" || clean === "algoritmos") {
+    const displayText =
+      "Un algoritmo es una secuencia ordenada y finita de pasos o instrucciones para resolver un problema o completar una tarea. " +
+      "Puede expresarse en lenguaje natural, pseudocódigo o código, y debe definir con claridad qué hacer y en qué orden.";
+    return {
+      claimKey: "local-stable:algorithm",
       value: normalize(displayText),
       displayText,
       independentSourceCount: 0,

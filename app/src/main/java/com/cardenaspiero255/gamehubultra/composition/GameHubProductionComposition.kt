@@ -22,6 +22,7 @@ import com.cardenaspiero255.gamehubultra.data.GameSessionLifecycleCoordinatorFac
 import com.cardenaspiero255.gamehubultra.data.GameSessionStore
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStore
+import com.cardenaspiero255.gamehubultra.data.AiProfileProposalStore
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStore
 import com.cardenaspiero255.gamehubultra.data.UltraConversationMemoryStore
@@ -50,7 +51,8 @@ internal data class GameHubProductionBootstrap(
     val viewModelDependencyFactory: GameHubViewModelDependencyFactory,
     val connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     val storeLibraryRepository: StoreLibraryStateRepository,
-    val optimizationMemoryRepository: GameOptimizationMemoryStateRepository
+    val optimizationMemoryRepository: GameOptimizationMemoryStateRepository,
+    val aiProfileProposalStore: AiProfileProposalStore
 )
 
 internal object GameHubProductionComposition {
@@ -69,6 +71,7 @@ internal object GameHubProductionComposition {
         val storeLibraryRepository = storeLibraryRepository(appContext)
         val optimizationMemoryRepository: GameOptimizationMemoryStateRepository =
             GameOptimizationMemoryStore(appContext)
+        val aiProfileProposalStore = AiProfileProposalStore(appContext)
         val sessionCoordinatorFactory = GameSessionLifecycleCoordinatorFactory { scope ->
             GameSessionLifecycleCoordinator(
                 store = sessionRepository,
@@ -126,7 +129,8 @@ internal object GameHubProductionComposition {
             viewModelDependencyFactory = viewModelDependencyFactory,
             connectedAccountsRepository = connectedAccountsRepository,
             storeLibraryRepository = storeLibraryRepository,
-            optimizationMemoryRepository = optimizationMemoryRepository
+            optimizationMemoryRepository = optimizationMemoryRepository,
+            aiProfileProposalStore = aiProfileProposalStore
         )
     }
 

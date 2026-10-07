@@ -46,9 +46,46 @@ class DefaultUltraQueryExecutor(
             }
         }
 
-        return coordinator.answer(
+        val execution = coordinator.answer(
             request = request,
             localChat = localAnswer
-        ).message
+        )
+        if (
+            request.verificationMode == UltraVerificationMode.OPTIONAL &&
+            execution.abstained
+        ) {
+            val emergencyLocal = try {
+                localChat()
+                    .trim()
+                    .takeIf(String::isNotBlank)
+                    ?.takeIf(::isUsefulEmergencyLocalAnswer)
+            } catch (_: Exception) {
+                null
+            }
+            if (emergencyLocal != null) {
+                return "Respuesta local (sin verificación en línea): $emergencyLocal"
+            }
+        }
+        return execution.message
+    }
+
+    private fun isUsefulEmergencyLocalAnswer(value: String): Boolean {
+        if (value.length < 20) return false
+        val normalized = value.lowercase()
+        if (
+            normalized.startsWith("soy ultra") &&
+            normalized.contains("puedo ayudarte")
+        ) {
+            return false
+        }
+        val blocked = listOf(
+            "no pude verificar",
+            "no pudo verificar",
+            "servicio de consulta no",
+            "asistente general online no",
+            "hola soy ultra",
+            "puedo ayudarte con"
+        )
+        return blocked.none(normalized::contains)
     }
 }

@@ -657,12 +657,26 @@ class WikimediaUltraResearchProvider(
         return current
             .replace(
                 Regex(
+                    """^(?:h[aá]blame|cu[eé]ntame|dime(?:\s+algo)?|dime\s+qu[eé]\s+sabes|quiero\s+saber|quiero\s+que\s+me\s+hables|me\s+puedes\s+hablar|puedes\s+hablarme|podr[ií]as\s+hablarme|expl[ií]came(?:\s+algo)?|ens[eé][ñn]ame(?:\s+algo)?|qu[eé]\s+sabes|dame\s+informaci[oó]n|inf[oó]rmame|descr[ií]beme|tell\s+me(?:\s+something)?|talk\s+to\s+me|can\s+you\s+tell\s+me|could\s+you\s+tell\s+me|describe)\s+(?:(?:de|del|sobre|acerca\s+de|about)\s+)?(?:(?:el|la|los|las)\s+(?!marca\b))?""",
+                    RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+            .replace(
+                Regex(
                     """^(?:cual es el significado de|cuál es el significado de|que significa|qué significa|significado de|que es|qué es|que son|qué son|quien es|quién es|quienes son|quiénes son|define|definicion de|definición de|explicame|explícame|explica|dime que es|dime qué es|what is|what are|who is|who are|what does|meaning of|define)\s+""",
                     RegexOption.IGNORE_CASE
                 ),
                 ""
             )
             .trim()
+            .replace(
+                Regex(
+                    """^(?:la|el)\s+marca\s+""",
+                    RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
             .replace(
                 Regex(
                     """^(?:un|una|unos|unas|ser|a|an)\s+""",

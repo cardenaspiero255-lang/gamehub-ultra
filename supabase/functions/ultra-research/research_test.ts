@@ -344,50 +344,52 @@ Deno.test("marketplace price can read OAuth access token from Vault resolver", a
   }
 });
 
-Deno.test("weather follow-up uses current question instead of contaminating it with prior location", async () => {
-  let geocodedName = "";
-  const deps: ResearchDependencies = {
-    fetcher: (input) => {
-      const url = new URL(String(input));
-      if (url.hostname === "geocoding-api.open-meteo.com") {
-        geocodedName = url.searchParams.get("name") ?? "";
-        return jsonResponse({
-          results: [{
-            name: "Rancagua",
-            admin1: "O'Higgins",
-            country: "Chile",
-            latitude: -34.17,
-            longitude: -70.74,
-          }],
-        });
-      }
-      if (url.hostname === "api.open-meteo.com") {
-        return jsonResponse({
-          current: {
-            temperature_2m: 20,
-            apparent_temperature: 20,
-            weather_code: 0,
-            time: "2026-09-26T22:00",
-          },
-        });
-      }
-      throw new Error("unexpected URL " + url);
-    },
-    env: () => undefined,
-  };
+Deno.test(
+  "weather follow-up uses current question instead of contaminating it with prior location",
+  async () => {
+    let forecastLatitude = "";
+    let forecastLongitude = "";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "api.open-meteo.com") {
+          forecastLatitude = url.searchParams.get("latitude") ?? "";
+          forecastLongitude = url.searchParams.get("longitude") ?? "";
+          return jsonResponse({
+            current: {
+              temperature_2m: 20,
+              apparent_temperature: 20,
+              weather_code: 0,
+              time: "2026-09-26T22:00",
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
 
-  const result = await routeResearchQuery(
-    "Ultra, y clima en Rancagua?",
-    deps,
-    "Ultra, clima de hoy en Santiago",
-    "CURRENT_DATA",
-  );
+    const result = await routeResearchQuery(
+      "Ultra, y clima en Rancagua?",
+      deps,
+      "Ultra, clima de hoy en Santiago",
+      "CURRENT_DATA",
+    );
 
-  if (result.abstained) throw new Error("expected verified follow-up weather");
-  if (geocodedName !== "Rancagua") {
-    throw new Error("expected current question location, got " + geocodedName);
-  }
-});
+    if (result.abstained) {
+      throw new Error("expected verified follow-up weather");
+    }
+    if (
+      forecastLatitude !== "-34.1702" ||
+      forecastLongitude !== "-70.7407"
+    ) {
+      throw new Error(
+        "expected Rancagua coordinates from current question, got " +
+          forecastLatitude + "," + forecastLongitude,
+      );
+    }
+  },
+);
 
 Deno.test("general knowledge returns a sourced answer instead of the gaming fallback", async () => {
   const deps: ResearchDependencies = {
@@ -4898,6 +4900,32 @@ Deno.test(
         extract:
           "La presión arterial es la presión que ejerce la sangre sobre las arterias.",
       },
+      {
+        query: "Háblame de la marca Nike.",
+        expectedSearch: "Nike",
+        title: "Nike",
+        extract:
+          "Nike es una empresa estadounidense de ropa, calzado y equipamiento deportivo.",
+      },
+      {
+        query: "Quiero que me hables de Adidas.",
+        expectedSearch: "Adidas",
+        title: "Adidas",
+        extract: "Adidas es una empresa de ropa y calzado deportivo.",
+      },
+      {
+        query: "¿Me puedes hablar de los lobos?",
+        expectedSearch: "los lobos",
+        title: "Lobo",
+        extract: "Los lobos son mamíferos carnívoros de la familia Canidae.",
+      },
+      {
+        query: "Explícame sobre los volcanes.",
+        expectedSearch: "los volcanes",
+        title: "Volcán",
+        extract:
+          "Los volcanes son estructuras geológicas por las que emerge material del interior terrestre.",
+      },
     ];
 
     for (const testCase of cases) {
@@ -7845,6 +7873,321 @@ Deno.test(
             testCase.query,
         );
       }
+    }
+  },
+);
+
+Deno.test(
+  "Requinoa weather bypasses geocoders and survives primary forecast outage",
+  async () => {
+    let nominatimCalls = 0;
+    let metCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "geocoding-api.open-meteo.com") {
+          throw new Error("primary geocoder unavailable");
+        }
+        if (url.hostname === "nominatim.openstreetmap.org") {
+          nominatimCalls += 1;
+          return jsonResponse([
+            {
+              lat: "-34.2833",
+              lon: "-70.8167",
+              display_name: "Requínoa, Región de O'Higgins, Chile",
+            },
+          ]);
+        }
+        if (url.hostname === "api.open-meteo.com") {
+          return new Response("forecast unavailable", { status: 503 });
+        }
+        if (url.hostname === "api.met.no") {
+          metCalls += 1;
+          return jsonResponse({
+            properties: {
+              timeseries: [{
+                time: "2026-10-07T03:00:00Z",
+                data: {
+                  instant: { details: { air_temperature: 13.7 } },
+                  next_1_hours: {
+                    summary: { symbol_code: "partlycloudy_night" },
+                  },
+                },
+              }],
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "ULTRA_FETCH_RETRY_ATTEMPTS") return "1";
+        if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "50";
+        return undefined;
+      },
+      sleep: () => Promise.resolve(),
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, clima en Requínoa",
+      deps,
+      "",
+      "CURRENT_DATA",
+    );
+
+    if (result.abstained) {
+      throw new Error("expected authoritative Requinoa weather fallback");
+    }
+    if (result.authoritative !== true) {
+      throw new Error("weather fallback must remain authoritative");
+    }
+    if (nominatimCalls !== 0 || metCalls < 1) {
+      throw new Error(
+        "expected known Requinoa coordinates to bypass Nominatim and use MET Norway",
+      );
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("requínoa") || !answer.includes("13.7")) {
+      throw new Error(
+        "fallback lost requested location or temperature: " + answer,
+      );
+    }
+  },
+);
+
+Deno.test("basic algorithm knowledge never drifts to a specific algorithm subtype", async () => {
+  let networkCalls = 0;
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      networkCalls += 1;
+      return jsonResponse({}, 429);
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "Ultra, ¿qué es un algoritmo?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+
+  if (result.abstained) {
+    throw new Error("basic algorithm knowledge must remain answerable");
+  }
+  const answer = (result.displayText ?? "").toLowerCase();
+  if (
+    !answer.includes("algoritmo") ||
+    !answer.includes("pasos") ||
+    !answer.includes("problema")
+  ) {
+    throw new Error("expected a general algorithm definition: " + answer);
+  }
+  if (answer.includes("dijkstra")) {
+    throw new Error("generic algorithm definition must not drift to Dijkstra");
+  }
+  if (networkCalls !== 0) {
+    throw new Error(
+      "basic algorithm knowledge should not require network access",
+    );
+  }
+});
+
+Deno.test("basic star knowledge survives complete provider outage", async () => {
+  for (
+    const query of [
+      "Ultra, ¿qué es una estrella?",
+      "Ultra, háblame de las estrellas",
+    ]
+  ) {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        return jsonResponse({}, 429);
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("stable star knowledge must remain answerable: " + query);
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (
+      !answer.includes("estrella") ||
+      !(answer.includes("plasma") || answer.includes("energ"))
+    ) {
+      throw new Error("expected an astronomical star definition: " + answer);
+    }
+    if (networkCalls !== 0) {
+      throw new Error("basic star knowledge should not require network access");
+    }
+  }
+});
+
+Deno.test(
+  "Rancagua weather survives complete geocoder outage with local coordinates",
+  async () => {
+    let metCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (
+          url.hostname === "geocoding-api.open-meteo.com" ||
+          url.hostname === "nominatim.openstreetmap.org"
+        ) {
+          throw new Error("geocoder unavailable");
+        }
+        if (url.hostname === "api.open-meteo.com") {
+          return new Response("forecast unavailable", { status: 503 });
+        }
+        if (url.hostname === "api.met.no") {
+          metCalls += 1;
+          return jsonResponse({
+            properties: {
+              timeseries: [{
+                time: "2026-10-07T03:00:00Z",
+                data: {
+                  instant: { details: { air_temperature: 15.4 } },
+                  next_1_hours: { summary: { symbol_code: "cloudy" } },
+                },
+              }],
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: (name) => {
+        if (name === "ULTRA_FETCH_RETRY_ATTEMPTS") return "1";
+        if (name === "ULTRA_FETCH_RETRY_BUDGET_MS") return "50";
+        return undefined;
+      },
+      sleep: () => Promise.resolve(),
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, clima en Rancagua",
+      deps,
+      "",
+      "CURRENT_DATA",
+    );
+
+    if (result.abstained) {
+      throw new Error(
+        "expected Rancagua weather through local coordinate fallback",
+      );
+    }
+    if (result.authoritative !== true || metCalls < 1) {
+      throw new Error(
+        "expected authoritative MET Norway weather after geocoder outage",
+      );
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (!answer.includes("rancagua") || !answer.includes("15.4")) {
+      throw new Error(
+        "local coordinate fallback lost requested city: " + answer,
+      );
+    }
+  },
+);
+
+Deno.test(
+  "V20 weather falls back to wttr when Open-Meteo and MET Norway are unavailable",
+  async () => {
+    let wttrCalled = false;
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+
+        if (url.hostname === "api.open-meteo.com") {
+          return new Response("unavailable", { status: 503 });
+        }
+        if (url.hostname === "api.met.no") {
+          return new Response("unavailable", { status: 503 });
+        }
+        if (url.hostname === "wttr.in") {
+          wttrCalled = true;
+          return jsonResponse({
+            current_condition: [{
+              temp_C: "18",
+              FeelsLikeC: "17",
+              weatherDesc: [{ value: "Partly cloudy" }],
+              localObsDateTime: "2026-10-07 00:00 AM",
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, clima en Requínoa",
+      deps,
+      "",
+      "CURRENT_DATA",
+    );
+
+    if (!wttrCalled) throw new Error("expected wttr V20 weather fallback");
+    if (result.abstained) {
+      throw new Error("expected live weather fallback answer");
+    }
+    if (!result.displayText?.includes("18")) {
+      throw new Error("expected wttr temperature in answer");
+    }
+    if (!result.sourceIds?.some((source) => source.includes("wttr.in"))) {
+      throw new Error("expected wttr source evidence");
+    }
+  },
+);
+
+Deno.test(
+  "V20 never turns missing wttr temperature into a fake zero degrees",
+  async () => {
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "api.open-meteo.com") {
+          return new Response("unavailable", { status: 503 });
+        }
+        if (url.hostname === "api.met.no") {
+          return new Response("unavailable", { status: 503 });
+        }
+        if (url.hostname === "wttr.in") {
+          return jsonResponse({
+            current_condition: [{
+              weatherDesc: [{ value: "Cloudy" }],
+              localObsDateTime: "2026-10-07 00:00 AM",
+            }],
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+      sleep: () => Promise.resolve(),
+      random: () => 0,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, clima en Requínoa",
+      deps,
+      "",
+      "CURRENT_DATA",
+    );
+
+    if (
+      result.displayText?.includes("0 °C") ||
+      result.value?.startsWith("0|")
+    ) {
+      throw new Error("missing temperature must never become 0 °C");
     }
   },
 );

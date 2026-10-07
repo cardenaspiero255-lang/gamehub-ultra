@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 internal data class UltraResearchBackendResponse(
+    val engineVersion: String?,
     val claimKey: String?,
     val value: String?,
     val displayText: String?,
@@ -39,6 +40,9 @@ internal object UltraResearchJsonCodec {
                 append(escape(context))
                 append('"')
             }
+            append(",\"clientEngineVersion\":\"")
+            append(UltraResearchProtocol.ENGINE_VERSION)
+            append('"')
             append(",\"kind\":\"")
             append(request.kind.name)
             append("\",\"verificationMode\":\"")
@@ -74,6 +78,7 @@ internal object UltraResearchJsonCodec {
 
     fun decodeResponse(json: String): UltraResearchBackendResponse =
         UltraResearchBackendResponse(
+            engineVersion = stringField(json, "engineVersion"),
             claimKey = stringField(json, "claimKey"),
             value = stringField(json, "value"),
             displayText = stringField(json, "displayText"),
