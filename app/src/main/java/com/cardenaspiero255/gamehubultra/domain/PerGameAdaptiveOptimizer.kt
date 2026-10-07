@@ -19,9 +19,23 @@ data class PerGameAdaptiveDecision(
     val reason: String
 )
 
+data class PerGameAdaptivePersistedState(
+    val profile: PerformanceProfile,
+    val candidate: PerformanceProfile?,
+    val confirmations: Int,
+    val lastChangeMillis: Long?,
+    val recoveryProfile: PerformanceProfile?
+)
+
+interface PerGameAdaptiveStateStore {
+    fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState?
+    fun write(key: AdaptiveGameKey, state: PerGameAdaptivePersistedState)
+}
+
 class PerGameAdaptiveOptimizer(
     private val confirmationsRequired: Int = 2,
-    private val cooldownMillis: Long = 30_000L
+    private val cooldownMillis: Long = 30_000L,
+    private val stateStore: PerGameAdaptiveStateStore? = null
 ) {
     private data class State(
         var profile: PerformanceProfile,
@@ -44,7 +58,9 @@ class PerGameAdaptiveOptimizer(
         samples: List<AdaptiveTrendSample>,
         nowMillis: Long
     ): PerGameAdaptiveDecision {
-        val state = states.getOrPut(key) { State(activeProfile) }
+        val state = states.getOrPut(key) {
+            stateStore?.read(key)?.toRuntimeState() ?: State(activeProfile)
+        }
 
         if (state.profile != activeProfile) {
             state.profile = activeProfile
@@ -52,7 +68,9 @@ class PerGameAdaptiveOptimizer(
             state.confirmations = 0
             state.lastChange = null
             state.recoveryProfile = null
-            return PerGameAdaptiveDecision(
+            return decision(
+                key = key,
+                state = state,
                 profile = activeProfile,
                 changed = false,
                 reason = "Se detectó un cambio externo de perfil; se respeta y se reinicia la adaptación automática."
@@ -62,7 +80,9 @@ class PerGameAdaptiveOptimizer(
         if (samples.isEmpty()) {
             state.candidate = null
             state.confirmations = 0
-            return PerGameAdaptiveDecision(
+            return decision(
+                key = key,
+                state = state,
                 profile = activeProfile,
                 changed = false,
                 reason = "Sin muestras suficientes: se mantiene el perfil activo."
@@ -73,7 +93,9 @@ class PerGameAdaptiveOptimizer(
         if (target == state.profile) {
             state.candidate = null
             state.confirmations = 0
-            return PerGameAdaptiveDecision(
+            return decision(
+                key = key,
+                state = state,
                 profile = state.profile,
                 changed = false,
                 reason = reason(samples, changed = false)
@@ -81,7 +103,9 @@ class PerGameAdaptiveOptimizer(
         }
 
         if (state.lastChange?.let { nowMillis - it < cooldownMillis } == true) {
-            return PerGameAdaptiveDecision(
+            return decision(
+                key = key,
+                state = state,
                 profile = state.profile,
                 changed = false,
                 reason = "Periodo de enfriamiento activo: se evita una oscilación rápida de perfil."
@@ -96,7 +120,9 @@ class PerGameAdaptiveOptimizer(
         }
 
         if (state.confirmations < confirmationsRequired) {
-            return PerGameAdaptiveDecision(
+            return decision(
+                key = key,
+                state = state,
                 profile = state.profile,
                 changed = false,
                 reason = "La tendencia requiere confirmación antes de cambiar automáticamente el perfil."
@@ -116,7 +142,9 @@ class PerGameAdaptiveOptimizer(
             else -> state.recoveryProfile
         }
 
-        return PerGameAdaptiveDecision(
+        return decision(
+            key = key,
+            state = state,
             profile = target,
             changed = true,
             reason = reason(samples, changed = true)
@@ -162,6 +190,39 @@ class PerGameAdaptiveOptimizer(
 
         return if (stableRecovery) checkNotNull(state.recoveryProfile) else state.profile
     }
+
+    private fun decision(
+        key: AdaptiveGameKey,
+        state: State,
+        profile: PerformanceProfile,
+        changed: Boolean,
+        reason: String
+    ): PerGameAdaptiveDecision {
+        stateStore?.write(key, state.toPersistedState())
+        return PerGameAdaptiveDecision(
+            profile = profile,
+            changed = changed,
+            reason = reason
+        )
+    }
+
+    private fun State.toPersistedState() =
+        PerGameAdaptivePersistedState(
+            profile = profile,
+            candidate = candidate,
+            confirmations = confirmations,
+            lastChangeMillis = lastChange,
+            recoveryProfile = recoveryProfile
+        )
+
+    private fun PerGameAdaptivePersistedState.toRuntimeState() =
+        State(
+            profile = profile,
+            candidate = candidate,
+            confirmations = confirmations.coerceAtLeast(0),
+            lastChange = lastChangeMillis,
+            recoveryProfile = recoveryProfile
+        )
 
     private fun trend(values: List<Float>): Float =
         if (values.size < 2) 0f else values.last() - values.first()
