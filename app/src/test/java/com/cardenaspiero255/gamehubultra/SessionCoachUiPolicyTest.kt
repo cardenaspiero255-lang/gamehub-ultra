@@ -2,6 +2,7 @@ package com.cardenaspiero255.gamehubultra
 
 import com.cardenaspiero255.gamehubultra.data.GameSessionRecord
 import com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -95,16 +96,109 @@ class SessionCoachUiPolicyTest {
         )
     }
 
+
+    @Test
+    fun aiProfileUsesPersistedGameplaySamplesForMatchingSelectedGame() {
+        val persisted = listOf(
+            SessionCoachSnapshot(
+                timestampMillis = 10L,
+                batteryPercent = 80,
+                thermalStatus = 1,
+                thermalHeadroom = 0.2f,
+                refreshRateHz = 120f,
+                latencyMs = 20L
+            )
+        )
+        val dashboard = listOf(
+            SessionCoachSnapshot(
+                timestampMillis = 20L,
+                batteryPercent = 70,
+                thermalStatus = 2,
+                thermalHeadroom = 0.1f,
+                refreshRateHz = 60f,
+                latencyMs = 40L
+            )
+        )
+        val completed = stored(
+            sessionId = "coach-game-a",
+            packageName = "game.a",
+            startedAtMillis = 5_000L,
+            samples = persisted
+        )
+
+        assertEquals(
+            persisted,
+            aiProfileSamplesForSelectedGame(
+                completed = completed,
+                selectedPackage = "game.a",
+                activeSessionPackage = null,
+                dashboardSamples = dashboard
+            )
+        )
+    }
+
+    @Test
+    fun aiProfileTelemetryNeverLeaksAcrossGames() {
+        val foreignSample = SessionCoachSnapshot(
+            timestampMillis = 10L,
+            batteryPercent = 80,
+            thermalStatus = 1,
+            thermalHeadroom = 0.2f,
+            refreshRateHz = 120f,
+            latencyMs = 20L
+        )
+        val completed = stored(
+            sessionId = "coach-old",
+            packageName = "game.old",
+            startedAtMillis = 5_000L,
+            samples = listOf(foreignSample)
+        )
+
+        assertTrue(
+            aiProfileSamplesForSelectedGame(
+                completed = completed,
+                selectedPackage = "game.new",
+                activeSessionPackage = "game.other",
+                dashboardSamples = listOf(foreignSample)
+            ).isEmpty()
+        )
+    }
+
+    @Test
+    fun activeSelectedGameCanUseLiveDashboardSamplesBeforeCompletion() {
+        val live = listOf(
+            SessionCoachSnapshot(
+                timestampMillis = 30L,
+                batteryPercent = 90,
+                thermalStatus = 0,
+                thermalHeadroom = 0.3f,
+                refreshRateHz = 90f,
+                latencyMs = 15L
+            )
+        )
+
+        assertEquals(
+            live,
+            aiProfileSamplesForSelectedGame(
+                completed = null,
+                selectedPackage = "game.active",
+                activeSessionPackage = "game.active",
+                dashboardSamples = live
+            )
+        )
+    }
+
     private fun stored(
         sessionId: String,
         packageName: String,
-        startedAtMillis: Long
+        startedAtMillis: Long,
+        samples: List<SessionCoachSnapshot> = emptyList()
     ) = SessionCoachStoredSession(
         sessionId = sessionId,
         packageName = packageName,
         startedAtMillis = startedAtMillis,
         endedAtMillis = startedAtMillis + 1_000L,
-        samples = emptyList(),
+        samples = samples,
         preSessionMessage = null,
         latestObservation = null
     )

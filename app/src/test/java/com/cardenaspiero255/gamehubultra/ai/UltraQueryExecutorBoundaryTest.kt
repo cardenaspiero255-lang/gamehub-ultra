@@ -189,4 +189,54 @@ class UltraQueryExecutorBoundaryTest {
         }
     }
 
+    @Test
+    fun optionalQueryRejectsProductionCapabilityBoilerplateAsEmergencyFallback() {
+        val failingProvider = object : UltraResearchProvider {
+            override val id = "offline-network"
+
+            override fun fetch(
+                request: UltraGeneralQueryRequest
+            ): UltraResearchEvidence = error("network unavailable")
+
+            override fun fetchResult(
+                request: UltraGeneralQueryRequest
+            ): UltraProviderResult =
+                UltraProviderResult.Failure(
+                    reasonCode = "BACKEND_NETWORK_FAILURE",
+                    message = "network unavailable",
+                    retryable = true,
+                    stage = "client-network"
+                )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(failingProvider))
+        val executor: UltraQueryExecutor = DefaultUltraQueryExecutor(
+            coordinator = UltraQueryExecutionCoordinator(engine)
+        )
+        val route = UltraAgentRoute.Chat(
+            message = "Ultra, ¿qué es una partícula hipotética zeta?",
+            query = UltraGeneralQueryRouter.classify(
+                "Ultra, ¿qué es una partícula hipotética zeta?"
+            )
+        )
+        val boilerplate =
+            "Soy Ultra. Puedo ayudarte en español con rendimiento, FPS, temperatura, batería, red, perfiles de GameHub Ultra y consultas generales. Si una respuesta necesita datos externos, intentaré usar información verificada."
+
+        try {
+            val answer = executor.answer(
+                route = route,
+                stableKnowledgeFallback = { null },
+                localChat = { boilerplate }
+            )
+
+            kotlin.test.assertFalse(
+                answer.startsWith("Respuesta local", ignoreCase = true),
+                answer
+            )
+            kotlin.test.assertFalse(answer.contains(boilerplate), answer)
+        } finally {
+            engine.close()
+        }
+    }
+
+
 }
