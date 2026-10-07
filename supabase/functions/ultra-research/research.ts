@@ -3104,14 +3104,18 @@ function specialistResearchDomain(
     return "academic";
   }
 
+  const bookIdentifierSignal =
+    /\bisbn\s*[:#]?\s*[0-9x-]{8,20}\b/.test(clean);
   const bookTopicSignal =
-    /\b(?:libro|libros|books?)\b/.test(clean);
+    /\b(?:libro|libros|books?)\b/.test(clean) ||
+    /\bopen library\b/.test(clean) ||
+    bookIdentifierSignal;
   const bookDiscoverySignal =
     /\b(?:busca|buscar|encuentra|recomienda|recomiendame|muestrame|lista|catalogo|bibliografia|bibliography|open library)\b/.test(
       clean,
     ) ||
     /\b(?:libro|libros|books?)\s+(?:sobre|de|para)\b/.test(clean) ||
-    /\bisbn\s*[:#]?\s*[0-9x-]{8,20}\b/.test(clean);
+    bookIdentifierSignal;
   if (bookTopicSignal && bookDiscoverySignal) {
     return "books";
   }
@@ -3178,6 +3182,8 @@ function specialistSearchTopic(
     books: [
       /^(?:busca|buscar|encuentra|recomienda|muestrame|muéstrame)\s+(?:libros?|books?)\s+(?:sobre|de)?\s*/i,
       /^(?:libros?|books?)\s+(?:sobre|de)\s*/i,
+      /^(?:open library)\s*(?:libros?|books?)?\s*(?:sobre|de)?\s*/i,
+      /^(?:isbn)\s*[:#]?\s*/i,
     ],
     world_bank: [],
     cybersecurity: [],
@@ -4329,12 +4335,15 @@ async function openLibraryEvidence(
   const topic = specialistSearchTopic(query, "books");
   if (!topic) return abstain("Necesito un tema o título de libro concreto.");
 
+  const requestedIsbn = normalize(stripAssistantInvocation(query))
+    .match(/\bisbn\s*[:#]?\s*([0-9x-]{8,20})\b/)?.[1]
+    ?.replace(/-/g, "") ?? null;
   const url = new URL("https://openlibrary.org/search.json");
-  url.searchParams.set("q", topic);
+  url.searchParams.set("q", requestedIsbn ? "isbn:" + requestedIsbn : topic);
   url.searchParams.set("limit", "3");
   url.searchParams.set(
     "fields",
-    "key,title,author_name,first_publish_year,subject",
+    "key,title,author_name,first_publish_year,subject,isbn",
   );
 
   const payload = await fetchJson(deps, url, {
@@ -4352,7 +4361,17 @@ async function openLibraryEvidence(
 
     const subjects = stringArray(doc.subject).slice(0, 8);
     const candidateText = [title, ...subjects].join(" ");
-    if (!specialistCandidateMatches(topic, candidateText)) continue;
+    const candidateIsbns = stringArray(doc.isbn)
+      .map((value) => value.toLowerCase().replace(/[^0-9x]/g, ""));
+    const matchesRequestedIsbn = requestedIsbn != null &&
+      candidateIsbns.includes(requestedIsbn);
+    if (
+      requestedIsbn != null
+        ? !matchesRequestedIsbn
+        : !specialistCandidateMatches(topic, candidateText)
+    ) {
+      continue;
+    }
 
     const authors = stringArray(doc.author_name).slice(0, 5);
     const year = numberValue(doc.first_publish_year);
@@ -5671,6 +5690,15 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "Un ecosistema es el conjunto de organismos de un lugar y las relaciones que mantienen entre sí y con factores físicos como el agua, el suelo, la luz y la temperatura.",
     },
   };
+
+  academicCoreKnowledge["numeros primos"] =
+    academicCoreKnowledge["numero primo"];
+  academicCoreKnowledge["ecosistemas"] =
+    academicCoreKnowledge["ecosistema"];
+  academicCoreKnowledge["ley de newton"] =
+    academicCoreKnowledge["leyes de newton"];
+  academicCoreKnowledge["tres leyes de newton"] =
+    academicCoreKnowledge["leyes de newton"];
 
   const academicCore = academicCoreKnowledge[clean];
   if (academicCore) {
