@@ -94,11 +94,16 @@ internal fun AiSessionCoachCard(
     sessionActive: Boolean
 ) {
     val lines = SessionCoachPresentation.lines(
-        preSession,
-        liveSamples,
-        observations,
-        postSession,
-        sessionActive
+        preSession = preSession,
+        liveSamples = liveSamples,
+        observations = observations,
+        postSession = postSession,
+        sessionActive = sessionActive,
+        activeSessionText = stringResource(
+            R.string.session_coach_live,
+            liveSamples.size
+        ),
+        stableText = stringResource(R.string.session_coach_stable)
     )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
