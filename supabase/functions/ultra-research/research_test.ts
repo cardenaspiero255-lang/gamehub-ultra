@@ -344,50 +344,52 @@ Deno.test("marketplace price can read OAuth access token from Vault resolver", a
   }
 });
 
-Deno.test("weather follow-up uses current question instead of contaminating it with prior location", async () => {
-  let geocodedName = "";
-  const deps: ResearchDependencies = {
-    fetcher: (input) => {
-      const url = new URL(String(input));
-      if (url.hostname === "geocoding-api.open-meteo.com") {
-        geocodedName = url.searchParams.get("name") ?? "";
-        return jsonResponse({
-          results: [{
-            name: "Rancagua",
-            admin1: "O'Higgins",
-            country: "Chile",
-            latitude: -34.17,
-            longitude: -70.74,
-          }],
-        });
-      }
-      if (url.hostname === "api.open-meteo.com") {
-        return jsonResponse({
-          current: {
-            temperature_2m: 20,
-            apparent_temperature: 20,
-            weather_code: 0,
-            time: "2026-09-26T22:00",
-          },
-        });
-      }
-      throw new Error("unexpected URL " + url);
-    },
-    env: () => undefined,
-  };
+Deno.test(
+  "weather follow-up uses current question instead of contaminating it with prior location",
+  async () => {
+    let forecastLatitude = "";
+    let forecastLongitude = "";
+    const deps: ResearchDependencies = {
+      fetcher: (input) => {
+        const url = new URL(String(input));
+        if (url.hostname === "api.open-meteo.com") {
+          forecastLatitude = url.searchParams.get("latitude") ?? "";
+          forecastLongitude = url.searchParams.get("longitude") ?? "";
+          return jsonResponse({
+            current: {
+              temperature_2m: 20,
+              apparent_temperature: 20,
+              weather_code: 0,
+              time: "2026-09-26T22:00",
+            },
+          });
+        }
+        throw new Error("unexpected URL " + url);
+      },
+      env: () => undefined,
+    };
 
-  const result = await routeResearchQuery(
-    "Ultra, y clima en Rancagua?",
-    deps,
-    "Ultra, clima de hoy en Santiago",
-    "CURRENT_DATA",
-  );
+    const result = await routeResearchQuery(
+      "Ultra, y clima en Rancagua?",
+      deps,
+      "Ultra, clima de hoy en Santiago",
+      "CURRENT_DATA",
+    );
 
-  if (result.abstained) throw new Error("expected verified follow-up weather");
-  if (geocodedName !== "Rancagua") {
-    throw new Error("expected current question location, got " + geocodedName);
-  }
-});
+    if (result.abstained) {
+      throw new Error("expected verified follow-up weather");
+    }
+    if (
+      forecastLatitude !== "-34.1702" ||
+      forecastLongitude !== "-70.7407"
+    ) {
+      throw new Error(
+        "expected Rancagua coordinates from current question, got " +
+          forecastLatitude + "," + forecastLongitude,
+      );
+    }
+  },
+);
 
 Deno.test("general knowledge returns a sourced answer instead of the gaming fallback", async () => {
   const deps: ResearchDependencies = {
@@ -7876,7 +7878,7 @@ Deno.test(
 );
 
 Deno.test(
-  "Requinoa weather survives primary geocoder and forecast outages",
+  "Requinoa weather bypasses geocoders and survives primary forecast outage",
   async () => {
     let nominatimCalls = 0;
     let metCalls = 0;
@@ -7938,8 +7940,10 @@ Deno.test(
     if (result.authoritative !== true) {
       throw new Error("weather fallback must remain authoritative");
     }
-    if (nominatimCalls < 1 || metCalls < 1) {
-      throw new Error("expected Nominatim and MET Norway fallback chain");
+    if (nominatimCalls !== 0 || metCalls < 1) {
+      throw new Error(
+        "expected known Requinoa coordinates to bypass Nominatim and use MET Norway",
+      );
     }
     const answer = (result.displayText ?? "").toLowerCase();
     if (!answer.includes("requínoa") || !answer.includes("13.7")) {
