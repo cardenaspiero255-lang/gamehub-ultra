@@ -9,6 +9,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePendingDecision
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEventType
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.ThermalPredictionEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -195,17 +196,21 @@ private fun evaluateCompletedAdaptiveDecision(
     val key = adaptiveGameKey(session) ?: return null
     if (session.samples.isEmpty()) return null
 
-    val mappedSamples = session.samples.map { sample ->
-            AdaptiveTrendSample(
-                thermalStatus = sample.thermalStatus,
-                batteryPercent = sample.batteryPercent,
-                refreshRateHz = sample.refreshRateHz,
-                memoryUsedPercent = sample.memoryUsedPercent,
-                latencyMs = sample.latencyMs
-                    ?.coerceIn(0L, Int.MAX_VALUE.toLong())
-                    ?.toInt()
-            )
-        }
+    val thermalPrediction = ThermalPredictionEngine().predict(session.samples)
+    val mappedSamples = session.samples.mapIndexed { index, sample ->
+        AdaptiveTrendSample(
+            thermalStatus = sample.thermalStatus,
+            batteryPercent = sample.batteryPercent,
+            refreshRateHz = sample.refreshRateHz,
+            memoryUsedPercent = sample.memoryUsedPercent,
+            latencyMs = sample.latencyMs
+                ?.coerceIn(0L, Int.MAX_VALUE.toLong())
+                ?.toInt(),
+            thermalPrediction = thermalPrediction.takeIf {
+                index == session.samples.lastIndex
+            }
+        )
+    }
     val decision = if (persistState) {
         optimizer.evaluate(
             key = key,
