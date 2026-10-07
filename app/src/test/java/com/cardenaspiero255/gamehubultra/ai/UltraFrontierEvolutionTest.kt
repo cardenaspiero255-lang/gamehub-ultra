@@ -575,6 +575,7 @@ class UltraFrontierEvolutionTest {
 
         assertTrue(first.verified)
         assertTrue(second.verified)
+        assertEquals(2, second.independentSourceCount)
         assertEquals(1, calls)
         assertEquals("frontier-knowledge-graph", second.stage)
     }
