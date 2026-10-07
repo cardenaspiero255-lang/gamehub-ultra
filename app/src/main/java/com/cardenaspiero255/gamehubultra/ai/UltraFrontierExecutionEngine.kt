@@ -6,6 +6,29 @@ package com.cardenaspiero255.gamehubultra.ai
  * The engine can retry research when observable evidence is weak, but it never converts
  * stale/local text into a verified answer for a fresh-data request.
  */
+private data class UltraFrontierRetryProgress(
+    val verified: Boolean,
+    val confidenceRank: Int,
+    val sources: Set<String>,
+    val abstained: Boolean
+) {
+    fun improvesOn(previous: UltraFrontierRetryProgress): Boolean {
+        val qualityScore =
+            (if (verified) 1_000 else 0) +
+                confidenceRank * 100 +
+                sources.size * 10 +
+                (if (!abstained) 1 else 0)
+        val previousScore =
+            (if (previous.verified) 1_000 else 0) +
+                previous.confidenceRank * 100 +
+                previous.sources.size * 10 +
+                (if (!previous.abstained) 1 else 0)
+
+        return qualityScore > previousScore ||
+            sources.any { it !in previous.sources }
+    }
+}
+
 class UltraFrontierExecutionEngine(
     private val coordinator: UltraQueryExecutionCoordinator,
     private val frontier: UltraFrontierOrchestrator = UltraFrontierOrchestrator(),
@@ -45,7 +68,7 @@ class UltraFrontierExecutionEngine(
         }
 
         var attempt = 1
-        var previousRetryFingerprint: String? = null
+        var previousRetryProgress: UltraFrontierRetryProgress? = null
         recordAttempt(request, plan, attempt)
         var answer = coordinator.answer(
             request = requestForAttempt(request, plan, attempt),
@@ -131,8 +154,12 @@ class UltraFrontierExecutionEngine(
                         return answer.asSafeAbstention("FRONTIER_BUDGET_EXHAUSTED")
                     }
 
-                    val fingerprint = answer.retryFingerprint()
-                    if (previousRetryFingerprint == fingerprint) {
+                    val progress = answer.retryProgress()
+                    val previousProgress = previousRetryProgress
+                    if (
+                        previousProgress != null &&
+                        !progress.improvesOn(previousProgress)
+                    ) {
                         auditTrail.record(
                             correlationId = request.correlationId,
                             lane = plan.lane,
@@ -142,7 +169,7 @@ class UltraFrontierExecutionEngine(
                         )
                         return answer.asSafeAbstention("FRONTIER_NO_PROGRESS")
                     }
-                    previousRetryFingerprint = fingerprint
+                    previousRetryProgress = progress
 
                     if (isResearchLane(plan) && !networkAvailable()) {
                         auditTrail.record(
@@ -264,28 +291,24 @@ class UltraFrontierExecutionEngine(
             attempt = attempt
         )
 
-    private fun UltraQueryExecutionAnswer.retryFingerprint(): String =
-        buildString {
-            append(message.trim().lowercase())
-            append('|')
-            append(confidence?.name.orEmpty())
-            append('|')
-            append(abstained)
-            append('|')
-            append(reasonCode.orEmpty())
-            append('|')
-            sources
+    private fun UltraQueryExecutionAnswer.retryProgress():
+        UltraFrontierRetryProgress =
+        UltraFrontierRetryProgress(
+            verified = verified,
+            confidenceRank = when (confidence) {
+                UltraAnswerConfidence.HIGH -> 3
+                UltraAnswerConfidence.MEDIUM -> 2
+                UltraAnswerConfidence.LOW -> 1
+                null -> 0
+            },
+            sources = sources
                 .asSequence()
                 .map(String::trim)
                 .filter(String::isNotBlank)
                 .map(String::lowercase)
-                .distinct()
-                .sorted()
-                .forEach {
-                    append(it)
-                    append(';')
-                }
-        }
+                .toSet(),
+            abstained = abstained
+        )
 
     private fun networkAbstention(
         message: String,
