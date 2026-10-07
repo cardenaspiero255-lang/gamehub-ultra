@@ -405,13 +405,21 @@ class UltraAtomicClaimExtractor(
     }
 
     fun extract(message: String): List<String> =
+        atomicParts(message)
+            .take(maximumClaims)
+            .toList()
+
+    fun exceedsCapacity(message: String): Boolean =
+        atomicParts(message)
+            .take(maximumClaims + 1)
+            .count() > maximumClaims
+
+    private fun atomicParts(message: String): Sequence<String> =
         message
             .split(Regex("""(?<=[.!?;])\s+|\n+"""))
             .asSequence()
             .map(String::trim)
             .filter(String::isNotBlank)
-            .take(maximumClaims)
-            .toList()
 
     fun isInference(text: String): Boolean {
         val normalized = text.lowercase(Locale.ROOT)
@@ -1108,6 +1116,21 @@ class UltraFrontierEvolutionController(
             plan.lane != UltraFrontierLane.DEEP_RESEARCH
         ) {
             return answer
+        }
+
+        if (claimExtractor.exceedsCapacity(answer.message)) {
+            return answer.copy(
+                message =
+                    "La respuesta contiene más afirmaciones de las que puedo " +
+                        "verificar de forma segura en una sola pasada. Prefiero " +
+                        "no marcarla como verificada.",
+                verified = false,
+                sources = emptyList(),
+                abstained = true,
+                retryable = false,
+                reasonCode = "FRONTIER_CLAIM_CAPACITY_EXCEEDED",
+                stage = "frontier-claim-verifier"
+            )
         }
 
         val assessments = verifyAtomicClaims(
