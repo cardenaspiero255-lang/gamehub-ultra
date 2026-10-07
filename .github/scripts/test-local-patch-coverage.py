@@ -92,6 +92,31 @@ private companion object {
         self.assertEqual(stats.unmapped_files, ())
 
 
+    def test_multiline_const_initializer_marks_operator_continuations_and_final_expression_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+private const val WINDOW_MS =
+    1_000L +
+    500L +
+    EXTRA_WINDOW_MS
+RuntimeObject
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 7))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(
+            stats.unmapped_files,
+            ("app/src/main/java/com/example/Foo.kt:6",),
+        )
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+
+
     def test_jacoco_omitted_line_in_mapped_file_is_not_assumed_executable(self) -> None:
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
