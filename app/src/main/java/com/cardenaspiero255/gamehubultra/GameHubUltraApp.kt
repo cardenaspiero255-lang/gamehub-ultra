@@ -473,6 +473,30 @@ internal fun GameHubUltraApp(
         )
     }
 
+    fun applyAiProfileProposal() {
+        val packageName = selectedGameForMemory ?: return
+        val proposal = aiProfileProposal ?: return
+        viewModel.saveGameProfileConfig(
+            packageName = packageName,
+            config = proposal.proposedConfig
+        ) {
+            aiProfileProposalStore.recordApplied(packageName, proposal)
+            aiProfileRevision += 1
+        }
+    }
+
+    fun rollbackAiProfileProposal() {
+        val packageName = selectedGameForMemory ?: return
+        val rollback = aiProfileProposalStore.rollbackState(packageName) ?: return
+        viewModel.saveGameProfileConfig(
+            packageName = packageName,
+            config = rollback.previousKnownGoodConfig
+        ) {
+            aiProfileProposalStore.clearRollback(packageName)
+            aiProfileRevision += 1
+        }
+    }
+
     fun endGameSession() {
         runtimeCoordinator.endGameSession(runtimeSnapshot())
     }
