@@ -189,4 +189,60 @@ class UltraFrontierSystemTest {
 
         assertEquals(UltraFrontierVerdict.ACCEPT, verdict)
     }
+
+    @Test
+    fun deepResearchRejectsSingleSourceEvenWhenProviderClaimsHighConfidence() {
+        val query = UltraGeneralQueryRouter.classify(
+            "Compara dos procesadores actuales y dime cuál es mejor"
+        )
+        val plan = frontier.plan(
+            UltraFrontierRequest(
+                message = query.originalText,
+                query = query,
+                networkAvailable = true
+            )
+        )
+
+        val verdict = UltraFrontierCritic().review(
+            plan,
+            UltraFrontierCandidate(
+                message = "Comparación candidata.",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("only-source"),
+                abstained = false,
+                attempt = 1
+            )
+        )
+
+        assertEquals(UltraFrontierVerdict.RETRY_RESEARCH, verdict)
+    }
+
+    @Test
+    fun deepResearchAcceptsCorroboratedHighConfidenceEvidence() {
+        val query = UltraGeneralQueryRouter.classify(
+            "Compara dos procesadores actuales y dime cuál es mejor"
+        )
+        val plan = frontier.plan(
+            UltraFrontierRequest(
+                message = query.originalText,
+                query = query,
+                networkAvailable = true
+            )
+        )
+
+        val verdict = UltraFrontierCritic().review(
+            plan,
+            UltraFrontierCandidate(
+                message = "Comparación corroborada.",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("source-a", "source-b"),
+                abstained = false,
+                attempt = 1
+            )
+        )
+
+        assertEquals(UltraFrontierVerdict.ACCEPT, verdict)
+    }
 }
