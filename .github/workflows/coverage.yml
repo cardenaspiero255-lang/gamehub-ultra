@@ -1,6 +1,6 @@
 name: Unit Test Coverage
-# Sharded coverage: 8 logical shards are packed into 4 physical runners.
-# Each runner executes two deterministic logical shards with parallel test forks.
+# Sharded coverage: 8 logical shards are packed into 2 physical runners.
+# Each runner executes four deterministic logical shards with 4 parallel test forks.
 # A final aggregation job generates the single JaCoCo XML consumed by the gate/Codecov.
 
 on:
@@ -25,14 +25,14 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 2
       matrix:
-        runner: [0, 1, 2, 3]
+        runner: [0, 1]
     env:
       GAMEHUB_UNIT_TEST_FORKS: "4"
       GAMEHUB_UNIT_TEST_HEAP: "768m"
       COVERAGE_LOGICAL_SHARD_COUNT: "8"
-      COVERAGE_PHYSICAL_SHARD_COUNT: "4"
+      COVERAGE_PHYSICAL_SHARD_COUNT: "2"
       COVERAGE_RUNNER_INDEX: "${{ matrix.runner }}"
 
     steps:
@@ -88,7 +88,12 @@ jobs:
           logical_count = int(os.environ["COVERAGE_LOGICAL_SHARD_COUNT"])
           physical_count = int(os.environ["COVERAGE_PHYSICAL_SHARD_COUNT"])
           runner = int(os.environ["COVERAGE_RUNNER_INDEX"])
-          owned = {runner, runner + physical_count}
+          if logical_count % physical_count != 0:
+              raise SystemExit("Logical coverage shards must divide evenly across physical runners")
+          owned = {
+              runner + wave * physical_count
+              for wave in range(logical_count // physical_count)
+          }
           roots = [Path("app/src/test/java"), Path("app/src/test/kotlin")]
           selected = []
 
@@ -229,8 +234,8 @@ jobs:
           set -euo pipefail
           coverage_dir="$RUNNER_TEMP/coverage-shards"
           count="$(find "$coverage_dir" -type f \( -name '*.exec' -o -name '*.ec' \) -size +0c | wc -l)"
-          if [ "$count" -lt 4 ]; then
-            echo "::error::Expected JaCoCo data from 4 physical coverage runners; found $count file(s)."
+          if [ "$count" -lt 2 ]; then
+            echo "::error::Expected JaCoCo data from 2 physical coverage runners; found $count file(s)."
             exit 1
           fi
           echo "JaCoCo execution files ready: $count"
