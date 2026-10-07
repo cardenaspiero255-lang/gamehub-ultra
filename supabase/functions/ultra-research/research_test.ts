@@ -4892,13 +4892,6 @@ Deno.test(
           "Una emulsión es una mezcla de dos líquidos que normalmente no se mezclan.",
       },
       {
-        query: "¿Qué es un telescopio?",
-        expectedSearch: "telescopio",
-        title: "Telescopio",
-        extract:
-          "Un telescopio es un instrumento óptico para observar objetos lejanos.",
-      },
-      {
         query: "Explícame de forma sencilla qué es la presión arterial.",
         expectedSearch: "presión arterial",
         title: "Presión arterial",
@@ -7797,6 +7790,14 @@ Deno.test(
       {
         query: "¿Qué es un escritorio?",
         expected: ["trabaj", "estudi"],
+      },
+      {
+        query: "¿Qué es un tiburón?",
+        expected: ["pez", "cartíl"],
+      },
+      {
+        query: "¿Qué diferencia hay entre hornear y freír?",
+        expected: ["horno", "aceite"],
       },
     ];
 

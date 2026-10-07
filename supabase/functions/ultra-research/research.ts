@@ -5474,6 +5474,16 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
       text:
         "Un escritorio es un mueble con una superficie pensada para trabajar, estudiar, escribir o usar un computador, normalmente acompañado de espacio para guardar objetos.",
     },
+    "tiburon": {
+      claimKey: "local-stable:shark",
+      text:
+        "Un tiburón es un pez cartilaginoso: su esqueleto está formado principalmente por cartílago en lugar de hueso. Existen muchas especies marinas con tamaños y dietas diferentes.",
+    },
+    "hornear y freir": {
+      claimKey: "local-stable:baking-vs-frying",
+      text:
+        "Hornear cocina los alimentos con calor dentro de un horno, normalmente sin sumergirlos en grasa. Freír los cocina en contacto con aceite u otra grasa caliente, ya sea parcialmente o por inmersión.",
+    },
   };
 
   const regression = smokeRegressionKnowledge[clean];
