@@ -174,7 +174,7 @@ class Holder(
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
             '<line nr="1" mi="0" ci="1"/>'
-            '<line nr="3" mi="0" ci="1"/>'
+            '<line nr="4" mi="0" ci="1"/>'
             '</sourcefile></package></report>'
         )
         source = """val covered = expensiveCall()
