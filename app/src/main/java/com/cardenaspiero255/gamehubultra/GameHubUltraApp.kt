@@ -9,6 +9,7 @@ import com.cardenaspiero255.gamehubultra.data.OptimizationContextKey
 import com.cardenaspiero255.gamehubultra.data.OptimizationContextKeyFactory
 import com.cardenaspiero255.gamehubultra.data.GameOptimizationMemoryStateRepository
 import com.cardenaspiero255.gamehubultra.data.AiProfileProposalStore
+import com.cardenaspiero255.gamehubultra.data.AppliedAiProfileProposalState
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryGame
 import com.cardenaspiero255.gamehubultra.data.StoreLibraryStateRepository
 import android.os.Build
@@ -59,7 +60,10 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveDecision
 import com.cardenaspiero255.gamehubultra.domain.AiProfileBuilder
 import com.cardenaspiero255.gamehubultra.domain.AiProfileCapabilities
+import com.cardenaspiero255.gamehubultra.domain.AiProfileProposal
 import com.cardenaspiero255.gamehubultra.domain.GameProfileConfig
+import com.cardenaspiero255.gamehubultra.domain.OptimizationObservation
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -149,6 +153,64 @@ internal fun chooseCoachReport(
 ): com.cardenaspiero255.gamehubultra.domain.SessionCoachPostSessionReport? =
     storedReport ?: dashboardReport
 
+
+internal fun buildAiProfileProposalForSelectedGame(
+    packageName: String?,
+    selectedConfig: GameProfileConfig?,
+    effectiveProfile: PerformanceProfile,
+    observations: List<OptimizationObservation>,
+    sessionSamples: List<SessionCoachSnapshot>,
+    supportedRefreshRatesHz: Set<Int>?,
+    supportsSustainedPerformance: Boolean,
+    nextVersion: (String) -> Int
+): AiProfileProposal? {
+    if (packageName.isNullOrBlank() || supportedRefreshRatesHz == null) return null
+    val currentConfig = selectedConfig
+        ?: GameProfileConfig(performanceProfile = effectiveProfile)
+    return AiProfileBuilder.propose(
+        currentConfig = currentConfig,
+        observations = observations,
+        sessionSamples = sessionSamples,
+        capabilities = AiProfileCapabilities(
+            supportsSustainedPerformance = supportsSustainedPerformance,
+            supportsFrameInterpolation = false,
+            supportedRefreshRatesHz = supportedRefreshRatesHz,
+            supportedResolutions = emptySet()
+        ),
+        version = nextVersion(packageName)
+    ).takeIf { it.requiresExplicitApply }
+}
+
+internal fun applyAiProfileProposalForSelectedGame(
+    packageName: String?,
+    proposal: AiProfileProposal?,
+    save: (String, GameProfileConfig, () -> Unit) -> Unit,
+    recordApplied: (String, AiProfileProposal) -> Unit,
+    onApplied: () -> Unit
+): Boolean {
+    if (packageName.isNullOrBlank() || proposal == null) return false
+    save(packageName, proposal.proposedConfig) {
+        recordApplied(packageName, proposal)
+        onApplied()
+    }
+    return true
+}
+
+internal fun rollbackAiProfileProposalForSelectedGame(
+    packageName: String?,
+    rollback: AppliedAiProfileProposalState?,
+    save: (String, GameProfileConfig, () -> Unit) -> Unit,
+    clearRollback: (String) -> Unit,
+    onRolledBack: () -> Unit
+): Boolean {
+    if (packageName.isNullOrBlank() || rollback == null) return false
+    save(packageName, rollback.previousKnownGoodConfig) {
+        clearRollback(packageName)
+        onRolledBack()
+    }
+    return true
+}
+
 private val UltraHomeRed = Color(0xFFFF1630)
 private val UltraHomeBlack = Color(0xFF030303)
 private val UltraHomePanel = Color(0xFF0B0B0E)
@@ -233,28 +295,17 @@ internal fun GameHubUltraApp(
         initialState.capabilities,
         aiProfileRevision
     ) {
-        val packageName = selectedGameForMemory
-        val diagnostics = runtimeDiagnostics
-        if (packageName == null || diagnostics == null) {
-            null
-        } else {
-            val currentConfig = uiState.selectedGameConfig
-                ?: GameProfileConfig(performanceProfile = uiState.effectiveProfile)
-            AiProfileBuilder.propose(
-                currentConfig = currentConfig,
-                observations = optimizationObservations,
-                sessionSamples = sessionCoachSamples,
-                capabilities = AiProfileCapabilities(
-                    supportsSustainedPerformance =
-                        initialState.capabilities?.sustainedPerformanceSupported == true,
-                    supportsFrameInterpolation = false,
-                    supportedRefreshRatesHz =
-                        diagnostics.refresh.supportedRefreshRatesHz,
-                    supportedResolutions = emptySet()
-                ),
-                version = aiProfileProposalStore.nextVersion(packageName)
-            ).takeIf { it.requiresExplicitApply }
-        }
+        buildAiProfileProposalForSelectedGame(
+            packageName = selectedGameForMemory,
+            selectedConfig = uiState.selectedGameConfig,
+            effectiveProfile = uiState.effectiveProfile,
+            observations = optimizationObservations,
+            sessionSamples = sessionCoachSamples,
+            supportedRefreshRatesHz = runtimeDiagnostics?.refresh?.supportedRefreshRatesHz,
+            supportsSustainedPerformance =
+                initialState.capabilities?.sustainedPerformanceSupported == true,
+            nextVersion = aiProfileProposalStore::nextVersion
+        )
     }
     val aiProfileRollbackState = remember(
         selectedGameForMemory,
@@ -475,27 +526,27 @@ internal fun GameHubUltraApp(
     }
 
     fun applyAiProfileProposal() {
-        val packageName = selectedGameForMemory ?: return
-        val proposal = aiProfileProposal ?: return
-        viewModel.saveGameProfileConfig(
-            packageName = packageName,
-            config = proposal.proposedConfig
-        ) {
-            aiProfileProposalStore.recordApplied(packageName, proposal)
-            aiProfileRevision += 1
-        }
+        applyAiProfileProposalForSelectedGame(
+            packageName = selectedGameForMemory,
+            proposal = aiProfileProposal,
+            save = { packageName, config, onSaved ->
+                viewModel.saveGameProfileConfig(packageName, config, onSaved)
+            },
+            recordApplied = aiProfileProposalStore::recordApplied,
+            onApplied = { aiProfileRevision += 1 }
+        )
     }
 
     fun rollbackAiProfileProposal() {
-        val packageName = selectedGameForMemory ?: return
-        val rollback = aiProfileProposalStore.rollbackState(packageName) ?: return
-        viewModel.saveGameProfileConfig(
-            packageName = packageName,
-            config = rollback.previousKnownGoodConfig
-        ) {
-            aiProfileProposalStore.clearRollback(packageName)
-            aiProfileRevision += 1
-        }
+        rollbackAiProfileProposalForSelectedGame(
+            packageName = selectedGameForMemory,
+            rollback = aiProfileRollbackState,
+            save = { packageName, config, onSaved ->
+                viewModel.saveGameProfileConfig(packageName, config, onSaved)
+            },
+            clearRollback = aiProfileProposalStore::clearRollback,
+            onRolledBack = { aiProfileRevision += 1 }
+        )
     }
 
     fun endGameSession() {
