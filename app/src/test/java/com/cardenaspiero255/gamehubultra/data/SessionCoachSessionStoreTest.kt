@@ -46,6 +46,15 @@ class SessionCoachSessionStoreTest {
 
         assertEquals(valid, SessionCoachSnapshotCodec.decode(SessionCoachSnapshotCodec.encode(valid)))
 
+        val unplugged = valid.copy(
+            batteryCharging = false,
+            powerSaveMode = false
+        )
+        assertEquals(
+            unplugged,
+            SessionCoachSnapshotCodec.decode(SessionCoachSnapshotCodec.encode(unplugged))
+        )
+
         val invalid = SessionCoachSnapshotCodec.decode(
             "99|150|2|NaN|-1|-5|150"
         )
