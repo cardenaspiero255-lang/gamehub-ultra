@@ -38,12 +38,28 @@ class MainActivity : ComponentActivity() {
             Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
+        val permissionPrefs = getSharedPreferences(
+            COACH_PERMISSION_PREFS,
+            MODE_PRIVATE
+        )
+        val hasRequestedBefore = permissionPrefs.getBoolean(
+            KEY_COACH_NOTIFICATION_REQUESTED,
+            false
+        )
+        val shouldShowRationale =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
         if (
             SessionCoachNotificationPermission.shouldRequest(
                 sdkInt = Build.VERSION.SDK_INT,
-                granted = granted
+                granted = granted,
+                hasRequestedBefore = hasRequestedBefore,
+                shouldShowRationale = shouldShowRationale
             )
         ) {
+            permissionPrefs.edit()
+                .putBoolean(KEY_COACH_NOTIFICATION_REQUESTED, true)
+                .apply()
             requestPermissions(
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                 REQUEST_COACH_NOTIFICATIONS
@@ -53,5 +69,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val REQUEST_COACH_NOTIFICATIONS = 45
+        const val COACH_PERMISSION_PREFS = "session_coach_permission"
+        const val KEY_COACH_NOTIFICATION_REQUESTED = "notification_requested"
     }
 }

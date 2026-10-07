@@ -51,6 +51,7 @@ internal object SessionCoachGamePresenceDetector {
     private const val LOOKBACK_MS = 2L * 60L * 1_000L
     private const val LEGACY_MOVE_TO_FOREGROUND = 1
     private const val LEGACY_MOVE_TO_BACKGROUND = 2
+    @Volatile private var lastKnownPresence = SessionCoachGamePresence.UNKNOWN
 
     fun observe(
         context: Context,
@@ -93,18 +94,37 @@ internal object SessionCoachGamePresenceDetector {
             }
         }
 
-        return when {
-            latestForegroundPackage == packageName ->
+        val resolved = resolvePresence(
+            latestForegroundPackage = latestForegroundPackage,
+            latestForegroundAt = latestForegroundAt,
+            targetBackgroundAt = targetBackgroundAt,
+            previousPresence = lastKnownPresence,
+            targetPackage = packageName
+        )
+        lastKnownPresence = resolved
+        return resolved
+    }
+
+    internal fun resolvePresence(
+        latestForegroundPackage: String?,
+        latestForegroundAt: Long,
+        targetBackgroundAt: Long,
+        previousPresence: SessionCoachGamePresence,
+        targetPackage: String = "game.a"
+    ): SessionCoachGamePresence =
+        when {
+            latestForegroundPackage == targetPackage ->
                 SessionCoachGamePresence.ACTIVE
             latestForegroundPackage != null &&
                 latestForegroundAt >= targetBackgroundAt ->
                 SessionCoachGamePresence.INACTIVE
             targetBackgroundAt != Long.MIN_VALUE ->
                 SessionCoachGamePresence.INACTIVE
+            previousPresence == SessionCoachGamePresence.ACTIVE ->
+                SessionCoachGamePresence.ACTIVE
             else ->
                 SessionCoachGamePresence.UNKNOWN
         }
-    }
 
     @Suppress("DEPRECATION")
     private fun hasUsageAccess(context: Context): Boolean {
@@ -506,9 +526,14 @@ class SessionCoachMonitorService : Service() {
 internal object SessionCoachNotificationPermission {
     fun shouldRequest(
         sdkInt: Int,
-        granted: Boolean
+        granted: Boolean,
+        hasRequestedBefore: Boolean = false,
+        shouldShowRationale: Boolean = false
     ): Boolean =
-        sdkInt >= Build.VERSION_CODES.TIRAMISU && !granted
+        sdkInt >= Build.VERSION_CODES.TIRAMISU &&
+            !granted &&
+            !hasRequestedBefore &&
+            !shouldShowRationale
 }
 
 internal object SessionCoachNotifications {
