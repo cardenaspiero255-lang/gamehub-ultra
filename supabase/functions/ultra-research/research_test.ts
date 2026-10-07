@@ -8191,3 +8191,39 @@ Deno.test(
     }
   },
 );
+
+
+Deno.test(
+  "basic book definition stays in general knowledge instead of Open Library discovery",
+  async () => {
+    let networkCalls = 0;
+    const deps: ResearchDependencies = {
+      fetcher: () => {
+        networkCalls += 1;
+        throw new Error("network should not be required for a basic book definition");
+      },
+      env: () => undefined,
+    };
+
+    const result = await routeResearchQuery(
+      "Ultra, ¿qué es un libro?",
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+
+    if (result.abstained) {
+      throw new Error("basic book knowledge must remain answerable");
+    }
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (
+      !answer.includes("libro") ||
+      !(answer.includes("página") || answer.includes("paginas") || answer.includes("texto"))
+    ) {
+      throw new Error("expected a general book definition: " + answer);
+    }
+    if (networkCalls !== 0) {
+      throw new Error("basic book knowledge should not enter book discovery");
+    }
+  },
+);
