@@ -2616,18 +2616,18 @@ function stripConversationSpeaker(value: string): string {
 function stripGeneralKnowledgeStyleModifiers(value: string): string {
   let clean = value.trim();
   const modifiers: RegExp[] = [
-    /\s*,?\s+para un estudiante\b/gi,
-    /\s*,?\s+para alguien que empieza\b/gi,
-    /\s*,?\s+sin asumir conocimientos previos\b/gi,
-    /\s*,?\s+en lenguaje cotidiano\b/gi,
-    /\s*,?\s+sin jerga innecesaria\b/gi,
-    /\s*,?\s+de forma clara y directa\b/gi,
-    /\s*,?\s+en pocas frases\b/gi,
-    /\s*,?\s+y menciona su funci[oó]n principal\b/gi,
-    /\s*,?\s+y destaca una idea clave\b/gi,
-    /\s*,?\s+con una explicaci[oó]n breve\b/gi,
-    /\s*,?\s+sin inventar datos\b/gi,
-    /\s*,?\s+y explica por qu[eé] es relevante\b/gi,
+    /\s*[,?!.;:]?\s+para un estudiante\b/gi,
+    /\s*[,?!.;:]?\s+para alguien que empieza\b/gi,
+    /\s*[,?!.;:]?\s+sin asumir conocimientos previos\b/gi,
+    /\s*[,?!.;:]?\s+en lenguaje cotidiano\b/gi,
+    /\s*[,?!.;:]?\s+sin jerga innecesaria\b/gi,
+    /\s*[,?!.;:]?\s+de forma clara y directa\b/gi,
+    /\s*[,?!.;:]?\s+en pocas frases\b/gi,
+    /\s*[,?!.;:]?\s+y menciona su funci[oó]n principal\b/gi,
+    /\s*[,?!.;:]?\s+y destaca una idea clave\b/gi,
+    /\s*[,?!.;:]?\s+con una explicaci[oó]n breve\b/gi,
+    /\s*[,?!.;:]?\s+sin inventar datos\b/gi,
+    /\s*[,?!.;:]?\s+y explica por qu[eé] es relevante\b/gi,
   ];
 
   for (const modifier of modifiers) {
