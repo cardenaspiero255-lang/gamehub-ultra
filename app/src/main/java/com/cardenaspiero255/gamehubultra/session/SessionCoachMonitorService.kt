@@ -25,6 +25,9 @@ import com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession
 import com.cardenaspiero255.gamehubultra.domain.AiSessionCoach
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachPriority
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
+import com.cardenaspiero255.gamehubultra.domain.ThermalPredictionAdvisor
+import com.cardenaspiero255.gamehubultra.domain.ThermalPredictionEngine
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
@@ -244,6 +247,24 @@ class SessionCoachMonitorService : Service() {
         internal fun shouldFinishForUnknownPresence(evidenceCount: Int): Boolean =
             evidenceCount >= UNKNOWN_EVIDENCE_REQUIRED
 
+        internal fun thermalPredictionObservation(
+            samples: List<SessionCoachSnapshot>,
+            previousObservation: SessionCoachMessage?,
+            engine: ThermalPredictionEngine = ThermalPredictionEngine()
+        ): SessionCoachMessage? {
+            val latestStatus = samples.lastOrNull()?.thermalStatus
+            if (
+                latestStatus != null &&
+                latestStatus >= engine.policy.severeThermalStatus
+            ) {
+                return null
+            }
+            return ThermalPredictionAdvisor.message(
+                prediction = engine.predict(samples),
+                previousObservation = previousObservation
+            )
+        }
+
         internal fun start(
             context: Context,
             packageName: String,
@@ -401,7 +422,8 @@ class SessionCoachMonitorService : Service() {
                 finishOwnedSession(sessionId, now, startId)
                 return
             }
-            if (store.readActiveSession()?.sessionId != sessionId) {
+            val activeSession = store.readActiveSession()
+            if (activeSession?.sessionId != sessionId) {
                 stopMonitoring(startId, sessionId)
                 return
             }
@@ -433,9 +455,17 @@ class SessionCoachMonitorService : Service() {
 
             val diagnostics = readDiagnostics(now)
             val current = SessionCoachTelemetryMapper.snapshot(now, diagnostics)
-            val observations = previous
+            val measuredObservations = previous
                 ?.let { AiSessionCoach.midSession(it, current) }
                 .orEmpty()
+            val thermalPrediction = thermalPredictionObservation(
+                samples = activeSession.samples + current,
+                previousObservation = activeSession.latestObservation
+            )
+            val observations = buildList {
+                addAll(measuredObservations)
+                thermalPrediction?.let(::add)
+            }
 
             store.appendSnapshot(
                 sessionId = sessionId,
