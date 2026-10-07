@@ -71,6 +71,7 @@ internal object GameHubProductionComposition {
         val storeLibraryRepository = storeLibraryRepository(appContext)
         val optimizationMemoryRepository: GameOptimizationMemoryStateRepository =
             GameOptimizationMemoryStore(appContext)
+        val aiProfileProposalStore = AiProfileProposalStore(appContext)
         val sessionCoordinatorFactory = GameSessionLifecycleCoordinatorFactory { scope ->
             GameSessionLifecycleCoordinator(
                 store = sessionRepository,
