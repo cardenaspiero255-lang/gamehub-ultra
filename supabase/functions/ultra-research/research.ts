@@ -5620,11 +5620,6 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
       text:
         "Un átomo es una unidad básica de la materia formada por un núcleo con protones y neutrones, rodeado por electrones. El número de protones determina qué elemento químico es.",
     },
-    "fotosintesis": {
-      claimKey: "local-study:photosynthesis",
-      text:
-        "La fotosíntesis es el proceso por el que plantas, algas y algunos microorganismos transforman energía luminosa en energía química. Usan principalmente dióxido de carbono y agua para producir compuestos orgánicos y, en la fotosíntesis oxigénica, liberan oxígeno.",
-    },
     "mitosis": {
       claimKey: "local-study:mitosis",
       text:
