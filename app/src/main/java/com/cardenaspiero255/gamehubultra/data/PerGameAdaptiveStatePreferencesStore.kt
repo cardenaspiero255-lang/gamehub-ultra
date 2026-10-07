@@ -14,30 +14,29 @@ class PerGameAdaptiveStatePreferencesStore(
         Context.MODE_PRIVATE
     )
 
-    override fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState? {
-        val raw = preferences.getString(preferenceKey(key), null) ?: return null
-        val fields = raw.split("|")
-        if (fields.size != 5) return null
+    override fun read(key: AdaptiveGameKey): PerGameAdaptivePersistedState? =
+        preferences.getString(preferenceKey(key), null)?.let(::decodeState)
 
-        val profile = fields[0].toProfile() ?: return null
-        val candidate = fields[1].takeIf(String::isNotBlank)?.toProfile()
-            ?: if (fields[1].isBlank()) null else return null
-        val confirmations = fields[2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
-        val lastChangeMillis = fields[3]
-            .takeIf(String::isNotBlank)
-            ?.toLongOrNull()
-            ?.takeIf { it >= 0L }
-            ?: if (fields[3].isBlank()) null else return null
-        val recoveryProfile = fields[4].takeIf(String::isNotBlank)?.toProfile()
-            ?: if (fields[4].isBlank()) null else return null
-
-        return PerGameAdaptivePersistedState(
-            profile = profile,
-            candidate = candidate,
-            confirmations = confirmations,
-            lastChangeMillis = lastChangeMillis,
-            recoveryProfile = recoveryProfile
+    override fun ownedRecoveryProfileForPackage(
+        packageName: String,
+        excludingVersion: String,
+        activeProfile: PerformanceProfile
+    ): PerformanceProfile? {
+        val cleanPackage = packageName.trim()
+        if (cleanPackage.isEmpty()) return null
+        val prefix = "state:$cleanPackage:"
+        val excludedKey = preferenceKey(
+            AdaptiveGameKey(cleanPackage, excludingVersion.trim())
         )
+        return preferences.all.entries
+            .asSequence()
+            .filter { (key, _) -> key.startsWith(prefix) && key != excludedKey }
+            .mapNotNull { (_, raw) -> (raw as? String)?.let(::decodeState) }
+            .filter { state ->
+                state.profile == activeProfile && state.recoveryProfile != null
+            }
+            .maxByOrNull { it.lastChangeMillis ?: Long.MIN_VALUE }
+            ?.recoveryProfile
     }
 
     override fun write(
@@ -76,6 +75,31 @@ class PerGameAdaptiveStatePreferencesStore(
         preferences.edit()
             .putString(LAST_HANDLED_SESSION_ID, clean)
             .apply()
+    }
+
+    private fun decodeState(raw: String): PerGameAdaptivePersistedState? {
+        val fields = raw.split("|")
+        if (fields.size != 5) return null
+
+        val profile = fields[0].toProfile() ?: return null
+        val candidate = fields[1].takeIf(String::isNotBlank)?.toProfile()
+            ?: if (fields[1].isBlank()) null else return null
+        val confirmations = fields[2].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+        val lastChangeMillis = fields[3]
+            .takeIf(String::isNotBlank)
+            ?.toLongOrNull()
+            ?.takeIf { it >= 0L }
+            ?: if (fields[3].isBlank()) null else return null
+        val recoveryProfile = fields[4].takeIf(String::isNotBlank)?.toProfile()
+            ?: if (fields[4].isBlank()) null else return null
+
+        return PerGameAdaptivePersistedState(
+            profile = profile,
+            candidate = candidate,
+            confirmations = confirmations,
+            lastChangeMillis = lastChangeMillis,
+            recoveryProfile = recoveryProfile
+        )
     }
 
     companion object {
