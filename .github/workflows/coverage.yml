@@ -147,7 +147,15 @@ jobs:
             TEST_ARGS+=(--tests "$test_class")
           done
 
-          gradle :app:testDebugUnitTest             "${TEST_ARGS[@]}"             --build-cache             --parallel             --max-workers=8             --configuration-cache             --configuration-cache-problems=fail             --console=plain             --stacktrace
+          gradle :app:testDebugUnitTest \
+            "${TEST_ARGS[@]}" \
+            --build-cache \
+            --parallel \
+            --max-workers=8 \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --console=plain \
+            --stacktrace
 
       - name: Collect JaCoCo execution data
         shell: bash
