@@ -67,6 +67,7 @@ import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
 import com.cardenaspiero255.gamehubultra.domain.AdaptivePerformanceEngine
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveOptimizer
 import com.cardenaspiero255.gamehubultra.domain.OptimizationFeedbackDecision
 import com.cardenaspiero255.gamehubultra.domain.SmartPerformanceAdvisor
 import com.cardenaspiero255.gamehubultra.domain.SmartGameAssistant
@@ -353,6 +354,7 @@ internal fun GameHubUltraApp(
     val adaptiveEngine = remember(uiState.effectiveProfile) {
         AdaptivePerformanceEngine(initialProfile = uiState.effectiveProfile)
     }
+    val perGameAdaptiveOptimizer = remember { PerGameAdaptiveOptimizer() }
     val adaptiveEngineState = rememberUpdatedState(adaptiveEngine)
     val dashboardTelemetryController = remember(context, viewModel) {
         DashboardTelemetryController(
@@ -619,6 +621,16 @@ internal fun GameHubUltraApp(
             lastSessionCoachReport = hydration.report
             sessionCoachObservations = hydration.observations
             if (hydration.shouldMarkHydrated) {
+                applyCompletedAdaptiveDecision(
+                    completed = completed,
+                    selectedPackage = selectedGameForMemory,
+                    gameVersion = selectedGameVersion,
+                    activeProfile = uiState.effectiveProfile,
+                    optimizer = perGameAdaptiveOptimizer,
+                    nowMillis = System.currentTimeMillis(),
+                    applyProfile = viewModel::selectGameProfile,
+                    recordPerformanceEvent = viewModel::recordPerformanceEvent
+                )
                 hydratedCoachSessionId = completed.sessionId
             }
             if (hydration.shouldEndRuntimeSession) {
