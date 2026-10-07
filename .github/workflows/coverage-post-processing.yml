@@ -64,6 +64,7 @@ jobs:
           name: gamehub-ultra-unit-tests
           override_commit: ${{ github.event.workflow_run.head_sha }}
           override_branch: ${{ github.event.workflow_run.head_branch }}
+          override_pr: ${{ github.event.workflow_run.pull_requests[0].number || '' }}
           override_build: ${{ github.event.workflow_run.id }}
           fail_ci_if_error: false
           verbose: false

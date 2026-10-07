@@ -745,6 +745,7 @@ def main() -> None:
         "actions/download-artifact@",
         "codecov/codecov-action@",
         "override_commit: ${{ github.event.workflow_run.head_sha }}",
+        "override_pr: ${{ github.event.workflow_run.pull_requests[0].number || '' }}",
         "continue-on-error: true",
     ):
         if fragment not in coverage_post_text:
