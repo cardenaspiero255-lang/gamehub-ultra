@@ -228,6 +228,65 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         assertFalse(persisted)
     }
 
+
+    @Test
+    fun eventPersistenceFailureRollsBackProfileAndAllowsRetry() = kotlinx.coroutines.runBlocking {
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val completed = SessionCoachStoredSession(
+            sessionId = "session-event-retry",
+            packageName = "game.a",
+            startedAtMillis = 1L,
+            endedAtMillis = 2L,
+            samples = listOf(snapshot(2L, memory = 95)),
+            preSessionMessage = null,
+            latestObservation = null,
+            gameVersion = "1#1"
+        )
+        var handled = false
+        var currentProfile = PerformanceProfile.X4
+        var eventAttempts = 0
+
+        assertFailsWith<IllegalStateException> {
+            processCompletedAdaptiveSession(
+                completed = completed,
+                optimizer = optimizer,
+                nowMillis = 3L,
+                wasSessionHandled = { handled },
+                resolveActiveProfile = { currentProfile },
+                persistProfile = { _, profile -> currentProfile = profile },
+                markSessionHandled = { handled = true },
+                recordPerformanceEvent = {
+                    eventAttempts++
+                    error("simulated event persistence failure")
+                }
+            )
+        }
+
+        assertFalse(handled)
+        assertEquals(PerformanceProfile.X4, currentProfile)
+        assertEquals(1, eventAttempts)
+
+        val retried = processCompletedAdaptiveSession(
+            completed = completed,
+            optimizer = optimizer,
+            nowMillis = 4L,
+            wasSessionHandled = { handled },
+            resolveActiveProfile = { currentProfile },
+            persistProfile = { _, profile -> currentProfile = profile },
+            markSessionHandled = { handled = true },
+            recordPerformanceEvent = { eventAttempts++ }
+        )
+
+        assertNotNull(retried)
+        assertTrue(retried.changed)
+        assertTrue(handled)
+        assertEquals(PerformanceProfile.BALANCED, currentProfile)
+        assertEquals(2, eventAttempts)
+    }
+
     @Test
     fun failedProfilePersistenceDoesNotMarkSessionHandledAndCanRetry() = kotlinx.coroutines.runBlocking {
         val optimizer = PerGameAdaptiveOptimizer(
