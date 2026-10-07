@@ -8,6 +8,7 @@ import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveOptimizer
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptivePersistedState
 import com.cardenaspiero255.gamehubultra.domain.PerGameAdaptiveStateStore
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
+import kotlinx.coroutines.isActive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
