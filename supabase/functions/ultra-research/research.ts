@@ -5268,6 +5268,59 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
 
+  if (clean === "seguro de viaje") {
+    const displayText =
+      "Un seguro de viaje es una cobertura contratada para reducir el impacto económico de imprevistos durante un viaje. " +
+      "Según la póliza, puede cubrir asistencia médica, cancelaciones, interrupciones, equipaje u otras incidencias; " +
+      "las coberturas, límites y exclusiones dependen del contrato.";
+    return {
+      claimKey: "local-stable:travel-insurance",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "educacion tecnica") {
+    const displayText =
+      "La educación técnica combina conocimientos con habilidades prácticas orientadas a oficios y áreas tecnológicas o productivas. " +
+      "Es relevante porque prepara para resolver tareas concretas, usar herramientas y procesos especializados, y facilita la continuidad de estudios o la inserción laboral.";
+    return {
+      claimKey: "local-stable:technical-education",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "separacion de poderes") {
+    const displayText =
+      "La separación de poderes distribuye las funciones del Estado entre poderes como el Ejecutivo, el Legislativo y el Judicial. " +
+      "Su objetivo es evitar que una sola autoridad concentre todo el poder y permitir controles y equilibrios entre instituciones.";
+    return {
+      claimKey: "local-stable:separation-of-powers",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
+  if (clean === "interes compuesto") {
+    const displayText =
+      "El interés compuesto es el crecimiento de un capital cuando los intereses generados se incorporan al saldo y también producen intereses en los períodos siguientes. " +
+      "Por eso el resultado depende del capital inicial, la tasa, la frecuencia de capitalización y el tiempo.";
+    return {
+      claimKey: "local-stable:compound-interest",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   if (clean === "oso" || clean === "osos" || clean === "ursidae") {
     const displayText =
       "Un oso es un mamífero carnívoro de la familia Ursidae. " +
