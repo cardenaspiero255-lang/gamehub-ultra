@@ -165,4 +165,31 @@ class BatteryAwareGamingEngineTest {
         assertFalse(assessment.preventAggressiveProfiles)
     }
 
+
+    @Test
+    fun `missing final percentage preserves preceding uncharged drain history`() {
+        val samples = listOf(
+            snapshot(minutes = 0, percent = 80, charging = false),
+            snapshot(minutes = 10, percent = 76, charging = false),
+            snapshot(minutes = 20, percent = 72, charging = false),
+            SessionCoachSnapshot(
+                timestampMillis = 30 * 60_000L,
+                batteryPercent = null,
+                thermalStatus = 1,
+                thermalHeadroom = 0.20f,
+                refreshRateHz = 120f,
+                latencyMs = 30L,
+                batteryCharging = false,
+                powerSaveMode = false,
+            ),
+        )
+
+        val assessment = engine.assess(samples)
+
+        assertEquals(8, assessment.observedDropPercent)
+        assertEquals(24f, assessment.drainPercentPerHour)
+        assertEquals(BatteryGamingRecommendation.BALANCED, assessment.recommendation)
+        assertTrue(assessment.preventAggressiveProfiles)
+    }
+
 }
