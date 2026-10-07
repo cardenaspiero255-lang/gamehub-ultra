@@ -295,4 +295,40 @@ class UltraFrontierExecutionEngineTest {
         )
     }
 
+
+    @Test
+    fun stableKnowledgeEscalatesToVerifiedResearchWhenLocalKnowledgeFails() {
+        var researchCalls = 0
+        var localCalls = 0
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                researchCalls += 1
+                return UltraVerifiedResearchResult(
+                    message = "ChatGPT es un asistente de IA desarrollado por OpenAI.",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-a", "source-b"),
+                    abstained = false
+                )
+            }
+        }
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            networkAvailable = { true }
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify("¿Qué es ChatGPT?")
+        ) {
+            localCalls += 1
+            "No pude verificarlo con suficiente confianza."
+        }
+
+        assertEquals(2, localCalls)
+        assertEquals(1, researchCalls)
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+        assertTrue(answer.message.contains("ChatGPT", ignoreCase = true))
+        assertTrue(answer.sources.isNotEmpty())
+    }
+
 }
