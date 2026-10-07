@@ -51,7 +51,8 @@ internal data class GameHubProductionBootstrap(
     val viewModelDependencyFactory: GameHubViewModelDependencyFactory,
     val connectedAccountsRepository: ConnectedGameAccountsStateRepository,
     val storeLibraryRepository: StoreLibraryStateRepository,
-    val optimizationMemoryRepository: GameOptimizationMemoryStateRepository
+    val optimizationMemoryRepository: GameOptimizationMemoryStateRepository,
+    val aiProfileProposalStore: AiProfileProposalStore
 )
 
 internal object GameHubProductionComposition {
