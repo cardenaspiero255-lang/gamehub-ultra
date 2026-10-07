@@ -339,4 +339,62 @@ class UltraFrontierExecutionEngineTest {
         )
     }
 
+
+    @Test
+    fun repeatedLocalFailuresTriggerParallelVerifiedEnsembleCrossCheck() {
+        var researchCalls = 0
+        var localCalls = 0
+        val evolution = UltraFrontierEvolutionController(
+            learning = UltraFrontierLearningStore(
+                minSamplesForPreference = 3
+            )
+        )
+        repeat(2) {
+            evolution.record(
+                UltraFrontierExecutionOutcome(
+                    domain = UltraFrontierDomain.GENERAL_KNOWLEDGE,
+                    lane = UltraFrontierLane.LOCAL_FAST,
+                    accepted = false,
+                    verified = false,
+                    abstained = true,
+                    latencyMillis = 50L,
+                    reasonCode = "LOCAL_UNAVAILABLE"
+                )
+            )
+        }
+        val gateway = object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                researchCalls += 1
+                return UltraVerifiedResearchResult(
+                    message = "Respuesta corroborada.",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-a", "source-b"),
+                    independentSourceCount = 2,
+                    abstained = false
+                )
+            }
+        }
+        val frontier = UltraFrontierOrchestrator(
+            evolution = evolution
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = frontier,
+            networkAvailable = { true }
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify("¿Qué es un exoplaneta?")
+        ) {
+            localCalls += 1
+            "Un exoplaneta es un planeta fuera del Sistema Solar."
+        }
+
+        assertEquals(1, localCalls)
+        assertEquals(1, researchCalls)
+        assertTrue(answer.verified)
+        assertEquals("Respuesta corroborada.", answer.message)
+    }
+
 }
