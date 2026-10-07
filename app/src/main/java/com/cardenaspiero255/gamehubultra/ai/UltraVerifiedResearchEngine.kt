@@ -208,7 +208,9 @@ object UltraSensitiveInputGuard {
 class UltraVerifiedResearchEngine(
     private val providers: List<UltraResearchProvider>,
     private val cache: UltraResearchCache = UltraResearchCache(),
-    private val nowMillis: () -> Long = System::currentTimeMillis
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val providerHealth: UltraResearchProviderHealth =
+        UltraResearchProviderHealth()
 ) : UltraResearchGateway {
 
     private data class ProviderAttempt(
@@ -243,10 +245,25 @@ class UltraVerifiedResearchEngine(
             )
         }
 
+        val healthyProviders = providers.filter { provider ->
+            providerHealth.isAvailable(
+                providerId = provider.id,
+                nowMillis = nowMillis()
+            )
+        }
+        if (healthyProviders.isEmpty()) {
+            return abstention(
+                timedOut = false,
+                fallbackUsed = false,
+                reasonCode = "PROVIDERS_COOLDOWN",
+                retryable = false
+            )
+        }
+
         val providerBudget = request.researchProviderBudget
-            ?.coerceAtMost(providers.size)
-            ?: providers.size
-        val activeProviders = providers.take(providerBudget)
+            ?.coerceAtMost(healthyProviders.size)
+            ?: healthyProviders.size
+        val activeProviders = healthyProviders.take(providerBudget)
         val requestExecutor = Executors.newFixedThreadPool(
             activeProviders.size.coerceIn(1, 4)
         )
@@ -395,6 +412,11 @@ class UltraVerifiedResearchEngine(
                     )
                 }
                 attempts += attempt
+                providerHealth.record(
+                    providerId = attempt.providerId,
+                    result = attempt.result,
+                    nowMillis = nowMillis()
+                )
 
                 if (
                     optionalStableKnowledge &&
@@ -696,6 +718,8 @@ class UltraVerifiedResearchEngine(
                 reasonCode == "BACKEND_NOT_CONFIGURED" ||
                     reasonCode == "GENERAL_MODEL_NOT_CONFIGURED" ->
                     "El servicio de consulta todavía no está configurado para esa búsqueda."
+                reasonCode == "PROVIDERS_COOLDOWN" ->
+                    "Las fuentes disponibles están temporalmente en recuperación tras fallos repetidos. Inténtalo de nuevo en unos segundos."
                 sources.isEmpty() ->
                     "No encontré fuentes suficientes para confirmar ese dato."
                 else ->
