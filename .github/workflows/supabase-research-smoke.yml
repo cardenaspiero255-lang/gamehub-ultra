@@ -899,7 +899,10 @@ jobs:
                   return re.sub(r"[^a-z0-9]+", " ", ascii_value).strip()
 
               normalized_answer = normalize_semantic(display)
-              answer_words = set(normalized_answer.split())
+              normalized_query = normalize_semantic(case["query"])
+              if normalized_answer == normalized_query:
+                  return case, "FAIL", "answer merely echoes the question"
+
               expected = [
                   normalize_semantic(token)
                   for token in case.get("expectedAny", [])
@@ -907,27 +910,13 @@ jobs:
               ]
               expected_match = any(token in normalized_answer for token in expected)
 
-              stop_words = {
-                  "que", "como", "para", "sirve", "porque", "por", "una", "uno",
-                  "unos", "unas", "del", "las", "los", "con", "sin", "sobre",
-                  "dame", "explicacion", "clara", "funcion", "principal", "deberia",
-                  "saber", "persona", "alguien", "pregunta", "explicarias", "pocas",
-                  "frases", "resume", "asumir", "conocimientos", "tecnicos", "forma",
-                  "sencilla", "importante", "explicame", "esto", "esta", "este",
-                  "son", "hace", "hacer", "significa", "tipo", "productos", "producto",
-                  "diferencia", "hay", "entre", "actual", "hoy", "ahora",
-              }
-              query_tokens = {
-                  token
-                  for token in normalize_semantic(case["query"]).split()
-                  if len(token) >= 4 and token not in stop_words
-              }
-              query_match = any(token in answer_words for token in query_tokens)
-
-              if expected and not expected_match and not query_match:
+              # When the corpus provides semantic evidence, require it. Do not
+              # let a response pass merely because it repeats a word from the
+              # question.
+              if expected and not expected_match:
                   return case, "FAIL", (
-                      f"semantic relevance mismatch: expected={expected}; "
-                      f"query_tokens={sorted(query_tokens)}; answer={display[:300]}"
+                      f"semantic evidence mismatch: expected={expected}; "
+                      f"answer={display[:300]}"
                   )
 
               return case, "PASS", "ok"

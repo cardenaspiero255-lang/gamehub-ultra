@@ -138,17 +138,17 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "macro shard removed",
+        "macro settings shard removed",
         android_replace=(
-            "        shard: [release, ui, baseline, macro]\n",
-            "        shard: [release, ui, baseline]\n",
+            "        shard: [release, ui, baseline, macro-startup, macro-library, macro-settings]\n",
+            "        shard: [release, ui, baseline, macro-startup, macro-library]\n",
         ),
     )
     reject_mutation(
         "device parallelism reduced",
         android_replace=(
-            "      max-parallel: 4\n",
-            "      max-parallel: 2\n",
+            "      max-parallel: 6\n",
+            "      max-parallel: 3\n",
         ),
     )
     reject_mutation(

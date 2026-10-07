@@ -422,13 +422,20 @@ def main() -> None:
         fail("device validation strategy is missing")
     if strategy.get("fail-fast") is not False:
         fail("device validation matrix must keep fail-fast disabled")
-    if strategy.get("max-parallel") != 4:
-        fail("device validation matrix must keep four-way parallel execution")
+    if strategy.get("max-parallel") != 6:
+        fail("device validation matrix must keep six-way parallel execution")
     matrix = strategy.get("matrix")
     if not isinstance(matrix, dict):
         fail("device validation matrix definition is missing")
-    if set(matrix.get("shard", [])) != {"release", "ui", "baseline", "macro"}:
-        fail("device validation lost release/ui/baseline/macro coverage")
+    if set(matrix.get("shard", [])) != {
+        "release",
+        "ui",
+        "baseline",
+        "macro-startup",
+        "macro-library",
+        "macro-settings",
+    }:
+        fail("device validation lost release/ui/baseline/split-macro coverage")
 
     retry_test = require_step(
         android,
@@ -494,6 +501,13 @@ def main() -> None:
         ":baseline-profile:connectedNonMinifiedReleaseAndroidTest",
         'RULE="BaselineProfile"',
         'RULE="Macrobenchmark"',
+        "macro-startup",
+        "macro-library",
+        "macro-settings",
+        "coldStartup",
+        "navigationToLibrary",
+        "navigationToSettings",
+        "android.testInstrumentationRunnerArguments.class",
         "Expected at least {minimum} {label} cases",
         "Required performance tests were skipped",
     ):
