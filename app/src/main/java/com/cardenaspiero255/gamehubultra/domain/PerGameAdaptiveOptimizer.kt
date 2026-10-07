@@ -11,7 +11,9 @@ data class AdaptiveTrendSample(
     val refreshRateHz: Float?,
     val memoryUsedPercent: Int?,
     val latencyMs: Int?,
-    val thermalPrediction: ThermalPrediction? = null
+    val thermalPrediction: ThermalPrediction? = null,
+    val batteryConstrained: Boolean = false,
+    val batteryConstraintReason: String? = null
 )
 
 data class PerGameAdaptiveDecision(
@@ -290,7 +292,8 @@ class PerGameAdaptiveOptimizer(
         val pressure =
             latest.thermalPrediction?.allowPreventiveSignal == true ||
                 latest.thermalStatus?.let { it >= 3 } == true ||
-                latest.batteryPercent?.let { it <= 45 } == true ||
+                latest.batteryConstrained ||
+                latest.batteryPercent?.let { it <= 15 } == true ||
                 latest.memoryUsedPercent?.let { it >= 88 } == true ||
                 latest.latencyMs?.let { it >= 120 } == true ||
                 refreshTrend < -15f ||
@@ -311,6 +314,7 @@ class PerGameAdaptiveOptimizer(
                 samples.size >= 3 &&
                 knownSignals >= 3 &&
                 latest.thermalStatus?.let { it <= 1 } != false &&
+                !latest.batteryConstrained &&
                 latest.batteryPercent?.let { it >= 55 } != false &&
                 latest.memoryUsedPercent?.let { it <= 80 } != false &&
                 latest.latencyMs?.let { it <= 80 } != false &&
@@ -373,7 +377,13 @@ class PerGameAdaptiveOptimizer(
             signals += "predicción térmica"
         }
         if (latest.thermalStatus?.let { it >= 3 } == true) signals += "térmica"
-        if (latest.batteryPercent?.let { it <= 45 } == true) signals += "batería"
+        if (latest.batteryConstrained) {
+            signals += latest.batteryConstraintReason
+                ?.takeIf(String::isNotBlank)
+                ?: "restricción de batería"
+        } else if (latest.batteryPercent?.let { it <= 15 } == true) {
+            signals += "batería crítica"
+        }
         if (trend(samples.mapNotNull { it.refreshRateHz }) < -15f) signals += "refresco"
         if (latest.memoryUsedPercent?.let { it >= 88 } == true) signals += "memoria"
         if (
