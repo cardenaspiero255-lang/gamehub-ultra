@@ -458,6 +458,35 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun evolutionEnsemblePrefersVerifiedResearchOverWeakLocalCandidate() {
+        val evolution = UltraFrontierEvolutionController()
+
+        val selected = evolution.selectEnsemble(
+            local = UltraQueryExecutionAnswer(
+                message = "respuesta local",
+                verified = false,
+                confidence = UltraAnswerConfidence.MEDIUM,
+                independentSourceCount = 0,
+                abstained = false
+            ),
+            research = UltraQueryExecutionAnswer(
+                message = "respuesta corroborada",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("a", "b"),
+                independentSourceCount = 2,
+                abstained = false
+            ),
+            localLatencyMillis = 10L,
+            researchLatencyMillis = 400L,
+            requiresFreshData = false
+        )
+
+        assertEquals("respuesta corroborada", selected?.message)
+        assertTrue(selected?.verified == true)
+    }
+
+    @Test
     fun evolutionFinalGateRejectsVerifiedAnswerThatDoesNotMeetClaimQuorum() {
         val evolution = UltraFrontierEvolutionController()
         val query = UltraGeneralQueryRouter.classify("noticias de Android hoy")
