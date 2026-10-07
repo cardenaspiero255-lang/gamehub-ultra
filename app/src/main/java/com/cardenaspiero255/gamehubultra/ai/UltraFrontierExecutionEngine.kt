@@ -65,6 +65,29 @@ class UltraFrontierExecutionEngine(
             event = UltraFrontierAuditEvent.PLAN_CREATED
         )
 
+        if (
+            plan.lane == UltraFrontierLane.VERIFIED_RESEARCH ||
+            plan.lane == UltraFrontierLane.DEEP_RESEARCH
+        ) {
+            evolution.recallVerified(
+                request = request,
+                nowMillis = nowMillis()
+            )?.let { recalled ->
+                auditTrail.record(
+                    correlationId = request.correlationId,
+                    lane = plan.lane,
+                    event = UltraFrontierAuditEvent.ACCEPT,
+                    reasonCode = "FRONTIER_TEMPORAL_KNOWLEDGE"
+                )
+                return complete(
+                    request = request,
+                    plan = plan,
+                    answer = recalled,
+                    executionStartedNanos = executionStartedNanos
+                )
+            }
+        }
+
         if (plan.lane == UltraFrontierLane.BLOCKED) {
             auditTrail.record(
                 correlationId = request.correlationId,
