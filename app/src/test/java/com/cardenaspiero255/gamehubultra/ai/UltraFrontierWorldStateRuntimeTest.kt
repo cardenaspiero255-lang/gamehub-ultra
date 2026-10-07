@@ -59,6 +59,16 @@ class UltraFrontierWorldStateRuntimeTest {
         assertNotNull(state.thermalRisk)
         assertNotNull(state.batteryRecommendation)
         assertTrue(state.preventAggressiveProfiles)
+        assertEquals(
+            state,
+            UltraFrontierWorldStateRegistry.snapshotForPlanning(50_000L)
+        )
+        assertEquals(
+            null,
+            UltraFrontierWorldStateRegistry.snapshotForPlanning(
+                50_000L + 2 * 60_000L + 1L
+            )
+        )
         UltraFrontierWorldStateRegistry.clear()
     }
 }
