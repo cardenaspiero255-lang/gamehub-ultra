@@ -21,7 +21,9 @@ data class SessionCoachSnapshot(
     val thermalHeadroom: Float?,
     val refreshRateHz: Float?,
     val latencyMs: Long?,
-    val memoryUsedPercent: Int? = null
+    val memoryUsedPercent: Int? = null,
+    val batteryCharging: Boolean? = null,
+    val powerSaveMode: Boolean? = null
 )
 
 data class SessionCoachMessage(
@@ -43,7 +45,10 @@ data class SessionCoachPostSessionReport(
     val summary: String,
     val nextSteps: List<String>,
     val patterns: List<SessionCoachPattern>,
-    val batteryDropPercent: Int?
+    val batteryDropPercent: Int?,
+    val batteryDrainPercentPerHour: Float? = null,
+    val batteryChargingObserved: Boolean = false,
+    val batteryRecommendation: BatteryGamingRecommendation? = null
 )
 
 object AiSessionCoach {
@@ -64,6 +69,10 @@ object AiSessionCoach {
         val concerns = buildList {
             if (snapshot.batteryPercent != null && snapshot.batteryPercent <= 15) {
                 add("Batería baja: ${snapshot.batteryPercent} %.")
+                coveredFamilies += "batería"
+            }
+            if (snapshot.powerSaveMode == true && "batería" !in coveredFamilies) {
+                add("Modo de ahorro de batería activo.")
                 coveredFamilies += "batería"
             }
             if (snapshot.thermalStatus != null && snapshot.thermalStatus >= 3) {
@@ -225,17 +234,30 @@ object AiSessionCoach {
         }
 
         val batteryValues = ordered.mapNotNull { it.batteryPercent }
-        val batteryDrop = batteryValues.firstOrNull()?.let { first ->
+        val legacyBatteryDrop = batteryValues.firstOrNull()?.let { first ->
             batteryValues.lastOrNull()?.let { last -> (first - last).coerceAtLeast(0) }
         }
+        val batteryAssessment = BatteryAwareGamingEngine().assess(ordered)
+        val batteryDrop = batteryAssessment.observedDropPercent ?: legacyBatteryDrop
         val patterns = recurringPatterns(ordered)
-        val nextSteps = patterns
-            .map(SessionCoachPattern::action)
-            .distinct()
+        val batteryNextStep = if (batteryAssessment.preventAggressiveProfiles) {
+            "Para priorizar autonomía, evita perfiles agresivos hasta que mejore el estado de batería."
+        } else {
+            null
+        }
+        val nextSteps = (
+            patterns.map(SessionCoachPattern::action) + listOfNotNull(batteryNextStep)
+            ).distinct()
 
         val summary = buildString {
             append("Sesión analizada con ${ordered.size} muestras")
             batteryDrop?.let { append(" · batería -$it %") }
+            batteryAssessment.drainPercentPerHour?.let {
+                append(" · drenaje estimado ~${it.toInt()} %/h")
+            }
+            if (batteryAssessment.charging) {
+                append(" · el dispositivo terminó la sesión cargando")
+            }
             if (patterns.isEmpty()) {
                 append(" · sin patrones repetidos relevantes.")
             } else {
@@ -247,7 +269,10 @@ object AiSessionCoach {
             summary = summary,
             nextSteps = nextSteps,
             patterns = patterns,
-            batteryDropPercent = batteryDrop
+            batteryDropPercent = batteryDrop,
+            batteryDrainPercentPerHour = batteryAssessment.drainPercentPerHour,
+            batteryChargingObserved = ordered.any { it.batteryCharging == true },
+            batteryRecommendation = batteryAssessment.recommendation
         )
     }
 
@@ -286,6 +311,7 @@ object AiSessionCoach {
         previous: SessionCoachSnapshot,
         current: SessionCoachSnapshot
     ): SessionCoachMessage? {
+        if (current.batteryCharging == true) return null
         val before = previous.batteryPercent ?: return null
         val after = current.batteryPercent ?: return null
         val drop = before - after
