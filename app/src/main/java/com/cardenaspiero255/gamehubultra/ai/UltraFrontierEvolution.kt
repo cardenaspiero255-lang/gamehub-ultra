@@ -1141,7 +1141,10 @@ class UltraFrontierEvolutionController(
         val digits = raw.removePrefix("+").removePrefix("-")
         val sign = if (raw.startsWith("-")) "-" else ""
         val parts = digits.split('.', ',')
-        val thousandsOnly = parts.size > 1 &&
+        // With mixed separators, the rightmost delimiter is a decimal
+        // separator even when the decimal has three digits: 1.234,567.
+        val hasMixedSeparators = digits.contains('.') && digits.contains(',')
+        val thousandsOnly = !hasMixedSeparators && parts.size > 1 &&
             parts.first().length in 1..3 &&
             parts.first().any { it != '0' } &&
             parts.drop(1).all { it.length == 3 }
