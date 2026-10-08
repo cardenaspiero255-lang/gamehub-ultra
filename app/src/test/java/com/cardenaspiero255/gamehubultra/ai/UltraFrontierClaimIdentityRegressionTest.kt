@@ -40,6 +40,29 @@ class UltraFrontierClaimIdentityRegressionTest {
     }
 
     @Test
+    fun modelNumbersArePartOfSubjectNotDisputedPrice() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("El iPhone 15 cuesta 800 euros.", "shop-iphone-15") to 100L,
+                checked("El iPhone 16 cuesta 900 euros.", "shop-iphone-16") to 110L
+            )
+        ))
+        assertFalse(result.abstained)
+        assertEquals(null, result.reasonCode)
+    }
+
+    @Test
+    fun sameModelDifferentPriceIsContradiction() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("El iPhone 15 cuesta 800 euros.", "shop-a") to 100L,
+                checked("El iPhone 15 cuesta 900 euros.", "shop-b") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", result.reasonCode)
+    }
+
+    @Test
     fun accentsAndPunctuationDoNotInventNumericalDisagreement() {
         val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
             listOf(
