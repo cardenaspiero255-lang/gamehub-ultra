@@ -5067,11 +5067,21 @@ function isBiologicalBearCandidate(candidate: string): boolean {
   );
 }
 
+function encyclopediaExcerptLooksTampered(extract: string): boolean {
+  // Invisible formatting and embedded assistant instructions are not evidence.
+  // Reject rather than silently stripping them and promoting source authority.
+  return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
+    /\b(?:ignora|ignore)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous)\b/iu.test(
+      normalize(extract),
+    );
+}
+
 function candidateMatchesKnownMeaning(
   query: string,
   title: string,
   extract: string,
 ): boolean {
+  if (encyclopediaExcerptLooksTampered(extract)) return false;
   const cleanQuery = normalize(query);
   const candidate = normalize(title + " " + extract);
 
@@ -5476,6 +5486,21 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   const clean = normalize(topic)
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
+
+  if (clean === "ascensor" || clean === "ascensores" || clean === "elevador") {
+    const displayText =
+      "Un ascensor, también llamado elevador, es un sistema de transporte vertical " +
+      "que mueve personas o cargas entre los distintos pisos de un edificio. " +
+      "La cabina sube y baja mediante un mecanismo de tracción o hidráulico, " +
+      "con controles y dispositivos de seguridad.";
+    return {
+      claimKey: "local-stable:elevator",
+      value: normalize(displayText),
+      displayText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
 
   if (clean === "seguro de viaje") {
     const displayText =
