@@ -83,9 +83,12 @@ function analyze(files,config={}){
      for(let i=0;i<rows.length;i++){
        const decl=rows[i].text.match(/\bfun\s+([A-Za-z_]\w*)\s*\(/);
        if(!decl||['toString','equals','hashCode'].includes(decl[1]))continue;
-       const close=rows.slice(i+1,i+20);
+       const candidates=rows.slice(i+1,i+20).filter(x=>x.line>rows[i].line&&x.line-rows[i].line<60);
+       // A separate Kotlin function is a scope boundary, not a self-call.
+       const nextMethod=candidates.findIndex(x=>/^\s*(?:(?:public|private|internal|override|suspend|protected|open|inline)\s+)*fun\s+[A-Za-z_]\w*\s*\(/.test(x.text));
+       const close=nextMethod===-1?candidates:candidates.slice(0,nextMethod);
        const recur=close.find(x=>new RegExp('(?:^|[^\\w.])'+decl[1]+'\\s*\\(').test(x.text));
-       if(recur&&!close.some(x=>/\b(depth|remaining|maxDepth|visited|budget|tailrec)\b/i.test(x.text)))
+       if(recur&&!close.some(x=>/\b(remaining|maxDepth|visited|budget|tailrec)\b|\bdepth\s*(?:>=|<=|>|<)\s*\d+\b/i.test(x.text)))
          put('UNBOUNDED_RECURSION','HIGH','medium',path,recur.line,recur.text,'Posible autollamada sin límite visible.','Probar entradas cíclicas con profundidad acotada.');
      }
    }
