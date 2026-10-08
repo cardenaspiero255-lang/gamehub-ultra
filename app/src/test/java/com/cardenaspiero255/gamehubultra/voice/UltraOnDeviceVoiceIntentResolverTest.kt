@@ -23,6 +23,18 @@ class UltraOnDeviceVoiceIntentResolverTest {
     }
 
     @Test
+    fun politeImperativesCanLaunchExplicitlySpokenGames() {
+        val selected = UltraOnDeviceVoiceIntentResolver.validate(
+            "Por favor lanza Resident Evil 4",
+            LocalVoiceIntentCandidate("OPEN_GAME", "Resident Evil 4")
+        )
+        assertEquals(
+            "Resident Evil 4",
+            assertIs<VoiceCommand.OpenGame>(selected).query
+        )
+    }
+
+    @Test
     fun rejectsInventedTargetsInstructionsAndUnexpectedActions() {
         assertNull(UltraOnDeviceVoiceIntentResolver.validate(
             "Por favor abre CoD", LocalVoiceIntentCandidate("OPEN_GAME", "Banco")
