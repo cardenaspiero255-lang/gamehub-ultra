@@ -43,6 +43,7 @@ jobs:
           node --check .github/scripts/ultra_sentinel_remediation.cjs
           node --check .github/scripts/ultra_sentinel_report.cjs
           node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
+          node .github/scripts/ultra_sentinel_benchmark.cjs
       - name: Read PR evidence and publish safe independent analysis
         uses: actions/github-script@v7
         with:
