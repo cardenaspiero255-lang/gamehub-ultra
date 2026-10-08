@@ -211,7 +211,11 @@ class SupabaseUltraResearchProvider(
             sourceId.isBlank() &&
                 !decoded.authoritative &&
                 decoded.independentSourceCount == 0 &&
-                claimKey.startsWith("local-")
+                (
+                    claimKey.startsWith("local-") ||
+                        (claimKey.startsWith("terminology:") &&
+                            request.verificationMode != UltraVerificationMode.REQUIRED)
+                    )
         if (
             claimKey.isBlank() ||
             value.isBlank() ||
