@@ -682,11 +682,23 @@ internal object SessionCoachNotifications {
         ensureChannel(context)
         val report = AiSessionCoach.postSession(session.samples)
         val historyStore = SessionCoachSessionStore(context)
-        val proposedNightProfile = UltraSessionHistoryIntelligence.proposeNightProfile(
-            history = historyStore.readRecentGameSessions(),
-            packageName = session.packageName
-        )?.takeIf {
-            historyStore.takeNightProfileProposalToShow(session.packageName)
+        val notificationsEnabled =
+            androidx.core.app.NotificationManagerCompat.from(context)
+                .areNotificationsEnabled() &&
+                context.getSystemService(NotificationManager::class.java)
+                    ?.getNotificationChannel(ALERT_CHANNEL_ID)
+                    ?.importance != NotificationManager.IMPORTANCE_NONE
+        val proposedNightProfile = if (notificationsEnabled) {
+            UltraSessionHistoryIntelligence.proposeNightProfile(
+                history = historyStore.readRecentGameSessions(),
+                packageName = session.packageName
+            )?.takeIf {
+                historyStore.takeNightProfileProposalToShow(session.packageName)
+            }
+        } else {
+            // Do not consume the one-time proposal when no approval
+            // notification can be delivered.
+            null
         }
         val detail = buildString {
             append(report.summary)
