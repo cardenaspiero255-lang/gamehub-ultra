@@ -5637,6 +5637,13 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "hdmi": {
+      claim: "local-stable:hdmi",
+      text:
+        "HDMI es una interfaz digital que permite transmitir vídeo y audio " +
+        "entre dispositivos, como una consola o computadora y un televisor. " +
+        "Se utiliza para conectar pantallas y equipos audiovisuales.",
+    },
     "brujula": {
       claim: "local-stable:compass",
       text:
