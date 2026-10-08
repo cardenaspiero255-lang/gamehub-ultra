@@ -17,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NetworkVoiceSpanishIntegrationTest {
@@ -171,12 +172,14 @@ class NetworkVoiceSpanishIntegrationTest {
                     downstreamBandwidthKbps = 500_000,
                     latencyMs = 41L
                 )
-            )
+            ),
+            latencyMeasured = true
         )
 
         requireNotNull(snapshot)
         assertEquals(38.0, snapshot.metrics.averageLatencyMs)
-        assertEquals(NetworkGameProfile.COMPETITIVE, snapshot.recommendedProfile)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+        assertFalse(assertNotNull(snapshot.diagnostics).packetLossMeasured)
     }
 
     @Test
@@ -196,6 +199,73 @@ class NetworkVoiceSpanishIntegrationTest {
         )
 
         requireNotNull(snapshot)
+        assertEquals(NetworkStability.UNMEASURED, snapshot.metrics.stability)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+    }
+
+
+    @Test
+    fun voiceStatusExposesCar51SpikeDiagnosticsWithoutInventedLoss() {
+        val samples = listOf(40L, 42L, 41L, 180L, 43L).map { latency ->
+            ConnectivityTelemetry(
+                networkHandle = 8L,
+                connected = true,
+                validated = true,
+                metered = false,
+                transport = "Wi-Fi",
+                downstreamBandwidthKbps = 100_000,
+                latencyMs = latency
+            )
+        }
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(samples, latencyMeasured = true)
+        )
+        assertEquals(1, assertNotNull(snapshot.diagnostics).metrics.spikeCount)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+        val report = VoiceActionResult.NetworkReport(
+            request = NetworkVoiceRequest.STATUS,
+            snapshot = snapshot,
+            optimizationOutcome = NetworkOptimizationOutcome.NOT_REQUESTED
+        )
+        val spoken = NetworkVoiceResponseText.format(report).lowercase()
+        assertTrue(spoken.contains("picos de latencia: 1"))
+        assertTrue(spoken.contains("pérdida de paquetes todavía no medida"))
+    }
+
+    @Test
+    fun offlineNetworkReportNeverReusesPreviouslyMeasuredLatency() {
+        val connected = ConnectivityTelemetry(
+            networkHandle = 9L,
+            connected = true,
+            validated = true,
+            metered = false,
+            transport = "Wi-Fi",
+            downstreamBandwidthKbps = 100_000,
+            latencyMs = 25L
+        )
+        val offline = connected.copy(connected = false, validated = false, latencyMs = null)
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(
+                listOf(connected, connected, connected, offline),
+                latencyMeasured = true
+            )
+        )
+        assertEquals(NetworkStability.OFFLINE, snapshot.metrics.stability)
+        assertEquals(null, snapshot.metrics.averageLatencyMs)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+    }
+
+    @Test
+    fun unverifiedLegacyLatencyIsNotTreatedAsMeasured() {
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(
+                listOf(
+                    ConnectivityTelemetry(8L, true, true, false, "Wi-Fi", 100_000, 15L),
+                    ConnectivityTelemetry(8L, true, true, false, "Wi-Fi", 100_000, 20L),
+                    ConnectivityTelemetry(8L, true, true, false, "Wi-Fi", 100_000, 18L)
+                )
+            )
+        )
         assertEquals(NetworkStability.UNMEASURED, snapshot.metrics.stability)
         assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
     }
