@@ -220,6 +220,11 @@ class UltraVerifiedResearchEngine(
 
     override val supportsProviderPartitioning: Boolean = true
 
+    override val providerPartitionCapacity: Int?
+        get() = providers.count {
+            providerHealth.isAvailable(it.id, nowMillis())
+        }.takeIf { it > 0 }
+
     private data class ProviderAttempt(
         val index: Int,
         val providerId: String,
