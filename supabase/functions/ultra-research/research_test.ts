@@ -707,7 +707,9 @@ Deno.test(
       "REQUIRED",
     );
     if (result.claimKey === "terminology:macroverso" || liveLookups === 0) {
-      throw new Error("REQUIRED returned an unsourced definition without live verification");
+      throw new Error(
+        "REQUIRED returned an unsourced definition without live verification",
+      );
     }
   },
 );
