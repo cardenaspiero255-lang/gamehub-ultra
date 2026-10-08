@@ -5503,6 +5503,19 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "survival horror": {
+      claim: "local-stable:survival-horror-genre",
+      text:
+        "Survival horror es un género de videojuegos de terror y supervivencia " +
+        "que combina exploración, recursos limitados, tensión y situaciones " +
+        "peligrosas. Juegos como Resident Evil utilizan elementos del género.",
+    },
+    "armario": {
+      claim: "local-stable:wardrobe",
+      text:
+        "Un armario es un mueble con puertas y compartimentos que sirve " +
+        "para guardar y organizar ropa, calzado u otros objetos del hogar.",
+    },
     "leonardo da vinci": {
       claim: "local-stable:leonardo-da-vinci",
       text:
@@ -5547,6 +5560,9 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "televisores, electrodomésticos y semiconductores.",
     },
   };
+  basicDefinitions["armarios"] = basicDefinitions["armario"];
+  basicDefinitions["horror de supervivencia"] =
+    basicDefinitions["survival horror"];
   basicDefinitions["lapices"] = basicDefinitions["lapiz"];
   basicDefinitions["moleculas"] = basicDefinitions["molecula"];
   basicDefinitions["poemas"] = basicDefinitions["poema"];
