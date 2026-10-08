@@ -93,7 +93,7 @@ object UltraSessionHistoryIntelligence {
             session.packageName == packageName &&
                 session.playedAtNight &&
                 session.measuredSampleCount >= MIN_VALID_REFRESH_SAMPLES &&
-                session.typicalRefreshRateHz in (TARGET_NIGHT_HZ - 2)..(TARGET_NIGHT_HZ + 2) &&
+                (session.typicalRefreshRateHz?.let { it in (TARGET_NIGHT_HZ - 2)..(TARGET_NIGHT_HZ + 2) } == true) &&
                 session.minimumBatteryPercent != null &&
                 session.minimumBatteryPercent <= LOW_BATTERY_PERCENT
         }.distinctBy { it.startedAtMillis }
