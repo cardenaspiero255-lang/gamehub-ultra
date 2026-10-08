@@ -83,6 +83,50 @@ class UltraFrontierV2Test {
     }
 
     @Test
+    fun replannerKeepsReplacementDependenciesResolvableAndNonCyclic() {
+        val tasks = listOf(
+            UltraFrontierTask("route", UltraFrontierSpecialist.ROUTER),
+            UltraFrontierTask(
+                "research-a",
+                UltraFrontierSpecialist.RESEARCH,
+                dependsOn = setOf("route")
+            ),
+            UltraFrontierTask(
+                "research-b",
+                UltraFrontierSpecialist.RESEARCH,
+                dependsOn = setOf("research-a")
+            ),
+            UltraFrontierTask(
+                "synthesize",
+                UltraFrontierSpecialist.SYNTHESIZER,
+                dependsOn = setOf("research-a", "research-b")
+            )
+        )
+        val result = UltraFrontierV2Replanner().replan(
+            tasks = tasks,
+            failedTaskIds = setOf("research-a", "research-b"),
+            remainingTimeMillis = 15_000L,
+            recoveryOrdinal = 1
+        )
+        val ids = result.tasks.map { it.id }.toSet()
+        assertTrue(result.changed)
+        assertFalse("research-a" in ids)
+        assertFalse("research-b" in ids)
+        assertTrue(result.tasks.all { task ->
+            task.dependsOn.all { it in ids && it != task.id }
+        })
+        val secondRecovery = result.tasks.single {
+            it.id == "research-recovery-2"
+        }
+        assertTrue("research-recovery-1" in secondRecovery.dependsOn)
+        val synthesis = result.tasks.single { it.id == "synthesize" }
+        assertEquals(
+            setOf("research-recovery-1", "research-recovery-2"),
+            synthesis.dependsOn
+        )
+    }
+
+    @Test
     fun adaptiveBranchAllocatorPreservesBudgetAndRewardsStrongNovelBranch() {
         val allocator = UltraFrontierV2BranchAllocator()
         val allocation = allocator.allocate(
