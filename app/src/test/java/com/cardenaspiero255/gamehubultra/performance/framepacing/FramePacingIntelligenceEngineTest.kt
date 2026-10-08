@@ -98,6 +98,41 @@ class FramePacingIntelligenceEngineTest {
     }
 
     @Test
+    fun refreshAndFrameTimingsNeverInventActualGameFps() {
+        val fast = (0..25).map { index ->
+            FrameTimingSample(index * 50L, 16f)
+        }
+        val assessment = engine.analyze(
+            targetHz = 120,
+            refreshSamples = slowSamples(120f, 120f, 120f, 120f, 120f),
+            frameTimingSamples = fast,
+            thermal = null,
+            battery = null,
+            supportedRefreshRatesHz = listOf(60, 120),
+            interpolationState = InterpolationState(false, false, false)
+        )
+
+        assertNull(assessment.observedGameFps)
+        assertEquals(FrameDataAvailability.AVAILABLE, assessment.pacingAvailability)
+    }
+
+    @Test
+    fun verifiedExternalGameFpsIsPassedThroughWithoutBeingDerivedFromRefresh() {
+        val assessment = engine.analyze(
+            targetHz = 120,
+            refreshSamples = slowSamples(120f, 120f, 120f, 120f, 120f),
+            frameTimingSamples = null,
+            thermal = null,
+            battery = null,
+            supportedRefreshRatesHz = listOf(60, 120),
+            interpolationState = InterpolationState(false, false, false),
+            verifiedGameFps = 58f
+        )
+
+        assertEquals(58f, assessment.observedGameFps)
+    }
+
+    @Test
     fun minorVarianceNeedsEnoughEvidenceWithoutBecomingUnstable() {
         val assessment = engine.analyze(
             targetHz = 60,
