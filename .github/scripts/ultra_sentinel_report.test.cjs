@@ -58,3 +58,18 @@ test('signals machine-report truncation separately from diff completeness',()=>{
  assert.equal(out.reportTruncated,true);
  assert.equal(out.partial,false);
 });
+
+test('machine report labels heuristic playbooks rather than falsely verified fixes',()=>{
+ const x=sample();
+ x.analysis.remediations.suggestions[0].relatedEvidence=[
+  {id:'pattern-voice-retry',type:'playbook',verification:'curated_playbook',advice:'Use retry gate'},
+  {id:'fake-historic',type:'verified_fix',verification:'confirmed_tests',advice:'Based on a verified SHA',
+    evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/161'}
+ ];
+ const saved=parseComment(serialize(buildReport(x)),{pr:167,sha});
+ const mem=saved.findings[0].repair.memory;
+ assert.equal(mem[0].verification,'curated_playbook');
+ assert.equal(mem[0].source,null);
+ assert.equal(mem[1].type,'verified_fix');
+ assert.ok(mem[1].source.startsWith('https://github.com/'));
+});
