@@ -286,7 +286,10 @@ class UltraVerifiedResearchEngine(
                 timedOut = false,
                 fallbackUsed = false,
                 reasonCode = "PROVIDERS_COOLDOWN",
-                retryable = false
+                // A later stable slot may still be healthy. Allow the
+                // Frontier retry planner to move forward without retrying
+                // the quarantined identity.
+                retryable = request.researchProviderOffset + selectedSlots.size < providers.size
             )
         }
         val activeProviders = providerRanker.rank(
