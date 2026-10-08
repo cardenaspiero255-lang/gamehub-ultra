@@ -5073,7 +5073,7 @@ function encyclopediaExcerptLooksTampered(extract: string): boolean {
   return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
     /\b(?:ignora|ignore|disregard|olvida|omite)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous|prior)\b/iu.test(text) ||
     /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores|prior)\s+(?:instructions|instrucciones)\b/iu.test(text) ||
-    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|todas|las)\s+)*(?:instructions|instrucciones)\s+(?:above|below|de arriba|anteriores|previas)\b/iu.test(text);
+    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|any|above|below|previous|prior|earlier|todas?|las?|anteriores|previas|superiores)\s+)*(?:instructions|instrucciones)\s+(?:above|below|de arriba|anteriores|previas)?\b/iu.test(text);
 }
 
 function candidateMatchesKnownMeaning(
@@ -5090,7 +5090,11 @@ function candidateMatchesKnownMeaning(
   const requestedTopic = normalize(extractGeneralKnowledgeQuery(query))
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
   const candidateTitle = normalize(title)
-    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
+    // A canonical encyclopedia article may specify its topic in parentheses:
+    // "Mercurio (planeta)" is not a narrower named event than "Mercurio".
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .trim();
   if (
     /^(?:que es|que son|define|explicame que es)\b/.test(
       cleanQuery.replace(/^[¿?¡!\s]+/, ""),
