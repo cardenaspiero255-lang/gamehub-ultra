@@ -117,6 +117,80 @@ class UltraFrontierV2Test {
     }
 
     @Test
+    fun claimProvenanceDoesNotOverwriteDistinctEvidenceWhenIdsContainDelimiters() {
+        val graph = UltraFrontierV2ClaimProvenanceGraph()
+        graph.record(
+            UltraFrontierV2ClaimEvidence(
+                claimId = "price",
+                normalizedValue = "100",
+                sourceId = "official|mirror",
+                providerId = "provider-a",
+                authoritative = true
+            )
+        )
+        graph.record(
+            UltraFrontierV2ClaimEvidence(
+                claimId = "price",
+                normalizedValue = "100",
+                sourceId = "official",
+                providerId = "mirror|provider-a",
+                authoritative = false
+            )
+        )
+        val snapshot = assertNotNull(graph.snapshot("price", "100"))
+        assertEquals(2, snapshot.supportingSources)
+        assertEquals(2, snapshot.independentSources)
+        assertEquals(2, snapshot.providers)
+        assertTrue(snapshot.hasAuthoritativeSupport)
+        assertFalse(snapshot.hasConflict)
+    }
+
+    @Test
+    fun claimProvenanceRetainsAuthorityWhenRepeatedObservationIsLessTrustworthy() {
+        val graph = UltraFrontierV2ClaimProvenanceGraph()
+        val trusted = UltraFrontierV2ClaimEvidence(
+            claimId = " Price ",
+            normalizedValue = " 100 ",
+            sourceId = " Official ",
+            providerId = " Provider ",
+            authoritative = true
+        )
+        graph.record(trusted)
+        graph.record(
+            trusted.copy(
+                claimId = "price",
+                normalizedValue = "100",
+                sourceId = "official",
+                providerId = "provider",
+                authoritative = false
+            )
+        )
+        val snapshot = assertNotNull(graph.snapshot("PRICE", "100"))
+        assertEquals(1, snapshot.supportingSources)
+        assertEquals(1, snapshot.independentSources)
+        assertEquals(1, snapshot.providers)
+        assertTrue(snapshot.hasAuthoritativeSupport)
+        assertFalse(snapshot.hasConflict)
+    }
+
+    @Test
+    fun claimProvenancePromotesAuthorityWhenStrongEvidenceArrivesLater() {
+        val graph = UltraFrontierV2ClaimProvenanceGraph()
+        val evidence = UltraFrontierV2ClaimEvidence(
+            claimId = "battery",
+            normalizedValue = "5000mah",
+            sourceId = "official",
+            providerId = "maker",
+            authoritative = false
+        )
+        graph.record(evidence)
+        graph.record(evidence.copy(authoritative = true))
+        val snapshot = assertNotNull(graph.snapshot("battery", "5000mah"))
+        assertEquals(1, snapshot.supportingSources)
+        assertTrue(snapshot.hasAuthoritativeSupport)
+    }
+
+    @Test
     fun claimProvenanceTracksSupportConflictAndIndependentSources() {
         val graph = UltraFrontierV2ClaimProvenanceGraph()
         graph.record(
