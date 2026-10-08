@@ -569,8 +569,6 @@ Deno.test("tampered encyclopedia excerpts never become trusted stable knowledge"
   }
 });
 
-
-
 Deno.test(
   "required general knowledge does not call an unverified AI fallback",
   async () => {
@@ -638,7 +636,8 @@ Deno.test(
                     pageid: 100,
                     title: "Barómetro",
                     extract,
-                    canonicalurl: "https://es.wikipedia.org/wiki/Bar%C3%B3metro",
+                    canonicalurl:
+                      "https://es.wikipedia.org/wiki/Bar%C3%B3metro",
                   },
                 },
               },
