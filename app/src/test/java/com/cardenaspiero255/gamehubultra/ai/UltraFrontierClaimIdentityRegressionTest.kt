@@ -83,6 +83,18 @@ class UltraFrontierClaimIdentityRegressionTest {
     }
 
     @Test
+    fun mixedGroupingAndDecimalSeparatorsCompareAtEqualValue() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("La medición fue 1.234,567 unidades.", "lab-one") to 100L,
+                checked("La medición fue 1234,567 unidades.", "lab-two") to 110L
+            )
+        ))
+        assertFalse(result.abstained)
+        assertEquals(null, result.reasonCode)
+    }
+
+    @Test
     fun distinctPricesMustRemainConflictingAfterCanonicalization() {
         val selected = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
             listOf(
