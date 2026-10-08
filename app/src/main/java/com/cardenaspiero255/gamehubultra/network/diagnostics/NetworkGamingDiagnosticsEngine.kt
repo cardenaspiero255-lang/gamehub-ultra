@@ -33,7 +33,21 @@ class NetworkGamingDiagnosticsEngine(
             validTimeline.filter { it.timestampMs >= windowStart }
         }
 
-        val connected = recent.filter { it.connected && it.validated }
+        // Current connectivity wins over historical samples. A prior successful
+        // probe is never evidence that a disconnected or new network is healthy.
+        val latest = recent.lastOrNull()
+        val connected = if (latest?.connected == true && latest.validated) {
+            recent.asReversed()
+                .takeWhile {
+                    it.connected && it.validated &&
+                        it.networkHandle == latest.networkHandle
+                }
+                .asReversed()
+        } else {
+            emptyList()
+        }
+        // Keep transitions visible, but do not combine measurements across networks.
+        val connectionTimeline = recent.filter { it.connected && it.validated }
         val latencyHistory = connected.mapNotNull { sample ->
             sample.latencyMs?.takeIf { latency ->
                 sample.latencyMeasured &&
@@ -63,8 +77,8 @@ class NetworkGamingDiagnosticsEngine(
             ?.average()
 
         val spikeCount = countSpikes(latencyHistory)
-        val transportChanges = transportChanges(connected)
-        val networkHandleChangeCount = connected
+        val transportChanges = transportChanges(connectionTimeline)
+        val networkHandleChangeCount = connectionTimeline
             .zipWithNext()
             .count { (before, after) ->
                 before.networkHandle != null &&
@@ -207,7 +221,7 @@ class NetworkGamingDiagnosticsEngine(
             if (
                 latency != null &&
                 latency <= policy.competitiveLatencyMaxMs &&
-                (loss == null || loss <= policy.competitivePacketLossMaxPercent)
+                (loss != null && loss <= policy.competitivePacketLossMaxPercent)
             ) {
                 return NetworkGameProfile.COMPETITIVE
             }
