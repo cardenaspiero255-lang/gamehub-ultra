@@ -26,6 +26,7 @@ import com.cardenaspiero255.gamehubultra.domain.AiSessionCoach
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachPriority
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
+import com.cardenaspiero255.gamehubultra.domain.UltraSessionHistoryIntelligence
 import com.cardenaspiero255.gamehubultra.domain.ThermalPredictionAdvisor
 import com.cardenaspiero255.gamehubultra.domain.ThermalPredictionEngine
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe
@@ -680,11 +681,19 @@ internal object SessionCoachNotifications {
     ) {
         ensureChannel(context)
         val report = AiSessionCoach.postSession(session.samples)
+        val proposedNightProfile = UltraSessionHistoryIntelligence.proposeNightProfile(
+            history = SessionCoachSessionStore(context).readRecentGameSessions(),
+            packageName = session.packageName
+        )
         val detail = buildString {
             append(report.summary)
             report.nextSteps.take(3).forEach { step ->
                 append("\n• ")
                 append(step)
+            }
+            proposedNightProfile?.let { suggestion ->
+                append("\n• ")
+                append(suggestion)
             }
         }
         val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
