@@ -175,7 +175,13 @@ class UltraFrontierV2Replanner(
             .toMutableList()
 
         failedResearch.forEach { failed ->
-            replacementByFailed[failed.id]?.let(rebuilt::add)
+            val replacement = replacementByFailed.getValue(failed.id)
+            // Replacement tasks are part of the graph too: keep dependencies
+            // pointing to the new IDs, never deleted or self-referential IDs.
+            val dependencies = replacement.dependsOn.mapTo(linkedSetOf()) { id ->
+                replacementByFailed[id]?.id ?: id
+            }.filterTo(linkedSetOf()) { it != replacement.id }
+            rebuilt += replacement.copy(dependsOn = dependencies)
         }
 
         return UltraFrontierV2ReplanResult(
