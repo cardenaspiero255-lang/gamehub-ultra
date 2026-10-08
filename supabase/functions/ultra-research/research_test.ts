@@ -529,9 +529,7 @@ Deno.test(
           return new Response("not found", { status: 404 });
         },
         env: (name) =>
-          name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE"
-            ? "1"
-            : undefined,
+          name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
       };
       const result = await routeResearchQuery(
         entry.query,
@@ -545,7 +543,9 @@ Deno.test(
         result.displayText !== entry.extract ||
         result.authoritative !== true
       ) {
-        throw new Error("Rejected canonical parenthetical title: " + entry.title);
+        throw new Error(
+          "Rejected canonical parenthetical title: " + entry.title,
+        );
       }
     }
   },
