@@ -312,8 +312,8 @@ class SessionCoachSessionStore(
             .lineSequence()
             .mapNotNull(UltraGameSessionHistoryCodec::decode)
             .filter { packageName == null || it.packageName == packageName }
-            .takeLast(limit.coerceIn(1, MAX_HISTORY))
             .toList()
+            .takeLast(limit.coerceIn(1, MAX_HISTORY))
 
     private fun readSession(prefix: String): SessionCoachStoredSession? {
         val id = preferences.getString(prefix + KEY_ID, null)?.trim().orEmpty()
