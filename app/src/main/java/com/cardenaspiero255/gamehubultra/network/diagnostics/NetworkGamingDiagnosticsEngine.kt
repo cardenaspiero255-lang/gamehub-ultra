@@ -198,13 +198,13 @@ class NetworkGamingDiagnosticsEngine(
         transportChanged: Boolean,
         networkChanged: Boolean
     ): NetworkGameProfile {
-        if (metered) return NetworkGameProfile.DATA_SAVER
         if (
             metrics.stability == NetworkStability.OFFLINE ||
             metrics.stability == NetworkStability.UNMEASURED
         ) {
             return NetworkGameProfile.BALANCED
         }
+        if (metered) return NetworkGameProfile.DATA_SAVER
         if (
             transportChanged ||
             networkChanged ||
