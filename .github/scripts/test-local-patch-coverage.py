@@ -571,6 +571,66 @@ realCall()
             ("app/src/main/java/com/example/Foo.kt:7",),
         )
 
+    def test_unmapped_nested_generic_comparator_body_is_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+compareByDescending<IndexedValue<UltraResearchProvider>> {
+    score(it.value.id, domain)
+}.thenBy { it.index }
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2, 3, 4}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+
+    def test_property_declaration_followed_by_generated_getter_is_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/></sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+val supportsProviderPartitioning: Boolean
+    get() = researchGateway.supportsProviderPartitioning
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": {1, 2, 3}},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+
+    def test_parenthesized_multiline_concat_suffix_is_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/>'
+            '<line nr="2" mi="0" ci="1"/>'
+            '<line nr="3" mi="0" ci="1"/>'
+            '<line nr="4" mi="0" ci="1"/>'
+            '<line nr="5" mi="0" ci="1"/>'
+            '<line nr="7" mi="0" ci="1"/>'
+            '</sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+val key = prefix +
+    (if (fresh) {
+        "fresh"
+    } else {
+        "stable"
+    }) + ":" +
+    request.originalText
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 9))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.unmapped_files, ())
+
     def test_threshold_is_blocking_below_minimum(self) -> None:
         stats = gate.PatchCoverage(executable=10, covered=8)
         self.assertFalse(gate.meets_threshold(stats, 90.0))
