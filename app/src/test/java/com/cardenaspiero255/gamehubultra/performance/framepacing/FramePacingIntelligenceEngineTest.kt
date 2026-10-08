@@ -176,7 +176,9 @@ class FramePacingIntelligenceEngineTest {
         )
 
         assertEquals(RefreshStability.DEGRADING, assessment.stability)
-        assertTrue(assessment.recommendedRefreshHz in listOf(50, 60, 72, 90))
+        val recommendation = assessment.recommendedRefreshHz
+        assertNotNull(recommendation)
+        assertTrue(recommendation in listOf(50, 60, 72, 90))
     }
 
     @Test
@@ -276,7 +278,9 @@ class FramePacingIntelligenceEngineTest {
         )
 
         assertEquals(144, assessment.recommendedRefreshHz)
-        assertTrue(assessment.recommendedRefreshHz in supported)
+        val recommendation = assessment.recommendedRefreshHz
+        assertNotNull(recommendation)
+        assertTrue(recommendation in supported)
     }
 
     @Test
