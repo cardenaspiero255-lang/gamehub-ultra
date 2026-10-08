@@ -486,6 +486,51 @@ Deno.test("generic topic rejects narrower names even when search ranks them firs
 });
 
 Deno.test(
+  "photosynthesis science query never resolves to a documentary film",
+  async () => {
+    const result = await routeResearchQuery(
+      "¿Qué es la fotosíntesis?",
+      {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.searchParams.has("generator")
+          ) {
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    title: "Fotosíntesis",
+                    extract:
+                      "Fotosíntesis es una película documental de Argentina estrenada en 2020.",
+                    index: 1,
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse({ query: { search: [] } });
+        },
+        env: () => undefined,
+      },
+      "",
+      "GENERAL_KNOWLEDGE",
+      "OPTIONAL",
+    );
+    const answer = result.displayText ?? "";
+    if (
+      result.abstained ||
+      !/luz/i.test(answer) ||
+      !/plant/i.test(answer) ||
+      /pel[ií]cula|documental/i.test(answer)
+    ) {
+      throw new Error("Biology topic resolved to an unrelated movie: " + answer);
+    }
+  },
+);
+
+Deno.test(
   "canonical encyclopedia entries with parenthetical qualifiers remain eligible",
   async () => {
     const entries = [
