@@ -82,7 +82,9 @@ Deno.test("Wi-Fi definitions remain complete without upstream data", async () =>
       result.authoritative ||
       (result.independentSourceCount ?? 0) !== 0
     ) {
-      throw new Error("Incomplete or incorrectly attributed Wi-Fi answer: " + answer);
+      throw new Error(
+        "Incomplete or incorrectly attributed Wi-Fi answer: " + answer,
+      );
     }
   }
 });
