@@ -3,6 +3,7 @@
    No external AI services, no execution of PR code, no automatic merges. */
 const VERSION='2.0.0';
 const {buildRemediations,markdown:repairMarkdown}=require('./ultra_sentinel_remediation.cjs');
+const {search:searchMemory}=require('./ultra_sentinel_memory.cjs');
 const MAX_FILES=300,MAX_PATCH=100000;
 const SEVERITY={BLOCKER:4,HIGH:3,MEDIUM:2,LOW:1};
 function sanitize(s){
@@ -121,6 +122,11 @@ function analyze(files,config={}){
  alerts.sort((a,b)=>SEVERITY[b.severity]-SEVERITY[a.severity]||a.path.localeCompare(b.path)||a.line-b.line);
  const plan=validationPlan(list);
  const repairs=buildRemediations({sha,findings:alerts.slice(0,40)});
+ // Only validated historical fixes are marked verified. Curated playbooks are explicitly advisory.
+ for(const suggestion of repairs.suggestions){
+   const f=alerts.find(x=>x.rule===suggestion.rule&&x.path===suggestion.path&&x.line===suggestion.line);
+   suggestion.relatedEvidence=searchMemory({rule:suggestion.rule,path:suggestion.path,reason:f?.reason,domain:f?.domains?.[0]},[],2);
+ }
  return {engine:'Ultra Sentinel Core',version:VERSION,sha,mode:'independent-rule-and-structure-reasoner',
   coverage:{returned:list.length,analyzed:scanned,partial},validationPlan:plan,remediations:repairs,findings:alerts.slice(0,40),
   omitted:Math.max(0,alerts.length-40),warnings:warnings.slice(0,25),
