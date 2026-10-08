@@ -604,6 +604,31 @@ val supportsProviderPartitioning: Boolean
         )
         self.assertEqual(stats.unmapped_files, ())
 
+    def test_multiline_generated_getter_header_is_structural_but_real_call_is_not(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/>'
+            '<line nr="4" mi="0" ci="1"/>'
+            '<line nr="5" mi="0" ci="1"/>'
+            '</sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+val score: Double
+    get() =
+        reliability * 0.50 +
+            novelty
+realCall()
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 7))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(
+            stats.unmapped_files,
+            ("app/src/main/java/com/example/Foo.kt:6",),
+        )
+
     def test_parenthesized_multiline_concat_suffix_is_structural(self) -> None:
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
