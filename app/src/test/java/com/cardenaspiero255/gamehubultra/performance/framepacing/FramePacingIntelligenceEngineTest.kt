@@ -291,6 +291,38 @@ class FramePacingIntelligenceEngineTest {
         assertFalse(signal.shouldNotify)
     }
 
+
+    @Test
+    fun integrationConsumesExistingSessionAndRefreshTelemetry() {
+        val integration = FramePacingIntegration(engine)
+        val snapshots = listOf(
+            snapshot(0L, 120f),
+            snapshot(15_000L, 120f),
+            snapshot(30_000L, 120f),
+            snapshot(45_000L, 120f),
+            snapshot(60_000L, 120f),
+            snapshot(75_000L, 120f)
+        )
+        val telemetry = RefreshTelemetry(
+            supportedRefreshRatesHz = setOf(60, 90, 120),
+            currentRefreshRateHz = 120f
+        )
+
+        val assessment = integration.assess(
+            targetHz = 120,
+            sessionSnapshots = snapshots,
+            frameTimingSamples = null,
+            thermal = null,
+            battery = null,
+            refreshTelemetry = telemetry,
+            interpolationState = InterpolationState(false, false, false)
+        )
+
+        assertEquals(RefreshVerification.VERIFIED, assessment.verification)
+        assertEquals(120, assessment.recommendedRefreshHz)
+        assertFalse(integration.shouldNotifyAdaptiveOptimizer(integration.adaptiveSignal(assessment)))
+    }
+
     @Test
     fun policyRejectsBrokenHysteresis() {
         var failed = false
