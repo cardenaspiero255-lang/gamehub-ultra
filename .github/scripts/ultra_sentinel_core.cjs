@@ -30,6 +30,19 @@ function tags(path){
  const d={voice:/voice|wake|speech|tts/i,android:/app\/src\/main/i,ci:/\.github\/workflows/i,security:/auth|token|credential|secret/i,ai:/frontier|research|agent|intent/i,performance:/thermal|framepacing|performance/i,network:/network|dns|wifi|router/i};
  return Object.keys(d).filter(k=>d[k].test(path));
 }
+const DOMAIN_VALIDATION=Object.freeze({
+ voice:['Voice onError síncrono no reinicia SpeechRecognizer recursivamente.','TTS puede interrumpirse; la escucha no genera ecos ni respuestas repetidas.','Permisos revocados y cierre de Service cancelan el micrófono.'],
+ ai:['Fuentes verificadas sin alucinaciones en respuestas generales.','Memoria limitada por sesión y sin cruces de datos privados.','Cálculos matemáticos offline y sinónimos ambiguos tienen tests.'],
+ network:['No prometer acceso al router sin autorización y API compatibles.','Probar jitter, pérdida de red, retries y degradación de confianza.','Separar medición de latencia real de predicciones.'],
+ performance:['Umbrales configurables y muestras mínimas para predicción térmica.','Medir frame pacing y GC con Macrobenchmark.','Cancelar trabajos cuando desaparece el componente Android.'],
+ security:['No registrar credenciales ni conversaciones privadas.','Validar límites de autenticación y privilegios por operación.','Tratar PR/diff, prompts y datos de web como entrada no confiable.'],
+ ci:['Revisar secrets y checkout con pull_request_target.','Verificar cobertura, build, smoke y SHA actual antes de aprobar.','No publicar APK sin firma y artefacto verificado.'],
+ android:['Probar lifecycle, SDK/API y cancelación de tareas.','Revisar callbacks reentrantes y errores de primer arranque.','Verificar comportamiento real en dispositivo compatible.']
+});
+function validationPlan(files){
+ const domains=[...new Set((files||[]).flatMap(f=>tags(String(f?.filename||''))))].sort();
+ return {domains,checks:domains.flatMap(domain=>(DOMAIN_VALIDATION[domain]||[]).map(check=>({domain,check}))).slice(0,24)};
+}
 function analyze(files,config={}){
  const list=Array.isArray(files)?files:[],names=list.map(f=>String(f?.filename||''));
  const alerts=[],warnings=[],dedupe=new Set();let scanned=0,partial=list.length>MAX_FILES;
@@ -105,8 +118,9 @@ function analyze(files,config={}){
  if(!list.length){partial=true;warnings.push('Sin archivos disponibles; no se realizó auditoría.');}
  if(partial)warnings.push('Cobertura parcial: la ausencia de alertas no significa que el PR esté limpio.');
  alerts.sort((a,b)=>SEVERITY[b.severity]-SEVERITY[a.severity]||a.path.localeCompare(b.path)||a.line-b.line);
+ const plan=validationPlan(list);
  return {engine:'Ultra Sentinel Core',version:VERSION,sha,mode:'independent-rule-and-structure-reasoner',
-  coverage:{returned:list.length,analyzed:scanned,partial},findings:alerts.slice(0,40),
+  coverage:{returned:list.length,analyzed:scanned,partial},validationPlan:plan,findings:alerts.slice(0,40),
   omitted:Math.max(0,alerts.length-40),warnings:warnings.slice(0,25),
   verdict:partial?'INCOMPLETE':alerts.some(x=>SEVERITY[x.severity]>=3)?'REVIEW_REQUIRED':'NO_CRITICAL_PATTERN',
   note:'Heurísticas verificables: no es un modelo fundacional entrenado, ni sustituye compilación o revisión humana.'};
@@ -126,6 +140,10 @@ function markdown(result){
      '- Hipótesis: '+f.reason,
      '- Prueba necesaria: '+f.verification,
      '- Confianza heurística: '+f.confidence+'.');
+ }
+ if(result.validationPlan.checks.length){
+   lines.push('','### Tests adversariales propuestos por Ultra Sentinel');
+   for(const item of result.validationPlan.checks)lines.push('- **'+item.domain+'**: '+item.check);
  }
  lines.push('','Sin auto-merge ni auto-aprobación. Exigir pruebas y revisiones completas.');
  return lines.join('\n').slice(0,58000);
