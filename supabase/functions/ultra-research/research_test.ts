@@ -525,7 +525,9 @@ Deno.test(
       !/plant/i.test(answer) ||
       /pel[ií]cula|documental/i.test(answer)
     ) {
-      throw new Error("Biology topic resolved to an unrelated movie: " + answer);
+      throw new Error(
+        "Biology topic resolved to an unrelated movie: " + answer,
+      );
     }
   },
 );
