@@ -129,6 +129,9 @@ class UltraFrontierExecutionEngine(
             )?.let { return it }
         }
 
+        // Per-query cursor. Replanning can change the budgets of later
+        // attempts, so previous slot consumption must be remembered.
+        val nextStableProviderOffset = intArrayOf(request.researchProviderOffset)
         var attempt = 1
         var previousRetryProgress: UltraFrontierRetryProgress? = null
         recordAttempt(request, plan, attempt)
@@ -137,7 +140,8 @@ class UltraFrontierExecutionEngine(
             plan = plan,
             attempt = attempt,
             executionStartedNanos = executionStartedNanos,
-            localChat = localChat
+            localChat = localChat,
+            nextStableProviderOffset = nextStableProviderOffset
         )
 
         while (true) {
@@ -332,7 +336,8 @@ class UltraFrontierExecutionEngine(
                         plan = plan,
                         attempt = attempt,
                         executionStartedNanos = executionStartedNanos,
-                        localChat = localChat
+                        localChat = localChat,
+                        nextStableProviderOffset = nextStableProviderOffset
                     )
                 }
 
@@ -540,7 +545,8 @@ class UltraFrontierExecutionEngine(
         plan: UltraFrontierPlan,
         attempt: Int,
         executionStartedNanos: Long,
-        localChat: () -> String?
+        localChat: () -> String?,
+        nextStableProviderOffset: IntArray
     ): UltraQueryExecutionAnswer {
         val attemptRequest = requestForAttempt(
             request = request,
@@ -648,9 +654,11 @@ class UltraFrontierExecutionEngine(
         } else {
             maxOf(plan.maxSourceBudget, totalBudget, 1)
         }
-        val attemptProviderOffset =
-            request.researchProviderOffset +
-                (attempt - 1) * partitionStride
+        val attemptProviderOffset = if (capacity != null) {
+            nextStableProviderOffset[0]
+        } else {
+            request.researchProviderOffset + (attempt - 1) * partitionStride
+        }
         if (capacity != null && attemptProviderOffset >= capacity) {
             return UltraQueryExecutionAnswer(
                 message = "Ya consulté los proveedores disponibles sin obtener " +
@@ -673,6 +681,18 @@ class UltraFrontierExecutionEngine(
         }
         val allocatedTasks = researchTasks.filter {
             allocation.containsKey(it.id)
+        }
+        if (capacity != null) {
+            // Single-worker fallback queries exactly one slot; branched calls
+            // consume their actual post-capacity allocation, not a nominal
+            // budget recomputed from the current retry.
+            val used = if (allocatedTasks.size < 2) {
+                1
+            } else {
+                allocation.values.sum()
+            }
+            nextStableProviderOffset[0] =
+                (attemptProviderOffset + used).coerceAtMost(capacity)
         }
         if (allocatedTasks.size < 2) {
             return coordinator.answer(
