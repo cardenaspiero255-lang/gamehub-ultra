@@ -105,10 +105,11 @@ class FramePacingIntelligenceEngine(
         val hz = recentSlow.map(RefreshSample::refreshHz)
         val mean = hz.average().toFloat()
         var ewma = hz.first().toDouble()
+        val ewmaAlpha = policy.ewmaAlpha.toDouble()
         for (value in hz.drop(1)) {
             ewma =
-                policy.ewmaAlpha * value +
-                    (1f - policy.ewmaAlpha) * ewma
+                ewmaAlpha * value.toDouble() +
+                    (1.0 - ewmaAlpha) * ewma
         }
 
         val variance = hz
@@ -141,7 +142,7 @@ class FramePacingIntelligenceEngine(
         }
         val isDegrading =
             hz.size >= policy.minSamplesForTrend &&
-                lastAverage < firstAverage * policy.degradingRatio &&
+                lastAverage < firstAverage * policy.degradingRatio.toDouble() &&
                 descendingRatio >= policy.degradingDescendingRatio
 
         val transitionThreshold =
@@ -182,10 +183,10 @@ class FramePacingIntelligenceEngine(
         val isRecovering =
             recoverySegmentSize >= 2 &&
                 recoveryHeadMean <=
-                recoveryTailMean * policy.recoveryHeadRatio &&
+                recoveryTailMean * policy.recoveryHeadRatio.toDouble() &&
                 recoveryTailStd <= policy.maxStdForStable &&
                 recoveryTailMean >
-                recoveryHeadMean * policy.recoveryTailBoost
+                recoveryHeadMean * policy.recoveryTailBoost.toDouble()
 
         val baseStability = when {
             isRecovering -> RefreshStability.RECOVERING
