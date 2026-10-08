@@ -518,6 +518,14 @@ class UltraVerifiedResearchEngine(
         val evidenceAttempts = attempts.mapNotNull { attempt ->
             val evidence = (attempt.result as? UltraProviderResult.Evidence)?.evidence
                 ?: return@mapNotNull null
+            // Only optional, non-fresh general knowledge may show unsourced
+            // local definitions. These must never join verified consensus.
+            if (
+                evidence.allSourceIds().isEmpty() &&
+                (!optionalStableKnowledge || evidence.authoritative)
+            ) {
+                return@mapNotNull null
+            }
             attempt to evidence
         }
         val configuredPrimaryId = providers.firstOrNull()?.id
@@ -566,8 +574,11 @@ class UltraVerifiedResearchEngine(
             val sources = selectedEvidence.allSourceIds()
             // Multiple URLs can still belong to one underlying source. Confidence
             // must follow the provider's independent-source count, not URL count.
-            val corroborationCount =
+            val corroborationCount = if (sources.isEmpty()) {
+                0 // Explicitly unsourced local reference knowledge.
+            } else {
                 selectedEvidence.independentSourceCount.coerceAtLeast(1)
+            }
             val confidence = when {
                 corroborationCount >= 2 -> UltraAnswerConfidence.HIGH
                 selectedEvidence.authoritative -> UltraAnswerConfidence.MEDIUM
