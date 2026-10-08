@@ -121,14 +121,15 @@ object UltraFrontierWorldStateRegistry {
                 previousAge <= ADVANCED_SIGNAL_MAX_AGE_MILLIS
 
         current = if (canReuseAdvanced) {
+            // The reuse guard above guarantees a non-null previous snapshot.
+            val reusable = checkNotNull(previous)
             base.copy(
-                thermalTrend = previous?.thermalTrend,
-                thermalRisk = previous?.thermalRisk,
-                thermalConfidence = previous?.thermalConfidence,
-                batteryRecommendation = previous?.batteryRecommendation,
-                preventAggressiveProfiles =
-                    previous?.preventAggressiveProfiles ?: false,
-                adaptiveScore = previous?.adaptiveScore
+                thermalTrend = reusable.thermalTrend,
+                thermalRisk = reusable.thermalRisk,
+                thermalConfidence = reusable.thermalConfidence,
+                batteryRecommendation = reusable.batteryRecommendation,
+                preventAggressiveProfiles = reusable.preventAggressiveProfiles,
+                adaptiveScore = reusable.adaptiveScore
             )
         } else {
             base
