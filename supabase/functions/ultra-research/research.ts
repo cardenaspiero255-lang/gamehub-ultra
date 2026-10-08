@@ -5113,7 +5113,7 @@ function candidateMatchesKnownMeaning(
   // corroboration of the biological process.
   if (
     /\bfotosintesis\b/.test(cleanQuery) &&
-    !/\b(?:plantas?|algas?|clorofila|luz|energia solar|dioxido de carbono|carbono)\b/.test(
+    !/\b(?:plantas?|algas?|clorofila|luz|energia (?:solar|luminosa|quimica)|dioxido de carbono|carbono)\b/.test(
       normalize(extract),
     )
   ) {
