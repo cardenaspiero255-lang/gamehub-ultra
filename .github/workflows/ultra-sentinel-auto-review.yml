@@ -52,6 +52,7 @@ jobs:
             const path = require("node:path");
             const {analyze, markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
+            const {buildGraph} = require(path.resolve(".github/scripts/ultra_sentinel_causal.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -70,7 +71,26 @@ jobs:
             }
             // Human summary plus compact machine report can be fetched directly by connected GitHub tools.
             // Limit both portions: GitHub comments have a finite size.
-            const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence});
+            // Slow-path only: look up bounded git history if a high-risk finding exists.
+            // Overlap with historical commits is never proof that a commit caused a bug.
+            const history=[];
+            const paths=[...new Set(evidence.findings
+              .filter(f=>f.severity==="HIGH"||f.severity==="BLOCKER")
+              .map(f=>f.path))].slice(0,2);
+            for(const file of paths){
+              try{
+                const {data: oldCommits}=await github.rest.repos.listCommits({
+                  owner,repo,path:file,sha:pr.head.sha,per_page:6
+                });
+                for(const previous of oldCommits){
+                  if(previous.sha!==pr.head.sha)history.push({
+                    sha:previous.sha,files:[file],message:previous.commit?.message||""
+                  });
+                }
+              }catch(error){core.warning("Historical lookup skipped for "+file+": "+(error.status||"unavailable"));}
+            }
+            const causalGraph=buildGraph({headSha:pr.head.sha,findings:evidence.findings,history});
+            const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
             const body = markdown(evidence).slice(0,33000) + "\n\n" + serialize(report);
             if (body.length > 64000) {
               core.setFailed("Machine report exceeds safe comment size."); return;
