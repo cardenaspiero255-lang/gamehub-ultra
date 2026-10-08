@@ -3,34 +3,31 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - '.github/scripts/ultra_sentinel_core.cjs'
-      - '.github/scripts/ultra_sentinel_core.test.cjs'
-      - '.github/scripts/ultra_sentinel_remediation.cjs'
-      - '.github/scripts/ultra_sentinel_remediation.test.cjs'
-      - '.github/scripts/ultra_sentinel_report.cjs'
-      - '.github/scripts/ultra_sentinel_report.test.cjs'
-      - '.github/scripts/ultra_sentinel_benchmark.cjs'
-      - '.github/workflows/ultra-sentinel-auto-review.yml'
-      - '.github/workflows/ultra-sentinel-core-check.yml'
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/scripts/install_sentinel_hook.sh'
+      - '.githooks/pre-commit'
+      - '.github/workflows/ultra-sentinel-*.yml'
+      - 'docs/ULTRA_SENTINEL_LOCAL.md'
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   core-tests:
-    name: Sentinel Core / Node regression suite
+    name: Sentinel Core / full regression suite
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
-      - name: Checkout PR for isolated tests
+      - name: Checkout tested PR in restricted runner
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Check syntax
-        run: node --check .github/scripts/ultra_sentinel_core.cjs && node --check .github/scripts/ultra_sentinel_remediation.cjs && node --check .github/scripts/ultra_sentinel_core.test.cjs && node --check .github/scripts/ultra_sentinel_remediation.test.cjs && node --check .github/scripts/ultra_sentinel_report.cjs && node --check .github/scripts/ultra_sentinel_report.test.cjs && node --check .github/scripts/ultra_sentinel_benchmark.cjs
-      - name: Run independent reviewer regression suite
-        run: node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
-
+      - name: Validate JavaScript parser and shell hook
+        run: |
+          set -eu
+          for file in .github/scripts/ultra_sentinel_*.cjs; do node --check "$file"; done
+          sh -n .githooks/pre-commit
+          sh -n .github/scripts/install_sentinel_hook.sh
+      - name: Run all isolated engine and orchestrator tests
+        run: node --test .github/scripts/ultra_sentinel_*.test.cjs
       - name: Score labeled adversarial cases
         run: node .github/scripts/ultra_sentinel_benchmark.cjs
