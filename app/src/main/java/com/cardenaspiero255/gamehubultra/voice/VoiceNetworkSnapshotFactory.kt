@@ -17,50 +17,25 @@ object VoiceNetworkSnapshotFactory {
     private const val MAX_HISTORY = 6
     private val adapter = NetworkGamingDiagnosticsAdapter()
     private val engine = NetworkGamingDiagnosticsEngine()
-    private val historyLock = Any()
-    private var history: List<NetworkGamingDiagnosticSample> = emptyList()
+    private val session = VoiceNetworkSnapshotSession()
 
     /**
      * Production voice callers invoke this on an existing background worker.
      * Do not reuse old latency samples after a disconnect or network change.
      */
-    fun current(context: Context): VoiceNetworkSnapshot? {
-        val telemetry = RuntimeDiagnosticsProvider.get(context).connectivity
-        val networkHandle = telemetry.networkHandle
-
-        if (!telemetry.connected || !telemetry.validated || networkHandle == null) {
-            clearHistory()
-            return fromMeasurements(
-                listOf(
-                    adapter.fromTelemetry(
-                        telemetry = telemetry,
-                        timestampMs = System.currentTimeMillis(),
-                        latencyMeasured = false
+    fun current(context: Context): VoiceNetworkSnapshot? =
+        session.capture(
+            readConnectivity = { RuntimeDiagnosticsProvider.connectivity(context) },
+            measureLatency = { handle ->
+                runBlocking {
+                    ConnectivityLatencyProbe.measure(
+                        context = context,
+                        expectedNetworkHandle = handle
                     )
-                )
-            )
-        }
-
-        val measuredLatency = runBlocking {
-            ConnectivityLatencyProbe.measure(
-                context = context,
-                expectedNetworkHandle = networkHandle
-            )
-        }
-        val sample = adapter.fromTelemetry(
-            telemetry = telemetry.copy(latencyMs = measuredLatency),
-            timestampMs = System.currentTimeMillis(),
-            latencyMeasured = measuredLatency != null
+                }
+            },
+            timestampMs = { System.currentTimeMillis() }
         )
-
-        val samples = synchronized(historyLock) {
-            // Retain previous transport/handle metadata to detect handoffs.
-            // The engine uses latency only from the newest network handle.
-            history = appendHistory(history, sample)
-            history
-        }
-        return fromMeasurements(samples)
-    }
 
     /**
      * Legacy/test entry point. A numeric latency alone is NOT proof that a
@@ -100,7 +75,65 @@ object VoiceNetworkSnapshotFactory {
     ): List<NetworkGamingDiagnosticSample> =
         (previous + sample).takeLast(MAX_HISTORY)
 
-    private fun clearHistory() = synchronized(historyLock) {
-        history = emptyList()
+}
+
+/**
+ * Tracks observations for one voice diagnostics session.
+ *
+ * The probe runs outside the lock, but connectivity is re-read under the lock
+ * immediately before committing a sample. Concurrent or delayed probes therefore
+ * cannot reintroduce an old network as the current connection.
+ */
+internal class VoiceNetworkSnapshotSession(
+    private val adapter: NetworkGamingDiagnosticsAdapter =
+        NetworkGamingDiagnosticsAdapter()
+) {
+    private val historyLock = Any()
+    private var history: List<NetworkGamingDiagnosticSample> = emptyList()
+
+    fun capture(
+        readConnectivity: () -> ConnectivityTelemetry,
+        measureLatency: (Long) -> Long?,
+        timestampMs: () -> Long
+    ): VoiceNetworkSnapshot? {
+        val beforeProbe = readConnectivity()
+        val originalHandle = beforeProbe.networkHandle
+        val latency = if (
+            beforeProbe.connected && beforeProbe.validated &&
+            originalHandle != null
+        ) {
+            measureLatency(originalHandle)
+        } else {
+            null
+        }
+
+        val samples = synchronized(historyLock) {
+            // A handoff can occur during the probe, or another capture may
+            // complete first. Observe the live connection before appending.
+            val current = readConnectivity()
+            val currentValid = current.connected &&
+                current.validated && current.networkHandle != null
+            val probeMatchesCurrentNetwork = currentValid &&
+                beforeProbe.connected && beforeProbe.validated &&
+                originalHandle != null &&
+                current.networkHandle == originalHandle &&
+                current.transport == beforeProbe.transport
+
+            val measuredLatency = latency.takeIf { probeMatchesCurrentNetwork }
+            val sample = adapter.fromTelemetry(
+                telemetry = current.copy(latencyMs = measuredLatency),
+                timestampMs = timestampMs(),
+                latencyMeasured = measuredLatency != null
+            )
+
+            if (!currentValid) {
+                history = emptyList()
+                listOf(sample)
+            } else {
+                history = VoiceNetworkSnapshotFactory.appendHistory(history, sample)
+                history
+            }
+        }
+        return VoiceNetworkSnapshotFactory.fromMeasurements(samples)
     }
 }
