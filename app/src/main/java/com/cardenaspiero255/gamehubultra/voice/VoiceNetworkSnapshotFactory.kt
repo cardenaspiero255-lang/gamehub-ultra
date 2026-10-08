@@ -18,7 +18,6 @@ object VoiceNetworkSnapshotFactory {
     private val adapter = NetworkGamingDiagnosticsAdapter()
     private val engine = NetworkGamingDiagnosticsEngine()
     private val historyLock = Any()
-    private var historyNetworkHandle: Long? = null
     private var history: List<NetworkGamingDiagnosticSample> = emptyList()
 
     /**
@@ -55,11 +54,9 @@ object VoiceNetworkSnapshotFactory {
         )
 
         val samples = synchronized(historyLock) {
-            if (historyNetworkHandle != networkHandle) {
-                historyNetworkHandle = networkHandle
-                history = emptyList()
-            }
-            history = (history + sample).takeLast(MAX_HISTORY)
+            // Retain previous transport/handle metadata to detect handoffs.
+            // The engine uses latency only from the newest network handle.
+            history = appendHistory(history, sample)
             history
         }
         return fromMeasurements(samples)
@@ -97,8 +94,13 @@ object VoiceNetworkSnapshotFactory {
         )
     }
 
+    internal fun appendHistory(
+        previous: List<NetworkGamingDiagnosticSample>,
+        sample: NetworkGamingDiagnosticSample
+    ): List<NetworkGamingDiagnosticSample> =
+        (previous + sample).takeLast(MAX_HISTORY)
+
     private fun clearHistory() = synchronized(historyLock) {
-        historyNetworkHandle = null
         history = emptyList()
     }
 }
