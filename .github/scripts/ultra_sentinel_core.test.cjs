@@ -109,3 +109,8 @@ test('does not scan synthetic credentials inside .test.cjs fixtures as productio
  const z=analyze([file('.github/scripts/sample.test.cjs',['GITHUB_TOKEN="abcdefghijklmnop"'])]);
  assert.ok(!rules(z).includes('POTENTIAL_HARDCODED_SECRET'));
 });
+
+test('ignores the labeled benchmark fixture as executable production secrets',()=>{
+ const z=analyze([file('.github/scripts/ultra_sentinel_benchmark.cjs',['SENTRY_AUTH_TOKEN="abcdefghijklmnop"'])]);
+ assert.ok(!rules(z).includes('POTENTIAL_HARDCODED_SECRET'));
+});
