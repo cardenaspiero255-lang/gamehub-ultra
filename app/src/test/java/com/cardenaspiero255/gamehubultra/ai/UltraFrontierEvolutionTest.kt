@@ -552,6 +552,65 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun synthesisProvenanceBlocksConflictingVerifiedClaimsAtRuntime() {
+        val evolution = UltraFrontierEvolutionController()
+        val selected = evolution.synthesizeResearch(
+            candidates = listOf(
+                UltraQueryExecutionAnswer(
+                    message = "El evento ocurrió en 2025.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://one.example/report"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 80L,
+                UltraQueryExecutionAnswer(
+                    message = "El evento ocurrió en 2024.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://two.example/report"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 85L
+            )
+        )
+        assertNotNull(selected)
+        assertFalse(selected.verified)
+        assertTrue(selected.abstained)
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", selected.reasonCode)
+    }
+
+    @Test
+    fun synthesisProvenancePreservesAgreementWithoutInventingExtraSources() {
+        val evolution = UltraFrontierEvolutionController()
+        val agreed = evolution.synthesizeResearch(
+            candidates = listOf(
+                UltraQueryExecutionAnswer(
+                    message = "El objeto tiene masa.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://one.example/a"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 100L,
+                UltraQueryExecutionAnswer(
+                    message = "El objeto tiene masa.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://two.example/b"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 120L
+            )
+        )
+        assertNotNull(agreed)
+        assertTrue(agreed.verified)
+        assertFalse(agreed.abstained)
+        assertEquals(2, agreed.sources.size)
+        assertEquals(2, agreed.independentSourceCount)
+    }
+
+    @Test
     fun evolutionEnsemblePrefersVerifiedResearchOverWeakLocalCandidate() {
         val evolution = UltraFrontierEvolutionController()
 
