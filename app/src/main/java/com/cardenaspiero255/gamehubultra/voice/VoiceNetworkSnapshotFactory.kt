@@ -1,36 +1,45 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import android.content.Context
-import com.cardenaspiero255.gamehubultra.network.NetworkMetricsCalculator
-import com.cardenaspiero255.gamehubultra.network.NetworkProfilePolicy
-import com.cardenaspiero255.gamehubultra.network.NetworkSample
+import com.cardenaspiero255.gamehubultra.network.diagnostics.NetworkGamingDiagnosticSample
+import com.cardenaspiero255.gamehubultra.network.diagnostics.NetworkGamingDiagnosticsAdapter
+import com.cardenaspiero255.gamehubultra.network.diagnostics.NetworkGamingDiagnosticsEngine
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityLatencyProbe
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import com.cardenaspiero255.gamehubultra.platform.RuntimeDiagnosticsProvider
 import kotlinx.coroutines.runBlocking
 
+/**
+ * Existing voice/UI network entry point, now backed by the CAR-51 diagnostics
+ * engine. Only probes that really ran are marked as measured.
+ */
 object VoiceNetworkSnapshotFactory {
     private const val MAX_HISTORY = 6
+    private val adapter = NetworkGamingDiagnosticsAdapter()
+    private val engine = NetworkGamingDiagnosticsEngine()
     private val historyLock = Any()
     private var historyNetworkHandle: Long? = null
-    private var history: List<ConnectivityTelemetry> = emptyList()
+    private var history: List<NetworkGamingDiagnosticSample> = emptyList()
 
     /**
-     * Production voice callers invoke this on their existing background worker.
-     * A real validated-network latency probe is added to a short per-network
-     * history before metrics are calculated.
+     * Production voice callers invoke this on an existing background worker.
+     * Do not reuse old latency samples after a disconnect or network change.
      */
     fun current(context: Context): VoiceNetworkSnapshot? {
         val telemetry = RuntimeDiagnosticsProvider.get(context).connectivity
         val networkHandle = telemetry.networkHandle
 
-        if (
-            !telemetry.connected ||
-            !telemetry.validated ||
-            networkHandle == null
-        ) {
+        if (!telemetry.connected || !telemetry.validated || networkHandle == null) {
             clearHistory()
-            return from(listOf(telemetry))
+            return fromMeasurements(
+                listOf(
+                    adapter.fromTelemetry(
+                        telemetry = telemetry,
+                        timestampMs = System.currentTimeMillis(),
+                        latencyMeasured = false
+                    )
+                )
+            )
         }
 
         val measuredLatency = runBlocking {
@@ -39,43 +48,52 @@ object VoiceNetworkSnapshotFactory {
                 expectedNetworkHandle = networkHandle
             )
         }
-        val measured = telemetry.copy(latencyMs = measuredLatency)
+        val sample = adapter.fromTelemetry(
+            telemetry = telemetry.copy(latencyMs = measuredLatency),
+            timestampMs = System.currentTimeMillis(),
+            latencyMeasured = measuredLatency != null
+        )
 
         val samples = synchronized(historyLock) {
             if (historyNetworkHandle != networkHandle) {
                 historyNetworkHandle = networkHandle
                 history = emptyList()
             }
-            history = (history + measured).takeLast(MAX_HISTORY)
+            history = (history + sample).takeLast(MAX_HISTORY)
             history
         }
-        return from(samples)
+        return fromMeasurements(samples)
     }
 
-    fun from(samples: List<ConnectivityTelemetry>): VoiceNetworkSnapshot? {
-        val latest = samples.lastOrNull() ?: return null
-        val connected = samples.filter { it.connected && it.validated }
-        if (connected.isEmpty()) return null
-
-        val metrics = NetworkMetricsCalculator.calculate(
-            connected.map {
-                NetworkSample(
-                    latencyMs = it.latencyMs,
-                    packetLossPercent = null,
-                    transport = it.transport,
-                    connected = it.connected,
-                    validated = it.validated,
-                    metered = it.metered
+    /**
+     * Legacy/test entry point. A numeric latency alone is NOT proof that a
+     * validated latency probe ran: callers must opt in to measurement provenance.
+     */
+    fun from(
+        samples: List<ConnectivityTelemetry>,
+        latencyMeasured: Boolean = false
+    ): VoiceNetworkSnapshot? =
+        fromMeasurements(
+            samples.mapIndexed { index, telemetry ->
+                adapter.fromTelemetry(
+                    telemetry = telemetry,
+                    timestampMs = index.toLong() * 1_000L,
+                    latencyMeasured = latencyMeasured
                 )
             }
         )
+
+    internal fun fromMeasurements(
+        samples: List<NetworkGamingDiagnosticSample>
+    ): VoiceNetworkSnapshot? {
+        val latest = samples.maxByOrNull(NetworkGamingDiagnosticSample::timestampMs)
+            ?: return null
+        val diagnostic = engine.analyze(samples)
         return VoiceNetworkSnapshot(
-            metrics = metrics,
-            recommendedProfile = NetworkProfilePolicy.recommend(
-                metrics = metrics,
-                metered = latest.metered
-            ),
-            metered = latest.metered
+            metrics = diagnostic.metrics,
+            recommendedProfile = diagnostic.recommendedProfile,
+            metered = latest.metered,
+            diagnostics = diagnostic
         )
     }
 
