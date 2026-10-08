@@ -39,3 +39,13 @@ test('extra verified records include provenance',()=>{
  tests:['resumption test'],rule:'SPEECH_REENTRANT_RETRY',domain:'voice'};
  assert.ok(m.search({rule:e.rule,text:'Bluetooth voice resume'},[e]).some(x=>x.id===e.id&&x.evidenceUrl));
 });
+
+test('rejects unsupported memory type even when all provenance fields look valid',()=>{
+ const impostor={id:'suspicious-memory',type:'unreviewed_suggestion',fixSha:sha,testSha:b,
+  evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/167',
+  summary:'Valid looking long summary of unverified changes',
+  advice:'Potential but unverified instructions that should not be trusted',tests:['pretend test'],
+  rule:'SPEECH_REENTRANT_RETRY',domain:'voice'};
+ assert.equal(m.vetted(impostor),false);
+ assert.ok(!m.search({rule:impostor.rule},[impostor]).some(r=>r.id===impostor.id));
+});
