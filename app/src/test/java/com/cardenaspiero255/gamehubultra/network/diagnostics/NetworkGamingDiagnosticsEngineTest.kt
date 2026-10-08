@@ -299,6 +299,20 @@ class NetworkGamingDiagnosticsEngineTest {
         assertEquals(NetworkGameProfile.BALANCED, result.recommendedProfile)
     }
 
+    @Test
+    fun offlineMeteredNetworkStillRecommendsNoAppliedOptimization() {
+        val result = engine.analyze(
+            listOf(
+                sample(1_000L, latencyMs = 40L, latencyMeasured = true,
+                    metered = true),
+                sample(2_000L, connected = false, validated = false, metered = true)
+            )
+        )
+        assertEquals(NetworkStability.OFFLINE, result.metrics.stability)
+        assertEquals(NetworkGameProfile.BALANCED, result.recommendedProfile)
+        assertFalse(result.networkControlApplied)
+    }
+
     private fun sample(
         timestampMs: Long,
         latencyMs: Long? = null,
