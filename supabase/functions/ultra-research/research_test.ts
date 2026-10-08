@@ -6134,6 +6134,7 @@ Deno.test(
           throw new Error("unexpected URL " + url);
         },
         env: (name) => {
+          if (name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE") return "1";
           if (name === "GEMINI_API_KEY") return "test-gemini";
           if (name === "XAI_API_KEY") return "test-xai";
           if (name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS") return "1";
@@ -8166,7 +8167,10 @@ Deno.test(
         throw new Error("unexpected URL " + url);
       },
       env: (name) =>
-        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ? "1" : undefined,
+        name === "ULTRA_DISABLE_OPTIONAL_SYNTHESIS" ||
+          name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE"
+          ? "1"
+          : undefined,
       sleep: () => Promise.resolve(),
       random: () => 0,
     };
