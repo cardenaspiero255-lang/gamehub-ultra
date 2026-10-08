@@ -87,3 +87,20 @@ test('does not confuse another method call with direct self-recursion (CAR-51)',
  const result=analyze([changed]);
  assert.ok(!rules(result).includes('UNBOUNDED_RECURSION'));
 });
+
+test('does not flag calls in a second diff hunk as self-recursion in the previous method',()=>{
+ const patch=[
+   '@@ -98,6 +98,9 @@',
+   '+fun connectivity(context: Context): ConnectivityTelemetry =',
+   '+  runCatching { readConnectivity(context.applicationContext) }',
+   '+    .getOrDefault(ConnectivityTelemetry(null,false,false,true,null,null,null))',
+   ' fun get(context: Context): RuntimeDiagnostics {',
+   '@@ -107,8 +110,7 @@',
+   ' refresh = runCatching { readRefresh(appContext) }',
+   '- connectivity = readConnectivity(appContext),',
+   '+ connectivity = connectivity(appContext),',
+   ' storage = readStorage()'
+ ].join('\n');
+ const result=analyze([{filename:'app/src/main/java/com/cardenaspiero255/gamehubultra/platform/RuntimeDiagnostics.kt',patch}]);
+ assert.ok(!rules(result).includes('UNBOUNDED_RECURSION'));
+});
