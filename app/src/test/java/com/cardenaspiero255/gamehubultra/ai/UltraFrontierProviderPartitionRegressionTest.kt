@@ -198,6 +198,44 @@ class UltraFrontierProviderPartitionRegressionTest {
     }
 
     @Test
+    fun optionalTerminologyWithoutSourcesRemainsUsableButUnverified() {
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "engineVersion":"20",
+                  "claimKey":"terminology:macroverso",
+                  "value":"nonstandard term",
+                  "displayText":"Macroverso es un término no estandarizado.",
+                  "sourceIds":[],
+                  "independentSourceCount":0,
+                  "authoritative":false
+                }
+            """.trimIndent()
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+        val evidence = assertIs<UltraProviderResult.Evidence>(
+            provider.fetchResult(UltraGeneralQueryRouter.classify("¿Qué es un macroverso?"))
+                .let { request ->
+                    request.copy(verificationMode = UltraVerificationMode.OPTIONAL)
+                }
+            )
+        ).evidence
+        assertTrue(evidence.sourceId.isEmpty())
+        assertEquals(0, evidence.independentSourceCount)
+        assertFalse(evidence.authoritative)
+    }
+
+    @Test
     fun emptyCorroborationMustNotMakeAnUnsourcedAuthorityClaimValid() {
         val transport = object : UltraResearchBackendTransport {
             override fun post(
