@@ -1,0 +1,88 @@
+name: Ultra Sentinel - Regression Bisect Lab
+# Opt-in diagnostic: read-only remote permissions, no main mutations, never auto-revert.
+on:
+  workflow_dispatch:
+    inputs:
+      known_good_sha:
+        description: Known green main SHA (40 hex characters)
+        required: true
+        type: string
+      suite:
+        description: Fixed test command; no arbitrary shell
+        required: true
+        type: choice
+        options: [architecture, unit]
+permissions:
+  contents: read
+jobs:
+  bisect:
+    name: Locate regression in isolated history
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Verify input and launch bounded bisect
+        shell: bash
+        env:
+          GOOD: ${{ inputs.known_good_sha }}
+          SUITE: ${{ inputs.suite }}
+        run: |
+          set -euo pipefail
+          [[ "$GOOD" =~ ^[a-f0-9A-F]{40}$ ]] || exit 1
+          [[ "$SUITE" == "architecture" || "$SUITE" == "unit" ]] || exit 1
+          BAD="$(git rev-parse HEAD)"
+          git cat-file -e "$GOOD^{commit}"
+          git merge-base --is-ancestor "$GOOD" "$BAD"
+          [ "$GOOD" != "$BAD" ] || exit 1
+          OUT="$RUNNER_TEMP/sentinel-bisect"
+          mkdir -p "$OUT"
+          cat > "$OUT/run-test.sh" <<'SCRIPT'
+          #!/bin/sh
+          set -eu
+          if [ "$SUITE" = architecture ]; then
+            timeout 420 ./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.cardenaspiero255.gamehubultra.architecture.ArchitectureBoundaryGuardTest'
+          else
+            timeout 420 ./gradlew --no-daemon :app:testDebugUnitTest
+          fi
+          SCRIPT
+          chmod +x "$OUT/run-test.sh"
+          export SUITE
+          git bisect start "$BAD" "$GOOD"
+          set +e
+          git bisect run "$OUT/run-test.sh" > "$OUT/bisect.log" 2>&1
+          code=$?
+          set -e
+          candidate="$(git rev-parse HEAD)"
+          git bisect reset
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::Bisect could not isolate a verified commit. See log."
+            exit 0
+          fi
+          printf '{"good":"%s","bad":"%s","candidate":"%s","suite":"%s","verifiedInCI":false}\n' \
+            "$GOOD" "$BAD" "$candidate" "$SUITE" > "$OUT/diagnosis.json"
+          # A revert patch may have conflicts; in that case keep diagnosis only.
+          if [ "$(git rev-list --parents -n1 "$candidate" | wc -w)" -eq 2 ]; then
+            if git revert --no-commit "$candidate"; then
+              git diff --cached > "$OUT/revert.patch"
+            else
+              echo "::warning::Revert suggestion has conflicts."
+            fi
+            git revert --abort >/dev/null 2>&1 || true
+            git reset --hard HEAD >/dev/null 2>&1 || true
+          fi
+      - name: Upload diagnostic artifacts only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sentinel-bisect-investigation
+          path: ${{ runner.temp }}/sentinel-bisect/
+          if-no-files-found: warn
+          retention-days: 7
