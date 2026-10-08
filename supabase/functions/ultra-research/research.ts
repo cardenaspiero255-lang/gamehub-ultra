@@ -5119,6 +5119,22 @@ function candidateMatchesKnownMeaning(
   }
   const candidate = normalize(title + " " + extract);
 
+  // Resolve ambiguous encyclopedia titles by the requested sense, not by
+  // superficial keyword overlap: a documentary about plants remains a film,
+  // even if its excerpt also mentions photosynthesis and solar energy.
+  if (
+    /\bfotosintesis\b/.test(cleanQuery) &&
+    !/\b(?:pelicula|film|documental)\b/.test(cleanQuery) &&
+    (
+      /\((?:pelicula|film|documental)\)/.test(normalize(title)) ||
+      /\b(?:pelicula|documental|largometraje|estrenada?|dirigida? por)\b/.test(
+        normalize(extract),
+      )
+    )
+  ) {
+    return false;
+  }
+
   // The encyclopedia may contain films, works and brands sharing the name
   // of a scientific concept. Do not treat a homonymous documentary as
   // corroboration of the biological process.
@@ -5549,6 +5565,13 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "calendario": {
+      claim: "local-stable:calendar",
+      text:
+        "Un calendario organiza fechas, días, semanas y meses para planificar " +
+        "eventos, citas y actividades. Permite consultar fechas, organizar " +
+        "compromisos y recordar acontecimientos importantes.",
+    },
     "fotosintesis": {
       claim: "local-stable:photosynthesis",
       text:
