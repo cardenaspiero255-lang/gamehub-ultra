@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra
 
+import com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldState
+import com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldStateRegistry
 import com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveTrendSample
@@ -233,6 +235,29 @@ private fun evaluateCompletedAdaptiveDecision(
             nowMillis = nowMillis
         )
     }
+    val latest = orderedSamples.last()
+    UltraFrontierWorldStateRegistry.update(
+        UltraFrontierWorldState(
+            selectedGamePackage = key.packageName,
+            sessionActive = false,
+            selectedProfile = activeProfile,
+            networkValidated = latest.latencyMs != null,
+            networkLatencyMs = latest.latencyMs,
+            batteryPercent = latest.batteryPercent,
+            charging = latest.batteryCharging == true,
+            thermalStatus = latest.thermalStatus,
+            thermalHeadroom = latest.thermalHeadroom,
+            thermalTrend = thermalPrediction.trend,
+            thermalRisk = thermalPrediction.risk,
+            thermalConfidence = thermalPrediction.confidence,
+            batteryRecommendation = batteryAssessment.recommendation,
+            preventAggressiveProfiles =
+                batteryAssessment.preventAggressiveProfiles,
+            adaptiveScore = null,
+            timestampMillis = nowMillis
+        )
+    )
+
     return EvaluatedAdaptiveSession(
         packageName = key.packageName,
         decision = decision

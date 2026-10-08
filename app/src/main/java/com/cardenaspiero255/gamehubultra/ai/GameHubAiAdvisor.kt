@@ -26,6 +26,7 @@ class GameHubAiAdvisor(
         context: GameHubAiContext,
         conversation: List<String>
     ): String? {
+        UltraFrontierWorldStateRegistry.update(context)
         val modelAnswer = runCatching {
             modelAdapter
                 ?.takeIf { it.isAvailable() }
@@ -41,11 +42,14 @@ class GameHubAiAdvisor(
     override fun advise(
         question: String,
         context: GameHubAiContext
-    ): GameHubAiAdvice = adviseInternal(
-        question = question,
-        context = context,
-        memories = recallMemorySignals(question, context)
-    )
+    ): GameHubAiAdvice {
+        UltraFrontierWorldStateRegistry.update(context)
+        return adviseInternal(
+            question = question,
+            context = context,
+            memories = recallMemorySignals(question, context)
+        )
+    }
 
     private fun adviseInternal(
         question: String,
@@ -95,6 +99,7 @@ class GameHubAiAdvisor(
         context: GameHubAiContext,
         conversation: List<String>
     ): String {
+        UltraFrontierWorldStateRegistry.update(context)
         val memoryScope = UltraMemoryScope(
             userId = "local",
             gamePackage = context.selectedGamePackage

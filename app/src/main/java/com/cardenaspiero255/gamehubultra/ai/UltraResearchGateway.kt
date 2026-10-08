@@ -25,6 +25,14 @@ interface UltraResearchGateway :
             requiresNetwork = true
         )
 
+    /**
+     * True only when [researchProviderOffset] and provider budgets map to stable,
+     * non-overlapping provider partitions. Generic gateways keep sequential
+     * Frontier retry semantics by default.
+     */
+    val supportsProviderPartitioning: Boolean
+        get() = false
+
     fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult
 
     override fun execute(

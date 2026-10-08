@@ -15,9 +15,14 @@ interface UltraQueryExecutor {
 /**
  * Default query policy implementation. It owns only routing/fallback behavior;
  * provider construction belongs to the production composition layer.
+ *
+ * [frontierExecutionEngine] is optional so existing tests and non-production
+ * callers can keep the legacy single-pass coordinator behavior. Production
+ * explicitly enables Frontier orchestration.
  */
 class DefaultUltraQueryExecutor(
-    private val coordinator: UltraQueryExecutionCoordinator
+    private val coordinator: UltraQueryExecutionCoordinator,
+    private val frontierExecutionEngine: UltraFrontierExecutionEngine? = null
 ) : UltraQueryExecutor {
 
     override fun answer(
@@ -46,7 +51,10 @@ class DefaultUltraQueryExecutor(
             }
         }
 
-        val execution = coordinator.answer(
+        val execution = frontierExecutionEngine?.answer(
+            request = request,
+            localChat = localAnswer
+        ) ?: coordinator.answer(
             request = request,
             localChat = localAnswer
         )

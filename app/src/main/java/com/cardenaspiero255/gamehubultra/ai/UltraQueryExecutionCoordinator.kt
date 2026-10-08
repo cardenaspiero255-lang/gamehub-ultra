@@ -5,6 +5,7 @@ data class UltraQueryExecutionAnswer(
     val verified: Boolean,
     val confidence: UltraAnswerConfidence? = null,
     val sources: List<String> = emptyList(),
+    val independentSourceCount: Int = 0,
     val fromCache: Boolean = false,
     val timedOut: Boolean = false,
     val fallbackUsed: Boolean = false,
@@ -26,6 +27,9 @@ data class UltraQueryExecutionAnswer(
 class UltraQueryExecutionCoordinator(
     private val researchGateway: UltraResearchGateway
 ) {
+    val supportsProviderPartitioning: Boolean
+        get() = researchGateway.supportsProviderPartitioning
+
     private fun safeLocalAnswer(localChat: () -> String?): String? =
         try {
             localChat()
@@ -105,6 +109,7 @@ class UltraQueryExecutionCoordinator(
                 research.confidence != UltraAnswerConfidence.LOW,
             confidence = research.confidence,
             sources = research.sources,
+            independentSourceCount = research.independentSourceCount,
             fromCache = research.fromCache,
             timedOut = research.timedOut,
             fallbackUsed = research.fallbackUsed,

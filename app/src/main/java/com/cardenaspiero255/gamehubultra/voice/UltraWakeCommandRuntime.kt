@@ -50,6 +50,9 @@ internal class UltraWakeCommandRuntime(
         val baseAiContext = VoiceAiContextFactory.create(selectedGamePackage, selectedProfile, device, diagnostics, capabilities)
         val aiContext =
             VoiceOptimizationFeedbackContext.enrichBlockingOrBase(baseAiContext, context, device)
+        com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldStateRegistry.update(
+            context = aiContext
+        )
         val status = VoiceDeviceStatus(
             batteryPercent = diagnostics.battery.percent,
             thermalLabel = voiceThermalLabel(diagnostics.thermal.status)

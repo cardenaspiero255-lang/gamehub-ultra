@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
+import com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldStateRegistry
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilities
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfo
@@ -13,8 +14,8 @@ internal object VoiceAiContextFactory {
         device: DeviceInfo,
         diagnostics: RuntimeDiagnostics,
         capabilities: DeviceCapabilities
-    ): GameHubAiContext =
-        GameHubAiContext(
+    ): GameHubAiContext {
+        val context = GameHubAiContext(
             selectedGamePackage = selectedGamePackage,
             sustainedPerformanceSupported = capabilities.sustainedPerformanceSupported,
             cpuCores = device.cpuCores,
@@ -33,4 +34,7 @@ internal object VoiceAiContextFactory {
             selectedProfile = selectedProfile,
             sessionActive = selectedGamePackage != null
         )
+        UltraFrontierWorldStateRegistry.update(context)
+        return context
+    }
 }

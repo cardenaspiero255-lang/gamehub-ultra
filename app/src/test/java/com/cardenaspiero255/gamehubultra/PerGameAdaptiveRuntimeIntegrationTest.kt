@@ -1,6 +1,9 @@
 package com.cardenaspiero255.gamehubultra
 
 import com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession
+import com.cardenaspiero255.gamehubultra.ai.UltraFrontierWorldStateRegistry
+import com.cardenaspiero255.gamehubultra.domain.BatteryGamingRecommendation
+import com.cardenaspiero255.gamehubultra.domain.ThermalRisk
 import com.cardenaspiero255.gamehubultra.domain.PerformanceEvent
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.AdaptiveGameKey
@@ -60,6 +63,93 @@ class PerGameAdaptiveRuntimeIntegrationTest {
         assertEquals("session-47", events.single().sessionId)
         assertEquals(PerformanceProfile.BALANCED, events.single().profile)
         assertTrue(events.single().detail.contains("memoria"))
+    }
+
+    @Test
+    fun completedSessionPublishesThermalAndBatterySignalsToFrontierWorldState() {
+        UltraFrontierWorldStateRegistry.clear()
+        val optimizer = PerGameAdaptiveOptimizer(
+            confirmationsRequired = 1,
+            cooldownMillis = 0
+        )
+        val samples = listOf(
+            SessionCoachSnapshot(
+                timestampMillis = 1_000L,
+                batteryPercent = 24,
+                thermalStatus = 1,
+                thermalHeadroom = 0.55f,
+                refreshRateHz = 120f,
+                latencyMs = 30L,
+                memoryUsedPercent = 60
+            ),
+            SessionCoachSnapshot(
+                timestampMillis = 12_000L,
+                batteryPercent = 23,
+                thermalStatus = 2,
+                thermalHeadroom = 0.62f,
+                refreshRateHz = 120f,
+                latencyMs = 31L,
+                memoryUsedPercent = 62
+            ),
+            SessionCoachSnapshot(
+                timestampMillis = 23_000L,
+                batteryPercent = 22,
+                thermalStatus = 2,
+                thermalHeadroom = 0.69f,
+                refreshRateHz = 120f,
+                latencyMs = 32L,
+                memoryUsedPercent = 64
+            ),
+            SessionCoachSnapshot(
+                timestampMillis = 34_000L,
+                batteryPercent = 21,
+                thermalStatus = 3,
+                thermalHeadroom = 0.76f,
+                refreshRateHz = 120f,
+                latencyMs = 33L,
+                memoryUsedPercent = 66
+            ),
+            SessionCoachSnapshot(
+                timestampMillis = 45_000L,
+                batteryPercent = 20,
+                thermalStatus = 3,
+                thermalHeadroom = 0.83f,
+                refreshRateHz = 120f,
+                latencyMs = 34L,
+                memoryUsedPercent = 68
+            )
+        )
+
+        applyCompletedAdaptiveDecision(
+            completed = SessionCoachStoredSession(
+                sessionId = "frontier-world-state",
+                packageName = "game.frontier",
+                startedAtMillis = 1_000L,
+                endedAtMillis = 45_000L,
+                samples = samples,
+                preSessionMessage = null,
+                latestObservation = null,
+                gameVersion = "1"
+            ),
+            activeProfile = PerformanceProfile.X4,
+            optimizer = optimizer,
+            nowMillis = 46_000L,
+            applyProfile = { _, _ -> },
+            recordPerformanceEvent = {}
+        )
+
+        val world = UltraFrontierWorldStateRegistry.snapshot()
+        assertEquals("game.frontier", world?.selectedGamePackage)
+        assertTrue(
+            world?.thermalRisk == ThermalRisk.HIGH ||
+                world?.thermalRisk == ThermalRisk.CRITICAL
+        )
+        assertEquals(
+            BatteryGamingRecommendation.BALANCED,
+            world?.batteryRecommendation
+        )
+        assertTrue(world?.preventAggressiveProfiles == true)
+        UltraFrontierWorldStateRegistry.clear()
     }
 
     @Test

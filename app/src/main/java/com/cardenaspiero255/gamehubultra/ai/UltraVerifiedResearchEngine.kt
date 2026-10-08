@@ -71,6 +71,7 @@ data class UltraVerifiedResearchResult(
     val message: String,
     val confidence: UltraAnswerConfidence,
     val sources: List<String> = emptyList(),
+    val independentSourceCount: Int = 0,
     val abstained: Boolean,
     val fromCache: Boolean = false,
     val timedOut: Boolean = false,
@@ -208,13 +209,22 @@ object UltraSensitiveInputGuard {
 class UltraVerifiedResearchEngine(
     private val providers: List<UltraResearchProvider>,
     private val cache: UltraResearchCache = UltraResearchCache(),
-    private val nowMillis: () -> Long = System::currentTimeMillis
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val providerHealth: UltraResearchProviderHealth =
+        UltraResearchProviderHealth(),
+    private val providerRanker: UltraAdaptiveProviderRanker =
+        UltraAdaptiveProviderRanker(),
+    private val consensusEngine: UltraWeightedConsensusEngine =
+        UltraWeightedConsensusEngine()
 ) : UltraResearchGateway {
+
+    override val supportsProviderPartitioning: Boolean = true
 
     private data class ProviderAttempt(
         val index: Int,
         val providerId: String,
-        val result: UltraProviderResult
+        val result: UltraProviderResult,
+        val latencyMillis: Long
     )
 
     override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
@@ -243,15 +253,51 @@ class UltraVerifiedResearchEngine(
             )
         }
 
+        val domain = UltraFrontierDomainClassifier.classify(request)
+        val healthyProviders = providerRanker.rank(
+            providers = providers.filter { provider ->
+                providerHealth.isAvailable(
+                    providerId = provider.id,
+                    nowMillis = nowMillis()
+                )
+            },
+            domain = domain
+        )
+        if (healthyProviders.isEmpty()) {
+            return abstention(
+                timedOut = false,
+                fallbackUsed = false,
+                reasonCode = "PROVIDERS_COOLDOWN",
+                retryable = false
+            )
+        }
+
+        val partitionedProviders = healthyProviders
+            .drop(request.researchProviderOffset)
+        if (partitionedProviders.isEmpty()) {
+            return abstention(
+                timedOut = false,
+                fallbackUsed = false,
+                reasonCode = "PROVIDER_PARTITION_EMPTY",
+                retryable = false
+            )
+        }
+
+        val providerBudget = request.researchProviderBudget
+            ?.coerceAtMost(partitionedProviders.size)
+            ?: partitionedProviders.size
+        val activeProviders = partitionedProviders.take(providerBudget)
         val requestExecutor = Executors.newFixedThreadPool(
-            providers.size.coerceIn(1, 4)
+            activeProviders.size.coerceIn(1, 4)
         )
         return try {
             answerWithProviders(
                 request = request,
                 key = key,
                 usePersistentCache = usePersistentCache,
-                requestExecutor = requestExecutor
+                requestExecutor = requestExecutor,
+                activeProviders = activeProviders,
+                domain = domain
             )
         } finally {
             requestExecutor.shutdownNow()
@@ -296,7 +342,9 @@ class UltraVerifiedResearchEngine(
         request: UltraGeneralQueryRequest,
         key: String,
         usePersistentCache: Boolean,
-        requestExecutor: ExecutorService
+        requestExecutor: ExecutorService,
+        activeProviders: List<UltraResearchProvider>,
+        domain: UltraFrontierDomain
     ): UltraVerifiedResearchResult {
         val optionalStableKnowledge =
             request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
@@ -304,22 +352,27 @@ class UltraVerifiedResearchEngine(
                 !request.requiresFreshData
 
         val completion = ExecutorCompletionService<ProviderAttempt>(requestExecutor)
-        val providerWorkers = providers.map {
+        val providerWorkers = activeProviders.map {
             AtomicReference<Thread?>(null)
         }
-        val submitted = providers.mapIndexed { index, provider ->
+        val submitted = activeProviders.mapIndexed { index, provider ->
             completion.submit {
                 val worker = Thread.currentThread()
                 providerWorkers[index].set(worker)
                 try {
+                    val startedNanos = System.nanoTime()
                     val result = fetchProviderWithRetry(
                         provider = provider,
                         request = request
                     )
+                    val latencyMillis = TimeUnit.NANOSECONDS.toMillis(
+                        (System.nanoTime() - startedNanos).coerceAtLeast(0L)
+                    )
                     ProviderAttempt(
                         index = index,
                         providerId = provider.id,
-                        result = result
+                        result = result,
+                        latencyMillis = latencyMillis
                     )
                 } finally {
                     providerWorkers[index].compareAndSet(worker, null)
@@ -338,7 +391,7 @@ class UltraVerifiedResearchEngine(
         var stoppedAfterGrace = false
 
         try {
-            while (attempts.size < providers.size) {
+            while (attempts.size < activeProviders.size) {
                 val now = System.nanoTime()
                 val effectiveDeadline = minOf(
                     deadline,
@@ -385,15 +438,27 @@ class UltraVerifiedResearchEngine(
                         result = UltraProviderResult.Failure(
                             reasonCode = "PROVIDER_EXECUTION_FAILURE",
                             retryable = true
-                        )
+                        ),
+                        latencyMillis = 0L
                     )
                 }
                 attempts += attempt
+                providerHealth.record(
+                    providerId = attempt.providerId,
+                    result = attempt.result,
+                    nowMillis = nowMillis()
+                )
+                providerRanker.record(
+                    providerId = attempt.providerId,
+                    domain = domain,
+                    result = attempt.result,
+                    latencyMillis = attempt.latencyMillis
+                )
 
                 if (
                     optionalStableKnowledge &&
                     attempt.result is UltraProviderResult.Evidence &&
-                    attempts.size < providers.size &&
+                    attempts.size < activeProviders.size &&
                     graceDeadlineNanos == null
                 ) {
                     val graceDeadline = if (attempt.index == 0) {
@@ -422,7 +487,7 @@ class UltraVerifiedResearchEngine(
                 if (!future.isDone) {
                     providerWorkers[index].get()?.let { worker ->
                         runCatching {
-                            providers[index].cancelActiveRequest(worker)
+                            activeProviders[index].cancelActiveRequest(worker)
                         }
                     }
                     future.cancel(true)
@@ -437,7 +502,7 @@ class UltraVerifiedResearchEngine(
                 if (!future.isDone) {
                     providerWorkers[index].get()?.let { worker ->
                         runCatching {
-                            providers[index].cancelActiveRequest(worker)
+                            activeProviders[index].cancelActiveRequest(worker)
                         }
                     }
                     future.cancel(true)
@@ -450,11 +515,14 @@ class UltraVerifiedResearchEngine(
                 ?: return@mapNotNull null
             attempt to evidence
         }
+        val configuredPrimaryId = providers.firstOrNull()?.id
         val primarySucceeded = evidenceAttempts.any { (attempt, _) ->
-            attempt.index == 0
+            attempt.providerId == configuredPrimaryId
         }
         val fallbackUsed = !primarySucceeded &&
-            evidenceAttempts.any { (attempt, _) -> attempt.index > 0 }
+            evidenceAttempts.any { (attempt, _) ->
+                attempt.providerId != configuredPrimaryId
+            }
 
         if (
             optionalStableKnowledge &&
@@ -504,12 +572,14 @@ class UltraVerifiedResearchEngine(
                 message = selectedEvidence.displayText,
                 confidence = confidence,
                 sources = sources,
+                independentSourceCount = corroborationCount,
                 abstained = false,
                 timedOut = false,
-                fallbackUsed = selectedAttempt.index > 0
+                fallbackUsed =
+                    selectedAttempt.providerId != configuredPrimaryId
             )
 
-            val allProvidersSettled = attempts.size >= providers.size
+            val allProvidersSettled = attempts.size >= activeProviders.size
             if (allProvidersSettled) {
                 cache.put(
                     key = key,
@@ -580,62 +650,102 @@ class UltraVerifiedResearchEngine(
             }
         }
 
-        val dominantClaim = evidenceAttempts
-            .groupBy { (_, evidence) ->
-                evidence.claimKey.trim().lowercase(Locale.ROOT)
+        val consensus = consensusEngine.decide(
+            evidenceAttempts.map { (attempt, evidence) ->
+                UltraWeightedEvidenceCandidate(
+                    providerId = attempt.providerId,
+                    claimKey = evidence.claimKey,
+                    value = evidence.value,
+                    displayText = evidence.displayText,
+                    sourceIds = evidence.allSourceIds().toSet(),
+                    independentSourceCount =
+                        evidence.independentSourceCount.coerceAtLeast(1),
+                    authoritative = evidence.authoritative,
+                    providerScore = providerRanker.score(
+                        attempt.providerId,
+                        domain
+                    )
+                )
             }
-            .maxByOrNull { (_, group) -> group.size }
-            ?.value
-            .orEmpty()
+        )
 
-        val values = dominantClaim.groupBy { (_, evidence) ->
-            evidence.value.trim().lowercase(Locale.ROOT)
-        }
-
-        if (values.size != 1) {
+        if (!consensus.accepted) {
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
-                sources = dominantClaim
+                sources = evidenceAttempts
                     .flatMap { (_, evidence) -> evidence.allSourceIds() }
                     .distinct(),
-                reasonCode = "INSUFFICIENT_CORROBORATION"
+                reasonCode = "INSUFFICIENT_CORROBORATION",
+                retryable = activeProviders.size < providers.size
             )
         }
 
-        val agreeing = values.values.single()
-        val evidence = agreeing.first().second
-        val sources = agreeing
-            .flatMap { (_, itemEvidence) -> itemEvidence.allSourceIds() }
-            .distinct()
-        val corroborationCount = maxOf(
-            agreeing.size,
-            agreeing.maxOfOrNull { (_, itemEvidence) ->
-                itemEvidence.independentSourceCount.coerceAtLeast(1)
-            } ?: 1
-        )
-        val confidence = when {
-            corroborationCount >= 2 -> UltraAnswerConfidence.HIGH
-            evidence.authoritative -> UltraAnswerConfidence.MEDIUM
-            else -> UltraAnswerConfidence.LOW
+        val agreeing = evidenceAttempts.filter { (_, evidence) ->
+            evidence.claimKey.trim().lowercase(Locale.ROOT) ==
+                consensus.claimKey &&
+                evidence.value.trim().lowercase(Locale.ROOT) ==
+                    consensus.value
+                        ?.trim()
+                        ?.lowercase(Locale.ROOT)
         }
+        val evidence = agreeing
+            .maxByOrNull { (attempt, itemEvidence) ->
+                providerRanker.score(attempt.providerId, domain) +
+                    itemEvidence.independentSourceCount.coerceAtLeast(1)
+            }
+            ?.second
+            ?: evidenceAttempts.first().second
+        val sources = consensus.evidence
+            .flatMap { it.sourceIds }
+            .distinct()
+        val corroborationCount =
+            consensus.independentSourceCount.coerceAtLeast(1)
+        val confidence = consensus.confidence
 
+        val requiredGeneralKnowledge =
+            request.kind == UltraGeneralQueryKind.GENERAL_KNOWLEDGE &&
+                request.verificationMode == UltraVerificationMode.REQUIRED
+        val winnerHasAuthoritativeEvidence =
+            consensus.evidence.any { it.authoritative }
+        val minimumRequiredSources = when {
+            winnerHasAuthoritativeEvidence -> 1
+            request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH -> 2
+            requiredGeneralKnowledge -> 2
+            else -> 1
+        }
+        if (corroborationCount < minimumRequiredSources) {
+            return abstention(
+                timedOut = timedOut,
+                fallbackUsed = fallbackUsed,
+                sources = sources,
+                reasonCode = "INSUFFICIENT_CORROBORATION",
+                retryable = activeProviders.size < partitionedProviderCount(request)
+            )
+        }
         if (
             confidence == UltraAnswerConfidence.LOW &&
-            request.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE
+            (
+                request.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE ||
+                    requiredGeneralKnowledge
+                )
         ) {
             return abstention(
                 timedOut = timedOut,
                 fallbackUsed = fallbackUsed,
                 sources = sources,
-                reasonCode = "INSUFFICIENT_CORROBORATION"
+                reasonCode = "INSUFFICIENT_CORROBORATION",
+                retryable =
+                    requiredGeneralKnowledge &&
+                        activeProviders.size < partitionedProviderCount(request)
             )
         }
 
         val result = UltraVerifiedResearchResult(
-            message = evidence.displayText,
+            message = consensus.displayText ?: evidence.displayText,
             confidence = confidence,
             sources = sources,
+            independentSourceCount = corroborationCount,
             abstained = false,
             timedOut = timedOut,
             fallbackUsed = fallbackUsed
@@ -650,6 +760,11 @@ class UltraVerifiedResearchEngine(
         return result
 
     }
+
+    private fun partitionedProviderCount(
+        request: UltraGeneralQueryRequest
+    ): Int =
+        (providers.size - request.researchProviderOffset).coerceAtLeast(0)
 
     private fun abstention(
         timedOut: Boolean,
@@ -681,6 +796,10 @@ class UltraVerifiedResearchEngine(
                 reasonCode == "BACKEND_NOT_CONFIGURED" ||
                     reasonCode == "GENERAL_MODEL_NOT_CONFIGURED" ->
                     "El servicio de consulta todavía no está configurado para esa búsqueda."
+                reasonCode == "PROVIDERS_COOLDOWN" ->
+                    "Las fuentes disponibles están temporalmente en recuperación tras fallos repetidos. Inténtalo de nuevo en unos segundos."
+                reasonCode == "PROVIDER_PARTITION_EMPTY" ->
+                    "No quedan fuentes independientes en esta rama de investigación."
                 sources.isEmpty() ->
                     "No encontré fuentes suficientes para confirmar ese dato."
                 else ->
@@ -907,7 +1026,12 @@ class UltraVerifiedResearchEngine(
     private fun cacheKey(request: UltraGeneralQueryRequest): String =
         request.kind.name + ":" +
             request.verificationMode.name + ":" +
-            (if (request.requiresFreshData) "fresh" else "stable") + ":" +
+            (if (request.requiresFreshData) "fresh" else "stable") +
+            (if (request.researchProviderOffset > 0) {
+                ":partition=" + request.researchProviderOffset
+            } else {
+                ""
+            }) + ":" +
             request.originalText
                 .lowercase(Locale.ROOT)
                 .replace(Regex("""\s+"""), " ")

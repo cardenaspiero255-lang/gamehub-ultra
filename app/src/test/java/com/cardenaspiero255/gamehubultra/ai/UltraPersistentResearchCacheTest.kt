@@ -46,7 +46,12 @@ class UltraPersistentResearchCacheTest {
 
         assertFalse(first.fromCache)
         assertTrue(second.fromCache)
+        assertEquals(1, first.independentSourceCount)
         assertEquals(first.message, second.message)
+        assertEquals(
+            first.independentSourceCount,
+            second.independentSourceCount
+        )
         assertEquals(1, firstCalls.get())
         assertEquals(0, secondCalls.get())
         assertEquals(1, persistent.writeCount)
