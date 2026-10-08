@@ -1099,16 +1099,16 @@ class UltraFrontierEvolutionController(
             message,
             java.text.Normalizer.Form.NFD
         )
-            .replace(Regex("""\\p{M}+"""), "")
+            .replace(Regex("""\p{M}+"""), "")
             .trim()
             .lowercase(Locale.ROOT)
-            .replace(Regex("""\\s+"""), " ")
+            .replace(Regex("""\s+"""), " ")
             .trimEnd('.', '!', '?')
         val numericValue =
-            Regex("""(?<![\\p{L}\\d])[+-]?\\d+(?:[.,]\\d+)?(?![\\p{L}\\d])""")
+            Regex("""(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\d])""")
         val values = numericValue.findAll(normalized).toList()
         val assertionVerb = Regex(
-            """\\b(?:ocurrio|sucedio|fue|es|tiene|cuesta|mide|pesa|vale|resulto|is|was|has|costs|weighs)\\b"""
+            """\b(?:ocurrio|sucedio|fue|es|tiene|cuesta|mide|pesa|vale|resulto|is|was|has|costs|weighs)\b"""
         )
         val normalizedAssertion =
             if (values.size == 1 && assertionVerb.containsMatchIn(normalized)) {
