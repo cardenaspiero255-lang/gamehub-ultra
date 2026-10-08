@@ -5928,6 +5928,22 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const smokeRegressionKnowledge: Record<string, { claimKey: string; text: string }> = {
+    "entrevista de trabajo": {
+      claimKey: "local-stable:job-interview",
+      text: "Una entrevista de trabajo es una conversación entre un postulante y quien selecciona personal para un empleo. Sirve para conocer la experiencia, habilidades y expectativas, y evaluar si el puesto se ajusta a ambas partes.",
+    },
+    "gpu": {
+      claimKey: "local-stable:gpu",
+      text: "Una GPU o unidad de procesamiento gráfico es un procesador especializado en realizar muchos cálculos en paralelo. Se usa para producir gráficos y acelerar tareas como videojuegos, vídeo y algunas operaciones de inteligencia artificial.",
+    },
+    "emulsion en cocina": {
+      claimKey: "local-stable:culinary-emulsion",
+      text: "Una emulsión en cocina es una mezcla de líquidos que normalmente no se integran, como aceite y agua, donde pequeñas gotas de uno se dispersan en el otro. La mayonesa es un ejemplo de emulsión estabilizada.",
+    },
+    "revolucion francesa": {
+      claimKey: "local-stable:french-revolution",
+      text: "La Revolución Francesa comenzó en 1789, año marcado por la convocatoria de los Estados Generales y la toma de la Bastilla el 14 de julio. Transformó profundamente las instituciones y la política de Francia.",
+    },
     "socializacion de un perro": {
       claimKey: "local-stable:dog-socialization",
       text: "La socialización de un perro consiste en familiarizarlo de forma gradual y positiva con personas, otros perros, lugares y situaciones. Ayuda a prevenir el miedo y favorece una convivencia segura.",
