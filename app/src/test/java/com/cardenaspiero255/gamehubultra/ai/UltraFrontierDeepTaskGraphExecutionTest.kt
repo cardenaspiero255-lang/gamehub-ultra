@@ -287,6 +287,64 @@ class UltraFrontierDeepTaskGraphExecutionTest {
     }
 
     @Test
+    fun retriesExploreAllUnusedProviderSlotsBeforeRepeatingSources() {
+        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+            override val providerPartitionCapacity: Int = 4
+
+            override fun answer(
+                request: UltraGeneralQueryRequest
+            ): UltraVerifiedResearchResult {
+                val offset = request.researchProviderOffset
+                offsets += offset
+                return if (offset < 2) {
+                    UltraVerifiedResearchResult(
+                        message = "Proveedores iniciales sin datos.",
+                        confidence = UltraAnswerConfidence.LOW,
+                        sources = emptyList(),
+                        independentSourceCount = 0,
+                        abstained = true,
+                        retryable = true,
+                        reasonCode = "RETRYABLE_WEAK_SOURCES"
+                    )
+                } else {
+                    UltraVerifiedResearchResult(
+                        message = "Resultado recuperado de un proveedor nuevo.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("trusted-$offset", "independent-$offset"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = UltraFrontierOrchestrator(
+                policy = UltraFrontierPolicy(
+                    verifiedSourceBudget = 2,
+                    deepSourceBudget = 2,
+                    deepResearchPassBudget = 2
+                ),
+                evolution = evolution
+            )
+        )
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos teléfonos y revisa fuentes nuevas"
+            )
+        ) { null }
+        assertTrue(0 in offsets && 1 in offsets)
+        assertTrue(2 in offsets && 3 in offsets)
+        assertTrue(offsets.indexOf(2) > offsets.indexOf(1))
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+    }
+
+    @Test
     fun frontierV2DeepResearchNeverOverspendsPlannedSourceBudget() {
         UltraFrontierWorldStateRegistry.clear()
         val partitions = Collections.synchronizedList(
