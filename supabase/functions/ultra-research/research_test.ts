@@ -486,6 +486,84 @@ Deno.test("generic topic rejects narrower names even when search ranks them firs
 });
 
 Deno.test(
+  "dynamic calendar explanations include dates, events, and organization",
+  async () => {
+    const prompts = [
+      "Describe un calendario para un estudiante, y menciona su función principal.",
+      "¿Para qué sirve o por qué importa un calendario? sin jerga innecesaria, y explica por qué es relevante!",
+      "Resume qué es un calendario en lenguaje cotidiano, en pocas frases?",
+      "Dime lo esencial sobre un calendario sin asumir conocimientos previos, sin inventar datos!",
+    ];
+    for (const query of prompts) {
+      const result = await routeResearchQuery(
+        query,
+        {
+          fetcher: () => {
+            throw new Error("Stable calendar knowledge should work offline");
+          },
+          env: () => undefined,
+        },
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+      );
+      const message = result.displayText ?? "";
+      if (
+        result.abstained ||
+        !/fechas?/i.test(message) ||
+        !/eventos?/i.test(message) ||
+        !/organiz/i.test(message) ||
+        result.authoritative === true ||
+        (result.independentSourceCount ?? 0) !== 0
+      ) {
+        throw new Error("Unhelpful calendar explanation: " + message);
+      }
+    }
+  },
+);
+
+Deno.test(
+  "required photosynthesis rejects films mentioning plants and solar energy",
+  async () => {
+    const result = await routeResearchQuery(
+      "¿Qué es la fotosíntesis?",
+      {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.searchParams.has("generator")
+          ) {
+            return jsonResponse({
+              query: {
+                pages: {
+                  "17": {
+                    title: "Fotosíntesis (película)",
+                    extract:
+                      "Fotosíntesis es una película documental sobre plantas y energía solar.",
+                    pageid: 17,
+                    index: 1,
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse({ query: { search: [] } });
+        },
+        env: (name) =>
+          name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
+      },
+      "",
+      "GENERAL_KNOWLEDGE",
+      "REQUIRED",
+    );
+    if (!result.abstained || result.authoritative === true) {
+      throw new Error("A film is not verified evidence of photosynthesis");
+    }
+  },
+);
+
+Deno.test(
   "photosynthesis science query never resolves to a documentary film",
   async () => {
     const result = await routeResearchQuery(
