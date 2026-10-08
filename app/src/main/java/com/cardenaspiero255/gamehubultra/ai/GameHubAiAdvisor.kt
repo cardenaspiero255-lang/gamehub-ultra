@@ -1,6 +1,9 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
+import com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession
+import com.cardenaspiero255.gamehubultra.domain.UltraSessionHistoryIntelligence
+import com.cardenaspiero255.gamehubultra.voice.UltraOnDeviceVoiceIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
 import java.text.Normalizer
@@ -9,7 +12,8 @@ import java.util.Locale
 class GameHubAiAdvisor(
     private val modelAdapter: LocalAiModelAdapter? = null,
     private val memoryGateway: UltraLongTermMemoryGateway? = null,
-    private val aiCore: UltraAiCoreGateway = UltraAiCore2()
+    private val aiCore: UltraAiCoreGateway = UltraAiCore2(),
+    private val gameSessionHistory: (() -> List<UltraRecordedGameSession>)? = null
 ) : UltraAssistantGateway {
 
     override fun hasLocalModelProvider(): Boolean = modelAdapter != null
@@ -108,6 +112,20 @@ class GameHubAiAdvisor(
             memoryGateway?.handleCommand(message, memoryScope)
         }.getOrNull()
         if (memoryCommandResponse != null) return memoryCommandResponse
+
+        // Gameplay memories are factual measurements; they are never sent
+        // through the free-form model as invented temperature claims.
+        if (gameSessionHistory != null) {
+            val history = runCatching { gameSessionHistory.invoke() }
+                .getOrDefault(emptyList())
+            val relevantGame = context.selectedGamePackage
+                ?: history.maxByOrNull { it.endedAtMillis }?.packageName
+            UltraSessionHistoryIntelligence.response(
+                query = message,
+                packageName = relevantGame,
+                history = history
+            )?.let { return it }
+        }
 
         val visibleTexts = conversation
             .map { normalize(it.substringAfter(':').trim()) }
@@ -638,7 +656,27 @@ class GameHubAiAdvisor(
                         "optimize my game"
                     ) -> VoiceCommand.AskAi(transcript)
 
-                    else -> null
+                    else -> {
+                        // Preserve existing deterministic commands and only
+                        // consult the optional local model for action-like text.
+                        val actionLike = Regex(
+                            """\\b(podrias|puedes|quisiera|necesito|abre|abrir|pon|activa|cambia|perfil|modo|launch|open)\\b"""
+                        ).containsMatchIn(clean)
+                        if (!actionLike || clean.length > 300) {
+                            null
+                        } else {
+                            runCatching {
+                                modelAdapter
+                                    ?.takeIf { it.isAvailable() }
+                                    ?.interpretVoiceIntent(transcript)
+                            }.getOrNull()?.let { candidate ->
+                                UltraOnDeviceVoiceIntentResolver.validate(
+                                    transcript = transcript,
+                                    candidate = candidate
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
