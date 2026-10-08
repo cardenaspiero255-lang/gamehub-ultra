@@ -486,6 +486,78 @@ Deno.test("generic topic rejects narrower names even when search ranks them firs
 });
 
 Deno.test(
+  "compass questions explain orientation, not the constellation",
+  async () => {
+    const prompts = [
+      "¿Para qué sirve una brújula?",
+      "Explica qué es una brújula para un estudiante.",
+    ];
+    for (const query of prompts) {
+      const result = await routeResearchQuery(
+        query,
+        {
+          fetcher: () => {
+            throw new Error("Compass basics must work without external APIs");
+          },
+          env: () => undefined,
+        },
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+      );
+      const answer = result.displayText ?? "";
+      if (
+        result.abstained ||
+        !/norte|orient/i.test(answer) ||
+        /constelaci[oó]n/i.test(answer) ||
+        result.authoritative === true
+      ) {
+        throw new Error("Wrong compass sense: " + answer);
+      }
+    }
+  },
+);
+
+Deno.test(
+  "required compass research rejects a homonymous constellation",
+  async () => {
+    const result = await routeResearchQuery(
+      "¿Para qué sirve una brújula?",
+      {
+        fetcher: (input) => {
+          const url = new URL(String(input));
+          if (
+            url.hostname === "es.wikipedia.org" &&
+            url.searchParams.has("generator")
+          ) {
+            return jsonResponse({
+              query: {
+                pages: {
+                  "1": {
+                    title: "Brújula (constelación)",
+                    extract:
+                      "Brújula es una constelación del cielo del sur.",
+                    index: 1,
+                  },
+                },
+              },
+            });
+          }
+          return jsonResponse({ query: { search: [] } });
+        },
+        env: () => undefined,
+      },
+      "",
+      "GENERAL_KNOWLEDGE",
+      "REQUIRED",
+    );
+    if (!result.abstained || result.authoritative === true) {
+      throw new Error("A constellation cannot verify a navigation compass");
+    }
+  },
+);
+
+Deno.test(
   "dynamic calendar explanations include dates, events, and organization",
   async () => {
     const prompts = [
