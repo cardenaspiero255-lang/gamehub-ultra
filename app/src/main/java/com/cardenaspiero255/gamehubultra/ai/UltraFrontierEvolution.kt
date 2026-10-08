@@ -1104,7 +1104,14 @@ class UltraFrontierEvolutionController(
                     .forEach { source ->
                         provenanceGraph.record(
                             UltraFrontierV2ClaimEvidence(
-                                claimId = "research-answer",
+                                // Whole research answers are alternatives, not
+                                // necessarily conflicting values of one claim.
+                                // Only evidence for the same answer belongs to
+                                // the same provenance group. Structured factual
+                                // conflicts are evaluated at the claim level.
+                                claimId = "research-answer:" +
+                                    candidate.message.trim()
+                                        .lowercase(Locale.ROOT),
                                 normalizedValue = candidate.message,
                                 sourceId = source,
                                 providerId = "research-branch-$index",
@@ -1115,7 +1122,8 @@ class UltraFrontierEvolutionController(
             }
         }
         val provenance = provenanceGraph.snapshot(
-            claimId = "research-answer",
+            claimId = "research-answer:" +
+                selected.message.trim().lowercase(Locale.ROOT),
             preferredValue = selected.message
         )
         if (selected.verified && provenance?.hasConflict == true) {
