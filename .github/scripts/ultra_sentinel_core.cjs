@@ -83,7 +83,12 @@ function analyze(files,config={}){
      for(let i=0;i<rows.length;i++){
        const decl=rows[i].text.match(/\bfun\s+([A-Za-z_]\w*)\s*\(/);
        if(!decl||['toString','equals','hashCode'].includes(decl[1]))continue;
-       const candidates=rows.slice(i+1,i+20).filter(x=>x.line>rows[i].line&&x.line-rows[i].line<60);
+       // A disconnected diff hunk is not evidence of self-recursion.
+       const candidates=[];let expected=rows[i].line+1;
+       for(const next of rows.slice(i+1,i+20)){
+         if(next.line!==expected)break;
+         candidates.push(next);expected++;
+       }
        // A separate Kotlin function is a scope boundary, not a self-call.
        const nextMethod=candidates.findIndex(x=>/^\s*(?:(?:public|private|internal|override|suspend|protected|open|inline)\s+)*fun\s+[A-Za-z_]\w*\s*\(/.test(x.text));
        const close=nextMethod===-1?candidates:candidates.slice(0,nextMethod);
