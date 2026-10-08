@@ -55,16 +55,27 @@ Deno.test("stable elevator definitions reject vandalized external answers", asyn
 Deno.test("basic concepts are defined rather than confused with named subclasses", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
-      throw new Error("stable basic concepts must not rely on a random search result");
+      throw new Error(
+        "stable basic concepts must not rely on a random search result",
+      );
     },
     env: () => undefined,
   };
   const cases: Array<[string, RegExp]> = [
     ["¿Qué es un lápiz?", /escribir.*dibujar|dibujar.*escribir/i],
     ["¿Qué es una molécula?", /átomos.*enlaces|átomos.*enlazados/i],
-    ["¿Qué tipo de productos fabrica Samsung?", /teléfonos.*televisores|electrónicos/i],
-    ["¿Cómo explicarías un poema? en lenguaje cotidiano, en pocas frases.", /versos.*poesía|poesía.*versos/i],
-    ["Resume qué es un poema de forma clara y directa, sin inventar datos.", /versos.*poesía|poesía.*versos/i],
+    [
+      "¿Qué tipo de productos fabrica Samsung?",
+      /teléfonos.*televisores|electrónicos/i,
+    ],
+    [
+      "¿Cómo explicarías un poema? en lenguaje cotidiano, en pocas frases.",
+      /versos.*poesía|poesía.*versos/i,
+    ],
+    [
+      "Resume qué es un poema de forma clara y directa, sin inventar datos.",
+      /versos.*poesía|poesía.*versos/i,
+    ],
   ];
   for (const [query, expected] of cases) {
     const result = await routeResearchQuery(
@@ -74,7 +85,9 @@ Deno.test("basic concepts are defined rather than confused with named subclasses
       "GENERAL_KNOWLEDGE",
     );
     if (result.abstained || !expected.test(result.displayText ?? "")) {
-      throw new Error("wrong core concept for: " + query + "; got " + result.displayText);
+      throw new Error(
+        "wrong core concept for: " + query + "; got " + result.displayText,
+      );
     }
     if (result.authoritative || (result.independentSourceCount ?? 0) !== 0) {
       throw new Error("offline core concepts must not claim verified sources");
