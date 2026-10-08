@@ -58,4 +58,19 @@ class UltraGameSessionHistoryStoreTest {
         store.finishActiveSession(300L)
         assertTrue(store.readRecentGameSessions().isEmpty())
     }
+
+    @Test
+    fun nightProposalIsPersistedAndIsOnlyShownOncePerGame() {
+        val first = SessionCoachSessionStore(context)
+        assertTrue(first.takeNightProfileProposalToShow("com.example.cod"))
+        assertTrue(!first.takeNightProfileProposalToShow("com.example.cod"))
+        val restored = SessionCoachSessionStore(context)
+        assertTrue(restored.isNightProfileProposalPending("com.example.cod"))
+        assertTrue(!restored.takeNightProfileProposalToShow("com.example.cod"))
+        assertTrue(restored.takeNightProfileProposalToShow("com.example.other"))
+        assertTrue(restored.markNightProfileProposalApplied("com.example.cod"))
+        assertTrue(!restored.isNightProfileProposalPending("com.example.cod"))
+        assertTrue(!restored.markNightProfileProposalApplied("com.example.cod"))
+        assertTrue(!restored.takeNightProfileProposalToShow("com.example.cod"))
+    }
 }
