@@ -197,14 +197,20 @@ class SupabaseUltraResearchProvider(
         val claimKey = decoded.claimKey.orEmpty().trim()
         val value = decoded.value.orEmpty().trim()
         val displayText = decoded.displayText.orEmpty().trim()
+        val sourceIds = decoded.sourceIds
+            .map(String::trim)
+            .filter { it.isNotBlank() }
+            .distinct()
+        // Corroboration can add sourceIds while leaving the local answer's
+        // primary sourceId blank. Use actual evidence, never a synthetic URL.
         val sourceId = decoded.sourceId.orEmpty().trim()
-        // Offline stable knowledge is allowed to be informative without a
-        // source, but must never impersonate externally verified evidence.
+            .ifBlank { sourceIds.firstOrNull().orEmpty() }
+        // Offline stable knowledge may be unsourced only if it makes no
+        // authority or independent-corroboration claims.
         val unsourcedLocal =
             sourceId.isBlank() &&
                 !decoded.authoritative &&
                 decoded.independentSourceCount == 0 &&
-                decoded.sourceIds.isEmpty() &&
                 claimKey.startsWith("local-")
         if (
             claimKey.isBlank() ||
@@ -226,10 +232,8 @@ class SupabaseUltraResearchProvider(
                 value = value,
                 displayText = displayText,
                 sourceId = sourceId,
-                supportingSourceIds = decoded.sourceIds
-                    .map(String::trim)
-                    .filter { it.isNotBlank() && it != sourceId }
-                    .distinct(),
+                supportingSourceIds = sourceIds
+                    .filter { it != sourceId },
                 independentSourceCount = if (unsourcedLocal) 0
                     else decoded.independentSourceCount.coerceAtLeast(1),
                 authoritative = decoded.authoritative
