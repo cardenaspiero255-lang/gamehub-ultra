@@ -220,13 +220,13 @@ class FramePacingIntelligenceEngine(
             }
             thermal?.let {
                 add(
-                    "Señal CAR-48: riesgo ${it.risk}, confianza ${format(it.confidence)}, " +
+                    "Correlación térmica CAR-48: riesgo ${it.risk}, confianza ${format(it.confidence)}, " +
                         "preventiva=${it.allowPreventiveSignal}; correlación, no causalidad."
                 )
             }
             battery?.let {
                 add(
-                    "Señal CAR-49: ${it.recommendation}, " +
+                    "Correlación de batería CAR-49: ${it.recommendation}, " +
                         "restricción=${it.preventAggressiveProfiles}; correlación, no causalidad."
                 )
             }
