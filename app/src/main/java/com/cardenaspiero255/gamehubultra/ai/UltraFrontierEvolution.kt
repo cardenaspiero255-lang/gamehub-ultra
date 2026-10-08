@@ -1094,7 +1094,7 @@ class UltraFrontierEvolutionController(
      * Multi-value/narrative answers stay independent rather than forcing
      * a semantic decision without a structured claim.
      */
-    private fun researchClaimIdentity(message: String): String {
+    private fun researchClaimIdentity(message: String): Pair<String, String> {
         val normalized = java.text.Normalizer.normalize(
             message,
             java.text.Normalizer.Form.NFD
@@ -1104,19 +1104,24 @@ class UltraFrontierEvolutionController(
             .lowercase(Locale.ROOT)
             .replace(Regex("""\s+"""), " ")
             .trimEnd('.', '!', '?')
-        val numericValue =
-            Regex("""(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\d])""")
-        val values = numericValue.findAll(normalized).toList()
-        val assertionVerb = Regex(
-            """\b(?:ocurrio|sucedio|fue|es|tiene|cuesta|mide|pesa|vale|resulto|is|was|has|costs|weighs)\b"""
-        )
-        val normalizedAssertion =
-            if (values.size == 1 && assertionVerb.containsMatchIn(normalized)) {
-                numericValue.replace(normalized, "valor-numerico")
-            } else {
-                normalized
-            }
-        return "research-answer:$normalizedAssertion"
+        // Preserve all measured values (including multiple fields in ISO
+        // dates), but compare them separately from the claim's subject.
+        // A fixed verb allowlist misses valid facts such as "comenzó".
+        val number = Regex("""(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\d])""")
+        val values = number.findAll(normalized).map {
+            it.value.replace(',', '.')
+        }.toList()
+        val skeleton = if (values.isEmpty()) {
+            normalized
+        } else {
+            number.replace(normalized, "valor-numerico")
+        }
+        val comparedValue = if (values.isEmpty()) {
+            normalized
+        } else {
+            values.joinToString("|")
+        }
+        return "research-answer:$skeleton" to comparedValue
     }
 
     fun synthesizeResearch(
@@ -1134,12 +1139,12 @@ class UltraFrontierEvolutionController(
                     .filter(String::isNotBlank)
                     .distinct()
                     .forEach { source ->
+                        val (claimId, comparedValue) =
+                            researchClaimIdentity(candidate.message)
                         provenanceGraph.record(
                             UltraFrontierV2ClaimEvidence(
-                                // Group only assertions with the same claim
-                                // identity, not unrelated answers or options.
-                                claimId = researchClaimIdentity(candidate.message),
-                                normalizedValue = candidate.message,
+                                claimId = claimId,
+                                normalizedValue = comparedValue,
                                 sourceId = source,
                                 providerId = "research-branch-$index",
                                 authoritative = true
@@ -1148,9 +1153,11 @@ class UltraFrontierEvolutionController(
                     }
             }
         }
+        val (selectedClaimId, selectedValue) =
+            researchClaimIdentity(selected.message)
         val provenance = provenanceGraph.snapshot(
-            claimId = researchClaimIdentity(selected.message),
-            preferredValue = selected.message
+            claimId = selectedClaimId,
+            preferredValue = selectedValue
         )
         if (selected.verified && provenance?.hasConflict == true) {
             return selected.copy(
