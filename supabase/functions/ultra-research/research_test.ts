@@ -486,6 +486,41 @@ Deno.test("generic topic rejects narrower names even when search ranks them firs
 });
 
 Deno.test(
+  "HDMI has a useful offline explanation during upstream rate limits",
+  async () => {
+    for (
+      const query of [
+        "¿Para qué sirve HDMI?",
+        "¿Qué es HDMI?",
+      ]
+    ) {
+      const result = await routeResearchQuery(
+        query,
+        {
+          fetcher: () => {
+            throw new Error("HDMI basics must not depend on API availability");
+          },
+          env: () => undefined,
+        },
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+      );
+      const answer = result.displayText ?? "";
+      if (
+        result.abstained ||
+        !/video/i.test(answer) ||
+        !/audio/i.test(answer) ||
+        result.authoritative === true ||
+        (result.independentSourceCount ?? 0) !== 0
+      ) {
+        throw new Error("Missing offline HDMI explanation: " + answer);
+      }
+    }
+  },
+);
+
+Deno.test(
   "well-known brand questions identify concrete product categories",
   async () => {
     const cases: Array<[string, RegExp]> = [
