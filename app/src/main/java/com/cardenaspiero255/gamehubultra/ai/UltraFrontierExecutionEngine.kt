@@ -615,10 +615,13 @@ class UltraFrontierExecutionEngine(
         }
 
         val latencies = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        val capacity = coordinator.providerPartitionCapacity
+            ?.takeIf { it > 0 }
         val maxParallelism = evolution
             .budget(request, frontier.policy)
             .maxParallelism
             .coerceIn(1, researchTasks.size)
+            .let { if (capacity != null) it.coerceAtMost(capacity) else it }
         val totalBudget =
             attemptRequest.researchProviderBudget
                 ?: plan.sourceBudget.coerceAtLeast(1)
@@ -639,14 +642,19 @@ class UltraFrontierExecutionEngine(
         }
         // Each attempt must explore a fresh provider partition, including
         // a device-pressure fallback where only one worker can execute.
-        val partitionStride = maxOf(
-            plan.maxSourceBudget,
-            totalBudget,
+        val partitionStride = if (capacity != null) {
+            // A source budget measures desired evidence, not provider slots.
+            // Walk one real slot per retry rather than skipping all providers.
             1
-        )
-        val attemptProviderOffset =
+        } else {
+            maxOf(plan.maxSourceBudget, totalBudget, 1)
+        }
+        val candidateOffset =
             request.researchProviderOffset +
                 (attempt - 1) * partitionStride
+        val attemptProviderOffset =
+            if (capacity != null) Math.floorMod(candidateOffset, capacity)
+            else candidateOffset
         if (allocatedTasks.size < 2) {
             return coordinator.answer(
                 request = attemptRequest.copy(
@@ -659,8 +667,13 @@ class UltraFrontierExecutionEngine(
         val providerOffsets = linkedMapOf<String, Int>()
         var nextProviderOffset = attemptProviderOffset
         allocatedTasks.forEach { task ->
-            providerOffsets[task.id] = nextProviderOffset
-            nextProviderOffset += allocation.getValue(task.id)
+            providerOffsets[task.id] = if (capacity != null) {
+                Math.floorMod(nextProviderOffset, capacity)
+            } else {
+                nextProviderOffset
+            }
+            nextProviderOffset += if (capacity != null) 1
+                else allocation.getValue(task.id)
         }
 
         val results = try {
@@ -669,7 +682,8 @@ class UltraFrontierExecutionEngine(
                 maxParallelism = allocatedTasks.size.coerceIn(1, maxParallelism),
                 timeoutMillis = remainingMillis
             ) { task ->
-                val branchBudget = allocation.getValue(task.id)
+                val branchBudget = if (capacity != null) 1
+                    else allocation.getValue(task.id)
                 val branchRequest = attemptRequest.copy(
                     researchProviderBudget = branchBudget,
                     researchProviderOffset =
