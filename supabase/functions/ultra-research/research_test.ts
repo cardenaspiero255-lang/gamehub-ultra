@@ -13,7 +13,7 @@ function wikipediaSearchParam(url: URL): string {
     "";
 }
 
-Deno.test("healthy sourced evidence outranks the offline stable corpus", async () => {
+Deno.test("required verification consults healthy live source instead of unsourced local corpus", async () => {
   let liveRequests = 0;
   const deps: ResearchDependencies = {
     fetcher: (input) => {
@@ -45,6 +45,7 @@ Deno.test("healthy sourced evidence outranks the offline stable corpus", async (
     deps,
     "",
     "GENERAL_KNOWLEDGE",
+    "REQUIRED",
   );
   if (
     result.abstained || liveRequests === 0 ||
