@@ -5071,8 +5071,8 @@ function encyclopediaExcerptLooksTampered(extract: string): boolean {
   // Reject rather than silently stripping them and promoting source authority.
   const text = normalize(extract);
   return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
-    /\b(?:ignora|ignore)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous)\b/iu.test(text) ||
-    /\b(?:ignore|ignora)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores)\s+(?:instructions|instrucciones)\b/iu.test(text);
+    /\b(?:ignora|ignore|disregard|olvida|omite)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous|prior)\b/iu.test(text) ||
+    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores|prior)\s+(?:instructions|instrucciones)\b/iu.test(text);
 }
 
 function candidateMatchesKnownMeaning(
@@ -6598,6 +6598,9 @@ export async function routeResearchQuery(
         },
       );
     }
+    // An LLM alone is not externally verified evidence. A REQUIRED query
+    // must fail closed when all eligible live/corroborated sources abstain.
+    if (verificationMode === "REQUIRED") return evidence;
     return await generalKnowledgeAiFallback(
       query,
       context,
