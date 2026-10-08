@@ -887,6 +887,53 @@ Deno.test(
   },
 );
 
+Deno.test("normal technical prose mentioning omitted instructions remains valid evidence", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.has("generator")
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                title: "Microarquitectura",
+                extract:
+                  "La microarquitectura describe la organización interna de un procesador. Un diseño omite algunas de las instrucciones del procesador al describir ciertas rutas de ejecución.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Microarquitectura",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "es.wikipedia.org") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "www.wikidata.org") {
+        return jsonResponse({ search: [] });
+      }
+      return jsonResponse({ query: { search: [] } });
+    },
+    env: () => undefined,
+  };
+  const result = await routeResearchQuery(
+    "¿Qué es microarquitectura?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+    "REQUIRED",
+  );
+  if (
+    result.abstained ||
+    !result.displayText?.includes("organización interna") ||
+    !result.sourceId?.includes("wikipedia.org")
+  ) {
+    throw new Error("Benign technical instructions prose must not be rejected");
+  }
+});
+
 Deno.test("English instruction injection in extracts is rejected", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
