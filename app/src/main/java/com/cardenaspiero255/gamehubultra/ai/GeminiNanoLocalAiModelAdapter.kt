@@ -48,6 +48,29 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
             }
         }.getOrNull()
 
+    override fun interpretVoiceIntent(transcript: String): LocalVoiceIntentCandidate? =
+        runCatching {
+            if (transcript.length !in 4..300) return@runCatching null
+            runBlocking(Dispatchers.IO) {
+                val client = model.value ?: return@runBlocking null
+                if (client.checkStatus() != FeatureStatus.AVAILABLE) return@runBlocking null
+                val prompt = buildString {
+                    appendLine("Classify an explicit gaming voice command as one of:")
+                    appendLine("PROFILE_BALANCED, PROFILE_X4, PROFILE_INTERPOLATION")
+                    appendLine("OPEN_GAME|exact game name spoken")
+                    appendLine("DEVICE_STATUS, HELP, NONE")
+                    appendLine("Respond with exactly one item, no explanation.")
+                    appendLine("Use NONE for informational questions or unclear intent.")
+                    appendLine("Voice input: " + transcript.take(300))
+                }
+                val raw = client.generateContent(prompt).candidates
+                    .firstOrNull()?.text?.trim() ?: return@runBlocking null
+                if (raw.length > 100 || raw.contains('\\n')) return@runBlocking null
+                val parts = raw.split('|', limit = 2)
+                LocalVoiceIntentCandidate(parts.first().trim(), parts.getOrNull(1)?.trim())
+            }
+        }.getOrNull()
+
     override fun close() {
         if (model.isInitialized()) {
             model.value?.close()
