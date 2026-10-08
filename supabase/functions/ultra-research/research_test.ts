@@ -59,6 +59,34 @@ Deno.test("required verification consults healthy live source instead of unsourc
   }
 });
 
+Deno.test("Wi-Fi definitions remain complete without upstream data", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      throw new Error("a basic Wi-Fi definition must work offline");
+    },
+    env: () => undefined,
+  };
+  for (const query of ["¿Qué es Wi-Fi?", "¿Qué es wifi?"]) {
+    const result = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+      "OPTIONAL",
+    );
+    const answer = (result.displayText ?? "").toLowerCase();
+    if (
+      result.abstained ||
+      !answer.includes("inalámbr") ||
+      !answer.includes("red") ||
+      result.authoritative ||
+      (result.independentSourceCount ?? 0) !== 0
+    ) {
+      throw new Error("Incomplete or incorrectly attributed Wi-Fi answer: " + answer);
+    }
+  }
+});
+
 Deno.test("stable elevator definitions reject vandalized external answers", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
