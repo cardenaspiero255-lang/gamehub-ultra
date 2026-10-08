@@ -63,6 +63,7 @@ class UltraFrontierDeepTaskGraphExecutionTest {
 
     @Test
     fun frontierV2DeepResearchNeverOverspendsPlannedSourceBudget() {
+        UltraFrontierWorldStateRegistry.clear()
         val partitions = Collections.synchronizedList(
             mutableListOf<Pair<Int, Int>>()
         )
@@ -109,6 +110,7 @@ class UltraFrontierDeepTaskGraphExecutionTest {
         assertEquals(7, firstAttempt.sumOf { it.second })
         assertTrue(firstAttempt[1].first >= firstAttempt[0].first + firstAttempt[0].second)
         assertFalse(answer.abstained)
+        UltraFrontierWorldStateRegistry.clear()
     }
 
 }
