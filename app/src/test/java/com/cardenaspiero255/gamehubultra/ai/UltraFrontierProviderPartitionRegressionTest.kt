@@ -95,6 +95,39 @@ class UltraFrontierProviderPartitionRegressionTest {
     }
 
     @Test
+    fun cooledDownProviderSlotRemainsRetryableWhenAnotherSlotExists() {
+        val bad = object : UltraResearchProvider {
+            override val id = "failed-provider"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                error("Not used")
+            override fun fetchResult(request: UltraGeneralQueryRequest): UltraProviderResult =
+                UltraProviderResult.Failure("UPSTREAM_UNAVAILABLE", retryable = false)
+        }
+        val fresh = object : UltraResearchProvider {
+            override val id = "healthy-provider"
+            override fun fetch(request: UltraGeneralQueryRequest): UltraResearchEvidence =
+                UltraResearchEvidence(
+                    claimKey = "general:test",
+                    value = "fact",
+                    displayText = "Hecho verificado.",
+                    sourceId = "https://example.org/fact"
+                )
+        }
+        val health = UltraResearchProviderHealth(
+            UltraResearchProviderHealthPolicy(failureThreshold = 1)
+        )
+        UltraVerifiedResearchEngine(listOf(bad, fresh), providerHealth = health).use {
+            val query = UltraGeneralQueryRouter.classify("¿Qué es un planeta?")
+                .copy(researchProviderBudget = 1, researchProviderOffset = 0)
+            it.answer(query)
+            val quarantined = it.answer(query)
+            assertEquals("PROVIDERS_COOLDOWN", quarantined.reasonCode)
+            assertTrue(quarantined.retryable)
+            assertFalse(it.answer(query.copy(researchProviderOffset = 1)).abstained)
+        }
+    }
+
+    @Test
     fun androidAcceptsLocalEvidenceCorroboratedByOnlySourceIds() {
         val url = "https://example.org/corroboration"
         val transport = object : UltraResearchBackendTransport {
