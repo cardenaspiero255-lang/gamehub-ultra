@@ -198,11 +198,19 @@ class SupabaseUltraResearchProvider(
         val value = decoded.value.orEmpty().trim()
         val displayText = decoded.displayText.orEmpty().trim()
         val sourceId = decoded.sourceId.orEmpty().trim()
+        // Offline stable knowledge is allowed to be informative without a
+        // source, but must never impersonate externally verified evidence.
+        val unsourcedLocal =
+            sourceId.isBlank() &&
+                !decoded.authoritative &&
+                decoded.independentSourceCount == 0 &&
+                decoded.sourceIds.isEmpty() &&
+                claimKey.startsWith("local-")
         if (
             claimKey.isBlank() ||
             value.isBlank() ||
             displayText.isBlank() ||
-            sourceId.isBlank()
+            (sourceId.isBlank() && !unsourcedLocal)
         ) {
             return UltraProviderResult.Failure(
                 reasonCode = "INVALID_BACKEND_RESPONSE",
@@ -222,7 +230,8 @@ class SupabaseUltraResearchProvider(
                     .map(String::trim)
                     .filter { it.isNotBlank() && it != sourceId }
                     .distinct(),
-                independentSourceCount = decoded.independentSourceCount.coerceAtLeast(1),
+                independentSourceCount = if (unsourcedLocal) 0
+                    else decoded.independentSourceCount.coerceAtLeast(1),
                 authoritative = decoded.authoritative
             )
         )
