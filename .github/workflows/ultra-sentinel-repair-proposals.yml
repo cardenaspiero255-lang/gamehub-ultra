@@ -1,0 +1,80 @@
+name: Ultra Sentinel - Safe Repair Candidates
+# Never checkout PR head in this privileged read-only workflow.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: sentinel-patch-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  dry-run-patch:
+    name: Generate uncommitted fix.patch
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted Sentinel engine
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+      - name: Generate bounded repair candidates from API data
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs=require('node:fs'),path=require('node:path');
+            const {analyze}=require(path.resolve('.github/scripts/ultra_sentinel_core.cjs'));
+            const {orchestrate}=require(path.resolve('.github/scripts/ultra_sentinel_orchestrator.cjs'));
+            const owner=context.repo.owner,repo=context.repo.repo,number=context.issue.number;
+            const pr=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
+            if(pr.state!=='open'||pr.head.repo?.full_name!==owner+'/'+repo){
+              core.setFailed('Only open same-repository PRs supported');return;
+            }
+            const files=await github.paginate(github.rest.pulls.listFiles,{owner,repo,pull_number:number,per_page:100});
+            const analysis=analyze(files,{sha:pr.head.sha});
+            if(pr.changed_files>files.length){analysis.coverage.partial=true;analysis.verdict='INCOMPLETE';}
+            const sources={};
+            const targets=analysis.findings.filter(f=>f.rule==='FORCED_GC').slice(0,8);
+            for(const f of targets){
+              if(!/^app\/src\/main\/[A-Za-z0-9_/.-]+\.(?:kt|java)$/.test(f.path))continue;
+              try{
+                const {data: entry}=await github.rest.repos.getContent({owner,repo,path:f.path,ref:pr.head.sha});
+                if(entry.type==='file'&&entry.encoding==='base64'&&entry.size<=240000)
+                  sources[f.path]=Buffer.from(entry.content,'base64').toString('utf8');
+              }catch(error){core.warning('Source read failed: '+f.path+' ('+error.status+')');}
+            }
+            const report=orchestrate({analysis,sources,sha:pr.head.sha,checks:{}});
+            const current=(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
+            if(current.head.sha!==pr.head.sha){core.setFailed('PR changed during scan');return;}
+            const dest=path.join(process.env.RUNNER_TEMP,'sentinel-patch');
+            fs.mkdirSync(dest,{recursive:true});
+            const patches=report.fixer.proposals.map(x=>x.proposal.patch);
+            fs.writeFileSync(path.join(dest,'report.json'),JSON.stringify({
+              sha:pr.head.sha,pr:number,engine:report.engine,
+              coverage:analysis.coverage,verdict:analysis.verdict,
+              candidates:report.fixer.proposals.map(x=>({
+                filename:x.proposal.filename,rule:x.proposal.rule,
+                linesChanged:x.proposal.linesChanged,decision:x.judgement.status,
+                test:x.proposal.test
+              })),
+              approved:false,applied:false,merged:false
+            },null,2));
+            if(patches.length)fs.writeFileSync(path.join(dest,'fix.patch'),patches.join('\n'));
+            await core.summary.addHeading('Ultra Sentinel repair candidates')
+              .addRaw('SHA: '+pr.head.sha+'\n\n'+patches.length+' patch(es) proposed. No code was applied.')
+              .write();
+            if(analysis.coverage.partial)core.warning('Incomplete diff coverage: result requires manual validation.');
+      - name: Save advisory patch artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ultra-sentinel-proposal-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/sentinel-patch/
+          if-no-files-found: error
+          retention-days: 7
