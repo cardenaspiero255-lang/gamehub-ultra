@@ -95,6 +95,63 @@ Deno.test("basic concepts are defined rather than confused with named subclasses
   }
 });
 
+Deno.test("Leonardo da Vinci biography cannot be confused with a same-named warship", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      throw new Error("stable biography must not depend on disambiguated warship article");
+    },
+    env: () => undefined,
+  };
+  const answer = await routeResearchQuery(
+    "¿Quién fue Leonardo da Vinci?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+  const content = answer.displayText?.toLowerCase() ?? "";
+  if (
+    answer.abstained ||
+    !/(renacimiento|artista)/.test(content) ||
+    !/(pintor|inventor)/.test(content) ||
+    /acorazado|primera guerra mundial/.test(content)
+  ) {
+    throw new Error("Leonardo da Vinci must resolve to the Renaissance figure");
+  }
+  if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
+    throw new Error("offline biography cannot impersonate verified citations");
+  }
+});
+
+Deno.test("waterproof footwear basic knowledge survives external provider throttling", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      throw new Error("stable footwear definition should remain available when rate-limited");
+    },
+    env: () => undefined,
+  };
+  for (
+    const query of [
+      "¿Qué es el calzado impermeable?",
+      "Describe el calzado impermeable sin asumir conocimientos previos, en pocas frases.",
+      "¿Para qué sirve o por qué importa el calzado impermeable? para un estudiante, y destaca una idea clave!",
+    ]
+  ) {
+    const answer = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    const content = answer.displayText?.toLowerCase() ?? "";
+    if (answer.abstained || !/agua|humedad/.test(content) || !/pie|calzado/.test(content)) {
+      throw new Error("waterproof footwear should be explained offline for: " + query);
+    }
+    if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
+      throw new Error("offline footwear definition must not invent sources");
+    }
+  }
+});
+
 Deno.test("tampered encyclopedia excerpts never become trusted stable knowledge", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
