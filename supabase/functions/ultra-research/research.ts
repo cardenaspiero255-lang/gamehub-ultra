@@ -5567,6 +5567,60 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
 
+  // Stable, offline company/product basics. This is an intentionally
+  // non-authoritative answer, never a claim of current pricing or stock.
+  // Normalize explicit company/product question forms to one brand identity.
+  const brandName = clean
+    .replace(
+      /^(?:que\\s+(?:tipo\\s+de\\s+(?:productos\\s+fabrica|empresa\\s+es)|productos\\s+(?:son\\s+conocidos\\s+de|fabrica)|fabrica|hace)|por\\s+que\\s+es\\s+conocida)\\s+/,
+      "",
+    )
+    .replace(/\\s+como\\s+empresa$/, "")
+    .trim();
+  const brandDescriptions: Record<string, string> = {
+    sony:
+      "Sony es una empresa japonesa de electrónica y entretenimiento. " +
+      "Sus productos conocidos incluyen PlayStation, televisores Bravia, " +
+      "cámaras Alpha y equipos de audio como auriculares.",
+    samsung:
+      "Samsung fabrica teléfonos inteligentes, televisores, " +
+      "electrodomésticos y componentes electrónicos.",
+    apple:
+      "Apple es una empresa tecnológica conocida por el iPhone, " +
+      "las computadoras Mac, el iPad y sus servicios digitales.",
+    xiaomi:
+      "Xiaomi es una empresa de tecnología que fabrica smartphones, " +
+      "dispositivos conectados y productos de electrónica de consumo.",
+    nintendo:
+      "Nintendo es una empresa de videojuegos que desarrolla juegos " +
+      "y fabrica consolas como Nintendo Switch.",
+    nvidia:
+      "NVIDIA diseña GPU para gráficos y procesamiento de IA, " +
+      "además de chips y plataformas de computación.",
+    amd:
+      "AMD desarrolla procesadores CPU y GPU para computadoras, " +
+      "servidores y gráficos.",
+    lg:
+      "LG produce televisores, electrodomésticos y otros equipos " +
+      "de electrónica para el hogar.",
+    jbl:
+      "JBL es una marca de audio conocida por altavoces, " +
+      "auriculares y sistemas de sonido.",
+    lenovo:
+      "Lenovo fabrica computadores y equipos de tecnología, " +
+      "como laptops, PC y estaciones de trabajo.",
+  };
+  const brandText = brandDescriptions[brandName];
+  if (brandText) {
+    return {
+      claimKey: "local-stable:brand-" + brandName,
+      value: normalize(brandText),
+      displayText: brandText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   if (clean === "ascensor" || clean === "ascensores" || clean === "elevador") {
     const displayText =
       "Un ascensor, también llamado elevador, es un sistema de transporte vertical " +
