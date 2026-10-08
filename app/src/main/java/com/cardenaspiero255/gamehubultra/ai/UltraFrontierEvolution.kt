@@ -1119,15 +1119,41 @@ class UltraFrontierEvolutionController(
         val subject = normalized.substring(0, predicate.range.first)
         val assertion = normalized.substring(predicate.range.first)
         val numericValue = Regex(
-            """(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\d])"""
+            """(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)*(?![\p{L}\d])"""
         )
         val values = numericValue.findAll(assertion)
-            .map { it.value.replace(',', '.') }.toList()
+            .map { canonicalResearchNumber(it.value) }.toList()
         if (values.isEmpty()) {
             return "research-answer:$normalized" to normalized
         }
         val skeleton = numericValue.replace(assertion, "valor-numerico")
         return "research-answer:$subject$skeleton" to values.joinToString("|")
+    }
+
+    /**
+     * Compare a number's value instead of its locale-specific spelling.
+     * Separators followed by three-digit groups represent thousands
+     * (1.299 = 1299); otherwise the final separator represents a decimal
+     * (800,0 = 800). This heuristic is scoped to extracted measurements,
+     * never the product/version numbers before the factual predicate.
+     */
+    private fun canonicalResearchNumber(raw: String): String {
+        val digits = raw.removePrefix("+").removePrefix("-")
+        val sign = if (raw.startsWith("-")) "-" else ""
+        val parts = digits.split('.', ',')
+        val thousandsOnly = parts.size > 1 &&
+            parts.first().length in 1..3 &&
+            parts.first().any { it != '0' } &&
+            parts.drop(1).all { it.length == 3 }
+        val decimalAt = if (thousandsOnly) -1
+            else digits.indexOfLast { it == '.' || it == ',' }
+        val whole = if (decimalAt == -1) digits else digits.substring(0, decimalAt)
+        val fraction = if (decimalAt == -1) "" else digits.substring(decimalAt + 1)
+        val canonical = sign + whole.filter(Char::isDigit) +
+            (if (fraction.isEmpty()) "" else "." + fraction)
+        return runCatching {
+            java.math.BigDecimal(canonical).stripTrailingZeros().toPlainString()
+        }.getOrElse { raw }
     }
 
     fun synthesizeResearch(
