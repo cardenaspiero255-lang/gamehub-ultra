@@ -33,6 +33,11 @@ function buildReport(args){
      steps:Array.isArray(s.steps)?s.steps.slice(0,5).map(x=>clean(x,260)):[],
      test:clean(s.test,300),
      caution:clean(s.caution,300),
+     humanFeedback:s.humanFeedback?{
+       decision:clean(s.humanFeedback.decision,10),
+       reason:clean(s.humanFeedback.reason,270),
+       status:'HUMAN_FEEDBACK_NOT_A_TRAINED_MODEL'
+     }:null,
      handoff:clean(s.handoff,1200),
      memory:Array.isArray(s.relatedEvidence)?s.relatedEvidence.slice(0,2).map(m=>({
        id:clean(m.id,90),type:clean(m.type,25),
