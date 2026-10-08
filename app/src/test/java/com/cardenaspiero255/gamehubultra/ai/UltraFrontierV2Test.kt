@@ -146,6 +146,57 @@ class UltraFrontierV2Test {
     }
 
     @Test
+    fun caseSensitiveUrlPathsRemainIndependentEvidence() {
+        val graph = UltraFrontierV2ClaimProvenanceGraph()
+        graph.record(
+            UltraFrontierV2ClaimEvidence(
+                claimId = "scientific finding",
+                normalizedValue = "confirmed",
+                sourceId = "HTTPS://EXAMPLE.ORG/Evidence/A",
+                providerId = "primary",
+                authoritative = true
+            )
+        )
+        graph.record(
+            UltraFrontierV2ClaimEvidence(
+                claimId = "scientific finding",
+                normalizedValue = "confirmed",
+                sourceId = "https://example.org/Evidence/a",
+                providerId = "primary",
+                authoritative = false
+            )
+        )
+        val snapshot = assertNotNull(
+            graph.snapshot("scientific finding", "confirmed")
+        )
+        assertEquals(2, snapshot.supportingSources)
+        assertEquals(2, snapshot.independentSources)
+        assertTrue(snapshot.hasAuthoritativeSupport)
+    }
+
+    @Test
+    fun identicalUrlPathsDeduplicateAcrossSchemeAndHostCase() {
+        val graph = UltraFrontierV2ClaimProvenanceGraph()
+        val evidence = UltraFrontierV2ClaimEvidence(
+            claimId = "report",
+            normalizedValue = "accepted",
+            sourceId = "HTTPS://EXAMPLE.COM/Report?Version=1",
+            providerId = "provider",
+            authoritative = true
+        )
+        graph.record(evidence)
+        graph.record(
+            evidence.copy(
+                sourceId = "https://example.com/Report?Version=1",
+                authoritative = false
+            )
+        )
+        val snapshot = assertNotNull(graph.snapshot("report", "accepted"))
+        assertEquals(1, snapshot.supportingSources)
+        assertTrue(snapshot.hasAuthoritativeSupport)
+    }
+
+    @Test
     fun claimProvenanceRetainsAuthorityWhenRepeatedObservationIsLessTrustworthy() {
         val graph = UltraFrontierV2ClaimProvenanceGraph()
         val trusted = UltraFrontierV2ClaimEvidence(
