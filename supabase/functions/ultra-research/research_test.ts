@@ -295,7 +295,8 @@ Deno.test("generic topic rejects narrower names even when search ranks them firs
   );
   if (answer.abstained || !answer.displayText?.includes("concepto teórico")) {
     throw new Error(
-      "generic definition must prefer exact concept over related event: " + JSON.stringify(answer),
+      "generic definition must prefer exact concept over related event: " +
+        JSON.stringify(answer),
     );
   }
 });
