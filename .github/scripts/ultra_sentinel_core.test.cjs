@@ -114,3 +114,9 @@ test('ignores the labeled benchmark fixture as executable production secrets',()
  const z=analyze([file('.github/scripts/ultra_sentinel_benchmark.cjs',['SENTRY_AUTH_TOKEN="abcdefghijklmnop"'])]);
  assert.ok(!rules(z).includes('POTENTIAL_HARDCODED_SECRET'));
 });
+
+test('empty changed-file list must mark audit incomplete',()=>{
+ const result=analyze([]);
+ assert.equal(result.coverage.partial,true);
+ assert.equal(result.verdict,'INCOMPLETE');
+});
