@@ -133,6 +133,7 @@ Deno.serve(async (req: Request) => {
       },
       context,
       kind,
+      verificationMode,
     );
 
     if (!quietRequestLogs) {
