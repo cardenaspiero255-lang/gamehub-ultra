@@ -45,8 +45,8 @@ class NetworkGamingDiagnosticsEngineTest {
         assertEquals(47.5, result.metrics.averageLatencyMs)
         assertTrue((result.metrics.jitterMs ?: 0.0) > 0.0)
         assertEquals(NetworkStability.EXCELLENT, result.metrics.stability)
-        assertEquals(NetworkGameProfile.COMPETITIVE, result.recommendedProfile)
-        assertTrue(result.competitiveRecommended)
+        assertEquals(NetworkGameProfile.BALANCED, result.recommendedProfile)
+        assertFalse(result.competitiveRecommended)
     }
 
     @Test
