@@ -5070,7 +5070,14 @@ function encyclopediaExcerptLooksTampered(extract: string): boolean {
   // Invisible formatting and embedded assistant instructions are not evidence.
   // Reject rather than silently stripping them and promoting source authority.
   const text = normalize(extract);
-  return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
+  // A bounded sequence permits "Ignore all of the previous instructions"
+  // and "Ignore the system instructions above" without requiring a rigid
+  // allowlist of modifier words.
+  const instructionDirective =
+    /\b(?:ignora|ignore|disregard|olvida|omite)\b(?:\s+[\p{L}-]+){0,8}\s+(?:instructions|instrucciones)\b/iu
+      .test(text);
+  return instructionDirective ||
+    /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
     /\b(?:ignora|ignore|disregard|olvida|omite)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous|prior)\b/iu.test(text) ||
     /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores|prior)\s+(?:instructions|instrucciones)\b/iu.test(text) ||
     /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|any|above|below|previous|prior|earlier|todas?|las?|anteriores|previas|superiores)\s+)*(?:instructions|instrucciones)\b(?:\s+(?:above|below|anteriores|previas))?/iu.test(text);
@@ -5091,9 +5098,13 @@ function candidateMatchesKnownMeaning(
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
   const candidateTitle = normalize(title)
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
-    // A canonical encyclopedia article may specify its topic in parentheses:
-    // "Mercurio (planeta)" is not a narrower named event than "Mercurio".
-    .replace(/\s*\([^)]*\)\s*$/, "")
+    // Only remove known canonical subject-type qualifiers. Parentheticals
+    // like "(evento de Berlín)" distinguish a different, narrower entity
+    // and must remain visible to the generic-definition rejection.
+    .replace(
+      /\s*\((?:lenguaje de programacion|planeta|elemento quimico|cuerpo celeste)\)\s*$/,
+      "",
+    )
     .trim();
   if (
     /^(?:que es|que son|define|explicame que es)\b/.test(
