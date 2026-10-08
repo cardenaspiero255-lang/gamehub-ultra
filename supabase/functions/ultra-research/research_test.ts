@@ -5521,9 +5521,7 @@ Deno.test(
           throw new Error("unexpected URL " + url);
         },
         env: (name) =>
-          name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE"
-            ? "1"
-            : undefined,
+          name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
         sleep: () => Promise.resolve(),
         random: () => 0,
       };
