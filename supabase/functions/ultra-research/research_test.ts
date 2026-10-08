@@ -201,6 +201,37 @@ Deno.test("generic survival horror and wardrobe questions are not confused with 
   }
 });
 
+Deno.test("planet definitions survive complete upstream throttling in paraphrased questions", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => jsonResponse({ error: "rate limited" }, 429),
+    env: () => undefined,
+  };
+  const prompts = [
+    "Dime lo esencial sobre un planeta en lenguaje cotidiano, sin inventar datos?",
+    "¿Qué es un planeta?",
+    "Explica qué es un planeta en pocas frases.",
+  ];
+  for (const query of prompts) {
+    const answer = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    const content = answer.displayText?.toLowerCase() ?? "";
+    if (
+      answer.abstained ||
+      !/planeta/.test(content) ||
+      !/(estrella|orbita|órbita)/.test(content)
+    ) {
+      throw new Error("offline planetary definition failed for: " + query);
+    }
+    if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
+      throw new Error("local planetary definitions must not claim verified sources");
+    }
+  }
+});
+
 Deno.test("common definitions and comparisons answer safely during upstream rate limits", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => jsonResponse({ error: "rate limited" }, 429),
