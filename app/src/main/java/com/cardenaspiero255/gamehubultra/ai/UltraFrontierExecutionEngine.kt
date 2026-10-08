@@ -637,22 +637,27 @@ class UltraFrontierExecutionEngine(
         val allocatedTasks = researchTasks.filter {
             allocation.containsKey(it.id)
         }
-        if (allocatedTasks.size < 2) {
-            return coordinator.answer(
-                request = attemptRequest,
-                localChat = localChat
-            )
-        }
-
-        val providerOffsets = linkedMapOf<String, Int>()
+        // Each attempt must explore a fresh provider partition, including
+        // a device-pressure fallback where only one worker can execute.
         val partitionStride = maxOf(
             plan.maxSourceBudget,
             totalBudget,
             1
         )
-        var nextProviderOffset =
+        val attemptProviderOffset =
             request.researchProviderOffset +
                 (attempt - 1) * partitionStride
+        if (allocatedTasks.size < 2) {
+            return coordinator.answer(
+                request = attemptRequest.copy(
+                    researchProviderOffset = attemptProviderOffset
+                ),
+                localChat = localChat
+            )
+        }
+
+        val providerOffsets = linkedMapOf<String, Int>()
+        var nextProviderOffset = attemptProviderOffset
         allocatedTasks.forEach { task ->
             providerOffsets[task.id] = nextProviderOffset
             nextProviderOffset += allocation.getValue(task.id)
