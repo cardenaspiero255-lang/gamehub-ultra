@@ -164,7 +164,9 @@ Deno.test("waterproof footwear basic knowledge survives external provider thrott
 Deno.test("generic survival horror and wardrobe questions are not confused with titles or metaphors", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
-      throw new Error("stable definitions should not need an ambiguous live article");
+      throw new Error(
+        "stable definitions should not need an ambiguous live article",
+      );
     },
     env: () => undefined,
   };
@@ -188,7 +190,9 @@ Deno.test("generic survival horror and wardrobe questions are not confused with 
       "GENERAL_KNOWLEDGE",
     );
     const content = answer.displayText ?? "";
-    if (answer.abstained || !expected.test(content) || forbidden.test(content)) {
+    if (
+      answer.abstained || !expected.test(content) || forbidden.test(content)
+    ) {
       throw new Error("ambiguous stable definition: " + query);
     }
     if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
