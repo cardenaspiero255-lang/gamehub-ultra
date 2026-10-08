@@ -113,4 +113,73 @@ class UltraFrontierDeepTaskGraphExecutionTest {
         UltraFrontierWorldStateRegistry.clear()
     }
 
+
+    @Test
+    fun frontierV2RetryReplansOntoFreshProviderPartitions() {
+        UltraFrontierWorldStateRegistry.clear()
+        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        val audit = UltraFrontierAuditTrail()
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                offsets += request.researchProviderOffset
+                return if (request.researchProviderOffset < 7) {
+                    UltraVerifiedResearchResult(
+                        message = "Evidencia insuficiente.",
+                        confidence = UltraAnswerConfidence.LOW,
+                        sources = emptyList(),
+                        independentSourceCount = 0,
+                        abstained = true,
+                        retryable = true,
+                        reasonCode = "V2_BRANCH_WEAK"
+                    )
+                } else {
+                    UltraVerifiedResearchResult(
+                        message = "Respuesta recuperada.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("source-" + request.researchProviderOffset),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val frontier = UltraFrontierOrchestrator(
+            policy = UltraFrontierPolicy(
+                verifiedSourceBudget = 6,
+                deepSourceBudget = 7,
+                deepResearchPassBudget = 2
+            ),
+            evolution = evolution
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = frontier,
+            auditTrail = audit
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos teléfonos actuales"
+            )
+        ) { null }
+
+        val observed = offsets.toList()
+        assertEquals(4, observed.size)
+        assertTrue(observed.take(2).all { it < 7 })
+        assertTrue(observed.drop(2).all { it >= 7 })
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+        assertTrue(
+            audit.snapshot().any {
+                it.event == UltraFrontierAuditEvent.REPLAN &&
+                    it.attempt == 2
+            }
+        )
+        UltraFrontierWorldStateRegistry.clear()
+    }
+
 }
