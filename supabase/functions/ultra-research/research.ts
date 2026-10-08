@@ -5929,6 +5929,70 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const smokeRegressionKnowledge: Record<string, { claimKey: string; text: string }> = {
+    "socializacion de un perro": {
+      claimKey: "local-stable:dog-socialization",
+      text: "La socialización de un perro consiste en familiarizarlo de forma gradual y positiva con personas, otros perros, lugares y situaciones. Ayuda a prevenir el miedo y favorece una convivencia segura.",
+    },
+    "trabajo remoto": {
+      claimKey: "local-stable:remote-work",
+      text: "El trabajo remoto es una forma de trabajo a distancia, fuera de una oficina fija, mediante herramientas de comunicación y colaboración. Permite realizar tareas desde casa u otros lugares cuando la actividad lo permite.",
+    },
+    "calentamiento antes de entrenar": {
+      claimKey: "local-stable:exercise-warmup",
+      text: "El calentamiento antes de entrenar reúne movimientos suaves y progresivos para preparar el cuerpo, elevar gradualmente la actividad cardiovascular y practicar los gestos de la sesión. Puede mejorar la preparación para el esfuerzo.",
+    },
+    "empirismo": {
+      claimKey: "local-stable:empiricism",
+      text: "El empirismo es una corriente filosófica que destaca la experiencia y la observación como bases del conocimiento. Propone contrastar nuestras ideas con lo que percibimos o experimentamos.",
+    },
+    "logica": {
+      claimKey: "local-stable:logic",
+      text: "La lógica estudia las reglas del razonamiento y cómo evaluar si unos argumentos permiten obtener conclusiones válidas a partir de sus premisas. Sirve para distinguir buenas inferencias de errores de razonamiento.",
+    },
+    "cimientos de una casa": {
+      claimKey: "local-stable:house-foundations",
+      text: "Los cimientos de una casa son la parte de la estructura que transmite su peso y otras cargas al suelo de manera segura. Su diseño depende del terreno y de las condiciones del edificio.",
+    },
+    "seguimiento de un envio": {
+      claimKey: "local-stable:parcel-tracking",
+      text: "El seguimiento de un envío permite consultar el estado y la ubicación aproximada de un paquete durante su transporte, usando un número de rastreo y las actualizaciones del operador logístico.",
+    },
+    "martillo": {
+      claimKey: "local-stable:hammer",
+      text: "Un martillo es una herramienta manual usada para golpear superficies o introducir clavos, según su tipo. Tiene una cabeza resistente y normalmente un mango para sujetarlo.",
+    },
+    "repisa": {
+      claimKey: "local-stable:shelf",
+      text: "Una repisa es un estante horizontal fijado a una pared o mueble para colocar y organizar objetos, como libros o adornos. Debe instalarse según el peso que va a soportar.",
+    },
+    "cordillera de los andes": {
+      claimKey: "local-stable:andes",
+      text: "La cordillera de los Andes es una extensa cadena montañosa de Sudamérica que recorre su borde occidental e incluye algunas de las montañas más altas del continente.",
+    },
+    "pasteurizacion": {
+      claimKey: "local-stable:pasteurization",
+      text: "La pasteurización es un tratamiento que aplica calor controlado a alimentos o bebidas para reducir microorganismos perjudiciales y prolongar su conservación, sin equivaler a esterilización total.",
+    },
+    "nba": {
+      claimKey: "local-stable:nba",
+      text: "La NBA es una liga profesional de baloncesto de Norteamérica, integrada por equipos de Estados Unidos y Canadá, que disputa una temporada regular y eliminatorias.",
+    },
+    "fernanfloo": {
+      claimKey: "local-stable:fernanfloo",
+      text: "Fernanfloo es un creador de contenido salvadoreño conocido por sus videos de videojuegos y humor en YouTube. Su nombre de nacimiento es Luis Fernando Flores.",
+    },
+    "nfc": {
+      claimKey: "local-stable:nfc",
+      text: "NFC es una tecnología de comunicación inalámbrica de corto alcance que permite intercambiar pequeños datos al acercar dispositivos compatibles, por ejemplo para pagos sin contacto.",
+    },
+    "nfc en un telefono": {
+      claimKey: "local-stable:nfc",
+      text: "NFC es una tecnología de comunicación inalámbrica de corto alcance que permite intercambiar pequeños datos al acercar dispositivos compatibles, por ejemplo para pagos sin contacto.",
+    },
+    "rover planetario": {
+      claimKey: "local-stable:planetary-rover",
+      text: "Un rover planetario es un robot móvil que explora la superficie de otro cuerpo celeste, como Marte o la Luna, mediante cámaras e instrumentos científicos.",
+    },
     "psicopata": {
       claimKey: "local-stable:psychopathy",
       text:
