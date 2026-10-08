@@ -32,6 +32,7 @@ class GameHubAiAdvisor(
         conversation: List<String>
     ): String? {
         UltraFrontierWorldStateRegistry.update(context)
+        sessionMemoryAnswerOrNull(message, context)?.let { return it }
         val modelAnswer = runCatching {
             modelAdapter
                 ?.takeIf { it.isAvailable() }
@@ -79,6 +80,21 @@ class GameHubAiAdvisor(
         return deterministicAdvice(question, context, memories)
     }
 
+    private fun sessionMemoryAnswerOrNull(
+        message: String,
+        context: GameHubAiContext
+    ): String? {
+        val provider = gameSessionHistory ?: return null
+        val history = runCatching { provider.invoke() }.getOrDefault(emptyList())
+        val game = context.selectedGamePackage
+            ?: history.maxByOrNull { it.endedAtMillis }?.packageName
+        return UltraSessionHistoryIntelligence.response(
+            query = message,
+            packageName = game,
+            history = history
+        )
+    }
+
     private fun recallMemorySignals(
         question: String,
         context: GameHubAiContext
@@ -114,19 +130,8 @@ class GameHubAiAdvisor(
         }.getOrNull()
         if (memoryCommandResponse != null) return memoryCommandResponse
 
-        // Gameplay memories are factual measurements; they are never sent
-        // through the free-form model as invented temperature claims.
-        if (gameSessionHistory != null) {
-            val history = runCatching { gameSessionHistory?.invoke().orEmpty() }
-                .getOrDefault(emptyList())
-            val relevantGame = context.selectedGamePackage
-                ?: history.maxByOrNull { it.endedAtMillis }?.packageName
-            UltraSessionHistoryIntelligence.response(
-                query = message,
-                packageName = relevantGame,
-                history = history
-            )?.let { return it }
-        }
+        // Factual gameplay memory wins over any generative answer.
+        sessionMemoryAnswerOrNull(message, context)?.let { return it }
 
         val visibleTexts = conversation
             .map { normalize(it.substringAfter(':').trim()) }
