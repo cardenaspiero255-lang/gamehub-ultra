@@ -1108,14 +1108,16 @@ class UltraFrontierEvolutionController(
         // Numeric model identifiers belong to the subject; numeric values
         // *after* the factual predicate belong to the assertion. Never
         // replace every number in a sentence indiscriminately.
-        val predicate = Regex(
+        val predicates = Regex(
             """\b(?:cuesta|costaba|vale|valia|tiene|tenia|mide|media|pesa|pesaba|comenzo|empezo|ocurrio|sucedio|termino|finalizo|fue|es|ser[aá]|costs|started|ended|happened|weighs|measures)\b"""
-        ).find(normalized)
-        if (predicate == null) {
-            // Without a reliable predicate boundary, do not invent a
-            // contradiction from unrelated numeric entities.
+        ).findAll(normalized).toList()
+        // More than one factual verb makes the subject/value boundary ambiguous:
+        // never fold model numbers into the measured value by guessing.
+        if (predicates.size != 1) {
             return "research-answer:$normalized" to normalized
         }
+        val predicate = predicates.single()
+
         val subject = normalized.substring(0, predicate.range.first)
         val assertion = normalized.substring(predicate.range.first)
         val numericValue = Regex(
