@@ -608,8 +608,6 @@ val supportsProviderPartitioning: Boolean
         report = ET.fromstring(
             '<report><package name="com/example"><sourcefile name="Foo.kt">'
             '<line nr="1" mi="0" ci="1"/>'
-            '<line nr="4" mi="0" ci="1"/>'
-            '<line nr="5" mi="0" ci="1"/>'
             '</sourcefile></package></report>'
         )
         source = """val covered = expensiveCall()
@@ -624,9 +622,38 @@ realCall()
             {"app/src/main/java/com/example/Foo.kt": set(range(1, 7))},
             {"app/src/main/java/com/example/Foo.kt": source},
         )
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
         self.assertEqual(
             stats.unmapped_files,
             ("app/src/main/java/com/example/Foo.kt:6",),
+        )
+
+    def test_multiline_getter_calls_are_not_hidden_as_structural(self) -> None:
+        report = ET.fromstring(
+            '<report><package name="com/example"><sourcefile name="Foo.kt">'
+            '<line nr="1" mi="0" ci="1"/>'
+            '</sourcefile></package></report>'
+        )
+        source = """val covered = expensiveCall()
+val score: Double
+    get() =
+        calculateScore()
+realCall()
+"""
+        stats = gate.calculate_patch_line_coverage(
+            report,
+            {"app/src/main/java/com/example/Foo.kt": set(range(1, 6))},
+            {"app/src/main/java/com/example/Foo.kt": source},
+        )
+        self.assertEqual(stats.executable, 1)
+        self.assertEqual(stats.covered, 1)
+        self.assertEqual(
+            stats.unmapped_files,
+            (
+                "app/src/main/java/com/example/Foo.kt:4",
+                "app/src/main/java/com/example/Foo.kt:5",
+            ),
         )
 
     def test_parenthesized_multiline_concat_suffix_is_structural(self) -> None:
