@@ -1589,7 +1589,8 @@ Deno.test("a complete new topic ignores previous knowledge context", async () =>
         },
       });
     },
-    env: () => undefined,
+    env: (name) =>
+      name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE" ? "1" : undefined,
   };
 
   const result = await routeResearchQuery(
@@ -2680,6 +2681,9 @@ Deno.test(
         throw new Error("unexpected URL " + url);
       },
       env: (name) => {
+        // This test exercises the live/model fallback path, not the
+        // intentionally available offline biology definition.
+        if (name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE") return "1";
         if (name === "XAI_API_KEY") return "xai-test-key";
         if (name === "ULTRA_GENERAL_MODEL_TIMEOUT_MS") return "250";
         return undefined;
@@ -3627,6 +3631,9 @@ Deno.test(
         throw new Error("unexpected URL " + url);
       },
       env: (name) => {
+        // This test exercises the live/model fallback path, not the
+        // intentionally available offline biology definition.
+        if (name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE") return "1";
         if (name === "TAVILY_API_KEY") return "tvly-test-key";
         if (name === "GEMINI_API_KEY") return "gemini-test-key";
         return undefined;
@@ -4185,6 +4192,9 @@ Deno.test(
         throw new Error("unexpected URL " + url);
       },
       env: (name) => {
+        // This test exercises the live/model fallback path, not the
+        // intentionally available offline biology definition.
+        if (name === "ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE") return "1";
         if (name === "TAVILY_API_KEY") return "tvly-test-key";
         if (name === "GEMINI_API_KEY") return "gemini-test-key";
         if (name === "ULTRA_FALLBACK_SEARCH_TIMEOUT_MS") return "500";
