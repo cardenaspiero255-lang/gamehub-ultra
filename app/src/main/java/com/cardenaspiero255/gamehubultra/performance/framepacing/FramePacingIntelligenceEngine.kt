@@ -379,9 +379,8 @@ class FramePacingIntelligenceEngine(
         val evidence = buildList {
             add(
                 "Refresco medido reciente: " +
-                    recentSlow.takeLast(5).joinToString { sample ->
-                        sample.refreshHz.toString() + " Hz"
-                    } + "."
+                    recentSlow.takeLast(5).joinToString { sample -> sample.refreshHz.toString() + " Hz" } +
+                    "."
             )
             if (fast.availability == FrameDataAvailability.AVAILABLE) {
                 add(
