@@ -561,7 +561,11 @@ class UltraFrontierExecutionEngine(
         val baseResearchTaskIds = plan.tasks
             .filter { it.specialist == UltraFrontierSpecialist.RESEARCH }
             .mapTo(linkedSetOf()) { it.id }
-        val replanned = if (attempt > 1 && baseResearchTaskIds.isNotEmpty()) {
+        val canExecuteBranchedResearch =
+            plan.lane == UltraFrontierLane.DEEP_RESEARCH &&
+                coordinator.supportsProviderPartitioning &&
+                baseResearchTaskIds.size >= 2
+        val replanned = if (attempt > 1 && canExecuteBranchedResearch) {
             v2Replanner.replan(
                 tasks = plan.tasks,
                 failedTaskIds = baseResearchTaskIds,
@@ -575,16 +579,6 @@ class UltraFrontierExecutionEngine(
                 replacedTaskIds = emptySet()
             )
         }
-        if (replanned.changed) {
-            auditTrail.record(
-                correlationId = request.correlationId,
-                lane = plan.lane,
-                event = UltraFrontierAuditEvent.REPLAN,
-                attempt = attempt,
-                reasonCode = "FRONTIER_V2_RESEARCH_RECOVERY"
-            )
-        }
-
         val v2Request = UltraFrontierRequest(
             message = request.originalText,
             query = request,
@@ -702,6 +696,19 @@ class UltraFrontierExecutionEngine(
                         else attemptRequest.researchProviderBudget
                 ),
                 localChat = localChat
+            )
+        }
+
+        // Record an actual V2 recovery only after the execution path has
+        // accepted its replanned tasks and a branched allocation. A retry
+        // delegated to coordinator.answer must not claim task-graph recovery.
+        if (replanned.changed) {
+            auditTrail.record(
+                correlationId = request.correlationId,
+                lane = plan.lane,
+                event = UltraFrontierAuditEvent.REPLAN,
+                attempt = attempt,
+                reasonCode = "FRONTIER_V2_RESEARCH_RECOVERY"
             )
         }
 
