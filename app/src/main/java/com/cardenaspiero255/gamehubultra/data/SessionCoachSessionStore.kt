@@ -315,6 +315,40 @@ class SessionCoachSessionStore(
             .toList()
             .takeLast(limit.coerceIn(1, MAX_HISTORY))
 
+    /**
+     * A notification proposes settings only once per game. Showing a prompt
+     * never applies a profile: a separate explicit action must confirm it.
+     */
+    @Synchronized
+    fun takeNightProfileProposalToShow(packageName: String): Boolean {
+        val clean = packageName.trim()
+        if (clean.isBlank()) return false
+        val key = nightProposalKey(clean)
+        if (preferences.contains(key)) return false
+        preferences.edit().putString(key, "pending").apply()
+        return true
+    }
+
+    @Synchronized
+    fun isNightProfileProposalPending(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        return preferences.getString(nightProposalKey(packageName.trim()), null) == "pending"
+    }
+
+    @Synchronized
+    fun markNightProfileProposalApplied(packageName: String): Boolean {
+        val clean = packageName.trim()
+        if (!isNightProfileProposalPending(clean)) return false
+        preferences.edit()
+            .putString(nightProposalKey(clean), "applied")
+            .apply()
+        return true
+    }
+
+    private fun nightProposalKey(packageName: String): String =
+        "night_proposal_" + Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(packageName.toByteArray(StandardCharsets.UTF_8))
+
     private fun readSession(prefix: String): SessionCoachStoredSession? {
         val id = preferences.getString(prefix + KEY_ID, null)?.trim().orEmpty()
         val packageName = preferences.getString(prefix + KEY_PACKAGE, null)?.trim().orEmpty()
