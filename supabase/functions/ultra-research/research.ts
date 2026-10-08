@@ -6178,7 +6178,11 @@ async function generalKnowledgeEvidence(
   const terminology = stableTerminologyEvidence(query);
   if (terminology) return terminology;
 
-  const localStableKnowledge = dependentFollowUp
+  // Deterministic integration tests can exercise the live encyclopedia path
+  // even for entries already covered by the offline reference corpus.
+  const bypassLocalForTesting =
+    deps.env("ULTRA_TEST_BYPASS_LOCAL_STABLE_KNOWLEDGE") === "1";
+  const localStableKnowledge = dependentFollowUp || bypassLocalForTesting
     ? null
     : stableCoreKnowledgeEvidence(topic);
   if (localStableKnowledge) return localStableKnowledge;
