@@ -161,6 +161,42 @@ Deno.test("waterproof footwear basic knowledge survives external provider thrott
   }
 });
 
+Deno.test("generic survival horror and wardrobe questions are not confused with titles or metaphors", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => {
+      throw new Error("stable definitions should not need an ambiguous live article");
+    },
+    env: () => undefined,
+  };
+  const cases: Array<[string, RegExp, RegExp]> = [
+    [
+      "¿Qué es un survival horror?",
+      /terror|supervivencia/i,
+      /bring me the horizon|ep musical/i,
+    ],
+    [
+      "¿Para qué sirve un armario?",
+      /ropa|guardar|almacenar/i,
+      /psicoanal[ií]tica|met[aá]fora/i,
+    ],
+  ];
+  for (const [query, expected, forbidden] of cases) {
+    const answer = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    const content = answer.displayText ?? "";
+    if (answer.abstained || !expected.test(content) || forbidden.test(content)) {
+      throw new Error("ambiguous stable definition: " + query);
+    }
+    if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
+      throw new Error("unsourced basic definitions must remain unverified");
+    }
+  }
+});
+
 Deno.test("tampered encyclopedia excerpts never become trusted stable knowledge", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
