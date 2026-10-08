@@ -1,0 +1,76 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {analyze,parsePatch,markdown,VERSION}=require('./ultra_sentinel_core.cjs');
+const p=(xs)=>'@@ -1,1 +1,'+xs.length+' @@\n'+xs.map(x=>'+'+x).join('\n');
+const file=(path,lines)=>({filename:path,patch:p(lines),changes:lines.length});
+const app='app/src/main/java/com/cardenaspiero255/gamehubultra/';
+function rules(out){return out.findings.map(f=>f.rule)}
+test('added line numbers follow GitHub diff ranges',()=>{
+ const z=parsePatch('@@ -7,2 +43,3 @@\n old\n+GlobalScope.launch { }\n old\n+runBlocking { }\n');
+ assert.deepEqual(z.added.map(x=>x.line),[44,46]);
+});
+test('no external API/model dependency for independent engine',()=>{
+ const z=analyze([file(app+'Engine.kt',['fun safe() = 42'])],{sha:'a'.repeat(40)});
+ assert.equal(z.engine,'Ultra Sentinel Core');
+ assert.equal(z.sha,'a'.repeat(40));assert.equal(VERSION,'1.0.0');
+});
+test('recognizes unsupervised Android coroutine',()=>{
+ assert.ok(rules(analyze([file(app+'Service.kt',['GlobalScope.launch { work() }'])])).includes('UNSCOPED_COROUTINE'));
+});
+test('recognizes main thread blocking candidate',()=>{
+ assert.ok(rules(analyze([file(app+'MainActivity.kt',['Thread.sleep(1000)'])])).includes('BLOCKING_ANDROID_CALL'));
+});
+test('detects possible onError synchronous recursion',()=>{
+ const result=analyze([file(app+'voice/Recognizer.kt',['override fun onError(error: Int) {','startListening(intent)','}'])]);
+ assert.ok(rules(result).includes('SPEECH_REENTRANT_RETRY'));
+ assert.equal(result.findings.find(x=>x.rule==='SPEECH_REENTRANT_RETRY').status,'NEEDS_VERIFICATION');
+});
+test('does not flag posted speech restart',()=>{
+ const result=analyze([file(app+'voice/Recognizer.kt',['override fun onError(error: Int) {','mainHandler.post { startListening(intent) }','}'])]);
+ assert.ok(!rules(result).includes('SPEECH_REENTRANT_RETRY'));
+});
+test('detects recursive self-call candidate',()=>{
+ const result=analyze([file(app+'X.kt',['fun recursive() {','recursive()','}'])]);
+ assert.ok(rules(result).includes('UNBOUNDED_RECURSION'));
+});
+test('does not flag guarded bounded recursion',()=>{
+ const result=analyze([file(app+'X.kt',['fun recursive(depth: Int) {','if (depth > 100) return','recursive(depth + 1)','}'])]);
+ assert.ok(!rules(result).includes('UNBOUNDED_RECURSION'));
+});
+test('detects dangerous privileged PR checkout',()=>{
+ const result=analyze([file('.github/workflows/danger.yml',['pull_request_target:','  ref: ${{ github.event.pull_request.head.sha }}'])]);
+ assert.ok(rules(result).includes('PRIVILEGED_UNTRUSTED_CHECKOUT'));
+ assert.equal(result.findings[0].severity,'BLOCKER');
+});
+test('does not leak a credential in JSON or Markdown',()=>{
+ const secret='abcdefghijklmnop';
+ const result=analyze([file(app+'X.kt',['SENTRY_AUTH_TOKEN="'+secret+'"'])]);
+ assert.ok(rules(result).includes('POTENTIAL_HARDCODED_SECRET'));
+ assert.ok(!JSON.stringify(result).includes(secret));
+ assert.ok(!markdown(result).includes(secret));
+});
+test('comments are not treated as executable code',()=>{
+ const result=analyze([file(app+'X.kt',['// GlobalScope.launch { }'])]);
+ assert.ok(!rules(result).includes('UNSCOPED_COROUTINE'));
+});
+test('documentation-only changes do not trigger Android rules',()=>{
+ const result=analyze([file('README.md',['GlobalScope.launch { }'])]);
+ assert.equal(result.findings.length,0);
+});
+test('missing PR patch fails open-data coverage',()=>{
+ const result=analyze([{filename:app+'X.kt',changes:23}]);
+ assert.equal(result.coverage.partial,true);assert.equal(result.verdict,'INCOMPLETE');
+});
+test('test gap is a low-confidence finding, not a confirmed bug',()=>{
+ const result=analyze([file(app+'Example.kt',['fun foo() = 3'])]);
+ assert.equal(result.findings.find(x=>x.rule==='REGRESSION_TEST_COVERAGE').confidence,'low');
+});
+test('modified tests avoid no-tests signal',()=>{
+ const result=analyze([file(app+'Example.kt',['fun foo() = 3']),file('app/src/test/java/ExampleTest.kt',['testFoo()'])]);
+ assert.ok(!rules(result).includes('REGRESSION_TEST_COVERAGE'));
+});
+test('output honestly states a clean-looking patch is not certified',()=>{
+ const text=markdown(analyze([file('README.md',['Hello'])]));
+ assert.match(text,/NO certifica/);
+});
