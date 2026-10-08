@@ -1087,10 +1087,95 @@ class UltraFrontierEvolutionController(
             }
     }
 
+    /**
+     * A different candidate answer is not automatically a disagreement.
+     * A single measurable value can be compared only when the remaining
+     * normalized assertion, including its subject and unit, is identical.
+     * Multi-value/narrative answers stay independent rather than forcing
+     * a semantic decision without a structured claim.
+     */
+    private fun researchClaimIdentity(message: String): Pair<String, String> {
+        val normalized = java.text.Normalizer.normalize(
+            message,
+            java.text.Normalizer.Form.NFD
+        )
+            .replace(Regex("""\p{M}+"""), "")
+            .trim()
+            .lowercase(Locale.ROOT)
+            .replace(Regex("""\s+"""), " ")
+            .trimEnd('.', '!', '?')
+
+        // Numeric model identifiers belong to the subject; numeric values
+        // *after* the factual predicate belong to the assertion. Never
+        // replace every number in a sentence indiscriminately.
+        val predicate = Regex(
+            """\b(?:cuesta|costaba|vale|valia|tiene|tenia|mide|media|pesa|pesaba|comenzo|empezo|ocurrio|sucedio|termino|finalizo|fue|es|ser[aá]|costs|started|ended|happened|weighs|measures)\b"""
+        ).find(normalized)
+        if (predicate == null) {
+            // Without a reliable predicate boundary, do not invent a
+            // contradiction from unrelated numeric entities.
+            return "research-answer:$normalized" to normalized
+        }
+        val subject = normalized.substring(0, predicate.range.first)
+        val assertion = normalized.substring(predicate.range.first)
+        val numericValue = Regex(
+            """(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\d])"""
+        )
+        val values = numericValue.findAll(assertion)
+            .map { it.value.replace(',', '.') }.toList()
+        if (values.isEmpty()) {
+            return "research-answer:$normalized" to normalized
+        }
+        val skeleton = numericValue.replace(assertion, "valor-numerico")
+        return "research-answer:$subject$skeleton" to values.joinToString("|")
+    }
+
     fun synthesizeResearch(
         candidates: List<Pair<UltraQueryExecutionAnswer, Long>>
     ): UltraQueryExecutionAnswer? {
         val selected = selectBestResearch(candidates) ?: return null
+        // Provenance must be evaluated at synthesis time, not merely held in
+        // an unused utility class. Keep the graph scoped to this request so
+        // concurrent sessions never leak evidence into each other.
+        val provenanceGraph = UltraFrontierV2ClaimProvenanceGraph()
+        candidates.forEachIndexed { index, (candidate, _) ->
+            if (candidate.verified && !candidate.abstained) {
+                candidate.sources
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .forEach { source ->
+                        val (claimId, comparedValue) =
+                            researchClaimIdentity(candidate.message)
+                        provenanceGraph.record(
+                            UltraFrontierV2ClaimEvidence(
+                                claimId = claimId,
+                                normalizedValue = comparedValue,
+                                sourceId = source,
+                                providerId = "research-branch-$index",
+                                authoritative = true
+                            )
+                        )
+                    }
+            }
+        }
+        val (selectedClaimId, selectedValue) =
+            researchClaimIdentity(selected.message)
+        val provenance = provenanceGraph.snapshot(
+            claimId = selectedClaimId,
+            preferredValue = selectedValue
+        )
+        if (selected.verified && provenance?.hasConflict == true) {
+            return selected.copy(
+                message = "Encontré afirmaciones contradictorias entre fuentes " +
+                    "verificadas. Necesito corroboración adicional.",
+                verified = false,
+                abstained = true,
+                retryable = true,
+                reasonCode = "FRONTIER_CLAIM_PROVENANCE_CONFLICT",
+                stage = "frontier-synthesizer"
+            )
+        }
         val selectedText = selected.message
             .trim()
             .lowercase(Locale.ROOT)

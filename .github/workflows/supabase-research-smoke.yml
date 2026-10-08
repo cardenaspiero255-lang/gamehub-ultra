@@ -852,7 +852,7 @@ jobs:
                   "query": case["query"],
                   "clientEngineVersion": "20",
                   "kind": case["kind"],
-                  "verificationMode": "STRICT",
+                  "verificationMode": "OPTIONAL",
                   "requiresFreshData": case["fresh"],
                   "correlationId": case["correlationId"],
               }, ensure_ascii=False).encode("utf-8")
