@@ -52,7 +52,9 @@ Deno.test("healthy sourced evidence outranks the offline stable corpus", async (
     result.authoritative !== true ||
     !result.sourceId?.includes("wikipedia.org")
   ) {
-    throw new Error("Available reputable live evidence must outrank local fallback");
+    throw new Error(
+      "Available reputable live evidence must outrank local fallback",
+    );
   }
 });
 
