@@ -51,6 +51,15 @@ data class LocalAiActionCandidate(
     val argument: String? = null
 )
 
+/**
+ * Model output is data, never permission to execute anything.
+ * Targets are checked against the original user transcript.
+ */
+data class LocalVoiceIntentCandidate(
+    val command: String,
+    val argument: String? = null
+)
+
 interface LocalAiModelAdapter : AutoCloseable {
     fun isAvailable(): Boolean
 
@@ -58,6 +67,9 @@ interface LocalAiModelAdapter : AutoCloseable {
         question: String,
         context: GameHubAiContext
     ): LocalAiActionCandidate?
+
+    /** Optional local language-to-intent classification. */
+    fun interpretVoiceIntent(transcript: String): LocalVoiceIntentCandidate? = null
 
     /** Optional free-form local conversation. */
     fun chat(
