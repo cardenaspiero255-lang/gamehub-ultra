@@ -53,6 +53,7 @@ jobs:
             const {analyze, markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const {buildGraph} = require(path.resolve(".github/scripts/ultra_sentinel_causal.cjs"));
+            const {annotate} = require(path.resolve(".github/scripts/ultra_sentinel_feedback.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -90,6 +91,8 @@ jobs:
               }catch(error){core.warning("Historical lookup skipped for "+file+": "+(error.status||"unavailable"));}
             }
             const causalGraph=buildGraph({headSha:pr.head.sha,findings:evidence.findings,history});
+            const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
+            annotate(evidence,old,{pr:n,sha:pr.head.sha});
             const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
             const body = markdown(evidence).slice(0,33000) + "\n\n" + serialize(report);
             if (body.length > 64000) {
@@ -99,7 +102,6 @@ jobs:
             if (after.head.sha !== pr.head.sha) {
               core.setFailed("Head SHA changed; refusing to publish stale report"); return;
             }
-            const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
             const existing = old.find(c => c.user?.login === "github-actions[bot]" && (c.body||"").startsWith("<!-- ultra-sentinel-core -->"));
             if (existing) {
               await github.rest.issues.updateComment({owner,repo,comment_id:existing.id,body});
