@@ -45,3 +45,16 @@ test('findings are bounded in reports',()=>{
 test('requires valid report shape',()=>{
  assert.throws(()=>buildReport({pr:0,sha,analysis:sample().analysis}));
 });
+
+test('never attaches a solution for a different rule or file',()=>{
+ const x=sample();
+ x.analysis.remediations.suggestions[0].rule='UNSCOPED_COROUTINE';
+ const f=buildReport(x).findings[0];
+ assert.equal(f.repair,null);
+});
+test('signals machine-report truncation separately from diff completeness',()=>{
+ const x=sample();x.analysis.findings=Array(13).fill(x.analysis.findings[0]);
+ const out=buildReport(x);
+ assert.equal(out.reportTruncated,true);
+ assert.equal(out.partial,false);
+});
