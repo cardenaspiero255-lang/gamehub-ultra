@@ -5503,6 +5503,21 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "leonardo da vinci": {
+      claim: "local-stable:leonardo-da-vinci",
+      text:
+        "Leonardo da Vinci fue un artista, pintor, inventor e investigador italiano " +
+        "del Renacimiento. Es conocido por obras como la Mona Lisa y La última cena " +
+        "y por sus estudios de anatomía, ingeniería y naturaleza.",
+    },
+    "calzado impermeable": {
+      claim: "local-stable:waterproof-footwear",
+      text:
+        "El calzado impermeable está diseñado para dificultar que el agua entre " +
+        "en los zapatos o botas y mantener los pies secos durante la lluvia o " +
+        "al caminar por lugares húmedos. Sus materiales y costuras ayudan a " +
+        "evitar la entrada de agua, aunque la protección depende del modelo.",
+    },
     "lapiz": {
       claim: "local-stable:pencil",
       text:
