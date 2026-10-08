@@ -201,6 +201,36 @@ Deno.test("generic survival horror and wardrobe questions are not confused with 
   }
 });
 
+Deno.test("stable creator and aviation definitions survive upstream rate limiting", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => jsonResponse({ error: "rate limited" }, 429),
+    env: () => undefined,
+  };
+  const cases: Array<[string, RegExp]> = [
+    ["¿Quién es AuronPlay?", /creador.*youtube|youtube.*stream/i],
+    [
+      "¿Para qué sirve o por qué importa un motor turbofán? en lenguaje cotidiano, y menciona su función principal!",
+      /motor.*avi[oó]n|motor.*empuje|avi[oó]n.*empuje/i,
+    ],
+  ];
+  for (const [query, expected] of cases) {
+    const answer = await routeResearchQuery(
+      query,
+      deps,
+      "",
+      "GENERAL_KNOWLEDGE",
+    );
+    if (answer.abstained || !expected.test(answer.displayText ?? "")) {
+      throw new Error("failed stable offline concept: " + query);
+    }
+    if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
+      throw new Error(
+        "offline creator/aviation definitions must not claim verified sources",
+      );
+    }
+  }
+});
+
 Deno.test("planet definitions survive complete upstream throttling in paraphrased questions", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => jsonResponse({ error: "rate limited" }, 429),
