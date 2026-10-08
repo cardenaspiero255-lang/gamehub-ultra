@@ -60,4 +60,55 @@ class UltraFrontierDeepTaskGraphExecutionTest {
         assertTrue(answer.verified)
         assertEquals("Candidato A", answer.message)
     }
+
+    @Test
+    fun frontierV2DeepResearchNeverOverspendsPlannedSourceBudget() {
+        val partitions = Collections.synchronizedList(
+            mutableListOf<Pair<Int, Int>>()
+        )
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                val budget = request.researchProviderBudget ?: 0
+                partitions += request.researchProviderOffset to budget
+                return UltraVerifiedResearchResult(
+                    message = "Mismo candidato",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-" + request.researchProviderOffset),
+                    independentSourceCount = 2,
+                    abstained = false
+                )
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val frontier = UltraFrontierOrchestrator(
+            policy = UltraFrontierPolicy(
+                verifiedSourceBudget = 6,
+                deepSourceBudget = 7
+            ),
+            evolution = evolution
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = frontier
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos teléfonos actuales"
+            )
+        ) { null }
+
+        val firstAttempt = partitions
+            .sortedBy { it.first }
+            .take(2)
+
+        assertEquals(2, firstAttempt.size)
+        assertEquals(7, firstAttempt.sumOf { it.second })
+        assertTrue(firstAttempt[1].first >= firstAttempt[0].first + firstAttempt[0].second)
+        assertFalse(answer.abstained)
+    }
+
 }
