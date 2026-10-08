@@ -5108,6 +5108,18 @@ function candidateMatchesKnownMeaning(
   }
   const candidate = normalize(title + " " + extract);
 
+  // The encyclopedia may contain films, works and brands sharing the name
+  // of a scientific concept. Do not treat a homonymous documentary as
+  // corroboration of the biological process.
+  if (
+    /\bfotosintesis\b/.test(cleanQuery) &&
+    !/\b(?:plantas?|algas?|clorofila|luz|energia solar|dioxido de carbono|carbono)\b/.test(
+      normalize(extract),
+    )
+  ) {
+    return false;
+  }
+
   const genericBearIntent =
     /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
     !/\b(?:yogui|yogi|personaje)\b/.test(cleanQuery);
@@ -5526,6 +5538,13 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "fotosintesis": {
+      claim: "local-stable:photosynthesis",
+      text:
+        "La fotosíntesis es el proceso por el cual las plantas, las algas " +
+        "y algunas bacterias usan la luz para convertir agua y dióxido " +
+        "de carbono en materia orgánica, liberando oxígeno en muchos casos.",
+    },
     "auronplay": {
       claim: "local-stable:auronplay",
       text:
