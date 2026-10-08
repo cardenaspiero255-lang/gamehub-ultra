@@ -404,8 +404,14 @@ Deno.test("stable concepts from smoke tests survive provider throttling without 
       "Describe una entrevista de trabajo para alguien que empieza, y menciona su función principal.",
       /entrevista.*(?:selecci[oó]n|empleo)/i,
     ],
-    ["¿Qué es una GPU?", /(?:unidad.*procesamiento.*gr[aá]fico|procesador.*gr[aá]fic)/i],
-    ["¿Qué es una emulsión en cocina?", /mezcla.*(?:l[ií]quidos|aceite)/i],
+    [
+      "¿Qué es una GPU?",
+      /(?:unidad.*procesamiento.*gr[aá]fico|procesador.*gr[aá]fic)/i,
+    ],
+    [
+      "¿Qué es una emulsión en cocina?",
+      /mezcla.*(?:l[ií]quidos|aceite)/i,
+    ],
     ["¿Cuándo comenzó la Revolución Francesa?", /1789/],
     ["¿Para qué sirve un martillo?", /golpear.*clavos/i],
     ["¿Qué es una repisa?", /estante.*objetos/i],
