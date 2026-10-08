@@ -5072,7 +5072,8 @@ function encyclopediaExcerptLooksTampered(extract: string): boolean {
   const text = normalize(extract);
   return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
     /\b(?:ignora|ignore|disregard|olvida|omite)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous|prior)\b/iu.test(text) ||
-    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores|prior)\s+(?:instructions|instrucciones)\b/iu.test(text);
+    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores|prior)\s+(?:instructions|instrucciones)\b/iu.test(text) ||
+    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|todas|las)\s+)*(?:instructions|instrucciones)\s+(?:above|below|de arriba|anteriores|previas)\b/iu.test(text);
 }
 
 function candidateMatchesKnownMeaning(
@@ -6192,7 +6193,8 @@ async function generalKnowledgeEvidence(
   if (!topic) return abstain("Necesito una pregunta concreta para investigarla.");
 
   const terminology = stableTerminologyEvidence(query);
-  if (terminology) return terminology;
+  // REQUIRED cannot present an unsourced terminology explanation as verified.
+  if (terminology && !preferLiveSources) return terminology;
 
   // Deterministic integration tests can exercise the live encyclopedia path
   // even for entries already covered by the offline reference corpus.
