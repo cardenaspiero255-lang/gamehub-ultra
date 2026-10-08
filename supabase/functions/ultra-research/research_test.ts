@@ -488,12 +488,8 @@ Deno.test("generic topic rejects narrower names even when search ranks them firs
 Deno.test(
   "HDMI has a useful offline explanation during upstream rate limits",
   async () => {
-    for (
-      const query of [
-        "¿Para qué sirve HDMI?",
-        "¿Qué es HDMI?",
-      ]
-    ) {
+    const queries = ["¿Para qué sirve HDMI?", "¿Qué es HDMI?"];
+    for (const query of queries) {
       const result = await routeResearchQuery(
         query,
         {
