@@ -45,6 +45,34 @@ class UltraFrontierEvolutionTest {
     }
 
     @Test
+    fun synthesisDoesNotConfuseDifferentModelNumbersWhenSubjectHasAnExtraCopula() {
+        val candidates = listOf(
+            UltraQueryExecutionAnswer(
+                message = "El precio que es oficial del iPhone 15 cuesta 800 euros.",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("source-a", "source-b"),
+                independentSourceCount = 2,
+                abstained = false
+            ) to 10L,
+            UltraQueryExecutionAnswer(
+                message = "El precio que es oficial del iPhone 16 cuesta 900 euros.",
+                verified = true,
+                confidence = UltraAnswerConfidence.MEDIUM,
+                sources = listOf("source-c"),
+                independentSourceCount = 1,
+                abstained = false
+            ) to 15L
+        )
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(candidates)
+        )
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+        assertEquals("El precio que es oficial del iPhone 15 cuesta 800 euros.", answer.message)
+    }
+
+    @Test
     fun synthesisRejectsIncompatibleNumericValuesOfTheSameClaim() {
         val answer = assertNotNull(
             UltraFrontierEvolutionController().synthesizeResearch(
