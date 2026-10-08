@@ -220,10 +220,10 @@ class UltraVerifiedResearchEngine(
 
     override val supportsProviderPartitioning: Boolean = true
 
+    // Offsets refer to the configured, stable provider slots, not the
+    // temporary set of healthy providers. Quarantine cannot renumber slots.
     override val providerPartitionCapacity: Int?
-        get() = providers.count {
-            providerHealth.isAvailable(it.id, nowMillis())
-        }.takeIf { it > 0 }
+        get() = providers.size.takeIf { it > 0 }
 
     private data class ProviderAttempt(
         val index: Int,
@@ -259,27 +259,14 @@ class UltraVerifiedResearchEngine(
         }
 
         val domain = UltraFrontierDomainClassifier.classify(request)
-        val healthyProviders = providerRanker.rank(
-            providers = providers.filter { provider ->
-                providerHealth.isAvailable(
-                    providerId = provider.id,
-                    nowMillis = nowMillis()
-                )
-            },
-            domain = domain
-        )
-        if (healthyProviders.isEmpty()) {
-            return abstention(
-                timedOut = false,
-                fallbackUsed = false,
-                reasonCode = "PROVIDERS_COOLDOWN",
-                retryable = false
-            )
-        }
-
-        val partitionedProviders = healthyProviders
-            .drop(request.researchProviderOffset)
-        if (partitionedProviders.isEmpty()) {
+        // Select immutable identity slots BEFORE applying health and ranking.
+        // Otherwise a completed branch can demote/quarantine a provider and
+        // cause a concurrent offset-based branch to retry the same provider.
+        val remainingSlots = providers.drop(request.researchProviderOffset)
+        val selectedSlots = request.researchProviderBudget?.let { budget ->
+            remainingSlots.take(budget)
+        } ?: remainingSlots
+        if (selectedSlots.isEmpty()) {
             return abstention(
                 timedOut = false,
                 fallbackUsed = false,
@@ -288,10 +275,24 @@ class UltraVerifiedResearchEngine(
             )
         }
 
-        val providerBudget = request.researchProviderBudget
-            ?.coerceAtMost(partitionedProviders.size)
-            ?: partitionedProviders.size
-        val activeProviders = partitionedProviders.take(providerBudget)
+        val healthySlots = selectedSlots.filter { provider ->
+            providerHealth.isAvailable(
+                providerId = provider.id,
+                nowMillis = nowMillis()
+            )
+        }
+        if (healthySlots.isEmpty()) {
+            return abstention(
+                timedOut = false,
+                fallbackUsed = false,
+                reasonCode = "PROVIDERS_COOLDOWN",
+                retryable = false
+            )
+        }
+        val activeProviders = providerRanker.rank(
+            providers = healthySlots,
+            domain = domain
+        )
         val requestExecutor = Executors.newFixedThreadPool(
             activeProviders.size.coerceIn(1, 4)
         )
