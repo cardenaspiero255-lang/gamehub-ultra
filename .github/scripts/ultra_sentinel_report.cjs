@@ -51,6 +51,13 @@ function buildReport(args){
    returned:Number(analysis.coverage?.returned)||0,analyzed:Number(analysis.coverage?.analyzed)||0
   },
   count:Number(analysis.findings.length)||0,provided:risks.length,reportTruncated:analysis.findings.length>risks.length,findings:risks,
+  causalCandidates:(args?.causalGraph?.candidates||[]).slice(0,3).map(group=>({
+   finding:clean(group.finding,300),
+   commits:(group.historyCandidates||[]).slice(0,3).map(c=>({
+    sha:clean(c.sha,40),summary:clean(c.summary,140),rank:Number(c.rank)||1,
+    evidence:'same_file_history',causality:'NOT_ESTABLISHED',url:clean(c.url,220)
+   }))
+  })),
   limitations:[
    'Diff-only heuristics: no proof of correctness or confirmed bug.',
    'Remediation templates require source-context inspection, RED/GREEN tests and review.',
