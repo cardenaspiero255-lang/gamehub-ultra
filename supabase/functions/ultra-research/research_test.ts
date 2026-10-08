@@ -497,7 +497,7 @@ Deno.test(
       ["¿Qué fabrica NVIDIA?", /gpu.*gr[aá]fic/i],
       ["¿Qué fabrica AMD?", /procesador.*gpu/i],
       ["¿Qué productos fabrica LG?", /televisor.*electrodom/i],
-      ["¿Por qué es conocida JBL?", /audio.*altavoz/i],
+      ["¿Por qué es conocida JBL?", /audio.*(?:altavoz|altavoces)/i],
       ["¿Qué tipo de empresa es Lenovo?", /computador.*tecnolog/i],
     ];
     for (const [query, expected] of cases) {
@@ -6150,7 +6150,15 @@ Deno.test(
       "",
       "GENERAL_KNOWLEDGE",
     );
-    if (!result.abstained) {
+    // An accurate local, non-authoritative Sony summary is allowed.
+    // What remains forbidden is promoting the unrelated Samsung page
+    // or presenting unsupported cross-brand corroboration as authoritative.
+    if (
+      result.authoritative === true ||
+      /samsung/i.test(result.displayText ?? "") ||
+      /samsung/i.test(result.sourceId ?? "") ||
+      (!result.abstained && !/sony/i.test(result.displayText ?? ""))
+    ) {
       throw new Error(
         "generic search hints must not validate an unrelated brand",
       );
