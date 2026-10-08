@@ -932,7 +932,9 @@ Deno.test(
       !result.displayText?.includes("organización interna") ||
       !result.sourceId?.includes("wikipedia.org")
     ) {
-      throw new Error("Benign technical instructions prose must not be rejected");
+      throw new Error(
+        "Benign technical instructions prose must not be rejected",
+      );
     }
   },
 );
