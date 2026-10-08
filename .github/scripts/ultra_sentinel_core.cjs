@@ -1,7 +1,8 @@
 'use strict';
 /* Ultra Sentinel Core: an independent, domain-specific, evidence-based reviewer.
    No external AI services, no execution of PR code, no automatic merges. */
-const VERSION='1.0.0';
+const VERSION='2.0.0';
+const {buildRemediations,markdown:repairMarkdown}=require('./ultra_sentinel_remediation.cjs');
 const MAX_FILES=300,MAX_PATCH=100000;
 const SEVERITY={BLOCKER:4,HIGH:3,MEDIUM:2,LOW:1};
 function sanitize(s){
@@ -119,8 +120,9 @@ function analyze(files,config={}){
  if(partial)warnings.push('Cobertura parcial: la ausencia de alertas no significa que el PR esté limpio.');
  alerts.sort((a,b)=>SEVERITY[b.severity]-SEVERITY[a.severity]||a.path.localeCompare(b.path)||a.line-b.line);
  const plan=validationPlan(list);
+ const repairs=buildRemediations({sha,findings:alerts.slice(0,40)});
  return {engine:'Ultra Sentinel Core',version:VERSION,sha,mode:'independent-rule-and-structure-reasoner',
-  coverage:{returned:list.length,analyzed:scanned,partial},validationPlan:plan,findings:alerts.slice(0,40),
+  coverage:{returned:list.length,analyzed:scanned,partial},validationPlan:plan,remediations:repairs,findings:alerts.slice(0,40),
   omitted:Math.max(0,alerts.length-40),warnings:warnings.slice(0,25),
   verdict:partial?'INCOMPLETE':alerts.some(x=>SEVERITY[x.severity]>=3)?'REVIEW_REQUIRED':'NO_CRITICAL_PATTERN',
   note:'Heurísticas verificables: no es un modelo fundacional entrenado, ni sustituye compilación o revisión humana.'};
@@ -144,6 +146,9 @@ function markdown(result){
  if(result.validationPlan.checks.length){
    lines.push('','### Tests adversariales propuestos por Ultra Sentinel');
    for(const item of result.validationPlan.checks)lines.push('- **'+item.domain+'**: '+item.check);
+ }
+ if(result.remediations?.suggestions?.length){
+   lines.push('',repairMarkdown({...result.remediations,suggestions:result.remediations.suggestions.slice(0,6)}));
  }
  lines.push('','Sin auto-merge ni auto-aprobación. Exigir pruebas y revisiones completas.');
  return lines.join('\n').slice(0,58000);
