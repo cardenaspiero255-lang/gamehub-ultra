@@ -6,6 +6,7 @@ import com.cardenaspiero255.gamehubultra.domain.UltraSessionHistoryIntelligence
 import com.cardenaspiero255.gamehubultra.voice.UltraOnDeviceVoiceIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
+import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import java.text.Normalizer
 import java.util.Locale
 
@@ -116,7 +117,7 @@ class GameHubAiAdvisor(
         // Gameplay memories are factual measurements; they are never sent
         // through the free-form model as invented temperature claims.
         if (gameSessionHistory != null) {
-            val history = runCatching { gameSessionHistory.invoke() }
+            val history = runCatching { gameSessionHistory?.invoke().orEmpty() }
                 .getOrDefault(emptyList())
             val relevantGame = context.selectedGamePackage
                 ?: history.maxByOrNull { it.endedAtMillis }?.packageName
