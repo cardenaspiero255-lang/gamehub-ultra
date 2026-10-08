@@ -41,6 +41,26 @@ class UltraSessionHistoryIntelligenceTest {
     }
 
     @Test
+    fun ordinaryHealthHabitsQuestionIsNotHijackedByGameProfileHistory() {
+        val answer = UltraSessionHistoryIntelligence.response(
+            query = "¿Qué hábitos ayudan a dormir mejor?",
+            packageName = "com.example.cod",
+            history = emptyList()
+        )
+        assertNull(answer)
+    }
+
+    @Test
+    fun gameHabitsQuestionCanSuggestNightProfile() {
+        val answer = UltraSessionHistoryIntelligence.response(
+            query = "¿Qué hábitos de mis sesiones de juego sirven para un perfil Noche?",
+            packageName = "com.example.cod",
+            history = listOf(session(1), session(2), session(3))
+        )
+        assertTrue(answer.orEmpty().contains("Noche"))
+    }
+
+    @Test
     fun onlyThreeDistinctMeasuredNightSessionsTriggerSuggestion() {
         val history = listOf(session(1), session(2), session(3))
         val suggestion = UltraSessionHistoryIntelligence.proposeNightProfile(
