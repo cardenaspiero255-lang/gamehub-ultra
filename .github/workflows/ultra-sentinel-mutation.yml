@@ -30,7 +30,7 @@ jobs:
         shell: bash
         env:
           SENTINEL_MUTANT_LIMIT: '14'
-          SENTINEL_MUTATION_GATE: '0'
+          SENTINEL_MUTATION_GATE: '1'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sentinel-mutation-results"
