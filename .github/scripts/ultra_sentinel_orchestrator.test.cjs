@@ -50,3 +50,21 @@ test('bound sources and edits',()=>{
  const r=p.orchestrate({analysis:{findings:[]},sources:files,sha});
  assert.equal(r.fixer.generated,0);assert.equal(p.judge(null).status,'REJECT');
 });
+
+test('generated hunk passes git apply --check in temporary Kotlin tree',()=>{
+ const fs=require('node:fs'),os=require('node:os'),cp=require('node:child_process'),path=require('node:path');
+ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'sentinel-patch-'));
+ try{
+  const target=path.join(tmp,filename);
+  fs.mkdirSync(path.dirname(target),{recursive:true});
+  fs.writeFileSync(target,content);
+  const proposal=p.candidate({filename,content,findings:[f],sha});
+  const patchfile=path.join(tmp,'fix.patch');
+  fs.writeFileSync(patchfile,proposal.patch);
+  cp.execFileSync('git',['apply','--check',patchfile],{cwd:tmp,timeout:2500});
+  cp.execFileSync('git',['apply',patchfile],{cwd:tmp,timeout:2500});
+  const changed=fs.readFileSync(target,'utf8');
+  assert.doesNotMatch(changed,/System\.gc\(\)/);
+  assert.match(changed,/println\("ok"\)/);
+ }finally{fs.rmSync(tmp,{recursive:true,force:true})}
+});
