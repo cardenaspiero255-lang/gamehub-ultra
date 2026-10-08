@@ -104,3 +104,8 @@ test('does not flag calls in a second diff hunk as self-recursion in the previou
  const result=analyze([{filename:'app/src/main/java/com/cardenaspiero255/gamehubultra/platform/RuntimeDiagnostics.kt',patch}]);
  assert.ok(!rules(result).includes('UNBOUNDED_RECURSION'));
 });
+
+test('does not scan synthetic credentials inside .test.cjs fixtures as production',()=>{
+ const z=analyze([file('.github/scripts/sample.test.cjs',['GITHUB_TOKEN="abcdefghijklmnop"'])]);
+ assert.ok(!rules(z).includes('POTENTIAL_HARDCODED_SECRET'));
+});
