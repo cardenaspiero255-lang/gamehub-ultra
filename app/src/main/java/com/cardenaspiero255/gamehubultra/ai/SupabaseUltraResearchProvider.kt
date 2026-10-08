@@ -226,6 +226,17 @@ class SupabaseUltraResearchProvider(
             )
         }
 
+        // A backend-reported count is not evidence of independent sources.
+        // Never claim more corroboration than distinct, nonblank source IDs
+        // actually survive normalization and deduplication.
+        val distinctEvidenceSources = (listOf(sourceId) + sourceIds)
+            .filter(String::isNotBlank)
+            .distinct()
+        val corroboratedCount = if (unsourcedLocal) 0 else {
+            decoded.independentSourceCount.coerceAtLeast(1)
+                .coerceAtMost(distinctEvidenceSources.size)
+        }
+
         return UltraProviderResult.Evidence(
             UltraResearchEvidence(
                 claimKey = claimKey,
@@ -234,8 +245,7 @@ class SupabaseUltraResearchProvider(
                 sourceId = sourceId,
                 supportingSourceIds = sourceIds
                     .filter { it != sourceId },
-                independentSourceCount = if (unsourcedLocal) 0
-                    else decoded.independentSourceCount.coerceAtLeast(1),
+                independentSourceCount = corroboratedCount,
                 authoritative = decoded.authoritative
             )
         )
