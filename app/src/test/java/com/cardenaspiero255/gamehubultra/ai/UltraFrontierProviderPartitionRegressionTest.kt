@@ -164,6 +164,40 @@ class UltraFrontierProviderPartitionRegressionTest {
     }
 
     @Test
+    fun duplicateCorroborationUrlsCannotClaimTwoIndependentSources() {
+        val url = "https://example.org/one-source"
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "engineVersion":"20",
+                  "claimKey":"general:planet",
+                  "value":"planet",
+                  "displayText":"Una definición corroborada.",
+                  "sourceIds":["$url","$url","  $url  "],
+                  "independentSourceCount":2,
+                  "authoritative":true
+                }
+            """.trimIndent()
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+        val evidence = assertIs<UltraProviderResult.Evidence>(
+            provider.fetchResult(UltraGeneralQueryRouter.classify("¿Qué es un planeta?"))
+        ).evidence
+        assertEquals(1, evidence.independentSourceCount)
+        assertEquals(listOf(url), listOf(evidence.sourceId) + evidence.supportingSourceIds)
+    }
+
+    @Test
     fun emptyCorroborationMustNotMakeAnUnsourcedAuthorityClaimValid() {
         val transport = object : UltraResearchBackendTransport {
             override fun post(
