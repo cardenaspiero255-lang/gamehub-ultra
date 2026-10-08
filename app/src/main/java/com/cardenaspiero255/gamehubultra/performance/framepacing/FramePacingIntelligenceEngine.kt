@@ -379,12 +379,9 @@ class FramePacingIntelligenceEngine(
         val evidence = buildList {
             add(
                 "Refresco medido reciente: " +
-                    recentSlow
-                        .takeLast(5)
-                        .joinToString { sample ->
-                            sample.refreshHz.toString() + " Hz"
-                        } +
-                    "."
+                    recentSlow.takeLast(5).joinToString { sample ->
+                        sample.refreshHz.toString() + " Hz"
+                    } + "."
             )
             if (fast.availability == FrameDataAvailability.AVAILABLE) {
                 add(
@@ -583,13 +580,13 @@ class FramePacingIntelligenceEngine(
 
     private fun fpsExplanation(
         observedGameFps: Float?
-    ): String =
-        observedGameFps?.let { fps ->
-            "FPS real verificado externamente: " + fps + "."
-        } ?: (
-            "FPS real no observable con las señales actuales; " +
-                "no se infiere desde el refresco ni desde el jitter."
-            )
+    ): String {
+        if (observedGameFps != null) {
+            return "FPS real verificado externamente: " + observedGameFps + "."
+        }
+        return "FPS real no observable con las señales actuales; " +
+            "no se infiere desde el refresco ni desde el jitter."
+    }
 
     private fun stabilityLabel(
         stability: RefreshStability
