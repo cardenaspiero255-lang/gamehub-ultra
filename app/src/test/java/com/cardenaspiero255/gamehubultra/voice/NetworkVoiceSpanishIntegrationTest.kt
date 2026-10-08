@@ -9,6 +9,7 @@ import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationResultPolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkPriorityAction
 import com.cardenaspiero255.gamehubultra.network.NetworkLeaseGenerationPolicy
 import com.cardenaspiero255.gamehubultra.network.NetworkOptimizationOutcome
+import com.cardenaspiero255.gamehubultra.network.diagnostics.NetworkGamingDiagnosticSample
 import com.cardenaspiero255.gamehubultra.platform.ConnectivityTelemetry
 import com.cardenaspiero255.gamehubultra.platform.RouterDiscoveryParser
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
@@ -230,6 +231,82 @@ class NetworkVoiceSpanishIntegrationTest {
         val spoken = NetworkVoiceResponseText.format(report).lowercase()
         assertTrue(spoken.contains("picos de latencia: 1"))
         assertTrue(spoken.contains("pérdida de paquetes todavía no medida"))
+    }
+
+
+    @Test
+    fun networkHandoffIsRetainedAndReportedWithoutReusingPreviousNetworkLatency() {
+        val wifi = NetworkGamingDiagnosticSample(
+            timestampMs = 1_000L,
+            networkHandle = 7L,
+            transport = "Wi-Fi",
+            connected = true,
+            validated = true,
+            metered = false,
+            latencyMs = 35L,
+            latencyMeasured = true,
+            packetLossPercent = null,
+            packetLossMeasured = false
+        )
+        val cellular = wifi.copy(
+            timestampMs = 2_000L,
+            networkHandle = 8L,
+            transport = "Móvil",
+            metered = true,
+            latencyMs = 180L
+        )
+        val first = VoiceNetworkSnapshotFactory.appendHistory(emptyList(), wifi)
+        val history = VoiceNetworkSnapshotFactory.appendHistory(first, cellular)
+        assertEquals(listOf(7L, 8L), history.map { it.networkHandle })
+
+        val snapshot = assertNotNull(
+            VoiceNetworkSnapshotFactory.fromMeasurements(history)
+        )
+        val diagnostics = assertNotNull(snapshot.diagnostics)
+        assertEquals(1, diagnostics.networkHandleChangeCount)
+        assertEquals("Wi-Fi", diagnostics.transportChanges.single().fromTransport)
+        assertEquals("Móvil", diagnostics.transportChanges.single().toTransport)
+        assertEquals(listOf(180L), diagnostics.latencyHistoryMs)
+        assertEquals(NetworkStability.UNMEASURED, snapshot.metrics.stability)
+        assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
+        val report = VoiceActionResult.NetworkReport(
+            request = NetworkVoiceRequest.STATUS,
+            snapshot = snapshot,
+            optimizationOutcome = NetworkOptimizationOutcome.NOT_REQUESTED
+        )
+        assertTrue(
+            NetworkVoiceResponseText.format(report)
+                .contains("cambios de conectividad detectados")
+        )
+    }
+
+    @Test
+    fun retainedNetworkHistoryRemainsBoundedAcrossMultipleSwitches() {
+        val sample = NetworkGamingDiagnosticSample(
+            timestampMs = 0L,
+            networkHandle = 1L,
+            transport = "Wi-Fi",
+            connected = true,
+            validated = true,
+            metered = false,
+            latencyMs = 30L,
+            latencyMeasured = true,
+            packetLossPercent = null,
+            packetLossMeasured = false
+        )
+        val history = (0L..7L).fold(emptyList<NetworkGamingDiagnosticSample>()) {
+            previous, index ->
+            VoiceNetworkSnapshotFactory.appendHistory(
+                previous,
+                sample.copy(
+                    timestampMs = index * 1_000L,
+                    networkHandle = index + 1L
+                )
+            )
+        }
+        assertEquals(6, history.size)
+        assertEquals(3L, history.first().networkHandle)
+        assertEquals(8L, history.last().networkHandle)
     }
 
     @Test
