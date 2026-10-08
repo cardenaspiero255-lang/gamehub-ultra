@@ -5522,6 +5522,20 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "auronplay": {
+      claim: "local-stable:auronplay",
+      text:
+        "AuronPlay, nombre artístico de Raúl Álvarez Genes, es un creador " +
+        "de contenido español conocido por sus vídeos en YouTube y sus " +
+        "transmisiones en directo como streamer de entretenimiento.",
+    },
+    "motor turbofan": {
+      claim: "local-stable:turbofan",
+      text:
+        "Un motor turbofán es un motor de reacción usado en muchos aviones. " +
+        "Un ventilador mueve gran cantidad de aire y, junto con la turbina, " +
+        "produce el empuje necesario para impulsar la aeronave.",
+    },
     "planeta": {
       claim: "local-stable:planet",
       text:
@@ -5641,6 +5655,8 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "televisores, electrodomésticos y semiconductores.",
     },
   };
+  basicDefinitions["motor turbofan de avion"] =
+    basicDefinitions["motor turbofan"];
   basicDefinitions["planetas"] = basicDefinitions["planeta"];
   basicDefinitions["maratones"] = basicDefinitions["maraton"];
   basicDefinitions["fotografia con camara"] = basicDefinitions["camara fotografica"];
