@@ -227,7 +227,9 @@ Deno.test("planet definitions survive complete upstream throttling in paraphrase
       throw new Error("offline planetary definition failed for: " + query);
     }
     if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
-      throw new Error("local planetary definitions must not claim verified sources");
+      throw new Error(
+        "local planetary definitions must not claim verified sources",
+      );
     }
   }
 });
