@@ -290,8 +290,15 @@ data class UltraFrontierV2ClaimProvenanceSnapshot(
 )
 
 class UltraFrontierV2ClaimProvenanceGraph {
+    // A structured key prevents collisions when source/provider/value contain '|'.
+    private data class EvidenceIdentity(
+        val sourceId: String,
+        val providerId: String,
+        val normalizedValue: String
+    )
+
     private val evidenceByClaim =
-        linkedMapOf<String, LinkedHashMap<String, UltraFrontierV2ClaimEvidence>>()
+        linkedMapOf<String, LinkedHashMap<EvidenceIdentity, UltraFrontierV2ClaimEvidence>>()
 
     @Synchronized
     fun record(evidence: UltraFrontierV2ClaimEvidence) {
@@ -304,11 +311,16 @@ class UltraFrontierV2ClaimProvenanceGraph {
         val claimEvidence = evidenceByClaim.getOrPut(normalized.claimId) {
             linkedMapOf()
         }
-        val identity =
-            normalized.sourceId + "|" +
-                normalized.providerId + "|" +
-                normalized.normalizedValue
-        claimEvidence[identity] = normalized
+        val identity = EvidenceIdentity(
+            sourceId = normalized.sourceId,
+            providerId = normalized.providerId,
+            normalizedValue = normalized.normalizedValue
+        )
+        // Re-observing identical evidence must never erase prior authority.
+        val previouslyAuthoritative = claimEvidence[identity]?.authoritative == true
+        claimEvidence[identity] = normalized.copy(
+            authoritative = normalized.authoritative || previouslyAuthoritative
+        )
     }
 
     @Synchronized
