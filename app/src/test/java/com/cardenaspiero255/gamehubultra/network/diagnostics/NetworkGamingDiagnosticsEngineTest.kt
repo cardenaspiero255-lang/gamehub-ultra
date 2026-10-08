@@ -239,6 +239,66 @@ class NetworkGamingDiagnosticsEngineTest {
         }
     }
 
+
+    @Test
+    fun latestDisconnectedSampleInvalidatesPreviouslyExcellentReadings() {
+        val result = engine.analyze(
+            listOf(
+                sample(0L, latencyMs = 40L, latencyMeasured = true,
+                    packetLossPercent = 0.0, packetLossMeasured = true),
+                sample(1_000L, latencyMs = 42L, latencyMeasured = true,
+                    packetLossPercent = 0.0, packetLossMeasured = true),
+                sample(2_000L, latencyMs = 41L, latencyMeasured = true,
+                    packetLossPercent = 0.0, packetLossMeasured = true),
+                sample(3_000L, connected = false, validated = false)
+            )
+        )
+
+        assertEquals(NetworkStability.OFFLINE, result.metrics.stability)
+        assertNull(result.metrics.averageLatencyMs)
+        assertNull(result.metrics.packetLossPercent)
+        assertTrue(result.latencyHistoryMs.isEmpty())
+        assertFalse(result.competitiveRecommended)
+        assertEquals(NetworkGameProfile.BALANCED, result.recommendedProfile)
+    }
+
+    @Test
+    fun competitiveRecommendationRequiresMeasuredPacketLoss() {
+        val measuredLatencyOnly = listOf(
+            sample(0L, latencyMs = 35L, latencyMeasured = true),
+            sample(1_000L, latencyMs = 36L, latencyMeasured = true),
+            sample(2_000L, latencyMs = 34L, latencyMeasured = true)
+        )
+        val incomplete = engine.analyze(measuredLatencyOnly)
+        assertEquals(NetworkStability.EXCELLENT, incomplete.metrics.stability)
+        assertNull(incomplete.metrics.packetLossPercent)
+        assertEquals(NetworkGameProfile.BALANCED, incomplete.recommendedProfile)
+
+        val verified = engine.analyze(
+            measuredLatencyOnly.map {
+                it.copy(packetLossPercent = 0.0, packetLossMeasured = true)
+            }
+        )
+        assertEquals(NetworkGameProfile.COMPETITIVE, verified.recommendedProfile)
+    }
+
+    @Test
+    fun latestUnvalidatedNetworkCannotReusePreviousGoodMeasurements() {
+        val result = engine.analyze(
+            listOf(
+                sample(0L, latencyMs = 40L, latencyMeasured = true,
+                    packetLossPercent = 0.0, packetLossMeasured = true),
+                sample(1_000L, latencyMs = 42L, latencyMeasured = true,
+                    packetLossPercent = 0.0, packetLossMeasured = true),
+                sample(2_000L, latencyMs = 41L, latencyMeasured = true,
+                    packetLossPercent = 0.0, packetLossMeasured = true),
+                sample(3_000L, validated = false)
+            )
+        )
+        assertEquals(NetworkStability.OFFLINE, result.metrics.stability)
+        assertEquals(NetworkGameProfile.BALANCED, result.recommendedProfile)
+    }
+
     private fun sample(
         timestampMs: Long,
         latencyMs: Long? = null,
