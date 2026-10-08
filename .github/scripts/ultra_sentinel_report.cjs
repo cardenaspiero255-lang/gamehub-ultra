@@ -22,7 +22,7 @@ function buildReport(args){
    throw new Error('Analysis belongs to a different commit');
  const risks=analysis.findings.slice(0,10).map((f,i)=>{
    const s=analysis.remediations?.suggestions?.find(x=>x.rule===f.rule&&x.path===f.path&&x.line===f.line)
-    ||analysis.remediations?.suggestions?.[i];
+    ;
    return {
     rule:clean(f.rule,85),severity:clean(f.severity,20),
     location:{path:clean(f.path,240),line:Number.isSafeInteger(f.line)?f.line:0},
@@ -45,7 +45,7 @@ function buildReport(args){
   partial,coverage:{
    returned:Number(analysis.coverage?.returned)||0,analyzed:Number(analysis.coverage?.analyzed)||0
   },
-  count:Number(analysis.findings.length)||0,provided:risks.length,findings:risks,
+  count:Number(analysis.findings.length)||0,provided:risks.length,reportTruncated:analysis.findings.length>risks.length,findings:risks,
   limitations:[
    'Diff-only heuristics: no proof of correctness or confirmed bug.',
    'Remediation templates require source-context inspection, RED/GREEN tests and review.',
