@@ -28,6 +28,7 @@ import com.cardenaspiero255.gamehubultra.data.effectiveProfileForSelection
 import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
+import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiContext
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoute
@@ -98,7 +99,10 @@ class UltraWakeService : Service() {
     private val aiAdvisor by lazy {
         GameHubAiAdvisor(
             modelAdapter = GeminiNanoLocalAiModelAdapter(),
-            memoryGateway = ultraMemoryStore
+            memoryGateway = ultraMemoryStore,
+            gameSessionHistory = {
+                SessionCoachSessionStore(applicationContext).readRecentGameSessions()
+            }
         )
     }
 
