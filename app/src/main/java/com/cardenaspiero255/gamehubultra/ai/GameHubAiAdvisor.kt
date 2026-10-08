@@ -666,7 +666,7 @@ class GameHubAiAdvisor(
                         // Preserve existing deterministic commands and only
                         // consult the optional local model for action-like text.
                         val actionLike = Regex(
-                            """\b(podrias|puedes|quisiera|necesito|abre|abrir|pon|activa|cambia|perfil|modo|launch|open)\b"""
+                            """\b(podrias|puedes|quisiera|necesito|abre|abrir|abreme|lanza|lanzar|inicia|iniciar|ejecuta|juega|pon|activa|cambia|selecciona|aplica|configura|perfil|modo|launch|open|start|play)\b"""
                         ).containsMatchIn(clean)
                         if (!actionLike || clean.length > 300 ||
                             VoiceCommandParser.parse(transcript) !is VoiceCommand.Unknown
