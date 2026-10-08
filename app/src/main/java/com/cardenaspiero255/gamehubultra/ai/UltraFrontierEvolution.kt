@@ -1104,24 +1104,30 @@ class UltraFrontierEvolutionController(
             .lowercase(Locale.ROOT)
             .replace(Regex("""\s+"""), " ")
             .trimEnd('.', '!', '?')
-        // Preserve all measured values (including multiple fields in ISO
-        // dates), but compare them separately from the claim's subject.
-        // A fixed verb allowlist misses valid facts such as "comenzó".
-        val number = Regex("""(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\d])""")
-        val values = number.findAll(normalized).map {
-            it.value.replace(',', '.')
-        }.toList()
-        val skeleton = if (values.isEmpty()) {
-            normalized
-        } else {
-            number.replace(normalized, "valor-numerico")
+
+        // Numeric model identifiers belong to the subject; numeric values
+        // *after* the factual predicate belong to the assertion. Never
+        // replace every number in a sentence indiscriminately.
+        val predicate = Regex(
+            """\b(?:cuesta|costaba|vale|valia|tiene|tenia|mide|media|pesa|pesaba|comenzo|empezo|ocurrio|sucedio|termino|finalizo|fue|es|ser[aá]|costs|started|ended|happened|weighs|measures)\b"""
+        ).find(normalized)
+        if (predicate == null) {
+            // Without a reliable predicate boundary, do not invent a
+            // contradiction from unrelated numeric entities.
+            return "research-answer:$normalized" to normalized
         }
-        val comparedValue = if (values.isEmpty()) {
-            normalized
-        } else {
-            values.joinToString("|")
+        val subject = normalized.substring(0, predicate.range.first)
+        val assertion = normalized.substring(predicate.range.first)
+        val numericValue = Regex(
+            """(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)?(?![\p{L}\d])"""
+        )
+        val values = numericValue.findAll(assertion)
+            .map { it.value.replace(',', '.') }.toList()
+        if (values.isEmpty()) {
+            return "research-answer:$normalized" to normalized
         }
-        return "research-answer:$skeleton" to comparedValue
+        val skeleton = numericValue.replace(assertion, "valor-numerico")
+        return "research-answer:$subject$skeleton" to values.joinToString("|")
     }
 
     fun synthesizeResearch(
