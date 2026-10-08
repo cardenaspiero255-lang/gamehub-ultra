@@ -47,6 +47,8 @@ class UltraFrontierExecutionEngine(
         UltraFrontierV2HierarchicalPlanner(),
     private val v2BranchAllocator: UltraFrontierV2BranchAllocator =
         UltraFrontierV2BranchAllocator(),
+    private val v2Replanner: UltraFrontierV2Replanner =
+        UltraFrontierV2Replanner(),
     private val networkAvailable: () -> Boolean = { true },
     private val auditTrail: UltraFrontierAuditTrail = UltraFrontierAuditTrail(),
     private val nanoTime: () -> Long = System::nanoTime,
@@ -546,6 +548,37 @@ class UltraFrontierExecutionEngine(
             attempt = attempt,
             executionStartedNanos = executionStartedNanos
         )
+        val remainingMillis = remainingResearchMillis(
+            plan = plan,
+            executionStartedNanos = executionStartedNanos
+        ).coerceAtLeast(1L)
+        val baseResearchTaskIds = plan.tasks
+            .filter { it.specialist == UltraFrontierSpecialist.RESEARCH }
+            .mapTo(linkedSetOf()) { it.id }
+        val replanned = if (attempt > 1 && baseResearchTaskIds.isNotEmpty()) {
+            v2Replanner.replan(
+                tasks = plan.tasks,
+                failedTaskIds = baseResearchTaskIds,
+                remainingTimeMillis = remainingMillis,
+                recoveryOrdinal = attempt
+            )
+        } else {
+            UltraFrontierV2ReplanResult(
+                tasks = plan.tasks,
+                changed = false,
+                replacedTaskIds = emptySet()
+            )
+        }
+        if (replanned.changed) {
+            auditTrail.record(
+                correlationId = request.correlationId,
+                lane = plan.lane,
+                event = UltraFrontierAuditEvent.REPLAN,
+                attempt = attempt,
+                reasonCode = "FRONTIER_V2_RESEARCH_RECOVERY"
+            )
+        }
+
         val v2Request = UltraFrontierRequest(
             message = request.originalText,
             query = request,
@@ -554,13 +587,13 @@ class UltraFrontierExecutionEngine(
         val hierarchy = v2HierarchicalPlanner.plan(
             request = v2Request,
             lane = plan.lane,
-            tasks = plan.tasks
+            tasks = replanned.tasks
         )
         val evidenceTaskIds = hierarchy.phases
             .firstOrNull { it.phase == UltraFrontierV2Phase.EVIDENCE }
             ?.taskIds
             .orEmpty()
-        val researchTasks = plan.tasks
+        val researchTasks = replanned.tasks
             .filter {
                 it.specialist == UltraFrontierSpecialist.RESEARCH &&
                     (evidenceTaskIds.isEmpty() || it.id in evidenceTaskIds)
@@ -582,10 +615,6 @@ class UltraFrontierExecutionEngine(
         }
 
         val latencies = java.util.concurrent.ConcurrentHashMap<String, Long>()
-        val remainingMillis = remainingResearchMillis(
-            plan = plan,
-            executionStartedNanos = executionStartedNanos
-        ).coerceAtLeast(1L)
         val maxParallelism = evolution
             .budget(request, frontier.policy)
             .maxParallelism
@@ -616,7 +645,14 @@ class UltraFrontierExecutionEngine(
         }
 
         val providerOffsets = linkedMapOf<String, Int>()
-        var nextProviderOffset = request.researchProviderOffset
+        val partitionStride = maxOf(
+            plan.maxSourceBudget,
+            totalBudget,
+            1
+        )
+        var nextProviderOffset =
+            request.researchProviderOffset +
+                (attempt - 1) * partitionStride
         allocatedTasks.forEach { task ->
             providerOffsets[task.id] = nextProviderOffset
             nextProviderOffset += allocation.getValue(task.id)
