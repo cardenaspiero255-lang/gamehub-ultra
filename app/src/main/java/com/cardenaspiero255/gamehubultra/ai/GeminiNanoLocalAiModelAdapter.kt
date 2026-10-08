@@ -65,7 +65,7 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
                 }
                 val raw = client.generateContent(prompt).candidates
                     .firstOrNull()?.text?.trim() ?: return@runBlocking null
-                if (raw.length > 100 || raw.contains('\\n')) return@runBlocking null
+                if (raw.length > 100 || raw.contains('\n')) return@runBlocking null
                 val parts = raw.split('|', limit = 2)
                 LocalVoiceIntentCandidate(parts.first().trim(), parts.getOrNull(1)?.trim())
             }
