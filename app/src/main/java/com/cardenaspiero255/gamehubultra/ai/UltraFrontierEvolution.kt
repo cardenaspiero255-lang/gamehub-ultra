@@ -1091,6 +1091,44 @@ class UltraFrontierEvolutionController(
         candidates: List<Pair<UltraQueryExecutionAnswer, Long>>
     ): UltraQueryExecutionAnswer? {
         val selected = selectBestResearch(candidates) ?: return null
+        // Provenance must be evaluated at synthesis time, not merely held in
+        // an unused utility class. Keep the graph scoped to this request so
+        // concurrent sessions never leak evidence into each other.
+        val provenanceGraph = UltraFrontierV2ClaimProvenanceGraph()
+        candidates.forEachIndexed { index, (candidate, _) ->
+            if (candidate.verified && !candidate.abstained) {
+                candidate.sources
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .forEach { source ->
+                        provenanceGraph.record(
+                            UltraFrontierV2ClaimEvidence(
+                                claimId = "research-answer",
+                                normalizedValue = candidate.message,
+                                sourceId = source,
+                                providerId = "research-branch-$index",
+                                authoritative = true
+                            )
+                        )
+                    }
+            }
+        }
+        val provenance = provenanceGraph.snapshot(
+            claimId = "research-answer",
+            preferredValue = selected.message
+        )
+        if (selected.verified && provenance?.hasConflict == true) {
+            return selected.copy(
+                message = "Encontré afirmaciones contradictorias entre fuentes " +
+                    "verificadas. Necesito corroboración adicional.",
+                verified = false,
+                abstained = true,
+                retryable = true,
+                reasonCode = "FRONTIER_CLAIM_PROVENANCE_CONFLICT",
+                stage = "frontier-synthesizer"
+            )
+        }
         val selectedText = selected.message
             .trim()
             .lowercase(Locale.ROOT)
