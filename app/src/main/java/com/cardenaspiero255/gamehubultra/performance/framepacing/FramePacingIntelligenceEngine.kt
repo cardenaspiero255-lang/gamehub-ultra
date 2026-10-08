@@ -79,7 +79,7 @@ class FramePacingIntelligenceEngine(
         val mean = hz.average().toFloat()
         val ewma = ewma(hz)
         val variance = variance(hz, mean)
-        val stdDev = sqrt(variance)
+        val stdDev = sqrt(variance.toDouble()).toFloat()
         val stableRatio =
             hz.count { abs(it - mean) <= policy.noiseToleranceHz }.toFloat() /
                 hz.size.toFloat()
@@ -354,7 +354,7 @@ class FramePacingIntelligenceEngine(
 
             val tailMean = tail.average().toFloat()
             val headMean = head.average().toFloat()
-            val tailStd = sqrt(variance(tail, tailMean))
+            val tailStd = sqrt(variance(tail, tailMean).toDouble()).toFloat()
 
             if (
                 headMean <= tailMean * policy.recoveryHeadRatio &&
