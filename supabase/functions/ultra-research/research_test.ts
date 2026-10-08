@@ -887,7 +887,9 @@ Deno.test(
   },
 );
 
-Deno.test("normal technical prose mentioning omitted instructions remains valid evidence", async () => {
+Deno.test(
+  "normal technical prose mentioning omitted instructions remains valid evidence",
+  async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
       const url = new URL(String(input));
@@ -932,7 +934,8 @@ Deno.test("normal technical prose mentioning omitted instructions remains valid 
   ) {
     throw new Error("Benign technical instructions prose must not be rejected");
   }
-});
+  },
+);
 
 Deno.test("English instruction injection in extracts is rejected", async () => {
   const deps: ResearchDependencies = {
