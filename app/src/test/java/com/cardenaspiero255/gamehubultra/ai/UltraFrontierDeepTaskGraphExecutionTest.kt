@@ -345,6 +345,58 @@ class UltraFrontierDeepTaskGraphExecutionTest {
     }
 
     @Test
+    fun growingRetryBudgetDoesNotSkipUnconsumedCapacitySlots() {
+        val observed = Collections.synchronizedList(mutableListOf<Int>())
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+            override val providerPartitionCapacity: Int = 8
+
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                val offset = request.researchProviderOffset
+                observed += offset
+                return if (offset < 3) {
+                    UltraVerifiedResearchResult(
+                        message = "Faltan pruebas.",
+                        confidence = UltraAnswerConfidence.LOW,
+                        abstained = true,
+                        retryable = true,
+                        reasonCode = "INSUFFICIENT_CORROBORATION"
+                    )
+                } else {
+                    UltraVerifiedResearchResult(
+                        message = "Nueva fuente encontrada.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("source-$offset", "independent-$offset"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = UltraFrontierOrchestrator(
+                policy = UltraFrontierPolicy(
+                    verifiedSourceBudget = 3,
+                    deepSourceBudget = 3,
+                    deepResearchPassBudget = 2,
+                    researchRetrySourceBudgetStep = 2
+                ),
+                evolution = evolution
+            )
+        )
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos móviles con evidencia independiente"
+            )
+        ) { null }
+        assertTrue(3 in observed, "The next attempt must start at the first unconsumed slot")
+        assertTrue(answer.verified)
+    }
+
+    @Test
     fun frontierV2DeepResearchNeverOverspendsPlannedSourceBudget() {
         UltraFrontierWorldStateRegistry.clear()
         val partitions = Collections.synchronizedList(
