@@ -25,7 +25,7 @@ function parsePatch(text){
 }
 function production(path){
  return /^(app\/src\/main\/|supabase\/functions\/|\.github\/(?:workflows|scripts)\/|control-center\/)/.test(path)
- && !/(\.md$|\/test\/|\/tests\/|Test\.(kt|java)$|\.(?:test|spec)\.(?:cjs|mjs|js|ts|jsx|tsx)$)/i.test(path);
+ && !/(\.md$|\/test\/|\/tests\/|Test\.(kt|java)$|\.(?:test|spec|benchmark)\.(?:cjs|mjs|js|ts|jsx|tsx)$|(?:^|\/)ultra_sentinel_benchmark\.cjs$)/i.test(path);
 }
 function tags(path){
  const d={voice:/voice|wake|speech|tts/i,android:/app\/src\/main/i,ci:/\.github\/workflows/i,security:/auth|token|credential|secret/i,ai:/frontier|research|agent|intent/i,performance:/thermal|framepacing|performance/i,network:/network|dns|wifi|router/i};
