@@ -63,6 +63,37 @@ class UltraFrontierClaimIdentityRegressionTest {
     }
 
     @Test
+    fun equivalentThousandsAndDecimalNotationMustNotConflict() {
+        val variants = listOf(
+            "1.299" to "1299",
+            "5,000" to "5000",
+            "800,0" to "800",
+            "1.234,50" to "1234,5"
+        )
+        variants.forEach { (left, right) ->
+            val selected = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    checked("El móvil cuesta $left euros.", "store-one") to 100L,
+                    checked("El móvil cuesta $right euros.", "store-two") to 110L
+                )
+            ))
+            assertFalse(selected.abstained, "Matching values $left and $right must agree")
+            assertEquals(null, selected.reasonCode)
+        }
+    }
+
+    @Test
+    fun distinctPricesMustRemainConflictingAfterCanonicalization() {
+        val selected = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("El móvil cuesta 1.299 euros.", "store-one") to 100L,
+                checked("El móvil cuesta 1298 euros.", "store-two") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", selected.reasonCode)
+    }
+
+    @Test
     fun accentsAndPunctuationDoNotInventNumericalDisagreement() {
         val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
             listOf(
