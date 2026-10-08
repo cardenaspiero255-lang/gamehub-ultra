@@ -509,7 +509,7 @@ Deno.test(
       const answer = result.displayText ?? "";
       if (
         result.abstained ||
-        !/video/i.test(answer) ||
+        !/v[ií]deo/i.test(answer) ||
         !/audio/i.test(answer) ||
         result.authoritative === true ||
         (result.independentSourceCount ?? 0) !== 0
