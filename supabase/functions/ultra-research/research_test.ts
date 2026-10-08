@@ -320,6 +320,39 @@ Deno.test("common definitions and comparisons answer safely during upstream rate
   }
 });
 
+Deno.test("stable concepts from smoke tests survive provider throttling without invented citations", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: () => jsonResponse({ error: "rate limited" }, 429),
+    env: () => undefined,
+  };
+  const cases: Array<[string, RegExp]> = [
+    ["¿Cómo explicarías la socialización de un perro? en lenguaje cotidiano, y explica por qué es relevante!", /perro.*personas|perro.*otros perros/i],
+    ["¿Para qué sirve o por qué importa el trabajo remoto? para un estudiante, y menciona su función principal!", /trabajo.*distancia|trabajo.*fuera.*oficina/i],
+    ["Resume qué es el calentamiento antes de entrenar sin jerga innecesaria, y destaca una idea clave.", /preparar.*cuerpo|prepara.*cuerpo/i],
+    ["¿Cómo explicarías el empirismo? sin jerga innecesaria, y explica por qué es relevante.", /experiencia.*conocimiento/i],
+    ["Dime lo esencial sobre la lógica para alguien que empieza, en pocas frases!", /razonamiento.*argumentos|argumentos.*razonamiento/i],
+    ["Explica qué es los cimientos de una casa para alguien que empieza.", /cimientos.*estructura|cimientos.*suelo/i],
+    ["Describe el seguimiento de un envío de forma clara y directa, y destaca una idea clave!", /env[ií]o.*ubicaci[oó]n|paquete.*ubicaci[oó]n/i],
+    ["¿Para qué sirve un martillo?", /golpear.*clavos/i],
+    ["¿Qué es una repisa?", /estante.*objetos/i],
+    ["¿Qué es la cordillera de los Andes?", /cordillera.*monta/i],
+    ["¿Qué es la pasteurización?", /calor.*microorganismos/i],
+    ["¿Qué es la NBA?", /liga.*baloncesto/i],
+    ["¿Quién es Fernanfloo?", /creador.*contenido.*salvadore/i],
+    ["¿Para qué sirve NFC en un teléfono?", /comunicaci[oó]n.*corto.*alcance/i],
+    ["Explícame qué es un rover planetario de forma clara y directa.", /robot.*explora.*superficie/i],
+  ];
+  for (const [query, expected] of cases) {
+    const result = await routeResearchQuery(query, deps, "", "GENERAL_KNOWLEDGE");
+    if (result.abstained || !expected.test(result.displayText ?? "")) {
+      throw new Error("Missing or misleading stable answer for: " + query);
+    }
+    if (result.authoritative || (result.independentSourceCount ?? 0) !== 0) {
+      throw new Error("Local stable answer must not claim external sources");
+    }
+  }
+});
+
 Deno.test("generic topic rejects narrower names even when search ranks them first", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
