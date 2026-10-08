@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import java.util.Collections
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -59,6 +60,71 @@ class UltraFrontierDeepTaskGraphExecutionTest {
         assertFalse(answer.abstained)
         assertTrue(answer.verified)
         assertEquals("Candidato A", answer.message)
+    }
+
+    @Test
+    fun constrainedFrontierV2FallsBackToSingleResearchWorker() {
+        UltraFrontierWorldStateRegistry.clear()
+        val requests = Collections.synchronizedList(
+            mutableListOf<Pair<Int, Int?>>()
+        )
+        try {
+            UltraFrontierWorldStateRegistry.update(
+                UltraFrontierWorldState(
+                    selectedGamePackage = "test.game",
+                    sessionActive = true,
+                    selectedProfile = PerformanceProfile.BALANCED,
+                    networkValidated = true,
+                    networkLatencyMs = 40L,
+                    batteryPercent = 12,
+                    charging = false,
+                    thermalStatus = null,
+                    thermalHeadroom = null,
+                    thermalTrend = null,
+                    thermalRisk = null,
+                    thermalConfidence = null,
+                    batteryRecommendation = null,
+                    preventAggressiveProfiles = true,
+                    adaptiveScore = null,
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+            val gateway = object : UltraResearchGateway {
+                override val supportsProviderPartitioning: Boolean = true
+
+                override fun answer(
+                    request: UltraGeneralQueryRequest
+                ): UltraVerifiedResearchResult {
+                    requests += request.researchProviderOffset to request.researchProviderBudget
+                    return UltraVerifiedResearchResult(
+                        message = "Respuesta verificada con uso prudente.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("official-a", "official-b"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+            val evolution = UltraFrontierEvolutionController()
+            val engine = UltraFrontierExecutionEngine(
+                coordinator = UltraQueryExecutionCoordinator(gateway),
+                evolution = evolution,
+                frontier = UltraFrontierOrchestrator(evolution = evolution)
+            )
+            val answer = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Compara profundamente dos teléfonos actuales"
+                )
+            ) { null }
+
+            assertTrue(answer.verified)
+            assertFalse(answer.abstained)
+            assertEquals(1, requests.size)
+            assertEquals(0, requests.single().first)
+            assertTrue((requests.single().second ?: 0) >= 2)
+        } finally {
+            UltraFrontierWorldStateRegistry.clear()
+        }
     }
 
     @Test
