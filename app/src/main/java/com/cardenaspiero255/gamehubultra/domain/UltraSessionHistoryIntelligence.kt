@@ -72,7 +72,7 @@ object UltraSessionHistoryIntelligence {
         val observations = buildList {
             recent.typicalRefreshRateHz?.let { add("refresco observado de $it Hz") }
             recent.minimumBatteryPercent?.let { add("batería mínima del $it %") }
-            recent.maximumThermalStatus?.let { add("estado térmico $it (escala Android, no °C)") }
+            recent.maximumThermalStatus?.let { add("estado térmico $it (nivel de Android; no equivale a temperatura medida)") }
         }
         return if (observations.isEmpty()) {
             "De la última sesión de $packageName tengo muestras, pero no métricas verificables."
@@ -116,9 +116,13 @@ object UltraSessionHistoryIntelligence {
             return lastSessionSummary(history, game)
                 ?: "No tengo una sesión anterior medida de este juego."
         }
-        if (listOf("perfil noche", "perfil nocturno", "habitos", "sugerencia de perfil")
-                .any(clean::contains)
-        ) {
+        val profileQuestion = listOf(
+            "perfil noche", "perfil nocturno", "sugerencia de perfil"
+        ).any(clean::contains) || (
+            clean.contains("habitos") &&
+                listOf("juego", "partida", "sesion", "perfil", "gaming").any(clean::contains)
+            )
+        if (profileQuestion) {
             return proposeNightProfile(history, game)
                 ?: "Todavía no tengo suficientes sesiones medidas para proponerte un perfil Noche."
         }
