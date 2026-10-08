@@ -5092,7 +5092,9 @@ function candidateMatchesKnownMeaning(
   const candidateTitle = normalize(title)
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
   if (
-    /^(?:que es|que son|define|explicame que es)\b/.test(cleanQuery) &&
+    /^(?:que es|que son|define|explicame que es)\b/.test(
+      cleanQuery.replace(/^[¿?¡!\s]+/, ""),
+    ) &&
     requestedTopic.length >= 4 &&
     candidateTitle !== requestedTopic &&
     candidateTitle.split(" ").length > requestedTopic.split(" ").length &&
