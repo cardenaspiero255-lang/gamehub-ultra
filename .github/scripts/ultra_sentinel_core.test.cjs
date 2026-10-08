@@ -13,7 +13,7 @@ test('added line numbers follow GitHub diff ranges',()=>{
 test('no external API/model dependency for independent engine',()=>{
  const z=analyze([file(app+'Engine.kt',['fun safe() = 42'])],{sha:'a'.repeat(40)});
  assert.equal(z.engine,'Ultra Sentinel Core');
- assert.equal(z.sha,'a'.repeat(40));assert.equal(VERSION,'1.0.0');
+ assert.equal(z.sha,'a'.repeat(40));assert.equal(VERSION,'2.0.0');
 });
 test('recognizes unsupervised Android coroutine',()=>{
  assert.ok(rules(analyze([file(app+'Service.kt',['GlobalScope.launch { work() }'])])).includes('UNSCOPED_COROUTINE'));
