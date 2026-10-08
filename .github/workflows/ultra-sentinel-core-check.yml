@@ -9,6 +9,7 @@ on:
       - '.github/scripts/ultra_sentinel_remediation.test.cjs'
       - '.github/scripts/ultra_sentinel_report.cjs'
       - '.github/scripts/ultra_sentinel_report.test.cjs'
+      - '.github/scripts/ultra_sentinel_benchmark.cjs'
       - '.github/workflows/ultra-sentinel-auto-review.yml'
       - '.github/workflows/ultra-sentinel-core-check.yml'
   workflow_dispatch:
@@ -27,6 +28,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Check syntax
-        run: node --check .github/scripts/ultra_sentinel_core.cjs && node --check .github/scripts/ultra_sentinel_remediation.cjs && node --check .github/scripts/ultra_sentinel_core.test.cjs && node --check .github/scripts/ultra_sentinel_remediation.test.cjs && node --check .github/scripts/ultra_sentinel_report.cjs && node --check .github/scripts/ultra_sentinel_report.test.cjs
+        run: node --check .github/scripts/ultra_sentinel_core.cjs && node --check .github/scripts/ultra_sentinel_remediation.cjs && node --check .github/scripts/ultra_sentinel_core.test.cjs && node --check .github/scripts/ultra_sentinel_remediation.test.cjs && node --check .github/scripts/ultra_sentinel_report.cjs && node --check .github/scripts/ultra_sentinel_report.test.cjs && node --check .github/scripts/ultra_sentinel_benchmark.cjs
       - name: Run independent reviewer regression suite
         run: node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
+
+      - name: Score labeled adversarial cases
+        run: node .github/scripts/ultra_sentinel_benchmark.cjs
