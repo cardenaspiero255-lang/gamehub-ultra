@@ -1,0 +1,14 @@
+{
+  "name": "gamehub-ultra-control-center",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Panel web de estado para GameHub Ultra, preparado para Vercel",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "npm test && node --check app.js && node --check api/status.js && node --check api/errors.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
