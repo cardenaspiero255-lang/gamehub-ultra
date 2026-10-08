@@ -33,7 +33,12 @@ function buildReport(args){
      steps:Array.isArray(s.steps)?s.steps.slice(0,5).map(x=>clean(x,260)):[],
      test:clean(s.test,300),
      caution:clean(s.caution,300),
-     handoff:clean(s.handoff,1200)
+     handoff:clean(s.handoff,1200),
+     memory:Array.isArray(s.relatedEvidence)?s.relatedEvidence.slice(0,2).map(m=>({
+       id:clean(m.id,90),type:clean(m.type,25),
+       verification:clean(m.verification,30),advice:clean(m.advice,250),
+       source:m.evidenceUrl?clean(m.evidenceUrl,250):null
+     })):[]
     }:null
    };
  });
