@@ -681,10 +681,13 @@ internal object SessionCoachNotifications {
     ) {
         ensureChannel(context)
         val report = AiSessionCoach.postSession(session.samples)
+        val historyStore = SessionCoachSessionStore(context)
         val proposedNightProfile = UltraSessionHistoryIntelligence.proposeNightProfile(
-            history = SessionCoachSessionStore(context).readRecentGameSessions(),
+            history = historyStore.readRecentGameSessions(),
             packageName = session.packageName
-        )
+        )?.takeIf {
+            historyStore.takeNightProfileProposalToShow(session.packageName)
+        }
         val detail = buildString {
             append(report.summary)
             report.nextSteps.take(3).forEach { step ->
@@ -696,7 +699,7 @@ internal object SessionCoachNotifications {
                 append(suggestion)
             }
         }
-        val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_qs_gamehub)
             .setContentTitle("Resumen de sesión · Ultra")
             .setContentText(report.summary)
@@ -704,7 +707,22 @@ internal object SessionCoachNotifications {
             .setContentIntent(openAppIntent(context))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
+        if (proposedNightProfile != null) {
+            val approvalIntent = Intent(context, NightProfileApprovalReceiver::class.java)
+                .setAction(NightProfileApprovalReceiver.ACTION_APPLY)
+                .setData(android.net.Uri.parse(
+                    "gamehubultra://night/" + android.net.Uri.encode(session.packageName)
+                ))
+                .putExtra(NightProfileApprovalReceiver.EXTRA_PACKAGE, session.packageName)
+            val approveAction = PendingIntent.getBroadcast(
+                context,
+                session.packageName.hashCode(),
+                approvalIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(0, "Aplicar ajustes Noche", approveAction)
+        }
+        val notification = builder.build()
         context.getSystemService(NotificationManager::class.java)
             ?.notify(SUMMARY_ID, notification)
     }
