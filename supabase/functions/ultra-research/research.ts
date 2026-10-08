@@ -5073,7 +5073,7 @@ function encyclopediaExcerptLooksTampered(extract: string): boolean {
   return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
     /\b(?:ignora|ignore|disregard|olvida|omite)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous|prior)\b/iu.test(text) ||
     /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores|prior)\s+(?:instructions|instrucciones)\b/iu.test(text) ||
-    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|any|above|below|previous|prior|earlier|todas?|las?|anteriores|previas|superiores)\s+)*(?:instructions|instrucciones)\s+(?:above|below|de arriba|anteriores|previas)?\b/iu.test(text);
+    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|any|above|below|previous|prior|earlier|todas?|las?|anteriores|previas|superiores)\s+)*(?:instructions|instrucciones)\b(?:\s+(?:above|below|anteriores|previas))?/iu.test(text);
 }
 
 function candidateMatchesKnownMeaning(
