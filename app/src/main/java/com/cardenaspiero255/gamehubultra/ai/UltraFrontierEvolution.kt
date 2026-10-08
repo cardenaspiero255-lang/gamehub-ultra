@@ -1087,6 +1087,38 @@ class UltraFrontierEvolutionController(
             }
     }
 
+    /**
+     * A different candidate answer is not automatically a disagreement.
+     * A single measurable value can be compared only when the remaining
+     * normalized assertion, including its subject and unit, is identical.
+     * Multi-value/narrative answers stay independent rather than forcing
+     * a semantic decision without a structured claim.
+     */
+    private fun researchClaimIdentity(message: String): String {
+        val normalized = java.text.Normalizer.normalize(
+            message,
+            java.text.Normalizer.Form.NFD
+        )
+            .replace(Regex("""\\p{M}+"""), "")
+            .trim()
+            .lowercase(Locale.ROOT)
+            .replace(Regex("""\\s+"""), " ")
+            .trimEnd('.', '!', '?')
+        val numericValue =
+            Regex("""(?<![\\p{L}\\d])[+-]?\\d+(?:[.,]\\d+)?(?![\\p{L}\\d])""")
+        val values = numericValue.findAll(normalized).toList()
+        val assertionVerb = Regex(
+            """\\b(?:ocurrio|sucedio|fue|es|tiene|cuesta|mide|pesa|vale|resulto|is|was|has|costs|weighs)\\b"""
+        )
+        val normalizedAssertion =
+            if (values.size == 1 && assertionVerb.containsMatchIn(normalized)) {
+                numericValue.replace(normalized, "valor-numerico")
+            } else {
+                normalized
+            }
+        return "research-answer:$normalizedAssertion"
+    }
+
     fun synthesizeResearch(
         candidates: List<Pair<UltraQueryExecutionAnswer, Long>>
     ): UltraQueryExecutionAnswer? {
@@ -1104,14 +1136,9 @@ class UltraFrontierEvolutionController(
                     .forEach { source ->
                         provenanceGraph.record(
                             UltraFrontierV2ClaimEvidence(
-                                // Whole research answers are alternatives, not
-                                // necessarily conflicting values of one claim.
-                                // Only evidence for the same answer belongs to
-                                // the same provenance group. Structured factual
-                                // conflicts are evaluated at the claim level.
-                                claimId = "research-answer:" +
-                                    candidate.message.trim()
-                                        .lowercase(Locale.ROOT),
+                                // Group only assertions with the same claim
+                                // identity, not unrelated answers or options.
+                                claimId = researchClaimIdentity(candidate.message),
                                 normalizedValue = candidate.message,
                                 sourceId = source,
                                 providerId = "research-branch-$index",
@@ -1122,8 +1149,7 @@ class UltraFrontierEvolutionController(
             }
         }
         val provenance = provenanceGraph.snapshot(
-            claimId = "research-answer:" +
-                selected.message.trim().lowercase(Locale.ROOT),
+            claimId = researchClaimIdentity(selected.message),
             preferredValue = selected.message
         )
         if (selected.verified && provenance?.hasConflict == true) {
