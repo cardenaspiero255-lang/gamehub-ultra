@@ -74,3 +74,16 @@ test('output honestly states a clean-looking patch is not certified',()=>{
  const text=markdown(analyze([file('README.md',['Hello'])]));
  assert.match(text,/NO certifica/);
 });
+
+test('does not confuse another method call with direct self-recursion (CAR-51)',()=>{
+ const changed=file('app/src/main/java/com/cardenaspiero255/gamehubultra/platform/RuntimeDiagnostics.kt',[
+   'fun connectivity(context: Context): ConnectivityTelemetry =',
+   '  runCatching { readConnectivity(context.applicationContext) }',
+   '      .getOrDefault(ConnectivityTelemetry(null,false,false,true,null,null,null))',
+   'fun get(context: Context): RuntimeDiagnostics {',
+   '  return RuntimeDiagnostics(connectivity = connectivity(context))',
+   '}'
+ ]);
+ const result=analyze([changed]);
+ assert.ok(!rules(result).includes('UNBOUNDED_RECURSION'));
+});
