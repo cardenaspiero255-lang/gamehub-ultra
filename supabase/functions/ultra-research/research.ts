@@ -5637,6 +5637,13 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "wi-fi": {
+      claim: "local-stable:wifi",
+      text:
+        "Wi-Fi es una tecnología de red inalámbrica basada en los estándares " +
+        "IEEE 802.11. Permite conectar dispositivos por ondas de radio a " +
+        "una red local y, si esa red dispone de acceso, a Internet.",
+    },
     "hdmi": {
       claim: "local-stable:hdmi",
       text:
@@ -5798,6 +5805,8 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "televisores, electrodomésticos y semiconductores.",
     },
   };
+  basicDefinitions["wifi"] = basicDefinitions["wi-fi"];
+  basicDefinitions["wi fi"] = basicDefinitions["wi-fi"];
   basicDefinitions["motor turbofan de avion"] =
     basicDefinitions["motor turbofan"];
   basicDefinitions["planetas"] = basicDefinitions["planeta"];
