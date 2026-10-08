@@ -16,6 +16,36 @@ import kotlin.test.assertTrue
 
 class UltraFrontierEvolutionTest {
     @Test
+    fun synthesisDoesNotMistakeDifferentComparisonCandidatesForConflictingClaims() {
+        val candidates = listOf(
+            UltraQueryExecutionAnswer(
+                message = "Candidato A",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("a", "b"),
+                independentSourceCount = 2,
+                abstained = false
+            ) to 12L,
+            UltraQueryExecutionAnswer(
+                message = "Candidato B",
+                verified = true,
+                confidence = UltraAnswerConfidence.MEDIUM,
+                sources = listOf("c"),
+                independentSourceCount = 1,
+                abstained = false
+            ) to 16L
+        )
+
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(candidates)
+        )
+        assertFalse(answer.abstained)
+        assertTrue(answer.verified)
+        assertEquals("Candidato A", answer.message)
+        assertEquals(listOf("a", "b"), answer.sources)
+    }
+
+    @Test
     fun learningStorePrefersLaneWithBetterObservedOutcomes() {
         val learning = UltraFrontierLearningStore(minSamplesForPreference = 2)
         repeat(3) {
