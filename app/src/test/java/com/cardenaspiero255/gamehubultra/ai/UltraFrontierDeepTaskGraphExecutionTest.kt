@@ -128,6 +128,85 @@ class UltraFrontierDeepTaskGraphExecutionTest {
     }
 
     @Test
+    fun constrainedRetryUsesFreshProviderPartitionRatherThanRepeatingCachedFailure() {
+        UltraFrontierWorldStateRegistry.clear()
+        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        try {
+            UltraFrontierWorldStateRegistry.update(
+                UltraFrontierWorldState(
+                    selectedGamePackage = "constrained.game",
+                    sessionActive = true,
+                    selectedProfile = PerformanceProfile.BALANCED,
+                    networkValidated = true,
+                    networkLatencyMs = 40L,
+                    batteryPercent = 12,
+                    charging = false,
+                    thermalStatus = null,
+                    thermalHeadroom = null,
+                    thermalTrend = null,
+                    thermalRisk = null,
+                    thermalConfidence = null,
+                    batteryRecommendation = null,
+                    preventAggressiveProfiles = true,
+                    adaptiveScore = null,
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+            val gateway = object : UltraResearchGateway {
+                override val supportsProviderPartitioning: Boolean = true
+
+                override fun answer(
+                    request: UltraGeneralQueryRequest
+                ): UltraVerifiedResearchResult {
+                    offsets += request.researchProviderOffset
+                    return if (request.researchProviderOffset < 7) {
+                        UltraVerifiedResearchResult(
+                            message = "No hay información suficiente.",
+                            confidence = UltraAnswerConfidence.LOW,
+                            sources = emptyList(),
+                            independentSourceCount = 0,
+                            abstained = true,
+                            retryable = true,
+                            reasonCode = "CONSTRAINED_PARTITION_EXHAUSTED"
+                        )
+                    } else {
+                        UltraVerifiedResearchResult(
+                            message = "Información recuperada de nuevas fuentes.",
+                            confidence = UltraAnswerConfidence.HIGH,
+                            sources = listOf("official-a", "official-b"),
+                            independentSourceCount = 2,
+                            abstained = false
+                        )
+                    }
+                }
+            }
+            val evolution = UltraFrontierEvolutionController()
+            val engine = UltraFrontierExecutionEngine(
+                coordinator = UltraQueryExecutionCoordinator(gateway),
+                evolution = evolution,
+                frontier = UltraFrontierOrchestrator(
+                    policy = UltraFrontierPolicy(
+                        verifiedSourceBudget = 6,
+                        deepSourceBudget = 7,
+                        deepResearchPassBudget = 2
+                    ),
+                    evolution = evolution
+                )
+            )
+            val answer = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Compara profundamente dos teléfonos actuales"
+                )
+            ) { null }
+            assertEquals(listOf(0, 7), offsets.toList())
+            assertTrue(answer.verified)
+            assertFalse(answer.abstained)
+        } finally {
+            UltraFrontierWorldStateRegistry.clear()
+        }
+    }
+
+    @Test
     fun frontierV2DeepResearchNeverOverspendsPlannedSourceBudget() {
         UltraFrontierWorldStateRegistry.clear()
         val partitions = Collections.synchronizedList(
