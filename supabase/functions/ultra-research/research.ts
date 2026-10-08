@@ -5572,10 +5572,10 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   // Normalize explicit company/product question forms to one brand identity.
   const brandName = clean
     .replace(
-      /^(?:que\\s+(?:tipo\\s+de\\s+(?:productos\\s+fabrica|empresa\\s+es)|productos\\s+(?:son\\s+conocidos\\s+de|fabrica)|fabrica|hace)|por\\s+que\\s+es\\s+conocida)\\s+/,
+      /^(?:que\s+(?:tipo\s+de\s+(?:productos\s+fabrica|empresa\s+es)|productos\s+(?:son\s+conocidos\s+de|fabrica)|fabrica|hace)|por\s+que\s+es\s+conocida)\s+/,
       "",
     )
-    .replace(/\\s+como\\s+empresa$/, "")
+    .replace(/\s+como\s+empresa$/, "")
     .trim();
   const brandDescriptions: Record<string, string> = {
     sony:
