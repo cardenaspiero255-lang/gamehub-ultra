@@ -16,6 +16,64 @@ import kotlin.test.assertTrue
 
 class UltraFrontierEvolutionTest {
     @Test
+    fun synthesisSeparatesNumericalClaimsAboutDifferentSubjects() {
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    UltraQueryExecutionAnswer(
+                        message = "El teléfono A cuesta 100 dólares.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("a", "b"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    ) to 10L,
+                    UltraQueryExecutionAnswer(
+                        message = "El teléfono B cuesta 200 dólares.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.MEDIUM,
+                        sources = listOf("c"),
+                        independentSourceCount = 1,
+                        abstained = false
+                    ) to 20L
+                )
+            )
+        )
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+        assertEquals("El teléfono A cuesta 100 dólares.", answer.message)
+    }
+
+    @Test
+    fun synthesisRejectsIncompatibleNumericValuesOfTheSameClaim() {
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    UltraQueryExecutionAnswer(
+                        message = "La batería tiene 5000 mAh.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("a", "b"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    ) to 10L,
+                    UltraQueryExecutionAnswer(
+                        message = "La batería tiene 6000 mAh.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("c"),
+                        independentSourceCount = 1,
+                        abstained = false
+                    ) to 20L
+                )
+            )
+        )
+        assertFalse(answer.verified)
+        assertTrue(answer.abstained)
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", answer.reasonCode)
+    }
+
+    @Test
     fun synthesisDoesNotMistakeDifferentComparisonCandidatesForConflictingClaims() {
         val candidates = listOf(
             UltraQueryExecutionAnswer(
