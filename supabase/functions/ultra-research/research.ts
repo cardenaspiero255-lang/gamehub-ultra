@@ -48,43 +48,6 @@ const stableKnowledgeInFlight =
   new WeakMap<object, Map<string, StableKnowledgeInFlightEntry>>();
 const STABLE_KNOWLEDGE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES = 2048;
-// After an upstream outage, avoid hammering Wikipedia on every local answer.
-// Live verification is retried after this bounded cooldown.
-const STABLE_KNOWLEDGE_RETRY_COOLDOWN_MS = 60 * 1000;
-const stableKnowledgeOfflineCooldowns =
-  new WeakMap<object, Map<string, number>>();
-
-function inStableKnowledgeOfflineCooldown(
-  fetcher: ResearchFetcher,
-  topic: string,
-): boolean {
-  const key = stableKnowledgeCacheKey(topic);
-  const expiresAt = stableKnowledgeOfflineCooldowns.get(fetcher as object)
-    ?.get(key);
-  if (expiresAt === undefined) return false;
-  if (Date.now() < expiresAt) return true;
-  stableKnowledgeOfflineCooldowns.get(fetcher as object)?.delete(key);
-  return false;
-}
-
-function rememberStableKnowledgeOfflineCooldown(
-  fetcher: ResearchFetcher,
-  topic: string,
-): void {
-  const key = stableKnowledgeCacheKey(topic);
-  if (!key) return;
-  let entries = stableKnowledgeOfflineCooldowns.get(fetcher as object);
-  if (!entries) {
-    entries = new Map<string, number>();
-    stableKnowledgeOfflineCooldowns.set(fetcher as object, entries);
-  }
-  if (!entries.has(key) && entries.size >= STABLE_KNOWLEDGE_CACHE_MAX_ENTRIES) {
-    const oldestKey = entries.keys().next().value;
-    if (typeof oldestKey === "string") entries.delete(oldestKey);
-  }
-  entries.set(key, Date.now() + STABLE_KNOWLEDGE_RETRY_COOLDOWN_MS);
-}
-
 const USER_AGENT =
   "GameHub-Ultra-Research-V20/20.0 (https://github.com/cardenaspiero255-lang/gamehub-ultra)";
 
@@ -6198,6 +6161,7 @@ async function generalKnowledgeEvidence(
   deps: ResearchDependencies,
   context = "",
   signal?: AbortSignal,
+  preferLiveSources = false,
 ): Promise<ResearchResult> {
   const previousTopic = contextKnowledgeTopic(context);
   const currentTopic = extractGeneralKnowledgeQuery(query);
@@ -6221,8 +6185,11 @@ async function generalKnowledgeEvidence(
   const localStableKnowledge = dependentFollowUp || bypassLocalForTesting
     ? null
     : stableCoreKnowledgeEvidence(topic);
-  // Prefer relevant sourced live knowledge while providers are healthy.
-  // A bounded outage cooldown keeps offline definitions fast under 429 bursts.
+  // Stable optional answers must remain available without network access.
+  // REQUIRED verification takes the live path instead of asserting that a
+  // local explanation has independent sources it does not possess.
+  if (localStableKnowledge && !preferLiveSources) return localStableKnowledge;
+
   const technicalTroubleshooting = isTechnicalTroubleshootingQuery(query);
   if (technicalTroubleshooting) {
     const technical = await stackOverflowSpanishEvidence(query, deps, signal);
@@ -6238,12 +6205,6 @@ async function generalKnowledgeEvidence(
   if (!technicalTroubleshooting) {
     const cached = cachedStableKnowledge(deps.fetcher, cacheTopic);
     if (cached) return cached;
-  }
-  if (
-    localStableKnowledge &&
-    inStableKnowledgeOfflineCooldown(deps.fetcher, cacheTopic)
-  ) {
-    return localStableKnowledge;
   }
   const loadStableEvidence = async (
     lookupSignal: AbortSignal,
@@ -6404,17 +6365,15 @@ async function generalKnowledgeEvidence(
     );
   };
 
-  const live = technicalTroubleshooting
-    ? await loadStableEvidence(signal ?? new AbortController().signal)
-    : await coalescedStableKnowledgeLookup(
-      deps.fetcher,
-      cacheTopic,
-      loadStableEvidence,
-      signal,
-    );
-  if (!live.abstained || !localStableKnowledge) return live;
-  rememberStableKnowledgeOfflineCooldown(deps.fetcher, cacheTopic);
-  return localStableKnowledge;
+  if (technicalTroubleshooting) {
+    return await loadStableEvidence(signal ?? new AbortController().signal);
+  }
+  return await coalescedStableKnowledgeLookup(
+    deps.fetcher,
+    cacheTopic,
+    loadStableEvidence,
+    signal,
+  );
 }
 
 async function freshWikidataGeneralKnowledgeEvidence(
@@ -6495,6 +6454,7 @@ export async function routeResearchQuery(
   deps: ResearchDependencies,
   context = "",
   kind = "",
+  verificationMode = "",
 ): Promise<ResearchResult> {
   const routeDeadlineAt =
     performance.now() + generalKnowledgeRouteTimeoutMs(deps);
@@ -6539,6 +6499,7 @@ export async function routeResearchQuery(
         deps,
         context,
         primaryController.signal,
+        verificationMode === "REQUIRED",
       ),
       primaryController,
       deps,
