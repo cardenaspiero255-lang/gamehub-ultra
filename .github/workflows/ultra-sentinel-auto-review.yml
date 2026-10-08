@@ -41,7 +41,8 @@ jobs:
         run: |
           node --check .github/scripts/ultra_sentinel_core.cjs
           node --check .github/scripts/ultra_sentinel_remediation.cjs
-          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs
+          node --check .github/scripts/ultra_sentinel_report.cjs
+          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
       - name: Read PR evidence and publish safe independent analysis
         uses: actions/github-script@v7
         with:
@@ -49,6 +50,7 @@ jobs:
           script: |
             const path = require("node:path");
             const {analyze, markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
+            const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -65,7 +67,13 @@ jobs:
               evidence.verdict = "INCOMPLETE";
               evidence.warnings.push("GitHub omitted " + (pr.changed_files - files.length) + " files.");
             }
-            const body = markdown(evidence);
+            // Human summary plus compact machine report can be fetched directly by connected GitHub tools.
+            // Limit both portions: GitHub comments have a finite size.
+            const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence});
+            const body = markdown(evidence).slice(0,33000) + "\n\n" + serialize(report);
+            if (body.length > 64000) {
+              core.setFailed("Machine report exceeds safe comment size."); return;
+            }
             const {data: after} = await github.rest.pulls.get({owner,repo,pull_number:n});
             if (after.head.sha !== pr.head.sha) {
               core.setFailed("Head SHA changed; refusing to publish stale report"); return;
