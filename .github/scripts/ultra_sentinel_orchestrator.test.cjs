@@ -68,3 +68,10 @@ test('generated hunk passes git apply --check in temporary Kotlin tree',()=>{
   assert.match(changed,/println\("ok"\)/);
  }finally{fs.rmSync(tmp,{recursive:true,force:true})}
 });
+
+test('even a matching risk cannot bypass the strict path allowlist',()=>{
+ const outside='../../outside.kt';
+ const risk={...f,path:outside};
+ const got=p.candidate({filename:outside,content,findings:[risk],sha});
+ assert.equal(got.status,'NO_SAFE_TEMPLATE');
+});
