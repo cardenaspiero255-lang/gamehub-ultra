@@ -345,6 +345,48 @@ class UltraVerifiedResearchEngineTest {
 
 
     @Test
+    fun optionalStableKnowledgePrefersSourcedEvidenceOverUnsourcedLocalAnswer() {
+        val local = object : UltraResearchProvider {
+            override val id = "supabase-local"
+            override fun fetch(request: UltraGeneralQueryRequest) = UltraResearchEvidence(
+                claimKey = "local:motor",
+                value = "maquina",
+                displayText = "El motor mueve cosas.",
+                sourceId = "",
+                independentSourceCount = 0,
+                authoritative = false
+            )
+        }
+        val sourced = object : UltraResearchProvider {
+            override val id = "wikimedia"
+            override fun fetch(request: UltraGeneralQueryRequest) = UltraResearchEvidence(
+                claimKey = "general:motor",
+                value = "energia-mecanica",
+                displayText = "Un motor convierte energía térmica o eléctrica en movimiento mecánico útil.",
+                sourceId = "https://es.wikipedia.org/wiki/Motor",
+                independentSourceCount = 1,
+                authoritative = false
+            )
+        }
+        val engine = UltraVerifiedResearchEngine(listOf(local, sourced))
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("Ultra, ¿qué es un motor?")
+                    .copy(verificationMode = UltraVerificationMode.OPTIONAL)
+            )
+            assertFalse(result.abstained)
+            assertEquals(listOf("https://es.wikipedia.org/wiki/Motor"), result.sources)
+            assertEquals(1, result.independentSourceCount)
+            assertEquals(
+                "Un motor convierte energía térmica o eléctrica en movimiento mecánico útil.",
+                result.message
+            )
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun optionalStableKnowledgeChoosesHigherQualityEvidenceWhenProvidersParaphrase() {
         val primary = object : UltraResearchProvider {
             override val id = "primary-multi-source"
