@@ -98,7 +98,9 @@ Deno.test("basic concepts are defined rather than confused with named subclasses
 Deno.test("Leonardo da Vinci biography cannot be confused with a same-named warship", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
-      throw new Error("stable biography must not depend on disambiguated warship article");
+      throw new Error(
+        "stable biography must not depend on disambiguated warship article",
+      );
     },
     env: () => undefined,
   };
@@ -125,7 +127,9 @@ Deno.test("Leonardo da Vinci biography cannot be confused with a same-named wars
 Deno.test("waterproof footwear basic knowledge survives external provider throttling", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
-      throw new Error("stable footwear definition should remain available when rate-limited");
+      throw new Error(
+        "stable footwear definition should remain available when rate-limited",
+      );
     },
     env: () => undefined,
   };
@@ -143,8 +147,13 @@ Deno.test("waterproof footwear basic knowledge survives external provider thrott
       "GENERAL_KNOWLEDGE",
     );
     const content = answer.displayText?.toLowerCase() ?? "";
-    if (answer.abstained || !/agua|humedad/.test(content) || !/pie|calzado/.test(content)) {
-      throw new Error("waterproof footwear should be explained offline for: " + query);
+    if (
+      answer.abstained || !/agua|humedad/.test(content) ||
+      !/pie|calzado/.test(content)
+    ) {
+      throw new Error(
+        "waterproof footwear should be explained offline for: " + query,
+      );
     }
     if (answer.authoritative || (answer.independentSourceCount ?? 0) !== 0) {
       throw new Error("offline footwear definition must not invent sources");
