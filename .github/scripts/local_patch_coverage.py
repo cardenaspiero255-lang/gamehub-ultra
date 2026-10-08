@@ -260,7 +260,7 @@ def _inline_comparator_lambda_lines(source_lines: list[str]) -> set[int]:
     for number, line in enumerate(source_lines, start=1):
         stripped = line.strip()
         if not inside and re.search(
-            r"\bcompareBy(?:Descending)?(?:<[^>]+>)?\s*\{\s*$",
+            r"\bcompareBy(?:Descending)?(?:<[^{}]+>)?\s*\{\s*$",
             stripped,
         ):
             inside = True
@@ -270,6 +270,25 @@ def _inline_comparator_lambda_lines(source_lines: list[str]) -> set[int]:
             structural.add(number)
             if "}" in stripped:
                 inside = False
+    return structural
+
+
+def _generated_getter_property_declaration_lines(
+    source_lines: list[str],
+) -> set[int]:
+    """Property declarations can share bytecode only with their generated getter line."""
+    structural: set[int] = set()
+    declaration = re.compile(
+        r"^(?:(?:public|private|protected|internal|override)\s+)*"
+        r"(?:val|var)\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*[^=]+$"
+    )
+    for index, line in enumerate(source_lines):
+        stripped = line.strip()
+        if not declaration.fullmatch(stripped):
+            continue
+        following = _next_nonblank(source_lines, index)
+        if re.match(r"^get\(\)\s*=", following):
+            structural.add(index + 1)
     return structural
 
 
@@ -313,6 +332,14 @@ def _multiline_expression_continuation_lines(
                 r"(?:\s*:\s*[^=]+)?\s*=\s*.+$",
                 stripped,
             )
+        ):
+            structural.add(index + 1)
+            continue
+        if re.fullmatch(
+            r"\}\)\s*[+*/%\-]\s*"
+            r"(?:\"[^\"]*\"|'[^']*'|[A-Za-z_][A-Za-z0-9_.]*)"
+            r"(?:\s*[+*/%\-])?\s*",
+            stripped,
         ):
             structural.add(index + 1)
             continue
@@ -407,6 +434,9 @@ def calculate_patch_line_coverage(
         signature_lines = _multiline_function_type_signature_lines(source)
         const_initializer_lines = _multiline_const_initializer_lines(source)
         inline_comparator_lines = _inline_comparator_lambda_lines(source)
+        generated_getter_property_lines = (
+            _generated_getter_property_declaration_lines(source)
+        )
         continuation_lines = _multiline_expression_continuation_lines(source)
         compose_dispose_lines = _compose_dispose_synthetic_call_lines(source)
         finally_cleanup_lines = _finally_synthetic_cleanup_lines(source)
@@ -414,6 +444,7 @@ def calculate_patch_line_coverage(
             signature_lines
             | const_initializer_lines
             | inline_comparator_lines
+            | generated_getter_property_lines
             | continuation_lines
             | compose_dispose_lines
             | finally_cleanup_lines
