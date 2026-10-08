@@ -535,8 +535,7 @@ Deno.test(
                 pages: {
                   "1": {
                     title: "Brújula (constelación)",
-                    extract:
-                      "Brújula es una constelación del cielo del sur.",
+                    extract: "Brújula es una constelación del cielo del sur.",
                     index: 1,
                   },
                 },
