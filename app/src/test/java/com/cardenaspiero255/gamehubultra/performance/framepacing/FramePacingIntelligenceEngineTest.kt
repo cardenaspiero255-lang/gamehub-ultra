@@ -443,7 +443,7 @@ class FramePacingIntelligenceEngineTest {
         val customPolicy = FramePacingPolicy(
             refreshMinHz = 50f,
             refreshMaxHz = 200f,
-            frameTimeMaxMs = 50f
+            frameTimeMaxMs = 500f
         )
         val adapter = FramePacingTelemetryAdapter(customPolicy)
         val telemetry = RefreshTelemetry(
