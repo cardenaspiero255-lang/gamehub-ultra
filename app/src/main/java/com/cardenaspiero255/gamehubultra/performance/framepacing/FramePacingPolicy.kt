@@ -24,6 +24,7 @@ data class FramePacingPolicy(
     val notAppliedThresholdHz: Float = 20f,
     val minStabilityRatio: Float = 0.75f,
     val recoverySamples: Int = 5,
+    val minRecoveryStableSamples: Int = 3,
     val recoveryHeadRatio: Float = 0.85f,
     val recoveryTailBoost: Float = 1.10f,
     val degradingMinSamples: Int = 6,
@@ -60,6 +61,7 @@ data class FramePacingPolicy(
         }
         require(minStabilityRatio in 0f..1f)
         require(recoverySamples >= 2)
+        require(minRecoveryStableSamples in 2..recoverySamples)
         require(recoveryHeadRatio in 0f..1f)
         require(recoveryTailBoost in 1f..2f)
         require(degradingMinSamples >= 4)
