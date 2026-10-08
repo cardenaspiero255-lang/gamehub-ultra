@@ -5522,6 +5522,13 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "planeta": {
+      claim: "local-stable:planet",
+      text:
+        "Un planeta es un cuerpo celeste que orbita una estrella o un resto estelar " +
+        "y cuya gravedad le da una forma aproximadamente redondeada. " +
+        "Los planetas del sistema solar, como la Tierra, orbitan el Sol.",
+    },
     "maraton": {
       claim: "local-stable:marathon",
       text:
@@ -5634,6 +5641,7 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "televisores, electrodomésticos y semiconductores.",
     },
   };
+  basicDefinitions["planetas"] = basicDefinitions["planeta"];
   basicDefinitions["maratones"] = basicDefinitions["maraton"];
   basicDefinitions["fotografia con camara"] = basicDefinitions["camara fotografica"];
   basicDefinitions["tarjeta roja"] = basicDefinitions["tarjeta roja en futbol"];
