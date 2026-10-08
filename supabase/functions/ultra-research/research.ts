@@ -5502,6 +5502,50 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     };
   }
 
+  const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "lapiz": {
+      claim: "local-stable:pencil",
+      text:
+        "Un lápiz es un instrumento que permite escribir y dibujar. " +
+        "Normalmente contiene una mina de grafito dentro de una cubierta de madera " +
+        "u otro material, que deja una marca sobre el papel.",
+    },
+    "molecula": {
+      claim: "local-stable:molecule",
+      text:
+        "Una molécula es una agrupación de átomos enlazados químicamente que " +
+        "se comporta como una unidad de una sustancia. Los enlaces entre " +
+        "los átomos determinan parte de sus propiedades.",
+    },
+    "poema": {
+      claim: "local-stable:poem",
+      text:
+        "Un poema es una composición literaria de poesía que utiliza el lenguaje " +
+        "con intención expresiva y estética. Puede organizarse en versos y estrofas " +
+        "o escribirse en prosa poética para expresar ideas, emociones o experiencias.",
+    },
+    "samsung": {
+      claim: "local-stable:samsung-products",
+      text:
+        "Samsung es un grupo empresarial surcoreano conocido especialmente " +
+        "por fabricar productos electrónicos, como teléfonos inteligentes, " +
+        "televisores, electrodomésticos y semiconductores.",
+    },
+  };
+  basicDefinitions["lapices"] = basicDefinitions["lapiz"];
+  basicDefinitions["moleculas"] = basicDefinitions["molecula"];
+  basicDefinitions["poemas"] = basicDefinitions["poema"];
+  const definition = basicDefinitions[clean];
+  if (definition) {
+    return {
+      claimKey: definition.claim,
+      value: normalize(definition.text),
+      displayText: definition.text,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   if (clean === "seguro de viaje") {
     const displayText =
       "Un seguro de viaje es una cobertura contratada para reducir el impacto económico de imprevistos durante un viaje. " +
