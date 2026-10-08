@@ -13,6 +13,49 @@ function wikipediaSearchParam(url: URL): string {
     "";
 }
 
+Deno.test("healthy sourced evidence outranks the offline stable corpus", async () => {
+  let liveRequests = 0;
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        liveRequests += 1;
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                title: "Ascensor",
+                extract:
+                  "Un ascensor transporta personas de forma vertical entre pisos. Esta definición fue contrastada con una fuente enciclopédica.",
+                canonicalurl: "https://es.wikipedia.org/wiki/Ascensor",
+              },
+            },
+          },
+        });
+      }
+      return jsonResponse({ query: { search: [] } });
+    },
+    env: () => undefined,
+  };
+  const result = await routeResearchQuery(
+    "¿Qué es un ascensor?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+  );
+  if (
+    result.abstained || liveRequests === 0 ||
+    !result.displayText?.includes("contrastada") ||
+    result.authoritative !== true ||
+    !result.sourceId?.includes("wikipedia.org")
+  ) {
+    throw new Error("Available reputable live evidence must outrank local fallback");
+  }
+});
+
 Deno.test("stable elevator definitions reject vandalized external answers", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
