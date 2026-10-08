@@ -223,12 +223,10 @@ class UltraFrontierProviderPartitionRegressionTest {
             transport = transport,
             requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
         )
+        val request = UltraGeneralQueryRouter.classify("¿Qué es un macroverso?")
+            .copy(verificationMode = UltraVerificationMode.OPTIONAL)
         val evidence = assertIs<UltraProviderResult.Evidence>(
-            provider.fetchResult(UltraGeneralQueryRouter.classify("¿Qué es un macroverso?"))
-                .let { request ->
-                    request.copy(verificationMode = UltraVerificationMode.OPTIONAL)
-                }
-            )
+            provider.fetchResult(request)
         ).evidence
         assertTrue(evidence.sourceId.isEmpty())
         assertEquals(0, evidence.independentSourceCount)
