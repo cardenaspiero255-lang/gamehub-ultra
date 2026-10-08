@@ -125,7 +125,7 @@ class UltraFrontierProviderPartitionRegressionTest {
             provider.fetchResult(UltraGeneralQueryRouter.classify("¿Qué es un planeta?"))
         ).evidence
         assertEquals(url, evidence.sourceId)
-        assertEquals(listOf(url), evidence.allSourceIds())
+        assertEquals(listOf(url), listOf(evidence.sourceId) + evidence.supportingSourceIds)
         assertEquals(1, evidence.independentSourceCount)
         assertFalse(evidence.authoritative)
     }
