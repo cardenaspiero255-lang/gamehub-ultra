@@ -486,6 +486,45 @@ Deno.test("generic topic rejects narrower names even when search ranks them firs
 });
 
 Deno.test(
+  "well-known brand questions identify concrete product categories",
+  async () => {
+    const cases: Array<[string, RegExp]> = [
+      ["¿Qué productos son conocidos de Sony?", /playstation.*audio/i],
+      ["¿Qué tipo de productos fabrica Samsung?", /tel[eé]fono.*televisor/i],
+      ["¿Qué es Apple como empresa?", /iphone.*mac/i],
+      ["¿Qué es Xiaomi?", /smartphone.*electr/i],
+      ["¿Qué hace Nintendo?", /videojuego.*consol/i],
+      ["¿Qué fabrica NVIDIA?", /gpu.*gr[aá]fic/i],
+      ["¿Qué fabrica AMD?", /procesador.*gpu/i],
+      ["¿Qué productos fabrica LG?", /televisor.*electrodom/i],
+      ["¿Por qué es conocida JBL?", /audio.*altavoz/i],
+      ["¿Qué tipo de empresa es Lenovo?", /computador.*tecnolog/i],
+    ];
+    for (const [query, expected] of cases) {
+      const result = await routeResearchQuery(
+        query,
+        {
+          fetcher: () => {
+            throw new Error("Stable brand basics must not require a network");
+          },
+          env: () => undefined,
+        },
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+      );
+      if (
+        result.abstained ||
+        !expected.test(result.displayText ?? "") ||
+        result.authoritative === true
+      ) {
+        throw new Error("Brand product facts missing for " + query);
+      }
+    }
+  },
+);
+
+Deno.test(
   "compass questions explain orientation, not the constellation",
   async () => {
     const prompts = [
