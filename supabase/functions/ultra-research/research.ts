@@ -5070,10 +5070,10 @@ function isBiologicalBearCandidate(candidate: string): boolean {
 function encyclopediaExcerptLooksTampered(extract: string): boolean {
   // Invisible formatting and embedded assistant instructions are not evidence.
   // Reject rather than silently stripping them and promoting source authority.
+  const text = normalize(extract);
   return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
-    /\b(?:ignora|ignore)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous)\b/iu.test(
-      normalize(extract),
-    );
+    /\b(?:ignora|ignore)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous)\b/iu.test(text) ||
+    /\b(?:ignore|ignora)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores)\s+(?:instructions|instrucciones)\b/iu.test(text);
 }
 
 function candidateMatchesKnownMeaning(
@@ -5083,6 +5083,23 @@ function candidateMatchesKnownMeaning(
 ): boolean {
   if (encyclopediaExcerptLooksTampered(extract)) return false;
   const cleanQuery = normalize(query);
+  // A generic definition of a term must not be satisfied by a narrower
+  // named event, branch of science, award or product merely mentioning it.
+  // Apply this only to explicit definitional queries. Domain synonyms whose
+  // titles do not contain the requested term remain eligible downstream.
+  const requestedTopic = normalize(extractGeneralKnowledgeQuery(query))
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
+  const candidateTitle = normalize(title)
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
+  if (
+    /^(?:que es|que son|define|explicame que es)\b/.test(cleanQuery) &&
+    requestedTopic.length >= 4 &&
+    candidateTitle !== requestedTopic &&
+    candidateTitle.split(" ").length > requestedTopic.split(" ").length &&
+    (" " + candidateTitle + " ").includes(" " + requestedTopic + " ")
+  ) {
+    return false;
+  }
   const candidate = normalize(title + " " + extract);
 
   const genericBearIntent =
@@ -5503,6 +5520,61 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "maraton": {
+      claim: "local-stable:marathon",
+      text:
+        "Una maratón es una carrera de atletismo de larga distancia de 42,195 kilómetros. " +
+        "Las personas participantes deben mantener el esfuerzo y la resistencia física " +
+        "durante todo el recorrido.",
+    },
+    "camara fotografica": {
+      claim: "local-stable:camera",
+      text:
+        "Una cámara fotográfica captura una imagen cuando la luz entra por el objetivo " +
+        "y llega a un sensor o a una película fotosensible. Controla la exposición " +
+        "mediante la apertura, el obturador y otros ajustes.",
+    },
+    "gravedad": {
+      claim: "local-stable:gravity",
+      text:
+        "La gravedad es la interacción por la que los objetos con masa se atraen. " +
+        "Explica por qué caen los cuerpos hacia la Tierra y por qué los planetas " +
+        "permanecen en órbita alrededor del Sol.",
+    },
+    "termometro": {
+      claim: "local-stable:thermometer",
+      text:
+        "Un termómetro sirve para medir la temperatura de una persona, objeto " +
+        "o ambiente mediante sensores electrónicos u otros mecanismos físicos.",
+    },
+    "manga": {
+      claim: "local-stable:manga",
+      text:
+        "El manga es un tipo de cómic japonés, normalmente narrado mediante " +
+        "viñetas e ilustraciones. Puede contar historias de numerosos géneros " +
+        "y está dirigido a públicos de distintas edades.",
+    },
+    "tarjeta roja en futbol": {
+      claim: "local-stable:football-red-card",
+      text:
+        "En fútbol, la tarjeta roja indica la expulsión de un jugador por una " +
+        "infracción grave o una segunda amonestación. El jugador debe abandonar " +
+        "el campo y su equipo normalmente continúa con menos futbolistas.",
+    },
+    "enchufe electrico": {
+      claim: "local-stable:electrical-plug",
+      text:
+        "Un enchufe eléctrico conecta un dispositivo con una toma de corriente " +
+        "para recibir energía eléctrica de forma adecuada a su diseño. " +
+        "Hay diversos tipos de clavijas y normas de seguridad.",
+    },
+    "silla y un sillon": {
+      claim: "local-stable:chair-vs-armchair",
+      text:
+        "Una silla es un asiento para una persona, generalmente con respaldo; " +
+        "un sillón suele ser más ancho, acolchado y con reposabrazos. " +
+        "Ambos sirven para sentarse, pero el sillón prioriza la comodidad.",
+    },
     "survival horror": {
       claim: "local-stable:survival-horror-genre",
       text:
@@ -5560,6 +5632,11 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "televisores, electrodomésticos y semiconductores.",
     },
   };
+  basicDefinitions["maratones"] = basicDefinitions["maraton"];
+  basicDefinitions["fotografia con camara"] = basicDefinitions["camara fotografica"];
+  basicDefinitions["tarjeta roja"] = basicDefinitions["tarjeta roja en futbol"];
+  basicDefinitions["enchufe"] = basicDefinitions["enchufe electrico"];
+  basicDefinitions["silla y sillon"] = basicDefinitions["silla y un sillon"];
   basicDefinitions["armarios"] = basicDefinitions["armario"];
   basicDefinitions["horror de supervivencia"] =
     basicDefinitions["survival horror"];
