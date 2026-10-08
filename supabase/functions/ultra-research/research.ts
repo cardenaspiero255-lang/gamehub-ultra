@@ -5119,6 +5119,24 @@ function candidateMatchesKnownMeaning(
   }
   const candidate = normalize(title + " " + extract);
 
+  // Separate the navigational instrument from the homonymous southern
+  // constellation. A generic question about what a compass is used for
+  // must be corroborated by navigation semantics, not just a title match.
+  const navigationCompassIntent =
+    /\bbrujula\b/.test(cleanQuery) &&
+    !/\b(?:constelacion|astronomia|estrellas)\b/.test(cleanQuery);
+  if (navigationCompassIntent) {
+    const description = normalize(extract);
+    if (
+      /\b(?:constelacion|astros?|cielo austral)\b/.test(candidate) ||
+      !/\b(?:norte|orient\w*|magnet\w*|direcc\w*|cardinal\w*|naveg\w*)\b/.test(
+        description,
+      )
+    ) {
+      return false;
+    }
+  }
+
   // Resolve ambiguous encyclopedia titles by the requested sense, not by
   // superficial keyword overlap: a documentary about plants remains a film,
   // even if its excerpt also mentions photosynthesis and solar energy.
@@ -5565,6 +5583,13 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "brujula": {
+      claim: "local-stable:compass",
+      text:
+        "Una brújula es un instrumento de orientación que usa una aguja " +
+        "imantada para señalar el norte magnético. Ayuda a orientarse y " +
+        "seguir direcciones al navegar, caminar o consultar un mapa.",
+    },
     "calendario": {
       claim: "local-stable:calendar",
       text:
