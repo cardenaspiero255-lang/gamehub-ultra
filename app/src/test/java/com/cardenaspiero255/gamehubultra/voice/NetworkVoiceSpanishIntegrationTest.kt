@@ -270,6 +270,41 @@ class NetworkVoiceSpanishIntegrationTest {
         assertEquals(NetworkGameProfile.BALANCED, snapshot.recommendedProfile)
     }
 
+
+    @Test
+    fun offlineNetworkOptimizeDoesNotInvokeMutableNetworkAction() {
+        val disconnected = assertNotNull(
+            VoiceNetworkSnapshotFactory.from(
+                listOf(ConnectivityTelemetry(
+                    networkHandle = null,
+                    connected = false,
+                    validated = false,
+                    metered = true,
+                    transport = null,
+                    downstreamBandwidthKbps = null,
+                    latencyMs = null
+                ))
+            )
+        )
+        var mutationCalls = 0
+        val result = VoiceCommandEngine.execute(
+            command = VoiceCommand.Network(NetworkVoiceRequest.OPTIMIZE),
+            gamesProvider = { emptyList() },
+            launchGame = { true },
+            saveSelectedGame = {},
+            saveSelectedProfile = {},
+            isProfileAvailable = { true },
+            statusProvider = { VoiceDeviceStatus(80, "Normal") },
+            networkStatusProvider = { disconnected },
+            applyNetworkProfile = {
+                mutationCalls++
+                NetworkOptimizationOutcome.APPLIED
+            }
+        )
+        assertEquals(0, mutationCalls)
+        assertIs<VoiceActionResult.NotAvailable>(result)
+    }
+
     @Test
     fun staleLeaseCallbackCannotReleaseNewerWifiLease() {
         assertFalse(
