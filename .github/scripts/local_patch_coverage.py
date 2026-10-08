@@ -302,6 +302,29 @@ def _generated_getter_property_declaration_lines(
         structural.add(index + 1)
         if re.fullmatch(r"get\(\)\s*=", source_lines[getter_index].strip()):
             structural.add(getter_index + 1)
+            # Only synthetic, call-free getter expressions may be missing from
+            # JaCoCo. Never suppress absent counters for function calls.
+            getter_indent = len(source_lines[getter_index]) - len(
+                source_lines[getter_index].lstrip()
+            )
+            simple_arithmetic = re.compile(
+                r"^[A-Za-z_][A-Za-z0-9_.]*"
+                r"(?:\s*[+*/%-]\s*(?:[A-Za-z_][A-Za-z0-9_.]*|"
+                r"\d+(?:\.\d+)?))*"
+                r"(?:\s*[+*/%-])?$"
+            )
+            for cursor in range(getter_index + 1, len(source_lines)):
+                expression_line = source_lines[cursor]
+                if (
+                    not expression_line.strip()
+                    or len(expression_line) - len(expression_line.lstrip())
+                    <= getter_indent
+                    or not simple_arithmetic.fullmatch(expression_line.strip())
+                ):
+                    break
+                structural.add(cursor + 1)
+                if not expression_line.rstrip().endswith(("+", "-", "*", "/", "%")):
+                    break
     return structural
 
 
