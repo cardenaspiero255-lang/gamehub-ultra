@@ -305,7 +305,7 @@ class UltraFrontierV2ClaimProvenanceGraph {
         val normalized = evidence.copy(
             claimId = normalize(evidence.claimId),
             normalizedValue = normalize(evidence.normalizedValue),
-            sourceId = normalize(evidence.sourceId),
+            sourceId = normalizeSourceId(evidence.sourceId),
             providerId = normalize(evidence.providerId)
         )
         val claimEvidence = evidenceByClaim.getOrPut(normalized.claimId) {
@@ -358,6 +358,30 @@ class UltraFrontierV2ClaimProvenanceGraph {
     @Synchronized
     fun clear() {
         evidenceByClaim.clear()
+    }
+
+    private fun normalizeSourceId(value: String): String {
+        val trimmed = value.trim()
+        val uri = runCatching { java.net.URI(trimmed) }.getOrNull()
+        if (
+            uri != null &&
+            (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) &&
+            uri.host != null
+        ) {
+            // Only the scheme and hostname are case-insensitive. Preserve
+            // case-sensitive URL paths, queries and fragments as evidence IDs.
+            return buildString {
+                append(uri.scheme.lowercase(Locale.ROOT))
+                append("://")
+                uri.rawUserInfo?.let { append(it); append("@") }
+                append(uri.host.lowercase(Locale.ROOT))
+                if (uri.port >= 0) { append(":"); append(uri.port) }
+                append(uri.rawPath.orEmpty())
+                uri.rawQuery?.let { append("?"); append(it) }
+                uri.rawFragment?.let { append("#"); append(it) }
+            }
+        }
+        return normalize(trimmed)
     }
 
     private fun normalize(value: String): String =
