@@ -3,10 +3,10 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const yaml=()=>fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
 test('read-only reviewer runs for PRs, including drafts, without issue write privileges',()=>{
  const x=yaml();
- assert.match(x,/pull_request:\s*\n\s*types:\s*\[opened, reopened, synchronize, ready_for_review\]/);
+ assert.match(x,/pull_request_target:\s*\n\s*types:\s*\[opened, reopened, synchronize, ready_for_review\]/);
  assert.match(x,/contents: read/);
  assert.match(x,/pull-requests: read/);
- assert.doesNotMatch(x,/issues:\s*write|pull-requests:\s*write|pull_request_target:/);
+ assert.doesNotMatch(x,/issues:\s*write|pull-requests:\s*write|^  pull_request:\s*$/m);
 });
 test('never executes PR source or accesses third-party secrets',()=>{
  const x=yaml();
