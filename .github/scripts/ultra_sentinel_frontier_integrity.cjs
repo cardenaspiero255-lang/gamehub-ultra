@@ -28,15 +28,24 @@ function attestCi({sha,repo,runs,apiComplete=true,trustedWorkflows,changedFiles,
   return empty();
  const chosen=[];
  for(const name of REQUIRED){
-  const trusted=runs.filter(run=>run&&run.name===name&&
+  // First group authenticated workflow/SHA candidates, then check that
+  // *every* matching run has trustworthy ordering metadata. Otherwise a
+  // newer incomplete record could be discarded in favor of stale green CI.
+  const candidates=runs.filter(run=>run&&run.name===name&&
    typeof run.head_sha==='string'&&run.head_sha.toLowerCase()===sha.toLowerCase()&&
    run.repository?.full_name===repo&&run.head_repository?.full_name===repo&&
    EVENTS.has(run.event)&&run.workflow_id===trustedWorkflows[name].id&&
-   run.path===trustedWorkflows[name].path&&Number.isSafeInteger(run.id)&&run.id>0&&
+   run.path===trustedWorkflows[name].path);
+  const orderable=candidates.every(run=>Number.isSafeInteger(run.id)&&run.id>0&&
    Number.isSafeInteger(run.run_number)&&run.run_number>0&&
-   Number.isSafeInteger(run.run_attempt)&&run.run_attempt>0&&
-   (run.status==='completed'||['in_progress','queued','waiting','pending','requested'].includes(run.status))
-  ).sort((a,b)=>(b.run_number-a.run_number)||(b.run_attempt-a.run_attempt)||(b.id-a.id));
+   Number.isSafeInteger(run.run_attempt)&&run.run_attempt>0);
+  if(!orderable){
+   counts.pending++;
+   chosen.push({name,state:'pending',runId:null,attempt:null});
+   continue;
+  }
+  const trusted=candidates.sort((a,b)=>(b.run_number-a.run_number)||
+   (b.run_attempt-a.run_attempt)||(b.id-a.id));
   const latest=trusted[0];
   const state=!latest?'pending':latest.status!=='completed'?'pending':
    latest.conclusion==='success'?'success':FAILURES.has(latest.conclusion)?'failed':'pending';
