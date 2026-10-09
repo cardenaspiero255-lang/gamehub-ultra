@@ -208,7 +208,7 @@ function refInFlowValue(value){
  const mapped=String(value||'').trim().match(/^\{([\s\S]*)\}$/);
  if(!mapped)return false;
  for(const entry of splitFlowEntries(mapped[1])){
-  const kv=keyValue(entry);
+  const kv=keyValue(entry.trim());
   if(kv?.key==='ref'&&isUnsafePrRef(kv.value))return true;
  }
  return false;
@@ -244,7 +244,7 @@ function stepAction(lines,step){
  const flow=flowText.match(/^\{([\s\S]*)\}\s*(?:#.*)?$/);
  if(flow){
   for(const entry of splitFlowEntries(flow[1])){
-   const kv=keyValue(entry);
+   const kv=keyValue(entry.trim());
    if(kv?.key==='uses'){action=scalar(kv.value);actionLine=start+1;}
    if(kv?.key==='with'&&refInFlowValue(kv.value))dangerous.push(start+1);
   }
