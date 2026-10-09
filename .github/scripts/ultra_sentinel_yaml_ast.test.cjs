@@ -129,3 +129,46 @@ test('AST safety: BOM at root is recognized without skipping privileged trigger'
  assert.ok(verdict.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),
   JSON.stringify(verdict));
 });
+
+test('AST merge <<: *alias inherits dangerous checkout and ref instead of masking it',()=>{
+ const yaml=['on: pull_request_target',
+ 'shared: &checkout {uses: "actions/checkout@'+SHA+'", with: {ref: "${{ github.head_ref }}"}}',
+ 'jobs:','  audit:','    steps:','      - <<: *checkout'].join('\n');
+ const r=inspectWorkflow(yaml);
+ assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('AST merge <<: *alias inherits writable permissions and never claims safe',()=>{
+ const yaml=['on: push', 'base: &writer {contents: write}',
+ 'permissions:', '  <<: *writer', 'jobs:','  test:','    steps:','      - run: echo safe'].join('\n');
+ const r=inspectWorkflow(yaml);
+ assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_WRITE_TOKEN')||r.coverage.partial,
+ JSON.stringify(r));
+});
+test('AST step alias resolves concrete checkout rather than skipping steps',()=>{
+ const yaml=['on: pull_request_target','jobs:','  test:','    steps:',
+ '      - &source {uses: "actions/checkout@'+SHA+'", with: {ref: "${{ github.head_ref }}"}}',
+ '      - *source'].join('\n');
+ const r=inspectWorkflow(yaml);
+ assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('AST unknown tag is incomplete and cannot be executed',()=>{
+ const yaml='on: push\njobs:\n  demo:\n    steps:\n      - uses: !javascript/object actions/checkout@v6\n';
+ const r=inspectWorkflow(yaml);
+ assert.equal(r.status,'INCOMPLETE');
+});
+test('AST excessively large untrusted YAML fails closed',()=>{
+ const src='on: push\njobs: {}\n#'+('x'.repeat(160001));
+ const r=inspectWorkflow(src);
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.coverage.partial,true);
+});
+test('AST numeric ref in checkout is not silently treated as a trusted branch',()=>{
+ const y='on: pull_request_target\njobs:\n  t:\n    steps:\n      - uses: actions/checkout@'+SHA+
+ '\n        with:\n          ref: 100\n';
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('AST missing on trigger does not claim a healthy workflow',()=>{
+ const r=inspectWorkflow('jobs:\n  t:\n    steps:\n      - run: echo hi\n');
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
