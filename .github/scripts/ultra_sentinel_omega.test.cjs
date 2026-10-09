@@ -5,7 +5,7 @@ const omega=require('./ultra_sentinel_omega.cjs');
 const sample=()=>JSON.parse(fs.readFileSync(path.resolve(__dirname,'../sentinel-contracts/voice-retry.omega.json'),'utf8'));
 test('shipped OMEGA voice contract is total and deterministic',()=>{
  const result=omega.check(sample());assert.equal(result.valid,true,JSON.stringify(result.errors));
- assert.equal(result.transitionsChecked,6);assert.deepEqual(result.reachableStates,['IDLE','RETRY_PENDING']);
+ assert.equal(result.transitionsChecked,12);assert.deepEqual(result.reachableStates,['CLOSED','IDLE','RETRY_PENDING']);
 });
 test('rejects repeated schedule from pending',()=>{
  const p=sample();p.transitions.find(t=>t.from==='RETRY_PENDING'&&t.event==='SCHEDULE').accepted=true;
@@ -41,4 +41,18 @@ test('rejects arbitrary added states',()=>{
 test('rejects nonobject payload',()=>assert.equal(omega.check(null).valid,false));
 test('does not report Android runtime proof',()=>{
  assert.match(omega.check(sample()).guarantee,/Abstract/);
+});
+
+test('CLOSED is terminal even after reset and dispatch',()=>{
+ const p=sample();
+ for(const event of ['SCHEDULE','RESET','DISPATCH','CLOSE']){
+  const tr=p.transitions.find(t=>t.from==='CLOSED'&&t.event===event);
+  assert.equal(tr.to,'CLOSED');
+ }
+ const broken=sample();broken.transitions.find(t=>t.from==='CLOSED'&&t.event==='RESET').to='IDLE';
+ assert.equal(omega.check(broken).valid,false);
+});
+test('cannot schedule retry after close',()=>{
+ const p=sample();const tr=p.transitions.find(t=>t.from==='CLOSED'&&t.event==='SCHEDULE');
+ tr.accepted=true;assert.equal(omega.check(p).valid,false);
 });
