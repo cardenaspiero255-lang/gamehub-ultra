@@ -412,22 +412,22 @@ def main() -> None:
     reject_mutation(
         "preinstalled SDK probe removed",
         coverage_replace=(
-            "      - name: Probe preinstalled Android SDK\\n",
-            "      - name: Probe preinstalled Android SDK disabled\\n",
+            "      - name: Probe preinstalled Android SDK\n",
+            "      - name: Probe preinstalled Android SDK disabled\n",
         ),
     )
     reject_mutation(
         "pinned SDK fallback disabled",
         android_replace=(
-            "        if: steps.sdk_preflight.outputs.usable != 'true'\\n",
-            "        if: false\\n",
+            "        if: steps.sdk_preflight.outputs.usable != 'true'\n",
+            "        if: false\n",
         ),
     )
     reject_mutation(
         "SDK probe bypasses actual script",
         android_replace=(
-            "        run: bash .github/scripts/probe-preinstalled-android-sdk.sh\\n",
-            "        run: echo probe-skipped\\n",
+            "        run: bash .github/scripts/probe-preinstalled-android-sdk.sh\n",
+            "        run: echo probe-skipped\n",
         ),
     )
     reject_mutation(
