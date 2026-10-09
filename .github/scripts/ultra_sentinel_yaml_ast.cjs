@@ -303,6 +303,10 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   const where=path; // Deliberately no attempt to fabricate AST line locations.
   if(!isMap(job)){coverage.partial=true;continue;}
   checkPermissions(job.permissions,where);
+  // The GITHUB_TOKEN permission inherited from repository defaults is not
+  // verifiable from YAML. In privileged jobs it must not be certified clean.
+  if(privileged && job.permissions==null && document.permissions==null)
+   coverage.partial=true;
   checkDefaults(job.defaults,where);
   const jobTaint=new Set([...workflowTaint,...collectEnvSources(job.env)]);
   if(privileged){
@@ -404,6 +408,14 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      }
      if(invalidInputs)coverage.partial=true;
      else{
+      // Even a static branch or tag can point to attacker-controlled code.
+      // Only the repository's reviewed main branch, an immutable SHA, or
+      // exactly base-scoped GitHub expressions can be certified here.
+      const ref=typeof inputs.ref==='string'?inputs.ref.trim():null;
+      const trustedBaseRef=ref==='main'||ref==='refs/heads/main'||
+        /^\$\{\{\s*(?:github\.(?:sha|ref)|github\.event\.pull_request\.base\.sha|github\.event\.repository\.default_branch)\s*\}\}$/.test(ref||'');
+      if(ref!==null&&!trustedBaseRef&&!PINNED.test(ref))
+       coverage.partial=true;
       const server=inputs['github-server-url'];
       if(server!==undefined){
        if(typeof server!=='string')coverage.partial=true;
