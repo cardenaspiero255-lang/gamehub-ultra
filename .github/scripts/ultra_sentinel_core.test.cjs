@@ -259,3 +259,26 @@ test('ADVERSARIAL: Java comment and text-block context cannot manufacture Kotlin
  ])]);
  assert.ok(!rules(out).includes('BLOCKING_ANDROID_CALL'));
 });
+
+// Codex P2: no lexical certainty when a changed hunk begins in the middle
+// of an existing file. An unchanged comment/raw-string opener may be missing.
+test('Codex P2: a mid-file hunk inside a Kotlin comment cannot create an actionable finding',()=>{
+ for(const statement of ['runBlocking { example() }','System.gc()','Log.i("private", transcript)']){
+  const patch=['@@ -60,3 +60,4 @@',' * explanation',
+   '+ '+statement,' * more explanation'].join('\n');
+  const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+  assert.equal(result.verdict,'INCOMPLETE',JSON.stringify(result));
+  assert.equal(result.coverage.partial,true);
+  assert.ok(!result.findings.some(f=>['BLOCKING_ANDROID_CALL','FORCED_GC','POTENTIAL_PRIVATE_LOG'].includes(f.rule)),
+   JSON.stringify({statement,findings:result.findings}));
+  assert.ok(!result.remediations?.suggestions?.some(x=>x.rule==='FORCED_GC'),JSON.stringify(result.remediations));
+ }
+});
+test('Codex P2: disconnected Kotlin hunk cannot inherit falsely trusted lexer context',()=>{
+ const patch=['@@ -1,1 +1,1 @@','val count = 1',
+  '@@ -80,1 +80,2 @@',' val explanation = 1',
+  '+runBlocking { example() }'].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+ assert.equal(result.verdict,'INCOMPLETE',JSON.stringify(result));
+ assert.ok(!result.findings.some(f=>f.rule==='BLOCKING_ANDROID_CALL'),JSON.stringify(result.findings));
+});
