@@ -303,7 +303,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     /^(?:false|0|\$\{\{\s*(?:false|0)\s*\}\})$/i.test(condition.trim()))
    coverage.partial=true;
  };
- const sensitiveExpression=value=>typeof value==='string'&&value.includes('
+ const sensitiveExpression=value=>typeof value==='string'&&
+  value.includes(String.fromCharCode(36,123,123))&&
+  /\b(?:secrets\s*(?:\.|\[)|github\s*(?:\.\s*token\b|\[\s*['"]token['"]\s*\]))/i.test(value);
  const checkActionCredentialHandoff=(step,job)=>{
   // A pinned action may still be an unauthorized recipient of credentials.
   // Effective env includes workflow-, job- and step-level values.
