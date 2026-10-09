@@ -893,6 +893,16 @@ def main() -> None:
     if android_test_fan_in.get("needs") != "android-test-shard":
         fail("Android test fan-in lost packed shard dependency")
 
+    # Shard workers select tests from source files only; full history is
+    # required solely by the aggregation job to compute patch coverage.
+    coverage_checkout = require_step(coverage, "coverage-shard", "Checkout")
+    shard_checkout_with = coverage_checkout.get("with")
+    if not isinstance(shard_checkout_with, dict) or shard_checkout_with.get("fetch-depth") != 1:
+        fail("Coverage physical runners must use shallow one-commit checkout")
+    aggregate_checkout = require_step(coverage, "coverage", "Checkout")
+    aggregate_checkout_with = aggregate_checkout.get("with")
+    if not isinstance(aggregate_checkout_with, dict) or aggregate_checkout_with.get("fetch-depth") != 0:
+        fail("Coverage aggregate must retain complete Git history for patch provenance")
     coverage_shard_job = job(coverage, "coverage-shard")
     coverage_strategy = coverage_shard_job.get("strategy")
     if not isinstance(coverage_strategy, dict):
