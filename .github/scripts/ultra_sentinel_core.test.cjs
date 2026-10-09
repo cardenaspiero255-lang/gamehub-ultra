@@ -293,8 +293,8 @@ test('P2 full source: aligned immutable Kotlin source restores exact executable 
  assert.ok(rules(result).includes('BLOCKING_ANDROID_CALL'),JSON.stringify(result.findings));
 });
 test('P2 full source: matching patch inside multiline comment stays inert and complete',()=>{
- const patch=['@@ -5,2 +5,3 @@',' * docs',
-  '+System.gc()',' * docs'].join('\n');
+ const patch=['@@ -5,2 +5,3 @@','  * docs',
+  '+System.gc()','  * docs'].join('\n');
  const fullSource=['/*',' * heading',' * background',' * guidance',' * docs',
   'System.gc()',' * docs',' */'].join('\n');
  const result=analyze([{filename:app+'Service.kt',patch,changes:1,fullSource}]);
