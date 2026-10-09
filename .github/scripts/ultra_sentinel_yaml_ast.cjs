@@ -5,8 +5,8 @@
 const yaml=require('js-yaml');
 const MAX_SOURCE=160000,MAX_NODES=4096,MAX_DEPTH=35,MAX_FINDINGS=40;
 const PINNED=/^[a-f0-9]{40}$/i, ACTION=/^[-A-Za-z0-9_.\/]+@([^\s]+)$/;
-const REMOTE=/\b(?:curl|wget)\b[^\n]{0,240}\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|$)/;
-const DOWNLOAD_PIPE=/\b(?:curl|wget)\b[^\n]{0,240}\|&?\s*\S+/;
+const REMOTE=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|$)/;
+const DOWNLOAD_PIPE=/\b(?:curl|wget)\b[^\n]*\|&?\s*\S+/;
 const WRITE_CAPABILITIES=new Set(['actions','attestations','checks','contents',
  'deployments','discussions','environments','id-token','issues','models','packages',
  'pages','pull-requests','security-events','statuses','artifact-metadata',
@@ -91,15 +91,18 @@ function unknownCheckoutExpression(value,field){
   /^\$\{\{\s*(?:github\.(?:sha|ref)|github\.event\.pull_request\.base\.sha|github\.event\.repository\.default_branch)\s*\}\}$/;
  return !allowed.test(value);
 }
+// Bash treats a newline following | or |& as part of the same pipeline,
+// even without a backslash. Normalize only those lexical continuations.
+// This remains a bounded, conservative heuristic (not a full shell parser).
+function pipelineCommands(v){
+ const withoutEscaped=String(v).replace(/\\\r?\n/g,'');
+ return withoutEscaped.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ').split(/\r?\n/);
+}
 function remotePipeline(v){
- if(typeof v!=='string')return false;
- // For literal scripts, Bash removes a backslash + newline WITHOUT spaces.
- // Folded YAML is already folded by js-yaml; do not join unrelated commands.
- return v.replace(/\\\r?\n/g,'').split(/\r?\n/).some(line=>REMOTE.test(line));
+ return typeof v==='string'&&pipelineCommands(v).some(line=>REMOTE.test(line));
 }
 function unknownDownloadPipeline(v){
- if(typeof v!=='string')return false;
- return v.replace(/\\\r?\n/g,'').split(/\r?\n/).some(line=>DOWNLOAD_PIPE.test(line)&&!REMOTE.test(line));
+ return typeof v==='string'&&pipelineCommands(v).some(line=>DOWNLOAD_PIPE.test(line)&&!REMOTE.test(line));
 }
 // Direct interpolation substitutes attacker-controlled event text into a
 // shell script before execution. Quoting cannot prevent command substitution.
