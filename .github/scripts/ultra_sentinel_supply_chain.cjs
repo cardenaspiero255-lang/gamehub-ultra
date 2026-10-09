@@ -405,7 +405,7 @@ function readStepScalar(lines,index,end,raw,keyIndent){
  if(!parts.length)return {value:null,incomplete:true};
  return {value:parts.join(' '),incomplete:false};
 }
-const remoteShellPattern=/\b(?:curl|wget)\b.{0,240}\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|\s|["']|$)/;
+const remoteShellPattern=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|\s|["']|$)/;
 function shellPipelinesInStep(lines,step){
  const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
  const original=withoutLeadingAnchor(lines[start].replace(/^\s*-\s*/,''));
@@ -455,6 +455,9 @@ function shellPipelinesInStep(lines,step){
       continued=true;
       continue;
      }
+     // A pipe operator continues into the next Bash line even without a
+     // backslash. Preserve only that command until the interpreter is seen.
+     if(/\|&?[ \t]*$/.test(command)){continued=true;continue;}
      if(remoteShellPattern.test(command))matched.push(startLine);
      command='';
     }
