@@ -274,7 +274,7 @@ test('proactive: privileged checkout with unresolved ref input fails closed',()=
  assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
 });
 test('proactive: privileged checkout of same repository and github.sha is accepted',()=>{
- const y=['on: pull_request_target','jobs:','  t:','    steps:',
+ const y=['on: pull_request_target','permissions: read-all','jobs:','  t:','    steps:',
  '      - uses: actions/checkout@'+SHA,'        with:',
  '          repository: ${{ github.repository }}', '          ref: ${{ github.sha }}'].join('\n');
  const r=inspectWorkflow(y);
