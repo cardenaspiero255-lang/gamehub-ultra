@@ -31,22 +31,41 @@ function attestCi({sha,repo,runs,apiComplete=true,trustedWorkflows,changedFiles,
   // First group authenticated workflow/SHA candidates, then check that
   // *every* matching run has trustworthy ordering metadata. Otherwise a
   // newer incomplete record could be discarded in favor of stale green CI.
+  // Trust must be established for the COMPLETE family of same-name runs,
+  // not merely for the subset that already looks green. Otherwise a newer
+  // malformed/authentication-mismatched record can disappear and an older
+  // green run would be falsely certified. A missing SHA is ambiguous too.
   const candidates=runs.filter(run=>run&&run.name===name&&
-   typeof run.head_sha==='string'&&run.head_sha.toLowerCase()===sha.toLowerCase()&&
+   (typeof run.head_sha!=='string'||
+    run.head_sha.toLowerCase()===sha.toLowerCase()));
+  const valid=candidates.every(run=>
+   typeof run.head_sha==='string'&&SHA.test(run.head_sha)&&
    run.repository?.full_name===repo&&run.head_repository?.full_name===repo&&
    EVENTS.has(run.event)&&run.workflow_id===trustedWorkflows[name].id&&
-   run.path===trustedWorkflows[name].path);
-  const orderable=candidates.every(run=>Number.isSafeInteger(run.id)&&run.id>0&&
+   run.path===trustedWorkflows[name].path&&
+   Number.isSafeInteger(run.id)&&run.id>0&&
    Number.isSafeInteger(run.run_number)&&run.run_number>0&&
-   Number.isSafeInteger(run.run_attempt)&&run.run_attempt>0);
-  if(!orderable){
+   Number.isSafeInteger(run.run_attempt)&&run.run_attempt>0&&
+   ['completed','in_progress','queued','waiting','pending','requested'].includes(run.status));
+  const ordered=candidates.slice().sort((a,b)=>(b.run_number-a.run_number)||
+   (b.run_attempt-a.run_attempt)||(b.id-a.id));
+  // A GitHub workflow run_number identifies one run ID for that workflow.
+  // Conflicting representations at equal run_number/attempt cannot be
+  // resolved by id sorting: treat the entire workflow as inconclusive.
+  const seen=new Map();let ambiguous=false;
+  if(valid)for(const run of ordered){
+   const key=run.run_number+':'+run.run_attempt;
+   const prev=seen.get(key);
+   if(prev&&(prev.id!==run.id||prev.status!==run.status||
+     prev.conclusion!==run.conclusion)){ambiguous=true;break;}
+   seen.set(key,run);
+  }
+  if(!valid||ambiguous){
    counts.pending++;
    chosen.push({name,state:'pending',runId:null,attempt:null});
    continue;
   }
-  const trusted=candidates.sort((a,b)=>(b.run_number-a.run_number)||
-   (b.run_attempt-a.run_attempt)||(b.id-a.id));
-  const latest=trusted[0];
+  const latest=ordered[0];
   const state=!latest?'pending':latest.status!=='completed'?'pending':
    latest.conclusion==='success'?'success':FAILURES.has(latest.conclusion)?'failed':'pending';
   counts[state]++;
