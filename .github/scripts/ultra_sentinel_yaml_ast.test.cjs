@@ -196,7 +196,7 @@ test('Codex P1 AST: normal literal repository and main ref remain safe',()=>{
  '      - uses: actions/checkout@'+SHA,
  '        with:', '          repository: cardenaspiero255-lang/gamehub-ultra',
  '          ref: main'].join('\n');
- const r=inspectWorkflow(y);
+ const r=inspectWorkflow(y,{trustedRepository:'cardenaspiero255-lang/gamehub-ultra'});
  assert.ok(!r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
  assert.equal(r.coverage.partial,false,JSON.stringify(r));
 });
