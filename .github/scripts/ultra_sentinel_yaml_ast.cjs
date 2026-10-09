@@ -1,7 +1,7 @@
 'use strict';
 // Structural, read-only YAML review. Source is UNTRUSTED DATA: never execute
 // parsed values, never interpolate them into a command, never load custom tags.
-// Dependency: js-yaml 4.1.1, pinned with sha512 integrity in package-lock.json.
+// Dependency: js-yaml 4.3.2, pinned with sha512 integrity in package-lock.json.
 const yaml=require('js-yaml');
 const MAX_SOURCE=160000,MAX_NODES=4096,MAX_DEPTH=35,MAX_FINDINGS=40;
 const PINNED=/^[a-f0-9]{40}$/i, ACTION=/^[-A-Za-z0-9_.\/]+@([^\s]+)$/;
@@ -36,7 +36,9 @@ function parseWorkflow(source){
   const input=source.charCodeAt(0)===0xfeff?source.slice(1):source;
   // DEFAULT_SCHEMA is YAML 1.2-compatible for GitHub's 'on' key; unlike
   // PyYAML's unmodified YAML 1.1 loader, 'on' stays a string.
+  // Resource budgets apply DURING parsing; boundedGraph runs only afterward.
   const doc=yaml.load(input,{schema:yaml.DEFAULT_SCHEMA,json:false,
+   maxDepth:MAX_DEPTH,maxMergeSeqLength:16,maxTotalMergeKeys:2048,
    onWarning:()=>{throw Error('yaml-warning');}});
   if(!isMap(doc))return {ok:false,reason:'INVALID_ROOT'};
   boundedGraph(doc);
@@ -162,7 +164,7 @@ function auditExecutableExpressions(script){
  return {unsafe,incomplete};
 }
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
- const findings=[],coverage={partial:false,parser:'js-yaml@4.1.1'};
+ const findings=[],coverage={partial:false,parser:'js-yaml@4.3.2'};
  const emit=(rule,severity,where)=>{
   if(findings.length>=MAX_FINDINGS){coverage.partial=true;return;}
   if(!findings.some(x=>x.rule===rule&&x.path===where))
@@ -376,8 +378,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      const external=job.uses.match(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@(.+)$/);
      if(!external||!PINNED.test(external[1]))
       emit('UNPINNED_REUSABLE_WORKFLOW','BLOCKER',where);
-    }else if(privileged){
-     // A caller cannot independently certify an uninspected callee graph.
+    }else{
+     // Local reusable workflows execute an uninspected transitive code graph.
      coverage.partial=true;
     }
     checkReusableInputs(job.with,where);
@@ -402,7 +404,10 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
-    if(!step.uses.startsWith('./')){
+    if(step.uses.startsWith('./')){
+     // Local actions load additional code/metadata; inspect the entire graph.
+     coverage.partial=true;
+    }else{
      const action=ACTION.exec(step.uses);
      if(!action||!PINNED.test(action[1]))emit('UNPINNED_ACTION','HIGH',where);
     }
@@ -537,7 +542,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
 }
 function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={}){
  const results=[],findings=[],coverage={partial:false,requested:expected.length,
-  scanned:0,parser:'js-yaml@4.1.1'};
+  scanned:0,parser:'js-yaml@4.3.2'};
  if(!Array.isArray(expected)||expected.length>25)return {status:'INCOMPLETE',findings,
   coverage:{...coverage,partial:true},results};
  for(const path of expected){
