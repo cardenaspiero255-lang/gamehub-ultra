@@ -21,8 +21,23 @@ function attestCi({sha,repo,runs,apiComplete=true,trustedWorkflows,changedFiles,
   !trustedWorkflows||typeof trustedWorkflows!=='object')return empty();
  // A modified CI definition can emit success without doing the intended checks.
  // Check the WHOLE PR's changed file list, not the names of its run results.
- if(REQUIRED.some(name=>changedFiles.includes(PATHS[name])))
+ const paths=[];let incompleteIdentity=false;
+ for(const entry of changedFiles){
+  if(typeof entry==='string'){
+   // Names alone cannot establish whether a protected path was renamed.
+   paths.push(entry);incompleteIdentity=true;
+  }else if(entry&&typeof entry==='object'&&typeof entry.filename==='string'&&
+    typeof entry.status==='string'){
+   paths.push(entry.filename);
+   if(entry.status==='renamed'){
+    if(typeof entry.previous_filename!=='string')incompleteIdentity=true;
+    else paths.push(entry.previous_filename);
+   }
+  }else incompleteIdentity=true;
+ }
+ if(REQUIRED.some(name=>paths.includes(PATHS[name])))
   return {...empty(),status:'UNTRUSTED'};
+ if(incompleteIdentity)return empty();
  if(REQUIRED.some(name=>!Number.isSafeInteger(trustedWorkflows[name]?.id)||
     trustedWorkflows[name].id<1||trustedWorkflows[name].path!==PATHS[name]))
   return empty();
@@ -36,6 +51,7 @@ function attestCi({sha,repo,runs,apiComplete=true,trustedWorkflows,changedFiles,
   // malformed/authentication-mismatched record can disappear and an older
   // green run would be falsely certified. A missing SHA is ambiguous too.
   const candidates=runs.filter(run=>run&&run.name===name&&
+   EVENTS.has(run.event)&&
    (typeof run.head_sha!=='string'||
     run.head_sha.toLowerCase()===sha.toLowerCase()));
   const valid=candidates.every(run=>
