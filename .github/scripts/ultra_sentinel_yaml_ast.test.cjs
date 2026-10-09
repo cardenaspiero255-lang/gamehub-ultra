@@ -294,3 +294,25 @@ test('proactive: step lacking run and uses is invalid evidence',()=>{
  const r=inspectWorkflow(y);
  assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
 });
+
+// Codex follow-up P1: default-branch events can carry privileged tokens and
+// still inspect attacker-controlled PR refs when checking out a PR head.
+test('Codex P1: issue and review comment events cannot checkout PR head silently',()=>{
+ for(const trigger of [
+  'issue_comment',
+  'pull_request_review',
+  'pull_request_review_comment',
+  'discussion_comment'
+ ]){
+  for(const on of [`on: ${trigger}`,`on: [push, ${trigger}]`,`on: {${trigger}: {types: [created]}}`]){
+   const y=[on,'jobs:','  audit:','    steps:',
+    '      - uses: actions/checkout@'+SHA,
+    '        with:',
+    '          ref: refs/pull/${{ github.event.issue.number }}/head'
+   ].join('\n');
+   const result=inspectWorkflow(y);
+   assert.ok(result.findings.some(x=>x.rule==='PRIVILEGED_PR_CODE_CHECKOUT'&&x.severity==='BLOCKER'),
+    JSON.stringify({on,result}));
+  }
+ }
+});
