@@ -19,7 +19,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
   pull-requests: read
 
 concurrency:
@@ -28,6 +27,11 @@ concurrency:
 
 jobs:
   core:
+    # GitHub's issue-comment API also accepts pull_requests:write. Request
+    # this capability only for the trusted reporter, never paid model jobs.
+    permissions:
+      contents: read
+      pull-requests: write
     name: Ultra Sentinel Core — own reviewer
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -230,6 +234,9 @@ jobs:
           esac
 
   consensus:
+    permissions:
+      contents: read
+      pull-requests: write
     needs: [providers, core]
     if: >-
       always() &&
