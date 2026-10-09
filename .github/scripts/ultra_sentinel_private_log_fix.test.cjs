@@ -11,7 +11,7 @@ test('US-026: a standalone private Logcat call gets one review-only removal prop
  assert.equal(r.linesChanged,1);
  assert.match(r.patch,/-  Log\.e\(TAG, transcript\)/);
  assert.doesNotMatch(r.patch,/^\+.*Log\.e/m);
- const j=judge(r,{sha:SHA,checks:{'sentinel-core-tests':'success','android-build':'success',
+ const j=judge(r,{sha:SHA,source:text,findings:[finding],checks:{'sentinel-core-tests':'success','android-build':'success',
   'unit-test-coverage':'success','architecture-boundary':'success'}});
  assert.equal(j.status,'ELIGIBLE_FOR_HUMAN_REVIEW');
  assert.equal(j.autoMergeAllowed,false);
