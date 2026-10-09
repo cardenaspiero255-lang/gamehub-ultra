@@ -97,7 +97,7 @@ function renderActionsSummary(report){
   '',
   '- Window: 24h',
   '- Valid deduplicated issues: '+count,
-  '- Aggregate observations: '+Object.keys(counts).sort().map(k=>k+': '+counts[k]).join(', '),
+  '- Aggregate observations: '+['fatal','error','warning','info','unknown'].map(k=>k+': '+counts[k]).join(', '),
   '- Decision: '+status,
   '- GitHub run attestation: '+(['COMPLETE','PARTIAL'].includes(report?.attestation?.status)?
      report.attestation.status:'UNKNOWN'),
