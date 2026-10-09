@@ -49,5 +49,7 @@ test('workflow integration takes exact immutable SHA, never exposes PR source to
  const y=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-auto-review.yml'),'utf8');
  assert.match(y,/ultra_sentinel_supply_chain\.cjs/);
  assert.match(y,/reviewWorkflows/);
- assert.match(y,/const supplyChain=reviewWorkflows/);\n assert.match(y,/ref:pr.head.sha/);\n assert.doesNotMatch(y,/contents: write|issues: write|pull-requests: write/);
+ assert.match(y,/const supplyChain=reviewWorkflows/);
+ assert.match(y,/ref:pr.head.sha/);
+ assert.doesNotMatch(y,/contents: write|issues: write|pull-requests: write/);
 });
