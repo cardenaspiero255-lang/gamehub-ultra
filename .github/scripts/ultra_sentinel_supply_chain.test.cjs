@@ -450,3 +450,67 @@ test('ADVERSARIAL: flow trigger with YAML single-quoted backslash does not hide 
  '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
  assert.ok(rules(scan(y)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
 });
+
+test('RED P1: escaped on, steps, uses, with and ref YAML keys cannot hide privileged checkout',()=>{
+ const workflow=[
+  '"\\u006fn": pull_request_target',
+  'jobs:','  audit:','    "\\u0073teps":',
+  '      - "\\u0075ses": actions/checkout@v6',
+  '        "\\u0077ith":',
+  '          "\\u0072ef": '+('$'+'{{ github.head_ref }}')
+ ].join('\n');
+ const r=scan(workflow);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'),JSON.stringify(r));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('RED P1: YAML xNN escapes in quoted keys decode to privileged trigger and checkout fields',()=>{
+ const workflow=[
+  '"\\x6fn": pull_request_target',
+  'jobs:','  audit:','    steps:',
+  '      - "\\x75ses": actions/checkout@'+SHA,
+  '        with:',
+  '          "\\x72ef": '+('$'+'{{ github.head_ref }}')
+ ].join('\n');
+ assert.ok(rules(scan(workflow)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('RED P1: YAML UNNNNNNNN escapes in quoted keys cannot hide unsafe checkout',()=>{
+ const workflow=[
+  '"\\U0000006fn": pull_request_target',
+  'jobs:','  audit:','    steps:',
+  '      - "\\U00000075ses": actions/checkout@v6',
+  '        with:',
+  '          "\\U00000072ef": '+('$'+'{{ github.head_ref }}')
+ ].join('\n');
+ const r=scan(workflow);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('RED P1: escaped YAML flow keys inside flow steps preserve both detections',()=>{
+ const workflow=[
+  'on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - {"\\u0075ses": actions/checkout@v6, "\\u0077ith": {"\\u0072ef": "'+('$'+'{{ github.head_ref }}')+'"}}'
+ ].join('\n');
+ const r=scan(workflow);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'),JSON.stringify(r));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('RED P1: escaped YAML permissions keys and flow triggers are visible',()=>{
+ const workflow=['"\\u006fn": {"\\u0070ull_request_target": null}',
+ 'permissions: {"\\u0063ontents": write, issues: read}'].join('\n');
+ const r=scan(workflow);
+ assert.ok(rules(r).includes('PRIVILEGED_WRITE_TOKEN'),JSON.stringify(r));
+});
+test('escaped YAML read-only keys remain benign and must not produce write tokens',()=>{
+ const workflow=['"\\u006fn": push',
+ 'permissions: {"\\u0063ontents": read, issues: read}',
+ 'jobs:','  audit:','    steps:','      - "\\u0075ses": actions/checkout@'+SHA].join('\n');
+ const r=scan(workflow);
+ assert.equal(r.status,'NO_RISK_PATTERN');
+ assert.equal(r.coverage.partial,false);
+});
+test('single-quoted YAML escape-looking keys are literal, not decoded events',()=>{
+ const workflow=["'\\\\u006fn': push",'jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA].join('\n');
+ const r=scan(workflow);
+ assert.ok(!rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
