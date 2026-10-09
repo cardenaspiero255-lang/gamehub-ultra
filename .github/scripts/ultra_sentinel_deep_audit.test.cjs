@@ -112,3 +112,63 @@ test('secure github-server-url variants cannot produce bogus blockers',()=>{
   assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
  }
 });
+
+test('Codex P1 default branch issue and discussion events block script injection',()=>{
+ for(const [event,field] of [['issues','issue.title'],['discussion','discussion.body']]){
+  for(const trigger of [
+    'on: '+event,
+    'on: [push, '+event+']',
+    'on: {'+event+': {types: [opened]}}'
+  ]){
+   const wf=[trigger,'jobs:','  audit:','    steps:',
+    '      - run: echo "\${{ github.event.'+field+' }}"'].join('\n');
+   const result=inspectWorkflow(wf);
+   assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify({trigger,result}));
+  }
+ }
+});
+test('Codex P1 pinned github-script interpolated comment body is unsafe JavaScript',()=>{
+ const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ '      - uses: actions/github-script@'+SHA,
+ '        with:',
+ '          script: |',
+ '            const comment = "\${{ github.event.comment.body }}";',
+ '            core.info(comment);'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify(result));
+});
+test('Codex P1 github-script Script key with mixed case must be treated as executable',()=>{
+ const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: actions/github-script@'+SHA,
+ '        with:',
+ '          Script: console.log("\${{ github.event.pull_request.title }}")'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify(result));
+});
+test('Codex P1 github-script duplicate Script input case variants are INCOMPLETE',()=>{
+ const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ '      - uses: actions/github-script@'+SHA,
+ '        with:',
+ '          script: console.log("safe")',
+ '          SCRIPT: console.log("not verified")'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+});
+test('Codex P1 github-script safe env interpolation is not false-positive',()=>{
+ const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ '      - uses: actions/github-script@'+SHA,
+ '        env:',
+ '          MESSAGE: \${{ github.event.comment.body }}',
+ '        with:',
+ '          script: core.info(process.env.MESSAGE);'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+});
+test('privileged release body must not be interpolated into JavaScript',()=>{
+ const src=['on: release','jobs:','  audit:','    steps:',
+ '      - uses: actions/github-script@'+SHA,
+ '        with:',
+ '          script: console.log("\${{ github.event.release.body }}")'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(result));
+});
