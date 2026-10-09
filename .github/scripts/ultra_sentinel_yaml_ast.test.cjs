@@ -172,3 +172,72 @@ test('AST missing on trigger does not claim a healthy workflow',()=>{
  const r=inspectWorkflow('jobs:\n  t:\n    steps:\n      - run: echo hi\n');
  assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
 });
+
+test('Codex P1 AST: privileged checkout from dynamic fork repository must BLOCK',()=>{
+ const y=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:',
+ '          repository: ${{ github.event.pull_request.head.repo.full_name }}',
+ '          ref: main'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'&&f.severity==='BLOCKER'),JSON.stringify(r));
+});
+test('Codex P1 AST: dynamic fork repository with fixed commit must still BLOCK',()=>{
+ const y=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:',
+ '          repository: ${{ github.event.pull_request.head.repo.full_name }}',
+ '          ref: '+SHA].join('\n');
+ const r=inspectWorkflow(y);
+ assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('Codex P1 AST: normal literal repository and main ref remain safe',()=>{
+ const y=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:', '          repository: cardenaspiero255-lang/gamehub-ultra',
+ '          ref: main'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.ok(!r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+ assert.equal(r.coverage.partial,false,JSON.stringify(r));
+});
+test('Codex P1 AST: reusable workflow from mutable third party branch is HIGH',()=>{
+ const y=['on: push','jobs:', '  external:',
+ '    uses: attacker/repo/.github/workflows/build.yml@main',
+ '    secrets: inherit'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.ok(r.findings.some(f=>f.rule==='UNPINNED_REUSABLE_WORKFLOW'),JSON.stringify(r));
+});
+test('Codex P1 AST: reusable workflow from semver tag is HIGH',()=>{
+ const y=['on: push','jobs:', '  external:',
+ '    uses: vendor/repo/.github/workflows/build.yaml@v1'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.ok(r.findings.some(f=>f.rule==='UNPINNED_REUSABLE_WORKFLOW'),JSON.stringify(r));
+});
+test('Codex P1 AST: external workflow pinned by 40-char SHA is accepted',()=>{
+ const y=['on: push','jobs:', '  external:',
+ '    uses: vendor/repo/.github/workflows/build.yml@'+SHA].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
+test('Codex P1 AST: local reusable workflow does not require 40-char remote SHA',()=>{
+ const y=['on: push','jobs:', '  local:',
+ '    uses: ./.github/workflows/build.yml'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+});
+test('Codex P1 AST: non-string job uses fails closed',()=>{
+ const y=['on: push','jobs:', '  external:',
+ '    uses: {what: unsafe}'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('P2: independent review must preserve AST attestation to final report',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const source=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
+ assert.ok(source.includes('let protectedChanges=null,structural=null;'));
+ assert.ok(!source.includes('const structural=reviewWorkflowSources'), 'inner structural shadows report evidence');
+ assert.ok(!source.includes('const protectedChanges=evaluateProtectedChanges'), 'inner protectedChanges shadows report evidence');
+ assert.ok(source.includes('report.structuralYaml=structural;'));
+ assert.ok(source.includes('report.protectedChanges=protectedChanges;'));
+});
