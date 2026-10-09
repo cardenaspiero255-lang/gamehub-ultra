@@ -51,3 +51,32 @@ test('KOTLIN GAUNTLET 40 incomplete diffs never become clean evidence',()=>{
   assert.equal(out.coverage.partial,true);assert.equal(out.verdict,'INCOMPLETE');
  }
 });
+
+test('KOTLIN GAUNTLET 120 inline comments must not appear as real unsafe calls',()=>{
+ const rules=[
+ ['UNSCOPED_COROUTINE','GlobalScope.launch { unexpected() }'],
+ ['BLOCKING_ANDROID_CALL','runBlocking { slow() }'],
+ ['FORCED_GC','System.gc()'],
+ ['POTENTIAL_PRIVATE_LOG','Log.e("tag", transcript)']
+ ];
+ const misses=[];
+ for(const [rule,fake] of rules)for(let k=0;k<30;k++){
+  const out=analyze([file('val sample = '+k+' // avoid '+fake,k)],{sha:SHA});
+  if(has(out,rule))misses.push({rule,k});
+ }
+ assert.deepEqual(misses,[]);
+});
+test('KOTLIN GAUNTLET 120 real calls with trailing comments are still detected',()=>{
+ const rules=[
+ ['UNSCOPED_COROUTINE','GlobalScope.launch { unexpected() }'],
+ ['BLOCKING_ANDROID_CALL','runBlocking { slow() }'],
+ ['FORCED_GC','System.gc()'],
+ ['POTENTIAL_PRIVATE_LOG','Log.e("tag", transcript)']
+ ];
+ const misses=[];
+ for(const [rule,real] of rules)for(let k=0;k<30;k++){
+  const out=analyze([file('fun risky() { '+real+' } // test '+k,k)],{sha:SHA});
+  if(!has(out,rule))misses.push({rule,k});
+ }
+ assert.deepEqual(misses,[]);
+});
