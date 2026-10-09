@@ -335,3 +335,38 @@ test('steps alias appearing only in comments does not block a real safe sequence
  const result=scan(workflow);
  assert.equal(result.status,'NO_RISK_PATTERN');
 });
+
+test('Codex P1: flow step with anchor detects both unpinned action and unsafe head checkout',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+  '      - &danger {uses: actions/checkout@v6, with: {ref: "'+('$'+'{{ github.head_ref }}')+'"}}'].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('UNPINNED_ACTION'));
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('anchored flow steps with pinned safe checkout have no false alarm',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+  '      - &trusted {uses: actions/checkout@'+SHA+', with: {ref: main}}'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+ assert.equal(result.coverage.partial,false);
+});
+test('Codex P2: anchored block permission value write is detected',()=>{
+ const workflow=['on: pull_request','permissions:','  contents: &write write','jobs:','  test:','    steps:',
+  '      - uses: actions/checkout@'+SHA].join('\n');
+ assert.ok(rules(scan(workflow)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('Codex P2: anchored flow permission value write is detected',()=>{
+ const workflow=['on: pull_request','permissions: {contents: &write write, issues: read}','jobs:','  test:','    steps:',
+  '      - uses: actions/checkout@'+SHA].join('\n');
+ assert.ok(rules(scan(workflow)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('anchored read permission values remain benign in block and flow maps',()=>{
+ for(const permission of ['permissions:\n  contents: &readonly read',
+  'permissions: {contents: &readonly read, issues: read}']){
+  const workflow=['on: pull_request',permission,'jobs:','  test:','    steps:',
+   '      - uses: actions/checkout@'+SHA].join('\n');
+  const result=scan(workflow);
+  assert.ok(!rules(result).includes('PRIVILEGED_WRITE_TOKEN'));
+  assert.equal(result.coverage.partial,false);
+ }
+});
