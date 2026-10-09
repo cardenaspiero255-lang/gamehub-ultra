@@ -100,3 +100,33 @@ test('Sensitive GitHub context object is not clean for third party',()=>{
   '          metadata: ${{ toJSON(secrets) }}'].join('\n');
  assert.notEqual(inspectWorkflow(s).status,'NO_RISK_PATTERN');
 });
+
+const makeExpr=s=>String.fromCharCode(36,123,123)+' '+s+' }}';
+const adversarial=(lines,jobExtra=[])=>[
+ 'on: workflow_dispatch','permissions: read-all','jobs:','  audit:',
+ '    runs-on: ubuntu-latest',...jobExtra,'    steps:',...lines
+].join('\n');
+for(const expression of ['toJSON(secrets)','toJSON(github)',"format('{0}', toJSON(secrets))"]){
+ test('Context object disclosure must be incomplete: '+expression,()=>{
+  const w=adversarial(['      - uses: vendor/collector@'+SHA,'        with:','          data: '+makeExpr(expression)]);
+  assert.notEqual(inspectWorkflow(w).status,'NO_RISK_PATTERN');
+ });
+}
+for(const expression of ['false && true','true && false','!true']){
+ test('Disabled job condition cannot be trusted: '+expression,()=>{
+  const w=adversarial(['      - run: echo hello'],['    if: '+makeExpr(expression)]);
+  assert.notEqual(inspectWorkflow(w).status,'NO_RISK_PATTERN');
+ });
+}
+for(const trigger of ['[]','{}']){
+ test('No enabled event cannot pass: '+trigger,()=>{
+  const w=['on: '+trigger,'permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest','    steps:','      - run: echo hello'].join('\n');
+  assert.equal(inspectWorkflow(w).status,'INCOMPLETE');
+ });
+}
+for(const runner of ['windows-2022','windows-2025','ubuntu-24.04','macos-15']){
+ test('Official GitHub hosted runner remains supported: '+runner,()=>{
+  const w=['on: workflow_dispatch','permissions: read-all','jobs:','  audit:','    runs-on: '+runner,'    steps:','      - run: echo hello'].join('\n');
+  assert.equal(inspectWorkflow(w).status,'NO_RISK_PATTERN');
+ });
+}
