@@ -388,6 +388,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    coverage.partial=true;continue;
   }
   if(job.uses!==undefined){coverage.partial=true;continue;}
+  // Executable jobs require a runner; missing runs-on cannot execute CI.
+  if(job['runs-on']===undefined)coverage.partial=true;
   if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
    if(!isMap(step)){coverage.partial=true;continue;}
