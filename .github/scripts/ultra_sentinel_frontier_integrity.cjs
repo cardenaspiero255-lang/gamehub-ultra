@@ -51,7 +51,6 @@ function attestCi({sha,repo,runs,apiComplete=true,trustedWorkflows,changedFiles,
   // malformed/authentication-mismatched record can disappear and an older
   // green run would be falsely certified. A missing SHA is ambiguous too.
   const candidates=runs.filter(run=>run&&run.name===name&&
-   EVENTS.has(run.event)&&
    (typeof run.head_sha!=='string'||
     run.head_sha.toLowerCase()===sha.toLowerCase()));
   const valid=candidates.every(run=>
