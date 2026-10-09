@@ -578,3 +578,47 @@ test('encoded pinned checkout and read-only permission remain benign',()=>{
  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
  assert.equal(r.coverage.partial,false);
 });
+
+test('ADVERSARIAL: aliases in shell heredoc inside run literal are not YAML aliases',()=>{
+ const y=['on: pull_request','jobs:','  guard:','    steps:',
+  '      - run: |',
+  "          cat <<'EOF'",
+  '          ref: *not_a_yaml_alias',
+  '          repository: *also_text',
+  '          EOF',
+  '          echo done'].join('\n');
+ const r=scan(y);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
+test('ADVERSARIAL: suspicious uses and with inside a literal run are not real steps',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps:',
+  '      - run: |',
+  "          cat <<'EOF'",
+  '          - uses: actions/checkout@v6',
+  '            with:',
+  '              ref: ${{ github.head_ref }}',
+  '          EOF'].join('\n');
+ const r=scan(y);
+ assert.ok(!rules(r).includes('UNPINNED_ACTION'),JSON.stringify(r));
+ assert.ok(!rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
+test('ADVERSARIAL: real YAML checkout ref alias is unresolved even with a separate shell heredoc',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps:',
+ '      - run: |','          ref: *shell_only',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: *genuine_alias'].join('\n');
+ const r=scan(y);
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.coverage.partial,true);
+});
+test('ADVERSARIAL: multiline run folded shell YAML-looking keys must remain inert',()=>{
+ const y=['on: push','jobs:','  guard:','    steps:',
+  '      - run: >-',
+  '          ref: *literal',
+  '          "\\u006fn": "${{ github.head_ref }}"',
+  '          echo done'].join('\n');
+ const r=scan(y);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+});
