@@ -233,16 +233,12 @@ jobs:
             if (structuralYaml.coverage.partial)
               core.setFailed("Structural YAML parser found incomplete/invalid workflow evidence.");
             if (structuralYaml.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
-              core.setFailed("Structural YAML parser identified untrusted privileged checkout.");
-            else if (structuralYaml.findings.some(f=>f.severity==='HIGH'))
-              core.warning("Structural YAML parser raised HIGH-risk workflow signals.");
+              core.setFailed("Structural YAML HIGH/BLOCKER must be investigated before merge.");
             if (supplyChain.coverage.partial) core.setFailed("Incomplete workflow supply-chain evidence; review manually.");
             if (supplyChain.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
-              core.setFailed("Potential privileged untrusted PR code execution; manual security review required.");
-            else if (supplyChain.findings.some(f=>f.severity==="HIGH"))
-              core.warning("High-risk workflow supply-chain patterns require manual verification.");
+              core.setFailed("Supply-chain HIGH/BLOCKER must be investigated before merge.");
             if (evidence.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
-              core.setFailed("Potential BLOCKER detected; verify the finding before merging.");
+              core.setFailed("Engine HIGH/BLOCKER must be reproduced and resolved before merge.");
             if (evidence.verdict === "REVIEW_REQUIRED")
               core.warning("HIGH risk signals are hypotheses requiring reproduction and tests.");
       - name: Upload SHA-pinned read-only Sentinel report
