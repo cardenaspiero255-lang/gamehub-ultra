@@ -33,7 +33,7 @@ Repositorio: `cardenaspiero255-lang/gamehub-ultra` · Rama: `feature/ultra-senti
 | US-015 | OMEGA: verificador finito del contrato de voz | IMPLEMENTADA_EN_PR | `.github/scripts/ultra_sentinel_omega.cjs`, `.github/sentinel-contracts/voice-retry.omega.json` | Verificar estados/transiciones y contrastar trazas Kotlin; sin afirmar prueba del runtime. |
 | US-016 | Sentinel vs. Sentinel con validador de rama confiable | PARCIAL_EN_PR | `.github/scripts/ultra_sentinel_selfreview.cjs`, `.github/workflows/ultra-sentinel-self-review.yml` | Integrar a main y verificar ejecución independiente pull_request_target. |
 | US-017 | Informes portátiles GitHub/ChatGPT con SHA y esquema | IMPLEMENTADA_EN_PR | `.github/scripts/ultra_sentinel_report.cjs` | Serialización y lectura segura; publicación automática solo tras instalar workflows en main. |
-| US-018 | Consenso de revisores externos y control de SHA | PARCIAL_EN_PR | `.github/workflows/ultra-sentinel-auto-review.yml`, `.github/scripts/ultra_sentinel_review_sha.cjs` | Verificar proveedores activos y equivalencia de SHA; degradación transparente si faltan. |
+| US-018 | Consenso de revisores externos y control de SHA | PARCIAL_EN_PR | `.github/scripts/ultra_sentinel_review_sha.cjs` | **Desactivado en Ultra Sentinel por falta de saldo/cuotas**; no se ejecutan proveedores externos ni se considera la ausencia de consenso como aprobación. La revisión independiente y el SHA fijado continúan activos. |
 | US-019 | Gate de voz con cierre terminal CLOSED | IMPLEMENTADA_EN_PR | `app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGate.kt`, `.github/sentinel-contracts/voice-retry.omega.json` | Bloquear reintentos tardíos; pruebas de trazas y concurrencia. |
 | US-020 | release() de SpeechRecognizer/TTS idempotente y resistente | IMPLEMENTADA_EN_PR | `app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceAssistantController.kt`, `app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceAssistantControllerRobolectricTest.kt` | Ignorar callbacks tardíos; limpieza independiente aunque callbacks fallen. |
 
@@ -154,3 +154,11 @@ Las pruebas simuladas no confirman la existencia de esas credenciales.
 **No declarar 35/35 completas** por superar un build o por disponer de código
 inicial. La aceptación requiere pruebas de integración reales, trazas RED/GREEN
 de bugs reproducibles, seguridad, revisión independiente y aprobación humana.
+
+### Desacoplamiento de proveedores de pago y permisos de GitHub (PR #168)
+
+- Los logs confirmaron saldo insuficiente para Claude y DeepSeek, créditos agotados/límite mensual en Grok (xAI), y solicitud Groq de 32.257 tokens frente a 8.000 TPM (no equivale a saldo agotado).
+- Los cuatro revisores se **retiraron del workflow automático** `.github/workflows/ultra-sentinel-auto-review.yml` junto con el job de consenso. No se invocan sus API ni se consumen sus cuotas desde ese workflow. Los scripts independientes de proveedores usados por otros flujos quedan fuera de este cambio.
+- Ultra Sentinel Core sigue ejecutándose desde el `main` confiable, con permisos `contents: read` y `pull-requests: read`, análisis de diff, validación del SHA, reglas de riesgo y bloqueo de evidencia incompleta o `BLOCKER`.
+- Para evitar el HTTP 403 de la API de comentarios, los informes se publican **solo** en el resumen de GitHub Actions y en artefactos JSON/Markdown con SHA fijado y 7 días de retención, sin escritura de comentarios ni secretos de proveedores.
+- El workflow `pull_request_target` usa la versión de `main`: **hasta fusionar este cambio seguirán fallando las ejecuciones antiguas**. Verificar una ejecución real del workflow nuevo tras la fusión; no afirmar que el 403 está resuelto en producción antes de comprobarlo.
