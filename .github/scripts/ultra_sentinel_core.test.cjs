@@ -207,3 +207,55 @@ test('Java block comments do not nest: executable call after first closer stays 
  ])]);
  assert.ok(!rules(kotlin).includes('BLOCKING_ANDROID_CALL'));
 });
+
+test('ADVERSARIAL P2: Java ordinary strings containing Kotlin-looking template expressions are inert',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  'String example = "${runBlocking { work() }}";',
+  'String another = "${Thread.sleep(99)}";',
+  'String tertiary = "${System.gc()}";'
+ ])]);
+ assert.ok(!rules(out).includes('BLOCKING_ANDROID_CALL'),JSON.stringify(out.findings));
+ assert.ok(!rules(out).includes('FORCED_GC'));
+});
+test('ADVERSARIAL P2: Java multiline text blocks are not Kotlin interpolation',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  'String example = """',
+  '  ${runBlocking { work() }}',
+  '  ${Thread.sleep(1000)}',
+  '""";',
+  'int answer = 42;'
+ ])]);
+ assert.ok(!rules(out).includes('BLOCKING_ANDROID_CALL'),JSON.stringify(out.findings));
+ assert.equal(out.coverage.partial,false);
+});
+test('ADVERSARIAL: Kotlin regular string interpolation retains dangerous call detection',()=>{
+ const out=analyze([file(app+'Literal.kt',[
+  'val result = "${runBlocking { work() }}"'
+ ])]);
+ assert.ok(rules(out).includes('BLOCKING_ANDROID_CALL'));
+});
+test('ADVERSARIAL: Kotlin raw interpolation retains executable call detection',()=>{
+ const out=analyze([file(app+'Literal.kt',[
+  'val result = """${runBlocking { work() }}"""'
+ ])]);
+ assert.ok(rules(out).includes('BLOCKING_ANDROID_CALL'));
+});
+test('ADVERSARIAL: Java executable call outside a closing multiline text block is still flagged',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  'String example = """',
+  '  ${runBlocking { notCode() }}',
+  '""";',
+  'Thread.sleep(1500);'
+ ])]);
+ const f=out.findings.filter(x=>x.rule==='BLOCKING_ANDROID_CALL');
+ assert.equal(f.length,1,JSON.stringify(f));
+ assert.equal(f[0].line,4);
+});
+test('ADVERSARIAL: Java comment and text-block context cannot manufacture Kotlin templates',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  '/* hidden ${Thread.sleep(200)} */',
+  'String example = "${runBlocking { notCode() }}";',
+  'int value = 2;'
+ ])]);
+ assert.ok(!rules(out).includes('BLOCKING_ANDROID_CALL'));
+});
