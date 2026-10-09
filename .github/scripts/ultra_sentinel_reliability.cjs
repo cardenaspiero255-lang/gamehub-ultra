@@ -28,7 +28,7 @@ function maliciousWorkflow(i){
   '"${{ format('+"'"+'refs/pull/{0}/merge'+"'"+', github.event.pull_request.number) }}"',
   '${{ github.event.pull_request.head.sha }}'
  ]);
- return event+'\njobs:\n  audit:\n    steps:\n'+
+ return event+'\npermissions: read-all\njobs:\n  audit:\n    steps:\n'+
   '      - uses: actions/checkout@'+SHA+
   '\n        with:\n          ref: '+ref+'\n';
 }
