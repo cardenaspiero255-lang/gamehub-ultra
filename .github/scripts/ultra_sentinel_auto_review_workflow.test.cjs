@@ -39,3 +39,19 @@ test('paid model providers require explicit opt-in, never consume exhausted quot
  assert.match(providerBlock,/inputs\.run_external_providers == true/);
  assert.doesNotMatch(providerBlock,/github\.event\.pull_request\.head\.repo\.full_name == github\.repository\s*$/m);
 });
+
+test('only reporting jobs request GitHub pull request comment write permission',()=>{
+ const wf=text();
+ const top=wf.slice(0,wf.indexOf('\nconcurrency:'));
+ assert.match(top,/permissions:\s*\n\s*contents: read\s*\n\s*pull-requests: read/);
+ assert.doesNotMatch(top,/issues: write|pull-requests: write/);
+ const blocks=Object.fromEntries(['core','providers','consensus'].map((n,i,ns)=>{
+   const start=wf.indexOf('\n  '+n+':');
+   const end=i+1<ns.length?wf.indexOf('\n  '+ns[i+1]+':',start):wf.length;
+   return [n,wf.slice(start,end)];
+ }));
+ for(const section of ['core','consensus']){
+   assert.match(blocks[section],/permissions:\s*\n\s*contents: read\s*\n\s*pull-requests: write/);
+ }
+ assert.doesNotMatch(blocks.providers,/pull-requests: write|issues: write/);
+});
