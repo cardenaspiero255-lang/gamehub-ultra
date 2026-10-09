@@ -712,3 +712,70 @@ test('DEEP negative: quoted alias-looking step name is ordinary text',()=>{
  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
  assert.equal(r.coverage.partial,false);
 });
+
+test('P1: anchored pinned checkout action with unsafe ref produces BLOCKER, not false unpinned',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - uses: &checkout actions/checkout@'+SHA,
+  '        with:','          ref: ${{ github.head_ref }}'].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(result));
+ assert.ok(!rules(result).includes('UNPINNED_ACTION'),JSON.stringify(result));
+});
+test('P1: dotted anchor on quoted checkout action is normalized before trust check',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - uses: &trusted.checkout "actions/checkout@'+SHA+'"',
+  '        with:','          ref: ${{ github.event.pull_request.head.sha }}'].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(result));
+ assert.ok(!rules(result).includes('UNPINNED_ACTION'),JSON.stringify(result));
+});
+test('P1: anchored pinned action in YAML flow map detects privileged ref',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - {uses: &checkout actions/checkout@'+SHA+', with: {ref: "${{ github.head_ref }}"}}'].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(result));
+ assert.ok(!rules(result).includes('UNPINNED_ACTION'),JSON.stringify(result));
+});
+test('P1: anchored pinned checkout with trusted main ref stays safe',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - uses: &checkout actions/checkout@'+SHA,'        with:','          ref: main'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+ assert.equal(result.coverage.partial,false);
+});
+test('P1: block step merge alias after ordinary name must fail closed',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - name: merged','        <<: *step',
+  '        run: echo benign'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+ assert.equal(result.coverage.partial,true);
+});
+test('P1: YAML flow step merge alias after name must fail closed',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - {name: merged, <<: *step}'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+ assert.equal(result.coverage.partial,true);
+});
+test('P1: YAML flow step merge alias before other fields must fail closed',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - {name: safe, <<: *step, run: echo safe}'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+});
+test('P1: bare hyphen child merge alias must fail closed',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:','      -',
+  '          name: shared','          <<: *step'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+});
+test('negative: merge-like strings in step names and scripts are inert',()=>{
+ const workflow=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - name: "<<: *not_a_merge"',
+  '        run: |',
+  '          echo "<<: *not_a_merge"'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+ assert.equal(result.coverage.partial,false);
+});
