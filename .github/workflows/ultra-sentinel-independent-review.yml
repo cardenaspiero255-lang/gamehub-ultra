@@ -69,7 +69,7 @@ jobs:
             const result = analyze(files,{sha:pr.head.sha});
             let protectedChanges=null,structural=null;
             if(deployed){
-              const protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
+              protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
               if(protectedChanges.status!=='OK')
                 core.setFailed('Required security control deleted/renamed or incomplete PR file list.');
               const expected=files.filter(f=>f.status!=='removed'&&
@@ -87,7 +87,7 @@ jobs:
                   core.warning('Unable to read changed workflow source; structural gate fails closed.');
                 }
               }
-              const structural=reviewWorkflowSources({expected,sources});
+              structural=reviewWorkflowSources({expected,sources});
               if(structural.coverage.partial)
                 core.setFailed('Unable to structurally parse every changed workflow.');
               if(structural.findings.some(f=>f.severity==='BLOCKER'))
