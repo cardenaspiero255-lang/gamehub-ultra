@@ -59,7 +59,12 @@ function parseWorkflow(source){
 function privilegedTrigger(value){
  const events=typeof value==='string'?[value]:
   Array.isArray(value)?value:Object.keys(value);
- return events.some(event=>event==='pull_request_target'||event==='workflow_run');
+ // These events use base/default-branch workflow definitions while PR-related
+ // payloads or refs can be attacker-controlled. Treat checkouts of PR code
+ // as privileged even when the workflow does not use pull_request_target.
+ const privileged=new Set(['pull_request_target','workflow_run','issue_comment',
+  'pull_request_review','pull_request_review_comment','discussion_comment']);
+ return events.some(event=>privileged.has(event));
 }
 function unsafePrRef(v){
  if(typeof v!=='string')return false;
