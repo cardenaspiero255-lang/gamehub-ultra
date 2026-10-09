@@ -120,3 +120,18 @@ test('empty changed-file list must mark audit incomplete',()=>{
  assert.equal(result.coverage.partial,true);
  assert.equal(result.verdict,'INCOMPLETE');
 });
+
+test('P2: an ambiguous raw-string closer before a diff addition cannot hide executable Kotlin',()=>{
+ // The opening triple quote may be before this hunk. Its first visible
+ // delimiter can be a closer; accepting a clean verdict is unsafe.
+ const patch=['@@ -40,3 +40,4 @@','     """','     old text','+    runBlocking { work() }','     after()'].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+ assert.equal(result.coverage.partial,true);
+ assert.equal(result.verdict,'INCOMPLETE');
+});
+test('a raw Kotlin string opened and closed within trustworthy file-origin context does not hide later code',()=>{
+ const patch=['@@ -1,4 +1,5 @@','val help = """','  sample','"""','+runBlocking { work() }','val end = 42'].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+ assert.ok(rules(result).includes('BLOCKING_ANDROID_CALL'));
+ assert.equal(result.coverage.partial,false);
+});
