@@ -67,3 +67,17 @@ test('Full nested local actions and traversal-like path are not clean',()=>{
  '      - uses: ./../untrusted/action'].join('\n');
  assert.notEqual(inspectWorkflow(src).status,'NO_RISK_PATTERN');
 });
+
+test('YAML merge explosion before post-parse graph limits is rejected by loader budget',()=>{
+ const src=['on: workflow_dispatch','permissions: read-all',
+ 'jobs:','  audit:','    runs-on: ubuntu-latest','    steps:',
+ '      - run: echo safe','base: &node { x: 1 }',
+ 'fused: { <<: ['+Array(25).fill('*node').join(', ')+'] }'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+});
+test('Uninspected local reusable workflow is never considered verified',()=>{
+ const src=['on: push','permissions: read-all','jobs:',
+ '  audit:','    uses: ./.github/workflows/local.yml'].join('\n');
+ assert.notEqual(inspectWorkflow(src).status,'NO_RISK_PATTERN');
+});
