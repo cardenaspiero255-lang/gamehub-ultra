@@ -93,7 +93,7 @@ function remotePipeline(v){
  // Folded YAML is already folded by js-yaml; do not join unrelated commands.
  return v.replace(/\\\r?\n/g,'').split(/\r?\n/).some(line=>REMOTE.test(line));
 }
-function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
+function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
  const findings=[],coverage={partial:false,parser:'js-yaml@4.1.1'};
  const emit=(rule,severity,where)=>{
   if(findings.length>=MAX_FINDINGS){coverage.partial=true;return;}
@@ -158,6 +158,19 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
       }else if(unknownCheckoutExpression(step.with.ref,'ref')||
                 unknownCheckoutExpression(step.with.repository,'repository')){
        coverage.partial=true;
+      }else if(typeof step.with.repository==='string'){
+       // In a privileged job, a checkout from another repository using a
+       // mutable ref can execute third-party code with privileged context.
+       // The caller must supply the immutable target repository identity.
+       const repository=step.with.repository.trim();
+       const trusted=typeof trustedRepository==='string'&&
+         /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trustedRepository);
+       if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!trusted){
+        coverage.partial=true;
+       }else if(repository.toLowerCase()!==trustedRepository.toLowerCase()&&
+                !PINNED.test(step.with.ref||'')){
+        emit('PRIVILEGED_EXTERNAL_MUTABLE_CHECKOUT','BLOCKER',where);
+       }
       }
      }
     }
@@ -174,7 +187,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
   findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN';
  return {status,findings,coverage,reason:null};
 }
-function reviewWorkflowSources({expected=[],sources={}}={}){
+function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={}){
  const results=[],findings=[],coverage={partial:false,requested:expected.length,
   scanned:0,parser:'js-yaml@4.1.1'};
  if(!Array.isArray(expected)||expected.length>25)return {status:'INCOMPLETE',findings,
@@ -182,7 +195,7 @@ function reviewWorkflowSources({expected=[],sources={}}={}){
  for(const path of expected){
   if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
    !Object.prototype.hasOwnProperty.call(sources,path)){coverage.partial=true;continue;}
-  const r=inspectWorkflow(sources[path],{path});results.push({path,status:r.status,reason:r.reason});
+  const r=inspectWorkflow(sources[path],{path,trustedRepository});results.push({path,status:r.status,reason:r.reason});
   coverage.scanned++;
   if(r.coverage.partial)coverage.partial=true;
   findings.push(...r.findings);
