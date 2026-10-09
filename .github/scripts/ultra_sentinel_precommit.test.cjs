@@ -56,7 +56,8 @@ test('no node in hook follows warning or strict-mode policy',()=>{
  const hook=path.resolve(__dirname,'../../.githooks/pre-commit');
  const cwd=path.resolve(__dirname,'../..');
  for(const [strict,code] of [['',0],['1',2]]){
-  const result=cp.spawnSync('sh',[hook],{
+  // Use an absolute shell: PATH intentionally has no binaries (including node and sh).
+  const result=cp.spawnSync('/bin/sh',[hook],{
    cwd,env:{...process.env,PATH:'/nonexistent',SENTINEL_PRECOMMIT_STRICT:strict},encoding:'utf8'});
   assert.equal(result.status,code,result.stderr);
   assert.match(result.stderr,/Node.js is not installed/);
