@@ -14,7 +14,9 @@ const cases=[
  {name:'malformed changed-files list',files:null,status:'INCOMPLETE'},
  {name:'truncated changed-files list',files:[{filename:'README.md',status:'modified'}],status:'INCOMPLETE',expected:2},
  {name:'legitimate README edit',files:[{filename:'README.md',status:'modified'}],status:'OK'},
- {name:'legitimate workflow update',files:[{filename:'.github/workflows/ultra-sentinel-auto-review.yml',status:'modified'}],status:'OK'},
+ {name:'modified trusted review requires manual approval',files:[{filename:'.github/workflows/ultra-sentinel-auto-review.yml',status:'modified'}],status:'REVIEW_REQUIRED'},
+ {name:'added trusted parser requires manual approval',files:[{filename:'.github/scripts/ultra_sentinel_yaml_ast.cjs',status:'added'}],status:'REVIEW_REQUIRED'},
+ {name:'unsupported change status is not trusted',files:[{filename:'.github/workflows/ultra-sentinel-auto-review.yml',status:'mystery'}],status:'INCOMPLETE'},
 ];
 for(const c of cases){
  test('protected controls: '+c.name,()=>{
