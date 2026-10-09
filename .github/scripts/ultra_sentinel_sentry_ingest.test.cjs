@@ -137,3 +137,49 @@ test('partial GitHub CI outage retains only independently verified releases',asy
   assert.equal(report.attestation.status,'PARTIAL');
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });
+
+test('malformed Sentry incident is not correlated with a valid release SHA',()=>{
+ const sha='a'.repeat(40);
+ const broken={id:'303',project:{slug:'gamehub-ultra'},level:'error',
+  count:'invalid',firstSeen:'2026-10-09T01:00:00Z',
+  lastSeen:'2026-10-09T02:00:00Z',firstRelease:{version:'gamehub-ultra@'+sha}};
+ const attestedRuns=['Android build','Unit Test Coverage'].map((workflow,i)=>({
+  sha,workflow,runId:i+1,verification:'verified-github-api-run'
+ }));
+ const report=buildSanitizedReport([broken],{consent:true,attestedRuns});
+ assert.equal(report.snapshotCount,0);
+ assert.equal(report.verifiedReleases.length,0);
+ assert.deepEqual(report.releaseHealth,{});
+});
+
+test('invalid Sentry incidents never consume SHA attestation lookup budget',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ultra-sentinel-filtered-'));
+ const good='f'.repeat(40);
+ const invalid=Array.from({length:4},(_,i)=>({
+  id:String(i+1),project:{slug:'gamehub-ultra'},level:'error',count:'invalid',
+  firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
+  firstRelease:{version:'gamehub-ultra@'+String(i+1).repeat(40)}
+ }));
+ const valid={id:'5',project:{slug:'gamehub-ultra'},level:'error',count:'2',
+  firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
+  firstRelease:{version:'gamehub-ultra@'+good}};
+ const seen=[];
+ try{
+  const env={RUNNER_TEMP:dir,ULTRA_SENTINEL_INCIDENTS_CONSENT:'true',
+   SENTRY_ORG_SLUG:'demo',SENTRY_PROJECT_SLUG:'gamehub-ultra',
+   SENTRY_AUTH_TOKEN:'s'.repeat(20),GITHUB_TOKEN:'g'.repeat(20)};
+  const report=await main(env,{
+   fetchIssues:async()=>[...invalid,valid],
+   fetchVerifiedRuns:async({sha})=>{
+    seen.push(sha);
+    return [{sha,workflow:'Android build',runId:1,
+     verification:'verified-github-api-run'}];
+   }
+  });
+  assert.deepEqual(seen,[good]);
+  assert.equal(report.snapshotCount,1);
+  assert.equal(report.verifiedReleases.length,1);
+  assert.equal(report.verifiedReleases[0].sha,good);
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
