@@ -171,9 +171,21 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  const checkExecutableShell=(value,where)=>{
   if(value===undefined)return;
   if(typeof value!=='string'||!value.trim()){coverage.partial=true;return;}
-  // Shell chooses the actual command template run by Actions, not merely a
-  // display setting. Dynamic shell paths are not safe just because run is.
-  if(value.includes('
+  // Shell is a command template, not a decorative runner option.
+  if(value.includes(String.fromCharCode(36,123,123))){
+   const check=auditExecutableExpressions(value);
+   if(check.unsafe)emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+   // Dynamic shell values are not preapproved executables, even if scalar.
+   coverage.partial=true;
+  }
+ };
+ const checkDefaults=(defaults,where)=>{
+  if(defaults===undefined)return;
+  if(!isMap(defaults)||!isMap(defaults.run)){coverage.partial=true;return;}
+  if(privileged)checkExecutableShell(defaults.run.shell,where);
+ };
+ checkDefaults(document.defaults,path);
+ checkPermissions(document.permissions,path);
  for(const [name,job] of Object.entries(document.jobs)){
   const where=path; // Deliberately no attempt to fabricate AST line locations.
   if(!isMap(job)){coverage.partial=true;continue;}
