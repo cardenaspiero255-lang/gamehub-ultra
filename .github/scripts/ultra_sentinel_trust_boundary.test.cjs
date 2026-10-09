@@ -439,3 +439,30 @@ test('Codex P1: ANSI-C Bash quote segments cannot conceal remote downloader',()=
   assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({downloader,v}));
  }
 });
+
+test('Codex P1: destructured and aliased process.env taint never certifies JavaScript eval clean',()=>{
+ const scripts=[
+  'const { CMD } = process.env; eval(CMD)',
+  'const { CMD: payload } = process.env; eval(payload)',
+  'const ENV = process.env; eval(ENV.CMD)',
+  'const { CMD } = process.env; new Function(CMD)()',
+  'const ENV = {...process.env}; eval(ENV.CMD)'
+ ];
+ for(const script of scripts){
+  const src=['on: issues','jobs:','  audit:','    steps:',
+   '      - uses: actions/github-script@'+SHA,
+   '        env:','          CMD: ${{ github.event.issue.title }}',
+   '        with:','          script: '+script].join('\n');
+  const actual=inspectWorkflow(src);
+  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify({script,actual}));
+  assert.ok(actual.coverage.partial||actual.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify({script,actual}));
+ }
+});
+test('Codex P1: ordinary logging of a tainted env value remains data not executable code',()=>{
+ const src=['on: issues','jobs:','  audit:','    steps:',
+  '      - uses: actions/github-script@'+SHA,
+  '        env:','          CMD: ${{ github.event.issue.title }}',
+  '        with:','          script: core.info(process.env.CMD)'].join('\n');
+ const actual=inspectWorkflow(src);
+ assert.ok(!actual.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(actual));
+});
