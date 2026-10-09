@@ -23,7 +23,9 @@ for(const [name,trigger] of [
  ['folded','on: >-\n  pull_request_target\n'],
  ['indent-indicator','on: >2-\n  pull_request_target\n'],
  ['indented-root','  on: pull_request_target\n']
-])add('privileged event '+name,trigger+checkout(),'REVIEW_REQUIRED','PRIVILEGED_PR_CODE_CHECKOUT');
+])add('privileged event '+name,
+ name==='indented-root'?'  on: pull_request_target\n'+checkout().split('\n').map(row=>row?'  '+row:row).join('\n'):trigger+checkout(),
+ 'REVIEW_REQUIRED','PRIVILEGED_PR_CODE_CHECKOUT');
 for(const [name,trigger] of [
  ['push','on: push\n'], ['pull-request','on: pull_request\n'],
  ['workflow-dispatch','on: workflow_dispatch\n'], ['issues','on: issues\n'],
@@ -83,7 +85,7 @@ for(const [name,yml] of [
  ['steps-map','on: push\njobs:\n  x:\n    steps: {uses: actions/checkout@v6}\n'],
  ['boolean-on','on: true\njobs: {}\n'],
  ['empty-source',''],
- ['invalid-tab-key','on: push\njobs:\n  x:\n    steps:\n      - uses:\tactions/checkout@v6\n'],
+ ['invalid-tab-key','on: push\njobs:\n  x:\n    steps:\n      \t- uses: actions/checkout@v6\n'],
  ['cyclic-alias','on: push\njobs:\n  x: &loop {steps: *loop}\n']
 ])add('parse rejection '+name,yml,'INCOMPLETE',null);
 for(const {title,src,status,rule} of cases){
