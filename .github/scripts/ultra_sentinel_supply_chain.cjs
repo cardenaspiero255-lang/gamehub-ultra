@@ -101,7 +101,9 @@ function yamlRootIndent(lines){
  }
  return Number.isFinite(min)?min:0;
 }
-const privilegedEvent=/^(pull_request_target|workflow_run)$/;
+// Match AST's default-branch event model. The heuristic is a second
+// fail-closed layer, never a reason to bypass structural YAML findings.
+const privilegedEvent=/^(pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)$/;
 function privilegedTrigger(lines,audit={}){
  const rootIndent=yamlRootIndent(lines);
  let start=-1,rest='';
@@ -123,7 +125,7 @@ function privilegedTrigger(lines,audit={}){
     if(lines[j].trim()&&!lines[j].trim().startsWith('#'))parts.push(lines[j].trim());
    }
    const folded=parts.join(' ');
-   return /(?:^|[\s,])(?:pull_request_target|workflow_run)(?:\s|$)/.test(folded);
+   return /(?:^|[\s,])(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)(?:\s|$)/.test(folded);
   }
   // GitHub Actions accepts block-flow sequences and mappings:
   // on: [<newline> pull_request_target, <newline> push].
@@ -146,7 +148,7 @@ function privilegedTrigger(lines,audit={}){
   }
   const tokens=value.replace(/[\[\]{},]/g,' ').trim().split(/\s+/).map(scalar);
   if(tokens.some(x=>privilegedEvent.test(x.replace(/:$/,''))))return true;
-  return /(?:^|[\s,{])(?:"(?:pull_request_target|workflow_run)"|'(?:pull_request_target|workflow_run)'|(?:pull_request_target|workflow_run))\s*:/.test(value);
+  return /(?:^|[\s,{])(?:"(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)"|'(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)'|(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment))\s*:/.test(value);
  }
  for(let i=start+1;i<lines.length;i++){
   if(lines[i].trim()&&lines[i].match(/^\s*/)[0].length<=rootIndent)break;
