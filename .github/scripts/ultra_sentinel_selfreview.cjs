@@ -29,6 +29,15 @@ function scan(files,sha){
   return {status:'BLOCKED',findings:[{rule:'INVALID_OR_UNBOUNDED_INPUT',severity:'BLOCKER'}],filesReviewed:0,requiresHuman:true,autoMergeAllowed:false};
  for(const f of files){
   const file=String(f?.filename||'');
+  const previous=String(f?.previous_filename||'');
+  if(f?.status==='renamed' && previous!==file && REQUIRED.includes(previous)){
+   changed.push(previous);
+   flag('REMOVED_GATE','BLOCKER',previous,0,'Critical reviewer component renamed away');
+  }
+  if(f?.status==='renamed' && SCOPE.test(previous) && !SCOPE.test(file)){
+   changed.push(previous);
+   flag('REVIEWER_SCOPE_ESCAPED','BLOCKER',previous,0,'Sentinel source moved outside review scope');
+  }
   if(!SCOPE.test(file))continue;
   changed.push(file);
   if(f.status==='removed'){
@@ -40,7 +49,10 @@ function scan(files,sha){
    flag('INCOMPLETE_DIFF','BLOCKER',file,0,'Diff truncated or missing');continue;
   }
   for(const a of additions){
-   const line=a.text.trim();
+   // Normalize YAML list prefixes, quotes and trailing comments before rules.
+   const line=a.text.trim().replace(/\s+#.*$/,'').trim()
+    .replace(/^-\s+/,'').trim()
+    .replace(/^([\w-]+:\s*)["']([^"']+)["']\s*$/,'$1$2');
    if(file.includes('/workflows/')&&/^ref:\s*/i.test(line)&&
     /\$\{\{\s*(?:github\.event\.pull_request\.head\.|github\.head_ref|github\.event\.workflow_run\.head_sha)/i.test(line))
     flag('UNTRUSTED_CHECKOUT','BLOCKER',file,a.line,'Unsafe head checkout may execute PR code');

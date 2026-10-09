@@ -52,3 +52,9 @@ test('malformed JSON is safely ignored',()=>{
  const c=input();c.body=f.START+'{invalid'+f.END;
  assert.equal(f.parse(c,{pr:167,sha}),null);
 });
+
+test('CRLF feedback is parsed, but stale PR and SHA remain rejected',()=>{
+ const c=input();c.body=c.body.replace(/\n/g,'\r\n');
+ assert.equal(f.parse(c,{pr:167,sha})?.decision,'reject');
+ assert.equal(f.parse(c,{pr:168,sha}),null);
+});

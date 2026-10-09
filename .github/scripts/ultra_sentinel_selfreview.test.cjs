@@ -62,3 +62,24 @@ test('red team fixtures are not treated as live auto-merge permissions',()=>{
  const fixture=file('.github/scripts/ultra_sentinel_selfreview.test.cjs',"assert.equal(scan([file(src,'new Function(userPatch)')],SHA).status,'BLOCKED')");
  assert.equal(scan([fixture],SHA).status,'ADVISORY');
 });
+
+test('required guard renamed outside scope must be blocked',()=>{
+ const r=scan([{filename:'docs/renamed.txt',previous_filename:'.github/scripts/ultra_sentinel_selfreview.cjs',
+  status:'renamed',changes:1,patch:patch('hello')}],SHA);
+ assert.equal(r.status,'BLOCKED');
+ assert.ok(r.findings.some(x=>x.rule==='REMOVED_GATE'));
+});
+test('other Sentinel source cannot escape scope via rename',()=>{
+ const r=scan([{filename:'docs/escaped.txt',previous_filename:'.github/scripts/ultra_sentinel_memory.cjs',
+  status:'renamed',changes:1,patch:patch('hello')}],SHA);
+ assert.equal(r.status,'BLOCKED');
+ assert.ok(r.findings.some(x=>x.rule==='REVIEWER_SCOPE_ESCAPED'));
+});
+test('YAML list syntax quotes and comments cannot bypass security rules',()=>{
+ for(const line of ['- uses: actions/checkout@v4','- uses: "actions/checkout@v4" # mutable',
+  "uses: 'actions/checkout@v4'",'contents: write # elevated',
+  "contents: 'write' # elevated",'actions: "write" # elevated']){
+  assert.equal(scan([file(wf,line)],SHA).status,'BLOCKED',line);
+ }
+ assert.equal(scan([file(wf,'- uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # pinned')],SHA).status,'ADVISORY');
+});

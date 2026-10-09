@@ -15,7 +15,7 @@ function sanitize(s,n=320){
 }
 function parse(comment,expected){
  if(!comment||!TRUSTED.has(comment.author_association)||typeof comment.body!=='string')return null;
- const body=comment.body;
+ const body=comment.body.replace(/\r\n/g,'\n');
  const start=body.indexOf(START);
  if(start<0||start>5000)return null;
  const stop=body.indexOf(END,start+START.length);

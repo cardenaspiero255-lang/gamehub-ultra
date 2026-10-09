@@ -211,6 +211,13 @@ jobs:
     timeout-minutes: 8
     name: Sentinel / Evidence consensus
     steps:
+      - name: Checkout trusted SHA verifier from main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts/ultra_sentinel_review_sha.cjs
+          persist-credentials: false
       - name: Update one pinned-to-commit status comment
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # pinned v7
         with:
@@ -226,6 +233,7 @@ jobs:
               core.setFailed("Only open same-repository PRs can be reviewed"); return;
             }
             const sha = pr.head.sha.slice(0,12);
+            const {matchesReviewHead} = require(require("node:path").resolve(".github/scripts/ultra_sentinel_review_sha.cjs"));
             const specs = [
               ["Claude","<!-- claude-sonnet-5-review -->"],
               ["Grok","<!-- grok-4.7-review -->"],
@@ -241,7 +249,9 @@ jobs:
               const item = [...comments].reverse().find(c =>
                 c.user?.login === "github-actions[bot]" &&
                 (c.body || "").startsWith(marker));
-              const verified = item && (item.body || "").includes(provider === "Ultra Sentinel Core" ? "**Commit:** " + pr.head.sha : "head " + sha);
+              const verified = Boolean(item) && (provider === "Ultra Sentinel Core"
+                ? (item.body || "").includes("**Commit:** " + pr.head.sha)
+                : matchesReviewHead(item.body || "", sha));
               const count = verified ? ((item.body || "").match(/\[(BLOCKER|HIGH)\]/g) || []).length : 0;
               if (verified && provider !== "Ultra Sentinel Core") { fresh++; high += count; }
               table.push("| " + provider + " | " +

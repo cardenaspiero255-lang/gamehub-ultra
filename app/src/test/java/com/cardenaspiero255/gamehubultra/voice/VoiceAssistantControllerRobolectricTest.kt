@@ -114,6 +114,65 @@ class VoiceAssistantControllerRobolectricTest {
         kotlin.test.assertTrue(listeningEvents.isNotEmpty())
     }
 
+
+    @Test
+    fun releaseCleansSpeechAndTtsEvenWhenListeningCallbackThrows() {
+        val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = { throw IllegalStateException("bad callback") },
+            onTranscript = {},
+            onError = {}
+        )
+        val rField = VoiceAssistantController::class.java
+            .getDeclaredField("recognizer").apply { isAccessible = true }
+        val tField = VoiceAssistantController::class.java
+            .getDeclaredField("tts").apply { isAccessible = true }
+        (tField.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
+        rField.set(controller, recognizer)
+        tField.set(controller, speech)
+
+        controller.release()
+        controller.release()
+        org.mockito.Mockito.verify(recognizer, org.mockito.Mockito.times(1)).destroy()
+        org.mockito.Mockito.verify(speech, org.mockito.Mockito.times(1)).stop()
+        org.mockito.Mockito.verify(speech, org.mockito.Mockito.times(1)).shutdown()
+        kotlin.test.assertNull(rField.get(controller))
+        kotlin.test.assertNull(tField.get(controller))
+        val gate = VoiceAssistantController::class.java
+            .getDeclaredField("fallbackRetryGate").apply { isAccessible = true }
+            .get(controller) as VoiceRecognitionRetryGate
+        kotlin.test.assertFalse(gate.trySchedule())
+    }
+
+    @Test
+    fun releaseStillShutsDownTtsIfRecognizerDestroyThrows() {
+        val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
+        org.mockito.Mockito.doThrow(IllegalStateException("destroy failure"))
+            .`when`(recognizer).destroy()
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = {},
+            onTranscript = {},
+            onError = {}
+        )
+        val rField = VoiceAssistantController::class.java
+            .getDeclaredField("recognizer").apply { isAccessible = true }
+        val tField = VoiceAssistantController::class.java
+            .getDeclaredField("tts").apply { isAccessible = true }
+        (tField.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
+        rField.set(controller, recognizer)
+        tField.set(controller, speech)
+        controller.release()
+        org.mockito.Mockito.verify(recognizer).destroy()
+        org.mockito.Mockito.verify(speech).stop()
+        org.mockito.Mockito.verify(speech).shutdown()
+        kotlin.test.assertNull(rField.get(controller))
+        kotlin.test.assertNull(tField.get(controller))
+    }
+
     @Test
     fun releasedControllerIgnoresLateRecognizerCallbacksAndCannotRestart() {
         val listeningEvents = mutableListOf<Boolean>()

@@ -135,14 +135,18 @@ class VoiceAssistantController(
     fun release() {
         if (released) return
         released = true
-        mainHandler.removeCallbacks(fallbackRetry)
+        // Make release terminal before calling any client or platform callbacks.
         fallbackRetryGate.close()
-        onListeningChanged(false)
-        recognizer?.destroy()
+        runCatching { mainHandler.removeCallbacks(fallbackRetry) }
+        // Every cleanup step must execute even if a previous callback throws.
+        runCatching { onListeningChanged(false) }
+        val oldRecognizer = recognizer
         recognizer = null
-        tts?.stop()
-        tts?.shutdown()
+        runCatching { oldRecognizer?.destroy() }
+        val oldTts = tts
         tts = null
+        runCatching { oldTts?.stop() }
+        runCatching { oldTts?.shutdown() }
     }
 
     private val listener = object : RecognitionListener {
