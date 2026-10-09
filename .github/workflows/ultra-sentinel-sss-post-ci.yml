@@ -113,7 +113,7 @@ jobs:
               .addRaw('Source run ID: '+run.id+'; immutable SHA: '+run.head_sha+'; linked PRs: '+
                 report.prs.length+'. CI status is advisory until both workflows finish. '+
                 'No automated merge or approval.').write();
-            if(!report.prs.length)core.warning('No open same-repo PR at this exact SHA; no CI verdict inferred.');
+            if(!report.prs.length)core.setFailed('No open same-SHA PR attested; do not report green CI evidence.');
       - name: Upload read-only SHA-scoped evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 Node 24
