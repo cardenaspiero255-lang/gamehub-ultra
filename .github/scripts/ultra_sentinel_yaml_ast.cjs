@@ -5,7 +5,8 @@
 const yaml=require('js-yaml');
 const MAX_SOURCE=160000,MAX_NODES=4096,MAX_DEPTH=35,MAX_FINDINGS=40;
 const PINNED=/^[a-f0-9]{40}$/i, ACTION=/^[-A-Za-z0-9_.\/]+@([^\s]+)$/;
-const REMOTE=/\b(?:curl|wget)\b[^\n]{0,240}\|&?\s*(?:bash|sh)(?:\b|$)/;
+const REMOTE=/\b(?:curl|wget)\b[^\n]{0,240}\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|$)/;
+const DOWNLOAD_PIPE=/\b(?:curl|wget)\b[^\n]{0,240}\|&?\s*\S+/;
 const WRITE_CAPABILITIES=new Set(['actions','attestations','checks','contents',
  'deployments','discussions','environments','id-token','issues','models','packages',
  'pages','pull-requests','security-events','statuses','artifact-metadata',
@@ -95,6 +96,10 @@ function remotePipeline(v){
  // For literal scripts, Bash removes a backslash + newline WITHOUT spaces.
  // Folded YAML is already folded by js-yaml; do not join unrelated commands.
  return v.replace(/\\\r?\n/g,'').split(/\r?\n/).some(line=>REMOTE.test(line));
+}
+function unknownDownloadPipeline(v){
+ if(typeof v!=='string')return false;
+ return v.replace(/\\\r?\n/g,'').split(/\r?\n/).some(line=>DOWNLOAD_PIPE.test(line)&&!REMOTE.test(line));
 }
 // Direct interpolation substitutes attacker-controlled event text into a
 // shell script before execution. Quoting cannot prevent command substitution.
@@ -235,7 +240,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  const checkDefaults=(defaults,where)=>{
   if(defaults===undefined)return;
   if(!isMap(defaults)||!isMap(defaults.run)){coverage.partial=true;return;}
-  if(privileged)checkExecutableShell(defaults.run.shell,where);
+  checkExecutableShell(defaults.run.shell,where);
  };
  checkDefaults(document.defaults,path);
  checkPermissions(document.permissions,path);
@@ -267,14 +272,14 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
    if(!isMap(step)){coverage.partial=true;continue;}
-   if(privileged)checkExecutableShell(step.shell,where);
+   checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
     if(!step.uses.startsWith('./')){
      const action=ACTION.exec(step.uses);
      if(!action||!PINNED.test(action[1]))emit('UNPINNED_ACTION','HIGH',where);
     }
-    if(privileged&&/^actions\/github-script@/i.test(step.uses)){
+    if(/^actions\/github-script@/i.test(step.uses)){
      // github-script compiles its script input as JavaScript after Github
      // expressions are substituted. Use runner-equivalent input names.
      const inputs=Object.create(null);
@@ -353,7 +358,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     if(typeof step.run!=='string'||!step.run.trim())coverage.partial=true;
     else{
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
-     if(privileged){
+     else if(unknownDownloadPipeline(step.run))coverage.partial=true;
+     {
       const inspection=auditExecutableExpressions(step.run);
       if(inspection.incomplete)coverage.partial=true;
       if(inspection.unsafe)
