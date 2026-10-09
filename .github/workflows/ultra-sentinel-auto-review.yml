@@ -84,7 +84,33 @@ jobs:
             if(protectedChanges.status!=='OK')
               core.setFailed('Missing or modified security controls: '+protectedChanges.status+
                 '; protect the independent required checks in branch rules.');
-            const evidence = analyze(files,{sha:pr.head.sha});
+            // Resolve Kotlin lexical state from immutable PR HEAD instead of
+            // guessing from disconnected diff hunks. Bounded, read-only and
+            // never executed or published to the Actions summary.
+            const evidenceFiles=files.map(item=>({...item}));
+            const kotlinTargets=evidenceFiles.filter(item=>
+              item.status!=="removed" &&
+              /^app\/src\/main\/[A-Za-z0-9_./-]+\.kt$/.test(item.filename||"") &&
+              !String(item.filename||"").includes("..")).slice(0,24);
+            for(let i=0;i<kotlinTargets.length;i+=4){
+              await Promise.all(kotlinTargets.slice(i,i+4).map(async item=>{
+                try{
+                  const {data: body}=await github.rest.repos.getContent({
+                    owner,repo,path:item.filename,ref:pr.head.sha
+                  });
+                  if(body.type!=="file"||body.encoding!=="base64"||
+                     !Number.isSafeInteger(body.size)||body.size>160000||
+                     typeof body.content!=="string")return;
+                  const bytes=Buffer.from(body.content,"base64");
+                  if(bytes.length===body.size&&bytes.length<=160000)
+                    item.fullSource=bytes.toString("utf8");
+                }catch(error){
+                  core.warning("Kotlin full-file source unavailable ("+
+                    (error.status||"API error")+"); context stays INCOMPLETE.");
+                }
+              }));
+            }
+            const evidence = analyze(evidenceFiles,{sha:pr.head.sha});
             if (pr.changed_files > files.length) {
               evidence.coverage.partial = true;
               evidence.verdict = "INCOMPLETE";
