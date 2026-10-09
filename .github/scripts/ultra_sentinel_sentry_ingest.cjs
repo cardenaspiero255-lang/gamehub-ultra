@@ -66,23 +66,38 @@ function buildSanitizedReport(raw,options={}){
    'CI provenance for a release must be independently verified before association']
  };
 }
-async function main(env=process.env){
+async function main(env=process.env,clients={}){
  const org=env.SENTRY_ORG_SLUG,project=env.SENTRY_PROJECT_SLUG,token=env.SENTRY_AUTH_TOKEN;
  if(env.ULTRA_SENTINEL_INCIDENTS_CONSENT!=='true')throw Error('Incident monitoring requires explicit consent');
  if(!env.RUNNER_TEMP||!path.isAbsolute(env.RUNNER_TEMP))throw Error('Runner temporary output directory missing');
- const raw=await fetchIssues({org,project,token});
+ const raw=await (clients.fetchIssues||fetchIssues)({org,project,token});
  // Only GitHub's own API can attest the latest CI results; no client-supplied
  // status can authorize a release correlation or automated rollback.
  const releaseShas=[...new Set(raw.map(releaseSha).filter(Boolean))].slice(0,4);
  const attestedRuns=[];
+ let failedLookups=0;
  for(const sha of releaseShas){
-  const validated=await fetchVerifiedRuns({sha,token:env.GITHUB_TOKEN});
-  attestedRuns.push(...validated);
+  try{
+   const validated=await (clients.fetchVerifiedRuns||fetchVerifiedRuns)({sha,token:env.GITHUB_TOKEN});
+   attestedRuns.push(...validated);
+  }catch{
+   // GitHub permission errors, rate limits, and outages are UNKNOWN, not a
+   // release failure or approval. Preserve sanitized Sentry evidence.
+   failedLookups++;
+  }
  }
  const report=buildSanitizedReport(raw,{consent:true,attestedRuns});
+ report.attestation={
+  status:failedLookups?'PARTIAL':'COMPLETE',
+  verifiedLookups:releaseShas.length-failedLookups,failedLookups
+ };
+ if(failedLookups)report.cautions.push(
+  'GitHub CI attestation unavailable for some releases; no verification inferred for those releases'
+ );
  const destination=path.join(env.RUNNER_TEMP,'ultra-sentinel-incident-summary.json');
  fs.writeFileSync(destination,JSON.stringify(report,null,2)+'\n',{encoding:'utf8',mode:0o600,flag:'wx'});
  console.log('Ultra Sentinel: '+report.snapshotCount+' sanitized issues assessed; decision='+report.assessment.decision);
+ console.log('CI verification: '+report.attestation.status+'; unavailable lookups='+failedLookups);
  console.log('Privacy: raw Sentry issue content was not persisted.');
  return report;
 }
