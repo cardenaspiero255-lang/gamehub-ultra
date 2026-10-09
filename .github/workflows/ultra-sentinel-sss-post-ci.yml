@@ -96,10 +96,14 @@ jobs:
                 core.warning('PR changed during CI attestation; dropping stale evidence');continue;
               }
               report.prs.push({number:n,ci});
-              if(ci.status==='UNTRUSTED')core.setFailed('PR changed protected CI definitions; refuse any successful attestation.');
-              if(ci.status==='FAILED')core.setFailed('Current PR SHA has a verified failing Android Build or Coverage run');
-              if(ci.status==='WAITING'||ci.status==='UNKNOWN'||ci.status==='UNTRUSTED')
-                core.warning('CI still pending or unavailable; this is NOT a green approval.');
+              // A successful workflow check must represent a real attestation,
+              // not merely successful execution of advisory reporting code.
+              // The first of two CI completions can be WAITING; the next
+              // workflow_run is responsible for issuing a fresh PASS check.
+              if(ci.status!=='PASS')core.setFailed(
+                'CI attestation for PR #'+n+' is '+ci.status+
+                '; Android Build and Coverage must both be verified for the same SHA.'
+              );
             }
             const folder=path.join(process.env.RUNNER_TEMP,'ultra-sentinel-post-ci');
             fs.mkdirSync(folder,{recursive:true});
