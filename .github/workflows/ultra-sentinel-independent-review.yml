@@ -115,8 +115,8 @@ jobs:
               structural=reviewWorkflowSources({expected,sources,trustedRepository:owner+'/'+repo});
               if(structural.coverage.partial)
                 core.setFailed('Unable to structurally parse every changed workflow.');
-              if(structural.findings.some(f=>f.severity==='BLOCKER'))
-                core.setFailed('Untrusted privileged checkout in parsed workflow.');
+              if(structural.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
+                core.setFailed('HIGH/BLOCKER structural workflow security finding requires repair before merge.');
             }else{
               core.warning("Trusted main structural parser not deployed yet; no independent AST attestation inferred.");
             }
@@ -141,8 +141,8 @@ jobs:
             await core.summary.addHeading("Ultra Sentinel · Independent Read-only Review")
               .addRaw(markdown(result)+'\nStructural YAML: '+(structural?.status||'NOT_DEPLOYED_ON_TRUSTED_MAIN')).write();
             if (result.coverage.partial) core.setFailed("Incomplete changed-file evidence; manual review required.");
-            if (result.findings.some(f => f.severity === "BLOCKER"))
-              core.setFailed("Potential BLOCKER; reproduce and verify before merging.");
+            if (result.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
+              core.setFailed('HIGH/BLOCKER finding; reproduce and verify before merging.');
       - name: Preserve immutable SHA-pinned report as artifact
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 Node 24
