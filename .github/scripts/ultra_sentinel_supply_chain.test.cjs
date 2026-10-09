@@ -149,3 +149,59 @@ test('commented braces in read-only permission flow do not invent writable scope
  const result=scan(workflow);
  assert.equal(result.status,'NO_RISK_PATTERN');
 });
+
+test('Codex P1: privileged flow-sequence trigger ignores commented closing bracket',()=>{
+ const src=['on: [ # ] commented bracket','  push,','  pull_request_target',']',
+ 'jobs:','  audit:','    steps:','      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(src);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P1: privileged flow-map trigger ignores commented closing brace',()=>{
+ const src=['on: { # } commented brace','  pull_request_target: null','}',
+ 'jobs:','  audit:','    steps:','      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(src);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('flow trigger with only push stays unprivileged despite commented event text',()=>{
+ const src=['on: [ # pull_request_target','  push',']',
+ 'jobs:','  audit:','    steps:','      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(src);
+ assert.ok(!rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P1: workflow_run checkout of triggering run head SHA is untrusted',()=>{
+ const src=['on: workflow_run','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: '+('$'+'{{ github.event.workflow_run.head_sha }}')].join('\n');
+ const result=scan(src);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P1: privileged checkout from PR fork repository is untrusted even at main',()=>{
+ const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:','          repository: '+('$'+'{{ github.event.pull_request.head.repo.full_name }}'),
+ '          ref: main'].join('\n');
+ const result=scan(src);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('privileged checkout in YAML flow step detects fork repository expressions',()=>{
+ const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - {uses: actions/checkout@'+SHA+', with: {repository: "'+('$'+'{{ github.event.pull_request.head.repo.full_name }}')+'", ref: main}}'].join('\n');
+ const result=scan(src);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P2: quoted flow message mentioning ref alias must stay benign',()=>{
+ const src=['on: pull_request','jobs:','  audit:','    steps:',
+ '      - {uses: owner/action@'+SHA+', with: {message: ", ref: *not-an-alias"}}'].join('\n');
+ const result=scan(src);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+ assert.equal(result.coverage.partial,false);
+});
+test('quoted flow message does not suppress a real sensitive alias',()=>{
+ const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - {uses: actions/checkout@'+SHA+', with: {message: ", ref: *fake", ref: *danger}}'].join('\n');
+ const result=scan(src);
+ assert.equal(result.status,'INCOMPLETE');
+});
