@@ -429,7 +429,9 @@ function stepAction(lines,step){
 // never arbitrary labels, descriptions, comments or action names.
 function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
  let scope=null;
+ const structural=structuralYamlRowMask(lines);
  for(let i=0;i<lines.length;i++){
+  if(!structural[i])continue;
   const row=lines[i],trim=row.trim();
   if(!trim||trim.startsWith('#'))continue;
   const indent=row.match(/^\s*/)[0].length,kv=keyValue(row);
@@ -461,23 +463,28 @@ function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
  return false;
 }
 
-function hasUnknownStructuralYamlKeys(lines){
- let blockIndent=null;
+// One structural mask for every security-sensitive YAML scan.
+// Content inside | and > block scalars is script/text data, not YAML nodes.
+function structuralYamlRowMask(lines){
+ const mask=[];let blockIndent=null;
  for(const line of lines){
-  const trimmed=line.trim();
-  const indent=line.match(/^\s*/)[0].length;
+  const trimmed=line.trim(),indent=line.match(/^\s*/)[0].length;
   if(blockIndent!==null){
-   // Blank and indented lines are literal block-scalar CONTENT, not keys.
-   if(!trimmed||indent>blockIndent)continue;
+   if(!trimmed||indent>blockIndent){mask.push(false);continue;}
    blockIndent=null;
   }
+  mask.push(true);
   if(!trimmed||trimmed.startsWith('#'))continue;
-  const kv=keyValue(line)||keyValue(line.replace(/^\s*-\s*/,'')); 
-  if(kv?.unresolved)return true;
+  const kv=keyValue(line)||keyValue(line.replace(/^\s*-\s*/,''));
   if(kv&&/^[>|](?:(?:[+-][1-9]?)|(?:[1-9][+-]?)|[+-])?$/.test(
     withoutYamlComment(kv.value).trim()))blockIndent=indent;
  }
- return false;
+ return mask;
+}
+function hasUnknownStructuralYamlKeys(lines){
+ const mask=structuralYamlRowMask(lines);
+ return lines.some((line,i)=>mask[i]&&
+  (keyValue(line)||keyValue(line.replace(/^\s*-\s*/,'')))?.unresolved);
 }
 
 function reviewWorkflows({sha,expected,sources={}}={}){
