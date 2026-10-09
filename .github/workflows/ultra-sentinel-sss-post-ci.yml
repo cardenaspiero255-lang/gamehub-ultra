@@ -58,7 +58,7 @@ jobs:
               const n=Number(linked.number);
               if(!Number.isSafeInteger(n)||n<1)continue;
               const {data: pr}=await github.rest.pulls.get({owner,repo,pull_number:n});
-              if(pr.state!=='open'||pr.base?.ref!=='main'||
+              if(pr.state!=='open'||pr.base?.ref!==context.payload.repository?.default_branch||
                  pr.head?.repo?.full_name!==owner+'/'+repo||
                  pr.head.sha !== run.head_sha)continue;
               let trustedWorkflows=null,changedFiles=[],changedFilesComplete=false;
@@ -79,12 +79,22 @@ jobs:
               }
               let ciRuns=[],apiComplete=false;
               try{
-                const {data: results}=await github.rest.actions.listWorkflowRunsForRepo({
-                  owner,repo,head_sha:pr.head.sha,per_page:100
-                });
-                ciRuns=Array.isArray(results.workflow_runs)?results.workflow_runs:[];
-                apiComplete=Number.isSafeInteger(results.total_count)&&
-                  results.total_count===ciRuns.length;
+                const args={owner,repo,head_sha:pr.head.sha,per_page:100};
+                const {data: first}=await github.rest.actions.listWorkflowRunsForRepo(args);
+                const total=first.total_count;
+                if(Number.isSafeInteger(total)&&total>=0&&total<=1000&&Array.isArray(first.workflow_runs)){
+                  ciRuns=first.workflow_runs.slice();
+                  apiComplete=true;
+                  for(let page=2;page<=Math.ceil(total/100);page++){
+                    const {data: next}=await github.rest.actions.listWorkflowRunsForRepo({...args,page});
+                    if(next.total_count!==total||!Array.isArray(next.workflow_runs)){
+                      apiComplete=false;break;
+                    }
+                    ciRuns.push(...next.workflow_runs);
+                  }
+                  apiComplete=apiComplete&&ciRuns.length===total&&
+                    new Set(ciRuns.map(x=>x?.id)).size===total;
+                }
               }catch(error){
                 core.warning('CI evidence unavailable ('+(error.status||'API error')+'); no approval inferred.');
               }
