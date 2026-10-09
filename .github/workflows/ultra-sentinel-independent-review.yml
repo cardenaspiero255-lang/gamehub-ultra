@@ -118,7 +118,7 @@ jobs:
               if(structural.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
                 core.setFailed('HIGH/BLOCKER structural workflow security finding requires repair before merge.');
             }else{
-              core.warning("Trusted main structural parser not deployed yet; no independent AST attestation inferred.");
+              core.setFailed('Trusted main structural parser not deployed; no independent AST attestation');
             }
             if (files.length !== pr.changed_files) {
               result.coverage.partial = true;
