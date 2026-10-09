@@ -65,3 +65,29 @@ test('Root cause: privileged ignored failed step cannot be certified clean',()=>
  '    steps:','      - run: echo hello','        continue-on-error: true'].join('\n');
  assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN');
 });
+
+test('Root cause: inherited job secret is forwarded to every uses step',()=>{
+ const source=['on: workflow_dispatch','permissions: {contents: read}','jobs:',
+  '  audit:','    env:','      SHARED_TOKEN: ${{ secrets.SERVICE_CREDENTIAL }}',
+  '    steps:','      - uses: vendor/repo@'+SHA].join('\n');
+ assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN');
+});
+test('Root cause: inherited workflow secret reaches the third-party action',()=>{
+ const source=['on: workflow_dispatch','permissions: {contents: read}',
+  'env:','  SHARED_TOKEN: ${{ secrets.SERVICE_CREDENTIAL }}',
+  'jobs:','  audit:','    steps:','      - uses: vendor/repo@'+SHA].join('\n');
+ assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN');
+});
+test('Root cause: derived secret expressions remain tainted in action inputs',()=>{
+ const source=['on: workflow_dispatch','permissions: {contents: read}',
+ 'jobs:','  audit:','    steps:','      - uses: vendor/repo@'+SHA,
+ '        with:',"          token: ${{ format('{0}', secrets.SERVICE_CREDENTIAL) }}"].join('\n');
+ assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN');
+});
+test('Regression: first-party pinned github-script uses normal scoped GitHub token',()=>{
+ const source=['on: workflow_dispatch','permissions: {contents: read}',
+ 'jobs:','  audit:','    steps:','      - uses: actions/github-script@'+SHA,
+ '        with:','          github-token: ${{ github.token }}',
+ '          script: core.info("safe")'].join('\n');
+ assert.equal(inspectWorkflow(source).status,'NO_RISK_PATTERN');
+});
