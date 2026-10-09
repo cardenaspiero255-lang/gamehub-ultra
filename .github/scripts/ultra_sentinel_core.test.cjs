@@ -130,7 +130,7 @@ test('P2: an ambiguous raw-string closer before a diff addition cannot hide exec
  assert.equal(result.verdict,'INCOMPLETE');
 });
 test('a raw Kotlin string opened and closed within trustworthy file-origin context does not hide later code',()=>{
- const patch=['@@ -1,4 +1,5 @@','val help = """','  sample','"""','+runBlocking { work() }','val end = 42'].join('\n');
+ const patch=['@@ -1,4 +1,5 @@',' val help = """','   sample',' """','+runBlocking { work() }',' val end = 42'].join('\n');
  const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
  assert.ok(rules(result).includes('BLOCKING_ANDROID_CALL'));
  assert.equal(result.coverage.partial,false);
