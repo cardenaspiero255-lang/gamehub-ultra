@@ -11,7 +11,7 @@ const WRITABLE=new Set(['actions','attestations','checks','contents','deployment
 const scalar=v=>{
  // Decode YAML node *values* too: "\u0061ctions/checkout" is a checkout.
  // strip comments only when outside quotes; never interpret PR source code.
- const s=withoutYamlComment(v).trim();
+ const s=withoutLeadingAnchor(v);
  if(s.length>=2&&s[0]==='"'&&s.at(-1)==='"'){
   const decoded=decodeYamlKey(s.slice(1,-1));
   return decoded===null?s:decoded.trim();
@@ -353,6 +353,8 @@ function sensitiveFlowAlias(value){
  if(/^\*[-A-Za-z0-9_]+\b/.test(source))return true;
  if(!source.startsWith('{')||!source.endsWith('}'))return false;
  for(const entry of splitFlowEntries(source.slice(1,-1))){
+  // YAML merge keys may inherit an untrusted action or ref at any position.
+  if(/^<<\s*:/.test(entry.trim()))return true;
   const kv=keyValue(entry.trim());
   if(!kv||!['uses','ref','repository','with'].includes(kv.key))continue;
   if(sensitiveFlowAlias(kv.value))return true;
@@ -462,8 +464,11 @@ function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
   // Neither gives evidence about the real action or checkout ref: fail closed.
   const unresolvedStep=typeof flowStepValue==='string'&&
    (/^\*[-A-Za-z0-9_.]+(?:\s|$)/.test(flowStepValue)||
-    /^<<\s*:\s*\*[-A-Za-z0-9_.]+(?:\s|$)/.test(flowStepValue));
-  if(unresolvedStep||flowStepAlias||containsYamlAlias(examined))return true;
+    /^<<\s*:/.test(flowStepValue));
+  // Inspect structural mapping entries throughout every step (not only
+  // the first key). Unresolved merges must not certify hidden uses/with.
+  const stepMerge=stepRanges.some(s=>s.start<=i&&i<s.end)&&/^<<\s*:/.test(trim);
+  if(unresolvedStep||stepMerge||flowStepAlias||containsYamlAlias(examined))return true;
  }
  return false;
 }
