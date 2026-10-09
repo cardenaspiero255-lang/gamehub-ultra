@@ -99,6 +99,15 @@ function judge(proposal,options={}){
   if(!['FORCED_GC','POTENTIAL_PRIVATE_LOG'].includes(proposal.rule))reasons.push('Regla no autorizada para parche exacto');
   if(!Number.isInteger(proposal.linesChanged)||proposal.linesChanged>MAX_LINES||proposal.linesChanged<1)reasons.push('Cambios exceden presupuesto');
   if(!validDeletionPatch(proposal))reasons.push('Contenido, ruta o hunk del parche no verificables');
+  // Reconstruct the exact candidate from independently fetched source and
+  // Hunter findings. Syntax-only validation allows patch-context confusion.
+  const original=typeof options.source==='string'&&Array.isArray(options.findings)?
+   candidate({filename:proposal.filename,content:options.source,
+     sha:proposal.sha,findings:options.findings}):null;
+  if(original?.status!=='DRAFT_PATCH'||original.patch!==proposal.patch||
+     original.rule!==proposal.rule||original.filename!==proposal.filename||
+     original.linesChanged!==proposal.linesChanged)
+   reasons.push('Parche no coincide exactamente con fuente y hallazgo verificados');
   if(!/^[a-f0-9]{40}$/.test(proposal.sha||''))reasons.push('SHA inválido');
   if(options.sha&&proposal.sha!==options.sha)reasons.push('El PR cambió de SHA');
   if(proposal.patch&&/(?:GITHUB_TOKEN|PRIVATE_KEY|SENTRY_AUTH_TOKEN|github\.event\.pull_request\.head)/.test(proposal.patch))
@@ -118,7 +127,7 @@ function orchestrate({analysis,sources={},sha,checks={}}){
  const proposals=[];
  for(const filename of sourceNames){
   const p=candidate({filename,content:sources[filename],sha,findings});
-  if(p.status==='DRAFT_PATCH')proposals.push({proposal:p,judgement:judge(p,{sha,checks})});
+  if(p.status==='DRAFT_PATCH')proposals.push({proposal:p,judgement:judge(p,{sha,checks,source:sources[filename],findings})});
   if(proposals.length>=3)break;
  }
  const risk=analysis?.coverage?.partial||analysis?.verdict==='INCOMPLETE';
