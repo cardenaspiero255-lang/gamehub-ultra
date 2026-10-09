@@ -43,12 +43,13 @@ function evaluate(corpus,reports,{expectedSha}={}){
    (report.costUsd!==undefined&&(!Number.isFinite(report.costUsd)||report.costUsd<0)))
    throw Error('Untrusted or inconsistent benchmark result');
   const label=report.provider;
-  if(!results[label])results[label]={tp:0,fp:0,fn:0,caseIds:new Set(),time:[],cost:[]};
+  if(!results[label])results[label]={tp:0,fp:0,fn:0,caseIds:new Set(),time:[],cost:[],negativeCasesReviewed:0,negativeCasesFlagged:0};
   const rec=results[label];if(rec.caseIds.has(report.caseId))throw Error('Duplicate provider report');
   rec.caseIds.add(report.caseId);providers.add(label);
   const actual=new Set();
   for(const f of report.findings){const k=key(f);if(!k)throw Error('Malformed provider finding');actual.add(k);}
   const expected=truth.get(report.caseId);
+  if(expected.size===0){rec.negativeCasesReviewed++;if(actual.size>0)rec.negativeCasesFlagged++;}
   for(const k of actual){if(expected.has(k))rec.tp++;else rec.fp++;}
   for(const k of expected){if(!actual.has(k))rec.fn++;}
   if(report.durationMs!==undefined)rec.time.push(report.durationMs);
@@ -59,6 +60,14 @@ function evaluate(corpus,reports,{expectedSha}={}){
   const r=results[provider],metrics=metric(r.tp,r.fp,r.fn);
   out[provider]={
    ...metrics,casesReviewed:r.caseIds.size,complete:r.caseIds.size===corpus.length,
+   negativeCasesReviewed:r.negativeCasesReviewed,
+   negativeCasesFlagged:r.negativeCasesFlagged,
+   // Case-level false alarm rate over independently labeled negative cases;
+   // not a per-finding false positive rate.
+   negativeCaseFalsePositiveRate:r.negativeCasesReviewed?
+    r.negativeCasesFlagged/r.negativeCasesReviewed:null,
+   latencyP95Ms:r.time.length===r.caseIds.size?
+    [...r.time].sort((a,b)=>a-b)[Math.max(0,Math.ceil(r.time.length*.95)-1)]:null,
    latencyMedianMs:r.time.length===r.caseIds.size?
     [...r.time].sort((a,b)=>a-b)[Math.floor(r.time.length/2)]:null,
    costTotalUsd:r.cost.length===r.caseIds.size?
