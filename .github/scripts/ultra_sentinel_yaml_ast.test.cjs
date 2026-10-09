@@ -319,3 +319,9 @@ test('Codex P1: issue and review comment events cannot checkout PR head silently
   }
  }
 });
+
+test('ROOT security: trusted independent review cannot pass green without AST deployed',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
+ assert.match(workflow,/core\.setFailed\(['"]Trusted main structural parser not deployed/);
+});
