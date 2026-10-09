@@ -514,3 +514,67 @@ test('single-quoted YAML escape-looking keys are literal, not decoded events',()
  const r=scan(workflow);
  assert.ok(!rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
 });
+
+test('Codex P2: unknown escape-looking shell line inside run literal scalar is not YAML evidence',()=>{
+ const src=['on: pull_request','jobs:','  lint:','    steps:',
+ '      - run: |',
+ '          "C:\\q": benign',
+ '          "\\u006fn": shell_text',
+ '          echo safe'].join('\n');
+ const r=scan(src);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
+test('folded run scalar and root-level descriptions cannot create a fake escaped YAML key',()=>{
+ const src=['on: push','description: >',
+ '  "\\q": not_a_real_key',
+ 'jobs:','  lint:','    steps:',
+ '      - run: >-',
+ '          "\\z": sample',
+ '          echo done'].join('\n');
+ const r=scan(src);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+});
+test('escaped quoted real YAML key with unknown escape still fails closed outside block scalars',()=>{
+ const src=['on: push','"\\q": value'].join('\n');
+ const r=scan(src);
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.coverage.partial,true);
+});
+test('ADVERSARIAL: Unicode-escaped double-quoted uses action is still a privileged checkout',()=>{
+ const src=['on: pull_request_target','jobs:','  lint:','    steps:',
+ '      - uses: "\\u0061ctions/checkout@v6"',
+ '        with:','          ref: ${{ github.head_ref }}'].join('\n');
+ const r=scan(src);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'),JSON.stringify(r));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('ADVERSARIAL: Unicode-escaped refs are recognized as untrusted GitHub expressions',()=>{
+ const src=['on: pull_request_target','jobs:','  lint:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: "${{ \\u0067ithub.head_ref }}"'].join('\n');
+ const r=scan(src);
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('ADVERSARIAL: YAML escaped write permission value cannot hide write token',()=>{
+ const src=['on: push','permissions:','  contents: "\\u0077rite"'].join('\n');
+ assert.ok(rules(scan(src)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('ADVERSARIAL: YAML escaped flow permissions write is detected',()=>{
+ const src=['on: push','permissions: {contents: "\\x77rite", issues: read}'].join('\n');
+ assert.ok(rules(scan(src)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('ADVERSARIAL: escaped scalar event pull_request_target remains privileged',()=>{
+ const src=['on: "\\u0070ull_request_target"','jobs:','  lint:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          ref: ${{ github.head_ref }}'].join('\n');
+ assert.ok(rules(scan(src)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('encoded pinned checkout and read-only permission remain benign',()=>{
+ const src=['on: push','permissions: {contents: "\\u0072ead"}','jobs:','  lint:','    steps:',
+ '      - uses: "\\u0061ctions/checkout@'+SHA+'"',
+ '        with:','          ref: main'].join('\n');
+ const r=scan(src);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
