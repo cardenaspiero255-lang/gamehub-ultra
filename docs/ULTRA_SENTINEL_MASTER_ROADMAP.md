@@ -91,3 +91,47 @@ Frontier, OMEGA y Sentinel vs. Sentinel quedan rastreados en `US-007`, `US-015`,
 **P3, confiabilidad y producto:** `US-030`–`US-034`, con métricas independientes y respeto de privacidad.
 
 **Regla de mantenimiento:** conservar IDs y evidencia, no pasar PARCIAL a IMPLEMENTADA solo porque CI esté verde; añadir nuevas filas para ideas nuevas y actualizar los totales con el mismo criterio. No eliminar controles ni bajar umbrales para conseguir un “100 %” aparente.
+
+## Evolución posterior a PR #167 — PR #168 (en validación)
+
+El PR #167 fue fusionado en `main` (commit `fe62f6b4`). Este nuevo desarrollo se trabaja
+en un PR **independiente, inicialmente borrador**:
+https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/168.
+
+**No actualizar el inventario a 35/35 por código parcial.** Se requieren resultados del
+SHA final, autorización humana y, para pruebas Android o incidentes Sentry, ejecución real.
+
+### Avances concretos en el primer bloque del PR #168
+
+| IDs | Implementación añadida | Estado real / límites |
+|---|---|---|
+| US-021 | `ultra_sentinel_sentry_ingest.cjs` y workflow manual read-only Sentry | **Parcial**: requiere `SENTRY_AUTH_TOKEN` de solo lectura, vars de organización/proyecto, consentimiento y prueba real de API. No hay webhooks aún. |
+| US-022 | `correlateBuilds` enlaza huellas de incidentes con SHA y estado aportados por CI | **Parcial**: la función no consulta ni verifica de manera independiente la API GitHub; se marca `ci-input-matched`. |
+| US-023 | `sanitizeBreadcrumbs` aplica consentimiento explícito y lista estricta de eventos voz/red/temperatura | **Parcial**: sanitizador en Sentinel, no integrado aún con instrumentación Android de producción. |
+| US-025, US-030 | Evaluación conservadora de picos con umbrales centralizados y estado `INSUFFICIENT_EVIDENCE` | **Parcial**: no confirma causalidad, carece de calibración longitudinal y pruebas RED de crashes de dispositivos. |
+| US-027 | `evaluateRepairGate` exige SHA, RED/GREEN, CI verde y revisión humana independiente | **Parcial**: bloqueador puro/offline; falta conectarlo a propuestas de PR, verificación API real y aprobación GitHub. Nunca fusiona automáticamente. |
+| US-028, US-035 | 7.500 casos adversariales con semillas reproducibles, consentimiento, seguridad de entradas y fail-closed | **Parcial**: cubre JavaScript del motor; faltan chaos tests en emuladores, app lifecycle y más clases supply-chain. |
+| US-029 | `ultra_sentinel_omega_access.cjs`: modelo finito de permisos/revocación (4 estados, 5 eventos) | **Parcial**: modelo abstracto, sin prueba de equivalencia con un componente Kotlin real. |
+| US-031 | `recordVerifiedRepair` registra una declaración humana limitada por caducidad y SHA | **Parcial**: estado real `PROVENANCE_RECORDED`, no demuestra por sí mismo RED/GREEN con GitHub ni persiste entre runners. |
+| US-032 | `ultra_sentinel_comparative.cjs`: precisión, recall, F1, latencia y coste solo con corpus y resultados suministrados | **Parcial**: falta corpus externo independiente y ejecuciones reales de CodeRabbit/Qodo; no inventar comparaciones. |
+| US-034 | Recomendación informativa `INVESTIGATE_ROLLBACK` con umbral conservador y CI suministrado | **Parcial**: sin canary de Play Store ni autorización/despliegue o rollback automático. |
+
+### Elementos no cerrados
+
+- US-005, 006, 008, 009, 010, 014, 018: requieren ampliaciones y pruebas
+  independientes específicas, no pasar de **PARCIAL** a **IMPLEMENTADA** por el PR #168.
+- US-016: workflow confiable incorporado a `main`; validar el job de revisión
+  independiente en PR #168 y no confundir ejecución con ausencia de vulnerabilidades.
+- US-024 y US-026: reproducción real en emulador y reparación TDD Android no implementadas.
+- US-033: panel Android de Ultra Sentinel no implementado.
+- US-021, 022, 023, 025, 027–032 y 034–035 siguen sujetos a las limitaciones de tabla.
+
+### Contratos de seguridad innegociables
+
+1. El token Sentry solo se lee en trabajo manual sobre `main` y requiere consentimiento;
+   no hay datos personales, pila de crash ni audio en artefactos; retención máxima 7 días.
+2. Nada de PR auto-merge, parcheo en producción, rollback automático o ejecutar código no confiable con secretos.
+3. Los SHAs y estados presentados por un cliente no equivalen a verificación
+   criptográfica o lectura independiente de GitHub.
+4. Código local y tests pasando no certifican una ingesta Sentry auténtica ni crashes
+   Android reproducidos. Mantener el PR borrador si falta CI final.
