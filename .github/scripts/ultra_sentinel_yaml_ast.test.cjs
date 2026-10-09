@@ -5,7 +5,7 @@ const SHA='a'.repeat(40);
 const ref='${{ github.head_ref }}';
 const prNumber='${{ github.event.pull_request.number }}';
 const checkout=(action='actions/checkout@'+SHA,refValue=ref)=>
- 'jobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: '+action+'\n        with:\n          ref: '+refValue+'\n';
+ 'permissions: read-all\njobs:\n  audit:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: '+action+'\n        with:\n          ref: '+refValue+'\n';
 const safeAction='jobs:\n  audit:\n    steps:\n      - uses: actions/checkout@'+SHA+'\n        with:\n          ref: main\n';
 const run=(cmd)=>'on: push\njobs:\n  audit:\n    steps:\n      - run: '+cmd+'\n';
 const cases=[];
@@ -195,7 +195,7 @@ test('Codex P1 AST: dynamic fork repository with fixed commit must still BLOCK',
  assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
 });
 test('Codex P1 AST: normal literal repository and main ref remain safe',()=>{
- const y=['on: pull_request_target','jobs:','  audit:','    steps:',
+ const y=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    steps:',
  '      - uses: actions/checkout@'+SHA,
  '        with:', '          repository: cardenaspiero255-lang/gamehub-ultra',
  '          ref: main'].join('\n');
