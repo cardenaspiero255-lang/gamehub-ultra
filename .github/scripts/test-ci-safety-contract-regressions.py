@@ -528,9 +528,16 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "Android test physical concurrency raised",
+        "Android physical test concurrency reduced below tuned capacity",
         android_replace=(
+            "      max-parallel: 5\n",
             "      max-parallel: 4\n",
+        ),
+    )
+    reject_mutation(
+        "Android physical test concurrency exceeds GH runner budget",
+        android_replace=(
+            "      max-parallel: 5\n",
             "      max-parallel: 8\n",
         ),
     )
