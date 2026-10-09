@@ -8,6 +8,11 @@ on:
       - '.githooks/pre-commit'
       - '.github/workflows/ultra-sentinel-*.yml'
       - 'docs/ULTRA_SENTINEL_LOCAL.md'
+      - '.github/sentinel-contracts/**'
+      - 'app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGate.kt'
+      - 'app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceAssistantController.kt'
+      - 'app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGateContractTest.kt'
+      - 'app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceAssistantControllerRobolectricTest.kt'
   workflow_dispatch:
 permissions:
   contents: read
@@ -29,5 +34,7 @@ jobs:
           sh -n .github/scripts/install_sentinel_hook.sh
       - name: Run all isolated engine and orchestrator tests
         run: node --test .github/scripts/ultra_sentinel_*.test.cjs
+      - name: Verify OMEGA abstract voice-state contracts
+        run: node .github/scripts/ultra_sentinel_omega.cjs
       - name: Score labeled adversarial cases
         run: node .github/scripts/ultra_sentinel_benchmark.cjs
