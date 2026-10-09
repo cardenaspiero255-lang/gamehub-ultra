@@ -34,7 +34,10 @@ for(const [name,trigger] of [
  ['map-push','on: {push: {branches: [main]}}\n'],
  ['quoted-push','"on": "push"\n'],
  ['indented-push','  on: push\n']
-])add('benign event '+name,trigger+checkout(),'REVIEW_REQUIRED','PRIVILEGED_PR_CODE_CHECKOUT_NEGATIVE');
+])add((['workflow-dispatch','issues','release','flow-push'].includes(name)?
+ 'privileged event ':'benign event ')+name,trigger+checkout(),'REVIEW_REQUIRED',
+ ['workflow-dispatch','issues','release','flow-push'].includes(name)?
+  'PRIVILEGED_PR_CODE_CHECKOUT':'PRIVILEGED_PR_CODE_CHECKOUT_NEGATIVE');
 for(const [name,action,refValue] of [
  ['unpinned tag','actions/checkout@v6','main'],
  ['unpinned version','actions/setup-node@v4','main'],
