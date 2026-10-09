@@ -405,7 +405,7 @@ function readStepScalar(lines,index,end,raw,keyIndent){
  if(!parts.length)return {value:null,incomplete:true};
  return {value:parts.join(' '),incomplete:false};
 }
-const remoteShellPattern=/\b(?:curl|wget)\b.{0,240}\|&?\s*(?:bash|sh)(?:\s|["']|$)/;
+const remoteShellPattern=/\b(?:curl|wget)\b.{0,240}\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|\s|["']|$)/;
 function shellPipelinesInStep(lines,step){
  const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
  const original=withoutLeadingAnchor(lines[start].replace(/^\s*-\s*/,''));
