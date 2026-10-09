@@ -9,7 +9,7 @@ const testWorkflow=source=>reviewWorkflows({sha:SHA,expected:[FILE],sources:{[FI
 const has=(report,rule)=>report.findings.some(f=>f.rule===rule);
 const android='app/src/main/java/com/cardenaspiero255/gamehubultra/VoiceController.kt';
 const patch=lines=>lines.join('\n')+'\n';
-const inspect=source=>analyze([{filename:android,status:'modified',patch:source,changes:1}],{sha:SHA});
+const inspect=(source,fullSource)=>analyze([{filename:android,status:'modified',patch:source,changes:1,fullSource}],{sha:SHA});
 test('Codex P1: checkout flow alias ref fails closed, never NO_RISK_PATTERN',()=>{
  for(const body of [
   'on: pull_request_target\njobs:\n  scan:\n    steps:\n      - {uses: '+ACTION+', with: {ref: *danger}}\n',
@@ -53,8 +53,10 @@ test('Codex P2: context-fed state still recognizes interpolated raw Kotlin code'
  '+'+'$'+'{runBlocking { realCall() }}',
  ' some text',
  ' """'
- ]));
+ ]),['val a=0','val b=0','val c=0','val d=0',
+ 'val docs = """','${runBlocking { realCall() }}','some text','"""'].join('\n'));
  assert.ok(has(a,'BLOCKING_ANDROID_CALL'),JSON.stringify(a.findings));
+ assert.equal(a.coverage.partial,false);
 });
 test('Codex P2: context closing raw string re-enables runtime detection',()=>{
  const a=inspect(patch([
@@ -63,8 +65,10 @@ test('Codex P2: context closing raw string re-enables runtime detection',()=>{
  ' """',
  '+runBlocking { executesNow() }',
  ' after'
- ]));
+ ]),['val a=0','val b=0','val c=0','val d=0',
+ 'val docs = """','"""','runBlocking { executesNow() }','after'].join('\n'));
  assert.ok(has(a,'BLOCKING_ANDROID_CALL'),JSON.stringify(a.findings));
+ assert.equal(a.coverage.partial,false);
 });
 test('US-026: source selection provides both fixed GC and private Logcat drafts safely',()=>{
  const f=[
