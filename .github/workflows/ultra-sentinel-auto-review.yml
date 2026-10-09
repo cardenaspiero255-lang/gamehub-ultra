@@ -66,7 +66,7 @@ jobs:
             const {attestCi,summarizeDrafts} = require(path.resolve(".github/scripts/ultra_sentinel_frontier_integrity.cjs"));
             const {reviewWorkflows} = require(path.resolve(".github/scripts/ultra_sentinel_supply_chain.cjs"));
             const {reviewWorkflowSources} = require(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"));
-            const {evaluateProtectedChanges} = require(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"));
+            const {evaluateProtectedChanges,hasIndependentHumanApproval} = require(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"));
             const {selectRepairTargets} = require(path.resolve(".github/scripts/ultra_sentinel_orchestrator.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
@@ -81,9 +81,19 @@ jobs:
             // This trusted base workflow still executes if a PR deletes its
             // own .yml. Never treat removal of Sentinel controls as safe.
             const protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
-            if(protectedChanges.status!=='OK')
-              core.setFailed('Missing or modified security controls: '+protectedChanges.status+
-                '; protect the independent required checks in branch rules.');
+            if(protectedChanges.status==='BLOCKED'||protectedChanges.status==='INCOMPLETE')
+              core.setFailed('Invalid or removed protected security controls: '+protectedChanges.status);
+            if(protectedChanges.status==='REVIEW_REQUIRED'){
+              let independentlyApproved=false;
+              try{
+                const reviews=await github.paginate(github.rest.pulls.listReviews,
+                  {owner,repo,pull_number:n,per_page:100});
+                independentlyApproved=hasIndependentHumanApproval(reviews,
+                  {sha:pr.head.sha,author:pr.user.login});
+              }catch(error){core.warning('Independent human review unavailable: fail closed.');}
+              if(!independentlyApproved)
+                core.setFailed('Critical controls changed: independent human approval for current SHA required.');
+            }
             // Resolve Kotlin lexical state from immutable PR HEAD instead of
             // guessing from disconnected diff hunks. Bounded, read-only and
             // never executed or published to the Actions summary.
