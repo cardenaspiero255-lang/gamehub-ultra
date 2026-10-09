@@ -50,11 +50,12 @@ const refs=[X,INDEX,INDEX_DEEP,'refs/heads/'+INDEX];
 const sameRef=['main','refs/heads/main',SHA];
 function rand(state){return (Math.imul(state,1664525)+1013904223)>>>0;}
 test('OMEGA 4096 seeded malicious combinations retain security detection',()=>{
- let seed=0x5eedbabe,miss=0;
+ let seed=0x5eedbabe,miss=0;const diversity=new Set();
  for(let i=0;i<4096;i++){
   seed=rand(seed);const event=triggers[seed%4];
   seed=rand(seed);const ref=refs[seed%4];
   seed=rand(seed);const variant=seed%4;
+  diversity.add(event+'|'+ref+'|'+variant);
   const step=[
    '      - uses: '+PIN+'\n        with:\n          ref: "'+ref+'"\n',
    '      - "uses": '+PIN+'\n        with:\n          ref: "'+ref+'"\n',
@@ -65,13 +66,15 @@ test('OMEGA 4096 seeded malicious combinations retain security detection',()=>{
   if(!has(result,'PRIVILEGED_PR_CODE_CHECKOUT'))miss++;
  }
  assert.equal(miss,0,'missed dangerous checkout: '+miss);
+ assert.ok(diversity.size>=48,'Insufficient malicious combinations: '+diversity.size);
 });
 test('OMEGA 4096 seeded benign combinations avoid false blocker and false unpinned action',()=>{
- let seed=0x42c0ffee,errors=0;
+ let seed=0x42c0ffee,errors=0;const diversity=new Set();
  for(let i=0;i<4096;i++){
   seed=rand(seed);const event=triggers[seed%4];
   seed=rand(seed);const ref=sameRef[seed%3];
   seed=rand(seed);const variant=seed%4;
+  diversity.add(event+'|'+ref+'|'+variant);
   const safe=['      - uses: '+PIN+'\n        with:\n          ref: '+ref+'\n',
    '      - {"uses": '+PIN+', "with": {"ref": "'+ref+'"}}\n',
    '      - {name: safe, with: {ref: "'+ref+'"}, uses: '+PIN+'}\n',
@@ -81,19 +84,22 @@ test('OMEGA 4096 seeded benign combinations avoid false blocker and false unpinn
   if(has(result,'PRIVILEGED_PR_CODE_CHECKOUT')||has(result,'UNPINNED_ACTION'))errors++;
  }
  assert.equal(errors,0,'incorrectly blocked benign workflow: '+errors);
+ assert.ok(diversity.size>=36,'Insufficient benign combinations: '+diversity.size);
 });
 test('OMEGA 2048 permission and misleading-input mutations are scoped',()=>{
- let seed=0xc1a055ed,errors=0;
+ let seed=0xc1a055ed,errors=0;const diversity=new Set();
  const perms=['artifact-metadata','code-quality','contents','checks'];
  for(let i=0;i<2048;i++){
   seed=rand(seed);const scope=perms[seed%4];
   seed=rand(seed);const isReal=seed%2===0;
   seed=rand(seed);const quoted=seed%2===0;
   const key=quoted?'"'+scope+'"':scope;
+  diversity.add(scope+'|'+isReal+'|'+quoted);
   const body=isReal?'permissions:\n  '+key+': write\n':
    'on: push\njobs:\n  a:\n    env:\n      '+key+': write\n';
   const result=check(body);
   if(has(result,'PRIVILEGED_WRITE_TOKEN')!==isReal)errors++;
  }
  assert.equal(errors,0,'misclassified permission: '+errors);
+ assert.ok(diversity.size>=14,'Insufficient permission combinations: '+diversity.size);
 });
