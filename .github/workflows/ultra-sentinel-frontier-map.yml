@@ -1,0 +1,37 @@
+name: Ultra Sentinel Frontier History Map
+# Diagnostic only. Full git history is fetched only when explicitly requested.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sentinel-frontier-history
+  cancel-in-progress: true
+jobs:
+  map:
+    name: Generate noncausal git-history evidence graph
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout trusted main history (no persisted credentials)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate offline generator
+        run: |
+          node --check .github/scripts/ultra_sentinel_frontier_map.cjs
+          node --test .github/scripts/ultra_sentinel_frontier_map.test.cjs
+      - name: Generate bounded history map
+        env:
+          SENTINEL_MAP_OUT: ${{ runner.temp }}/sentinel-frontier
+          SENTINEL_MAP_LIMIT: '1500'
+        run: node .github/scripts/ultra_sentinel_frontier_map.cjs
+      - name: Store private map and JSON
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ultra-sentinel-frontier-history
+          path: ${{ runner.temp }}/sentinel-frontier/
+          if-no-files-found: error
+          retention-days: 7
