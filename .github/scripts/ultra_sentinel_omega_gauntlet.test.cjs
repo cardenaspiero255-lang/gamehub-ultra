@@ -48,7 +48,7 @@ const triggers=[
 ];
 const refs=[X,INDEX,INDEX_DEEP,'refs/heads/'+INDEX];
 const sameRef=['main','refs/heads/main',SHA];
-function rand(state){return (Math.imul(state,1664525)+1013904223)>>>0;}
+function rand(state){state^=state<<13;state^=state>>>17;state^=state<<5;return state>>>0;}
 test('OMEGA 4096 seeded malicious combinations retain security detection',()=>{
  let seed=0x5eedbabe,miss=0;const diversity=new Set();
  for(let i=0;i<4096;i++){
