@@ -240,7 +240,7 @@ function writableLine(line){
    });
   }
  }
- return kv&&WRITABLE.has(kv.key)&&scalar(String(kv.value).replace(/,\s*$/,'').trim())==='write';
+ return kv&&WRITABLE.has(kv.key)&&scalar(withoutLeadingAnchor(String(kv.value).replace(/,\s*$/,'').trim()))==='write';
 }
 function inRealPermissionsMap(lines,index){
  const indentation=lines[index].match(/^\s*/)[0].length;
@@ -324,7 +324,7 @@ function sensitiveFlowAlias(value){
 
 function stepAction(lines,step){
  const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
- const original=lines[start].replace(/^\s*-\s*/,'');
+ const original=withoutLeadingAnchor(lines[start].replace(/^\s*-\s*/,''));
  let action=null,actionLine=null;
  const dangerous=[];
  // Flow-style steps can span several physical YAML lines. Build the exact
@@ -414,9 +414,10 @@ function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
   // YAML-quoted mapping keys. A ref alias is not a verified checkout target.
   // Only inspect real job steps, never arbitrary env/run text named "uses".
   const flowStep=stepRanges.find(s=>s.start===i);
-  const flowStepAlias=flowStep && /^\s*-\s*\{/.test(row) &&
+  const flowStepValue=flowStep && withoutLeadingAnchor(row.replace(/^\s*-\s*/,''));
+  const flowStepAlias=flowStepValue?.startsWith('{') &&
    sensitiveFlowAlias(collectFlowMap(lines,flowStep.start,flowStep.end,
-    row.replace(/^\s*-\s*/,'').trim()).value);
+    flowStepValue).value);
   if(flowStepAlias||containsYamlAlias(examined))return true;
  }
  return false;
