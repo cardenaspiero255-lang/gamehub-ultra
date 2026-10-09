@@ -410,7 +410,8 @@ const remoteShellPattern=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|
 // Normalize only for conservative risk detection; never execute this data.
 function matchesRemotePipeline(value){
  const normalized=String(value).replace(/\\(?=[A-Za-z])/g,'')
-  .replace(/\
+  .replace(/\x24\x27([A-Za-z]*)\x27/g,'$1')
+  .replace(/(['"])([A-Za-z]*)\1/g,'$2');
  return remoteShellPattern.test(normalized);
 }
 function shellPipelinesInStep(lines,step){
