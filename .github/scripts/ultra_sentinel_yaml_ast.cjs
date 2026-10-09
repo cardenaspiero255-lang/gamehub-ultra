@@ -96,7 +96,10 @@ function unknownCheckoutExpression(value,field){
 // This remains a bounded, conservative heuristic (not a full shell parser).
 function pipelineCommands(v){
  const withoutEscaped=String(v).replace(/\\\r?\n/g,'');
- const normalized=withoutEscaped.replace(/\\(?=[A-Za-z])/g,'');
+ // Shell concatenates adjacent quoted word fragments (c''url, c'u'rl).
+ // This is a conservative classification canonicalization, not evaluation.
+ const normalized=withoutEscaped.replace(/\\(?=[A-Za-z])/g,'')
+  .replace(/(['"])([A-Za-z]*)\1/g,'$2');
  return normalized.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ').split(/\r?\n/);
 }
 function remotePipeline(v){
@@ -272,11 +275,15 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  };
  const auditShellEnvUse=(script,tainted,where)=>{
   for(const key of tainted){
-   const token='\\$(?:\\{'+key+'\\}|'+key+'\\b)';
+   const bare='\\$(?:\\{'+key+'\\}|'+key+'\\b)';
+   // Bash parameter operators retain the tainted source. Unknown valid
+   // parameter syntax must never be silently classified as clean.
+   const parameter='\\$\\{!?'+key+'(?=[^A-Za-z0-9_])[^}]*\\}';
+   const token='(?:'+bare+'|'+parameter+')';
    const ref=new RegExp(token);
    if(!ref.test(script))continue;
-   // Bare variable substitution at command position can choose the
-   // executable; eval/command-string interpreters are dangerous sinks.
+   // Bare or parametrized substitutions can choose a command or feed
+   // eval/shell -c. Other usages remain INCOMPLETE, never clean.
    const commandPosition=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*'+token+'(?=\\s|$)');
    if(commandPosition.test(script)||/\\b(?:eval|source|bash\\s+-c|sh\\s+-c|python\\s+-c|node\\s+-e)\\b/.test(script))
     emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
