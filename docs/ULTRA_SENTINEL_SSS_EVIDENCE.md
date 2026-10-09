@@ -20,11 +20,12 @@
   anchors, aliases, escaped keys, merges, BOM, tabs, nested flow maps,
   untrusted PR checkouts, remote shell pipelines, permissions and benign
   negative controls.
-- **100-run reproducibility:** the reliability workflow executes five
-  unprivileged shards of 20 independent synthetic scenarios, each checking
-  three repository profiles (trusted, attacker, tampered), 300 evaluations.
-  Any false positive, missed attack, missed tamper or failed shard fails the
-  aggregate gate. Report artifacts are SHA-scoped.
+- **100-run reproducibility:** one unprivileged CI runner starts 100
+  independent Node processes in sequence, each checking three synthetic
+  repository profiles (trusted, attacker, tampered), 300 evaluations total.
+  Any false positive, missed attack, missed tamper or failed process fails
+  the aggregate gate. This avoids provisioning five separate runners.
+  Report artifacts are SHA-scoped.
 
 **Scope disclaimer:** these are 100 in-repository scenario executions, NOT
 100 consecutive remote GitHub Actions workflow runs, and the three profiles
