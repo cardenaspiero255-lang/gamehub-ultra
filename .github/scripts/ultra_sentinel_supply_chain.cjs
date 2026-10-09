@@ -53,13 +53,13 @@ function stepRange(lines,useIndex){
  const indent=lines[useIndex].match(/^\s*/)[0].length;
  let start=useIndex;
  for(let i=useIndex;i>=0;i--){
-  const match=lines[i].match(/^(\s*)-\s+(?:name|uses|id|run)\s*:/);
+  const match=lines[i].match(/^(\s*)-\s+(?:"[^"]+"|'[^']+'|[A-Za-z][\w-]*)\s*:/);
   if(match&&match[1].length<=indent){start=i;break;}
  }
  let end=lines.length;
  const startIndent=lines[start].match(/^\s*/)[0].length;
  for(let i=useIndex+1;i<lines.length;i++){
-  const match=lines[i].match(/^(\s*)-\s+(?:name|uses|id|run)\s*:/);
+  const match=lines[i].match(/^(\s*)-\s+(?:"[^"]+"|'[^']+'|[A-Za-z][\w-]*)\s*:/);
   if(match&&match[1].length<=startIndent){end=i;break;}
   if(lines[i].trim()&&lines[i].match(/^\s*/)[0].length<startIndent){end=i;break;}
  }
@@ -67,9 +67,26 @@ function stepRange(lines,useIndex){
 }
 function isUnsafePrRef(input){
  const value=scalar(input);
- if(!value.startsWith('$'+'{{')||!value.endsWith('}}'))return false;
- const expression=value.slice(3,-2).trim();
- return /^(?:github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref)$/.test(expression);
+ const expressions=[...value.matchAll(/\$\{\{\s*([\s\S]*?)\s*\}\}/g)];
+ return expressions.some(m=>/\bgithub\.(?:event\.pull_request\.head\.(?:sha|ref)|head_ref)\b/.test(m[1]));
+}
+function splitFlowEntries(content){
+ const chunks=[];let quote=null,escaped=false,depth=0,begin=0;
+ for(let i=0;i<content.length;i++){
+  const c=content[i];
+  if(quote){
+   if(escaped){escaped=false;continue;}
+   if(c==='\\'){escaped=true;continue;}
+   if(c===quote)quote=null;
+   continue;
+  }
+  if(c==='"'||c==="'"){quote=c;continue;}
+  if(c==='{')depth++;
+  else if(c==='}')depth=Math.max(0,depth-1);
+  else if(c===','&&depth===0){chunks.push(content.slice(begin,i));begin=i+1;}
+ }
+ chunks.push(content.slice(begin));
+ return chunks;
 }
 function dangerousCheckoutRefs(lines,useIndex){
  const {start,end}=stepRange(lines,useIndex);
@@ -84,8 +101,13 @@ function dangerousCheckoutRefs(lines,useIndex){
    // YAML allows flow-style mappings (with: {ref: "expression"}).
    // Treat only the checkout step's own mapping as a source reference.
    const inline=String(kv.value||'').trim();
-   const mapped=inline.match(/^\{\s*(?:"ref"|'ref'|ref)\s*:\s*(.*?)\s*\}$/);
-   if(mapped&&isUnsafePrRef(mapped[1]))out.push(i+1);
+   const flow=inline.match(/^\{([\s\S]*)\}$/);
+   if(flow){
+    for(const entry of splitFlowEntries(flow[1])){
+     const kvRef=keyValue(entry);
+     if(kvRef?.key==='ref'&&isUnsafePrRef(kvRef.value))out.push(i+1);
+    }
+   }
    continue;
   }
   if(kv?.key==='ref'&&withIndent!==null&&indent>withIndent){
@@ -118,7 +140,7 @@ function writableLine(line){
    });
   }
  }
- return kv&&WRITABLE.has(kv.key)&&scalar(kv.value)==='write';
+ return kv&&WRITABLE.has(kv.key)&&scalar(String(kv.value).replace(/,\s*$/,'').trim())==='write';
 }
 function inRealPermissionsMap(lines,index){
  const indentation=lines[index].match(/^\s*/)[0].length;
@@ -173,7 +195,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   for(let i=0;i<lines.length;i++){
    const line=lines[i],trim=line.trim();
    if(!trim||trim.startsWith('#'))continue;
-   const uses=line.match(/^\s*(?:-\s*)?uses:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))/);
+   const uses=line.match(/^\s*(?:-\s*)?(?:"uses"|'uses'|uses)\s*:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))/);
    if(uses){
     const action=uses[1]||uses[2]||uses[3];
     if(!action.startsWith('./')&&!/^[-A-Za-z0-9_.\/]+@[a-f0-9]{40}$/i.test(action))
@@ -188,7 +210,9 @@ function reviewWorkflows({sha,expected,sources={}}={}){
    const permissionKey=keyValue(line);
    if(permissionKey?.key==='permissions'&&inRealPermissionsMap(lines,i)){
     if(writableLine(line))flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
-    if(!permissionKey.value.trim())permissionsIndent=indent;
+    if(!permissionKey.value.trim()||
+       (permissionKey.value.trim().startsWith('{')&&!permissionKey.value.includes('}')))
+      permissionsIndent=indent;
    }else if(permissionsIndent!==null&&indent>permissionsIndent&&writableLine(line)){
     flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
    }
