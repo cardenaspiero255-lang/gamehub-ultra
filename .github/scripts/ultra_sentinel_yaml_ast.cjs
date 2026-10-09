@@ -286,7 +286,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    // Bare or parametrized substitutions can choose a command or feed
    // eval/shell -c. Other usages remain INCOMPLETE, never clean.
    const commandPosition=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*'+token+'(?=\\s|$)');
-   if(commandPosition.test(script)||/\\b(?:eval|source|bash\\s+-c|sh\\s+-c|python\\s+-c|node\\s+-e)\\b/.test(script))
+    if(commandPosition.test(script)||new RegExp('\\b(?:eval|source|bash\\s+-c|sh\\s+-c|python\\s+-c|node\\s+-e)\\b[^;\\n]*'+token).test(script))
     emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
    else coverage.partial=true;
   }
@@ -443,6 +443,10 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      auditShellEnvUse(step.run,stepTaint,where);
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
      else if(unknownDownloadPipeline(step.run))coverage.partial=true;
+     // Unsupported Bash ANSI-C quotes or indirect download execution are not clean.
+     if(step.run.includes(String.fromCharCode(36,39)))coverage.partial=true;
+     if(/\b(?:bash|sh|zsh)\s*(?:<\(|-c\s*["']?\$\()\s*(?:curl|wget)\b/.test(step.run))
+      emit('REMOTE_SHELL_SUBSTITUTION','HIGH',where);
      {
       const inspection=auditExecutableExpressions(step.run);
       if(inspection.incomplete)coverage.partial=true;
