@@ -59,3 +59,15 @@ test('every Sentinel workflow uses Node 24 SHA-pinned upload and GitHub API acti
  assert.ok(seen['actions/upload-artifact']>=9,'expected all nine Sentinel uploads');
  assert.ok(seen['actions/github-script']>=4,'expected all four Sentinel API actions');
 });
+
+
+// Security invariant: pull_request loads workflow definition from a PR-controlled
+// merge commit, so it cannot independently attest changes to its own YAML.
+// pull_request_target executes the trusted base definition. Never checkout/run PR code.
+test('trusted reviewer definition must originate from protected main, not candidate merge commit',()=>{
+ const source=yaml();
+ assert.match(source,/^  pull_request_target:\s*$/m);
+ assert.doesNotMatch(source,/^  pull_request:\s*$/m);
+ assert.match(source,/ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
+ assert.match(source,/persist-credentials: false/);
+});
