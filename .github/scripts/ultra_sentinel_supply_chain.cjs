@@ -10,7 +10,10 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   sha:SHA.test(sha||'')?sha.toLowerCase():null,status,coverage,findings:findings.slice(0,MAX_ALERTS),
   autoApproveAllowed:false,autoMergeAllowed:false});
  if(!SHA.test(sha||'')||!Array.isArray(expected)||!sources||
-   typeof sources!=='object'||Array.isArray(sources))return output('INCOMPLETE');
+   typeof sources!=='object'||Array.isArray(sources)){
+  coverage.partial=true;
+  return output('INCOMPLETE');
+ }
  const names=[...new Set(expected)];
  coverage.requested=names.length;
  if(names.length>MAX_FILES||names.some(n=>typeof n!=='string'||!WORKFLOW.test(n)||
