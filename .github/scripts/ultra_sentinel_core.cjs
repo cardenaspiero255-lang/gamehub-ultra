@@ -69,12 +69,20 @@ function executableText(source,state={}){
   if(f.kind==='raw'){
    if(s.startsWith('"""',i)){state.frames.pop();i+=3;continue;}
    if(state.kotlin&&s.startsWith('$'+'{',i)){state.frames.push({kind:'expr',depth:1});i+=2;out+=' ';continue;}
+   if(state.kotlin&&ch==='$'&&/^[A-Za-z_]/.test(s[i+1]||'')){
+    const id=/^[A-Za-z_]\w*/.exec(s.slice(i+1))[0];
+    out+=' '+id+' ';i+=1+id.length;continue;
+   }
    i++;continue;
   }
   if(f.kind==='string'){
    if(ch==='\\'){i=Math.min(s.length,i+2);continue;}
    if(state.kotlin&&f.quote==='"'&&s.startsWith('$'+'{',i)){
     state.frames.push({kind:'expr',depth:1});i+=2;out+=' ';continue;
+   }
+   if(state.kotlin&&f.quote==='"'&&ch==='$'&&/^[A-Za-z_]/.test(s[i+1]||'')){
+    const id=/^[A-Za-z_]\w*/.exec(s.slice(i+1))[0];
+    out+=' '+id+' ';i+=1+id.length;continue;
    }
    if(ch===f.quote)state.frames.pop();
    i++;continue;
@@ -145,10 +153,12 @@ function analyze(files,config={}){
      for(const entry of patch.scan){
        if(previousLine===null||entry.line!==previousLine+1){
          lexState={};
-         hunkUnknown=kotlin&&(entry.line!==1||sourceProvided);
+         // Java may also start mid-comment or mid-text-block.
+          hunkUnknown=(kotlin||(android&&path.endsWith('.java')))&&
+            (entry.line!==1||sourceProvided);
          if(hunkUnknown){
            partial=true;
-           warnings.push('Estado léxico Kotlin previo al hunk desconocido; revisar archivo completo: '+sanitize(path));
+           warnings.push('Estado léxico Kotlin/Java previo al hunk desconocido; revisar archivo completo: '+sanitize(path));
          }
        }
        lexState.kotlin=path.endsWith('.kt');
