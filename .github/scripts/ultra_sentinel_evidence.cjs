@@ -18,8 +18,10 @@ function validateRun(run,sha){
  if(!run||typeof run!=='object'||!SHA.test(sha||'')||
   run.head_sha?.toLowerCase()!==sha.toLowerCase()||
   run.status!=='completed'||run.conclusion!=='success'||
-  !NAMES.has(run.name)||run.event!=='pull_request'||
+  !NAMES.has(run.name)||!['push','workflow_dispatch'].includes(run.event)||
+  run.head_branch!=='main'||
   run.repository?.full_name!==REPO||
+  (run.head_repository?.full_name && run.head_repository.full_name!==REPO)||
   !Number.isSafeInteger(run.id)||run.id<=0||
   !Number.isSafeInteger(run.run_attempt)||run.run_attempt<1||
   run.html_url!=='https://github.com/'+REPO+'/actions/runs/'+run.id)return null;
@@ -31,8 +33,11 @@ function releaseSha(issue){
  if(typeof version!=='string'||version.length>180)return null;
  const value=version.trim();
  if(SHA.test(value))return value.toLowerCase();
- const match=value.match(/^[a-zA-Z0-9._-]{1,100}@[a-zA-Z0-9._-]{1,30}\+([a-f0-9]{40})$/i);
- return match?match[1].toLowerCase():null;
+ // Android CI names releases gamehub-ultra@<SHA>, not app@version+SHA.
+ const current=value.match(/^gamehub-ultra@([a-f0-9]{40})$/i);
+ if(current)return current[1].toLowerCase();
+ const legacy=value.match(/^[a-zA-Z0-9._-]{1,100}@[a-zA-Z0-9._-]{1,30}\+([a-f0-9]{40})$/i);
+ return legacy?legacy[1].toLowerCase():null;
 }
 function fingerprint(project,id){
  return crypto.createHash('sha256').update(project+'\0'+id).digest('hex');
