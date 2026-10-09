@@ -69,3 +69,16 @@ test('Security: unresolved aliases in non-sensitive fields do not automatically 
  const r=review(code);
  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
 });
+
+// Default-branch review / comment events are privileged even when no
+// pull_request_target or workflow_run trigger appears in the YAML.
+test('Codex P1: default-branch comment/review triggers are privileged in legacy fallback',()=>{
+ for(const trigger of ['issue_comment','pull_request_review','pull_request_review_comment','discussion_comment']){
+  const yaml=['on: '+trigger,'jobs:','  audit:','    steps:',
+   '      - uses: actions/checkout@'+PIN,
+   '        with:', '          ref: refs/pull/42/head'].join('\n');
+  const out=review(yaml);
+  assert.ok(has(out,'PRIVILEGED_PR_CODE_CHECKOUT')||has(out,'PRIVILEGED_UNTRUSTED_CHECKOUT'),
+   JSON.stringify({trigger,out}));
+ }
+});
