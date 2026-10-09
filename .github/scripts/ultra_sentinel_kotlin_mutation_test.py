@@ -67,10 +67,16 @@ class KotlinMutationLabTests(unittest.TestCase):
                 lab.execute(self.root, 1, 60)
 
     def test_allowed_gradle_task_cannot_be_injected(self):
-        (self.root / "gradlew").write_text("#!/bin/sh\n", encoding="utf-8")
-        command = lab.mutation_command(self.root)
+        with patch.object(lab.shutil, "which", return_value="/opt/gradle/8.13/bin/gradle"):
+            command = lab.mutation_command(self.root)
+        self.assertEqual(command[0], "/opt/gradle/8.13/bin/gradle")
         self.assertEqual(command[-3:], [lab.TASK, "--tests", lab.TEST_CLASS])
         self.assertNotIn("sh -c", " ".join(command))
+
+    def test_missing_approved_gradle_executable_fails_cleanly(self):
+        with patch.object(lab.shutil, "which", return_value=None):
+            with self.assertRaises(ValueError):
+                lab.mutation_command(self.root)
 
     def test_no_global_mutation_by_default(self):
         self.assertEqual(lab.MAX_MUTANTS, 5)
