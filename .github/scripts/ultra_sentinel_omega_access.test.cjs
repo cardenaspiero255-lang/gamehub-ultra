@@ -29,7 +29,7 @@ test('exhaustive bounded traces preserve revoked and denied access invariants',(
  const report=m.verify({maxTrace:7});
  assert.equal(report.valid,true);assert.equal(report.linkedRuntimeTests,false);
  assert.equal(report.states,4);assert.equal(report.events,5);
- assert.equal(report.transitions,19530);
+ assert.equal(report.transitions,97655);
 });
 test('rejects malformed state and runaway verification budgets',()=>{
  assert.throws(()=>m.step('ADMIN','USE_RESOURCE'));
