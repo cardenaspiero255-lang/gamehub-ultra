@@ -56,7 +56,7 @@ function executableText(source,state={}){
   const f=state.frames[state.frames.length-1],ch=s[i];
   if(f.kind==='comment'){
    // Kotlin permits nested block comments; preserve depth across lines.
-   if(s.startsWith('/*',i)){f.depth++;i+=2;continue;}
+   if(f.kotlinNested&&s.startsWith('/*',i)){f.depth++;i+=2;continue;}
    if(s.startsWith('*/',i)){
     f.depth--;i+=2;
     if(f.depth===0)state.frames.pop();
@@ -79,7 +79,7 @@ function executableText(source,state={}){
   }
   // Executable context, including interpolation expressions.
   if(s.startsWith('//',i))break;
-  if(s.startsWith('/*',i)){state.frames.push({kind:'comment',depth:1});i+=2;continue;}
+  if(s.startsWith('/*',i)){state.frames.push({kind:'comment',depth:1,kotlinNested:state.kotlin});i+=2;continue;}
   if(s.startsWith('"""',i)){state.frames.push({kind:'raw'});i+=3;continue;}
   if(ch==='"'||ch==="'"){state.frames.push({kind:'string',quote:ch});i++;continue;}
   if(f.kind==='expr'){
@@ -138,6 +138,7 @@ function analyze(files,config={}){
        warnings.push('Estado léxico Kotlin previo al hunk desconocido; revisar contexto completo: '+sanitize(path));
        unknownHunkStart=false;
      }
+     lexState.kotlin=path.endsWith('.kt');
      const code=executableText(entry.text.trim(),lexState);
      if(entry.added)executableByLine.set(entry.line,code);
      previousLine=entry.line;
