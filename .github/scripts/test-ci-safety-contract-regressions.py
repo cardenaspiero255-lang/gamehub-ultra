@@ -584,6 +584,13 @@ def main() -> None:
         ),
     )
     reject_mutation(
+        "coverage workers lose shallow clone optimization",
+        coverage_replace=(
+            "          fetch-depth: 1\n",
+            "          fetch-depth: 0\n",
+        ),
+    )
+    reject_mutation(
         "coverage physical runner removed",
         coverage_replace=(
             "        runner: [0, 1, 2, 3, 4, 5, 6, 7]\n",
