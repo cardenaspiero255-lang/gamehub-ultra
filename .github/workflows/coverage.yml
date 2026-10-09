@@ -25,7 +25,9 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      max-parallel: 4
+      # 8 actual runners, one wave; 64 deterministic logical shards remain intact.
+      # Alongside Android (4 tests + 4 devices + 3 support), peak is 19 / 20.
+      max-parallel: 8
       matrix:
         runner: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
