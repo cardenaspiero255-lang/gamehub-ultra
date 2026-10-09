@@ -2,7 +2,9 @@ name: Ultra Sentinel - Independent Read-only Review
 # A review on the PR merge event using ONLY the trusted engine from main.
 # No PR source is executed; no secrets or GitHub comment write permissions.
 on:
-  pull_request:
+  # GitHub evaluates this workflow from trusted main, never from the PR merge.
+  # No PR head checkout, third-party secrets, or write token permissions.
+  pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
 
