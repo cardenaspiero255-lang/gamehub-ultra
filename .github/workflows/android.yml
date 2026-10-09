@@ -229,15 +229,56 @@ jobs:
             TEST_ARGS+=(--tests "$test_class")
           done
 
-          gradle :app:testDebugUnitTest \
-            "${TEST_ARGS[@]}" \
-            --build-cache \
-            --parallel \
-            --max-workers=12 \
-            --configuration-cache \
-            --configuration-cache-problems=fail \
-            --console=plain \
-            --stacktrace
+          # Retry only transient Maven Central throttling or the known dependency
+          # resolution failures seen on CI. A real test/compile error stays blocking.
+          attempt_log="$RUNNER_TEMP/android-gradle-attempt.log"
+          for attempt in 1 2 3; do
+            retry_args=()
+            if [ "$attempt" -gt 1 ]; then
+              # Refresh negative-resolution cache entries on subsequent attempts.
+              retry_args+=(--refresh-dependencies)
+            fi
+            set +e
+            gradle :app:testDebugUnitTest \
+              "${TEST_ARGS[@]}" \
+              --build-cache \
+              --parallel \
+              --max-workers=12 \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --console=plain \
+              --stacktrace "${retry_args[@]}" 2>&1 | tee "$attempt_log"
+            pipeline_codes=("${PIPESTATUS[@]}")
+            set -e
+
+            if [ "${pipeline_codes[1]}" -ne 0 ]; then
+              echo "::error::Cannot capture Android Gradle output."
+              exit "${pipeline_codes[1]}"
+            fi
+            gradle_status="${pipeline_codes[0]}"
+            if [ "$gradle_status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit "$gradle_status"
+            fi
+
+            retryable=false
+            if grep -Fq "repo.maven.apache.org" "$attempt_log" && \
+               grep -Fq "Received status code 429 from server: Too Many Requests" "$attempt_log"; then
+              retryable=true
+            fi
+            if grep -Eq 'Could not find org[.]robolectric:robolectric:4[.]17[.]|Could not find org[.]mockito:mockito-core:5[.]14[.]2[.]' "$attempt_log"; then
+              retryable=true
+            fi
+            if [ "$retryable" != true ]; then
+              exit "$gradle_status"
+            fi
+
+            delay=$((30 * attempt + 3 * ANDROID_RUNNER_INDEX))
+            echo "::warning::Transient Android test dependency resolution failure; retrying in ${delay}s ($((attempt + 1))/3)."
+            sleep "$delay"
+          done
 
   android-test-shards:
     name: android-test-shards
