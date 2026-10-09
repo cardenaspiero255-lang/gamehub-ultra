@@ -131,8 +131,8 @@ for(const runner of ['windows-2022','windows-2025','ubuntu-24.04','macos-15']){
  });
 }
 
-test('Root hardening: executable job missing runs-on must never pass structural review',()=>{
+test('Root hardening: trusted security review cannot certify its own missing runner',()=>{
  const src=['on: workflow_dispatch','permissions: read-all','jobs:',
   '  audit:','    steps:','      - run: echo safe'].join('\n');
- assert.equal(inspectWorkflow(src).status,'INCOMPLETE');
+ assert.equal(inspectWorkflow(src,{path:'.github/workflows/ultra-sentinel-core-check.yml'}).status,'INCOMPLETE');
 });
