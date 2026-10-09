@@ -232,16 +232,16 @@ jobs:
             if (evidence.coverage.partial) core.setFailed("Incomplete patch coverage; review manually before merging.");
             if (structuralYaml.coverage.partial)
               core.setFailed("Structural YAML parser found incomplete/invalid workflow evidence.");
-            if (structuralYaml.findings.some(f=>f.severity==='BLOCKER'))
+            if (structuralYaml.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
               core.setFailed("Structural YAML parser identified untrusted privileged checkout.");
             else if (structuralYaml.findings.some(f=>f.severity==='HIGH'))
               core.warning("Structural YAML parser raised HIGH-risk workflow signals.");
             if (supplyChain.coverage.partial) core.setFailed("Incomplete workflow supply-chain evidence; review manually.");
-            if (supplyChain.findings.some(f=>f.severity==="BLOCKER"))
+            if (supplyChain.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
               core.setFailed("Potential privileged untrusted PR code execution; manual security review required.");
             else if (supplyChain.findings.some(f=>f.severity==="HIGH"))
               core.warning("High-risk workflow supply-chain patterns require manual verification.");
-            if (evidence.findings.some(f => f.severity === "BLOCKER"))
+            if (evidence.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
               core.setFailed("Potential BLOCKER detected; verify the finding before merging.");
             if (evidence.verdict === "REVIEW_REQUIRED")
               core.warning("HIGH risk signals are hypotheses requiring reproduction and tests.");
