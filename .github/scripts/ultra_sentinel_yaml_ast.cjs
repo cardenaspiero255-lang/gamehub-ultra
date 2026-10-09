@@ -366,6 +366,14 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
        emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
       // github-script runs JavaScript; tainted process.env is data until
       // passed to an executable code sink. Logging does not evaluate it.
+      // Destructuring, aliases and computed process.env reads can carry
+      // tainted values to executable JavaScript without spelling CMD twice.
+      // Unless the entire script is a plain direct log, do not certify it.
+      const directLog=/^\s*core\.info\(\s*process\.env\.([A-Za-z_][A-Za-z0-9_]*)\s*\);?\s*$/.exec(inputs.script);
+      const accessEnv=/\bprocess\s*(?:\.\s*env|\[\s*['"]env['"]\s*\])/;
+      if(stepTaint.size>0&&accessEnv.test(inputs.script)&&
+         !(directLog&&stepTaint.has(directLog[1])))
+       coverage.partial=true;
       for(const name of stepTaint){
        const used=inputs.script.includes('process.env.'+name)||
         inputs.script.includes("process.env['"+name+"']")||
