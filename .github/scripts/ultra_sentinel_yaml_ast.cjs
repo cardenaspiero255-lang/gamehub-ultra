@@ -106,13 +106,29 @@ function remotePipeline(v){
 // a clean verdict; references to event/input text are explicitly blocked.
 // This is not advertised as a complete parser for the Actions expression DSL.
 const TRUSTED_EXECUTABLE_SCALAR=/^(?:github\.(?:sha|run_id|run_number|run_attempt|event_name)|github\.event\.(?:issue|pull_request|discussion)\.number|toJSON\s*\(\s*github\.event\.(?:issue|pull_request|discussion)\.number\s*\))$/i;
+// GitHub expressions can contain '}}' inside quoted string literals.
+// Do not mistake that literal for the expression terminator. GitHub's
+// single-quoted string escaping uses doubled single quotes.
+function expressionTerminator(script,start){
+ let quote=null;
+ for(let i=start+3;i<script.length-1;i++){
+  const ch=script[i];
+  if(quote!==null){
+   if(quote==="'"&&ch==="'"&&script[i+1]==="'"){i++;continue;}
+   if(quote==='"'&&ch==='\\'){i++;continue;}
+   if(ch===quote)quote=null;
+  }else if(ch==="'"||ch==='"')quote=ch;
+  else if(ch==='}'&&script[i+1]==='}')return i;
+ }
+ return -1;
+}
 function auditExecutableExpressions(script){
  if(typeof script!=='string')return {unsafe:false,incomplete:true};
  let unsafe=false,incomplete=false,cursor=0;
  while(true){
   const start=script.indexOf('$'+'{{',cursor);
   if(start<0)break;
-  const end=script.indexOf('}}',start+3);
+  const end=expressionTerminator(script,start);
   if(end<0){incomplete=true;break;}
   const raw=script.slice(start+3,end);
   if(raw.length>800){incomplete=true;cursor=end+2;continue;}
@@ -152,6 +168,167 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    else if(level!=='read'&&level!=='none')coverage.partial=true;
   }
  };
+ const checkExecutableShell=(value,where)=>{
+  if(value===undefined)return;
+  if(typeof value!=='string'||!value.trim()){coverage.partial=true;return;}
+  // Shell chooses the actual command template run by Actions, not merely a
+  // display setting. Dynamic shell paths are not safe just because run is.
+  if(value.includes('
+ for(const [name,job] of Object.entries(document.jobs)){
+  const where=path; // Deliberately no attempt to fabricate AST line locations.
+  if(!isMap(job)){coverage.partial=true;continue;}
+  checkPermissions(job.permissions,where);
+  checkDefaults(job.defaults,where);
+  if(job.steps===undefined){
+   if(typeof job.uses==='string'){
+    // Local same-repository reusable workflows follow this commit; only
+    // third-party reusable workflows must be full SHA pinned.
+    if(!/^\.\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(job.uses)){
+     const external=job.uses.match(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@(.+)$/);
+     if(!external||!PINNED.test(external[1]))
+      emit('UNPINNED_REUSABLE_WORKFLOW','BLOCKER',where);
+    }
+    continue;
+   }
+   // Dynamic job.uses cannot be verified as a fixed action source.
+   coverage.partial=true;continue;
+  }
+  if(job.uses!==undefined){coverage.partial=true;continue;}
+  if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
+  for(const step of job.steps){
+   if(!isMap(step)){coverage.partial=true;continue;}
+   if(privileged)checkExecutableShell(step.shell,where);
+   if(step.uses!==undefined){
+    if(typeof step.uses!=='string'){coverage.partial=true;continue;}
+    if(!step.uses.startsWith('./')){
+     const action=ACTION.exec(step.uses);
+     if(!action||!PINNED.test(action[1]))emit('UNPINNED_ACTION','HIGH',where);
+    }
+    if(privileged&&/^actions\/github-script@/i.test(step.uses)){
+     // github-script compiles its script input as JavaScript after Github
+     // expressions are substituted. Use runner-equivalent input names.
+     const inputs=Object.create(null);
+     let ambiguous=step.with===undefined||!isMap(step.with);
+     if(!ambiguous){
+      for(const [key,value] of Object.entries(step.with)){
+       const folded=key.toLowerCase();
+       if(!/^[A-Za-z0-9_-]+$/.test(key)||
+          Object.prototype.hasOwnProperty.call(inputs,folded)){
+        ambiguous=true;break;
+       }
+       inputs[folded]=value;
+      }
+     }
+     if(ambiguous||typeof inputs.script!=='string'||!inputs.script.trim())
+      coverage.partial=true;
+     else{
+      const inspection=auditExecutableExpressions(inputs.script);
+      if(inspection.incomplete)coverage.partial=true;
+      if(inspection.unsafe)
+       emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+     }
+    }
+    if(privileged&&/^actions\/checkout@/i.test(step.uses)){
+     // Actions runner exposes every input as INPUT_<UPPERCASE_NAME>.
+     // YAML preserves case, so Ref/ref and Repository/repository must share
+     // the same effective slot; reject ambiguity or non-ASCII key tricks.
+     const inputs=Object.create(null);
+     let invalidInputs=step.with!==undefined&&!isMap(step.with);
+     if(!invalidInputs&&isMap(step.with)){
+      for(const [key,value] of Object.entries(step.with)){
+       const k=key.toLowerCase();
+       if(!/^[A-Za-z0-9_-]+$/.test(key)||
+          Object.prototype.hasOwnProperty.call(inputs,k)){
+        invalidInputs=true;break;
+       }
+       inputs[k]=value;
+      }
+     }
+     if(invalidInputs)coverage.partial=true;
+     else{
+      const server=inputs['github-server-url'];
+      if(server!==undefined){
+       if(typeof server!=='string')coverage.partial=true;
+       else if(/^\$\{\{\s*github\.server_url\s*\}\}$/.test(server.trim())||
+               /^https:\/\/github\.com\/?$/.test(server.trim())){
+        // Trusted GitHub instance, no attacker-controlled alternate origin.
+       }else if(server.includes('$'+'{{'))coverage.partial=true;
+       else emit('PRIVILEGED_ALTERNATE_GITHUB_SERVER','BLOCKER',where);
+      }
+      if((inputs.ref!==undefined&&typeof inputs.ref!=='string')||
+         (inputs.repository!==undefined&&typeof inputs.repository!=='string')){
+       coverage.partial=true;
+      }else if(unsafePrRef(inputs.ref)||unsafePrRef(inputs.repository)){
+       emit('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',where);
+      }else if(unknownCheckoutExpression(inputs.ref,'ref')||
+                unknownCheckoutExpression(inputs.repository,'repository')){
+       coverage.partial=true;
+      }else if(typeof inputs.repository==='string'){
+       const repository=inputs.repository.trim();
+       const trusted=typeof trustedRepository==='string'&&
+         /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trustedRepository);
+       if(/^\$\{\{\s*github\.repository\s*\}\}$/.test(repository)){
+        // The exact GitHub-provided base repository identity is trusted.
+       }else if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!trusted){
+        coverage.partial=true;
+       }else if(repository.toLowerCase()!==trustedRepository.toLowerCase()&&
+                !PINNED.test(inputs.ref||'')){
+        emit('PRIVILEGED_EXTERNAL_MUTABLE_CHECKOUT','BLOCKER',where);
+       }
+      }
+     }
+    }
+   }
+   if(step.run!==undefined){
+    if(typeof step.run!=='string'||!step.run.trim())coverage.partial=true;
+    else{
+     if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
+     if(privileged){
+      const inspection=auditExecutableExpressions(step.run);
+      if(inspection.incomplete)coverage.partial=true;
+      if(inspection.unsafe)
+       emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+     }
+    }
+   }
+   if((step.run===undefined&&step.uses===undefined)||
+      (step.run!==undefined&&step.uses!==undefined))coverage.partial=true;
+  }
+ }
+ const status=coverage.partial?'INCOMPLETE':
+  findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN';
+ return {status,findings,coverage,reason:null};
+}
+function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={}){
+ const results=[],findings=[],coverage={partial:false,requested:expected.length,
+  scanned:0,parser:'js-yaml@4.1.1'};
+ if(!Array.isArray(expected)||expected.length>25)return {status:'INCOMPLETE',findings,
+  coverage:{...coverage,partial:true},results};
+ for(const path of expected){
+  if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
+   !Object.prototype.hasOwnProperty.call(sources,path)){coverage.partial=true;continue;}
+  const r=inspectWorkflow(sources[path],{path,trustedRepository});results.push({path,status:r.status,reason:r.reason});
+  coverage.scanned++;
+  if(r.coverage.partial)coverage.partial=true;
+  findings.push(...r.findings);
+ }
+ return {status:coverage.partial?'INCOMPLETE':
+  findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN',findings,coverage,results};
+}
+module.exports={parseWorkflow,inspectWorkflow,reviewWorkflowSources};
++'{{')){
+   const check=auditExecutableExpressions(value);
+   if(check.unsafe)emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+   // Even immutable scalar data is not a reviewed shell command template.
+   coverage.partial=true;
+  }
+ };
+ const checkDefaults=(defaults,where)=>{
+  if(defaults===undefined)return;
+  if(!isMap(defaults)||!isMap(defaults.run)){coverage.partial=true;return;}
+  if(privileged)checkExecutableShell(defaults.run.shell,where);
+ };
+ checkDefaults(document.defaults,path);
  checkPermissions(document.permissions,path);
  for(const [name,job] of Object.entries(document.jobs)){
   const where=path; // Deliberately no attempt to fabricate AST line locations.
