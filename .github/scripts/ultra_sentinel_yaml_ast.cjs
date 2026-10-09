@@ -414,7 +414,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
       const ref=typeof inputs.ref==='string'?inputs.ref.trim():null;
       const trustedBaseRef=ref==='main'||ref==='refs/heads/main'||
         /^\$\{\{\s*(?:github\.(?:sha|ref)|github\.event\.pull_request\.base\.sha|github\.event\.repository\.default_branch)\s*\}\}$/.test(ref||'');
-      if(ref!==null&&!trustedBaseRef&&!PINNED.test(ref))
+      if(ref!==null&&!trustedBaseRef&&!PINNED.test(ref)&&!unsafePrRef(ref))
        coverage.partial=true;
       const server=inputs['github-server-url'];
       if(server!==undefined){
