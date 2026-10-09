@@ -1,0 +1,53 @@
+name: Ultra Sentinel - Sentry Incident Intake
+# Opt-in read-only telemetry. Never executes PR source with credentials.
+on:
+  workflow_dispatch:
+    inputs:
+      consent:
+        description: "I approve processing minimal Sentry issue aggregates (no raw event payloads)."
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ultra-sentinel-sentry-intake
+  cancel-in-progress: false
+
+jobs:
+  sanitize-sentry-issues:
+    if: github.ref == 'refs/heads/main' && inputs.consent == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted main without persisting credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+      - name: Verify incident sanitizer tests offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test .github/scripts/ultra_sentinel_incidents.test.cjs .github/scripts/ultra_sentinel_sentry_ingest.test.cjs
+      - name: Fetch Sentry issues with project-read token and export sanitized aggregate only
+        shell: bash
+        env:
+          SENTRY_ORG_SLUG: ${{ vars.SENTRY_ORG_SLUG }}
+          SENTRY_PROJECT_SLUG: ${{ vars.SENTRY_PROJECT_SLUG }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          ULTRA_SENTINEL_INCIDENTS_CONSENT: "true"
+        run: |
+          set -euo pipefail
+          node .github/scripts/ultra_sentinel_sentry_ingest.cjs
+      - name: Preserve only the privacy-filtered summary
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ultra-sentinel-sanitized-incidents
+          path: ${{ runner.temp }}/ultra-sentinel-incident-summary.json
+          if-no-files-found: error
+          retention-days: 7
