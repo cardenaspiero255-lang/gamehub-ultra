@@ -148,7 +148,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    coverage.partial=true;continue;
   }
   if(job.uses!==undefined){coverage.partial=true;continue;}
-  if(!Array.isArray(job.steps)){coverage.partial=true;continue;}
+  if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
    if(!isMap(step)){coverage.partial=true;continue;}
    if(step.uses!==undefined){
@@ -191,7 +191,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     }
    }
    if(step.run!==undefined){
-    if(typeof step.run!=='string')coverage.partial=true;
+    if(typeof step.run!=='string'||!step.run.trim())coverage.partial=true;
     else{
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
      if(privileged&&hasUntrustedEventInterpolation(step.run))
