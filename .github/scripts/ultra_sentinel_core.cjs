@@ -45,14 +45,42 @@ function validationPlan(files){
  const domains=[...new Set((files||[]).flatMap(f=>tags(String(f?.filename||''))))].sort();
  return {domains,checks:domains.flatMap(domain=>(DOMAIN_VALIDATION[domain]||[]).map(check=>({domain,check}))).slice(0,24)};
 }
-function executableText(source){
- // Plain Kotlin/Java string literals represent data or documentation, not calls.
- // Keep interpolated expressions conservatively visible as they may run code.
- return String(source||'')
-  .replace(/"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g,
-   literal=>literal.includes(String.fromCharCode(36)+'{')?literal:'""')
-  .replace(/\/\*.*?\*\//g,' ') // inline block comments
-  .replace(/\/\/.*$/,''); // trailing single-line comments
+function executableText(source,state={block:false,triple:false}){
+ // Small Kotlin/Java lexer: skip comments and ordinary literal text without
+ // losing real statements after an interpolated URL or across line boundaries.
+ const text=String(source||'');
+ let out='',i=0;
+ while(i<text.length){
+  if(state.block){
+   const end=text.indexOf('*/',i);
+   if(end<0)break;
+   state.block=false;i=end+2;continue;
+  }
+  if(state.triple){
+   const end=text.indexOf('"""',i);
+   if(end<0)break;
+   state.triple=false;i=end+3;continue;
+  }
+  if(text.startsWith('//',i))break;
+  if(text.startsWith('/*',i)){state.block=true;i+=2;continue;}
+  if(text.startsWith('"""',i)){state.triple=true;i+=3;continue;}
+  const ch=text[i];
+  if(ch==='"'||ch==="'"){
+   const q=ch;let j=i+1;
+   while(j<text.length){
+    if(text[j]==='\\'){j+=2;continue;}
+    if(text[j]===q){j++;break;}
+    if(q==='"'&&text.startsWith('$'+'{',j)){
+     const close=text.indexOf('}',j+2);
+     if(close>=0){out+=' '+text.slice(j+2,close)+' ';j=close+1;continue;}
+    }
+    j++;
+   }
+   out+='""';i=j;continue;
+  }
+  out+=ch;i++;
+ }
+ return out;
 }
 function analyze(files,config={}){
  const list=Array.isArray(files)?files:[],names=list.map(f=>String(f?.filename||''));
@@ -77,8 +105,12 @@ function analyze(files,config={}){
    const all=rows.map(x=>x.text).join('\n');
    const android=path.startsWith('app/src/main/');
    const workflow=/^\.github\/workflows\/.*\.ya?ml$/i.test(path);
+   let lexState={block:false,triple:false},previousLine=null;
    for(let i=0;i<rows.length;i++){
-     const x=rows[i],t=x.text.trim(),code=executableText(t);
+     const x=rows[i],t=x.text.trim();
+     if(previousLine!==null&&x.line!==previousLine+1)lexState={block:false,triple:false};
+     const code=executableText(t,lexState);
+     previousLine=x.line;
      if(!t||/^(\/\/|\/\*|\*|#)/.test(t))continue;
      if(android&&/\bGlobalScope\s*\.\s*(launch|async)\b/.test(code))
        put('UNSCOPED_COROUTINE','HIGH','high',path,x.line,t,'Una tarea puede superar el ciclo de vida Android.','Probar cancelación de Activity y Service.');

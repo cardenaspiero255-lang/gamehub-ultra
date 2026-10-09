@@ -25,6 +25,15 @@ function privilegedTrigger(lines){
  }
  if(start<0)return false;
  if(rest.trim()){
+  if(/^[>|][+-]?$/.test(rest.trim())){
+   const parts=[];
+   for(let j=start+1;j<Math.min(lines.length,start+65);j++){
+    if(lines[j].trim()&&!/^\s/.test(lines[j]))break;
+    if(lines[j].trim()&&!lines[j].trim().startsWith('#'))parts.push(lines[j].trim());
+   }
+   const folded=parts.join(' ');
+   return /(?:^|[\s,])(?:pull_request_target|workflow_run)(?:\s|$)/.test(folded);
+  }
   // GitHub Actions accepts block-flow sequences and mappings:
   // on: [<newline> pull_request_target, <newline> push].
   // Read only this bounded YAML value; never interpret arbitrary job text as an event.
@@ -210,6 +219,16 @@ function reviewWorkflows({sha,expected,sources={}}={}){
    const permissionKey=keyValue(line);
    if(permissionKey?.key==='permissions'&&inRealPermissionsMap(lines,i)){
     if(writableLine(line))flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    if(/^[>|][+-]?$/.test(permissionKey.value.trim())){
+     const items=[];
+     for(let k=i+1;k<Math.min(lines.length,i+65);k++){
+      const child=lines[k],childIndent=child.match(/^\s*/)[0].length;
+      if(child.trim()&&childIndent<=indent)break;
+      if(child.trim()&&!child.trim().startsWith('#'))items.push(child.trim());
+     }
+     if(items.join(' ').trim()==='write-all')
+      flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    }
     if(!permissionKey.value.trim()||
        (permissionKey.value.trim().startsWith('{')&&!permissionKey.value.includes('}')))
       permissionsIndent=indent;
