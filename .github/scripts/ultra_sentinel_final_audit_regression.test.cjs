@@ -56,9 +56,17 @@ test('Security RED: workflow rename cannot be attested from current names alone'
   trustedWorkflows:trust,changedFiles:[{filename:'.github/workflows/renamed-android.yml',previous_filename:'.github/workflows/android.yml',status:'renamed'}],changedFilesComplete:true});
  assert.notEqual(out.status,'PASS',JSON.stringify(out));
 });
-test('Security RED: false green evidence excludes manual workflow_dispatch from PR run selection',()=>{
- const f=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_frontier_integrity.cjs'),'utf8');
- assert.match(f,/EVENTS\.has\(run\.event\)[\s\S]{0,125}typeof run\.head_sha/);
+test('Security: manual workflow_dispatch cannot provide trusted PR attestation',()=>{
+ const repo='cardenaspiero255-lang/gamehub-ultra';
+ const mk=(name,id,more={})=>({name,id,run_number:7,run_attempt:1,head_sha:SHA,
+  status:'completed',conclusion:'success',event:'pull_request',workflow_id:id,
+  path:name==='Android build'?'.github/workflows/android.yml':'.github/workflows/coverage.yml',
+  repository:{full_name:repo},head_repository:{full_name:repo},...more});
+ const trust={'Android build':{id:1,path:'.github/workflows/android.yml'},
+  'Unit Test Coverage':{id:2,path:'.github/workflows/coverage.yml'}};
+ const result=attestCi({sha:SHA,repo,runs:[mk('Android build',1),mk('Unit Test Coverage',2),mk('Android build',3,{event:'workflow_dispatch',run_number:8,workflow_id:1})],
+  trustedWorkflows:trust,changedFiles:[],changedFilesComplete:true});
+ assert.notEqual(result.status,'PASS',JSON.stringify(result));
 });
 test('Security RED: scripts with tainted eval tokens are a BLOCKER, not merely incomplete',()=>{
  const data='on: issues\nenv:\n  CMD: $'+'{{ github.event.issue.title }}\njobs:\n  a:\n    steps:\n      - run: eval $CMD';
