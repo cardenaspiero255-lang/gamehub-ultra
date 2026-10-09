@@ -66,7 +66,32 @@ jobs:
             }
             const files = await github.paginate(github.rest.pulls.listFiles,
               {owner,repo,pull_number:number,per_page:100});
-            const result = analyze(files,{sha:pr.head.sha});
+            // Independently obtain bounded Kotlin full-file context at the
+            // same immutable PR SHA; never execute or checkout candidate code.
+            const evidenceFiles=files.map(item=>({...item}));
+            const kotlinTargets=evidenceFiles.filter(item=>
+              item.status!=="removed" &&
+              /^app\/src\/main\/[A-Za-z0-9_./-]+\.kt$/.test(item.filename||"") &&
+              !String(item.filename||"").includes("..")).slice(0,24);
+            for(let i=0;i<kotlinTargets.length;i+=4){
+              await Promise.all(kotlinTargets.slice(i,i+4).map(async item=>{
+                try{
+                  const {data: body}=await github.rest.repos.getContent({
+                    owner,repo,path:item.filename,ref:pr.head.sha
+                  });
+                  if(body.type!=="file"||body.encoding!=="base64"||
+                     !Number.isSafeInteger(body.size)||body.size>160000||
+                     typeof body.content!=="string")return;
+                  const bytes=Buffer.from(body.content,"base64");
+                  if(bytes.length===body.size&&bytes.length<=160000)
+                    item.fullSource=bytes.toString("utf8");
+                }catch(error){
+                  core.warning("Kotlin source context unavailable ("+
+                    (error.status||"API error")+"); unknown hunks remain INCOMPLETE.");
+                }
+              }));
+            }
+            const result = analyze(evidenceFiles,{sha:pr.head.sha});
             let protectedChanges=null,structural=null;
             if(deployed){
               protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
@@ -87,7 +112,7 @@ jobs:
                   core.warning('Unable to read changed workflow source; structural gate fails closed.');
                 }
               }
-              structural=reviewWorkflowSources({expected,sources});
+              structural=reviewWorkflowSources({expected,sources,trustedRepository:owner+'/'+repo});
               if(structural.coverage.partial)
                 core.setFailed('Unable to structurally parse every changed workflow.');
               if(structural.findings.some(f=>f.severity==='BLOCKER'))
