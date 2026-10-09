@@ -32,6 +32,7 @@ test('release metadata still contains only immutable hashes and run IDs',()=>{
 test('Sentry source includes no hardcoded workflow IDs',()=>{
  const fs=require('node:fs'),path=require('node:path');
  const code=fs.readFileSync(path.join(__dirname,'ultra_sentinel_evidence.cjs'),'utf8');
- assert.match(code,/actions\/workflows\/android\.yml/);
- assert.match(code,/actions\/workflows\/coverage\.yml/);
+ assert.match(code,/\.github\/workflows\/android\.yml/);
+ assert.match(code,/\.github\/workflows\/coverage\.yml/);
+ assert.match(code,/actions\/workflows\/'\+short/);
 });
