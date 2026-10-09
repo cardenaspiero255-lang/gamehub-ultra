@@ -178,7 +178,8 @@ jobs:
               }catch(error){core.warning("Workflow source unavailable ("+(error.status||"API error")+").");}
             }
             const supplyChain=reviewWorkflows({sha:pr.head.sha,expected,sources:workflowSources});
-            const structuralYaml=reviewWorkflowSources({expected,sources:workflowSources});
+            const structuralYaml=reviewWorkflowSources({expected,sources:workflowSources,
+              trustedRepository:owner+'/'+repo});
             // Human summary plus compact machine report can be fetched directly by connected GitHub tools.
             // Limit both portions: GitHub comments have a finite size.
             // Slow-path only: look up bounded git history if a high-risk finding exists.
