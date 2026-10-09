@@ -100,7 +100,9 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      max-parallel: 4
+      # 5 test jobs + 4 device jobs + 3 Android support + 8 coverage = 20.
+      # Keep 8 physical / 64 logical shards. No test or benchmark removed.
+      max-parallel: 5
       matrix:
         runner: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
