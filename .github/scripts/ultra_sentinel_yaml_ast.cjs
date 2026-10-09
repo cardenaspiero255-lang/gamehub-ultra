@@ -241,18 +241,46 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(Object.keys(service).some(key=>key!=='image'))coverage.partial=true;
   }
  };
- const checkEnvSources=(value,where)=>{
-  if(value===undefined)return;
-  if(!isMap(value)){coverage.partial=true;return;}
-  for(const item of Object.values(value)){
+ // Treat event-backed env as tainted DATA, not automatically as injected
+ // code. A github-script that merely logs process.env is not a vulnerability.
+ const collectEnvSources=(value)=>{
+  const tainted=new Set();
+  if(value===undefined)return tainted;
+  if(!isMap(value)){coverage.partial=true;return tainted;}
+  for(const [name,item] of Object.entries(value)){
+   if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)){coverage.partial=true;continue;}
    if(typeof item!=='string'){
     if(item!==null&&typeof item!=='number'&&typeof item!=='boolean')coverage.partial=true;
     continue;
    }
    if(!item.includes(String.fromCharCode(36,123,123)))continue;
    const check=auditExecutableExpressions(item);
+   if(check.unsafe||check.incomplete)tainted.add(name);
+  }
+  return tainted;
+ };
+ const checkReusableInputs=(value,where)=>{
+  if(value===undefined)return;
+  if(!isMap(value)){coverage.partial=true;return;}
+  for(const item of Object.values(value)){
+   if(typeof item!=='string'){coverage.partial=true;continue;}
+   if(!item.includes(String.fromCharCode(36,123,123)))continue;
+   const check=auditExecutableExpressions(item);
    if(check.unsafe)emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
    if(check.incomplete)coverage.partial=true;
+  }
+ };
+ const auditShellEnvUse=(script,tainted,where)=>{
+  for(const key of tainted){
+   const token='\\$(?:\\{'+key+'\\}|'+key+'\\b)';
+   const ref=new RegExp(token);
+   if(!ref.test(script))continue;
+   // Bare variable substitution at command position can choose the
+   // executable; eval/command-string interpreters are dangerous sinks.
+   const commandPosition=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*'+token+'(?=\\s|$)');
+   if(commandPosition.test(script)||/\\b(?:eval|source|bash\\s+-c|sh\\s+-c|python\\s+-c|node\\s+-e)\\b/.test(script))
+    emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+   else coverage.partial=true;
   }
  };
  const checkDefaults=(defaults,where)=>{
@@ -261,14 +289,14 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   checkExecutableShell(defaults.run.shell,where);
  };
  checkDefaults(document.defaults,path);
- checkEnvSources(document.env,path);
+ const workflowTaint=collectEnvSources(document.env);
  checkPermissions(document.permissions,path);
  for(const [name,job] of Object.entries(document.jobs)){
   const where=path; // Deliberately no attempt to fabricate AST line locations.
   if(!isMap(job)){coverage.partial=true;continue;}
   checkPermissions(job.permissions,where);
   checkDefaults(job.defaults,where);
-  checkEnvSources(job.env,where);
+  const jobTaint=new Set([...workflowTaint,...collectEnvSources(job.env)]);
   if(privileged){
    checkRunner(job['runs-on'],where);
    checkContainer(job.container,where);
@@ -287,7 +315,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      // A caller cannot independently certify an uninspected callee graph.
      coverage.partial=true;
     }
-    checkEnvSources(job.with,where);
+    checkReusableInputs(job.with,where);
     if(privileged&&job.secrets!==undefined)coverage.partial=true;
     continue;
    }
@@ -298,7 +326,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
    if(!isMap(step)){coverage.partial=true;continue;}
-   checkEnvSources(step.env,where);
+   const stepTaint=new Set([...jobTaint,...collectEnvSources(step.env)]);
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
@@ -384,6 +412,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(step.run!==undefined){
     if(typeof step.run!=='string'||!step.run.trim())coverage.partial=true;
     else{
+     auditShellEnvUse(step.run,stepTaint,where);
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
      else if(unknownDownloadPipeline(step.run))coverage.partial=true;
      {
