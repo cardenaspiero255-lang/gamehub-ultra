@@ -99,7 +99,7 @@ function renderActionsSummary(report){
   '- Valid deduplicated issues: '+count,
   '- Aggregate observations: '+['fatal','error','warning','info','unknown'].map(k=>k+': '+counts[k]).join(', '),
   '- Decision: '+status,
-  '- GitHub run attestation: '+(['COMPLETE','PARTIAL'].includes(report?.attestation?.status)?
+  '- GitHub run attestation: '+(['VERIFIED','PARTIAL','INCOMPLETE','NOT_APPLICABLE'].includes(report?.attestation?.status)?
      report.attestation.status:'UNKNOWN'),
   '',
   'Incident metadata only; not a confirmed crash root cause.',
@@ -113,7 +113,9 @@ async function main(env=process.env,clients={}){
  const raw=await (clients.fetchIssues||fetchIssues)({org,project,token});
  // Only GitHub's own API can attest the latest CI results; no client-supplied
  // status can authorize a release correlation or automated rollback.
- const releaseShas=[...new Set(acceptedReleaseIssues(raw).map(releaseSha).filter(Boolean))].slice(0,4);
+ const releaseCandidates=[...new Set(acceptedReleaseIssues(raw).map(releaseSha).filter(Boolean))];
+ const releaseShas=releaseCandidates.slice(0,4);
+ const omittedLookups=releaseCandidates.length-releaseShas.length;
  const attestedRuns=[];
  let failedLookups=0;
  for(const sha of releaseShas){
@@ -127,12 +129,24 @@ async function main(env=process.env,clients={}){
   }
  }
  const report=buildSanitizedReport(raw,{consent:true,attestedRuns});
+ // A completed API lookup is not proof of verified release CI. In particular,
+ // zero releases or an empty authenticated result must never print COMPLETE.
+ const fullyVerified=releaseShas.filter(sha=>report.releaseHealth[sha]?.status==='CI_VERIFIED');
+ const status=failedLookups||omittedLookups?'PARTIAL':
+  releaseShas.length===0?'NOT_APPLICABLE':
+  fullyVerified.length===releaseShas.length?'VERIFIED':'INCOMPLETE';
  report.attestation={
-  status:failedLookups?'PARTIAL':'COMPLETE',
-  verifiedLookups:releaseShas.length-failedLookups,failedLookups
+  status,verifiedLookups:releaseShas.length-failedLookups,failedLookups,
+  omittedLookups,verifiedReleaseCount:fullyVerified.length
  };
  if(failedLookups)report.cautions.push(
   'GitHub CI attestation unavailable for some releases; no verification inferred for those releases'
+ );
+ if(omittedLookups)report.cautions.push(
+  'Release lookup budget exceeded; some release SHAs were not assessed'
+ );
+ if(status==='INCOMPLETE')report.cautions.push(
+  'GitHub CI lookups completed but did not establish trusted Android Build and Coverage for every release'
  );
  const destination=path.join(env.RUNNER_TEMP,'ultra-sentinel-incident-summary.json');
  fs.writeFileSync(destination,JSON.stringify(report,null,2)+'\n',{encoding:'utf8',mode:0o600,flag:'wx'});
