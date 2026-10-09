@@ -40,13 +40,10 @@ function privilegedTrigger(lines){
   // Read only this bounded YAML value; never interpret arbitrary job text as an event.
   let value=rest;
   const open=rest.trim()[0];
-  const close=open==='['?']':open==='{'?'}':null;
-  if(close&&!rest.includes(close)){
-   for(let j=start+1;j<Math.min(lines.length,start+65);j++){
-    if(lines[j].trim()&&!/^\s/.test(lines[j])&&lines[j].trim()!==close)break;
-    value+=' '+lines[j].trim();
-    if(lines[j].includes(close))break;
-   }
+  if(open==='['||open==='{'){
+   // YAML comments and quoted scalars may contain fake ] or } tokens.
+   // Apply the same bounded, quote-aware collector used for step maps.
+   value=collectFlowMap(lines,start,lines.length,rest).value;
   }
   const tokens=value.replace(/[\[\]{},]/g,' ').trim().split(/\s+/).map(scalar);
   if(tokens.some(x=>privilegedEvent.test(x.replace(/:$/,''))))return true;
@@ -80,7 +77,7 @@ function isUnsafePrRef(input){
  const expressions=[...value.matchAll(/\$\{\{\s*([\s\S]*?)\s*\}\}/g)];
  return expressions.some(m=>{
   const expression=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
-  return /\bgithub\.(?:event\.pull_request\.head\.(?:sha|ref)|head_ref)\b/.test(expression);
+  return /\bgithub\.(?:event\.pull_request\.head\.(?:sha|ref|repo\.(?:full_name|name|clone_url))|event\.workflow_run\.(?:head_sha|head_branch|head_repository\.full_name)|head_ref)\b/.test(expression);
  });
 }
 function splitFlowEntries(content){
@@ -105,7 +102,7 @@ function splitFlowEntries(content){
 // Collect bounded YAML flow maps without counting braces in comments or
 // quoted strings. An unclosed map is incomplete evidence, not a clean scan.
 function collectFlowMap(lines,start,end,firstValue){
- let depth=0,opened=false,closed=false,quote=null,escaped=false;
+ const stack=[];let opened=false,closed=false,quote=null,escaped=false;
  const parts=[];
  for(let i=start;i<Math.min(end,start+65);i++){
   const src=i===start?String(firstValue):lines[i].trim();
@@ -124,10 +121,12 @@ function collectFlowMap(lines,start,end,firstValue){
    }
    if(ch==='"'||ch==="'"){quote=ch;fragment+=ch;continue;}
    if(ch==='#'&&(j===0||/\s/.test(src[j-1])))break;
-   if(ch==='{'){depth++;opened=true;}
-   else if(ch==='}'){depth--;if(depth<0)return {value:parts.join(' '),closed:false};}
+   if(ch==='{'||ch==='['){stack.push(ch==='{'?'}':']');opened=true;}
+   else if(ch==='}'||ch===']'){
+    if(stack.pop()!==ch)return {value:parts.join(' '),closed:false};
+   }
    fragment+=ch;
-   if(opened&&depth===0){closed=true;break;}
+   if(opened&&stack.length===0){closed=true;break;}
   }
   if(fragment.trim())parts.push(fragment.trim());
   if(closed)break;
@@ -152,12 +151,12 @@ function dangerousCheckoutRefs(lines,useIndex){
    if(flow){
     for(const entry of splitFlowEntries(flow[1])){
      const kvRef=keyValue(entry);
-     if(kvRef?.key==='ref'&&isUnsafePrRef(kvRef.value))out.push(i+1);
+     if(['ref','repository'].includes(kvRef?.key)&&isUnsafePrRef(kvRef.value))out.push(i+1);
     }
    }
    continue;
   }
-  if(kv?.key==='ref'&&withIndent!==null&&indent>withIndent){
+  if(['ref','repository'].includes(kv?.key)&&withIndent!==null&&indent>withIndent){
    let ref=String(kv.value||'').trim();
    // Folded/literal YAML scalars: the expression may be on the next line.
    // This is a conservative single-expression heuristic, not a YAML parser.
@@ -245,10 +244,23 @@ function refInFlowValue(value){
  if(!mapped)return false;
  for(const entry of splitFlowEntries(mapped[1])){
   const kv=keyValue(entry.trim());
-  if(kv?.key==='ref'&&isUnsafePrRef(kv.value))return true;
+  if(['ref','repository'].includes(kv?.key)&&isUnsafePrRef(kv.value))return true;
  }
  return false;
 }
+
+function sensitiveFlowAlias(value){
+ const source=String(value||'').trim();
+ if(/^\*[-A-Za-z0-9_]+\b/.test(source))return true;
+ if(!source.startsWith('{')||!source.endsWith('}'))return false;
+ for(const entry of splitFlowEntries(source.slice(1,-1))){
+  const kv=keyValue(entry.trim());
+  if(!kv||!['uses','ref','repository','with'].includes(kv.key))continue;
+  if(sensitiveFlowAlias(kv.value))return true;
+ }
+ return false;
+}
+
 function stepAction(lines,step){
  const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
  const original=lines[start].replace(/^\s*-\s*/,'');
@@ -297,7 +309,7 @@ function stepAction(lines,step){
   const line=lines[i],indent=line.match(/^\s*/)[0].length;
   if(indent<=direct)continue;
   const kv=keyValue(line);
-  if(kv?.key!=='ref')continue;
+  if(!['ref','repository'].includes(kv?.key))continue;
   let value=String(kv.value||'').trim();
   if(/^[>|][+-]?$/.test(value)){
    const sub=[];
@@ -325,7 +337,7 @@ function hasSensitiveAliases(lines){
   if(scope!==null&&indent<=scope.indent)scope=null;
   const rootEvent=indent===0&&kv?.key==='on';
   const permissions=kv?.key==='permissions'&&inRealPermissionsMap(lines,i);
-  const input=kv&&['uses','with','ref'].includes(kv.key)&&
+  const input=kv&&['uses','with','ref','repository'].includes(kv.key)&&
    stepRanges.some(s=>s.start<=i&&i<s.end);
   if(rootEvent||permissions)scope={indent};
   const examined=(rootEvent||permissions||input)?kv.value:
@@ -339,8 +351,8 @@ function hasSensitiveAliases(lines){
   // Only inspect real job steps, never arbitrary env/run text named "uses".
   const flowStep=stepRanges.find(s=>s.start===i);
   const flowStepAlias=flowStep && /^\s*-\s*\{/.test(row) &&
-   /(?:^|[,{]\s*)(?:"(?:ref|uses|with)"|'(?:ref|uses|with)'|(?:ref|uses|with))\s*:\s*\*[-A-Za-z0-9_]+\b/
-    .test(lines.slice(flowStep.start,flowStep.end).join('\n'));
+   sensitiveFlowAlias(collectFlowMap(lines,flowStep.start,flowStep.end,
+    row.replace(/^\s*-\s*/,'').trim()).value);
   if(flowStepAlias||
      /(?:^|[\s,[{,:"'])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
  }
