@@ -53,7 +53,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Probe preinstalled Android SDK
+        id: sdk_preflight
+        shell: bash
+        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
+
       - name: Set up Android SDK
+        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -245,7 +251,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Probe preinstalled Android SDK
+        id: sdk_preflight
+        shell: bash
+        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
+
       - name: Set up Android SDK
+        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
