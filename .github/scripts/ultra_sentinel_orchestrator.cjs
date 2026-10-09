@@ -50,6 +50,34 @@ function candidate({filename,content,sha,findings}){
  }
  return {status:'NO_SAFE_TEMPLATE',reason:'El hallazgo requiere contexto semántico; proponer pasos, no inventar un parche.'};
 }
+// Never trust a caller-supplied DRAFT_PATCH just because it carries an
+// allowed rule and a SHA. Accept exactly one deletion in exactly one file;
+// the human must still inspect the candidate in its original source context.
+function validDeletionPatch(proposal){
+ const body=proposal?.patch;
+ if(typeof body!=='string'||body.length>10000||!body.endsWith('\n')||
+    body.includes('\r')||!isPath(proposal.filename))return false;
+ const lines=body.slice(0,-1).split('\n'),f=proposal.filename;
+ if(lines.length<6||lines[0]!=='diff --git a/'+f+' b/'+f||
+    lines[1]!=='--- a/'+f||lines[2]!=='+++ b/'+f)return false;
+ const hunk=lines[3].match(/^@@ -(\d+),(\d+) \+(\d+),(\d+) @@$/);
+ if(!hunk)return false;
+ const oldStart=Number(hunk[1]),oldCount=Number(hunk[2]),
+       newStart=Number(hunk[3]),newCount=Number(hunk[4]);
+ if(oldStart<1||newStart!==oldStart||oldCount<2||oldCount>20||
+    oldCount-newCount!==1)return false;
+ const content=lines.slice(4);
+ const removed=content.filter(x=>x.startsWith('-'));
+ const added=content.filter(x=>x.startsWith('+'));
+ if(removed.length!==1||added.length>0||content.length!==oldCount||
+    !content.every(x=>x.startsWith('-')||x.startsWith(' ')))return false;
+ const old=removed[0].slice(1);
+ const safeGC=/^([ \t]*)(?:System\.gc\(\)|Runtime\.getRuntime\(\)\.gc\(\));?[ \t]*$/;
+ const safeLog=/^([ \t]*)Log\.(?:d|e|i|v|w)\(\s*(?:TAG|tag|LOG_TAG|"[A-Za-z0-9_-]{1,20}")\s*,\s*(?:transcript|password|authToken|accessToken)\s*\);?[ \t]*$/;
+ return proposal.linesChanged===1 &&
+  (proposal.rule==='FORCED_GC'&&safeGC.test(old)||
+   proposal.rule==='POTENTIAL_PRIVATE_LOG'&&safeLog.test(old));
+}
 function judge(proposal,options={}){
  const reasons=[];
  if(!proposal||proposal.status!=='DRAFT_PATCH')reasons.push('No existe un parche de alta confianza');
@@ -57,7 +85,7 @@ function judge(proposal,options={}){
   if(!isPath(proposal.filename))reasons.push('Ruta fuera del alcance permitido');
   if(!['FORCED_GC','POTENTIAL_PRIVATE_LOG'].includes(proposal.rule))reasons.push('Regla no autorizada para parche exacto');
   if(!Number.isInteger(proposal.linesChanged)||proposal.linesChanged>MAX_LINES||proposal.linesChanged<1)reasons.push('Cambios exceden presupuesto');
-  if(typeof proposal.patch!=='string'||proposal.patch.length>10000)reasons.push('Diff mal formado o demasiado extenso');
+  if(!validDeletionPatch(proposal))reasons.push('Contenido, ruta o hunk del parche no verificables');
   if(!/^[a-f0-9]{40}$/.test(proposal.sha||''))reasons.push('SHA inválido');
   if(options.sha&&proposal.sha!==options.sha)reasons.push('El PR cambió de SHA');
   if(proposal.patch&&/(?:GITHUB_TOKEN|PRIVATE_KEY|SENTRY_AUTH_TOKEN|github\.event\.pull_request\.head)/.test(proposal.patch))
