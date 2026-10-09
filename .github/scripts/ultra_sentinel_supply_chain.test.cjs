@@ -274,3 +274,64 @@ test('real checkout ref aliases still fail closed with trailing comments',()=>{
  assert.equal(result.status,'INCOMPLETE');
  assert.equal(result.coverage.partial,true);
 });
+
+test('Codex P1: overlong flow event is INCOMPLETE, never clean when privileged trigger is beyond scan limit',()=>{
+ const workflow=['on: [',...Array.from({length:70},(_,i)=>'  # line '+i),
+  '  pull_request_target',']','jobs:','  gate:','    steps:',
+  '      - uses: actions/checkout@'+SHA,'        with:',
+  '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE');
+ assert.equal(result.coverage.partial,true);
+});
+test('flow triggers closing within bound are classified without incomplete coverage',()=>{
+ const workflow=['on: [',...Array.from({length:3},(_,i)=>'  # comment '+i),
+  '  pull_request_target',']','jobs:','  gate:','    steps:',
+  '      - uses: actions/checkout@'+SHA,'        with:',
+  '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+ assert.equal(result.coverage.partial,false);
+});
+test('Codex P2: flow event only inspects top-level keys, not branch names nested inside push',()=>{
+ const workflow=['on: {push: {branches: [pull_request_target]}}',
+  'jobs:','  gate:','    steps:','      - uses: actions/checkout@'+SHA,'        with:',
+  '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+ assert.ok(!rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('flow event mapping still flags actual privileged top-level key alongside nested options',()=>{
+ const workflow=['on: {push: {branches: [main, development]}, pull_request_target: {types: [opened]}}',
+  'jobs:','  gate:','    steps:','      - uses: actions/checkout@'+SHA,'        with:',
+  '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P1: anchored steps sequence scans untrusted checkout and unpinned action',()=>{
+ const workflow=['on: pull_request_target','jobs:','  gate:','    steps: &shared',
+  '      - uses: actions/checkout@v6','        with:',
+  '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('UNPINNED_ACTION'));
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P1: unresolved steps alias marks incomplete evidence',()=>{
+ const workflow=['on: pull_request_target','jobs:','  gate:','    steps: *shared'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE');
+ assert.equal(result.coverage.partial,true);
+});
+test('anchored read-only steps with pinned action remain clean',()=>{
+ const workflow=['on: pull_request','jobs:','  gate:','    steps: &shared',
+  '      - uses: actions/checkout@'+SHA,'        with:','          ref: main'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+ assert.equal(result.coverage.partial,false);
+});
+test('steps alias appearing only in comments does not block a real safe sequence',()=>{
+ const workflow=['on: pull_request','jobs:','  gate:','    steps: &shared # *fake',
+  '      - uses: actions/checkout@'+SHA].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+});
