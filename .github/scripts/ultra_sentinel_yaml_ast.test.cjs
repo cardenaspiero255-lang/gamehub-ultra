@@ -102,3 +102,30 @@ for(const {title,src,status,rule} of cases){
 test('AST matrix guarantees at least 50 independent YAML traps',()=>{
  assert.ok(cases.length>=50,String(cases.length));
 });
+
+test('AST production wiring: parse each trusted Sentinel workflow without source execution',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ for(const filename of [
+  'ultra-sentinel-auto-review.yml',
+  'ultra-sentinel-core-check.yml',
+  'ultra-sentinel-independent-review.yml',
+  'ultra-sentinel-self-review.yml',
+  'ultra-sentinel-mutation.yml',
+  'ultra-sentinel-reliability-100.yml',
+  'ultra-sentinel-sss-post-ci.yml'
+ ]){
+  const full=path.resolve(__dirname,'../workflows',filename);
+  const content=fs.readFileSync(full,'utf8');
+  const verdict=inspectWorkflow(content,{path:'.github/workflows/'+filename});
+  assert.notEqual(verdict.status,'INCOMPLETE',
+   filename+': '+JSON.stringify(verdict));
+ }
+});
+test('AST safety: BOM at root is recognized without skipping privileged trigger',()=>{
+ const content='\ufeffon: pull_request_target\njobs:\n  audit:\n    steps:\n'+
+  '      - uses: actions/checkout@'+SHA+
+  '\n        with:\n          ref: ${{ github.head_ref }}';
+ const verdict=inspectWorkflow(content);
+ assert.ok(verdict.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),
+  JSON.stringify(verdict));
+});
