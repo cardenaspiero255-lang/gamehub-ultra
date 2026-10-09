@@ -94,3 +94,48 @@ test('network client is read-only, bounded, fixed-host and fails closed on redir
  assert.equal(seen[0].method,'GET');
  assert.ok(!seen[0].path.includes('xxxxxxxxx'));
 });
+
+test('Codex P2: newest failed, pending or rerun attempt cannot inherit older green CI',async()=>{
+ const {EventEmitter}=require('node:events');
+ const getRun=(name,id,number,attempt,status,conclusion)=>run({
+  id,name,run_number:number,run_attempt:attempt,status,conclusion,
+  workflow_id:name==='Android build'?131:132,
+  path:name==='Android build'?'.github/workflows/android.yml':'.github/workflows/coverage.yml',
+  html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+id
+ });
+ async function evaluate(runs){
+  const request=(opts,callback)=>{
+   const req=new EventEmitter();
+   req.end=()=>{
+    const res=new EventEmitter();res.statusCode=200;res.resume=()=>{};
+    callback(res);
+    process.nextTick(()=>{
+     const android=opts.path.includes('android.yml');
+     const name=android?'Android build':'Unit Test Coverage';
+     const filePath=android?'.github/workflows/android.yml':'.github/workflows/coverage.yml';
+     const body=opts.path.includes('/contents/')?{type:'file',path:filePath,sha:E.TRUSTED_BLOBS[name]}:
+      opts.path.endsWith('/android.yml')?{id:131,path:filePath}:
+      opts.path.endsWith('/coverage.yml')?{id:132,path:filePath}:
+      {total_count:runs.length,workflow_runs:runs};
+     res.emit('data',Buffer.from(JSON.stringify(body)));res.emit('end');
+    });
+   };
+   req.destroy=e=>req.emit('error',e);
+   return req;
+  };
+  const verified=await E.fetchVerifiedRuns({sha:SHA,token:'x'.repeat(30),request});
+  return {verified,release:E.assessRelease(SHA,verified,true)};
+ }
+ const coverage=getRun('Unit Test Coverage',220,8,1,'completed','success');
+ const older=getRun('Android build',201,8,1,'completed','success');
+ for(const state of [{status:'completed',conclusion:'failure'},
+  {status:'in_progress',conclusion:null}]){
+  const newest=getRun('Android build',202,9,1,state.status,state.conclusion);
+  const output=await evaluate([older,coverage,newest]);
+  assert.equal(output.release.status,'INCOMPLETE',JSON.stringify(output));
+  assert.ok(!output.verified.some(x=>x.workflow==='Android build'),JSON.stringify(output.verified));
+ }
+ const failedAttempt=getRun('Android build',201,8,2,'completed','failure');
+ const tied=await evaluate([older,coverage,failedAttempt]);
+ assert.equal(tied.release.status,'INCOMPLETE',JSON.stringify(tied));
+});
