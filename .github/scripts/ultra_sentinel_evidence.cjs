@@ -36,6 +36,7 @@ function validateRun(run,sha,trustedWorkflows){
   run.repository?.full_name!==REPO||
   (run.head_repository?.full_name && run.head_repository.full_name!==REPO)||
   !Number.isSafeInteger(run.id)||run.id<=0||
+  !Number.isSafeInteger(run.run_number)||run.run_number<1||
   !Number.isSafeInteger(run.run_attempt)||run.run_attempt<1||
   run.html_url!=='https://github.com/'+REPO+'/actions/runs/'+run.id)return null;
  return Object.freeze({sha:sha.toLowerCase(),workflow:run.name,runId:run.id,
@@ -135,7 +136,28 @@ async function fetchVerifiedRuns({sha,token,request=https.request}){
  if(!Array.isArray(body?.workflow_runs)||!Number.isSafeInteger(body.total_count)||
   body.total_count!==body.workflow_runs.length||body.workflow_runs.length>100)
   throw Error('GitHub CI run pagination incomplete');
- return body.workflow_runs.map(x=>validateRun(x,sha,trustedWorkflows)).filter(Boolean);
+ // Validate run recency BEFORE filtering success. Otherwise a prior green
+ // run could mask a newer red/in-progress execution of the exact same SHA.
+ // If any matching run lacks trustworthy ordering metadata, fail closed for
+ // that workflow rather than retaining a possibly stale green run.
+ const newest=new Map(),unorderable=new Set();
+ for(const candidate of body.workflow_runs){
+  if(!NAMES.has(candidate?.name)||typeof candidate.head_sha!=='string'||
+     candidate.head_sha.toLowerCase()!==sha.toLowerCase())continue;
+  const name=candidate.name;
+  if(!Number.isSafeInteger(candidate.run_number)||candidate.run_number<1||
+     !Number.isSafeInteger(candidate.run_attempt)||candidate.run_attempt<1||
+     !Number.isSafeInteger(candidate.id)||candidate.id<1){
+   unorderable.add(name);continue;
+  }
+  const old=newest.get(name);
+  if(!old||candidate.run_number>old.run_number||
+     (candidate.run_number===old.run_number&&candidate.run_attempt>old.run_attempt)||
+     (candidate.run_number===old.run_number&&candidate.run_attempt===old.run_attempt&&
+      candidate.id>old.id))newest.set(name,candidate);
+ }
+ return [...NAMES].filter(name=>!unorderable.has(name))
+  .map(name=>validateRun(newest.get(name),sha,trustedWorkflows)).filter(Boolean);
 }
 
 module.exports={apiPath,validateRun,releaseSha,attachVerifiedReleases,assessRelease,fetchVerifiedRuns,REPO,TRUSTED_BLOBS};
