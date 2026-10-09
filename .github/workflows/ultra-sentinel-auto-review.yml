@@ -45,7 +45,7 @@ jobs:
           node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
           node .github/scripts/ultra_sentinel_benchmark.cjs
       - name: Read PR evidence and publish safe independent analysis
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # pinned v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -212,7 +212,7 @@ jobs:
     name: Sentinel / Evidence consensus
     steps:
       - name: Update one pinned-to-commit status comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # pinned v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
