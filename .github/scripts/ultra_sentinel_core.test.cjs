@@ -135,3 +135,30 @@ test('a raw Kotlin string opened and closed within trustworthy file-origin conte
  assert.ok(rules(result).includes('BLOCKING_ANDROID_CALL'));
  assert.equal(result.coverage.partial,false);
 });
+
+test('Codex P1: added triple-quote delimiter with unknown hunk state fails closed',()=>{
+ const patch=[
+  '@@ -40,3 +40,4 @@',
+  '-    """.trimIndent()',
+  '+    """',
+  '+    runBlocking { work() }',
+  '     after()'
+ ].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:3}]);
+ assert.equal(result.coverage.partial,true);
+ assert.equal(result.verdict,'INCOMPLETE');
+});
+test('added raw opening with known beginning of Kotlin file remains safely distinguishable',()=>{
+ const patch=[
+  '@@ -1,4 +1,6 @@',
+  'fun sample() {',
+  '+val description = """',
+  '+runBlocking { textOnly() }',
+  '+"""',
+  '+runBlocking { executable() }',
+  '}' 
+ ].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:4}]);
+ assert.equal(result.coverage.partial,false);
+ assert.equal(result.findings.filter(f=>f.rule==='BLOCKING_ANDROID_CALL').length,1);
+});
