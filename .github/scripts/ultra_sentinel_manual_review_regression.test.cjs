@@ -91,3 +91,12 @@ test('Regression: first-party pinned github-script uses normal scoped GitHub tok
  '          script: core.info("safe")'].join('\n');
  assert.equal(inspectWorkflow(source).status,'NO_RISK_PATTERN');
 });
+
+// RED: serialized secret objects require a non-clean structural verdict.
+test('Sensitive GitHub context object is not clean for third party',()=>{
+ const s=['on: workflow_dispatch','permissions: read-all','jobs:','  audit:',
+  '    runs-on: ubuntu-latest','    steps:',
+  '      - uses: vendor/collector@'+SHA,'        with:',
+  '          metadata: ${{ toJSON(secrets) }}'].join('\n');
+ assert.notEqual(inspectWorkflow(s).status,'NO_RISK_PATTERN');
+});
