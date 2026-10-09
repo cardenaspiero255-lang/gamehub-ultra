@@ -48,8 +48,11 @@ function validationPlan(files){
 function executableText(source){
  // Plain Kotlin/Java string literals represent data or documentation, not calls.
  // Keep interpolated expressions conservatively visible as they may run code.
- return String(source||'').replace(/"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g,
-  literal=>literal.includes(String.fromCharCode(36)+'{')?literal:'""');
+ return String(source||'')
+  .replace(/"""[\s\S]*?"""|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g,
+   literal=>literal.includes(String.fromCharCode(36)+'{')?literal:'""')
+  .replace(/\/\*.*?\*\//g,' ') // inline block comments
+  .replace(/\/\/.*$/,''); // trailing single-line comments
 }
 function analyze(files,config={}){
  const list=Array.isArray(files)?files:[],names=list.map(f=>String(f?.filename||''));
