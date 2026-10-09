@@ -24,7 +24,7 @@ test('refuse string/comment containing System.gc()',()=>{
 });
 test('reject stale SHA',()=>{
  const r=p.candidate({filename,content,findings:[f],sha});
- assert.equal(p.judge(r,{sha:'b'.repeat(40)}).status,'REJECT');
+ assert.equal(p.judge(r,{sha:'b'.repeat(40),source:content,findings:[f]}).status,'REJECT');
 });
 test('never auto merge even with all checks success',()=>{
  const r=p.candidate({filename,content,findings:[f],sha});
