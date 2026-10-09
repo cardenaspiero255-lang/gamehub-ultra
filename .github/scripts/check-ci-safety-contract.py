@@ -328,6 +328,42 @@ def require_concurrency(workflow: dict[str, Any], label: str) -> None:
         fail(f"Stale-run cancellation disabled: {label}")
 
 
+def require_sdk_fast_path(workflow: dict[str, Any], job_name: str) -> None:
+    """Fast path is trusted only if the preflight is mandatory and slow fallback intact."""
+    pre = require_step(
+        workflow, job_name, "Probe preinstalled Android SDK", shell="bash"
+    )
+    if pre.get("id") != "sdk_preflight":
+        fail(f"SDK preflight output id missing from {job_name}")
+    require_shell_command(
+        pre,
+        f"{job_name}/Probe preinstalled Android SDK",
+        ("bash", ".github/scripts/probe-preinstalled-android-sdk.sh"),
+    )
+    slow = require_step(
+        workflow, job_name, "Set up Android SDK",
+        allowed_if="steps.sdk_preflight.outputs.usable != 'true'",
+        uses_prefix="android-actions/setup-android@",
+    )
+    options = slow.get("with")
+    if not isinstance(options, dict) or options.get("cmdline-tools-version") != 15859902:
+        fail(f"Pinned SDK commandline-tools fallback removed in {job_name}")
+    if options.get("accept-android-sdk-licenses") is not True:
+        fail(f"SDK license fallback removed in {job_name}")
+    steps = job(workflow, job_name).get("steps")
+    if not isinstance(steps, list):
+        fail(f"SDK job missing steps {job_name}")
+    if steps.index(pre) >= steps.index(slow):
+        fail(f"SDK fallback runs before preflight: {job_name}")
+    if not any(
+        isinstance(candidate, dict) and
+        ("sdkmanager" in str(candidate.get("run", "")) or
+         "install-android-runtime-sdk.sh" in str(candidate.get("run", "")))
+        for candidate in steps[steps.index(slow) + 1:]
+    ):
+        fail(f"SDK install/recovery logic missing from {job_name}")
+
+
 def main() -> None:
     """Fail closed if packed CI drops any blocking validation."""
     android = load_workflow(ANDROID)
@@ -338,6 +374,16 @@ def main() -> None:
     require_concurrency(android, "Android workflow")
     require_concurrency(smoke, "research smoke workflow")
     require_concurrency(coverage, "coverage workflow")
+
+    # Every SDK-consuming job first checks the hosted-runner image, falling
+    # back to pinned setup-android when its tools or license are incomplete.
+    for job_name in (
+        "android-test-shard", "quality-lint", "release-bundle",
+        "device-validation-shard",
+    ):
+        require_sdk_fast_path(android, job_name)
+    for job_name in ("coverage-shard", "coverage"):
+        require_sdk_fast_path(coverage, job_name)
 
     android_jobs = android.get("jobs")
     if not isinstance(android_jobs, dict):
