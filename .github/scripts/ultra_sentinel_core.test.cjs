@@ -151,12 +151,12 @@ test('Codex P1: added triple-quote delimiter with unknown hunk state fails close
 test('added raw opening with known beginning of Kotlin file remains safely distinguishable',()=>{
  const patch=[
   '@@ -1,4 +1,6 @@',
-  'fun sample() {',
+  ' fun sample() {',
   '+val description = """',
   '+runBlocking { textOnly() }',
   '+"""',
   '+runBlocking { executable() }',
-  '}' 
+  ' }' 
  ].join('\n');
  const result=analyze([{filename:app+'MainActivity.kt',patch,changes:4}]);
  assert.equal(result.coverage.partial,false);
@@ -275,7 +275,7 @@ test('Codex P2: a mid-file hunk inside a Kotlin comment cannot create an actiona
  }
 });
 test('Codex P2: disconnected Kotlin hunk cannot inherit falsely trusted lexer context',()=>{
- const patch=['@@ -1,1 +1,1 @@','val count = 1',
+ const patch=['@@ -1,1 +1,1 @@',' val count = 1',
   '@@ -80,1 +80,2 @@',' val explanation = 1',
   '+runBlocking { example() }'].join('\n');
  const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
