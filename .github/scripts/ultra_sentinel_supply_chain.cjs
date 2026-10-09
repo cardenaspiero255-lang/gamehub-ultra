@@ -381,6 +381,9 @@ function hasSensitiveAliases(lines){
   const indent=row.match(/^\s*/)[0].length,kv=keyValue(row);
   if(scope!==null&&indent<=scope.indent)scope=null;
   const rootEvent=indent===0&&kv?.key==='on';
+  // Quoted "*name" is not a YAML alias, but is also not a supported Actions
+  // trigger. Keep the existing fail-closed contract for ambiguous on scalars.
+  if(rootEvent&&/^\s*["']\*[-A-Za-z0-9_]+["']\s*(?:#.*)?$/.test(kv.value))return true;
   const permissions=kv?.key==='permissions'&&inRealPermissionsMap(lines,i);
   const input=kv&&['uses','with','ref','repository'].includes(kv.key)&&
    stepRanges.some(s=>s.start<=i&&i<s.end);
