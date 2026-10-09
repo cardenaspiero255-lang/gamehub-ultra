@@ -172,3 +172,28 @@ test('privileged release body must not be interpolated into JavaScript',()=>{
  const result=inspectWorkflow(src);
  assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(result));
 });
+
+test('Codex P1: serialized issue event object in privileged shell is injection',()=>{
+ const expr='$'+'{{ toJSON(github.event.issue) }}';
+ const result=inspectWorkflow(workflow('issues',"echo '"+expr+"'"));
+ assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify(result));
+});
+test('Codex P1: serialized event objects cannot enter github-script',()=>{
+ for(const expr of ['$'+'{{ toJson(github.event.comment) }}','$'+'{{ toJSON(github.event) }}']){
+  const src=['on: issue_comment','jobs:','  audit:','    steps:',
+   '      - uses: actions/github-script@'+SHA,'        with:',
+   '          script: core.info("'+expr+'")'].join('\n');
+  const result=inspectWorkflow(src);
+  assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(result));
+ }
+});
+test('Codex P1: bracket notation for serialized issue and release objects fails closed',()=>{
+ for(const expr of ['$'+'{{ toJSON(github.event["issue"]) }}','$'+'{{ toJSON(github.event.release) }}']){
+  const result=inspectWorkflow(workflow('issues',"echo '"+expr+"'"));
+  assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(result));
+ }
+});
+test('Codex P1: serializing trusted numeric fields is not a code-injection finding',()=>{
+ const result=inspectWorkflow(workflow('issues',"echo '"+'$'+'{{ toJSON(github.event.issue.number) }}'+"'"));
+ assert.ok(!result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(result));
+});
