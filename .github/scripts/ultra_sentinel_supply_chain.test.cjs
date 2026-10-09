@@ -69,3 +69,37 @@ test('P1: quoted YAML flow ref aliases on privileged checkout fail closed',()=>{
   assert.equal(result.coverage.partial,true,'ref key '+key);
  }
 });
+
+test('Codex P1: bare dash YAML step detects unsafe checkout and missing action SHA',()=>{
+ const workflow=[
+  'on: pull_request_target','jobs:','  gate:','    steps:',
+  '      -','        uses: actions/checkout@v6',
+  '        with:','          ref: \${{ github.head_ref }}'
+ ].join('\n')+'\n';
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('UNPINNED_ACTION'));
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+ assert.equal(result.status,'REVIEW_REQUIRED');
+});
+test('bare dash step with SHA pinned checkout and trusted ref is benign',()=>{
+ const workflow=['on: pull_request_target','jobs:','  gate:','    steps:',
+  '      -','        uses: actions/checkout@'+SHA,
+  '        with:','          ref: main'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+});
+test('Codex P2: multiline flow permissions detect first writable key on shared line',()=>{
+ const workflow=['on: pull_request','permissions: {',
+  '  contents: write, issues: read','}',
+  'jobs:','  check:','    steps:','      - uses: actions/checkout@'+SHA].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_WRITE_TOKEN'));
+ assert.equal(result.status,'REVIEW_REQUIRED');
+});
+test('multiline flow read-only permissions and env maps do not produce false write findings',()=>{
+ const workflow=['on: pull_request','permissions: {','  contents: read, issues: read','}',
+  'jobs:','  check:','    env:','      contents: write, issues: read',
+  '    steps:','      - uses: actions/checkout@'+SHA].join('\n');
+ const result=scan(workflow);
+ assert.ok(!rules(result).includes('PRIVILEGED_WRITE_TOKEN'));
+});
