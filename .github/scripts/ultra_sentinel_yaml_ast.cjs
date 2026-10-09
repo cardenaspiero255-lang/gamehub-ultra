@@ -65,6 +65,8 @@ function parseWorkflow(source){
      (isMap(trigger)&&!Object.keys(trigger).length)||
      (typeof trigger==='string'&&!trigger.trim()))
    return {ok:false,reason:'EMPTY_TRIGGER'};
+  if(isMap(trigger)&&Array.isArray(trigger.schedule)&&!trigger.schedule.length)
+   return {ok:false,reason:'EMPTY_SCHEDULE'};
   return {ok:true,workflow:doc};
  }catch(e){
   // Do not emit raw attacker-controlled snippets or throw from CI gating.
@@ -316,18 +318,15 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(condition===undefined||condition===true)return;
   if(condition===false||typeof condition!=='string'){coverage.partial=true;return;}
   const trimmed=condition.trim();
-  // Generic event-conditioned jobs may be legitimate; security-critical
-  // workflow edits require independent human review at the policy layer.
-  // Detect constant-false or statically disabled expressions without
-  // interpreting untrusted expressions as executable JavaScript.
-  if(/^(?:false|0)$/i.test(trimmed)){coverage.partial=true;return;}
+  // GitHub evaluates both bare expressions and the explicit template form.
+  // These checks conservatively flag statically disabled or unverifiable
+  // constant comparisons without executing arbitrary expression code.
   const expression=/^\$\{\{([\s\S]*)\}\}$/.exec(trimmed);
-  if(expression){
-   const body=expression[1].trim();
-   const withoutLiterals=body.replace(/'(?:[^']|'')*'|"(?:[^"\\]|\\.)*"/g,'');
-   if(/\bfalse\b|!\s*true\b/i.test(withoutLiterals))
-    coverage.partial=true;
-  }
+  const body=expression?expression[1].trim():trimmed;
+  const withoutLiterals=body.replace(/'(?:[^']|'')*'|"(?:[^"\\]|\\.)*"/g,'');
+  if(/^(?:false|0)$/i.test(body)||/\bfalse\b|!\s*true\b/i.test(withoutLiterals)||
+     /\b\d+\s*(?:==|!=|<=|>=|<|>)\s*\d+\b/.test(withoutLiterals))
+   coverage.partial=true;
  };
  const sensitiveExpression=value=>typeof value==='string'&&
   value.includes(String.fromCharCode(36,123,123))&&
@@ -401,7 +400,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   // Critical Sentinel gates must execute on a real runner. For arbitrary
   // candidate workflows NO_RISK_PATTERN means pattern-only, not validation
   // of all required GitHub Actions schema fields.
-  if(/^\.github\/workflows\/ultra-sentinel-[A-Za-z0-9_.-]+\.ya?ml$/.test(path)&&
+  if((/^\.github\/workflows\/ultra-sentinel-[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
+       (typeof trustedRepository==='string'&&trustedRepository.length>0))&&
      job['runs-on']===undefined)coverage.partial=true;
   if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
