@@ -10,8 +10,8 @@ const run=(overrides={})=>({
  html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+RUN,
  ...overrides
 });
-const TRUST={'Android build':{id:131,path:'.github/workflows/android.yml'},
- 'Unit Test Coverage':{id:132,path:'.github/workflows/coverage.yml'}};
+const TRUST={'Android build':{id:131,path:'.github/workflows/android.yml',blobSha:E.TRUSTED_BLOBS['Android build']},
+ 'Unit Test Coverage':{id:132,path:'.github/workflows/coverage.yml',blobSha:E.TRUSTED_BLOBS['Unit Test Coverage']}};
 const issue=(id,release)=>({
  id:String(id),project:{slug:'gamehub-ultra'},level:'error',count:'1',
  firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
@@ -71,8 +71,14 @@ test('network client is read-only, bounded, fixed-host and fails closed on redir
    const res=new EventEmitter();res.statusCode=200;res.resume=()=>{};
    callback(res);
    process.nextTick(()=>{
-    const body=opts.path.endsWith('/android.yml')?{id:131,path:'.github/workflows/android.yml'}:
-    opts.path.endsWith('/coverage.yml')?{id:132,path:'.github/workflows/coverage.yml'}:
+    const blobPath='/contents/.github/workflows/';
+    const isBlob=opts.path.includes(blobPath);
+    const isAndroid=opts.path.includes('android.yml');
+    const name=isAndroid?'Android build':'Unit Test Coverage';
+    const filePath=isAndroid?'.github/workflows/android.yml':'.github/workflows/coverage.yml';
+    const body=isBlob?{type:'file',path:filePath,sha:E.TRUSTED_BLOBS[name]}:
+    opts.path.endsWith('/android.yml')?{id:131,path:filePath}:
+    opts.path.endsWith('/coverage.yml')?{id:132,path:filePath}:
     {total_count:1,workflow_runs:[run()]};
    res.emit('data',Buffer.from(JSON.stringify(body)));
     res.emit('end');

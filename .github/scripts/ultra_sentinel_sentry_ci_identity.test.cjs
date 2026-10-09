@@ -2,8 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const E=require('./ultra_sentinel_evidence.cjs');
 const SHA='a'.repeat(40),REPO='cardenaspiero255-lang/gamehub-ultra',ID=123456;
-const TRUST={'Android build':{id:131,path:'.github/workflows/android.yml'},
- 'Unit Test Coverage':{id:132,path:'.github/workflows/coverage.yml'}};
+const TRUST={'Android build':{id:131,path:'.github/workflows/android.yml',blobSha:E.TRUSTED_BLOBS['Android build']},
+ 'Unit Test Coverage':{id:132,path:'.github/workflows/coverage.yml',blobSha:E.TRUSTED_BLOBS['Unit Test Coverage']}};
 const run=(overrides={})=>({
  id:ID,name:'Android build',workflow_id:131,path:'.github/workflows/android.yml',
  head_sha:SHA,status:'completed',conclusion:'success',event:'push',head_branch:'main',

@@ -16,6 +16,10 @@ function apiPath(sha){
 }
 const TRUSTED_PATHS=Object.freeze({'Android build':'.github/workflows/android.yml',
  'Unit Test Coverage':'.github/workflows/coverage.yml'});
+const TRUSTED_BLOBS=Object.freeze({
+ 'Android build':'418287ceb11221f1879ee81cbef40c4b008c4f04',
+ 'Unit Test Coverage':'5ccf1c5de322a29c6e5b1d884ea659d310efa83c'
+});
 function validateRun(run,sha,trustedWorkflows){
  if(!run||typeof run!=='object'||!SHA.test(sha||'')||
   run.head_sha?.toLowerCase()!==sha.toLowerCase()||
@@ -24,6 +28,7 @@ function validateRun(run,sha,trustedWorkflows){
   !Number.isSafeInteger(trustedWorkflows[run.name]?.id)||
   trustedWorkflows[run.name].id<1||
   trustedWorkflows[run.name].path!==TRUSTED_PATHS[run.name]||
+  trustedWorkflows[run.name].blobSha!==TRUSTED_BLOBS[run.name]||
   run.workflow_id!==trustedWorkflows[run.name].id||
   run.path!==trustedWorkflows[run.name].path||
   !['push','workflow_dispatch'].includes(run.event)||
@@ -118,7 +123,13 @@ async function fetchVerifiedRuns({sha,token,request=https.request}){
   const response=await readGithubJSON({uri:api,token,request});
   if(!Number.isSafeInteger(response?.id)||response.id<1||response.path!==expected)
    throw Error('GitHub CI workflow identity unverified');
-  trustedWorkflows[name]={id:response.id,path:response.path};
+  const blob=await readGithubJSON({
+   uri:'/repos/'+REPO+'/contents/'+expected+'?ref='+sha.toLowerCase(),
+   token,request
+  });
+  if(blob?.type!=='file'||blob.sha!==TRUSTED_BLOBS[name]||blob.path!==expected)
+   throw Error('GitHub workflow content differs from trusted reviewed baseline');
+  trustedWorkflows[name]={id:response.id,path:response.path,blobSha:blob.sha};
  }
  const body=await readGithubJSON({uri,token,request});
  if(!Array.isArray(body?.workflow_runs)||!Number.isSafeInteger(body.total_count)||
@@ -127,4 +138,4 @@ async function fetchVerifiedRuns({sha,token,request=https.request}){
  return body.workflow_runs.map(x=>validateRun(x,sha,trustedWorkflows)).filter(Boolean);
 }
 
-module.exports={apiPath,validateRun,releaseSha,attachVerifiedReleases,assessRelease,fetchVerifiedRuns,REPO};
+module.exports={apiPath,validateRun,releaseSha,attachVerifiedReleases,assessRelease,fetchVerifiedRuns,REPO,TRUSTED_BLOBS};
