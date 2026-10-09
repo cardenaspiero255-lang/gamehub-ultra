@@ -101,6 +101,40 @@ function splitFlowEntries(content){
  chunks.push(content.slice(begin));
  return chunks;
 }
+
+// Collect bounded YAML flow maps without counting braces in comments or
+// quoted strings. An unclosed map is incomplete evidence, not a clean scan.
+function collectFlowMap(lines,start,end,firstValue){
+ let depth=0,opened=false,closed=false,quote=null,escaped=false;
+ const parts=[];
+ for(let i=start;i<Math.min(end,start+65);i++){
+  const src=i===start?String(firstValue):lines[i].trim();
+  let fragment='';
+  for(let j=0;j<src.length;j++){
+   const ch=src[j];
+   if(quote){
+    fragment+=ch;
+    if(quote==='"'&&escaped){escaped=false;continue;}
+    if(quote==='"'&&ch==='\\'){escaped=true;continue;}
+    if(ch===quote){
+     if(quote==="'"&&src[j+1]==="'"){fragment+=src[++j];continue;}
+     quote=null;
+    }
+    continue;
+   }
+   if(ch==='"'||ch==="'"){quote=ch;fragment+=ch;continue;}
+   if(ch==='#'&&(j===0||/\s/.test(src[j-1])))break;
+   if(ch==='{'){depth++;opened=true;}
+   else if(ch==='}'){depth--;if(depth<0)return {value:parts.join(' '),closed:false};}
+   fragment+=ch;
+   if(opened&&depth===0){closed=true;break;}
+  }
+  if(fragment.trim())parts.push(fragment.trim());
+  if(closed)break;
+ }
+ return {value:parts.join(' '),closed};
+}
+
 function dangerousCheckoutRefs(lines,useIndex){
  const {start,end}=stepRange(lines,useIndex);
  let withIndent=null;
@@ -224,24 +258,9 @@ function stepAction(lines,step){
  // nested-brace mapping before parsing; quotes protect embedded expressions.
  let flowText=original.trim();
  if(flowText.startsWith('{')){
-  let quote=null,escape=false,depth=0,closed=false,parts=[];
-  for(const character of lines.slice(start,end).map((line,k)=>
-    (k===0?line.replace(/^\s*-\s*/,''):line.trim())).join('\n')){
-   parts.push(character);
-   if(quote){
-    if(escape)escape=false;
-    else if(character==='\\')escape=true;
-    else if(character===quote)quote=null;
-    continue;
-   }
-   if(character==='"'||character==="'"){quote=character;continue;}
-   if(character==='{')depth++;
-   else if(character==='}'){
-    depth--;
-    if(depth===0){closed=true;break;}
-   }
-  }
-  flowText=closed?parts.join(''):'';
+  const mapping=collectFlowMap(lines,start,end,flowText);
+  if(!mapping.closed)return {action:null,actionLine:null,dangerous,incomplete:true};
+  flowText=mapping.value;
  }
  const flow=flowText.match(/^\{([\s\S]*)\}\s*(?:#.*)?$/);
  if(flow){
@@ -252,7 +271,12 @@ function stepAction(lines,step){
   }
   return {action,actionLine,dangerous};
  }
- const direct=itemIndent+2;
+ // A bare "-" permits any deeper indentation for the child's mapping.
+ const childIndent=original.trim()===''?lines.slice(start+1,end)
+  .find(ln=>ln.trim()&&!ln.trim().startsWith('#')&&
+   ln.match(/^\s*/)[0].length>itemIndent&&keyValue(ln))
+  ?.match(/^\s*/)[0].length:null;
+ const direct=childIndent??itemIndent+2;
  let withStart=null,withEnd=null,withValue=null,withLine=null;
  const first=keyValue(original);
  if(first?.key==='uses'){action=scalar(first.value);actionLine=start+1;}
@@ -354,6 +378,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   if(hasSensitiveAliases(lines))coverage.partial=true;
   for(const step of jobStepRanges(lines)){
    const details=stepAction(lines,step);
+   if(details.incomplete)coverage.partial=true;
    const action=details.action;
    if(!action)continue;
    if(!action.startsWith('./')&&!/^[-A-Za-z0-9_.\/]+@[a-f0-9]{40}$/i.test(action))
@@ -375,14 +400,13 @@ function reviewWorkflows({sha,expected,sources={}}={}){
     // several comma-delimited entries on the same physical line. Parse the
     // collected flow *entries*, not each physical line as a single scalar.
     const permissionValue=permissionKey.value.trim();
+    let flowClosed=false;
     if(permissionValue.startsWith('{')){
-     let flow=permissionValue,at=i;
-     while(!flow.includes('}')&&at+1<lines.length&&at-i<65){
-      flow+=' '+lines[++at].trim();
-     }
-     const close=flow.indexOf('}');
-     if(close<0)coverage.partial=true;
-     else if(splitFlowEntries(flow.slice(1,close)).some(part=>writableLine(part.trim())))
+     const mapping=collectFlowMap(lines,i,lines.length,permissionValue);
+     flowClosed=mapping.closed;
+     if(!flowClosed)coverage.partial=true;
+     else if(splitFlowEntries(mapping.value.slice(1,-1))
+      .some(part=>writableLine(part.trim())))
       flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
     }
     if(/^[>|][+-]?$/.test(permissionKey.value.trim())){
@@ -395,8 +419,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
      if(items.join(' ').trim()==='write-all')
       flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
     }
-    if(!permissionKey.value.trim()||
-       (permissionKey.value.trim().startsWith('{')&&!permissionKey.value.includes('}')))
+    if(!permissionValue||(permissionValue.startsWith('{')&&!flowClosed))
       permissionsIndent=indent;
    }else if(permissionsIndent!==null&&indent>permissionsIndent&&writableLine(line)){
     flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
