@@ -51,6 +51,10 @@ function parseWorkflow(source){
    return {ok:false,reason:'INVALID_TRIGGER_LIST'};
   if(isMap(trigger)&&Object.keys(trigger).some(k=>typeof k!=='string'))
    return {ok:false,reason:'INVALID_TRIGGER_MAP'};
+  if((Array.isArray(trigger)&&!trigger.length)||
+     (isMap(trigger)&&!Object.keys(trigger).length)||
+     (typeof trigger==='string'&&!trigger.trim()))
+   return {ok:false,reason:'EMPTY_TRIGGER'};
   return {ok:true,workflow:doc};
  }catch(e){
   // Do not emit raw attacker-controlled snippets or throw from CI gating.
@@ -210,7 +214,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  const checkRunner=(value,where)=>{
   if(value===undefined)return;
   const hosted=v=>typeof v==='string'&&
-   /^(?:ubuntu|windows|macos)-(?:latest|[0-9]{2}(?:\.[0-9]{2})?)$/.test(v);
+   /^(?:ubuntu-(?:latest|[0-9]{2}\.[0-9]{2})|windows-(?:latest|20[0-9]{2})|macos-(?:latest|[0-9]{2}))$/.test(v);
   if(hosted(value))return;
   if(typeof value==='string'&&value.includes(String.fromCharCode(36,123,123)))
    inspectDynamicControl(value,where);
@@ -299,13 +303,16 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(node['continue-on-error']!==undefined&&node['continue-on-error']!==false)
    coverage.partial=true;
   const condition=node.if;
-  if(condition===false||typeof condition==='string'&&
-    /^(?:false|0|\$\{\{\s*(?:false|0)\s*\}\})$/i.test(condition.trim()))
+  if(condition===undefined||condition===true)return;
+  // Any condition other than literal true can suppress this safety gate.
+  if(typeof condition!=='string'||
+     !/^(?:true|\$\{\{\s*true\s*\}\})$/i.test(condition.trim()))
    coverage.partial=true;
  };
  const sensitiveExpression=value=>typeof value==='string'&&
   value.includes(String.fromCharCode(36,123,123))&&
-  /\b(?:secrets\s*(?:\.|\[)|github\s*(?:\.\s*token\b|\[\s*['"]token['"]\s*\]))/i.test(value);
+  // Whole-object serialization carries secrets even without a .token suffix.
+  /\b(?:secrets\b|github\s*(?:\.\s*token\b|\[\s*['"]token['"]\s*\])|toJSON\s*\(\s*github\s*\))/i.test(value);
  const checkActionCredentialHandoff=(step,job)=>{
   // A pinned action may still be an unauthorized recipient of credentials.
   // Effective env includes workflow-, job- and step-level values.
