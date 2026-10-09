@@ -32,25 +32,29 @@ test('partial patch evidence or BLOCKER does not silently produce a green gate',
  assert.match(x,/core\.setFailed/);
 });
 
-test('Sentinel workflows pin Node 24 artifact uploads and GitHub API scripting',()=>{
- const workflows=[
-  'ultra-sentinel-independent-review.yml',
-  'ultra-sentinel-auto-review.yml',
-  'ultra-sentinel-sentry-incidents.yml',
-  'ultra-sentinel-regression-investigator.yml',
-  'ultra-sentinel-mutation.yml',
-  'ultra-sentinel-kotlin-mutation.yml'
- ];
+test('every Sentinel workflow uses Node 24 SHA-pinned upload and GitHub API actions',()=>{
+ // Discover the directory, rather than maintain an incomplete manual allowlist.
+ // Newly added workflows must automatically enter this safety check.
+ const directory=path.resolve(__dirname,'../workflows');
+ const workflows=fs.readdirSync(directory).filter(name=>
+  /^ultra-sentinel-.*\.yml$/.test(name)
+ );
+ assert.ok(workflows.length>=9,'expected at least nine Sentinel workflows');
+ const allowed={
+  'actions/upload-artifact':'b7c566a772e6b6bfb58ed0dc250532a479d7789f',
+  'actions/github-script':'ed597411d8f924073f98dfc5c65a23a2325f34cd'
+ };
+ const seen={'actions/upload-artifact':0,'actions/github-script':0};
  for(const name of workflows){
-  const content=fs.readFileSync(path.resolve(__dirname,'../workflows',name),'utf8');
-  assert.ok(content.includes('actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f'),
-   name+' must use audited Node 24 artifact action');
-  assert.ok(!content.includes('actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02'),
-   name+' must not use retired Node 20 artifact action');
+  const source=fs.readFileSync(path.join(directory,name),'utf8');
+  for(const [action,sha] of Object.entries(allowed)){
+   const uses=new RegExp('^\\s*(?:-\\s*)?uses:\\s*'+action.replace('/','\\/')+'@([^\\s#]+)','gm');
+   for(const match of source.matchAll(uses)){
+    seen[action]++;
+    assert.equal(match[1],sha,name+' must use SHA-pinned Node 24 '+action);
+   }
+  }
  }
- for(const name of workflows.slice(0,2)){
-  const content=fs.readFileSync(path.resolve(__dirname,'../workflows',name),'utf8');
-  assert.ok(content.includes('actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'),
-   name+' must use SHA-pinned Node 24 GitHub script');
- }
+ assert.ok(seen['actions/upload-artifact']>=9,'expected all nine Sentinel uploads');
+ assert.ok(seen['actions/github-script']>=4,'expected all four Sentinel API actions');
 });
