@@ -409,7 +409,8 @@ const remoteShellPattern=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|
 // Shell backslash escapes can split downloader command names (c\\url).
 // Normalize only for conservative risk detection; never execute this data.
 function matchesRemotePipeline(value){
- const normalized=String(value).replace(/\\(?=[A-Za-z])/g,'');
+ const normalized=String(value).replace(/\\(?=[A-Za-z])/g,'')
+  .replace(/(['"])([A-Za-z]*)\1/g,'$2');
  return remoteShellPattern.test(normalized);
 }
 function shellPipelinesInStep(lines,step){
