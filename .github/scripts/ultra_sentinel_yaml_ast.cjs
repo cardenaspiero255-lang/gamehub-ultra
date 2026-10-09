@@ -304,10 +304,20 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    coverage.partial=true;
   const condition=node.if;
   if(condition===undefined||condition===true)return;
-  // Any condition other than literal true can suppress this safety gate.
-  if(typeof condition!=='string'||
-     !/^(?:true|\$\{\{\s*true\s*\}\})$/i.test(condition.trim()))
-   coverage.partial=true;
+  if(condition===false||typeof condition!=='string'){coverage.partial=true;return;}
+  const trimmed=condition.trim();
+  // Generic event-conditioned jobs may be legitimate; security-critical
+  // workflow edits require independent human review at the policy layer.
+  // Detect constant-false or statically disabled expressions without
+  // interpreting untrusted expressions as executable JavaScript.
+  if(/^(?:false|0)$/i.test(trimmed)){coverage.partial=true;return;}
+  const expression=/^\$\{\{([\s\S]*)\}\}$/.exec(trimmed);
+  if(expression){
+   const body=expression[1].trim();
+   const withoutLiterals=body.replace(/'(?:[^']|'')*'|"(?:[^"\\]|\\.)*"/g,'');
+   if(/\bfalse\b|!\s*true\b/i.test(withoutLiterals))
+    coverage.partial=true;
+  }
  };
  const sensitiveExpression=value=>typeof value==='string'&&
   value.includes(String.fromCharCode(36,123,123))&&
