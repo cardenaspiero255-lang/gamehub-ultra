@@ -39,3 +39,8 @@ test('post-CI reports never equate a pending/unknown result with approval',()=>{
  assert.match(wf,/No automated merge or approval/);
  assert.match(wf,/if-no-files-found: error/);
 });
+
+test('ROOT: post-CI must not claim a green run when no current PR received attestation',()=>{
+ const src=yaml();
+ assert.match(src,/if\s*\(!report\.prs\.length\)core\.setFailed\(/);
+});
