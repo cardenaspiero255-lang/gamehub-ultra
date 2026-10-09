@@ -81,6 +81,31 @@ function buildSanitizedReport(raw,options={}){
    'CI provenance for a release must be independently verified before association']
  };
 }
+function renderActionsSummary(report){
+ const allowed=new Set(['INSUFFICIENT_EVIDENCE','WATCH','INVESTIGATE_ROLLBACK']);
+ const status=report?.assessment?.decision;
+ const count=report?.snapshotCount;
+ const counts=report?.summary?.counts;
+ if(!allowed.has(status)||!Number.isSafeInteger(count)||count<0||count>100||
+    !counts||typeof counts!=='object')
+  throw Error('Invalid sanitized Sentry report');
+ for(const k of ['fatal','error','warning','info','unknown'])
+  if(!Number.isSafeInteger(counts[k])||counts[k]<0||counts[k]>1e9)
+   throw Error('Invalid Sentry aggregate counts');
+ return [
+  '## Ultra Sentinel · Sentry (sanitized aggregates)',
+  '',
+  '- Window: 24h',
+  '- Valid deduplicated issues: '+count,
+  '- Aggregate observations: '+Object.keys(counts).sort().map(k=>k+': '+counts[k]).join(', '),
+  '- Decision: '+status,
+  '- GitHub run attestation: '+(['COMPLETE','PARTIAL'].includes(report?.attestation?.status)?
+     report.attestation.status:'UNKNOWN'),
+  '',
+  'Incident metadata only; not a confirmed crash root cause.',
+  'No automatic rollback. No raw titles, audio, stack traces, personal data or secrets are exported.'
+ ].join('\n')+'\n';
+}
 async function main(env=process.env,clients={}){
  const org=env.SENTRY_ORG_SLUG,project=env.SENTRY_PROJECT_SLUG,token=env.SENTRY_AUTH_TOKEN;
  if(env.ULTRA_SENTINEL_INCIDENTS_CONSENT!=='true')throw Error('Incident monitoring requires explicit consent');
@@ -111,6 +136,8 @@ async function main(env=process.env,clients={}){
  );
  const destination=path.join(env.RUNNER_TEMP,'ultra-sentinel-incident-summary.json');
  fs.writeFileSync(destination,JSON.stringify(report,null,2)+'\n',{encoding:'utf8',mode:0o600,flag:'wx'});
+ if(env.GITHUB_STEP_SUMMARY&&path.isAbsolute(env.GITHUB_STEP_SUMMARY))
+  fs.appendFileSync(env.GITHUB_STEP_SUMMARY,renderActionsSummary(report),{encoding:'utf8'});
  console.log('Ultra Sentinel: '+report.snapshotCount+' sanitized issues assessed; decision='+report.assessment.decision);
  console.log('CI verification: '+report.attestation.status+'; unavailable lookups='+failedLookups);
  console.log('Privacy: raw Sentry issue content was not persisted.');
@@ -122,4 +149,4 @@ if(require.main===module){
   process.exitCode=1;
  });
 }
-module.exports={HOST,MAX_BODY,apiPath,fetchIssues,buildSanitizedReport,main};
+module.exports={HOST,MAX_BODY,apiPath,fetchIssues,buildSanitizedReport,renderActionsSummary,main};
