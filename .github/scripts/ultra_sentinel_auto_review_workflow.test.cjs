@@ -57,3 +57,9 @@ test('self tests remain mandatory and potential critical defects still fail the 
   assert.match(wf, /Engine HIGH\/BLOCKER must be reproduced and resolved before merge/);
   assert.match(wf, /No external provider approval is required/);
 });
+
+test('CI evidence collects bounded pages instead of silently ignoring 101st record',()=>{
+ const wf=workflow();assert.match(wf,/page=2/);
+ assert.match(wf,/total<=1000/);
+ assert.match(wf,/total_count!==total/);
+});
