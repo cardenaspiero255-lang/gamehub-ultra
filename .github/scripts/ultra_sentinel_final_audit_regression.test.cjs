@@ -75,7 +75,7 @@ test('Security RED: scripts with tainted eval tokens are a BLOCKER, not merely i
 });
 test('Security RED: post CI refuses stale SHA before calling setFailed on UNTRUSTED',()=>{
  const s=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-sss-post-ci.yml'),'utf8');
- assert.ok(s.indexOf('if(ci.status===\'UNTRUSTED\')core.setFailed')>s.indexOf('const {data: latest}=await github.rest.pulls.get'),s);
+ assert.ok(s.indexOf("if(ci.status!=='PASS')core.setFailed")>s.indexOf('const {data: latest}=await github.rest.pulls.get'),s);
 });
 test('Security RED: all review paths share privileged events',()=>{
  const s=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_supply_chain.cjs'),'utf8');
