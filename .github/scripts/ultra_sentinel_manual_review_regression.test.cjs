@@ -130,3 +130,9 @@ for(const runner of ['windows-2022','windows-2025','ubuntu-24.04','macos-15']){
   assert.equal(inspectWorkflow(w).status,'NO_RISK_PATTERN');
  });
 }
+
+test('Root hardening: executable job missing runs-on must never pass structural review',()=>{
+ const src=['on: workflow_dispatch','permissions: read-all','jobs:',
+  '  audit:','    steps:','      - run: echo safe'].join('\n');
+ assert.equal(inspectWorkflow(src).status,'INCOMPLETE');
+});
