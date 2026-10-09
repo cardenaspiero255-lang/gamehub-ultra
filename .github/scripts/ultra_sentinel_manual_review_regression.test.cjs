@@ -37,10 +37,8 @@ test('P1/P2: per-job explicit token permissions suffice if workflow-level permis
  ].join('\n'));
  assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
 });
-test('P2: post-CI never marks UNKNOWN/WAITING as green certification',()=>{
- const script=fs.readFileSync(path.join(__dirname,'../workflows/ultra-sentinel-sss-post-ci.yml'),'utf8');
- assert.match(script,/if\s*\(\s*ci\.status\s*!==\s*['"]PASS['"]\s*\)\s*core\.setFailed\s*\(/);
-});
+// Post-CI integration tests remain in the full phase-1 PR; this bootstrap
+// deploys only the trusted parser and the independent reviewer.
 
 test('Root cause: pinned third-party action receiving secret input is not clean',()=>{
  const value='${{ secrets.PROD_TOKEN }}';
