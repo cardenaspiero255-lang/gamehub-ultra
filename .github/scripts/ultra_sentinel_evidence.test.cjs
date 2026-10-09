@@ -4,7 +4,7 @@ const E=require('./ultra_sentinel_evidence.cjs');
 const SHA='a'.repeat(40),OTHER='b'.repeat(40),RUN=123456789;
 const run=(overrides={})=>({
  id:RUN,head_sha:SHA,status:'completed',conclusion:'success',
- name:'Android build',event:'push',head_branch:'main',run_attempt:1,
+ name:'Android build',event:'push',head_branch:'main',run_number:7,run_attempt:1,
  workflow_id:131,path:'.github/workflows/android.yml',
  repository:{full_name:'cardenaspiero255-lang/gamehub-ultra'},
  html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+RUN,
