@@ -81,3 +81,27 @@ test('Uninspected local reusable workflow is never considered verified',()=>{
  '  audit:','    uses: ./.github/workflows/local.yml'].join('\n');
  assert.notEqual(inspectWorkflow(src).status,'NO_RISK_PATTERN');
 });
+
+
+for(const condition of [
+ 'false && true','true && false','1 == 2',
+ 'github.event_name == "push" && false','${{ 1 != 1 }}'
+]){
+ test('Never certify a statically suppressible job: '+condition,()=>{
+  const src=['on: workflow_dispatch','permissions: read-all','jobs:',
+  '  audit:','    runs-on: ubuntu-latest','    if: '+condition,
+  '    steps:','      - run: echo safe'].join('\n');
+  assert.equal(inspectWorkflow(src).status,'INCOMPLETE',condition);
+ });
+}
+test('Explicitly empty schedule cannot be certified as executable workflow',()=>{
+ const src=['on: {schedule: []}','permissions: read-all','jobs:',
+ '  audit:','    runs-on: ubuntu-latest','    steps:','      - run: echo safe'].join('\n');
+ assert.equal(inspectWorkflow(src).status,'INCOMPLETE');
+});
+test('Production attestation rejects jobs without runners across all workflow names',()=>{
+ const src=['on: push','permissions: read-all','jobs:','  audit:',
+ '    steps:','      - run: echo safe'].join('\n');
+ assert.equal(inspectWorkflow(src,{path:'.github/workflows/new-gate.yml',
+  trustedRepository:'cardenaspiero255-lang/gamehub-ultra'}).status,'INCOMPLETE');
+});
