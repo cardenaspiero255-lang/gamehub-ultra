@@ -158,32 +158,50 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      if(!action||!PINNED.test(action[1]))emit('UNPINNED_ACTION','HIGH',where);
     }
     if(privileged&&/^actions\/checkout@/i.test(step.uses)){
-     if(step.with!==undefined&&!isMap(step.with))coverage.partial=true;
-     else if(isMap(step.with)){
-      if((step.with.ref!==undefined&&typeof step.with.ref!=='string')||
-         (step.with.repository!==undefined&&typeof step.with.repository!=='string')){
+     // Actions runner exposes every input as INPUT_<UPPERCASE_NAME>.
+     // YAML preserves case, so Ref/ref and Repository/repository must share
+     // the same effective slot; reject ambiguity or non-ASCII key tricks.
+     const inputs=Object.create(null);
+     let invalidInputs=step.with!==undefined&&!isMap(step.with);
+     if(!invalidInputs&&isMap(step.with)){
+      for(const [key,value] of Object.entries(step.with)){
+       const k=key.toLowerCase();
+       if(!/^[A-Za-z0-9_-]+$/.test(key)||
+          Object.prototype.hasOwnProperty.call(inputs,k)){
+        invalidInputs=true;break;
+       }
+       inputs[k]=value;
+      }
+     }
+     if(invalidInputs)coverage.partial=true;
+     else{
+      const server=inputs['github-server-url'];
+      if(server!==undefined){
+       if(typeof server!=='string')coverage.partial=true;
+       else if(/^\$\{\{\s*github\.server_url\s*\}\}$/.test(server.trim())||
+               /^https:\/\/github\.com\/?$/.test(server.trim())){
+        // Trusted GitHub instance, no attacker-controlled alternate origin.
+       }else if(server.includes('$'+'{{'))coverage.partial=true;
+       else emit('PRIVILEGED_ALTERNATE_GITHUB_SERVER','BLOCKER',where);
+      }
+      if((inputs.ref!==undefined&&typeof inputs.ref!=='string')||
+         (inputs.repository!==undefined&&typeof inputs.repository!=='string')){
        coverage.partial=true;
-      }else if(unsafePrRef(step.with.ref)||unsafePrRef(step.with.repository)){
-       // A fixed ref in a PR-controlled fork is STILL untrusted code.
+      }else if(unsafePrRef(inputs.ref)||unsafePrRef(inputs.repository)){
        emit('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',where);
-      }else if(unknownCheckoutExpression(step.with.ref,'ref')||
-                unknownCheckoutExpression(step.with.repository,'repository')){
+      }else if(unknownCheckoutExpression(inputs.ref,'ref')||
+                unknownCheckoutExpression(inputs.repository,'repository')){
        coverage.partial=true;
-      }else if(typeof step.with.repository==='string'){
-       // In a privileged job, a checkout from another repository using a
-       // mutable ref can execute third-party code with privileged context.
-       // The caller must supply the immutable target repository identity.
-       const repository=step.with.repository.trim();
+      }else if(typeof inputs.repository==='string'){
+       const repository=inputs.repository.trim();
        const trusted=typeof trustedRepository==='string'&&
          /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trustedRepository);
-       // GitHub's exact github.repository expression is base-repository
-       // scoped and cannot select an attacker-controlled fork.
        if(/^\$\{\{\s*github\.repository\s*\}\}$/.test(repository)){
-        // No unknown identity or remote mutable code: trusted repository.
+        // The exact GitHub-provided base repository identity is trusted.
        }else if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!trusted){
         coverage.partial=true;
        }else if(repository.toLowerCase()!==trustedRepository.toLowerCase()&&
-                !PINNED.test(step.with.ref||'')){
+                !PINNED.test(inputs.ref||'')){
         emit('PRIVILEGED_EXTERNAL_MUTABLE_CHECKOUT','BLOCKER',where);
        }
       }
