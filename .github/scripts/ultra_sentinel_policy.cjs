@@ -49,4 +49,29 @@ function evaluateProtectedChanges(files,{expectedCount}={}){
  return {status:removed.length?'BLOCKED':modified.length?'REVIEW_REQUIRED':'OK',
    removed,modified,partial:false};
 }
-module.exports={evaluateProtectedChanges,PROTECTED_FILES};
+
+/* Reviews are read-only GitHub API records fetched by a workflow checked out
+ * from trusted main. A candidate PR cannot provide its own review claims.
+ * This is an evidence prerequisite, not a substitute for branch rulesets.
+ */
+function hasIndependentHumanApproval(reviews,{sha,author}={}){
+ if(!Array.isArray(reviews)||!/^[a-f0-9]{40}$/i.test(sha||'')||
+  typeof author!=='string'||!author.trim())return false;
+ const latest=new Map();
+ for(const review of reviews){
+  const user=review?.user;
+  if(!user||user.type!=='User'||typeof user.login!=='string'||
+   user.login.toLowerCase()===author.toLowerCase()||
+   !['OWNER','MEMBER','COLLABORATOR'].includes(review.author_association)||
+   !['APPROVED','CHANGES_REQUESTED','DISMISSED'].includes(review.state)||
+   !Number.isSafeInteger(review.id)||review.id<=0)continue;
+  const login=user.login.toLowerCase(),prev=latest.get(login);
+  if(!prev||review.id>prev.id)latest.set(login,review);
+ }
+ const current=[...latest.values()];
+ // Any outstanding request for changes invalidates prior approvals.
+ if(current.some(review=>review.state==='CHANGES_REQUESTED'))return false;
+ return current.some(review=>review.state==='APPROVED'&&
+  typeof review.commit_id==='string'&&review.commit_id.toLowerCase()===sha.toLowerCase());
+}
+module.exports={evaluateProtectedChanges,PROTECTED_FILES,hasIndependentHumanApproval};
