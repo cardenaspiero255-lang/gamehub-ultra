@@ -3,6 +3,8 @@ package com.cardenaspiero255.gamehubultra.ui.components
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
+import androidx.test.platform.app.InstrumentationRegistry
+import com.cardenaspiero255.gamehubultra.R
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -23,6 +25,7 @@ class SentinelStatusCardCoverageTest {
 
     @Test
     fun readOnlySentinelPanelExplainsEvidenceAndLinksToTrustedGithub() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val visited = mutableListOf<String>()
         val handler = object : UriHandler {
             override fun openUri(uri: String) {
@@ -35,9 +38,9 @@ class SentinelStatusCardCoverageTest {
             }
         }
         composeRule.onNodeWithTag("sentinel_status_panel").assertExists()
-        composeRule.onNodeWithText("Ultra Sentinel").assertExists()
-        composeRule.onNodeWithText("Estado de CI: consultar GitHub").assertExists()
-        composeRule.onNodeWithText("Ver revisiones en GitHub").performClick()
+        composeRule.onNodeWithText(context.getString(R.string.sentinel_card_title)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.sentinel_card_ci_status)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.sentinel_card_open_reviews)).performClick()
         composeRule.waitForIdle()
         assertEquals(
             listOf("https://github.com/cardenaspiero255-lang/gamehub-ultra/actions"),
