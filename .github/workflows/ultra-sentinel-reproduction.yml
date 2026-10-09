@@ -24,7 +24,7 @@ jobs:
             .github/scripts
           persist-credentials: false
       - name: Prepare sanitized reproducibility manifest
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # pinned v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -54,7 +54,7 @@ jobs:
                 '. Metadata only; download manifest for safe rerun instructions.')
               .write();
       - name: Upload metadata manifest
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 Node 24
         with:
           name: sentinel-reproduction-manifest
           path: ${{ runner.temp }}/sentinel-repro/manifest.json

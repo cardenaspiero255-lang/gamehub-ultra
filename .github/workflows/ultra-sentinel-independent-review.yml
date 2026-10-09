@@ -1,0 +1,79 @@
+name: Ultra Sentinel - Independent Read-only Review
+# A review on the PR merge event using ONLY the trusted engine from main.
+# No PR source is executed; no secrets or GitHub comment write permissions.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: sentinel-independent-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  read-only-review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Use trusted main Sentinel engine rather than PR source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+      - name: Analyze the immutable PR diff and save local reports
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const {analyze,markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
+            const {buildReport} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const number = Number(context.payload.pull_request?.number);
+            if (!Number.isSafeInteger(number) || number < 1) {
+              core.setFailed("PR number invalid"); return;
+            }
+            const {data: pr} = await github.rest.pulls.get({owner,repo,pull_number:number});
+            if (pr.state !== "open" || pr.head.repo?.full_name !== owner+"/"+repo) {
+              core.setFailed("Only open same-repo PRs can be scanned"); return;
+            }
+            const files = await github.paginate(github.rest.pulls.listFiles,
+              {owner,repo,pull_number:number,per_page:100});
+            const result = analyze(files,{sha:pr.head.sha});
+            if (files.length !== pr.changed_files) {
+              result.coverage.partial = true;
+              result.verdict = "INCOMPLETE";
+              result.warnings.push("GitHub did not supply every changed file.");
+            }
+            const {data: after} = await github.rest.pulls.get({owner,repo,pull_number:number});
+            if (after.head.sha !== pr.head.sha) {
+              core.setFailed("PR head SHA changed during review"); return;
+            }
+            const report = buildReport({pr:number,sha:pr.head.sha,analysis:result});
+            const dest = path.join(process.env.RUNNER_TEMP,"sentinel-independent");
+            fs.mkdirSync(dest,{recursive:true});
+            fs.writeFileSync(path.join(dest,"report.json"),JSON.stringify(report,null,2)+"\n",
+              {encoding:"utf8",mode:0o600});
+            fs.writeFileSync(path.join(dest,"summary.md"),markdown(result)+"\n",
+              {encoding:"utf8",mode:0o600});
+            await core.summary.addHeading("Ultra Sentinel · Independent Read-only Review")
+              .addRaw(markdown(result)).write();
+            if (result.coverage.partial) core.setFailed("Incomplete changed-file evidence; manual review required.");
+            if (result.findings.some(f => f.severity === "BLOCKER"))
+              core.setFailed("Potential BLOCKER; reproduce and verify before merging.");
+      - name: Preserve immutable SHA-pinned report as artifact
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 Node 24
+        with:
+          name: ultra-sentinel-independent-pr-${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/sentinel-independent/
+          if-no-files-found: error
+          retention-days: 7

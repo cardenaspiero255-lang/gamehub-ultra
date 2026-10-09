@@ -20,7 +20,7 @@ function candidate({filename,content,sha,findings}){
  const matches=(Array.isArray(findings)?findings:[]).filter(f=>f.rule==='FORCED_GC'&&f.path===filename&&Number.isSafeInteger(f.line));
  for(const f of matches){
   const idx=f.line-1;
-  if(idx<0||idx>=lines.length||!/^([ \t]*)System\.gc\(\);?[ \t]*$/.test(lines[idx]))continue;
+  if(idx<0||idx>=lines.length||!/^([ \t]*)(?:System\.gc\(\)|Runtime\.getRuntime\(\)\.gc\(\));?[ \t]*$/.test(lines[idx]))continue;
   if(lines.length<3)continue;
   const start=Math.max(0,idx-2),end=Math.min(lines.length,idx+3);
   const before=lines.slice(start,end);
@@ -33,7 +33,7 @@ function candidate({filename,content,sha,findings}){
     ...patchLines].join('\n')+'\n';
   return {status:'DRAFT_PATCH',format:'unified-diff',sha:sha.toLowerCase(),
    filename,rule:f.rule,linesChanged:1,patch:unified,
-   expectation:'Eliminar únicamente una llamada aislada a System.gc() y medir cambios de jank.',
+   expectation:'Eliminar únicamente una llamada aislada a GC forzado (System o Runtime) y medir cambios de jank.',
    test:'Compilar Kotlin; ejecutar pruebas de rendimiento y ArchitectureBoundaryGuardTest.',
    warning:'Borrador SIN aplicar. No se ha ejecutado git apply --check ni compilación.'};
  }

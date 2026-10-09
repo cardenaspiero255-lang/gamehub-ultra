@@ -60,33 +60,43 @@ jobs:
           [ "$GOOD" != "$BAD" ] || exit 1
           OUT="$RUNNER_TEMP/sentinel-bisect"
           mkdir -p "$OUT"
+          # Keep a copy of the tested classifier outside git: historical commits
+          # cannot replace or remove the trusted infrastructure-failure guard.
+          cp .github/scripts/ultra_sentinel_bisect_guard.cjs "$OUT/guard.cjs"
           cat > "$OUT/run-test.sh" <<'SCRIPT'
           #!/bin/sh
           set -eu
-          # A timeout (124) is not evidence that this revision is defective.
-          # Git bisect uses 125 for skipped/unreliable test results.
           rc=0
           if [ "$SUITE" = architecture ]; then
-            timeout 420 gradle --no-daemon :app:testDebugUnitTest --tests 'com.cardenaspiero255.gamehubultra.architecture.ArchitectureBoundaryGuardTest' || rc=$?
+            timeout 420 gradle --no-daemon :app:testDebugUnitTest --tests 'com.cardenaspiero255.gamehubultra.architecture.ArchitectureBoundaryGuardTest' > "$OUT/candidate.log" 2>&1 || rc=$?
           else
-            timeout 420 gradle --no-daemon :app:testDebugUnitTest || rc=$?
+            timeout 420 gradle --no-daemon :app:testDebugUnitTest > "$OUT/candidate.log" 2>&1 || rc=$?
           fi
-          if [ "$rc" -eq 124 ]; then exit 125; fi
-          exit "$rc"
+          # Classifies 429 / dependency / compiler / timeout as 125 (skip).
+          # Only a real JUnit task failure can mark a revision bad (exit 1).
+          node "$OUT/guard.cjs" "$rc" "$OUT/candidate.log"
           SCRIPT
           chmod +x "$OUT/run-test.sh"
-          export SUITE
-          # Git bisect assumes BAD is failing, so verify that assumption first.
+          export SUITE OUT
+          # First prove BAD fails because of a test, not unavailable Maven.
           set +e
           "$OUT/run-test.sh" > "$OUT/bad-endpoint.log" 2>&1
           bad_code=$?
           set -e
-          if [ "$bad_code" -eq 0 ]; then
-            echo "::error::Current main passes the selected suite; no verified bad endpoint to bisect."
+          if [ "$bad_code" -ne 1 ]; then
+            echo "::error::Current main is not a confirmed test regression; refusing bisect ($bad_code)."
             exit 1
           fi
-          if [ "$bad_code" -eq 125 ] || [ "$bad_code" -ge 126 ]; then
-            echo "::error::Current main cannot be classified: timeout or infrastructure error (exit $bad_code)."
+          # A known-good SHA must actually pass in the SAME isolated environment.
+          # A user-supplied SHA or historical green badge alone is not evidence.
+          git -c advice.detachedHead=false checkout --detach "$GOOD"
+          set +e
+          "$OUT/run-test.sh" > "$OUT/good-endpoint.log" 2>&1
+          good_code=$?
+          set -e
+          git -c advice.detachedHead=false checkout --detach "$BAD"
+          if [ "$good_code" -ne 0 ]; then
+            echo "::error::The proposed known-good SHA did not pass; refusing bisect ($good_code)."
             exit 1
           fi
           git bisect start "$BAD" "$GOOD"
@@ -101,7 +111,7 @@ jobs:
             echo "::error::Bisect failed to identify a verified regression. See bisect.log."
             exit 1
           fi
-          printf '{"good":"%s","bad":"%s","candidate":"%s","suite":"%s","verifiedInCI":false}\n' \
+          printf '{"good":"%s","bad":"%s","candidate":"%s","suite":"%s","verifiedInCI":true}\n' \
             "$GOOD" "$BAD" "$candidate" "$SUITE" > "$OUT/diagnosis.json"
           # A revert patch may have conflicts; in that case keep diagnosis only.
           if [ "$(git rev-list --parents -n1 "$candidate" | wc -w)" -eq 2 ]; then
@@ -115,7 +125,7 @@ jobs:
           fi
       - name: Upload diagnostic artifacts only
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 Node 24
         with:
           name: sentinel-bisect-investigation
           path: ${{ runner.temp }}/sentinel-bisect/

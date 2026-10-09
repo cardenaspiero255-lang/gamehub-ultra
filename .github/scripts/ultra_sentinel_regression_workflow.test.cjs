@@ -24,12 +24,13 @@ test('timeout skips a revision while genuine failing tests retain their exit sta
   assert.ok(match,'bisect script must be embedded');
   const script=path.join(dir,'run-test.sh');
   fs.writeFileSync(script,match[1].split('\n').map(x=>x.replace(/^          /,'')).join('\n')+'\n',{mode:0o755});
-  fs.writeFileSync(path.join(dir,'timeout'),'#!/bin/sh\nexit "$SIM_TIMEOUT_CODE"\n',{mode:0o755});
+  fs.copyFileSync(path.join(__dirname,'ultra_sentinel_bisect_guard.cjs'),path.join(dir,'guard.cjs'));
+  fs.writeFileSync(path.join(dir,'timeout'),"#!/bin/sh\nif [ \"$SIM_TIMEOUT_CODE\" -eq 1 ]; then\n  echo \"Execution failed for task ':app:testDebugUnitTest'.\"\n  echo '> There were failing tests.'\nfi\nexit \"$SIM_TIMEOUT_CODE\"\n",{mode:0o755});
   for(const suite of ['architecture','unit']){
-   for(const [input,expected] of [[0,0],[1,1],[2,2],[124,125]]){
+   for(const [input,expected] of [[0,0],[1,1],[2,125],[124,125]]){
     const processResult=cp.spawnSync('sh',[script],{
      env:{...process.env,PATH:dir+path.delimiter+process.env.PATH,
-      SIM_TIMEOUT_CODE:String(input),SUITE:suite},encoding:'utf8'});
+      SIM_TIMEOUT_CODE:String(input),SUITE:suite,OUT:dir},encoding:'utf8'});
     assert.equal(processResult.status,expected,
      'suite='+suite+' simulated='+input+' stderr='+processResult.stderr);
    }
@@ -39,8 +40,10 @@ test('timeout skips a revision while genuine failing tests retain their exit sta
 test('regression workflow tests BAD endpoint before beginning bisect',()=>{
  const text=wf();
  assert.match(text,/"\$OUT\/run-test\.sh" > "\$OUT\/bad-endpoint\.log"/);
- assert.match(text,/if \[ "\$bad_code" -eq 0 \]; then/);
- assert.match(text,/if \[ "\$bad_code" -eq 125 \] \|\| \[ "\$bad_code" -ge 126 \]; then/);
+ assert.match(text,/if \[ "\$bad_code" -ne 1 \]; then/);
+ assert.match(text,/if \[ "\$good_code" -ne 0 \]; then/);
  assert.ok(text.indexOf('bad-endpoint.log')<text.indexOf('git bisect start "$BAD" "$GOOD"'));
- assert.match(text,/::error::Current main passes the selected suite/);
+ assert.match(text,/::error::Current main is not a confirmed test regression/);
+ assert.ok(text.indexOf('good-endpoint.log')<text.indexOf('git bisect start "$BAD" "$GOOD"'));
+ assert.match(text,/ultra_sentinel_bisect_guard\.cjs/);
 });
