@@ -221,11 +221,12 @@ test('Codex P1 AST: external workflow pinned by 40-char SHA is accepted',()=>{
  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
  assert.equal(r.coverage.partial,false);
 });
-test('Codex P1 AST: local reusable workflow does not require 40-char remote SHA',()=>{
+test('Local reusable workflow does not need remote SHA but callee is unverified',()=>{
  const y=['on: push','jobs:', '  local:',
  '    uses: ./.github/workflows/build.yml'].join('\n');
  const r=inspectWorkflow(y);
- assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.ok(!r.findings.some(f=>f.rule==='UNPINNED_REUSABLE_WORKFLOW'),JSON.stringify(r));
 });
 test('Codex P1 AST: non-string job uses fails closed',()=>{
  const y=['on: push','jobs:', '  external:',
