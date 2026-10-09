@@ -72,7 +72,7 @@ jobs:
                   'Android build':{id:android.data.id,path:android.data.path},
                   'Unit Test Coverage':{id:coverage.data.id,path:coverage.data.path}
                 };
-                changedFiles=prFiles.map(f=>f.filename);
+                changedFiles=prFiles.map(f=>({filename:f.filename,status:f.status,previous_filename:f.previous_filename}));
                 changedFilesComplete=prFiles.length===pr.changed_files;
               }catch(error){
                 core.warning('Trusted CI workflow identity unavailable ('+(error.status||'API error')+'); no approval inferred.');
@@ -90,13 +90,13 @@ jobs:
               }
               const ci=attestCi({sha:pr.head.sha,repo:owner+'/'+repo,runs:ciRuns,apiComplete,
                 trustedWorkflows,changedFiles,changedFilesComplete});
-              if(ci.status==='UNTRUSTED')core.setFailed('PR changed protected CI definitions; refuse any successful attestation.');
               // A changing PR must not be certified using an older SHA.
               const {data: latest}=await github.rest.pulls.get({owner,repo,pull_number:n});
               if(latest.state!=='open'||latest.head.sha!==run.head_sha){
                 core.warning('PR changed during CI attestation; dropping stale evidence');continue;
               }
               report.prs.push({number:n,ci});
+              if(ci.status==='UNTRUSTED')core.setFailed('PR changed protected CI definitions; refuse any successful attestation.');
               if(ci.status==='FAILED')core.setFailed('Current PR SHA has a verified failing Android Build or Coverage run');
               if(ci.status==='WAITING'||ci.status==='UNKNOWN'||ci.status==='UNTRUSTED')
                 core.warning('CI still pending or unavailable; this is NOT a green approval.');
