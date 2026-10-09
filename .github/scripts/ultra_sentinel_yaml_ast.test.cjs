@@ -193,7 +193,7 @@ test('Codex P1 AST: dynamic fork repository with fixed commit must still BLOCK',
  assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
 });
 test('Codex P1 AST: normal literal repository and main ref remain safe',()=>{
- const y=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    steps:',
+ const y=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest','    steps:',
  '      - uses: actions/checkout@'+SHA,
  '        with:', '          repository: cardenaspiero255-lang/gamehub-ultra',
  '          ref: main'].join('\n');
