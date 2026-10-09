@@ -103,7 +103,8 @@ function yamlRootIndent(lines){
 }
 // Match AST's default-branch event model. The heuristic is a second
 // fail-closed layer, never a reason to bypass structural YAML findings.
-const privilegedEvent=/^(pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)$/;
+const PRIVILEGED_EVENTS=Object.freeze(["pull_request_target","workflow_run","issue_comment","issues","discussion","discussion_comment","pull_request_review","pull_request_review_comment","release","repository_dispatch","workflow_dispatch","check_run","check_suite","deployment","deployment_status","gollum","fork","watch","label","milestone","public"]);
+const privilegedEvent=new RegExp('^(?:'+PRIVILEGED_EVENTS.join('|')+')$');
 function privilegedTrigger(lines,audit={}){
  const rootIndent=yamlRootIndent(lines);
  let start=-1,rest='';
@@ -125,7 +126,7 @@ function privilegedTrigger(lines,audit={}){
     if(lines[j].trim()&&!lines[j].trim().startsWith('#'))parts.push(lines[j].trim());
    }
    const folded=parts.join(' ');
-   return /(?:^|[\s,])(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)(?:\s|$)/.test(folded);
+    return new RegExp('(?:^|[\\s,])(?:'+PRIVILEGED_EVENTS.join('|')+')(?:\\s|$)').test(folded);
   }
   // GitHub Actions accepts block-flow sequences and mappings:
   // on: [<newline> pull_request_target, <newline> push].
@@ -148,7 +149,7 @@ function privilegedTrigger(lines,audit={}){
   }
   const tokens=value.replace(/[\[\]{},]/g,' ').trim().split(/\s+/).map(scalar);
   if(tokens.some(x=>privilegedEvent.test(x.replace(/:$/,''))))return true;
-  return /(?:^|[\s,{])(?:"(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)"|'(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment)'|(?:pull_request_target|workflow_run|issue_comment|pull_request_review|pull_request_review_comment|discussion_comment))\s*:/.test(value);
+   return [...value.matchAll(/(?:^|[\s,{])["']?([a-z_]+)["']?\s*:/g)].some(m=>privilegedEvent.test(m[1]));
  }
  for(let i=start+1;i<lines.length;i++){
   if(lines[i].trim()&&lines[i].match(/^\s*/)[0].length<=rootIndent)break;
@@ -412,7 +413,8 @@ function matchesRemotePipeline(value){
  const normalized=String(value).replace(/\\(?=[A-Za-z])/g,'')
   .replace(/\x24\x27([A-Za-z]*)\x27/g,'$1')
   .replace(/(['"])([A-Za-z]*)\1/g,'$2');
- return remoteShellPattern.test(normalized);
+  return remoteShellPattern.test(normalized)||
+   /\b(?:bash|sh|zsh)\s*(?:<\(|-c\s*["']?\$\()\s*(?:curl|wget)\b/.test(normalized);
 }
 function shellPipelinesInStep(lines,step){
  const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
@@ -655,6 +657,8 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   if(hasUnknownStructuralYamlKeys(lines))coverage.partial=true;
   const privileged=privilegedTrigger(lines,audit);
   const steps=jobStepRanges(lines,audit);
+   // Unknown ANSI-C shell quoting in runnable job steps cannot certify clean.
+   if(steps.some(step=>lines.slice(step.start,step.end).some(line=>line.includes(String.fromCharCode(36,39)))))coverage.partial=true;
   if(audit.partial||hasSensitiveAliases(lines,steps))coverage.partial=true;
   for(const step of steps){
    for(const line of shellPipelinesInStep(lines,step))
