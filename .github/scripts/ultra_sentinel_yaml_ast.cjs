@@ -99,7 +99,8 @@ function pipelineCommands(v){
  // Shell concatenates adjacent quoted word fragments (c''url, c'u'rl).
  // This is a conservative classification canonicalization, not evaluation.
  const normalized=withoutEscaped.replace(/\\(?=[A-Za-z])/g,'')
-  .replace(/\
+  .replace(/\x24\x27([A-Za-z]*)\x27/g,'$1')
+  .replace(/(['"])([A-Za-z]*)\1/g,'$2');
  return normalized.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ').split(/\r?\n/);
 }
 function remotePipeline(v){
