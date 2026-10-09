@@ -1,0 +1,18 @@
+# Qodo GitHub App: disable all automatic PR and push commands.
+# This is a cost-control preference; removal of GitHub App access is the final safeguard.
+# Do not restore reviews without the owner's explicit permission.
+[github_app]
+pr_commands = []
+push_commands = []
+handle_push_trigger = false
+feedback_on_draft_pr = false
+
+[chat_agent]
+enabled = false
+
+[checks]
+enable_auto_checks_feedback = false
+
+[fixer_agent]
+enable = false
+enable_auto_fix = false
