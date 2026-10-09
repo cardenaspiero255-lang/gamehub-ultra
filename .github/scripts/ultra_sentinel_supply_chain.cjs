@@ -53,6 +53,12 @@ function stepRange(lines,useIndex){
  }
  return {start,end};
 }
+function isUnsafePrRef(input){
+ const value=scalar(input);
+ if(!value.startsWith('$'+'{{')||!value.endsWith('}}'))return false;
+ const expression=value.slice(3,-2).trim();
+ return /^(?:github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref)$/.test(expression);
+}
 function dangerousCheckoutRefs(lines,useIndex){
  const {end}=stepRange(lines,useIndex);
  let withIndent=null;
@@ -61,11 +67,29 @@ function dangerousCheckoutRefs(lines,useIndex){
   const line=lines[i],indent=line.match(/^\s*/)[0].length;
   const kv=keyValue(line);
   if(withIndent!==null&&line.trim()&&indent<=withIndent)withIndent=null;
-  if(kv?.key==='with'){withIndent=indent;continue;}
+  if(kv?.key==='with'){
+   withIndent=indent;
+   // YAML allows flow-style mappings (with: {ref: "expression"}).
+   // Treat only the checkout step's own mapping as a source reference.
+   const inline=String(kv.value||'').trim();
+   const mapped=inline.match(/^\{\s*(?:"ref"|'ref'|ref)\s*:\s*(.*?)\s*\}$/);
+   if(mapped&&isUnsafePrRef(mapped[1]))out.push(i+1);
+   continue;
+  }
   if(kv?.key==='ref'&&withIndent!==null&&indent>withIndent){
-   const ref=scalar(kv.value);
-   if(/^\$\{\{\s*(?:github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref)\s*\}\}$/.test(ref))
-    out.push(i+1);
+   let ref=String(kv.value||'').trim();
+   // Folded/literal YAML scalars: the expression may be on the next line.
+   // This is a conservative single-expression heuristic, not a YAML parser.
+   if(/^[>|][+-]?$/.test(ref)){
+    const parts=[];
+    for(let j=i+1;j<end;j++){
+     const row=lines[j],childIndent=row.match(/^\s*/)[0].length;
+     if(row.trim()&&childIndent<=indent)break;
+     if(row.trim()&&!row.trim().startsWith('#'))parts.push(row.trim());
+    }
+    ref=parts.join(' ');
+   }
+   if(isUnsafePrRef(ref))out.push(i+1);
   }
  }
  return out;
