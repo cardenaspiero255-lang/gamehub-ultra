@@ -109,6 +109,7 @@ function judge(proposal,options={}){
      original.linesChanged!==proposal.linesChanged)
    reasons.push('Parche no coincide exactamente con fuente y hallazgo verificados');
   if(!/^[a-f0-9]{40}$/.test(proposal.sha||''))reasons.push('SHA inválido');
+  if(!/^[a-f0-9]{40}$/.test(options.sha||''))reasons.push('Falta SHA esperado inmutable');
   if(options.sha&&proposal.sha!==options.sha)reasons.push('El PR cambió de SHA');
   if(proposal.patch&&/(?:GITHUB_TOKEN|PRIVATE_KEY|SENTRY_AUTH_TOKEN|github\.event\.pull_request\.head)/.test(proposal.patch))
     reasons.push('Posible material sensible');
