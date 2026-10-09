@@ -125,7 +125,9 @@ function analyze(files,config={}){
        lexState={};
        unknownHunkStart=entry.line!==1;
      }
-     if(android&&path.endsWith('.kt')&&unknownHunkStart&&!entry.added&&
+     // Both context and added delimiters can be closing delimiters if
+     // their opening is outside the diff. Never certify an unknown state.
+     if(android&&path.endsWith('.kt')&&unknownHunkStart&&
         /"""|\*\//.test(entry.text)){
        partial=true;
        warnings.push('Estado léxico Kotlin previo al hunk desconocido; revisar contexto completo: '+sanitize(path));
