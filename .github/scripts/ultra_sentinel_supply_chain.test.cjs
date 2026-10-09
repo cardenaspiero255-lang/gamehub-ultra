@@ -103,3 +103,49 @@ test('multiline flow read-only permissions and env maps do not produce false wri
  const result=scan(workflow);
  assert.ok(!rules(result).includes('PRIVILEGED_WRITE_TOKEN'));
 });
+
+test('Codex P1: bare dash child mapping supports nonstandard valid indentation',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+ '      -','          uses: actions/checkout@v6','          with:',
+ '              ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('UNPINNED_ACTION'));
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('bare dash child mapping with extra indentation stays safe for trusted checkout',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+ '      -','          uses: actions/checkout@'+SHA,'          with:',
+ '              ref: main'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+});
+test('Codex P1: flow steps ignore closing braces in YAML comments',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+ '      - { # } is a comment, not a closing map',
+ '          uses: actions/checkout@v6,',
+ '          with: {ref: "'+('$'+'{{ github.head_ref }}')+'"}',
+ '        }'].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('UNPINNED_ACTION'));
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('flow steps with incomplete maps fail closed, never appear clean',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+ '      - { # } fake close in comment','        uses: actions/checkout@'+SHA].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE');
+ assert.equal(result.coverage.partial,true);
+});
+test('Codex P2: flow permissions ignore comment braces before write scopes',()=>{
+ const workflow=['on: pull_request','permissions: { # } not the closing brace',
+ '  contents: write, issues: read','}', 'jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('commented braces in read-only permission flow do not invent writable scopes',()=>{
+ const workflow=['on: pull_request','permissions: { # } fake close',
+ '  contents: read, issues: read','}', 'jobs:','  scan:','    steps:','      - uses: actions/checkout@'+SHA].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+});
