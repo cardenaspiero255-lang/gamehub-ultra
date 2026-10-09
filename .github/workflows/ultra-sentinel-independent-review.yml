@@ -25,8 +25,13 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: |
-            .github/scripts
+            .github/scripts/
+            package.json
+            package-lock.json
+          sparse-checkout-cone-mode: false
           persist-credentials: false
+      - name: Install main-verified YAML parser dependency
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Analyze the immutable PR diff and save local reports
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
         with:
@@ -36,6 +41,8 @@ jobs:
             const path = require("node:path");
             const {analyze,markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
+            const {reviewWorkflowSources} = require(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"));
+            const {evaluateProtectedChanges} = require(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const number = Number(context.payload.pull_request?.number);
             if (!Number.isSafeInteger(number) || number < 1) {
@@ -48,6 +55,29 @@ jobs:
             const files = await github.paginate(github.rest.pulls.listFiles,
               {owner,repo,pull_number:number,per_page:100});
             const result = analyze(files,{sha:pr.head.sha});
+            const protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
+            if(protectedChanges.status!=='OK')
+              core.setFailed('Required security control deleted/renamed or incomplete PR file list.');
+            const expected=files.filter(f=>f.status!=='removed'&&
+              /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(f.filename||''))
+              .map(f=>f.filename);
+            const sources={};
+            for(const filename of expected.slice(0,25)){
+              try{
+                const {data:file}=await github.rest.repos.getContent({
+                  owner,repo,path:filename,ref:pr.head.sha
+                });
+                if(file.type==='file'&&file.encoding==='base64'&&file.size<=160000)
+                  sources[filename]=Buffer.from(file.content,'base64').toString('utf8');
+              }catch(error){
+                core.warning('Unable to read changed workflow source; structural gate fails closed.');
+              }
+            }
+            const structural=reviewWorkflowSources({expected,sources});
+            if(structural.coverage.partial)
+              core.setFailed('Unable to structurally parse every changed workflow.');
+            if(structural.findings.some(f=>f.severity==='BLOCKER'))
+              core.setFailed('Untrusted privileged checkout in parsed workflow.');
             if (files.length !== pr.changed_files) {
               result.coverage.partial = true;
               result.verdict = "INCOMPLETE";
@@ -58,6 +88,8 @@ jobs:
               core.setFailed("PR head SHA changed during review"); return;
             }
             const report = buildReport({pr:number,sha:pr.head.sha,analysis:result});
+            report.structuralYaml=structural;
+            report.protectedChanges=protectedChanges;
             const dest = path.join(process.env.RUNNER_TEMP,"sentinel-independent");
             fs.mkdirSync(dest,{recursive:true});
             fs.writeFileSync(path.join(dest,"report.json"),JSON.stringify(report,null,2)+"\n",
@@ -65,7 +97,7 @@ jobs:
             fs.writeFileSync(path.join(dest,"summary.md"),markdown(result)+"\n",
               {encoding:"utf8",mode:0o600});
             await core.summary.addHeading("Ultra Sentinel · Independent Read-only Review")
-              .addRaw(markdown(result)).write();
+              .addRaw(markdown(result)+'\nStructural YAML: '+structural.status).write();
             if (result.coverage.partial) core.setFailed("Incomplete changed-file evidence; manual review required.");
             if (result.findings.some(f => f.severity === "BLOCKER"))
               core.setFailed("Potential BLOCKER; reproduce and verify before merging.");
