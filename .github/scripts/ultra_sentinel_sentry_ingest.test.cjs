@@ -78,3 +78,62 @@ test('Sentry releases are attached only after live GitHub CI verification',()=>{
   {...run,workflow:'Unit Test Coverage',runId:RUN+1}]});
  assert.equal(complete.releaseHealth[SHA].status,'CI_VERIFIED');
 });
+
+test('GitHub CI outage preserves sanitized Sentry incidents but never claims verified releases',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ultra-sentinel-intake-'));
+ const release='a'.repeat(40),raw=[{
+  id:'23',project:{slug:'gamehub-ultra'},level:'error',count:'3',
+  firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
+  firstRelease:{version:'gamehub-ultra@'+release},title:'password=PRIVATE-RAW-TITLE'
+ }];
+ try{
+  const env={RUNNER_TEMP:dir,ULTRA_SENTINEL_INCIDENTS_CONSENT:'true',
+   SENTRY_ORG_SLUG:'demo',SENTRY_PROJECT_SLUG:'gamehub-ultra',
+   SENTRY_AUTH_TOKEN:'s'.repeat(20),GITHUB_TOKEN:'g'.repeat(20)};
+  const report=await main(env,{
+   fetchIssues:async()=>raw,
+   fetchVerifiedRuns:async()=>{throw Error('GitHub CI returned HTTP 403: SECRET-IN-ERROR')}
+  });
+  assert.equal(report.snapshotCount,1);
+  assert.equal(report.verifiedReleases.length,0);
+  assert.equal(report.attestation.status,'PARTIAL');
+  assert.equal(report.attestation.failedLookups,1);
+  assert.ok(report.cautions.some(x=>x.includes('unavailable')));
+  const exported=require('node:fs').readFileSync(path.join(dir,'ultra-sentinel-incident-summary.json'),'utf8');
+  assert.ok(!exported.includes('PRIVATE-RAW-TITLE'));
+  assert.ok(!exported.includes('SECRET-IN-ERROR'));
+  assert.ok(!exported.includes('s'.repeat(20)));
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
+
+test('partial GitHub CI outage retains only independently verified releases',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ultra-sentinel-partial-'));
+ const good='a'.repeat(40),bad='b'.repeat(40);
+ const raw=[good,bad].map((sha,i)=>({
+  id:String(i+1),project:{slug:'gamehub-ultra'},level:'error',count:'1',
+  firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
+  firstRelease:{version:'gamehub-ultra@'+sha}
+ }));
+ try{
+  const env={RUNNER_TEMP:dir,ULTRA_SENTINEL_INCIDENTS_CONSENT:'true',
+   SENTRY_ORG_SLUG:'demo',SENTRY_PROJECT_SLUG:'gamehub-ultra',
+   SENTRY_AUTH_TOKEN:'s'.repeat(20),GITHUB_TOKEN:'g'.repeat(20)};
+  const report=await main(env,{
+   fetchIssues:async()=>raw,
+   fetchVerifiedRuns:async({sha})=>{
+    if(sha===bad)throw Error('rate limited');
+    return ['Android build','Unit Test Coverage'].map((workflow,i)=>({
+     sha,workflow,runId:i+1,verification:'verified-github-api-run'
+    }));
+   }
+  });
+  assert.equal(report.verifiedReleases.length,1);
+  assert.equal(report.verifiedReleases[0].sha,good);
+  assert.equal(report.releaseHealth[good].status,'CI_VERIFIED');
+  assert.equal(report.releaseHealth[bad],undefined);
+  assert.equal(report.attestation.failedLookups,1);
+  assert.equal(report.attestation.status,'PARTIAL');
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
