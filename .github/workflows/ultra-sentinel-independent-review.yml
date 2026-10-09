@@ -25,8 +25,20 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: |
-            .github/scripts
+            .github/scripts/
+            package.json
+            package-lock.json
+          sparse-checkout-cone-mode: false
           persist-credentials: false
+      - name: Install parser only after it exists on trusted main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f package-lock.json && test -f .github/scripts/ultra_sentinel_yaml_ast.cjs; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          else
+            echo "::error::Trusted main structural parser is absent; independent security review will fail closed."
+          fi
       - name: Analyze the immutable PR diff and save local reports
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
         with:
@@ -36,6 +48,13 @@ jobs:
             const path = require("node:path");
             const {analyze,markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
+            const deployed=fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"))&&
+              fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"))&&
+              fs.existsSync(path.resolve("package-lock.json"));
+            const reviewWorkflowSources=deployed?
+              require(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs")).reviewWorkflowSources:null;
+            const evaluateProtectedChanges=deployed?
+              require(path.resolve(".github/scripts/ultra_sentinel_policy.cjs")).evaluateProtectedChanges:null;
             const owner = context.repo.owner, repo = context.repo.repo;
             const number = Number(context.payload.pull_request?.number);
             if (!Number.isSafeInteger(number) || number < 1) {
@@ -47,7 +66,71 @@ jobs:
             }
             const files = await github.paginate(github.rest.pulls.listFiles,
               {owner,repo,pull_number:number,per_page:100});
-            const result = analyze(files,{sha:pr.head.sha});
+            // Independently obtain bounded Kotlin full-file context at the
+            // same immutable PR SHA; never execute or checkout candidate code.
+            const evidenceFiles=files.map(item=>({...item}));
+            const kotlinTargets=evidenceFiles.filter(item=>
+              item.status!=="removed" &&
+              /^app\/src\/main\/[A-Za-z0-9_./-]+\.kt$/.test(item.filename||"") &&
+              !String(item.filename||"").includes("..")).slice(0,24);
+            for(let i=0;i<kotlinTargets.length;i+=4){
+              await Promise.all(kotlinTargets.slice(i,i+4).map(async item=>{
+                try{
+                  const {data: body}=await github.rest.repos.getContent({
+                    owner,repo,path:item.filename,ref:pr.head.sha
+                  });
+                  if(body.type!=="file"||body.encoding!=="base64"||
+                     !Number.isSafeInteger(body.size)||body.size>160000||
+                     typeof body.content!=="string")return;
+                  const bytes=Buffer.from(body.content,"base64");
+                  if(bytes.length===body.size&&bytes.length<=160000)
+                    item.fullSource=bytes.toString("utf8");
+                }catch(error){
+                  core.warning("Kotlin source context unavailable ("+
+                    (error.status||"API error")+"); unknown hunks remain INCOMPLETE.");
+                }
+              }));
+            }
+            const result = analyze(evidenceFiles,{sha:pr.head.sha});
+            let protectedChanges=null,structural=null;
+            if(deployed){
+              protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
+              if(protectedChanges.status==='BLOCKED'||protectedChanges.status==='INCOMPLETE')
+                core.setFailed('Protected control removed/renamed or incomplete PR file list.');
+              if(protectedChanges.status==='REVIEW_REQUIRED'){
+                let approved=false;
+                try{
+                  const reviews=await github.paginate(github.rest.pulls.listReviews,
+                    {owner,repo,pull_number:number,per_page:100});
+                  const hasIndependentHumanApproval=require(
+                    path.resolve('.github/scripts/ultra_sentinel_policy.cjs')).hasIndependentHumanApproval;
+                  approved=hasIndependentHumanApproval(reviews,{sha:pr.head.sha,author:pr.user.login});
+                }catch(error){core.warning('Trusted human approval unavailable: fail closed.');}
+                if(!approved)core.setFailed('Protected control change needs non-author human approval for current SHA.');
+              }
+              const expected=files.filter(f=>f.status!=='removed'&&
+                /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(f.filename||''))
+                .map(f=>f.filename);
+              const sources={};
+              for(const filename of expected.slice(0,25)){
+                try{
+                  const {data:file}=await github.rest.repos.getContent({
+                    owner,repo,path:filename,ref:pr.head.sha
+                  });
+                  if(file.type==='file'&&file.encoding==='base64'&&file.size<=160000)
+                    sources[filename]=Buffer.from(file.content,'base64').toString('utf8');
+                }catch(error){
+                  core.warning('Unable to read changed workflow source; structural gate fails closed.');
+                }
+              }
+              structural=reviewWorkflowSources({expected,sources,trustedRepository:owner+'/'+repo});
+              if(structural.coverage.partial)
+                core.setFailed('Unable to structurally parse every changed workflow.');
+              if(structural.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
+                core.setFailed('HIGH/BLOCKER structural workflow security finding requires repair before merge.');
+            }else{
+              core.setFailed('Trusted main structural parser not deployed; no independent AST attestation');
+            }
             if (files.length !== pr.changed_files) {
               result.coverage.partial = true;
               result.verdict = "INCOMPLETE";
@@ -58,6 +141,8 @@ jobs:
               core.setFailed("PR head SHA changed during review"); return;
             }
             const report = buildReport({pr:number,sha:pr.head.sha,analysis:result});
+            report.structuralYaml=structural;
+            report.protectedChanges=protectedChanges;
             const dest = path.join(process.env.RUNNER_TEMP,"sentinel-independent");
             fs.mkdirSync(dest,{recursive:true});
             fs.writeFileSync(path.join(dest,"report.json"),JSON.stringify(report,null,2)+"\n",
@@ -65,10 +150,10 @@ jobs:
             fs.writeFileSync(path.join(dest,"summary.md"),markdown(result)+"\n",
               {encoding:"utf8",mode:0o600});
             await core.summary.addHeading("Ultra Sentinel · Independent Read-only Review")
-              .addRaw(markdown(result)).write();
+              .addRaw(markdown(result)+'\nStructural YAML: '+(structural?.status||'NOT_DEPLOYED_ON_TRUSTED_MAIN')).write();
             if (result.coverage.partial) core.setFailed("Incomplete changed-file evidence; manual review required.");
-            if (result.findings.some(f => f.severity === "BLOCKER"))
-              core.setFailed("Potential BLOCKER; reproduce and verify before merging.");
+            if (result.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
+              core.setFailed('HIGH/BLOCKER finding; reproduce and verify before merging.');
       - name: Preserve immutable SHA-pinned report as artifact
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 Node 24
