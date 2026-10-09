@@ -55,3 +55,10 @@ test('parser treats shell and HTML in patch as inert text',()=>{
  assert.equal(entries.length,2);
  assert.equal(entries[0].text,'$(touch /tmp/unsafe)');
 });
+
+test('red team fixtures are not treated as live auto-merge permissions',()=>{
+ const mutation=file('.github/scripts/ultra_sentinel_mutation.cjs',"['orchestrator','automerge','autoMergeAllowed:false','autoMergeAllowed:true']");
+ assert.equal(scan([mutation],SHA).status,'ADVISORY');
+ const fixture=file('.github/scripts/ultra_sentinel_selfreview.test.cjs',"assert.equal(scan([file(src,'new Function(userPatch)')],SHA).status,'BLOCKED')");
+ assert.equal(scan([fixture],SHA).status,'ADVISORY');
+});
