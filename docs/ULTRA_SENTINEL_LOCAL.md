@@ -9,7 +9,7 @@ sh .github/scripts/install_sentinel_hook.sh
 ~~~
 
 Tras instalarlo, cada \`git commit\` ejecuta un escaneo **offline** del diff staged.
-Predeterminado: advierte. Modo bloqueante para candidatos BLOCKER:
+Predeterminado: advierte, incluso si Git, Node.js o la inspeccion local no estan disponibles; ejecutar CI. En modo estricto, esas fallas y los candidatos BLOCKER bloquean el commit. Para activarlo:
 \`SENTINEL_PRECOMMIT_STRICT=1 git commit -m "..." \`.
 
 **Límites**: este escaneo no usa AST Kotlin, no compila el APK y no puede prometer una

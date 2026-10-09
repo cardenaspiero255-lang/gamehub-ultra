@@ -83,3 +83,26 @@ test('YAML list syntax quotes and comments cannot bypass security rules',()=>{
  }
  assert.equal(scan([file(wf,'- uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # pinned')],SHA).status,'ADVISORY');
 });
+
+test('rejects nested action refs and every non-SHA remote uses reference',()=>{
+ for(const action of [
+  'github/codeql-action/init@v3','actions/checkout@dev',
+  'actions/checkout@release','actions/checkout@v4-beta',
+  'vendor/action/subpath@branch','actions/checkout','$'+'{{ inputs.action }}'
+ ]){
+  for(const line of ['uses: '+action,'- uses: "'+action+'" # mutable']){
+   const result=scan([file(wf,line)],SHA);
+   assert.equal(result.status,'BLOCKED',line);
+   assert.ok(result.findings.some(x=>x.rule==='MUTABLE_ACTION'),line);
+  }
+ }
+});
+test('accepts SHA-pinned remote action subpaths and local/docker uses',()=>{
+ for(const action of [
+  'actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803',
+  'github/codeql-action/init@d23441a48e516b6c34aea4fa41551a30e30af803',
+  './.github/actions/custom','docker://alpine:3.20'
+ ]){
+  assert.equal(scan([file(wf,'- uses: "'+action+'" # safe')],SHA).status,'ADVISORY',action);
+ }
+});

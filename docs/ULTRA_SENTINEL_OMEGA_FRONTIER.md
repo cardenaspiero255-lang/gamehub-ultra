@@ -52,7 +52,7 @@ workflow inconcluso, omitido indebidamente o asociado a otro SHA.
 
 - El workflow `.github/workflows/ultra-sentinel-self-review.yml` incluye dos evaluaciones separadas:
   - `pull_request`: pruebas del candidato en un runner con permisos de lectura, sin credenciales persistidas. **No es una revision independiente**.
-  - `pull_request_target`: despues de integrar el workflow en `main`, se comprueba el PR con el analizador estable de la rama predeterminada, sin ejecutar ni descargar codigo de la rama del PR.
+  - `pull_request_target`: despues de integrar el workflow en `main`, se comprueba el PR con el analizador estable de la rama predeterminada, sin hacer checkout ni ejecutar codigo de la rama del PR; el analizador descarga y analiza el diff del PR como datos no confiables.
 - El motor `.github/scripts/ultra_sentinel_selfreview.cjs` analiza exclusivamente datos del diff fijados a un SHA verificado antes y despues. Rechaza cambios inseguros de permisos, checkout de PR no confiable en contextos privilegiados, acciones nuevas no fijadas y nuevos permisos de auto-merge.
 - Las pruebas `.github/scripts/ultra_sentinel_selfreview.test.cjs` incluyen entradas adversariales. La bateria independiente de mutaciones de JavaScript continua siendo un control adicional.
 - La herramienta puede devolver `BLOCKED` o `ADVISORY`. `ADVISORY` **no significa aprobado**. Toda modificacion del propio gate requiere revision humana y controles de branch protection con checks requeridos.

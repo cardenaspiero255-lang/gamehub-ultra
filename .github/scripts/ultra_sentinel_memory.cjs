@@ -21,7 +21,7 @@ const KNOWN=[
   tests:['fork no accede a secrets','permisos mínimos por job']}
 ];
 function terms(value){
- const s=String(value||'').slice(0,MAX_QUERY).toLowerCase().replace(/([a-z])([A-Z])/g,'$1 $2');
+ const s=String(value||'').slice(0,MAX_QUERY).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
  return [...new Set((s.match(/[a-z0-9_]{3,}/g)||[]).filter(x=>!STOP.has(x)))];
 }
 function vetted(entry){

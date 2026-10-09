@@ -49,3 +49,9 @@ test('rejects unsupported memory type even when all provenance fields look valid
  assert.equal(m.vetted(impostor),false);
  assert.ok(!m.search({rule:impostor.rule},[impostor]).some(r=>r.id===impostor.id));
 });
+
+test('camelCase identifiers tokenize before lowercasing and retrieve playbook',()=>{
+ assert.deepEqual(m.terms('SpeechRecognizer'),['speech','recognizer']);
+ assert.deepEqual(m.terms('startListening'),['start','listening']);
+ assert.ok(m.search({text:'SpeechRecognizer'}).some(x=>x.id==='pattern-voice-retry'));
+});

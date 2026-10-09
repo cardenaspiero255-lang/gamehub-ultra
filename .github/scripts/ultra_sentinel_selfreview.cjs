@@ -58,8 +58,14 @@ function scan(files,sha){
     flag('UNTRUSTED_CHECKOUT','BLOCKER',file,a.line,'Unsafe head checkout may execute PR code');
    if(file.includes('/workflows/')&&/^(?:permissions:\s*write-all|contents:\s*write|actions:\s*write)$/i.test(line))
     flag('WORKFLOW_PRIVILEGE','BLOCKER',file,a.line,'Unexpected new workflow write permission');
-   if(file.includes('/workflows/')&&/^uses:\s*[\w.-]+\/[\w.-]+@(?:main|master|v\d+(?:\.\d+)*|latest)\s*$/i.test(line))
-    flag('MUTABLE_ACTION','BLOCKER',file,a.line,'New action is not pinned to a commit');
+   if(file.includes('/workflows/')&&/^uses:\s*/i.test(line)){
+    const action=line.replace(/^uses:\s*/i,'').trim();
+    // Disallow every unpinned/dynamic remote action, not only known tag names.
+    // Local repository and docker:// references are distinct action types.
+    if(!action.startsWith('./')&&!action.startsWith('docker://')&&
+      !/^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/i.test(action))
+      flag('MUTABLE_ACTION','BLOCKER',file,a.line,'New action is not pinned to a commit');
+   }
    if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\.runIn(?:This|New)Context\s*\()/.test(line))
     flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Dynamic execution added to reviewer');
    if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&!file.endsWith('ultra_sentinel_mutation.cjs')&&/\bauto(?:Merge|Commit)Allowed:\s*true\b/.test(line))
