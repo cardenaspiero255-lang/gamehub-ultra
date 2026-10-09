@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -83,10 +84,13 @@ def git(root: Path, *args: str) -> str:
 
 
 def mutation_command(root: Path) -> list[str]:
-    wrapper = root / "gradlew"
-    if not wrapper.is_file() or wrapper.is_symlink():
-        raise ValueError("Gradle wrapper missing or symlinked")
-    return ["bash", str(wrapper), "--no-daemon", "--console=plain", TASK, "--tests", TEST_CLASS]
+    # This repository intentionally uses the pinned Gradle 8.13 distribution installed
+    # by gradle/actions/setup-gradle, not ./gradlew (which is absent).
+    gradle = shutil.which("gradle")
+    if not gradle:
+        raise ValueError("Gradle 8.13 missing: install using gradle/actions/setup-gradle")
+    return [gradle, "--no-daemon", "--console=plain", "--max-workers=4",
+            TASK, "--tests", TEST_CLASS]
 
 
 def run_gradle(root: Path, timeout: int) -> dict:
