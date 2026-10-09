@@ -83,4 +83,8 @@ report artifacts. Compare actual outputs to expected verdicts.
 - Independent audit, adversarial/fuzz testing and provenance reviews support
   any future SSS rating.
 
+No fusionar el PR #169 sin Android Build, Coverage, Codecov externo (cuando aplique),
+pruebas Core, revisión independiente actualizada y revisión de seguridad del MISMO
+commit SHA, independientemente de si GitHub marca los checks como required.
+Una revisión bot pendiente o bloqueada por cuota no cuenta como aprobación.
 Do not merge PR #169 with confirmed errors or unfinished required checks.
