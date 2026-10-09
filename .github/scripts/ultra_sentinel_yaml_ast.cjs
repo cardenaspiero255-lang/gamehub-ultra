@@ -291,6 +291,40 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    else coverage.partial=true;
   }
  };
+ // Fail closed on explicitly bypassed review jobs or non-failing checks.
+ // Unknown dynamic conditions in protected workflows additionally require
+ // policy/maintainer review; constant false is always inconclusive here.
+ const checkGateControl=node=>{
+  if(!isMap(node))return;
+  if(node['continue-on-error']!==undefined&&node['continue-on-error']!==false)
+   coverage.partial=true;
+  const condition=node.if;
+  if(condition===false||typeof condition==='string'&&
+    /^(?:false|0|\$\{\{\s*(?:false|0)\s*\}\})$/i.test(condition.trim()))
+   coverage.partial=true;
+ };
+ const sensitiveExpression=value=>typeof value==='string'&&
+  /\$\{\{\s*(?:secrets\s*(?:\.|\[)|github\s*\.\s*token\b|github\s*\[\s*['"]token['"]\s*\])/i.test(value);
+ const checkActionCredentialHandoff=(step,job)=>{
+  // A pinned action may still be an unauthorized recipient of credentials.
+  // Effective env includes workflow-, job- and step-level values.
+  for(const env of [document.env,job.env,step.env]){
+   if(env===undefined)continue;
+   if(!isMap(env)){coverage.partial=true;continue;}
+   if(Object.values(env).some(sensitiveExpression))coverage.partial=true;
+  }
+  if(step.with===undefined)return;
+  if(!isMap(step.with)){coverage.partial=true;return;}
+  for(const [input,value] of Object.entries(step.with)){
+   if(!sensitiveExpression(value))continue;
+   const firstParty=/^actions\/(?:github-script|checkout)@[a-f0-9]{40}$/i.test(step.uses||'');
+   const standardToken=/^(?:github-token|token)$/i.test(input)&&
+     /^\$\{\{\s*github\.token\s*\}\}$/.test(value.trim());
+   // GitHub-owned pinned actions may use a scoped github.token in their
+   // documented token input. No blanket exception for secrets.* or vendor actions.
+   if(!(firstParty&&standardToken))coverage.partial=true;
+  }
+ };
  const checkDefaults=(defaults,where)=>{
   if(defaults===undefined)return;
   if(!isMap(defaults)||!isMap(defaults.run)){coverage.partial=true;return;}
@@ -302,6 +336,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  for(const [name,job] of Object.entries(document.jobs)){
   const where=path; // Deliberately no attempt to fabricate AST line locations.
   if(!isMap(job)){coverage.partial=true;continue;}
+  checkGateControl(job);
   checkPermissions(job.permissions,where);
   // The GITHUB_TOKEN permission inherited from repository defaults is not
   // verifiable from YAML. In privileged jobs it must not be certified clean.
@@ -338,6 +373,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
    if(!isMap(step)){coverage.partial=true;continue;}
+   checkGateControl(step);
+   if(step.uses!==undefined)checkActionCredentialHandoff(step,job);
    const stepTaint=new Set([...jobTaint,...collectEnvSources(step.env)]);
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
