@@ -16,6 +16,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 concurrency:
   group: ultra-sentinel-${{ github.event.pull_request.number || inputs.pr_number }}
@@ -42,7 +43,8 @@ jobs:
           node --check .github/scripts/ultra_sentinel_core.cjs
           node --check .github/scripts/ultra_sentinel_remediation.cjs
           node --check .github/scripts/ultra_sentinel_report.cjs
-          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
+          node --check .github/scripts/ultra_sentinel_frontier_integrity.cjs
+          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs .github/scripts/ultra_sentinel_frontier_integrity.test.cjs
           node .github/scripts/ultra_sentinel_benchmark.cjs
       - name: Analyze PR evidence and publish read-only reports
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
@@ -54,6 +56,7 @@ jobs:
             const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const {buildGraph} = require(path.resolve(".github/scripts/ultra_sentinel_causal.cjs"));
             const {annotate} = require(path.resolve(".github/scripts/ultra_sentinel_feedback.cjs"));
+            const {attestCi,summarizeDrafts} = require(path.resolve(".github/scripts/ultra_sentinel_frontier_integrity.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -70,6 +73,35 @@ jobs:
               evidence.verdict = "INCOMPLETE";
               evidence.warnings.push("GitHub omitted " + (pr.changed_files - files.length) + " files.");
             }
+            // Read-only CI attestation. Pending/unknown never becomes a fake approval.
+            // Do not fail an advisory reviewer merely because concurrent CI is not finished.
+            let ciRuns=[],apiComplete=false;
+            try{
+              const {data: response}=await github.rest.actions.listWorkflowRunsForRepo({
+                owner,repo,head_sha:pr.head.sha,per_page:100
+              });
+              ciRuns=Array.isArray(response.workflow_runs)?response.workflow_runs:[];
+              apiComplete=Number.isSafeInteger(response.total_count)&&
+                response.total_count===ciRuns.length;
+            }catch(error){
+              core.warning("CI evidence unavailable ("+(error.status||"API error")+"); never assuming success.");
+            }
+            const ci=attestCi({sha:pr.head.sha,repo:owner+"/"+repo,runs:ciRuns,apiComplete});
+
+            // Hunter -> Fixer -> Judge: proposals only, no execution or PR writes.
+            // Fetch at most 3 exact Kotlin files as untrusted DATA, never checkout PR head.
+            const sources={};
+            for(const risk of evidence.findings.filter(x=>x.rule==="FORCED_GC").slice(0,3)){
+              if(!/^app\/src\/main\/[A-Za-z0-9_/.-]+\.(?:kt|java)$/.test(risk.path)||risk.path.includes(".."))continue;
+              try{
+                const {data: source}=await github.rest.repos.getContent({
+                  owner,repo,path:risk.path,ref:pr.head.sha
+                });
+                if(source.type==="file"&&source.encoding==="base64"&&source.size<=240000)
+                  sources[risk.path]=Buffer.from(source.content,"base64").toString("utf8");
+              }catch(error){core.warning("Safe repair source unavailable ("+(error.status||"API error")+").");}
+            }
+            const repairs=summarizeDrafts({analysis:evidence,sources,sha:pr.head.sha});
             // Human summary plus compact machine report can be fetched directly by connected GitHub tools.
             // Limit both portions: GitHub comments have a finite size.
             // Slow-path only: look up bounded git history if a high-risk finding exists.
@@ -94,7 +126,12 @@ jobs:
             const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
             annotate(evidence,old,{pr:n,sha:pr.head.sha});
             const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
-            const body = markdown(evidence).slice(0,33000) + "\n\n" + serialize(report);
+            report.frontier={ci,repairs};
+            const summary="## Ultra Sentinel SSS · Verified CI & Safe Repair"+
+              "\n- Android Build + Coverage: "+ci.status+" ("+ci.counts.success+"/2 verified green)"+
+              "\n- Unknown/pending: "+ci.counts.pending+", failed: "+ci.counts.failed+
+              "\n- Repair proposals: "+repairs.generated+"; NEVER applied; human approval required.\n";
+            const body = markdown(evidence).slice(0,33000) + "\n\n" + summary + "\n" + serialize(report);
             if (body.length > 64000) {
               core.setFailed("Machine report exceeds safe comment size."); return;
             }
