@@ -28,7 +28,9 @@ test('uses full immutable SHA and always uploads a report without posting commen
 test('partial patch evidence or BLOCKER does not silently produce a green gate',()=>{
  const x=yaml();
  assert.match(x,/coverage\.partial\)/);
- assert.match(x,/severity === "BLOCKER"/);
+ assert.match(x,/result\.findings\.some\([^\n]*severity==='HIGH'/);
+ assert.match(x,/result\.findings\.some\([^\n]*severity==='BLOCKER'/);
+ assert.match(x,/structural\.findings\.some\([^\n]*severity==='HIGH'/);
  assert.match(x,/core\.setFailed/);
 });
 
