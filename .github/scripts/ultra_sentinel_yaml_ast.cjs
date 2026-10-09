@@ -104,6 +104,11 @@ function hasUntrustedEventInterpolation(script){
  if(typeof script!=='string')return false;
  return [...script.matchAll(/\$\{\{\s*([\s\S]{0,800}?)\s*\}\}/g)].some(m=>{
   const expr=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
+  // Serialization of an entire event object embeds attacker-authored text
+  // (title/body/etc.) even when the expression never spells those keys.
+  // Only known numeric IDs and the fixed event action string are scalar.
+  const jsonObjects=[...expr.matchAll(/\btoJSON\s*\(\s*(github\.event(?:\.[A-Za-z_][A-Za-z0-9_]*){0,8})\s*\)/gi)];
+  if(jsonObjects.some(m=>!/\.(?:number|id|action)$/.test(m[1])))return true;
   return /\bgithub\.head_ref\b|\b(?:inputs\.[A-Za-z_][A-Za-z0-9_]*|github\.event\.(?:(?:comment|review|review_comment|issue|discussion|pull_request|release|deployment)\.(?:title|body|name|description|head\.(?:ref|label))|workflow_run\.(?:head_branch|name)|head_commit\.message|inputs\.[A-Za-z_][A-Za-z0-9_]*|client_payload\.[A-Za-z_][A-Za-z0-9_]*))\b/.test(expr);
  });
 }
