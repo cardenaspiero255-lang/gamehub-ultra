@@ -9,7 +9,7 @@ const FINDING={rule:'FORCED_GC',path:FILE,line:2,severity:'MEDIUM'};
 const checks={'sentinel-core-tests':'success','android-build':'success',
  'unit-test-coverage':'success','architecture-boundary':'success'};
 function workflow(trigger,run){
- return ['on: '+trigger,'jobs:','  audit:','    runs-on: ubuntu-latest',
+ return ['on: '+trigger,'permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest',
   '    steps:','      - run: |','          '+run].join('\n');
 }
 test('P1 privileged issue_comment script rejects direct comment.body interpolation',()=>{
@@ -48,12 +48,12 @@ test('P1 Judge rejects different finding line even when proposal diff is syntact
 });
 
 test('P2 AST rejects a job with an empty steps sequence as incomplete evidence',()=>{
- const src=['on: pull_request_target','jobs:','  audit:','    steps: []'].join('\n');
+ const src=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    steps: []'].join('\n');
  const result=inspectWorkflow(src);
  assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
 });
 test('P2 AST rejects an empty run command as incomplete evidence',()=>{
- const src=['on: issue_comment','jobs:','  audit:','    steps:','      - run: ""'].join('\n');
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:','      - run: ""'].join('\n');
  const result=inspectWorkflow(src);
  assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
 });
@@ -64,7 +64,7 @@ test('P1 Judge requires explicit immutable expected SHA even when CI and source 
 });
 
 test('Codex P1 mixed-case checkout inputs cannot hide mutable foreign repository',()=>{
- const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
   '      - uses: actions/checkout@'+SHA,
   '        with:',
   '          Repository: attacker/evil',
@@ -73,7 +73,7 @@ test('Codex P1 mixed-case checkout inputs cannot hide mutable foreign repository
  assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_EXTERNAL_MUTABLE_CHECKOUT'&&f.severity==='BLOCKER'),JSON.stringify(r));
 });
 test('Codex P1 colliding case-insensitive checkout input names fail closed',()=>{
- const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+ const src=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    steps:',
   '      - uses: actions/checkout@'+SHA,
   '        with:',
   '          repository: '+REPO,
@@ -83,7 +83,7 @@ test('Codex P1 colliding case-insensitive checkout input names fail closed',()=>
  assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
 });
 test('Codex P1 alternate github-server-url cannot impersonate the trusted same-name repo',()=>{
- const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+ const src=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    steps:',
   '      - uses: actions/checkout@'+SHA,
   '        with:',
   '          repository: '+REPO,
@@ -93,7 +93,7 @@ test('Codex P1 alternate github-server-url cannot impersonate the trusted same-n
  assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_ALTERNATE_GITHUB_SERVER'&&f.severity==='BLOCKER'),JSON.stringify(r));
 });
 test('Codex P1 dynamic alternate GitHub server must fail closed',()=>{
- const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
   '      - uses: actions/checkout@'+SHA,
   '        with:',
   '          github-server-url: ${{ inputs.server }}'].join('\n');
@@ -102,7 +102,7 @@ test('Codex P1 dynamic alternate GitHub server must fail closed',()=>{
 });
 test('secure github-server-url variants cannot produce bogus blockers',()=>{
  for(const server of ['https://github.com','${{ github.server_url }}']){
-  const src=['on: issue_comment','jobs:','  audit:','    steps:',
+  const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
    '      - uses: actions/checkout@'+SHA,
    '        with:',
    '          repository: '+REPO,
@@ -128,7 +128,7 @@ test('Codex P1 default branch issue and discussion events block script injection
  }
 });
 test('Codex P1 pinned github-script interpolated comment body is unsafe JavaScript',()=>{
- const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
  '      - uses: actions/github-script@'+SHA,
  '        with:',
  '          script: |',
@@ -138,7 +138,7 @@ test('Codex P1 pinned github-script interpolated comment body is unsafe JavaScri
  assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify(result));
 });
 test('Codex P1 github-script Script key with mixed case must be treated as executable',()=>{
- const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+ const src=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    steps:',
  '      - uses: actions/github-script@'+SHA,
  '        with:',
  '          Script: console.log("\${{ github.event.pull_request.title }}")'].join('\n');
@@ -146,7 +146,7 @@ test('Codex P1 github-script Script key with mixed case must be treated as execu
  assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify(result));
 });
 test('Codex P1 github-script duplicate Script input case variants are INCOMPLETE',()=>{
- const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
  '      - uses: actions/github-script@'+SHA,
  '        with:',
  '          script: console.log("safe")',
@@ -155,7 +155,7 @@ test('Codex P1 github-script duplicate Script input case variants are INCOMPLETE
  assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
 });
 test('Codex P1 github-script safe env interpolation is not false-positive',()=>{
- const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
  '      - uses: actions/github-script@'+SHA,
  '        env:',
  '          MESSAGE: \${{ github.event.comment.body }}',
@@ -180,7 +180,7 @@ test('Codex P1: serialized issue event object in privileged shell is injection',
 });
 test('Codex P1: serialized event objects cannot enter github-script',()=>{
  for(const expr of ['$'+'{{ toJson(github.event.comment) }}','$'+'{{ toJSON(github.event) }}']){
-  const src=['on: issue_comment','jobs:','  audit:','    steps:',
+  const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
    '      - uses: actions/github-script@'+SHA,'        with:',
    '          script: core.info("'+expr+'")'].join('\n');
   const result=inspectWorkflow(src);
@@ -209,7 +209,7 @@ test('Codex P1: serialized wildcard issue fields cannot bypass privileged shell 
  }
 });
 test('Codex P1: wildcard event serialization inside github-script is unsafe',()=>{
- const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
   '      - uses: actions/github-script@'+SHA,
   '        with:',
   '          script: core.info("${{ toJSON(github.event.comment.*) }}")'].join('\n');
@@ -224,7 +224,7 @@ test('Codex P1: oversized expression cannot silently become NO_RISK_PATTERN in r
 });
 test('Codex P1: oversized github-script expressions fail closed rather than clean',()=>{
  const expr='${{ format("'+ 'x'.repeat(801) +'{0}", github.event.comment.body) }}';
- const src=['on: issue_comment','jobs:','  audit:','    steps:',
+ const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
   '      - uses: actions/github-script@'+SHA,
   '        with:',
   '          script: core.info("'+expr+'")'].join('\n');
