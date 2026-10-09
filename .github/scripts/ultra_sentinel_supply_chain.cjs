@@ -62,7 +62,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
       flag('UNPINNED_ACTION','HIGH',name,i+1);
    }
    if(/^\s*permissions:\s*(?:["']?write-all["']?|[{][^}]*\b[a-z-]+\s*:\s*["']?write["']?[^}]*[}])\s*(?:#.*)?$/.test(line)||
-      /^\s*(?:actions|attestations|checks|contents|deployments|discussions|id-token|issues|models|packages|pages|pull-requests|security-events|statuses):\s*["']?write["']?\s*(?:#.*)?$/.test(line))
+      /^\s*(?:actions|attestations|checks|contents|deployments|discussions|environments|id-token|issues|models|packages|pages|pull-requests|security-events|statuses):\s*["']?write["']?\s*(?:#.*)?$/.test(line))
      flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
    if(/\bcurl\b.{0,240}\|\s*(?:bash|sh)(?:\s|$)/.test(trim)||
       /\bwget\b.{0,240}\|\s*(?:bash|sh)(?:\s|$)/.test(trim))
