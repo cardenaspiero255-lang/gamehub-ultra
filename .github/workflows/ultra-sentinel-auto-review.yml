@@ -36,8 +36,13 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: |
-            .github/scripts
+            .github/scripts/
+            package.json
+            package-lock.json
+          sparse-checkout-cone-mode: false
           persist-credentials: false
+      - name: Install trusted integrity-locked parser
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run Core self-tests without provider API keys
         run: |
           node --check .github/scripts/ultra_sentinel_core.cjs
@@ -45,7 +50,8 @@ jobs:
           node --check .github/scripts/ultra_sentinel_report.cjs
           node --check .github/scripts/ultra_sentinel_frontier_integrity.cjs
           node --check .github/scripts/ultra_sentinel_supply_chain.cjs
-          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs .github/scripts/ultra_sentinel_frontier_integrity.test.cjs .github/scripts/ultra_sentinel_supply_chain.test.cjs
+          node --check .github/scripts/ultra_sentinel_yaml_ast.cjs
+          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs .github/scripts/ultra_sentinel_frontier_integrity.test.cjs .github/scripts/ultra_sentinel_supply_chain.test.cjs .github/scripts/ultra_sentinel_yaml_ast.test.cjs
           node .github/scripts/ultra_sentinel_benchmark.cjs
       - name: Analyze PR evidence and publish read-only reports
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
@@ -59,6 +65,7 @@ jobs:
             const {annotate} = require(path.resolve(".github/scripts/ultra_sentinel_feedback.cjs"));
             const {attestCi,summarizeDrafts} = require(path.resolve(".github/scripts/ultra_sentinel_frontier_integrity.cjs"));
             const {reviewWorkflows} = require(path.resolve(".github/scripts/ultra_sentinel_supply_chain.cjs"));
+            const {reviewWorkflowSources} = require(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"));
             const {selectRepairTargets} = require(path.resolve(".github/scripts/ultra_sentinel_orchestrator.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
@@ -70,6 +77,25 @@ jobs:
               core.setFailed("Only open same-repository PRs can be reviewed"); return;
             }
             const files = await github.paginate(github.rest.pulls.listFiles,{owner,repo,pull_number:n,per_page:100});
+            // This trusted base workflow still executes if a PR deletes its
+            // own .yml. Never treat removal of Sentinel controls as safe.
+            const protectedPaths=new Set([
+              '.github/workflows/ultra-sentinel-auto-review.yml',
+              '.github/workflows/ultra-sentinel-core-check.yml',
+              '.github/workflows/ultra-sentinel-independent-review.yml',
+              '.github/workflows/ultra-sentinel-self-review.yml',
+              '.github/workflows/android.yml',
+              '.github/workflows/coverage.yml',
+              '.github/scripts/ultra_sentinel_yaml_ast.cjs',
+              'package-lock.json'
+            ]);
+            const removedProtections=files.filter(f=>
+              (f.status==='removed'&&protectedPaths.has(f.filename))||
+              (f.status==='renamed'&&protectedPaths.has(f.previous_filename))
+            );
+            if(removedProtections.length){
+              core.setFailed('PR removes/renames required Sentinel security controls; maintain an independent required branch check.');
+            }
             const evidence = analyze(files,{sha:pr.head.sha});
             if (pr.changed_files > files.length) {
               evidence.coverage.partial = true;
@@ -138,6 +164,7 @@ jobs:
               }catch(error){core.warning("Workflow source unavailable ("+(error.status||"API error")+").");}
             }
             const supplyChain=reviewWorkflows({sha:pr.head.sha,expected,sources:workflowSources});
+            const structuralYaml=reviewWorkflowSources({expected,sources:workflowSources});
             // Human summary plus compact machine report can be fetched directly by connected GitHub tools.
             // Limit both portions: GitHub comments have a finite size.
             // Slow-path only: look up bounded git history if a high-risk finding exists.
@@ -162,12 +189,13 @@ jobs:
             const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
             annotate(evidence,old,{pr:n,sha:pr.head.sha});
             const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
-            report.frontier={ci,repairs,supplyChain};
+            report.frontier={ci,repairs,supplyChain,structuralYaml,removedProtections:removedProtections.map(f=>f.filename)};
             const summary="## Ultra Sentinel SSS · Verified CI & Safe Repair"+
               "\n- Android Build + Coverage: "+ci.status+" ("+ci.counts.success+"/2 verified green)"+
               "\n- Unknown/pending: "+ci.counts.pending+", failed: "+ci.counts.failed+
               "\n- Repair proposals: "+repairs.generated+"; NEVER applied; human approval required."+
-              "\n- Workflow supply-chain: "+supplyChain.status+" ("+supplyChain.findings.length+" alerts).\n";
+              "\n- Workflow supply-chain: "+supplyChain.status+" ("+supplyChain.findings.length+" alerts)."+
+              "\n- Structural YAML parser: "+structuralYaml.status+" ("+structuralYaml.findings.length+" alerts).\n";
             const body = markdown(evidence).slice(0,33000) + "\n\n" + summary + "\n" + serialize(report);
             if (body.length > 64000) {
               core.setFailed("Machine report exceeds safe comment size."); return;
@@ -187,6 +215,12 @@ jobs:
             core.notice("No external provider approval is required; Ultra Sentinel Core independently analyzes the PR.");
             await core.summary.addHeading("Ultra Sentinel Core").addRaw(body).write();
             if (evidence.coverage.partial) core.setFailed("Incomplete patch coverage; review manually before merging.");
+            if (structuralYaml.coverage.partial)
+              core.setFailed("Structural YAML parser found incomplete/invalid workflow evidence.");
+            if (structuralYaml.findings.some(f=>f.severity==='BLOCKER'))
+              core.setFailed("Structural YAML parser identified untrusted privileged checkout.");
+            else if (structuralYaml.findings.some(f=>f.severity==='HIGH'))
+              core.warning("Structural YAML parser raised HIGH-risk workflow signals.");
             if (supplyChain.coverage.partial) core.setFailed("Incomplete workflow supply-chain evidence; review manually.");
             if (supplyChain.findings.some(f=>f.severity==="BLOCKER"))
               core.setFailed("Potential privileged untrusted PR code execution; manual security review required.");
