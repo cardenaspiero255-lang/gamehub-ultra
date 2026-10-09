@@ -6,22 +6,33 @@ const {orchestrate}=require('./ultra_sentinel_orchestrator.cjs');
 const SHA=/^[0-9a-f]{40}$/i;
 const REPO='cardenaspiero255-lang/gamehub-ultra';
 const REQUIRED=['Android build','Unit Test Coverage'];
-const EVENTS=new Set(['pull_request','push','workflow_dispatch']);
+const EVENTS=new Set(['pull_request']);
+const PATHS=Object.freeze({'Android build':'.github/workflows/android.yml','Unit Test Coverage':'.github/workflows/coverage.yml'});
 const FAILURES=new Set(['failure','cancelled','timed_out','action_required','startup_failure']);
-function attestCi({sha,repo,runs,apiComplete=true}={}){
+function attestCi({sha,repo,runs,apiComplete=true,trustedWorkflows,changedFiles,changedFilesComplete}={}){
  const counts={success:0,pending:0,failed:0};
  const empty=()=>({
   schema:'ultra-sentinel-verified-ci/v1',sha:SHA.test(sha||'')?sha.toLowerCase():null,
   status:'UNKNOWN',counts:{...counts},workflows:[],autoApproveAllowed:false,autoMergeAllowed:false
  });
  if(typeof sha!=='string'||!SHA.test(sha)||repo!==REPO||!Array.isArray(runs)||
-  apiComplete!==true||runs.length>100)return empty();
+  apiComplete!==true||runs.length>100||
+  changedFilesComplete!==true||!Array.isArray(changedFiles)||
+  !trustedWorkflows||typeof trustedWorkflows!=='object')return empty();
+ // A modified CI definition can emit success without doing the intended checks.
+ // Check the WHOLE PR's changed file list, not the names of its run results.
+ if(REQUIRED.some(name=>changedFiles.includes(PATHS[name])))
+  return {...empty(),status:'UNTRUSTED'};
+ if(REQUIRED.some(name=>!Number.isSafeInteger(trustedWorkflows[name]?.id)||
+    trustedWorkflows[name].id<1||trustedWorkflows[name].path!==PATHS[name]))
+  return empty();
  const chosen=[];
  for(const name of REQUIRED){
   const trusted=runs.filter(run=>run&&run.name===name&&
    typeof run.head_sha==='string'&&run.head_sha.toLowerCase()===sha.toLowerCase()&&
    run.repository?.full_name===repo&&run.head_repository?.full_name===repo&&
-   EVENTS.has(run.event)&&Number.isSafeInteger(run.id)&&run.id>0&&
+   EVENTS.has(run.event)&&run.workflow_id===trustedWorkflows[name].id&&
+   run.path===trustedWorkflows[name].path&&Number.isSafeInteger(run.id)&&run.id>0&&
    Number.isSafeInteger(run.run_number)&&run.run_number>0&&
    Number.isSafeInteger(run.run_attempt)&&run.run_attempt>0&&
    (run.status==='completed'||['in_progress','queued','waiting','pending','requested'].includes(run.status))

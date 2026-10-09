@@ -5,11 +5,15 @@ const SHA='a'.repeat(40),OLD='b'.repeat(40),REPO='cardenaspiero255-lang/gamehub-
 const run=(name,overrides={})=>({
  id: name==='Android build'?100:200,run_number:8,run_attempt:1,
  name,head_sha:SHA,event:'pull_request',head_branch:'feature/test',
+ workflow_id:name==='Android build'?101:202,
+ path:name==='Android build'?'.github/workflows/android.yml':'.github/workflows/coverage.yml',
  status:'completed',conclusion:'success',
  repository:{full_name:REPO},head_repository:{full_name:REPO},
  ...overrides
 });
-const ci=(runs,options={})=>attestCi({sha:SHA,repo:REPO,runs,...options});
+const TRUST={'Android build':{id:101,path:'.github/workflows/android.yml'},'Unit Test Coverage':{id:202,path:'.github/workflows/coverage.yml'}};
+const ci=(runs,options={})=>attestCi({sha:SHA,repo:REPO,runs,
+ trustedWorkflows:TRUST,changedFiles:[],changedFilesComplete:true,...options});
 test('the latest verified Android and Coverage runs are both required',()=>{
  const out=ci([run('Android build'),run('Unit Test Coverage')]);
  assert.equal(out.status,'PASS');assert.equal(out.counts.success,2);

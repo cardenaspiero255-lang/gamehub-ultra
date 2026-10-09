@@ -88,7 +88,25 @@ jobs:
             }catch(error){
               core.warning("CI evidence unavailable ("+(error.status||"API error")+"); never assuming success.");
             }
-            const ci=attestCi({sha:pr.head.sha,repo:owner+"/"+repo,runs:ciRuns,apiComplete});
+            // Authenticate workflow IDs against definitions on trusted main, not PR content.
+            // Fail closed if the PR edits an Android/Coverage workflow.
+            let trustedWorkflows=null,changedFilesComplete=false,changedFiles=[];
+            try{
+              const [android,coverage]=await Promise.all([
+                github.rest.actions.getWorkflow({owner,repo,workflow_id:'android.yml'}),
+                github.rest.actions.getWorkflow({owner,repo,workflow_id:'coverage.yml'})
+              ]);
+              trustedWorkflows={
+                'Android build':{id:android.data.id,path:android.data.path},
+                'Unit Test Coverage':{id:coverage.data.id,path:coverage.data.path}
+              };
+              changedFiles=files.map(f=>f.filename);
+              changedFilesComplete=files.length===pr.changed_files;
+            }catch(error){
+              core.warning("Trusted CI identity unavailable ("+(error.status||"API error")+"); no approval inferred.");
+            }
+            const ci=attestCi({sha:pr.head.sha,repo:owner+"/"+repo,runs:ciRuns,apiComplete,
+              trustedWorkflows,changedFiles,changedFilesComplete});
 
             // Hunter -> Fixer -> Judge: proposals only, no execution or PR writes.
             // Fetch at most 3 exact Kotlin files as untrusted DATA, never checkout PR head.

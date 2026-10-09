@@ -61,6 +61,22 @@ jobs:
               if(pr.state!=='open'||pr.base?.ref!=='main'||
                  pr.head?.repo?.full_name!==owner+'/'+repo||
                  pr.head.sha !== run.head_sha)continue;
+              let trustedWorkflows=null,changedFiles=[],changedFilesComplete=false;
+              try{
+                const [android,coverage,prFiles]=await Promise.all([
+                  github.rest.actions.getWorkflow({owner,repo,workflow_id:'android.yml'}),
+                  github.rest.actions.getWorkflow({owner,repo,workflow_id:'coverage.yml'}),
+                  github.paginate(github.rest.pulls.listFiles,{owner,repo,pull_number:n,per_page:100})
+                ]);
+                trustedWorkflows={
+                  'Android build':{id:android.data.id,path:android.data.path},
+                  'Unit Test Coverage':{id:coverage.data.id,path:coverage.data.path}
+                };
+                changedFiles=prFiles.map(f=>f.filename);
+                changedFilesComplete=prFiles.length===pr.changed_files;
+              }catch(error){
+                core.warning('Trusted CI workflow identity unavailable ('+(error.status||'API error')+'); no approval inferred.');
+              }
               let ciRuns=[],apiComplete=false;
               try{
                 const {data: results}=await github.rest.actions.listWorkflowRunsForRepo({
@@ -72,7 +88,8 @@ jobs:
               }catch(error){
                 core.warning('CI evidence unavailable ('+(error.status||'API error')+'); no approval inferred.');
               }
-              const ci=attestCi({sha:pr.head.sha,repo:owner+'/'+repo,runs:ciRuns,apiComplete});
+              const ci=attestCi({sha:pr.head.sha,repo:owner+'/'+repo,runs:ciRuns,apiComplete,
+                trustedWorkflows,changedFiles,changedFilesComplete});
               // A changing PR must not be certified using an older SHA.
               const {data: latest}=await github.rest.pulls.get({owner,repo,pull_number:n});
               if(latest.state!=='open'||latest.head.sha!==run.head_sha){
@@ -80,7 +97,7 @@ jobs:
               }
               report.prs.push({number:n,ci});
               if(ci.status==='FAILED')core.setFailed('Current PR SHA has a verified failing Android Build or Coverage run');
-              if(ci.status==='WAITING'||ci.status==='UNKNOWN')
+              if(ci.status==='WAITING'||ci.status==='UNKNOWN'||ci.status==='UNTRUSTED')
                 core.warning('CI still pending or unavailable; this is NOT a green approval.');
             }
             const folder=path.join(process.env.RUNNER_TEMP,'ultra-sentinel-post-ci');
