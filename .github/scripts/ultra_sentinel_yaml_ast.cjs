@@ -165,7 +165,11 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
        const repository=step.with.repository.trim();
        const trusted=typeof trustedRepository==='string'&&
          /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trustedRepository);
-       if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!trusted){
+       // GitHub's exact github.repository expression is base-repository
+       // scoped and cannot select an attacker-controlled fork.
+       if(/^\$\{\{\s*github\.repository\s*\}\}$/.test(repository)){
+        // No unknown identity or remote mutable code: trusted repository.
+       }else if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!trusted){
         coverage.partial=true;
        }else if(repository.toLowerCase()!==trustedRepository.toLowerCase()&&
                 !PINNED.test(step.with.ref||'')){
