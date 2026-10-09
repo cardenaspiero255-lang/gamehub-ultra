@@ -17,6 +17,49 @@ const keyValue=line=>{
  const m=String(line).match(/^\s*(?:"([^"]+)"|'([^']+)'|([a-zA-Z][\w-]*))\s*:\s*([\s\S]*)$/);
  return m?{key:m[1]||m[2]||m[3],value:m[4]}:null;
 };
+
+function withoutYamlComment(value){
+ const s=String(value??'');
+ let quote=null,escaped=false;
+ for(let i=0;i<s.length;i++){
+  const ch=s[i];
+  if(quote){
+   if(quote==='"'&&escaped){escaped=false;continue;}
+   if(quote==='"'&&ch==='\\'){escaped=true;continue;}
+   if(ch===quote){
+    if(quote==="'"&&s[i+1]==="'"){i++;continue;}
+    quote=null;
+   }
+  }else{
+   if(ch==='"'||ch==="'"){quote=ch;continue;}
+   if(ch==='#'&&(i===0||/\s/.test(s[i-1])))return s.slice(0,i);
+  }
+ }
+ return s;
+}
+function withoutLeadingAnchor(value){
+ return withoutYamlComment(String(value??'')
+  .replace(/^\s*&[A-Za-z0-9_-]+(?=\s|$)/,'')).trim();
+}
+function containsYamlAlias(value){
+ const s=withoutYamlComment(value);
+ let quote=null,escaped=false,code='';
+ for(let i=0;i<s.length;i++){
+  const ch=s[i];
+  if(quote){
+   code+=' ';
+   if(quote==='"'&&escaped){escaped=false;continue;}
+   if(quote==='"'&&ch==='\\'){escaped=true;continue;}
+   if(ch===quote){
+    if(quote==="'"&&s[i+1]==="'"){code+=' ';i++;continue;}
+    quote=null;
+   }
+  }else if(ch==='"'||ch==="'"){quote=ch;code+=' ';}
+  else code+=ch;
+ }
+ return /(?:^|[\s,[{,:])\*[-A-Za-z0-9_]+\b/.test(code);
+}
+
 const privilegedEvent=/^(pull_request_target|workflow_run)$/;
 function privilegedTrigger(lines){
  let start=-1,rest='';
@@ -25,6 +68,7 @@ function privilegedTrigger(lines){
   if(m?.key==='on'&&!/^\s/.test(lines[i])){start=i;rest=m.value;break;}
  }
  if(start<0)return false;
+ rest=withoutLeadingAnchor(rest);
  if(rest.trim()){
   if(/^[>|][+-]?$/.test(rest.trim())){
    const parts=[];
@@ -177,9 +221,10 @@ function dangerousCheckoutRefs(lines,useIndex){
 function writableLine(line){
  const kv=keyValue(line);
  if(kv?.key==='permissions'){
-  if(scalar(kv.value)==='write-all')return true;
-  if(/^\{.*\}$/.test(kv.value.trim())){
-   const pairs=kv.value.trim().slice(1,-1).split(',');
+  const value=withoutLeadingAnchor(kv.value);
+  if(scalar(value)==='write-all')return true;
+  if(/^\{.*\}$/.test(value)){
+   const pairs=value.slice(1,-1).split(',');
    return pairs.some(p=>{
     const item=keyValue(p);
     return item&&WRITABLE.has(item.key)&&scalar(item.value)==='write';
@@ -353,8 +398,7 @@ function hasSensitiveAliases(lines){
   const flowStepAlias=flowStep && /^\s*-\s*\{/.test(row) &&
    sensitiveFlowAlias(collectFlowMap(lines,flowStep.start,flowStep.end,
     row.replace(/^\s*-\s*/,'').trim()).value);
-  if(flowStepAlias||
-     /(?:^|[\s,[{,:"'])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
+  if(flowStepAlias||containsYamlAlias(examined))return true;
  }
  return false;
 }
@@ -411,7 +455,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
     // Flow permission maps may continue on following lines and contain
     // several comma-delimited entries on the same physical line. Parse the
     // collected flow *entries*, not each physical line as a single scalar.
-    const permissionValue=permissionKey.value.trim();
+    const permissionValue=withoutLeadingAnchor(permissionKey.value);
     let flowClosed=false;
     if(permissionValue.startsWith('{')){
      const mapping=collectFlowMap(lines,i,lines.length,permissionValue);
@@ -421,7 +465,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
       .some(part=>writableLine(part.trim())))
       flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
     }
-    if(/^[>|][+-]?$/.test(permissionKey.value.trim())){
+    if(/^[>|][+-]?$/.test(permissionValue)){
      const items=[];
      for(let k=i+1;k<Math.min(lines.length,i+65);k++){
       const child=lines[k],childIndent=child.match(/^\s*/)[0].length;
