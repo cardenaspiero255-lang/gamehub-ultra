@@ -14,11 +14,19 @@ function apiPath(sha){
  if(typeof sha!=='string'||!SHA.test(sha))throw Error('Full immutable SHA required');
  return '/repos/'+REPO+'/actions/runs?head_sha='+sha.toLowerCase()+'&per_page=100';
 }
-function validateRun(run,sha){
+const TRUSTED_PATHS=Object.freeze({'Android build':'.github/workflows/android.yml',
+ 'Unit Test Coverage':'.github/workflows/coverage.yml'});
+function validateRun(run,sha,trustedWorkflows){
  if(!run||typeof run!=='object'||!SHA.test(sha||'')||
   run.head_sha?.toLowerCase()!==sha.toLowerCase()||
   run.status!=='completed'||run.conclusion!=='success'||
-  !NAMES.has(run.name)||!['push','workflow_dispatch'].includes(run.event)||
+  !NAMES.has(run.name)||!trustedWorkflows||
+  !Number.isSafeInteger(trustedWorkflows[run.name]?.id)||
+  trustedWorkflows[run.name].id<1||
+  trustedWorkflows[run.name].path!==TRUSTED_PATHS[run.name]||
+  run.workflow_id!==trustedWorkflows[run.name].id||
+  run.path!==trustedWorkflows[run.name].path||
+  !['push','workflow_dispatch'].includes(run.event)||
   run.head_branch!=='main'||
   run.repository?.full_name!==REPO||
   (run.head_repository?.full_name && run.head_repository.full_name!==REPO)||
@@ -67,10 +75,8 @@ function assessRelease(sha,runs,consent){
  return {status:ready?'CI_VERIFIED':'INCOMPLETE',safeToRollback:false,
   verifiedWorkflows:[...names].sort()};
 }
-async function fetchVerifiedRuns({sha,token,request=https.request}){
- const uri=apiPath(sha);
- if(typeof token!=='string'||token.length<12||/[\r\n]/.test(token))
-  throw Error('Read-only GitHub token is required');
+
+function readGithubJSON({uri,token,request=https.request}){
  return new Promise((resolve,reject)=>{
   let settled=false;
   const fail=reason=>{if(!settled){settled=true;reject(Error(reason))}};
@@ -91,9 +97,7 @@ async function fetchVerifiedRuns({sha,token,request=https.request}){
     if(settled)return;
     try{
      const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
-     if(!Array.isArray(body?.workflow_runs))throw Error('unexpected response');
-     settled=true;
-     resolve(body.workflow_runs.slice(0,100).map(x=>validateRun(x,sha)).filter(Boolean));
+     settled=true;resolve(body);
     }catch{fail('GitHub CI response invalid')}
    });
    res.on('error',()=>fail('GitHub CI response failed'));
@@ -103,4 +107,24 @@ async function fetchVerifiedRuns({sha,token,request=https.request}){
   req.end();
  });
 }
+async function fetchVerifiedRuns({sha,token,request=https.request}){
+ const uri=apiPath(sha);
+ if(typeof token!=='string'||token.length<12||/[\r\n]/.test(token))
+  throw Error('Read-only GitHub token is required');
+ const trustedWorkflows={};
+ for(const [name,expected] of Object.entries(TRUSTED_PATHS)){
+  const short=expected.slice('.github/workflows/'.length);
+  const api='/repos/'+REPO+'/actions/workflows/'+short;
+  const response=await readGithubJSON({uri:api,token,request});
+  if(!Number.isSafeInteger(response?.id)||response.id<1||response.path!==expected)
+   throw Error('GitHub CI workflow identity unverified');
+  trustedWorkflows[name]={id:response.id,path:response.path};
+ }
+ const body=await readGithubJSON({uri,token,request});
+ if(!Array.isArray(body?.workflow_runs)||!Number.isSafeInteger(body.total_count)||
+  body.total_count!==body.workflow_runs.length||body.workflow_runs.length>100)
+  throw Error('GitHub CI run pagination incomplete');
+ return body.workflow_runs.map(x=>validateRun(x,sha,trustedWorkflows)).filter(Boolean);
+}
+
 module.exports={apiPath,validateRun,releaseSha,attachVerifiedReleases,assessRelease,fetchVerifiedRuns,REPO};
