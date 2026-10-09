@@ -168,15 +168,68 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    else if(level!=='read'&&level!=='none')coverage.partial=true;
   }
  };
+ const inspectDynamicControl=(value,where)=>{
+  if(typeof value!=='string'){coverage.partial=true;return;}
+  const checked=auditExecutableExpressions(value);
+  if(checked.unsafe)emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+  // Unknown expressions and all dynamic execution infrastructure require
+  // independent review. The caller may not infer safety from a clean script.
+  coverage.partial=true;
+ };
  const checkExecutableShell=(value,where)=>{
   if(value===undefined)return;
   if(typeof value!=='string'||!value.trim()){coverage.partial=true;return;}
-  // Shell is a command template, not a decorative runner option.
   if(value.includes(String.fromCharCode(36,123,123))){
-   const check=auditExecutableExpressions(value);
-   if(check.unsafe)emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
-   // Dynamic shell values are not preapproved executables, even if scalar.
+   inspectDynamicControl(value,where);
+   return;
+  }
+  // Actions permits arbitrary custom command templates for shell; checking
+  // only run: would miss malicious commands executed to launch that script.
+  const supported=new Set(['bash','sh','pwsh','powershell','cmd','python']);
+  if(!supported.has(value.trim())){
+   if(remotePipeline(value))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
    coverage.partial=true;
+  }
+ };
+ // Only preapproved GitHub-hosted runner labels may yield a clean verdict.
+ // Private runner groups/labels and arbitrary expression-based routing need
+ // independent review even when the commands themselves look safe.
+ const checkRunner=(value,where)=>{
+  if(value===undefined)return;
+  const hosted=v=>typeof v==='string'&&
+   /^(?:ubuntu|windows|macos)-(?:latest|[0-9]{2}(?:\.[0-9]{2})?)$/.test(v);
+  if(hosted(value))return;
+  if(typeof value==='string'&&value.includes(String.fromCharCode(36,123,123)))
+   inspectDynamicControl(value,where);
+  else if(Array.isArray(value)){
+   if(!value.length||!value.every(hosted))coverage.partial=true;
+  }else coverage.partial=true;
+ };
+ // An unpinned/mutable image runs third-party code on the job machine.
+ // Only fixed SHA-256 digests are recognized; all other image attributes,
+ // credentials, mounts and service options remain explicitly inconclusive.
+ const checkImage=(image,where)=>{
+  if(typeof image!=='string'||!image.trim()){coverage.partial=true;return;}
+  if(image.includes(String.fromCharCode(36,123,123))){
+   inspectDynamicControl(image,where);return;
+  }
+  if(!/^[a-zA-Z0-9_.:/-]+@sha256:[a-fA-F0-9]{64}$/.test(image.trim()))
+   coverage.partial=true;
+ };
+ const checkContainer=(container,where)=>{
+  if(container===undefined)return;
+  if(typeof container==='string'){checkImage(container,where);return;}
+  if(!isMap(container)){coverage.partial=true;return;}
+  checkImage(container.image,where);
+  if(Object.keys(container).some(key=>key!=='image'))coverage.partial=true;
+ };
+ const checkServices=(services,where)=>{
+  if(services===undefined)return;
+  if(!isMap(services)){coverage.partial=true;return;}
+  for(const service of Object.values(services)){
+   if(!isMap(service)){coverage.partial=true;continue;}
+   checkImage(service.image,where);
+   if(Object.keys(service).some(key=>key!=='image'))coverage.partial=true;
   }
  };
  const checkDefaults=(defaults,where)=>{
@@ -191,6 +244,11 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(!isMap(job)){coverage.partial=true;continue;}
   checkPermissions(job.permissions,where);
   checkDefaults(job.defaults,where);
+  if(privileged){
+   checkRunner(job['runs-on'],where);
+   checkContainer(job.container,where);
+   checkServices(job.services,where);
+  }
   if(job.steps===undefined){
    if(typeof job.uses==='string'){
     // Local same-repository reusable workflows follow this commit; only
