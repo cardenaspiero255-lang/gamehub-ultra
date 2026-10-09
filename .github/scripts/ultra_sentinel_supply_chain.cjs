@@ -25,10 +25,22 @@ function privilegedTrigger(lines){
  }
  if(start<0)return false;
  if(rest.trim()){
-  const tokens=rest.replace(/[\[\]{},]/g,' ').trim().split(/\s+/).map(scalar);
+  // GitHub Actions accepts block-flow sequences and mappings:
+  // on: [<newline> pull_request_target, <newline> push].
+  // Read only this bounded YAML value; never interpret arbitrary job text as an event.
+  let value=rest;
+  const open=rest.trim()[0];
+  const close=open==='['?']':open==='{'?'}':null;
+  if(close&&!rest.includes(close)){
+   for(let j=start+1;j<Math.min(lines.length,start+65);j++){
+    if(lines[j].trim()&&!/^\s/.test(lines[j])&&lines[j].trim()!==close)break;
+    value+=' '+lines[j].trim();
+    if(lines[j].includes(close))break;
+   }
+  }
+  const tokens=value.replace(/[\[\]{},]/g,' ').trim().split(/\s+/).map(scalar);
   if(tokens.some(x=>privilegedEvent.test(x.replace(/:$/,''))))return true;
-  // Inline YAML map includes quoted keys, e.g. on: {"pull_request_target": {}}
-  return /(?:^|[\s,{])(?:"(?:pull_request_target|workflow_run)"|'(?:pull_request_target|workflow_run)'|(?:pull_request_target|workflow_run))\s*:/.test(rest);
+  return /(?:^|[\s,{])(?:"(?:pull_request_target|workflow_run)"|'(?:pull_request_target|workflow_run)'|(?:pull_request_target|workflow_run))\s*:/.test(value);
  }
  for(let i=start+1;i<lines.length;i++){
   if(lines[i].trim()&&!/^\s/.test(lines[i]))break;
@@ -60,10 +72,10 @@ function isUnsafePrRef(input){
  return /^(?:github\.event\.pull_request\.head\.(?:sha|ref)|github\.head_ref)$/.test(expression);
 }
 function dangerousCheckoutRefs(lines,useIndex){
- const {end}=stepRange(lines,useIndex);
+ const {start,end}=stepRange(lines,useIndex);
  let withIndent=null;
  const out=[];
- for(let i=useIndex+1;i<end;i++){
+ for(let i=start+1;i<end;i++){
   const line=lines[i],indent=line.match(/^\s*/)[0].length;
   const kv=keyValue(line);
   if(withIndent!==null&&line.trim()&&indent<=withIndent)withIndent=null;
@@ -108,6 +120,26 @@ function writableLine(line){
  }
  return kv&&WRITABLE.has(kv.key)&&scalar(kv.value)==='write';
 }
+function inRealPermissionsMap(lines,index){
+ const indentation=lines[index].match(/^\s*/)[0].length;
+ if(indentation===0)return true;
+ let current=indentation;
+ const parents=[];
+ for(let j=index-1;j>=0;j--){
+  const line=lines[j],trim=line.trim();
+  if(!trim||trim.startsWith('#'))continue;
+  const prior=line.match(/^\s*/)[0].length;
+  if(prior>=current)continue;
+  current=prior;
+  const kv=keyValue(line);
+  if(kv)parents.push(kv.key);
+  if(prior===0)break;
+ }
+ // Permissions are valid at the workflow root and inside a job, never
+ // inside an action's with, environment variables, or workflow inputs.
+ return parents.includes('jobs')&&
+  !parents.some(p=>['steps','with','env','inputs','strategy','services','defaults'].includes(p));
+}
 function reviewWorkflows({sha,expected,sources={}}={}){
  const findings=[],seen=new Set(),coverage={requested:0,scanned:0,partial:false};
  const output=status=>({schema:'ultra-sentinel-workflow-audit/v1',
@@ -137,6 +169,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   }
   coverage.scanned++;
   const lines=code.split('\n'),privileged=privilegedTrigger(lines);
+  let permissionsIndent=null;
   for(let i=0;i<lines.length;i++){
    const line=lines[i],trim=line.trim();
    if(!trim||trim.startsWith('#'))continue;
@@ -150,7 +183,15 @@ function reviewWorkflows({sha,expected,sources={}}={}){
       flag('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',name,lineNumber);
     }
    }
-   if(writableLine(line))flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+   const indent=line.match(/^\s*/)[0].length;
+   if(permissionsIndent!==null&&indent<=permissionsIndent)permissionsIndent=null;
+   const permissionKey=keyValue(line);
+   if(permissionKey?.key==='permissions'&&inRealPermissionsMap(lines,i)){
+    if(writableLine(line))flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    if(!permissionKey.value.trim())permissionsIndent=indent;
+   }else if(permissionsIndent!==null&&indent>permissionsIndent&&writableLine(line)){
+    flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+   }
    if(/\b(?:curl|wget)\b.{0,240}\|\s*(?:bash|sh)(?:\s|$)/.test(trim))
     flag('REMOTE_SHELL_PIPELINE','HIGH',name,i+1);
   }
