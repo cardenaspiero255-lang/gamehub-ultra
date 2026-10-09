@@ -55,9 +55,14 @@ function executableText(source,state={}){
  while(i<s.length){
   const f=state.frames[state.frames.length-1],ch=s[i];
   if(f.kind==='comment'){
-   const end=s.indexOf('*/',i);
-   if(end<0)break;
-   state.frames.pop();i=end+2;continue;
+   // Kotlin permits nested block comments; preserve depth across lines.
+   if(s.startsWith('/*',i)){f.depth++;i+=2;continue;}
+   if(s.startsWith('*/',i)){
+    f.depth--;i+=2;
+    if(f.depth===0)state.frames.pop();
+    continue;
+   }
+   i++;continue;
   }
   if(f.kind==='raw'){
    if(s.startsWith('"""',i)){state.frames.pop();i+=3;continue;}
@@ -74,7 +79,7 @@ function executableText(source,state={}){
   }
   // Executable context, including interpolation expressions.
   if(s.startsWith('//',i))break;
-  if(s.startsWith('/*',i)){state.frames.push({kind:'comment'});i+=2;continue;}
+  if(s.startsWith('/*',i)){state.frames.push({kind:'comment',depth:1});i+=2;continue;}
   if(s.startsWith('"""',i)){state.frames.push({kind:'raw'});i+=3;continue;}
   if(ch==='"'||ch==="'"){state.frames.push({kind:'string',quote:ch});i++;continue;}
   if(f.kind==='expr'){
