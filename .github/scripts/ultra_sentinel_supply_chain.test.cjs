@@ -53,3 +53,10 @@ test('workflow integration takes exact immutable SHA, never exposes PR source to
  assert.match(y,/ref:pr.head.sha/);
  assert.doesNotMatch(y,/contents: write|issues: write|pull-requests: write/);
 });
+
+test('invalid immutable SHA marks evidence explicitly partial (fail-closed)',()=>{
+ const r=reviewWorkflows({sha:'invalid',expected:[F],sources:{[F]:'permissions:\n  contents: read\n'}});
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.coverage.partial,true);
+ assert.equal(r.autoApproveAllowed,false);
+});
