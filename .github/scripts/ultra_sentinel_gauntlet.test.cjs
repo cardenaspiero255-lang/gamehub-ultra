@@ -170,3 +170,51 @@ test('GAUNTLET new: actual job-level permissions still generate HIGH review (Cod
   assert.ok(includes(analyze(code),'PRIVILEGED_WRITE_TOKEN'),permissions);
  }
 });
+
+const extremeRef='$'+'{{ github.head_ref }}';
+test('GAUNTLET codex P1 quoted uses keys still recognize privileged checkout',()=>{
+ for(const key of ['"uses"',"'uses'"]){
+  const yaml='on: pull_request_target\njobs:\n  test:\n    steps:\n      - '+key+': '+CHECKOUT+'\n        with:\n          ref: '+extremeRef+'\n';
+  const out=analyze(yaml);
+  assert.ok(includes(out,'PRIVILEGED_PR_CODE_CHECKOUT'),key+': '+out.status);
+ }
+});
+test('GAUNTLET codex P1 multi-input with flow mapping detects untrusted ref',()=>{
+ for(const inputs of [
+  'with: {fetch-depth: 0, ref: "'+extremeRef+'"}',
+  "with: {ref: '"+extremeRef+"', persist-credentials: false}",
+  'with: {"fetch-depth": 1, "ref": "'+extremeRef+'"}'
+ ]){
+  const yaml='on: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: '+CHECKOUT+'\n        '+inputs+'\n';
+  assert.ok(includes(analyze(yaml),'PRIVILEGED_PR_CODE_CHECKOUT'),inputs);
+ }
+});
+test('GAUNTLET codex P1 interpolated PR refs and alternate expressions are unsafe',()=>{
+ const refs=[
+ 'refs/heads/'+extremeRef,
+ '$'+'{{ github.event.pull_request.head.sha || github.sha }}',
+ '$'+'{{ format('+"'refs/heads/{0}', github.head_ref"+') }}'
+ ];
+ for(const ref of refs){
+  const yaml='on: [pull_request_target]\njobs:\n  test:\n    steps:\n      - uses: '+CHECKOUT+
+   '\n        with:\n          ref: '+ref+'\n';
+  assert.ok(includes(analyze(yaml),'PRIVILEGED_PR_CODE_CHECKOUT'),ref);
+ }
+});
+test('GAUNTLET codex P2 step boundaries recognize if and do not conflate adjacent actions',()=>{
+ const yaml='on: pull_request_target\njobs:\n  test:\n    steps:\n'+
+ '      - name: untrusted field belongs to other action\n        uses: '+OTHER+
+ '\n        with:\n          ref: '+extremeRef+'\n'+
+ '      - if: always()\n        uses: '+CHECKOUT+'\n        with:\n          ref: main\n';
+ const out=analyze(yaml);
+ assert.ok(!includes(out,'PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(out));
+});
+test('GAUNTLET codex P2 multiline flow permissions still flag write',()=>{
+ for(const src of [
+ 'permissions: {\n  contents: write\n}\n',
+ 'permissions: {\n  "checks": "write",\n  statuses: read\n}\n',
+ "permissions: {\n  'pull-requests': write,\n  contents: read\n}\n"
+ ]){
+  assert.ok(includes(analyze('on: push\n'+src),'PRIVILEGED_WRITE_TOKEN'),src);
+ }
+});
