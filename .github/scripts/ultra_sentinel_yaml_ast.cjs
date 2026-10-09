@@ -41,7 +41,8 @@ function parseWorkflow(source){
   boundedGraph(doc);
   if(!Object.prototype.hasOwnProperty.call(doc,'on'))
    return {ok:false,reason:'MISSING_TRIGGER'};
-  if(!isMap(doc.jobs))return {ok:false,reason:'INVALID_JOBS'};
+  if(!isMap(doc.jobs)||!Object.keys(doc.jobs).length)
+   return {ok:false,reason:'INVALID_JOBS'};
   const trigger=doc.on;
   if(typeof trigger!=='string'&&!Array.isArray(trigger)&&!isMap(trigger))
    return {ok:false,reason:'INVALID_TRIGGER'};
@@ -70,6 +71,16 @@ function unsafePrRef(v){
   const expr=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
   return /\bgithub\.(?:head_ref|event\.pull_request\.head\.(?:sha|ref|repo\.(?:full_name|name|clone_url))|event\.workflow_run\.(?:head_sha|head_branch|head_repository\.full_name))\b/.test(expr);
  });
+}
+function unknownCheckoutExpression(value,field){
+ if(typeof value!=='string'||!value.includes('${{'))return false;
+ // Unknown dynamic inputs (e.g. inputs.ref) may be PR-controlled. Only
+ // explicitly base-scoped expressions can be treated as trusted under
+ // pull_request_target/workflow_run.
+ const allowed=field==='repository'?
+  /^\$\{\{\s*github\.repository\s*\}\}$/:
+  /^\$\{\{\s*(?:github\.(?:sha|ref)|github\.event\.pull_request\.base\.sha|github\.event\.repository\.default_branch)\s*\}\}$/;
+ return !allowed.test(value);
 }
 function remotePipeline(v){
  if(typeof v!=='string')return false;
@@ -113,13 +124,14 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
     if(!/^\.\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(job.uses)){
      const external=job.uses.match(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@(.+)$/);
      if(!external||!PINNED.test(external[1]))
-      emit('UNPINNED_REUSABLE_WORKFLOW','HIGH',where);
+      emit('UNPINNED_REUSABLE_WORKFLOW','BLOCKER',where);
     }
     continue;
    }
    // Dynamic job.uses cannot be verified as a fixed action source.
    coverage.partial=true;continue;
   }
+  if(job.uses!==undefined){coverage.partial=true;continue;}
   if(!Array.isArray(job.steps)){coverage.partial=true;continue;}
   for(const step of job.steps){
    if(!isMap(step)){coverage.partial=true;continue;}
@@ -138,6 +150,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
       }else if(unsafePrRef(step.with.ref)||unsafePrRef(step.with.repository)){
        // A fixed ref in a PR-controlled fork is STILL untrusted code.
        emit('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',where);
+      }else if(unknownCheckoutExpression(step.with.ref,'ref')||
+                unknownCheckoutExpression(step.with.repository,'repository')){
+       coverage.partial=true;
       }
      }
     }
@@ -146,6 +161,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
     if(typeof step.run!=='string')coverage.partial=true;
     else if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
    }
+   if((step.run===undefined&&step.uses===undefined)||
+      (step.run!==undefined&&step.uses!==undefined))coverage.partial=true;
   }
  }
  const status=coverage.partial?'INCOMPLETE':
