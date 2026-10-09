@@ -205,3 +205,72 @@ test('quoted flow message does not suppress a real sensitive alias',()=>{
  const result=scan(src);
  assert.equal(result.status,'INCOMPLETE');
 });
+
+test('Codex P1: block trigger anchored on on still treats pull_request_target as privileged',()=>{
+ const workflow=['on: &events','  pull_request_target:','    types: [opened]',
+ 'jobs:','  scan:','    steps:','      - uses: actions/checkout@'+SHA,
+ '        with:','          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const result=scan(workflow);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('anchored inline flow trigger preserves privileged event detection',()=>{
+ const workflow=['on: &events [pull_request_target]','jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ assert.ok(rules(scan(workflow)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('benign anchored block trigger with only push does not claim privileged checkout',()=>{
+ const workflow=['on: &events','  push:','jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ assert.ok(!rules(scan(workflow)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P2: root anchored permissions block detects contents write',()=>{
+ const workflow=['on: pull_request','permissions: &write_permissions',
+ '  contents: write','  issues: read','jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA].join('\n');
+ assert.ok(rules(scan(workflow)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('job anchored permissions block detects contents write without env false positives',()=>{
+ const workflow=['on: pull_request','jobs:','  scan:',
+ '    permissions: &writable','      contents: write',
+ '    env:','      contents: write',
+ '    steps:','      - uses: actions/checkout@'+SHA].join('\n');
+ assert.ok(rules(scan(workflow)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('anchored flow permissions with multiple scopes detects write',()=>{
+ const workflow=['on: pull_request','permissions: &scopes {contents: write, issues: read}',
+ 'jobs:','  scan:','    steps:','      - uses: actions/checkout@'+SHA].join('\n');
+ assert.ok(rules(scan(workflow)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('benign anchored read-only permissions do not create write findings',()=>{
+ const workflow=['on: pull_request','permissions: &read_permissions',
+ '  contents: read','jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+});
+test('Codex P2: alias in inline YAML comment does not contaminate checkout coverage',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          ref: main # *not_an_alias'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+ assert.equal(result.coverage.partial,false);
+});
+test('aliases inside quoted YAML value containing comment character stay literal',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          ref: "main # *not_an_alias"'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'NO_RISK_PATTERN');
+ assert.equal(result.coverage.partial,false);
+});
+test('real checkout ref aliases still fail closed with trailing comments',()=>{
+ const workflow=['on: pull_request_target','jobs:','  scan:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          ref: *danger # harmless note'].join('\n');
+ const result=scan(workflow);
+ assert.equal(result.status,'INCOMPLETE');
+ assert.equal(result.coverage.partial,true);
+});
