@@ -179,6 +179,11 @@ function isUnsafePrRef(input){
  // Both literal refs/pull/42/merge and interpolated PR numbers are untrusted.
  if(/^refs\/pull\/(?:\d+|\$\{\{[\s\S]*?\}\})\/(?:merge|head)$/i.test(value))
   return true;
+ // GitHub expressions can construct the exact same ref using format().
+ // Treat PR-number-dependent format() refs under refs/pull as untrusted.
+ if(/\$\{\{\s*format\(/i.test(value)&&/refs\/pull\//i.test(value)&&
+    /github\.event\.pull_request\.number\b/.test(value)&&
+    /(?:merge|head)/i.test(value))return true;
  const expressions=[...value.matchAll(/\$\{\{\s*([\s\S]*?)\s*\}\}/g)];
  return expressions.some(m=>{
   const expression=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
@@ -398,7 +403,7 @@ function readStepScalar(lines,index,end,raw,keyIndent){
  if(!parts.length)return {value:null,incomplete:true};
  return {value:parts.join(' '),incomplete:false};
 }
-const remoteShellPattern=/\b(?:curl|wget)\b.{0,240}\|\s*(?:bash|sh)(?:\s|["']|$)/;
+const remoteShellPattern=/\b(?:curl|wget)\b.{0,240}\|&?\s*(?:bash|sh)(?:\s|["']|$)/;
 function shellPipelinesInStep(lines,step){
  const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
  const original=withoutLeadingAnchor(lines[start].replace(/^\s*-\s*/,''));
@@ -437,13 +442,15 @@ function shellPipelinesInStep(lines,step){
     if(remoteShellPattern.test(script.map(part=>part.text).join(' ')))
      matched.push(i+1);
    }else{
-    let command='',startLine=i+1;
+    let command='',startLine=i+1,continued=false;
     for(const part of script){
      if(!command)startLine=part.line;
-     command+=(command?' ':'')+part.text;
+     command+=(command&&!continued?' ':'')+part.text;
+     continued=false;
      const trailing=/\\+$/.exec(command)?.[0].length||0;
      if(trailing%2===1){
-      command=command.slice(0,-1).trimEnd();
+      command=command.slice(0,-1);
+      continued=true;
       continue;
      }
      if(remoteShellPattern.test(command))matched.push(startLine);
@@ -511,7 +518,7 @@ function stepAction(lines,step){
   const kv=keyValue(line);
   if(!['ref','repository'].includes(kv?.key))continue;
   let value=String(kv.value||'').trim();
-  if(/^[>|][+-]?$/.test(value)){
+  if(isBlockScalarHeader(value)){
    const sub=[];
    for(let k=i+1;k<stop;k++){
     const r=lines[k],dep=r.match(/^\s*/)[0].length;
