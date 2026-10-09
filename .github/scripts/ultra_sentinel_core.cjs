@@ -116,35 +116,53 @@ function analyze(files,config={}){
    const all=rows.map(x=>x.text).join('\n');
    const android=path.startsWith('app/src/main/');
    const workflow=/^\.github\/workflows\/.*\.ya?ml$/i.test(path);
-   // Feed all unchanged context lines through the stateful lexer first.
-   // Only added lines are eligible to produce findings. Never infer that
-   // the first added line begins outside a raw string or a comment.
-   let lexState={},previousLine=null,unknownHunkStart=true;
-   const executableByLine=new Map();
-   for(const entry of patch.scan){
-     // Diff context is not necessarily the beginning of the Kotlin file.
-     // An unchanged triple quote can therefore CLOSE a raw string opened
-     // outside the hunk; treating it as an opener hides later executable code.
-     // Without trusted pre-hunk state, fail closed instead of claiming clean.
-     if(previousLine===null||entry.line!==previousLine+1){
-       lexState={};
-       unknownHunkStart=entry.line!==1;
+   // A diff beginning in the middle of a Kotlin file can start inside a
+   // block comment or raw string. Never guess lexical mode from a hunk.
+   // The optional fullSource must be provided from the same immutable HEAD;
+   // cross-check every added/context line against it before trusting its lexer.
+   const kotlin=android&&path.endsWith('.kt');
+   const sourceProvided=f.fullSource!==undefined;
+   const fullLines=kotlin&&typeof f.fullSource==='string'&&
+     Buffer.byteLength(f.fullSource,'utf8')<=160000?
+     f.fullSource.split(/\r?\n/):null;
+   const sourceMatches=!!(fullLines&&patch.scan.every(x=>
+     x.line>0&&x.line<=fullLines.length&&fullLines[x.line-1]===x.text));
+   if(kotlin&&sourceProvided&&!sourceMatches){
+     partial=true;
+     warnings.push('Archivo Kotlin completo no coincide con el parche o supera el límite: '+sanitize(path));
+   }
+   const executableByLine=new Map(),uncertainAdded=new Set();
+   if(kotlin&&sourceMatches){
+     const wanted=new Set(rows.map(x=>x.line)),lexState={kotlin:true};
+     for(let i=0;i<fullLines.length;i++){
+       const code=executableText(fullLines[i],lexState);
+       if(wanted.has(i+1))executableByLine.set(i+1,code);
      }
-     // Both context and added delimiters can be closing delimiters if
-     // their opening is outside the diff. Never certify an unknown state.
-     if(android&&path.endsWith('.kt')&&unknownHunkStart&&
-        /"""|\*\//.test(entry.text)){
-       partial=true;
-       warnings.push('Estado léxico Kotlin previo al hunk desconocido; revisar contexto completo: '+sanitize(path));
-       unknownHunkStart=false;
+   }else{
+     let lexState={},previousLine=null,hunkUnknown=false;
+     for(const entry of patch.scan){
+       if(previousLine===null||entry.line!==previousLine+1){
+         lexState={};
+         hunkUnknown=kotlin&&(entry.line!==1||sourceProvided);
+         if(hunkUnknown){
+           partial=true;
+           warnings.push('Estado léxico Kotlin previo al hunk desconocido; revisar archivo completo: '+sanitize(path));
+         }
+       }
+       lexState.kotlin=path.endsWith('.kt');
+       const code=executableText(entry.text,lexState);
+       if(entry.added){
+         if(hunkUnknown)uncertainAdded.add(entry.line);
+         else executableByLine.set(entry.line,code);
+       }
+       previousLine=entry.line;
      }
-     lexState.kotlin=path.endsWith('.kt');
-     const code=executableText(entry.text.trim(),lexState);
-     if(entry.added)executableByLine.set(entry.line,code);
-     previousLine=entry.line;
    }
    for(let i=0;i<rows.length;i++){
      const x=rows[i],t=x.text.trim();
+     // Unknown Kotlin context may be comment or string text. Do not offer
+     // an actionable finding or a repair from an ambiguous hunk.
+     if(uncertainAdded.has(x.line))continue;
      const code=executableByLine.get(x.line)||'';
      if(!t||/^(\/\/|\/\*|\*|#)/.test(t))continue;
      if(android&&/\bGlobalScope\s*\.\s*(launch|async)\b/.test(code))
@@ -173,11 +191,13 @@ function analyze(files,config={}){
    if(android){
      for(let i=0;i<rows.length;i++){
        const decl=rows[i].text.match(/\bfun\s+([A-Za-z_]\w*)\s*\(/);
-       if(!decl||['toString','equals','hashCode'].includes(decl[1]))continue;
+       if(!decl||uncertainAdded.has(rows[i].line)||
+         ['toString','equals','hashCode'].includes(decl[1]))continue;
        // A disconnected diff hunk is not evidence of self-recursion.
        const candidates=[];let expected=rows[i].line+1;
        for(const next of rows.slice(i+1,i+20)){
          if(next.line!==expected)break;
+         if(uncertainAdded.has(next.line))break;
          candidates.push(next);expected++;
        }
        // A separate Kotlin function is a scope boundary, not a self-call.
