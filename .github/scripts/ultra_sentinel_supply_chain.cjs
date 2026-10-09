@@ -116,8 +116,10 @@ function privilegedTrigger(lines,audit={}){
  if(rest.trim()){
   if(/^[>|][+-]?$/.test(rest.trim())){
    const parts=[];
-   for(let j=start+1;j<Math.min(lines.length,start+65);j++){
+   let foldedCount=0;
+   for(let j=start+1;j<lines.length;j++){
     if(lines[j].trim()&&lines[j].match(/^\s*/)[0].length<=rootIndent)break;
+    if(++foldedCount>65){audit.partial=true;return false;}
     if(lines[j].trim()&&!lines[j].trim().startsWith('#'))parts.push(lines[j].trim());
    }
    const folded=parts.join(' ');
@@ -150,6 +152,8 @@ function privilegedTrigger(lines,audit={}){
   if(lines[i].trim()&&lines[i].match(/^\s*/)[0].length<=rootIndent)break;
   const kv=keyValue(lines[i]);
   if(kv&&privilegedEvent.test(kv.key))return true;
+  const entry=lines[i].match(/^\s*-\s+(.+?)\s*(?:#.*)?$/);
+  if(entry&&privilegedEvent.test(scalar(entry[1])))return true;
  }
  return false;
 }
@@ -416,11 +420,16 @@ function shellPipelinesInStep(lines,step){
   const kv=keyValue(isFirst?original:lines[i]);
   if(kv?.key!=='run')continue;
   if(isBlockScalarHeader(kv.value)){
+   const folded=withoutLeadingAnchor(kv.value).startsWith('>'),script=[];
    for(let j=i+1;j<end;j++){
     const depth=lines[j].match(/^\s*/)[0].length;
     if(lines[j].trim()&&depth<=(isFirst?direct:indent))break;
     if(remoteShellPattern.test(lines[j]))matched.push(j+1);
+    if(lines[j].trim())script.push(lines[j].trim());
    }
+   // Folded YAML joins physical lines, including a pipe on the next line.
+   if(folded&&remoteShellPattern.test(script.join(' '))&&!matched.length)
+    matched.push(i+1);
   }else if(remoteShellPattern.test(scalar(kv.value)))matched.push(i+1);
  }
  return matched;
