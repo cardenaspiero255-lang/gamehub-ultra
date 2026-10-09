@@ -46,3 +46,15 @@ El inspector puede entregar diagnosticos, advertencias y `fix.patch` limitados.
 No auto-fusionar codigo ni parchear en vivo el APK de usuarios. No borrar
 protecciones solo por ausencia de crashes observados. No considerar verde un
 workflow inconcluso, omitido indebidamente o asociado a otro SHA.
+
+
+## Autovalidacion: Sentinel vs Sentinel
+
+- El workflow `.github/workflows/ultra-sentinel-self-review.yml` incluye dos evaluaciones separadas:
+  - `pull_request`: pruebas del candidato en un runner con permisos de lectura, sin credenciales persistidas. **No es una revision independiente**.
+  - `pull_request_target`: despues de integrar el workflow en `main`, se comprueba el PR con el analizador estable de la rama predeterminada, sin ejecutar ni descargar codigo de la rama del PR.
+- El motor `.github/scripts/ultra_sentinel_selfreview.cjs` analiza exclusivamente datos del diff fijados a un SHA verificado antes y despues. Rechaza cambios inseguros de permisos, checkout de PR no confiable en contextos privilegiados, acciones nuevas no fijadas y nuevos permisos de auto-merge.
+- Las pruebas `.github/scripts/ultra_sentinel_selfreview.test.cjs` incluyen entradas adversariales. La bateria independiente de mutaciones de JavaScript continua siendo un control adicional.
+- La herramienta puede devolver `BLOCKED` o `ADVISORY`. `ADVISORY` **no significa aprobado**. Toda modificacion del propio gate requiere revision humana y controles de branch protection con checks requeridos.
+- No usa secretos de proveedores ni concede permisos para fusionar, cambiar ramas o aplicar reparaciones.
+- Mientras el workflow aun no este en `main`, solo se ejecutan sus tests de candidato. **La autovalidacion independiente no se activa hasta entonces**.
