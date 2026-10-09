@@ -93,6 +93,17 @@ function remotePipeline(v){
  // Folded YAML is already folded by js-yaml; do not join unrelated commands.
  return v.replace(/\\\r?\n/g,'').split(/\r?\n/).some(line=>REMOTE.test(line));
 }
+// Direct interpolation substitutes attacker-controlled event text into a
+// shell script before execution. Quoting cannot prevent command substitution.
+// This catches high-confidence free-text expressions; review remains required
+// for unmodeled sources.
+function hasUntrustedEventInterpolation(script){
+ if(typeof script!=='string')return false;
+ return [...script.matchAll(/\$\{\{\s*([\s\S]{0,800}?)\s*\}\}/g)].some(m=>{
+  const expr=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
+  return /\bgithub\.head_ref\b|\bgithub\.event\.(?:(?:comment|review|review_comment|issue|discussion|pull_request)\.(?:title|body|name|head\.(?:ref|label))|workflow_run\.(?:head_branch|name)|head_commit\.message)\b/.test(expr);
+ });
+}
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
  const findings=[],coverage={partial:false,parser:'js-yaml@4.1.1'};
  const emit=(rule,severity,where)=>{
@@ -181,7 +192,11 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    }
    if(step.run!==undefined){
     if(typeof step.run!=='string')coverage.partial=true;
-    else if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
+    else{
+     if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
+     if(privileged&&hasUntrustedEventInterpolation(step.run))
+      emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+    }
    }
    if((step.run===undefined&&step.uses===undefined)||
       (step.run!==undefined&&step.uses!==undefined))coverage.partial=true;
