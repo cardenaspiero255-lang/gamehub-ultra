@@ -15,7 +15,9 @@ function sanitize(s){
 function parsePatch(text){
  if(typeof text!=='string')return {added:[],partial:true};
  let n=0,active=false;const added=[],scan=[];
- for(const row of text.slice(0,MAX_PATCH).split('\n')){
+ for(const rawRow of text.slice(0,MAX_PATCH).split('\n')){
+  // Normalize GitHub's LF and CRLF patch representations identically.
+  const row=rawRow.endsWith('\r')?rawRow.slice(0,-1):rawRow;
    const h=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
    if(h){n=+h[1];active=true;continue;}
    if(!active||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
