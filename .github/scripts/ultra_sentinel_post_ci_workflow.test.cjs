@@ -44,3 +44,10 @@ test('ROOT: post-CI must not claim a green run when no current PR received attes
  const src=yaml();
  assert.match(src,/if\s*\(!report\.prs\.length\)core\.setFailed\(/);
 });
+
+test('post-CI checks the actual default branch and a bounded complete run list',()=>{
+ const wf=yaml();
+ assert.match(wf,/context\.payload\.repository\?\.default_branch/);
+ assert.match(wf,/page=2/);
+ assert.match(wf,/total<=1000/);
+});
