@@ -162,3 +162,8 @@ de bugs reproducibles, seguridad, revisión independiente y aprobación humana.
 - Ultra Sentinel Core sigue ejecutándose desde el `main` confiable, con permisos `contents: read` y `pull-requests: read`, análisis de diff, validación del SHA, reglas de riesgo y bloqueo de evidencia incompleta o `BLOCKER`.
 - Para evitar el HTTP 403 de la API de comentarios, los informes se publican **solo** en el resumen de GitHub Actions y en artefactos JSON/Markdown con SHA fijado y 7 días de retención, sin escritura de comentarios ni secretos de proveedores.
 - El workflow `pull_request_target` usa la versión de `main`: **hasta fusionar este cambio seguirán fallando las ejecuciones antiguas**. Verificar una ejecución real del workflow nuevo tras la fusión; no afirmar que el 403 está resuelto en producción antes de comprobarlo.
+
+
+## Plan SSS de Meta AI — criterios pendientes, sin duplicar US
+
+Las 12 propuestas de Meta AI se han contrastado contra el inventario US-001–US-035. No constituyen 12 capacidades nuevas; se han documentado como **criterios de aceptación y propuestas pendientes** en [ULTRA_SENTINEL_SSS_ACCEPTANCE_PLAN.md](ULTRA_SENTINEL_SSS_ACCEPTANCE_PLAN.md). Su inclusión **no cambia ningún estado a DONE**, no acredita SSS, no activa workflows ni sustituye la verificación del SHA final.
