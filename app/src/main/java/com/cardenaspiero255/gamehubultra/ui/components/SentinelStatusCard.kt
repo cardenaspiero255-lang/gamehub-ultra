@@ -12,7 +12,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.cardenaspiero255.gamehubultra.R
 
 /**
  * In-app read-only entry point for Ultra Sentinel's trusted GitHub reports.
@@ -32,15 +34,14 @@ internal fun SentinelStatusCard(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Ultra Sentinel", style = MaterialTheme.typography.titleMedium)
-            Text("Protección del código con revisiones y pruebas de GitHub.")
+            Text(stringResource(R.string.sentinel_card_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.sentinel_card_description))
             Text(
-                "Estado de CI: consultar GitHub",
+                stringResource(R.string.sentinel_card_ci_status),
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
-                "Los informes de errores y reparaciones requieren verificación. " +
-                    "La aplicación no muestra resultados sin conexión comprobada.",
+                stringResource(R.string.sentinel_card_disclaimer),
                 style = MaterialTheme.typography.bodySmall
             )
             TextButton(
@@ -50,7 +51,7 @@ internal fun SentinelStatusCard(modifier: Modifier = Modifier) {
                     )
                 }
             ) {
-                Text("Ver revisiones en GitHub")
+                Text(stringResource(R.string.sentinel_card_open_reviews))
             }
         }
     }
