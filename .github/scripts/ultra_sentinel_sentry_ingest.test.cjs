@@ -212,3 +212,47 @@ test('Root cause: empty verified CI run list cannot be called COMPLETE',async()=
   assert.equal(result.attestation.status,'INCOMPLETE',JSON.stringify(result.attestation));
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });
+
+test('Root cause: lookup budget cannot silently claim verification of five releases',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ultra-sentinel-budget-'));
+ try{
+  const issues=Array.from({length:5},(_,i)=>({
+   id:String(i+1),project:{slug:'gamehub-ultra'},level:'error',count:'1',
+   firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
+   firstRelease:{version:'gamehub-ultra@'+(i+1).toString(16).repeat(40)}
+  }));
+  const result=await main({
+   RUNNER_TEMP:dir,ULTRA_SENTINEL_INCIDENTS_CONSENT:'true',
+   SENTRY_ORG_SLUG:'demo',SENTRY_PROJECT_SLUG:'gamehub-ultra',
+   SENTRY_AUTH_TOKEN:'s'.repeat(20),GITHUB_TOKEN:'g'.repeat(20)
+  },{fetchIssues:async()=>issues,fetchVerifiedRuns:async({sha})=>
+   ['Android build','Unit Test Coverage'].map((workflow,i)=>({
+    sha,workflow,runId:i+1,verification:'verified-github-api-run'
+   }))
+  });
+  assert.equal(result.attestation.status,'PARTIAL',JSON.stringify(result.attestation));
+  assert.equal(result.attestation.omittedLookups,1,JSON.stringify(result.attestation));
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
+test('Root cause: exact release SHA with two verified CI runs is VERIFIED',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ultra-sentinel-verified-'));
+ try{
+  const sha='a'.repeat(40);
+  const issue={id:'23',project:{slug:'gamehub-ultra'},level:'error',count:'1',
+   firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
+   firstRelease:{version:'gamehub-ultra@'+sha}};
+  const result=await main({
+   RUNNER_TEMP:dir,ULTRA_SENTINEL_INCIDENTS_CONSENT:'true',
+   SENTRY_ORG_SLUG:'demo',SENTRY_PROJECT_SLUG:'gamehub-ultra',
+   SENTRY_AUTH_TOKEN:'s'.repeat(20),GITHUB_TOKEN:'g'.repeat(20)
+  },{fetchIssues:async()=>[issue],fetchVerifiedRuns:async()=>[
+   'Android build','Unit Test Coverage'].map((workflow,i)=>({
+    sha,workflow,runId:i+1,verification:'verified-github-api-run'
+   }))
+  });
+  assert.equal(result.attestation.status,'VERIFIED',JSON.stringify(result.attestation));
+  assert.equal(result.attestation.verifiedReleaseCount,1);
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
