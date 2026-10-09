@@ -38,7 +38,7 @@ function parseWorkflow(source){
   // patches known merge DoS issues, but future regressions must fail closed.
   const aliasCount=(input.match(/(?:^|[\\s,\\[{])\\*[A-Za-z0-9_-]+/g)||[]).length;
   const merges=(input.match(/(?:^|[\\s,{])<<\\s*:/g)||[]).length;
-  const largeMergeList=[...input.matchAll(/<<\\s*:\\s*\\[([^\\]\\r\\n]{0,8192})\\]/g)]
+  const largeMergeList=[...input.matchAll(/<<\s*:\s*\[([^\n]{0,8192}?)\]/g)]
     .some(x=>(x[1].match(/\\*[A-Za-z0-9_-]+/g)||[]).length>16);
   if(aliasCount>256||merges>128||largeMergeList)
    return {ok:false,reason:'YAML_PREPARSE_LIMIT'};
