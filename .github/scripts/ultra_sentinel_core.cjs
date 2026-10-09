@@ -45,60 +45,44 @@ function validationPlan(files){
  const domains=[...new Set((files||[]).flatMap(f=>tags(String(f?.filename||''))))].sort();
  return {domains,checks:domains.flatMap(domain=>(DOMAIN_VALIDATION[domain]||[]).map(check=>({domain,check}))).slice(0,24)};
 }
-function executableText(source,state={block:false,triple:false}){
- // Small Kotlin/Java lexer: skip comments and ordinary literal text without
- // losing real statements after an interpolated URL or across line boundaries.
- const text=String(source||'');
+function executableText(source,state={}){
+ // Kotlin/Java lexer: distinguish ordinary prose from executable nested
+ // interpolation expressions in both regular and triple-quoted strings.
+ // The stack survives contiguous diff lines, including multiline templates.
+ const s=String(source||'');
+ if(!Array.isArray(state.frames))state.frames=[{kind:'code'}];
  let out='',i=0;
- while(i<text.length){
-  if(state.block){
-   const end=text.indexOf('*/',i);
+ while(i<s.length){
+  const f=state.frames[state.frames.length-1],ch=s[i];
+  if(f.kind==='comment'){
+   const end=s.indexOf('*/',i);
    if(end<0)break;
-   state.block=false;i=end+2;continue;
+   state.frames.pop();i=end+2;continue;
   }
-  // Raw strings contain executable Kotlin templates. Track nested braces,
-  // including templates spanning multiple diff lines, without treating raw
-  // prose or documentation as executable code.
-  if(state.triple&&!(state.templateDepth>0)){
-   if(text.startsWith('"""',i)){state.triple=false;i+=3;continue;}
-   if(text.startsWith('$'+'{',i)){state.templateDepth=1;i+=2;out+=' ';continue;}
+  if(f.kind==='raw'){
+   if(s.startsWith('"""',i)){state.frames.pop();i+=3;continue;}
+   if(s.startsWith('$'+'{',i)){state.frames.push({kind:'expr',depth:1});i+=2;out+=' ';continue;}
    i++;continue;
   }
-  if(state.triple&&state.templateDepth>0){
-   const ch=text[i];
-   if(ch==='{')state.templateDepth++;
-   else if(ch==='}'){
-    state.templateDepth--;
-    if(state.templateDepth===0){out+=' ';i++;continue;}
+  if(f.kind==='string'){
+   if(ch==='\\'){i=Math.min(s.length,i+2);continue;}
+   if(f.quote==='"'&&s.startsWith('$'+'{',i)){
+    state.frames.push({kind:'expr',depth:1});i+=2;out+=' ';continue;
    }
-   // Strings inside templates are inert unless interpolated themselves.
-   if(ch==='"'||ch==="'"){
-    const quote=ch;let j=i+1;
-    while(j<text.length){
-     if(text[j]==='\\'){j+=2;continue;}
-     if(text[j]===quote){j++;break;}
-     j++;
-    }
-    out+='""';i=j;continue;
-   }
-   out+=ch;i++;continue;
+   if(ch===f.quote)state.frames.pop();
+   i++;continue;
   }
-  if(text.startsWith('//',i))break;
-  if(text.startsWith('/*',i)){state.block=true;i+=2;continue;}
-  if(text.startsWith('"""',i)){state.triple=true;i+=3;continue;}
-  const ch=text[i];
-  if(ch==='"'||ch==="'"){
-   const q=ch;let j=i+1;
-   while(j<text.length){
-    if(text[j]==='\\'){j+=2;continue;}
-    if(text[j]===q){j++;break;}
-    if(q==='"'&&text.startsWith('$'+'{',j)){
-     const close=text.indexOf('}',j+2);
-     if(close>=0){out+=' '+text.slice(j+2,close)+' ';j=close+1;continue;}
-    }
-    j++;
+  // Executable context, including interpolation expressions.
+  if(s.startsWith('//',i))break;
+  if(s.startsWith('/*',i)){state.frames.push({kind:'comment'});i+=2;continue;}
+  if(s.startsWith('"""',i)){state.frames.push({kind:'raw'});i+=3;continue;}
+  if(ch==='"'||ch==="'"){state.frames.push({kind:'string',quote:ch});i++;continue;}
+  if(f.kind==='expr'){
+   if(ch==='{')f.depth++;
+   else if(ch==='}'){
+    f.depth--;
+    if(f.depth===0){state.frames.pop();out+=' ';i++;continue;}
    }
-   out+='""';i=j;continue;
   }
   out+=ch;i++;
  }

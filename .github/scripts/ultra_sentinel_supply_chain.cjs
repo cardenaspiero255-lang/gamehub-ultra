@@ -14,7 +14,7 @@ const scalar=v=>{
  return s.trim();
 };
 const keyValue=line=>{
- const m=String(line).match(/^\s*(?:"([^"]+)"|'([^']+)'|([a-zA-Z][\w-]*))\s*:\s*(.*)$/);
+ const m=String(line).match(/^\s*(?:"([^"]+)"|'([^']+)'|([a-zA-Z][\w-]*))\s*:\s*([\s\S]*)$/);
  return m?{key:m[1]||m[2]||m[3],value:m[4]}:null;
 };
 const privilegedEvent=/^(pull_request_target|workflow_run)$/;
@@ -286,6 +286,30 @@ function stepAction(lines,step){
  }
  return {action,actionLine,dangerous};
 }
+// YAML aliases in security-sensitive values are not trustworthy without a
+// complete YAML parser. Treat them as INCOMPLETE rather than silently clear.
+// Only scope aliases inside on/permissions mappings or checkout inputs,
+// never arbitrary labels, descriptions, comments or action names.
+function hasSensitiveAliases(lines){
+ let scope=null;
+ for(let i=0;i<lines.length;i++){
+  const row=lines[i],trim=row.trim();
+  if(!trim||trim.startsWith('#'))continue;
+  const indent=row.match(/^\s*/)[0].length,kv=keyValue(row);
+  if(scope!==null&&indent<=scope.indent)scope=null;
+  const rootEvent=indent===0&&kv?.key==='on';
+  const permissions=kv?.key==='permissions'&&inRealPermissionsMap(lines,i);
+  const input=kv&&['uses','with','ref'].includes(kv.key)&&
+   jobStepRanges(lines).some(s=>s.start<=i&&i<s.end);
+  if(rootEvent||permissions)scope={indent};
+  const examined=(rootEvent||permissions||input)?kv.value:
+   scope&&indent>scope.indent?trim:'';
+  // A leading *alias or an alias nested in a flow sequence/map is
+  // intentionally unresolved and must fail closed, including quoted aliases.
+  if(/(?:^|[\s,[{,:])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
+ }
+ return false;
+}
 function reviewWorkflows({sha,expected,sources={}}={}){
  const findings=[],seen=new Set(),coverage={requested:0,scanned:0,partial:false};
  const output=status=>({schema:'ultra-sentinel-workflow-audit/v1',
@@ -315,15 +339,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   }
   coverage.scanned++;
   const lines=code.split('\n'),privileged=privilegedTrigger(lines);
-  // Aliases in security-sensitive root event configuration must never
-  // silently default to an unprivileged trigger. For unresolved aliases,
-  // mark this audit incomplete so the caller's fail-closed gate blocks it.
-  const rootEvent=lines.find(line=>/^(?:on|"on"|'on')\s*:/.test(line));
-  if(rootEvent){
-   const rawEvent=rootEvent.replace(/^(?:on|"on"|'on')\s*:\s*/,'').trim();
-   if(/^['"]?\*[A-Za-z0-9_-]+['"]?(?:\s+#.*)?$/.test(rawEvent))
-    coverage.partial=true;
-  }
+  if(hasSensitiveAliases(lines))coverage.partial=true;
   for(const step of jobStepRanges(lines)){
    const details=stepAction(lines,step);
    const action=details.action;
