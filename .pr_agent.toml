@@ -16,3 +16,7 @@ enable_auto_checks_feedback = false
 [fixer_agent]
 enable = false
 enable_auto_fix = false
+
+[config]
+# Defense in depth: ignore every pull request from this repository.
+ignore_repositories = ["^cardenaspiero255-lang/gamehub-ultra$"]
