@@ -458,7 +458,12 @@ function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
   const flowStepAlias=flowStepValue?.startsWith('{') &&
    sensitiveFlowAlias(collectFlowMap(lines,flowStep.start,flowStep.end,
     flowStepValue).value);
-  if(flowStepAlias||containsYamlAlias(examined))return true;
+  // A sequence item can itself be a YAML alias or use a merge-key alias.
+  // Neither gives evidence about the real action or checkout ref: fail closed.
+  const unresolvedStep=typeof flowStepValue==='string'&&
+   (/^\*[-A-Za-z0-9_.]+(?:\s|$)/.test(flowStepValue)||
+    /^<<\s*:\s*\*[-A-Za-z0-9_.]+(?:\s|$)/.test(flowStepValue));
+  if(unresolvedStep||flowStepAlias||containsYamlAlias(examined))return true;
  }
  return false;
 }
