@@ -406,6 +406,12 @@ function readStepScalar(lines,index,end,raw,keyIndent){
  return {value:parts.join(' '),incomplete:false};
 }
 const remoteShellPattern=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|\s|["']|$)/;
+// Shell backslash escapes can split downloader command names (c\\url).
+// Normalize only for conservative risk detection; never execute this data.
+function matchesRemotePipeline(value){
+ const normalized=String(value).replace(/\\(?=[A-Za-z])/g,'');
+ return remoteShellPattern.test(normalized);
+}
 function shellPipelinesInStep(lines,step){
  const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
  const original=withoutLeadingAnchor(lines[start].replace(/^\s*-\s*/,''));
@@ -414,7 +420,7 @@ function shellPipelinesInStep(lines,step){
   if(map.closed&&map.value.trim().endsWith('}')){
    return splitFlowEntries(map.value.trim().slice(1,-1)).some(entry=>{
     const kv=keyValue(entry.trim());
-    return kv?.key==='run'&&remoteShellPattern.test(scalar(kv.value));
+    return kv?.key==='run'&&matchesRemotePipeline(scalar(kv.value));
    })?[start+1]:[];
   }
  }
@@ -435,13 +441,13 @@ function shellPipelinesInStep(lines,step){
    for(let j=i+1;j<end;j++){
     const depth=lines[j].match(/^\s*/)[0].length;
     if(lines[j].trim()&&depth<=(isFirst?direct:indent))break;
-    if(remoteShellPattern.test(lines[j]))matched.push(j+1);
+    if(matchesRemotePipeline(lines[j]))matched.push(j+1);
     if(lines[j].trim())script.push({line:j+1,text:lines[j].trim()});
    }
    // YAML folded scalars join physical lines. Literal shell scripts only
    // join lines ending in a real unescaped backslash continuation.
    if(folded){
-    if(remoteShellPattern.test(script.map(part=>part.text).join(' ')))
+    if(matchesRemotePipeline(script.map(part=>part.text).join(' ')))
      matched.push(i+1);
    }else{
     let command='',startLine=i+1,continued=false;
@@ -458,11 +464,11 @@ function shellPipelinesInStep(lines,step){
      // A pipe operator continues into the next Bash line even without a
      // backslash. Preserve only that command until the interpreter is seen.
      if(/\|&?[ \t]*$/.test(command)){continued=true;continue;}
-     if(remoteShellPattern.test(command))matched.push(startLine);
+     if(matchesRemotePipeline(command))matched.push(startLine);
      command='';
     }
    }
-  }else if(remoteShellPattern.test(scalar(kv.value)))matched.push(i+1);
+  }else if(matchesRemotePipeline(scalar(kv.value)))matched.push(i+1);
  }
  return matched;
 }
