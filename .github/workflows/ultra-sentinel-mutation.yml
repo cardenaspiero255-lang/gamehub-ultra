@@ -1,0 +1,53 @@
+name: Ultra Sentinel Mutation Lab
+# Independent fault-injection job with no secrets or write credentials.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/workflows/ultra-sentinel-mutation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sentinel-mutation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  mutation:
+    name: Mutation resilience / reviewer engine
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout isolated PR (no credentials persisted)
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Check mutation harness syntax
+        run: |
+          node --check .github/scripts/ultra_sentinel_mutation.cjs
+          node --test .github/scripts/ultra_sentinel_mutation.test.cjs
+      - name: Mutate copied reviewer source, run targeted tests
+        shell: bash
+        env:
+          SENTINEL_MUTANT_LIMIT: '14'
+          SENTINEL_MUTATION_GATE: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sentinel-mutation-results"
+          node .github/scripts/ultra_sentinel_mutation.cjs | tee "$RUNNER_TEMP/sentinel-mutation-results/report.json"
+          node - "$RUNNER_TEMP/sentinel-mutation-results/report.json" <<'NODE'
+          const fs=require('node:fs');
+          const report=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          const s=report.summary;
+          console.log('Mutation score:',s.score===null?'n/a':(100*s.score).toFixed(1)+'%',
+            'killed:',s.killed,'survived:',s.survived,'inconclusive:',s.inconclusive);
+          if(s.inconclusive>0)process.exitCode=1;
+          NODE
+      - name: Save bounded mutation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ultra-sentinel-mutation-report
+          path: ${{ runner.temp }}/sentinel-mutation-results/report.json
+          if-no-files-found: warn
+          retention-days: 14

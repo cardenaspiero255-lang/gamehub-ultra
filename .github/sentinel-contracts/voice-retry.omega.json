@@ -1,0 +1,103 @@
+{
+  "schema": "ultra-sentinel-omega/v1",
+  "id": "voice-retry-gate-v1",
+  "subject": "VoiceRecognitionRetryGate",
+  "implementation": "app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGate.kt",
+  "test": "app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGateContractTest.kt",
+  "initial": "IDLE",
+  "states": [
+    "IDLE",
+    "RETRY_PENDING",
+    "CLOSED"
+  ],
+  "events": [
+    "SCHEDULE",
+    "DISPATCH",
+    "RESET",
+    "CLOSE"
+  ],
+  "transitions": [
+    {
+      "from": "IDLE",
+      "event": "SCHEDULE",
+      "to": "RETRY_PENDING",
+      "accepted": true
+    },
+    {
+      "from": "IDLE",
+      "event": "DISPATCH",
+      "to": "IDLE",
+      "accepted": null
+    },
+    {
+      "from": "IDLE",
+      "event": "RESET",
+      "to": "IDLE",
+      "accepted": null
+    },
+    {
+      "from": "IDLE",
+      "event": "CLOSE",
+      "to": "CLOSED",
+      "accepted": null
+    },
+    {
+      "from": "RETRY_PENDING",
+      "event": "SCHEDULE",
+      "to": "RETRY_PENDING",
+      "accepted": false
+    },
+    {
+      "from": "RETRY_PENDING",
+      "event": "DISPATCH",
+      "to": "IDLE",
+      "accepted": null
+    },
+    {
+      "from": "RETRY_PENDING",
+      "event": "RESET",
+      "to": "IDLE",
+      "accepted": null
+    },
+    {
+      "from": "RETRY_PENDING",
+      "event": "CLOSE",
+      "to": "CLOSED",
+      "accepted": null
+    },
+    {
+      "from": "CLOSED",
+      "event": "SCHEDULE",
+      "to": "CLOSED",
+      "accepted": false
+    },
+    {
+      "from": "CLOSED",
+      "event": "DISPATCH",
+      "to": "CLOSED",
+      "accepted": null
+    },
+    {
+      "from": "CLOSED",
+      "event": "RESET",
+      "to": "CLOSED",
+      "accepted": null
+    },
+    {
+      "from": "CLOSED",
+      "event": "CLOSE",
+      "to": "CLOSED",
+      "accepted": null
+    }
+  ],
+  "properties": [
+    "BLOCK_REENTRANT_SCHEDULE",
+    "DISPATCH_TO_IDLE",
+    "RESET_TO_IDLE",
+    "FIRST_SCHEDULE_ALLOWED",
+    "TOTAL_DETERMINISTIC",
+    "CLOSE_TERMINAL",
+    "LATE_CALLBACK_CANNOT_REOPEN"
+  ],
+  "disclaimer": "Finite abstract state machine, not a mathematical proof of Android SpeechRecognizer or all Kotlin implementation behavior."
+}

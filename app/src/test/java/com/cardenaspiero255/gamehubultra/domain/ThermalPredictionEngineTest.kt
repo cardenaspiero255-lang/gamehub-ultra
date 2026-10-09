@@ -205,4 +205,25 @@ class ThermalPredictionEngineTest {
     }
 
 
+
+    @Test
+    fun thermalPolicyRejectsTwoSamplesEvenWhenOtherWindowsAreValid() {
+        // Kills minimumSamples >= 3 -> >= 2 without triggering an unrelated require().
+        val outcome = runCatching { ThermalPredictionPolicy(minimumSamples = 2) }
+        assertTrue(outcome.isFailure, "Two samples must never qualify for thermal prediction")
+    }
+
+    @Test
+    fun thermalPolicyRequiresCriticalHeadroomStrictlyAboveHighRisk() {
+        // Equality must be rejected; a mutant allowing >= is unsafe.
+        val outcome = runCatching {
+            ThermalPredictionPolicy(
+                highRiskHeadroom = 0.72f,
+                criticalRiskHeadroom = 0.72f
+            )
+        }
+        assertTrue(outcome.isFailure, "Critical threshold must exceed high-risk threshold")
+    }
+
+
 }

@@ -1,0 +1,311 @@
+name: Ultra Sentinel - Automatic CAR Review
+
+# Trusted base workflow. Never check out or execute the pull request head.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open pull request number
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ultra-sentinel-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Ultra Sentinel Core — own reviewer
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out independent engine from trusted main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+      - name: Run Core self-tests without provider API keys
+        run: |
+          node --check .github/scripts/ultra_sentinel_core.cjs
+          node --check .github/scripts/ultra_sentinel_remediation.cjs
+          node --check .github/scripts/ultra_sentinel_report.cjs
+          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
+          node .github/scripts/ultra_sentinel_benchmark.cjs
+      - name: Read PR evidence and publish safe independent analysis
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # pinned v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const path = require("node:path");
+            const {analyze, markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
+            const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
+            const {buildGraph} = require(path.resolve(".github/scripts/ultra_sentinel_causal.cjs"));
+            const {annotate} = require(path.resolve(".github/scripts/ultra_sentinel_feedback.cjs"));
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
+            if (!Number.isSafeInteger(n) || n < 1) {
+              core.setFailed("Invalid PR number"); return;
+            }
+            const {data: pr} = await github.rest.pulls.get({owner,repo,pull_number:n});
+            if (pr.state !== "open" || pr.head.repo?.full_name !== owner + "/" + repo) {
+              core.setFailed("Only open same-repository PRs can be reviewed"); return;
+            }
+            const files = await github.paginate(github.rest.pulls.listFiles,{owner,repo,pull_number:n,per_page:100});
+            const evidence = analyze(files,{sha:pr.head.sha});
+            if (pr.changed_files > files.length) {
+              evidence.coverage.partial = true;
+              evidence.verdict = "INCOMPLETE";
+              evidence.warnings.push("GitHub omitted " + (pr.changed_files - files.length) + " files.");
+            }
+            // Human summary plus compact machine report can be fetched directly by connected GitHub tools.
+            // Limit both portions: GitHub comments have a finite size.
+            // Slow-path only: look up bounded git history if a high-risk finding exists.
+            // Overlap with historical commits is never proof that a commit caused a bug.
+            const history=[];
+            const paths=[...new Set(evidence.findings
+              .filter(f=>f.severity==="HIGH"||f.severity==="BLOCKER")
+              .map(f=>f.path))].slice(0,2);
+            for(const file of paths){
+              try{
+                const {data: oldCommits}=await github.rest.repos.listCommits({
+                  owner,repo,path:file,sha:pr.head.sha,per_page:6
+                });
+                for(const previous of oldCommits){
+                  if(previous.sha!==pr.head.sha)history.push({
+                    sha:previous.sha,files:[file],message:previous.commit?.message||""
+                  });
+                }
+              }catch(error){core.warning("Historical lookup skipped for "+file+": "+(error.status||"unavailable"));}
+            }
+            const causalGraph=buildGraph({headSha:pr.head.sha,findings:evidence.findings,history});
+            const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
+            annotate(evidence,old,{pr:n,sha:pr.head.sha});
+            const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
+            const body = markdown(evidence).slice(0,33000) + "\n\n" + serialize(report);
+            if (body.length > 64000) {
+              core.setFailed("Machine report exceeds safe comment size."); return;
+            }
+            const {data: after} = await github.rest.pulls.get({owner,repo,pull_number:n});
+            if (after.head.sha !== pr.head.sha) {
+              core.setFailed("Head SHA changed; refusing to publish stale report"); return;
+            }
+            const existing = old.find(c => c.user?.login === "github-actions[bot]" && (c.body||"").startsWith("<!-- ultra-sentinel-core -->"));
+            if (existing) {
+              await github.rest.issues.updateComment({owner,repo,comment_id:existing.id,body});
+            } else {
+              await github.rest.issues.createComment({owner,repo,issue_number:n,body});
+            }
+            await core.summary.addHeading("Ultra Sentinel Core").addRaw(body).write();
+            if (evidence.coverage.partial) core.setFailed("Incomplete patch coverage; review manually before merging.");
+            if (evidence.findings.some(f => f.severity === "BLOCKER"))
+              core.setFailed("Potential BLOCKER detected; verify the finding before merging.");
+            if (evidence.verdict === "REVIEW_REQUIRED")
+              core.warning("HIGH risk signals are hypotheses requiring reproduction and tests.");
+
+  providers:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    name: Review / ${{ matrix.provider }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: Claude
+            secret_name: ANTHROPIC_API_KEY
+          - provider: Grok
+            secret_name: XAI_API_KEY
+          - provider: DeepSeek
+            secret_name: DEEPSEEK_API_KEY
+          - provider: Groq
+            secret_name: GROQ_API_KEY
+    env:
+      GH_REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+      TRIGGER_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PROVIDER: ${{ matrix.provider }}
+      PROVIDER_KEY: ${{ secrets[matrix.secret_name] }}
+    steps:
+      - name: Checkout trusted reviewer only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+
+      - name: Validate target before passing provider credentials
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          repo, number = os.environ["GH_REPOSITORY"], os.environ["PR_NUMBER"]
+          if not number.isdigit():
+              raise SystemExit("Invalid PR number")
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{repo}/pulls/{number}",
+              headers={"Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
+                       "Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              pr = json.load(response)
+          if (pr.get("head", {}).get("repo") or {}).get("full_name") != repo:
+              raise SystemExit("Fork PRs cannot receive reviewer credentials")
+          if pr.get("state") != "open":
+              raise SystemExit("Only open PRs can be reviewed")
+          PY
+
+      - name: Run existing independent reviewer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROVIDER_KEY" ]]; then
+            echo "::warning::No $PROVIDER API key; no AI review performed. This is NOT an approval."
+            exit 0
+          fi
+          case "$PROVIDER" in
+            Claude)
+              export ANTHROPIC_API_KEY="$PROVIDER_KEY"
+              python3 .github/scripts/claude_pr_review.py ;;
+            Grok)
+              export XAI_API_KEY="$PROVIDER_KEY"
+              python3 .github/scripts/grok_pr_review.py ;;
+            DeepSeek)
+              export AI_API_KEY="$PROVIDER_KEY" AI_PROVIDER=DeepSeek
+              export AI_BASE_URL=https://api.deepseek.com
+              export AI_MODEL_PREFERENCES=deepseek-v4-pro,deepseek-flash,deepseek-v4-flash,deepseek-chat
+              export COMMENT_MARKER="<!-- deepseek-review -->" REVIEW_HEADING="DeepSeek review"
+              python3 .github/scripts/compatible_ai_pr_review.py ;;
+            Groq)
+              export AI_API_KEY="$PROVIDER_KEY" AI_PROVIDER=Groq
+              export AI_BASE_URL=https://api.groq.com/openai/v1
+              export AI_MODEL_PREFERENCES=openai/gpt-oss-120b,qwen/qwen3.8-27b,qwen/qwen3.6-27b,llama-3.3-70b-versatile
+              export COMMENT_MARKER="<!-- groq-review -->" REVIEW_HEADING="Groq review"
+              python3 .github/scripts/compatible_ai_pr_review.py ;;
+            *) echo "::error::Unsupported provider"; exit 1 ;;
+          esac
+
+  consensus:
+    needs: [providers, core]
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    name: Sentinel / Evidence consensus
+    steps:
+      - name: Checkout trusted SHA verifier from main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts/ultra_sentinel_review_sha.cjs
+          persist-credentials: false
+      - name: Update one pinned-to-commit status comment
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # pinned v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const number = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
+            if (!Number.isSafeInteger(number) || number <= 0) {
+              core.setFailed("Invalid PR number"); return;
+            }
+            const {data: pr} = await github.rest.pulls.get({owner,repo,pull_number:number});
+            if (pr.state !== "open" || pr.head.repo?.full_name !== owner + "/" + repo) {
+              core.setFailed("Only open same-repository PRs can be reviewed"); return;
+            }
+            const sha = pr.head.sha.slice(0,12);
+            const {matchesReviewHead} = require(require("node:path").resolve(".github/scripts/ultra_sentinel_review_sha.cjs"));
+            const specs = [
+              ["Claude","<!-- claude-sonnet-5-review -->"],
+              ["Grok","<!-- grok-4.7-review -->"],
+              ["DeepSeek","<!-- deepseek-review -->"],
+              ["Groq","<!-- groq-review -->"],
+              ["Ultra Sentinel Core","<!-- ultra-sentinel-core -->"]
+            ];
+            const comments = await github.paginate(github.rest.issues.listComments,
+              {owner,repo,issue_number:number,per_page:100});
+            const table = [];
+            let fresh = 0, high = 0;
+            for (const [provider, marker] of specs) {
+              const item = [...comments].reverse().find(c =>
+                c.user?.login === "github-actions[bot]" &&
+                (c.body || "").startsWith(marker));
+              const verified = Boolean(item) && (provider === "Ultra Sentinel Core"
+                ? (item.body || "").includes("**Commit:** " + pr.head.sha)
+                : matchesReviewHead(item.body || "", sha));
+              const count = verified ? ((item.body || "").match(/\[(BLOCKER|HIGH)\]/g) || []).length : 0;
+              if (verified && provider !== "Ultra Sentinel Core") { fresh++; high += count; }
+              table.push("| " + provider + " | " +
+                (verified ? "Reviewed current SHA" : "Unverified / missing") +
+                " | " + (verified ? String(count) + " severity tags" : "n/a") + " |");
+            }
+            const {data: changed} = await github.rest.pulls.listFiles({owner,repo,pull_number:number,per_page:100});
+            const filenames = changed.map(f=>f.filename).join(" ");
+            const risks = [];
+            if (/voice|wake|tts|speech/i.test(filenames)) risks.push("voice, restart loops and callbacks");
+            if (/thermal|network|performance|framepacing/i.test(filenames)) risks.push("hardware policy and resource bounds");
+            if (/auth|secret|supabase|token/i.test(filenames)) risks.push("security and secret isolation");
+            if (/gradle|workflows|build|coverage/i.test(filenames)) risks.push("CI, build and coverage");
+            if (/frontier|research|agent|ai/i.test(filenames)) risks.push("AI grounding, lifecycle and regressions");
+            const marker = "<!-- ultra-sentinel-consensus -->";
+            const lines = [
+              marker,
+              "## Ultra Sentinel: automatic CAR review",
+              "",
+              "**Head SHA:** " + sha,
+              "**Ultra Sentinel Core (mandatory):** ${{ needs.core.result }}",
+              "**External reviewers (optional):** ${{ needs.providers.result }}",
+              "",
+              "| Provider | Result | Potential severity tags |",
+              "|---|---|---|",
+              ...table,
+              "",
+              "**Relevant code-risk areas:** " + (risks.join("; ") || "General regression review"),
+              "",
+              "**Evidence:** " + fresh + "/4 fresh model reports. " +
+                high + " BLOCKER/HIGH labels to verify manually.",
+              "",
+              "All model findings are advisory, not proven bugs. Check Android Build, Smoke Test,",
+              "Coverage, logs, human review and Sentry version/date before merging. No auto-merge.",
+              "",
+              "Private dashboard: https://gamehub-ultra-control-center.vercel.app/sentinel.html"
+            ];
+            const body = lines.join("\n");
+            const {data: again} = await github.rest.pulls.get({owner,repo,pull_number:number});
+            if (again.head.sha !== pr.head.sha) {
+              core.setFailed("Head changed while reviewing; rerun required"); return;
+            }
+            const existing = comments.find(c =>
+              c.user?.login === "github-actions[bot]" &&
+              (c.body || "").startsWith(marker));
+            if (existing) await github.rest.issues.updateComment({
+              owner,repo,comment_id:existing.id,body
+            });
+            else await github.rest.issues.createComment({
+              owner,repo,issue_number:number,body
+            });
+            if ("${{ needs.core.result }}" !== "success") core.setFailed("Independent Sentinel Core failed; inspect core job.");
+            if (fresh === 0) core.warning("No external AI models reviewed this SHA; independent core still ran.");
+            else if ("${{ needs.providers.result }}" !== "success")
+              core.warning("Optional AI provider failed; inspect provider jobs.");
+            else if (fresh < 4)
+              core.warning("Only " + fresh + "/4 AI providers reviewed this head.");

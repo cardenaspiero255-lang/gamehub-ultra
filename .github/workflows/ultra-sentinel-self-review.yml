@@ -1,0 +1,61 @@
+name: Ultra Sentinel Self-Review Gate
+# pull_request_target jobs use ONLY trusted main source; never run PR code.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/workflows/ultra-sentinel-*.yml'
+      - '.github/sentinel-contracts/**'
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/workflows/ultra-sentinel-*.yml'
+      - '.github/sentinel-contracts/**'
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: sentinel-self-review-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  candidate-tests:
+    if: github.event_name == 'pull_request'
+    name: Candidate self-review tests (not independent)
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Checkout PR in unprivileged runner without persisted token
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate the PR's own self-review checker
+        run: |
+          node --check .github/scripts/ultra_sentinel_selfreview.cjs
+          node --test .github/scripts/ultra_sentinel_selfreview.test.cjs
+  trusted-review:
+    if: github.event_name == 'pull_request_target'
+    name: Trusted main Sentinel inspects Sentinel changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout independent main source, NEVER the PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+      - name: Validate trusted meta-review unit tests
+        run: |
+          node --check .github/scripts/ultra_sentinel_selfreview.cjs
+          node --test .github/scripts/ultra_sentinel_selfreview.test.cjs
+      - name: Scan immutable PR diff as untrusted data only
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node .github/scripts/ultra_sentinel_selfreview.cjs
