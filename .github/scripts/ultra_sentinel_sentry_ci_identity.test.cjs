@@ -7,7 +7,7 @@ const TRUST={'Android build':{id:131,path:'.github/workflows/android.yml',blobSh
 const run=(overrides={})=>({
  id:ID,name:'Android build',workflow_id:131,path:'.github/workflows/android.yml',
  head_sha:SHA,status:'completed',conclusion:'success',event:'push',head_branch:'main',
- run_attempt:1,repository:{full_name:REPO},head_repository:{full_name:REPO},
+ run_number:7,run_attempt:1,repository:{full_name:REPO},head_repository:{full_name:REPO},
  html_url:'https://github.com/'+REPO+'/actions/runs/'+ID,
  ...overrides
 });
