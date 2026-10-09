@@ -11,6 +11,11 @@ on:
         description: Open pull request number
         required: true
         type: string
+      run_external_providers:
+        description: "Opt in to paid AI reviewers after verifying provider credits and token quotas"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -137,9 +142,11 @@ jobs:
           retention-days: 7
 
   providers:
+    # Third-party calls are paid and may exhaust credit/token allowances.
+    # Keep Sentinel's independently verified Core active on every PR.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_external_providers == true
     name: Review / ${{ matrix.provider }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
