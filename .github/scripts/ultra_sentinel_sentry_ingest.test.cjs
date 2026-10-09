@@ -60,3 +60,21 @@ test('intake produces only sanitized artifact and never raw title/audio/PII',()=
 test('missing consent fails before network requests',async()=>{
  await assert.rejects(main({SENTRY_AUTH_TOKEN:'x'.repeat(16),SENTRY_ORG_SLUG:'org',SENTRY_PROJECT_SLUG:'app'}),/consent/);
 });
+
+
+test('Sentry releases are attached only after live GitHub CI verification',()=>{
+ const SHA='a'.repeat(40),RUN=99;
+ const raw=[{id:'23',project:{slug:'gamehub-ultra'},level:'error',count:'10',
+  firstSeen:'2026-10-08T09:00:00Z',lastSeen:'2026-10-08T10:00:00Z',
+  firstRelease:{version:SHA},title:'Bearer secret123 user@private.test'}];
+ const run={sha:SHA,workflow:'Android build',runId:RUN,
+  verification:'verified-github-api-run'};
+ const report=buildSanitizedReport(raw,{consent:true,attestedRuns:[run]});
+ assert.equal(report.verifiedReleases.length,1);
+ assert.equal(report.verifiedReleases[0].sha,SHA);
+ assert.equal(report.releaseHealth[SHA].status,'INCOMPLETE');
+ assert.ok(!JSON.stringify(report).includes('private.test'));
+ const complete=buildSanitizedReport(raw,{consent:true,attestedRuns:[run,
+  {...run,workflow:'Unit Test Coverage',runId:RUN+1}]});
+ assert.equal(complete.releaseHealth[SHA].status,'CI_VERIFIED');
+});
