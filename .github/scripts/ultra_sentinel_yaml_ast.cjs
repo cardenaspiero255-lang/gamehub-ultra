@@ -107,8 +107,17 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
   if(!isMap(job)){coverage.partial=true;continue;}
   checkPermissions(job.permissions,where);
   if(job.steps===undefined){
-   if(typeof job.uses==='string')continue; // Reusable workflow job.
-   // Purely declarative/non-step jobs are not evaluated as successful evidence.
+   if(typeof job.uses==='string'){
+    // Local same-repository reusable workflows follow this commit; only
+    // third-party reusable workflows must be full SHA pinned.
+    if(!/^\.\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(job.uses)){
+     const external=job.uses.match(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@(.+)$/);
+     if(!external||!PINNED.test(external[1]))
+      emit('UNPINNED_REUSABLE_WORKFLOW','HIGH',where);
+    }
+    continue;
+   }
+   // Dynamic job.uses cannot be verified as a fixed action source.
    coverage.partial=true;continue;
   }
   if(!Array.isArray(job.steps)){coverage.partial=true;continue;}
@@ -123,10 +132,13 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml'}={}){
     if(privileged&&/^actions\/checkout@/i.test(step.uses)){
      if(step.with!==undefined&&!isMap(step.with))coverage.partial=true;
      else if(isMap(step.with)){
-      if(step.with.ref!==undefined&&typeof step.with.ref!=='string'){
+      if((step.with.ref!==undefined&&typeof step.with.ref!=='string')||
+         (step.with.repository!==undefined&&typeof step.with.repository!=='string')){
        coverage.partial=true;
-      }else if(unsafePrRef(step.with.ref))
+      }else if(unsafePrRef(step.with.ref)||unsafePrRef(step.with.repository)){
+       // A fixed ref in a PR-controlled fork is STILL untrusted code.
        emit('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',where);
+      }
      }
     }
    }
