@@ -114,7 +114,7 @@ function privilegedTrigger(lines,audit={}){
  if(start<0)return false;
  rest=withoutLeadingAnchor(rest);
  if(rest.trim()){
-  if(/^[>|][+-]?$/.test(rest.trim())){
+  if(isBlockScalarHeader(rest)){
    const parts=[];
    let foldedCount=0;
    for(let j=start+1;j<lines.length;j++){
@@ -175,6 +175,10 @@ function stepRange(lines,useIndex){
 }
 function isUnsafePrRef(input){
  const value=scalar(input);
+ // pull_request_target must not checkout the PR head OR synthetic merge ref.
+ // Both literal refs/pull/42/merge and interpolated PR numbers are untrusted.
+ if(/^refs\/pull\/(?:\d+|\$\{\{[\s\S]*?\}\})\/(?:merge|head)$/i.test(value))
+  return true;
  const expressions=[...value.matchAll(/\$\{\{\s*([\s\S]*?)\s*\}\}/g)];
  return expressions.some(m=>{
   const expression=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
@@ -425,11 +429,27 @@ function shellPipelinesInStep(lines,step){
     const depth=lines[j].match(/^\s*/)[0].length;
     if(lines[j].trim()&&depth<=(isFirst?direct:indent))break;
     if(remoteShellPattern.test(lines[j]))matched.push(j+1);
-    if(lines[j].trim())script.push(lines[j].trim());
+    if(lines[j].trim())script.push({line:j+1,text:lines[j].trim()});
    }
-   // Folded YAML joins physical lines, including a pipe on the next line.
-   if(folded&&remoteShellPattern.test(script.join(' '))&&!matched.length)
-    matched.push(i+1);
+   // YAML folded scalars join physical lines. Literal shell scripts only
+   // join lines ending in a real unescaped backslash continuation.
+   if(folded){
+    if(remoteShellPattern.test(script.map(part=>part.text).join(' ')))
+     matched.push(i+1);
+   }else{
+    let command='',startLine=i+1;
+    for(const part of script){
+     if(!command)startLine=part.line;
+     command+=(command?' ':'')+part.text;
+     const trailing=/\\+$/.exec(command)?.[0].length||0;
+     if(trailing%2===1){
+      command=command.slice(0,-1).trimEnd();
+      continue;
+     }
+     if(remoteShellPattern.test(command))matched.push(startLine);
+     command='';
+    }
+   }
   }else if(remoteShellPattern.test(scalar(kv.value)))matched.push(i+1);
  }
  return matched;
@@ -510,6 +530,7 @@ function stepAction(lines,step){
 // never arbitrary labels, descriptions, comments or action names.
 function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
  let scope=null;
+ const rootIndent=yamlRootIndent(lines);
  const structural=structuralYamlRowMask(lines);
  for(let i=0;i<lines.length;i++){
   if(!structural[i])continue;
@@ -517,7 +538,7 @@ function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
   if(!trim||trim.startsWith('#'))continue;
   const indent=row.match(/^\s*/)[0].length,kv=keyValue(row);
   if(scope!==null&&indent<=scope.indent)scope=null;
-  const rootEvent=indent===0&&kv?.key==='on';
+  const rootEvent=indent===rootIndent&&kv?.key==='on';
   // Quoted "*name" is not a YAML alias, but is also not a supported Actions
   // trigger. Keep the existing fail-closed contract for ambiguous on scalars.
   if(rootEvent&&/^\s*["']\*[-A-Za-z0-9_]+["']\s*(?:#.*)?$/.test(kv.value))return true;
