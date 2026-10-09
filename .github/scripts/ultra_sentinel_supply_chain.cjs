@@ -9,9 +9,16 @@ const WRITABLE=new Set(['actions','attestations','checks','contents','deployment
  'security-events','statuses','artifact-metadata','code-quality',
  'repository-projects','members','administration','workflows']);
 const scalar=v=>{
- let s=String(v??'').trim().replace(/\s+#.*$/,'').trim();
- if(s.length>=2&&((s[0]==='"'&&s.at(-1)==='"')||(s[0]==="'"&&s.at(-1)==="'")))s=s.slice(1,-1);
- return s.trim();
+ // Decode YAML node *values* too: "\u0061ctions/checkout" is a checkout.
+ // strip comments only when outside quotes; never interpret PR source code.
+ const s=withoutYamlComment(v).trim();
+ if(s.length>=2&&s[0]==='"'&&s.at(-1)==='"'){
+  const decoded=decodeYamlKey(s.slice(1,-1));
+  return decoded===null?s:decoded.trim();
+ }
+ if(s.length>=2&&s[0]==="'"&&s.at(-1)==="'")
+  return s.slice(1,-1).replace(/''/g,"'").trim();
+ return s;
 };
 // Only decode bounded YAML quoted-key escapes, not arbitrary expressions.
 // Unknown escaped keys are marked unresolved so audit cannot report clean.
@@ -453,6 +460,26 @@ function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
  }
  return false;
 }
+
+function hasUnknownStructuralYamlKeys(lines){
+ let blockIndent=null;
+ for(const line of lines){
+  const trimmed=line.trim();
+  const indent=line.match(/^\s*/)[0].length;
+  if(blockIndent!==null){
+   // Blank and indented lines are literal block-scalar CONTENT, not keys.
+   if(!trimmed||indent>blockIndent)continue;
+   blockIndent=null;
+  }
+  if(!trimmed||trimmed.startsWith('#'))continue;
+  const kv=keyValue(line)||keyValue(line.replace(/^\s*-\s*/,'')); 
+  if(kv?.unresolved)return true;
+  if(kv&&/^[>|](?:(?:[+-][1-9]?)|(?:[1-9][+-]?)|[+-])?$/.test(
+    withoutYamlComment(kv.value).trim()))blockIndent=indent;
+ }
+ return false;
+}
+
 function reviewWorkflows({sha,expected,sources={}}={}){
  const findings=[],seen=new Set(),coverage={requested:0,scanned:0,partial:false};
  const output=status=>({schema:'ultra-sentinel-workflow-audit/v1',
@@ -483,7 +510,7 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   coverage.scanned++;
   const lines=code.split('\n'),audit={partial:false};
   // Unknown YAML key escapes must not silently certify a workflow clean.
-  if(lines.some(line=>keyValue(line)?.unresolved))coverage.partial=true;
+  if(hasUnknownStructuralYamlKeys(lines))coverage.partial=true;
   const privileged=privilegedTrigger(lines,audit);
   const steps=jobStepRanges(lines,audit);
   if(audit.partial||hasSensitiveAliases(lines,steps))coverage.partial=true;
