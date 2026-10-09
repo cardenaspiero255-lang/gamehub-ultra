@@ -34,18 +34,35 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   }
   coverage.scanned++;
   const lines=code.split('\n');
-  const hasPrivilegedTrigger=lines.some(l=>/^\s*(?:pull_request_target|workflow_run)\s*:/.test(l));
-  const hasCheckout=lines.some(l=>/^\s*(?:-\s*)?uses:\s*actions\/checkout@/.test(l));
+  // GitHub accepts "on: pull_request_target", "on: [push, pull_request_target]",
+  // and the indented block style. Inspect root triggers, not arbitrary YAML text.
+  const trigger=lines.findIndex(l=>/^(?:"on"|'on'|on)\s*:/.test(l));
+  let hasPrivilegedTrigger=false;
+  if(trigger>=0){
+   const inline=lines[trigger].replace(/^(?:"on"|'on'|on)\s*:\s*/,'').split('#')[0];
+   hasPrivilegedTrigger=/(?:^|[{\[,\s])(?:pull_request_target|workflow_run)(?:[\s:\]},]|$)/.test(inline);
+   if(!hasPrivilegedTrigger&&!inline.trim()){
+    for(const line of lines.slice(trigger+1)){
+     if(/^[^\s#][^:]*:/.test(line))break;
+     if(/^\s+(?:pull_request_target|workflow_run)\s*:/.test(line)){
+      hasPrivilegedTrigger=true;break;
+     }
+    }
+   }
+  }
+  const hasCheckout=lines.some(l=>/^\s*(?:-\s*)?uses:\s*["']?actions\/checkout@/.test(l));
   for(let i=0;i<lines.length;i++){
    const line=lines[i],trim=line.trim();
    if(!trim||trim.startsWith('#'))continue;
-   const uses=line.match(/^\s*(?:-\s*)?uses:\s*([^\s#]+)/);
-   if(uses&&!uses[1].startsWith('./')){
-    const action=uses[1];
-    if(!/^[-A-Za-z0-9_.\/]+@[a-f0-9]{40}$/i.test(action))
+   const uses=line.match(/^\s*(?:-\s*)?uses:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))/);
+   if(uses){
+    // Normalize YAML scalar quoting, preserving immutable action digests.
+    const action=uses[1]||uses[2]||uses[3];
+    if(!action.startsWith('./')&&!/^[-A-Za-z0-9_.\/]+@[a-f0-9]{40}$/i.test(action))
       flag('UNPINNED_ACTION','HIGH',name,i+1);
    }
-   if(/^\s*(?:contents|actions|issues|pull-requests|packages|deployments|id-token):\s*write(?:\s*(?:#.*)?)?$/.test(line))
+   if(/^\s*permissions:\s*(?:["']?write-all["']?|[{][^}]*\b[a-z-]+\s*:\s*["']?write["']?[^}]*[}])\s*(?:#.*)?$/.test(line)||
+      /^\s*(?:actions|attestations|checks|contents|deployments|discussions|id-token|issues|models|packages|pages|pull-requests|security-events|statuses):\s*["']?write["']?\s*(?:#.*)?$/.test(line))
      flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
    if(/\bcurl\b.{0,240}\|\s*(?:bash|sh)(?:\s|$)/.test(trim)||
       /\bwget\b.{0,240}\|\s*(?:bash|sh)(?:\s|$)/.test(trim))
