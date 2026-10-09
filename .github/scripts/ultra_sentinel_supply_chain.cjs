@@ -410,6 +410,308 @@ const remoteShellPattern=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|
 // Normalize only for conservative risk detection; never execute this data.
 function matchesRemotePipeline(value){
  const normalized=String(value).replace(/\\(?=[A-Za-z])/g,'')
+  .replace(/\
+ return remoteShellPattern.test(normalized);
+}
+function shellPipelinesInStep(lines,step){
+ const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
+ const original=withoutLeadingAnchor(lines[start].replace(/^\s*-\s*/,''));
+ if(original.startsWith('{')){
+  const map=collectFlowMap(lines,start,end,original);
+  if(map.closed&&map.value.trim().endsWith('}')){
+   return splitFlowEntries(map.value.trim().slice(1,-1)).some(entry=>{
+    const kv=keyValue(entry.trim());
+    return kv?.key==='run'&&matchesRemotePipeline(scalar(kv.value));
+   })?[start+1]:[];
+  }
+ }
+ const mask=structuralYamlRowMask(lines),matched=[];
+ const childIndent=original?null:lines.slice(start+1,end)
+  .find(line=>line.trim()&&!line.trim().startsWith('#')&&keyValue(line))
+  ?.match(/^\s*/)[0].length;
+ const direct=childIndent??itemIndent+2;
+ for(let i=start;i<end;i++){
+  if(!mask[i])continue;
+  const isFirst=i===start;
+  const indent=lines[i].match(/^\s*/)[0].length;
+  if(!isFirst&&indent!==direct)continue;
+  const kv=keyValue(isFirst?original:lines[i]);
+  if(kv?.key!=='run')continue;
+  if(isBlockScalarHeader(kv.value)){
+   const folded=withoutLeadingAnchor(kv.value).startsWith('>'),script=[];
+   for(let j=i+1;j<end;j++){
+    const depth=lines[j].match(/^\s*/)[0].length;
+    if(lines[j].trim()&&depth<=(isFirst?direct:indent))break;
+    if(matchesRemotePipeline(lines[j]))matched.push(j+1);
+    if(lines[j].trim())script.push({line:j+1,text:lines[j].trim()});
+   }
+   // YAML folded scalars join physical lines. Literal shell scripts only
+   // join lines ending in a real unescaped backslash continuation.
+   if(folded){
+    if(matchesRemotePipeline(script.map(part=>part.text).join(' ')))
+     matched.push(i+1);
+   }else{
+    let command='',startLine=i+1,continued=false;
+    for(const part of script){
+     if(!command)startLine=part.line;
+     command+=(command&&!continued?' ':'')+part.text;
+     continued=false;
+     const trailing=/\\+$/.exec(command)?.[0].length||0;
+     if(trailing%2===1){
+      command=command.slice(0,-1);
+      continued=true;
+      continue;
+     }
+     // A pipe operator continues into the next Bash line even without a
+     // backslash. Preserve only that command until the interpreter is seen.
+     if(/\|&?[ \t]*$/.test(command)){continued=true;continue;}
+     if(matchesRemotePipeline(command))matched.push(startLine);
+     command='';
+    }
+   }
+  }else if(matchesRemotePipeline(scalar(kv.value)))matched.push(i+1);
+ }
+ return matched;
+}
+
+function stepAction(lines,step){
+ const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
+ const original=withoutLeadingAnchor(lines[start].replace(/^\s*-\s*/,''));
+ let action=null,actionLine=null;
+ const dangerous=[];let incomplete=false;
+ // Flow-style steps can span several physical YAML lines. Build the exact
+ // nested-brace mapping before parsing; quotes protect embedded expressions.
+ let flowText=original.trim();
+ if(flowText.startsWith('{')){
+  const mapping=collectFlowMap(lines,start,end,flowText);
+  if(!mapping.closed)return {action:null,actionLine:null,dangerous,incomplete:true};
+  flowText=mapping.value;
+ }
+ const flow=flowText.match(/^\{([\s\S]*)\}\s*(?:#.*)?$/);
+ if(flow){
+  for(const entry of splitFlowEntries(flow[1])){
+   const kv=keyValue(entry.trim());
+   if(kv?.key==='uses'){action=scalar(kv.value);actionLine=start+1;}
+   if(kv?.key==='with'&&refInFlowValue(kv.value))dangerous.push(start+1);
+  }
+  return {action,actionLine,dangerous};
+ }
+ // A bare "-" permits any deeper indentation for the child's mapping.
+ const childIndent=original.trim()===''?lines.slice(start+1,end)
+  .find(ln=>ln.trim()&&!ln.trim().startsWith('#')&&
+   ln.match(/^\s*/)[0].length>itemIndent&&keyValue(ln))
+  ?.match(/^\s*/)[0].length:null;
+ const direct=childIndent??itemIndent+2;
+ let withStart=null,withEnd=null,withValue=null,withLine=null;
+ const first=keyValue(original);
+ if(first?.key==='uses'){
+  const result=readStepScalar(lines,start,end,first.value,itemIndent+2);
+  action=result.value;incomplete ||=result.incomplete;actionLine=start+1;
+ }
+ if(first?.key==='with'){withStart=start;withValue=first.value;withLine=start+1;}
+ for(let i=start+1;i<end;i++){
+  const line=lines[i],indent=line.match(/^\s*/)[0].length;
+  if(indent!==direct)continue;
+  const kv=keyValue(line);
+  if(!kv)continue;
+  if(kv.key==='uses'){
+   const result=readStepScalar(lines,i,end,kv.value,indent);
+   action=result.value;incomplete ||=result.incomplete;actionLine=i+1;
+  }
+  if(kv.key==='with'){withStart=i;withEnd=null;withValue=kv.value;withLine=i+1;}
+  else if(withStart!==null&&withEnd===null)withEnd=i;
+ }
+ if(withStart===null)return {action,actionLine,dangerous,incomplete};
+ if(refInFlowValue(withValue))dangerous.push(withLine);
+ const stop=withEnd??end;
+ for(let i=withStart+1;i<stop;i++){
+  const line=lines[i],indent=line.match(/^\s*/)[0].length;
+  if(indent<=direct)continue;
+  const kv=keyValue(line);
+  if(!['ref','repository'].includes(kv?.key))continue;
+  let value=String(kv.value||'').trim();
+  if(isBlockScalarHeader(value)){
+   const sub=[];
+   for(let k=i+1;k<stop;k++){
+    const r=lines[k],dep=r.match(/^\s*/)[0].length;
+    if(r.trim()&&dep<=indent)break;
+    if(r.trim()&&!r.trim().startsWith('#'))sub.push(r.trim());
+   }
+   value=sub.join(' ');
+  }
+  if(isUnsafePrRef(value))dangerous.push(i+1);
+ }
+ return {action,actionLine,dangerous,incomplete};
+}
+// YAML aliases in security-sensitive values are not trustworthy without a
+// complete YAML parser. Treat them as INCOMPLETE rather than silently clear.
+// Only scope aliases inside on/permissions mappings or checkout inputs,
+// never arbitrary labels, descriptions, comments or action names.
+function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
+ let scope=null;
+ const rootIndent=yamlRootIndent(lines);
+ const structural=structuralYamlRowMask(lines);
+ for(let i=0;i<lines.length;i++){
+  if(!structural[i])continue;
+  const row=lines[i],trim=row.trim();
+  if(!trim||trim.startsWith('#'))continue;
+  const indent=row.match(/^\s*/)[0].length,kv=keyValue(row);
+  if(scope!==null&&indent<=scope.indent)scope=null;
+  const rootEvent=indent===rootIndent&&kv?.key==='on';
+  // Quoted "*name" is not a YAML alias, but is also not a supported Actions
+  // trigger. Keep the existing fail-closed contract for ambiguous on scalars.
+  if(rootEvent&&/^\s*["']\*[-A-Za-z0-9_]+["']\s*(?:#.*)?$/.test(kv.value))return true;
+  const permissions=kv?.key==='permissions'&&inRealPermissionsMap(lines,i);
+  const input=kv&&['uses','with','ref','repository'].includes(kv.key)&&
+   stepRanges.some(s=>s.start<=i&&i<s.end);
+  if(rootEvent||permissions)scope={indent};
+  const examined=(rootEvent||permissions||input)?kv.value:
+   scope&&indent>scope.indent?trim:'';
+  // A leading *alias or an alias nested in a flow sequence/map is
+  // intentionally unresolved and must fail closed, including quoted aliases.
+  // A flow-step begins with "- {"; ref aliases there are nested in the
+  // sequence item, so keyValue(row) cannot expose that syntax.
+  // Check the *entire* compact flow step, including continued lines and
+  // YAML-quoted mapping keys. A ref alias is not a verified checkout target.
+  // Only inspect real job steps, never arbitrary env/run text named "uses".
+  const flowStep=stepRanges.find(s=>s.start===i);
+  const flowStepValue=flowStep && withoutLeadingAnchor(row.replace(/^\s*-\s*/,''));
+  const flowStepAlias=flowStepValue?.startsWith('{') &&
+   sensitiveFlowAlias(collectFlowMap(lines,flowStep.start,flowStep.end,
+    flowStepValue).value);
+  // A sequence item can itself be a YAML alias or use a merge-key alias.
+  // Neither gives evidence about the real action or checkout ref: fail closed.
+  const unresolvedStep=typeof flowStepValue==='string'&&
+   (/^\*[-A-Za-z0-9_.]+(?:\s|$)/.test(flowStepValue)||
+    /^<<\s*:/.test(flowStepValue));
+  // Inspect structural mapping entries throughout every step (not only
+  // the first key). Unresolved merges must not certify hidden uses/with.
+  const stepMerge=stepRanges.some(s=>s.start<=i&&i<s.end)&&/^<<\s*:/.test(trim);
+  if(unresolvedStep||stepMerge||flowStepAlias||containsYamlAlias(examined))return true;
+ }
+ return false;
+}
+
+// One structural mask for every security-sensitive YAML scan.
+// Content inside | and > block scalars is script/text data, not YAML nodes.
+function structuralYamlRowMask(lines){
+ const mask=[];let blockIndent=null;
+ for(const line of lines){
+  const trimmed=line.trim(),indent=line.match(/^\s*/)[0].length;
+  if(blockIndent!==null){
+   if(!trimmed||indent>blockIndent){mask.push(false);continue;}
+   blockIndent=null;
+  }
+  mask.push(true);
+  if(!trimmed||trimmed.startsWith('#'))continue;
+  const kv=keyValue(line)||keyValue(line.replace(/^\s*-\s*/,''));
+  if(kv&&/^[>|](?:(?:[+-][1-9]?)|(?:[1-9][+-]?)|[+-])?$/.test(
+    withoutYamlComment(kv.value).trim())){
+   // Sequence mapping keys start after "- "; literal content has deeper
+   // indentation, but subsequent uses/with siblings are at key indentation.
+   const sequencePrefix=line.match(/^(\s*)-\s+/);
+   blockIndent=sequencePrefix?sequencePrefix[0].length:indent;
+  }
+ }
+ return mask;
+}
+function hasUnknownStructuralYamlKeys(lines){
+ const mask=structuralYamlRowMask(lines);
+ return lines.some((line,i)=>mask[i]&&
+  (keyValue(line)||keyValue(line.replace(/^\s*-\s*/,'')))?.unresolved);
+}
+
+function reviewWorkflows({sha,expected,sources={}}={}){
+ const findings=[],seen=new Set(),coverage={requested:0,scanned:0,partial:false};
+ const output=status=>({schema:'ultra-sentinel-workflow-audit/v1',
+  sha:SHA.test(sha||'')?sha.toLowerCase():null,status,coverage,findings:findings.slice(0,MAX_ALERTS),
+  autoApproveAllowed:false,autoMergeAllowed:false});
+ if(!SHA.test(sha||'')||!Array.isArray(expected)||!sources||
+   typeof sources!=='object'||Array.isArray(sources)){
+  coverage.partial=true;return output('INCOMPLETE');
+ }
+ const names=[...new Set(expected)];
+ coverage.requested=names.length;
+ if(names.length>MAX_FILES||names.some(n=>typeof n!=='string'||!WORKFLOW.test(n)||
+    n.includes('..'))){coverage.partial=true;return output('INCOMPLETE');}
+ if(!names.length)return output('NOT_APPLICABLE');
+ const flag=(rule,severity,path,line)=>{
+  const key=path+'#'+rule+'#'+line;
+  if(seen.has(key)||findings.length>=MAX_ALERTS)return;
+  seen.add(key);
+  findings.push({rule,severity,path,line,confidence:'HEURISTIC',
+   verification:'Inspect trusted full workflow and reproduce the path before concluding.',
+   status:'NEEDS_HUMAN_VERIFICATION'});
+ };
+ for(const name of names){
+  const code=sources[name];
+  if(typeof code!=='string'||code.length>MAX_SOURCE||!code.trim()){
+   coverage.partial=true;continue;
+  }
+  coverage.scanned++;
+  const lines=code.split('\n'),audit={partial:false};
+  // Unknown YAML key escapes must not silently certify a workflow clean.
+  if(hasUnknownStructuralYamlKeys(lines))coverage.partial=true;
+  const privileged=privilegedTrigger(lines,audit);
+  const steps=jobStepRanges(lines,audit);
+  if(audit.partial||hasSensitiveAliases(lines,steps))coverage.partial=true;
+  for(const step of steps){
+   for(const line of shellPipelinesInStep(lines,step))
+    flag('REMOTE_SHELL_PIPELINE','HIGH',name,line);
+   const details=stepAction(lines,step);
+   if(details.incomplete)coverage.partial=true;
+   const action=details.action;
+   if(!action)continue;
+   if(!action.startsWith('./')&&!/^[-A-Za-z0-9_.\/]+@[a-f0-9]{40}$/i.test(action))
+    flag('UNPINNED_ACTION','HIGH',name,details.actionLine);
+   if(privileged&&/^actions\/checkout@/i.test(action))
+    for(const lineNumber of details.dangerous)
+     flag('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',name,lineNumber);
+  }
+  let permissionsIndent=null;
+  for(let i=0;i<lines.length;i++){
+   const line=lines[i],trim=line.trim();
+   if(!trim||trim.startsWith('#'))continue;
+   const indent=line.match(/^\s*/)[0].length;
+   if(permissionsIndent!==null&&indent<=permissionsIndent)permissionsIndent=null;
+   const permissionKey=keyValue(line);
+   if(permissionKey?.key==='permissions'&&inRealPermissionsMap(lines,i)){
+    if(writableLine(line))flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    // Flow permission maps may continue on following lines and contain
+    // several comma-delimited entries on the same physical line. Parse the
+    // collected flow *entries*, not each physical line as a single scalar.
+    const permissionValue=withoutLeadingAnchor(permissionKey.value);
+    let flowClosed=false;
+    if(permissionValue.startsWith('{')){
+     const mapping=collectFlowMap(lines,i,lines.length,permissionValue);
+     flowClosed=mapping.closed;
+     if(!flowClosed)coverage.partial=true;
+     else if(splitFlowEntries(mapping.value.slice(1,-1))
+      .some(part=>writableLine(part.trim())))
+      flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    }
+    if(/^[>|][+-]?$/.test(permissionValue)){
+     const items=[];
+     for(let k=i+1;k<Math.min(lines.length,i+65);k++){
+      const child=lines[k],childIndent=child.match(/^\s*/)[0].length;
+      if(child.trim()&&childIndent<=indent)break;
+      if(child.trim()&&!child.trim().startsWith('#'))items.push(child.trim());
+     }
+     if(items.join(' ').trim()==='write-all')
+      flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    }
+    if(!permissionValue||(permissionValue.startsWith('{')&&!flowClosed))
+      permissionsIndent=indent;
+   }else if(permissionsIndent!==null&&indent>permissionsIndent&&writableLine(line)){
+    flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+   }
+  }
+ }
+ if(findings.length>=MAX_ALERTS)coverage.partial=true;
+ return output(coverage.partial?'INCOMPLETE':findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN');
+}
+module.exports={reviewWorkflows};
+([A-Za-z]*)'/g,'$1')
   .replace(/(['"])([A-Za-z]*)\1/g,'$2');
  return remoteShellPattern.test(normalized);
 }
