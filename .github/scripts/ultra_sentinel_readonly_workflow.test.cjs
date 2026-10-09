@@ -43,13 +43,14 @@ test('Sentinel workflows pin Node 24 artifact uploads and GitHub API scripting',
  ];
  for(const name of workflows){
   const content=fs.readFileSync(path.resolve(__dirname,'../workflows',name),'utf8');
-  assert.match(content,/actions\\/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f/,
+  assert.ok(content.includes('actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f'),
    name+' must use audited Node 24 artifact action');
-  assert.doesNotMatch(content,/actions\\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+  assert.ok(!content.includes('actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02'),
+   name+' must not use retired Node 20 artifact action');
  }
  for(const name of workflows.slice(0,2)){
   const content=fs.readFileSync(path.resolve(__dirname,'../workflows',name),'utf8');
-  assert.match(content,/actions\\/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd/,
+  assert.ok(content.includes('actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd'),
    name+' must use SHA-pinned Node 24 GitHub script');
  }
 });
