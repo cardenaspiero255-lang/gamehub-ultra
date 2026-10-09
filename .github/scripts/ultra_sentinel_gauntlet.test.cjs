@@ -126,3 +126,47 @@ test('GAUNTLET 120 synthetic Sentry incidents cannot leak titles, PII or secrets
  }
  assert.equal(cases,120);assert.deepEqual(misses,[]);
 });
+
+const unsafeRef='$'+'{{ github.event.pull_request.head.sha }}';
+const oneDangerousCheckout= 'jobs:\n  test:\n    steps:\n      - name: checkout\n        uses: '+CHECKOUT+
+ '\n        with:\n          ref: '+unsafeRef+'\n';
+test('GAUNTLET new: multiline flow list events are privileged (Codex P1)',()=>{
+ for(const prefix of [
+  'on: [\n  pull_request_target,\n  push\n]\n',
+  'on: [\n  "pull_request_target",\n  push\n]\n',
+  "on: [\n  'workflow_run'\n]\n",
+  'on: {\n  "workflow_run": {}\n}\n'
+ ]){
+  const out=analyze(prefix+oneDangerousCheckout);
+  assert.ok(includes(out,'PRIVILEGED_PR_CODE_CHECKOUT'),prefix+': '+out.status);
+ }
+});
+test('GAUNTLET new: checkout ref before uses cannot hide privilege escalation (Codex P1)',()=>{
+ const variants=[
+  '      - name: reverse order\n        with:\n          ref: "'+unsafeRef+'"\n        uses: '+CHECKOUT+'\n',
+  "      - name: reverse order\n        with:\n          ref: '"+unsafeRef+"'\n        uses: "+CHECKOUT+'\n',
+  '      - name: reverse flow mapping\n        with: {ref: "'+unsafeRef+'"}\n        uses: '+CHECKOUT+'\n'
+ ];
+ for(const code of variants){
+  const out=analyze('on: pull_request_target\njobs:\n  test:\n    steps:\n'+code);
+  assert.ok(includes(out,'PRIVILEGED_PR_CODE_CHECKOUT'),out.status+': '+code);
+ }
+});
+test('GAUNTLET new: action inputs and env vars do not falsely become GitHub permissions (Codex P2)',()=>{
+ const variants=[
+  'on: push\njobs:\n  build:\n    env:\n      contents: write\n',
+  'on: push\njobs:\n  build:\n    env:\n      "security-events": write\n',
+  'on: push\njobs:\n  build:\n    steps:\n      - uses: '+OTHER+'\n        with:\n          permissions: write-all\n',
+  'on: push\njobs:\n  build:\n    steps:\n      - uses: '+OTHER+'\n        with:\n          contents: write\n'
+ ];
+ for(const code of variants){
+  const out=analyze(code);
+  assert.ok(!includes(out,'PRIVILEGED_WRITE_TOKEN'),JSON.stringify(out));
+ }
+});
+test('GAUNTLET new: actual job-level permissions still generate HIGH review (Codex P2)',()=>{
+ for(const permissions of ['contents: write','"checks": write',"'security-events': write"]){
+  const code='on: push\njobs:\n  test:\n    permissions:\n      '+permissions+'\n    runs-on: ubuntu-latest\n';
+  assert.ok(includes(analyze(code),'PRIVILEGED_WRITE_TOKEN'),permissions);
+ }
+});
