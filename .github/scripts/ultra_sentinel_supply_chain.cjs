@@ -6,7 +6,8 @@ const WORKFLOW=/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 const MAX_FILES=25,MAX_SOURCE=160000,MAX_ALERTS=40;
 const WRITABLE=new Set(['actions','attestations','checks','contents','deployments','discussions',
  'environments','id-token','issues','models','packages','pages','pull-requests',
- 'security-events','statuses','repository-projects','members','administration','workflows']);
+ 'security-events','statuses','artifact-metadata','code-quality',
+ 'repository-projects','members','administration','workflows']);
 const scalar=v=>{
  let s=String(v??'').trim().replace(/\s+#.*$/,'').trim();
  if(s.length>=2&&((s[0]==='"'&&s.at(-1)==='"')||(s[0]==="'"&&s.at(-1)==="'")))s=s.slice(1,-1);
@@ -77,7 +78,10 @@ function stepRange(lines,useIndex){
 function isUnsafePrRef(input){
  const value=scalar(input);
  const expressions=[...value.matchAll(/\$\{\{\s*([\s\S]*?)\s*\}\}/g)];
- return expressions.some(m=>/\bgithub\.(?:event\.pull_request\.head\.(?:sha|ref)|head_ref)\b/.test(m[1]));
+ return expressions.some(m=>{
+  const expression=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
+  return /\bgithub\.(?:event\.pull_request\.head\.(?:sha|ref)|head_ref)\b/.test(expression);
+ });
 }
 function splitFlowEntries(content){
  const chunks=[];let quote=null,escaped=false,depth=0,begin=0;
@@ -171,6 +175,94 @@ function inRealPermissionsMap(lines,index){
  return parents.includes('jobs')&&
   !parents.some(p=>['steps','with','env','inputs','strategy','services','defaults'].includes(p));
 }
+// Read actions only from jobs.<job>.steps sequence items. Looking for "uses:"
+ // anywhere in YAML also matches unrelated environment variables and run scripts.
+function jobStepRanges(lines){
+ const ranges=[];
+ for(let i=0;i<lines.length;i++){
+  const kv=keyValue(lines[i]);
+  if(kv?.key!=='steps'||kv.value.trim()||!inRealPermissionsMap(lines,i))continue;
+  const parentIndent=lines[i].match(/^\s*/)[0].length,heads=[];
+  let itemIndent=null;
+  for(let j=i+1;j<lines.length;j++){
+   const ln=lines[j],trim=ln.trim(),indent=ln.match(/^\s*/)[0].length;
+   if(!trim||trim.startsWith('#'))continue;
+   if(indent<=parentIndent)break;
+   if(/^\s*-\s+/.test(ln)){
+    if(itemIndent===null)itemIndent=indent;
+    if(indent===itemIndent)heads.push(j);
+   }
+  }
+  for(let j=0;j<heads.length;j++){
+   let end=lines.length;
+   if(j+1<heads.length)end=heads[j+1];
+   else for(let k=heads[j]+1;k<lines.length;k++){
+    if(lines[k].trim()&&lines[k].match(/^\s*/)[0].length<=parentIndent){end=k;break;}
+   }
+   ranges.push({start:heads[j],end});
+  }
+ }
+ return ranges;
+}
+function refInFlowValue(value){
+ const mapped=String(value||'').trim().match(/^\{([\s\S]*)\}$/);
+ if(!mapped)return false;
+ for(const entry of splitFlowEntries(mapped[1])){
+  const kv=keyValue(entry);
+  if(kv?.key==='ref'&&isUnsafePrRef(kv.value))return true;
+ }
+ return false;
+}
+function stepAction(lines,step){
+ const {start,end}=step,itemIndent=lines[start].match(/^\s*/)[0].length;
+ const original=lines[start].replace(/^\s*-\s*/,'');
+ let action=null,actionLine=null;
+ const dangerous=[];
+ const flow=original.trim().match(/^\{([\s\S]*)\}\s*(?:#.*)?$/);
+ if(flow){
+  for(const entry of splitFlowEntries(flow[1])){
+   const kv=keyValue(entry);
+   if(kv?.key==='uses'){action=scalar(kv.value);actionLine=start+1;}
+   if(kv?.key==='with'&&refInFlowValue(kv.value))dangerous.push(start+1);
+  }
+  return {action,actionLine,dangerous};
+ }
+ const direct=itemIndent+2;
+ let withStart=null,withEnd=null,withValue=null,withLine=null;
+ const first=keyValue(original);
+ if(first?.key==='uses'){action=scalar(first.value);actionLine=start+1;}
+ if(first?.key==='with'){withStart=start;withValue=first.value;withLine=start+1;}
+ for(let i=start+1;i<end;i++){
+  const line=lines[i],indent=line.match(/^\s*/)[0].length;
+  if(indent!==direct)continue;
+  const kv=keyValue(line);
+  if(!kv)continue;
+  if(kv.key==='uses'){action=scalar(kv.value);actionLine=i+1;}
+  if(kv.key==='with'){withStart=i;withEnd=null;withValue=kv.value;withLine=i+1;}
+  else if(withStart!==null&&withEnd===null)withEnd=i;
+ }
+ if(withStart===null)return {action,actionLine,dangerous};
+ if(refInFlowValue(withValue))dangerous.push(withLine);
+ const stop=withEnd??end;
+ for(let i=withStart+1;i<stop;i++){
+  const line=lines[i],indent=line.match(/^\s*/)[0].length;
+  if(indent<=direct)continue;
+  const kv=keyValue(line);
+  if(kv?.key!=='ref')continue;
+  let value=String(kv.value||'').trim();
+  if(/^[>|][+-]?$/.test(value)){
+   const sub=[];
+   for(let k=i+1;k<stop;k++){
+    const r=lines[k],dep=r.match(/^\s*/)[0].length;
+    if(r.trim()&&dep<=indent)break;
+    if(r.trim()&&!r.trim().startsWith('#'))sub.push(r.trim());
+   }
+   value=sub.join(' ');
+  }
+  if(isUnsafePrRef(value))dangerous.push(i+1);
+ }
+ return {action,actionLine,dangerous};
+}
 function reviewWorkflows({sha,expected,sources={}}={}){
  const findings=[],seen=new Set(),coverage={requested:0,scanned:0,partial:false};
  const output=status=>({schema:'ultra-sentinel-workflow-audit/v1',
@@ -200,20 +292,20 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   }
   coverage.scanned++;
   const lines=code.split('\n'),privileged=privilegedTrigger(lines);
+  for(const step of jobStepRanges(lines)){
+   const details=stepAction(lines,step);
+   const action=details.action;
+   if(!action)continue;
+   if(!action.startsWith('./')&&!/^[-A-Za-z0-9_.\/]+@[a-f0-9]{40}$/i.test(action))
+    flag('UNPINNED_ACTION','HIGH',name,details.actionLine);
+   if(privileged&&/^actions\/checkout@/i.test(action))
+    for(const lineNumber of details.dangerous)
+     flag('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',name,lineNumber);
+  }
   let permissionsIndent=null;
   for(let i=0;i<lines.length;i++){
    const line=lines[i],trim=line.trim();
    if(!trim||trim.startsWith('#'))continue;
-   const uses=line.match(/^\s*(?:-\s*)?(?:"uses"|'uses'|uses)\s*:\s*(?:"([^"]+)"|'([^']+)'|([^\s#]+))/);
-   if(uses){
-    const action=uses[1]||uses[2]||uses[3];
-    if(!action.startsWith('./')&&!/^[-A-Za-z0-9_.\/]+@[a-f0-9]{40}$/i.test(action))
-      flag('UNPINNED_ACTION','HIGH',name,i+1);
-    if(privileged&&/^actions\/checkout@/i.test(action)){
-     for(const lineNumber of dangerousCheckoutRefs(lines,i))
-      flag('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',name,lineNumber);
-    }
-   }
    const indent=line.match(/^\s*/)[0].length;
    if(permissionsIndent!==null&&indent<=permissionsIndent)permissionsIndent=null;
    const permissionKey=keyValue(line);
