@@ -70,6 +70,17 @@ class VoiceAssistantControllerRobolectricTest {
                 arrayListOf("late partial")
             )
         })
+        // Simulate already-queued callbacks that run AFTER release. Both paths
+        // must return before starting another recognizer or forwarding errors.
+        val lateFallbackRetry = VoiceAssistantController::class.java
+            .getDeclaredField("fallbackRetry")
+            .apply { isAccessible = true }
+            .get(controller) as Runnable
+        lateFallbackRetry.run()
+        VoiceAssistantController::class.java
+            .getDeclaredMethod("startListeningWithCurrentLanguage")
+            .apply { isAccessible = true }
+            .invoke(controller)
         controller.startListening()
         controller.stopListening()
         controller.speak("Do not resurrect TTS after release")
