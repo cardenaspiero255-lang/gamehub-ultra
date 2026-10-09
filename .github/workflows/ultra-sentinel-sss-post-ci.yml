@@ -90,6 +90,7 @@ jobs:
               }
               const ci=attestCi({sha:pr.head.sha,repo:owner+'/'+repo,runs:ciRuns,apiComplete,
                 trustedWorkflows,changedFiles,changedFilesComplete});
+              if(ci.status==='UNTRUSTED')core.setFailed('PR changed protected CI definitions; refuse any successful attestation.');
               // A changing PR must not be certified using an older SHA.
               const {data: latest}=await github.rest.pulls.get({owner,repo,pull_number:n});
               if(latest.state!=='open'||latest.head.sha!==run.head_sha){

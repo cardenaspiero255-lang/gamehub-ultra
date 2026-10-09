@@ -107,6 +107,7 @@ jobs:
             }
             const ci=attestCi({sha:pr.head.sha,repo:owner+"/"+repo,runs:ciRuns,apiComplete,
               trustedWorkflows,changedFiles,changedFilesComplete});
+            if(ci.status==='UNTRUSTED')core.setFailed('Untrusted Android/Coverage workflow definition changed in PR. No CI approval possible.');
 
             // Hunter -> Fixer -> Judge: proposals only, no execution or PR writes.
             // Fetch at most 3 exact Kotlin files as untrusted DATA, never checkout PR head.
