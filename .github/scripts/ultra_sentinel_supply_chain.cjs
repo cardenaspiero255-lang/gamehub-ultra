@@ -218,7 +218,30 @@ function stepAction(lines,step){
  const original=lines[start].replace(/^\s*-\s*/,'');
  let action=null,actionLine=null;
  const dangerous=[];
- const flow=original.trim().match(/^\{([\s\S]*)\}\s*(?:#.*)?$/);
+ // Flow-style steps can span several physical YAML lines. Build the exact
+ // nested-brace mapping before parsing; quotes protect embedded expressions.
+ let flowText=original.trim();
+ if(flowText.startsWith('{')){
+  let quote=null,escape=false,depth=0,closed=false,parts=[];
+  for(const character of lines.slice(start,end).map((line,k)=>
+    (k===0?line.replace(/^\s*-\s*/,''):line.trim())).join('\n')){
+   parts.push(character);
+   if(quote){
+    if(escape)escape=false;
+    else if(character==='\\')escape=true;
+    else if(character===quote)quote=null;
+    continue;
+   }
+   if(character==='"'||character==="'"){quote=character;continue;}
+   if(character==='{')depth++;
+   else if(character==='}'){
+    depth--;
+    if(depth===0){closed=true;break;}
+   }
+  }
+  flowText=closed?parts.join(''):'';
+ }
+ const flow=flowText.match(/^\{([\s\S]*)\}\s*(?:#.*)?$/);
  if(flow){
   for(const entry of splitFlowEntries(flow[1])){
    const kv=keyValue(entry);
@@ -292,6 +315,15 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   }
   coverage.scanned++;
   const lines=code.split('\n'),privileged=privilegedTrigger(lines);
+  // Aliases in security-sensitive root event configuration must never
+  // silently default to an unprivileged trigger. For unresolved aliases,
+  // mark this audit incomplete so the caller's fail-closed gate blocks it.
+  const rootEvent=lines.find(line=>/^(?:on|"on"|'on')\s*:/.test(line));
+  if(rootEvent){
+   const rawEvent=rootEvent.replace(/^(?:on|"on"|'on')\s*:\s*/,'').trim();
+   if(/^['"]?\*[A-Za-z0-9_-]+['"]?(?:\s+#.*)?$/.test(rawEvent))
+    coverage.partial=true;
+  }
   for(const step of jobStepRanges(lines)){
    const details=stepAction(lines,step);
    const action=details.action;

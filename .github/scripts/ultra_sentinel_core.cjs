@@ -56,10 +56,32 @@ function executableText(source,state={block:false,triple:false}){
    if(end<0)break;
    state.block=false;i=end+2;continue;
   }
-  if(state.triple){
-   const end=text.indexOf('"""',i);
-   if(end<0)break;
-   state.triple=false;i=end+3;continue;
+  // Raw strings contain executable Kotlin templates. Track nested braces,
+  // including templates spanning multiple diff lines, without treating raw
+  // prose or documentation as executable code.
+  if(state.triple&&!(state.templateDepth>0)){
+   if(text.startsWith('"""',i)){state.triple=false;i+=3;continue;}
+   if(text.startsWith('$'+'{',i)){state.templateDepth=1;i+=2;out+=' ';continue;}
+   i++;continue;
+  }
+  if(state.triple&&state.templateDepth>0){
+   const ch=text[i];
+   if(ch==='{')state.templateDepth++;
+   else if(ch==='}'){
+    state.templateDepth--;
+    if(state.templateDepth===0){out+=' ';i++;continue;}
+   }
+   // Strings inside templates are inert unless interpolated themselves.
+   if(ch==='"'||ch==="'"){
+    const quote=ch;let j=i+1;
+    while(j<text.length){
+     if(text[j]==='\\'){j+=2;continue;}
+     if(text[j]===quote){j++;break;}
+     j++;
+    }
+    out+='""';i=j;continue;
+   }
+   out+=ch;i++;continue;
   }
   if(text.startsWith('//',i))break;
   if(text.startsWith('/*',i)){state.block=true;i+=2;continue;}
