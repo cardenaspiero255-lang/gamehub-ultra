@@ -135,3 +135,22 @@ SHA final, autorización humana y, para pruebas Android o incidentes Sentry, eje
    criptográfica o lectura independiente de GitHub.
 4. Código local y tests pasando no certifican una ingesta Sentry auténtica ni crashes
    Android reproducidos. Mantener el PR borrador si falta CI final.
+
+### Avances adicionales integrados en PR #168
+
+| Mejora | Evidencia añadida | Estado de validación real |
+|---|---|---|
+| US-005 / US-008 | `ultra_sentinel_bisect_guard.cjs` y Regression Investigator | Distingue fallos de tests de Maven 429, timeout o compilación; exige GOOD verde y BAD rojo. **No se ha ejecutado aún un bisect completo de una regresión real.** |
+| US-021 / US-022 | `ultra_sentinel_evidence.cjs`, pruebas negativas y exportador Sentry | Verifica resultados directamente en GitHub API para asociar SHAs completos. Requiere token Sentry autorizado y ejecución manual real tras su fusión a `main`. |
+| US-024 / US-028 | `MainActivitySentinelResilienceTest.kt` | Prueba instrumentada de arranque, segundo plano, reanudación y recreación. No demuestra replay de cualquier crash ni de SpeechRecognizer del fabricante. |
+| US-033 | `SentinelStatusCard.kt` y test Compose integrados en Ajustes | Panel Android de **solo lectura** enlazado a GitHub; aún no muestra feed autenticado de incidentes ni resultados en vivo dentro de la app. |
+| US-035 | 7.500 pruebas adversariales con semillas y pruebas de red, secretos, SHA y consentimiento | Cobertura JS del motor; falta red team end-to-end de proveedores y cadena de suministro. |
+
+**Servicios externos y datos:** no utilizar token Sentry de escritura. Configurar
+`SENTRY_ORG_SLUG`, `SENTRY_PROJECT_SLUG` y `SENTRY_AUTH_TOKEN` con permisos mínimos
+en GitHub Actions y autorización explícita antes de consultar incidentes.
+Las pruebas simuladas no confirman la existencia de esas credenciales.
+
+**No declarar 35/35 completas** por superar un build o por disponer de código
+inicial. La aceptación requiere pruebas de integración reales, trazas RED/GREEN
+de bugs reproducibles, seguridad, revisión independiente y aprobación humana.
