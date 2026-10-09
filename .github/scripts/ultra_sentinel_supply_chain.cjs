@@ -291,7 +291,7 @@ function stepAction(lines,step){
 // Only scope aliases inside on/permissions mappings or checkout inputs,
 // never arbitrary labels, descriptions, comments or action names.
 function hasSensitiveAliases(lines){
- let scope=null;
+ let scope=null,stepRanges=jobStepRanges(lines);
  for(let i=0;i<lines.length;i++){
   const row=lines[i],trim=row.trim();
   if(!trim||trim.startsWith('#'))continue;
@@ -300,13 +300,13 @@ function hasSensitiveAliases(lines){
   const rootEvent=indent===0&&kv?.key==='on';
   const permissions=kv?.key==='permissions'&&inRealPermissionsMap(lines,i);
   const input=kv&&['uses','with','ref'].includes(kv.key)&&
-   jobStepRanges(lines).some(s=>s.start<=i&&i<s.end);
+   stepRanges.some(s=>s.start<=i&&i<s.end);
   if(rootEvent||permissions)scope={indent};
   const examined=(rootEvent||permissions||input)?kv.value:
    scope&&indent>scope.indent?trim:'';
   // A leading *alias or an alias nested in a flow sequence/map is
   // intentionally unresolved and must fail closed, including quoted aliases.
-  if(/(?:^|[\s,[{,:])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
+  if(/(?:^|[\s,[{,:"'])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
  }
  return false;
 }
