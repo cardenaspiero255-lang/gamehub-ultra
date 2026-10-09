@@ -622,3 +622,62 @@ test('ADVERSARIAL: multiline run folded shell YAML-looking keys must remain iner
  const r=scan(y);
  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
 });
+
+test('DEEP P1: sequence name literal does not swallow real with ref alias',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - name: |','          checkout message',
+  '        uses: actions/checkout@'+SHA,
+  '        with:','          ref: *danger'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.equal(r.coverage.partial,true);
+});
+test('DEEP P1: sequence name folded block cannot hide a privileged checkout with untrusted ref',()=>{
+ for(const indicator of ['|','>-','|2','>+']){
+  const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+   '      - name: '+indicator,
+   '          informational name',
+   '        uses: actions/checkout@v6',
+   '        with:','          ref: ${{ github.head_ref }}'].join('\n');
+  const r=scan(yaml);
+  assert.ok(rules(r).includes('UNPINNED_ACTION'),indicator+': '+JSON.stringify(r));
+  assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),indicator+': '+JSON.stringify(r));
+ }
+});
+test('DEEP P1: block scalar inside step followed by real with flow alias stays incomplete',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - name: |','          legitimate display name',
+  '        uses: actions/checkout@'+SHA,
+  '        with: {ref: *unverified_ref}'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('DEEP negative: literal name text containing pseudo-keys is not a real YAML action',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - name: |','          fake uses: actions/checkout@v6',
+  '          with: *inert',
+  '        run: echo safe'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
+test('DEEP negative: sequence run literal with shell lookalike is inert but next step is scanned',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - run: |',
+  '          echo "ref: *shell_only"',
+  '          echo "uses: actions/checkout@v6"',
+  '      - uses: actions/checkout@'+SHA,
+  '        with:','          ref: main'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
+test('DEEP negative: folded step name with legitimate pinned checkout has no false alert',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - name: >-',
+  '          a benign block with ref: *shell',
+  '        uses: actions/checkout@'+SHA,
+  '        with:','          ref: main'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+});
