@@ -371,9 +371,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
         inputs.script.includes("process.env['"+name+"']")||
         inputs.script.includes('process.env["'+name+'"]');
        if(!used)continue;
-       if(/\\b(?:eval|Function|exec|execSync|spawn|spawnSync)\\s*\\(/.test(inputs.script))
+       if(/\b(?:eval|Function|exec|execSync|spawn|spawnSync)\s*\(/.test(inputs.script))
         emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
-       else if(!/^\\s*core\\.info\\(\\s*process\\.env\\.[A-Za-z_][A-Za-z0-9_]*\\s*\\);?\\s*$/.test(inputs.script))
+       else if(!/^\s*core\.info\(\s*process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*\);?\s*$/.test(inputs.script))
         coverage.partial=true;
       }
      }
