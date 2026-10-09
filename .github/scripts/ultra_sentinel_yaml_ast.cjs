@@ -100,27 +100,33 @@ function remotePipeline(v){
 // shell script before execution. Quoting cannot prevent command substitution.
 // This catches high-confidence free-text expressions; review remains required
 // for unmodeled sources.
-function hasUntrustedEventInterpolation(script){
- if(typeof script!=='string')return false;
- return [...script.matchAll(/\$\{\{\s*([\s\S]{0,800}?)\s*\}\}/g)].some(m=>{
-  const expr=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*|\*)\1\s*\]/g,'.$2');
-  // Serialization of an entire event object or wildcard property filter
-  // embeds attacker-authored text even when title/body are not named.
-  // Only known numeric IDs and the fixed event action string are scalar.
-  const jsonObjects=[...expr.matchAll(/\btoJSON\s*\(\s*(github\.event(?:\.[A-Za-z_][A-Za-z0-9_]*|\.\*){0,8})\s*\)/gi)];
-  if(jsonObjects.some(m=>!/\.(?:number|id|action)$/.test(m[1])))return true;
-  return /\bgithub\.head_ref\b|\b(?:inputs\.[A-Za-z_][A-Za-z0-9_]*|github\.event\.(?:(?:comment|review|review_comment|issue|discussion|pull_request|release|deployment)\.(?:title|body|name|description|head\.(?:ref|label))|workflow_run\.(?:head_branch|name)|head_commit\.message|inputs\.[A-Za-z_][A-Za-z0-9_]*|client_payload\.[A-Za-z_][A-Za-z0-9_]*))\b/.test(expr);
- });
-}
-// Failing to parse an expression is never evidence of safety. Even when a
-// short-list rule cannot recognize its source, fail closed for long/unclosed
-// expressions rather than silently omitting them from the audit.
-function hasUninspectableEventInterpolation(script){
- if(typeof script!=='string')return true;
- const starts=[...script.matchAll(/\$\{\{/g)].length;
- const expressions=[...script.matchAll(/\$\{\{([\s\S]*?)\}\}/g)];
- return expressions.length!==starts||
-  expressions.some(match=>match[1].length>800);
+// Executable Actions expressions are not a safe regular-language subset.
+// Conservative trust boundary: permit ONLY a small set of self-contained
+// GitHub-provided scalar values. Unknown or malformed expressions never yield
+// a clean verdict; references to event/input text are explicitly blocked.
+// This is not advertised as a complete parser for the Actions expression DSL.
+const TRUSTED_EXECUTABLE_SCALAR=/^(?:github\.(?:sha|run_id|run_number|run_attempt|event_name)|github\.event\.(?:issue|pull_request|discussion)\.number|toJSON\s*\(\s*github\.event\.(?:issue|pull_request|discussion)\.number\s*\))$/i;
+function auditExecutableExpressions(script){
+ if(typeof script!=='string')return {unsafe:false,incomplete:true};
+ let unsafe=false,incomplete=false,cursor=0;
+ while(true){
+  const start=script.indexOf('$'+'{{',cursor);
+  if(start<0)break;
+  const end=script.indexOf('}}',start+3);
+  if(end<0){incomplete=true;break;}
+  const raw=script.slice(start+3,end);
+  if(raw.length>800){incomplete=true;cursor=end+2;continue;}
+  const expr=raw.trim().replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*|\*)\1\s*\]/g,'.$2');
+  if(!TRUSTED_EXECUTABLE_SCALAR.test(expr)){
+   // Treat every unknown expression as unverified. Event, head_ref and user
+   // inputs are potentially arbitrary text even through format(), fromJSON(),
+   // wildcard filters or computed property access.
+   if(/\bgithub\s*\.\s*(?:event|head_ref)\b|\binputs\s*(?:\.|\[)/i.test(expr))unsafe=true;
+   else incomplete=true;
+  }
+  cursor=end+2;
+ }
+ return {unsafe,incomplete};
 }
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
  const findings=[],coverage={partial:false,parser:'js-yaml@4.1.1'};
@@ -193,8 +199,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      if(ambiguous||typeof inputs.script!=='string'||!inputs.script.trim())
       coverage.partial=true;
      else{
-      if(hasUninspectableEventInterpolation(inputs.script))coverage.partial=true;
-      if(hasUntrustedEventInterpolation(inputs.script))
+      const inspection=auditExecutableExpressions(inputs.script);
+      if(inspection.incomplete)coverage.partial=true;
+      if(inspection.unsafe)
        emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
      }
     }
@@ -254,8 +261,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     else{
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
      if(privileged){
-      if(hasUninspectableEventInterpolation(step.run))coverage.partial=true;
-      if(hasUntrustedEventInterpolation(step.run))
+      const inspection=auditExecutableExpressions(step.run);
+      if(inspection.incomplete)coverage.partial=true;
+      if(inspection.unsafe)
        emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
      }
     }
