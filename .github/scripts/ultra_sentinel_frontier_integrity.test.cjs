@@ -83,3 +83,18 @@ test('workflow uses trusted main with read-only actions access and no PR code ex
  assert.match(yaml,/persist-credentials: false/);
  assert.doesNotMatch(yaml,/issues: write|pull-requests: write|ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
 });
+
+test('Codex P2: missing ordering metadata cannot let stale green CI pass',()=>{
+ const old=run('Android build',{id:90,run_number:7,run_attempt:1});
+ const coverage=run('Unit Test Coverage');
+ for(const broken of [
+  {id:101,run_number:undefined,run_attempt:1,conclusion:'failure'},
+  {id:101,run_number:9,run_attempt:undefined,conclusion:'failure'},
+  {id:undefined,run_number:9,run_attempt:1,conclusion:'failure'},
+  {id:101,run_number:9,run_attempt:1,status:'new_unknown_status',conclusion:undefined}
+ ]){
+  const result=ci([old,run('Android build',broken),coverage]);
+  assert.notEqual(result.status,'PASS',JSON.stringify({broken,result}));
+  assert.ok(result.counts.pending>0||result.counts.failed>0,JSON.stringify({broken,result}));
+ }
+});
