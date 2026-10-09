@@ -20,38 +20,44 @@ class VoiceRecognitionRetryGateContractTest {
 
     @Test
     fun exhaustiveEightStepSequencesMatchSpecifiedModel() {
-        // 3^8 = 6,561 possible operation traces; a fresh gate for each trace.
+        // 4^7 = 16,384 traces with a terminal CLOSED state.
         var traces = 0
-        for (encoding in 0 until 6561) {
+        for (encoding in 0 until 16384) {
             val gate = VoiceRecognitionRetryGate()
-            var expectedPending = false
+            var pending = false
+            var closed = false
             var cursor = encoding
-            repeat(8) { step ->
-                when (val operation = cursor % 3) {
+            repeat(7) { step ->
+                when (val operation = cursor % 4) {
                     0 -> {
-                        val shouldSchedule = !expectedPending
+                        val accepted = !pending && !closed
                         assertEquals(
-                            shouldSchedule,
+                            accepted,
                             gate.trySchedule(),
-                            "Trace $encoding step $step: duplicate retry eligibility"
+                            "Trace $encoding step $step: unexpected schedule"
                         )
-                        expectedPending = true
+                        if (accepted) pending = true
                     }
                     1 -> {
                         gate.onRetryDispatched()
-                        expectedPending = false
+                        if (!closed) pending = false
                     }
                     2 -> {
                         gate.reset()
-                        expectedPending = false
+                        if (!closed) pending = false
+                    }
+                    3 -> {
+                        gate.close()
+                        closed = true
+                        pending = false
                     }
                     else -> error("Unexpected operation $operation")
                 }
-                cursor /= 3
+                cursor /= 4
             }
             traces++
         }
-        assertEquals(6561, traces)
+        assertEquals(16384, traces)
     }
 
     @Test
@@ -94,4 +100,18 @@ class VoiceRecognitionRetryGateContractTest {
             assertFalse(gate.trySchedule())
         }
     }
+
+    @Test
+    fun closeIsIrreversibleEvenWhenDelayedCallbacksArrive() {
+        val gate = VoiceRecognitionRetryGate()
+        assertTrue(gate.trySchedule())
+        gate.close()
+        repeat(1000) {
+            assertFalse(gate.trySchedule(), "Closed controller must never rearm retry")
+            gate.onRetryDispatched()
+            gate.reset()
+        }
+        assertFalse(gate.trySchedule())
+    }
+
 }
