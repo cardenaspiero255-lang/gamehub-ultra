@@ -14,6 +14,7 @@ COVERAGE_POST = ROOT / ".github/workflows/coverage-post-processing.yml"
 SHADOW_METRICS = ROOT / ".github/workflows/ci-metrics-shadow.yml"
 CHECKER = ROOT / ".github/scripts/check-ci-safety-contract.py"
 CONTRACT = ROOT / ".github/scripts/test-ci-safety-contract.sh"
+SDK_PROBE = ROOT / ".github/scripts/probe-preinstalled-android-sdk.sh"
 
 
 def run_contract(root: Path) -> subprocess.CompletedProcess[str]:
@@ -35,6 +36,57 @@ def current_contract_must_pass() -> None:
             f"--- contract output ---\n{result.stdout}"
         )
 
+
+
+def sdk_probe_behavior_cases() -> None:
+    """Exercise real preinstalled-SDK detection without network or runner mutation."""
+    import os
+
+    cases = (
+        ("ready", True, True, True, "true"),
+        ("manager-missing", False, True, True, "false"),
+        ("adb-missing", True, False, True, "false"),
+        ("licenses-missing", True, True, False, "false"),
+    )
+    for scenario, sdkmanager, adb, licenses, expected in cases:
+        with tempfile.TemporaryDirectory(prefix="gamehub-sdk-probe-") as raw:
+            root = Path(raw)
+            sdk = root / "sdk with spaces"
+            cmd = sdk / "cmdline-tools/latest/bin/sdkmanager"
+            tool = sdk / "platform-tools/adb"
+            license_file = sdk / "licenses/android-sdk-license"
+            for present, file in ((sdkmanager, cmd), (adb, tool), (licenses, license_file)):
+                if present:
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_text("accepted" if file == license_file else "#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+                    if file != license_file:
+                        file.chmod(0o755)
+            outputs = root / "output"
+            paths = root / "githubpath"
+            env = dict(os.environ)
+            env.update({
+                "ANDROID_HOME": str(sdk), "ANDROID_SDK_ROOT": str(sdk),
+                "GITHUB_OUTPUT": str(outputs), "GITHUB_PATH": str(paths),
+            })
+            done = subprocess.run(
+                ["bash", str(SDK_PROBE)], env=env, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=8, check=False,
+            )
+            actual = outputs.read_text(encoding="utf-8").strip() if outputs.exists() else ""
+            want = f"usable={expected}"
+            if done.returncode != 0 or actual != want:
+                raise SystemExit(
+                    f"SDK fast-path {scenario} failed: rc={done.returncode}, "
+                    f"output={actual!r} expected={want!r}; stdout={done.stdout[-500:]}"
+                )
+            path_text = paths.read_text(encoding="utf-8") if paths.exists() else ""
+            if expected == "true":
+                if str(cmd.parent) not in path_text or str(tool.parent) not in path_text:
+                    raise SystemExit(f"SDK fast-path {scenario} did not export both tools to PATH")
+            elif path_text.strip():
+                raise SystemExit(f"SDK fast-path {scenario} leaked PATH despite failing closed")
+    print("Android preinstalled-SDK probe: licensed success and missing-tool fallback validated.")
 
 
 def coverage_retry_behavior_cases() -> None:
@@ -353,9 +405,31 @@ def reject_mutation(
 
 def main() -> None:
     current_contract_must_pass()
+    sdk_probe_behavior_cases()
     coverage_retry_behavior_cases()
     android_dependency_retry_behavior_cases()
 
+    reject_mutation(
+        "preinstalled SDK probe removed",
+        coverage_replace=(
+            "      - name: Probe preinstalled Android SDK\\n",
+            "      - name: Probe preinstalled Android SDK disabled\\n",
+        ),
+    )
+    reject_mutation(
+        "pinned SDK fallback disabled",
+        android_replace=(
+            "        if: steps.sdk_preflight.outputs.usable != 'true'\\n",
+            "        if: false\\n",
+        ),
+    )
+    reject_mutation(
+        "SDK probe bypasses actual script",
+        android_replace=(
+            "        run: bash .github/scripts/probe-preinstalled-android-sdk.sh\\n",
+            "        run: echo probe-skipped\\n",
+        ),
+    )
     reject_mutation(
         "quality lint made advisory",
         android_replace=(
