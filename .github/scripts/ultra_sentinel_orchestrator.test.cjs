@@ -75,3 +75,15 @@ test('even a matching risk cannot bypass the strict path allowlist',()=>{
  const got=p.candidate({filename:outside,content,findings:[risk],sha});
  assert.equal(got.status,'NO_SAFE_TEMPLATE');
 });
+
+test('standalone Runtime.getRuntime().gc has matching low-risk draft patch',()=>{
+ const source='fun a() {\n  Runtime.getRuntime().gc()\n  println("after")\n}\n';
+ const proposal=p.candidate({filename,content:source,findings:[f],sha});
+ assert.equal(proposal.status,'DRAFT_PATCH');
+ assert.match(proposal.patch,/-  Runtime\.getRuntime\(\)\.gc\(\)/);
+ assert.equal(proposal.linesChanged,1);
+});
+test('inline Runtime GC calls stay unmodified; semantic context needs review',()=>{
+ const source='fun a() {\n  if (ready) Runtime.getRuntime().gc()\n  println("after")\n}\n';
+ assert.equal(p.candidate({filename,content:source,findings:[f],sha}).status,'NO_SAFE_TEMPLATE');
+});
