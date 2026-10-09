@@ -61,7 +61,7 @@ function containsYamlAlias(value){
 }
 
 const privilegedEvent=/^(pull_request_target|workflow_run)$/;
-function privilegedTrigger(lines){
+function privilegedTrigger(lines,audit={}){
  let start=-1,rest='';
  for(let i=0;i<lines.length;i++){
   const m=keyValue(lines[i]);
@@ -85,9 +85,18 @@ function privilegedTrigger(lines){
   let value=rest;
   const open=rest.trim()[0];
   if(open==='['||open==='{'){
-   // YAML comments and quoted scalars may contain fake ] or } tokens.
-   // Apply the same bounded, quote-aware collector used for step maps.
-   value=collectFlowMap(lines,start,lines.length,rest).value;
+   // Exceeding the bounded flow collector is INCOMPLETE rather than safe.
+   const mapping=collectFlowMap(lines,start,lines.length,rest);
+   if(!mapping.closed){audit.partial=true;return false;}
+   value=mapping.value;
+   if(open==='{'){
+    // Event names belong to the top-level map. Nested branch names and
+    // event options must not be interpreted as privileged triggers.
+    return splitFlowEntries(value.slice(1,-1)).some(entry=>{
+     const kv=keyValue(entry.trim());
+     return kv&&privilegedEvent.test(kv.key);
+    });
+   }
   }
   const tokens=value.replace(/[\[\]{},]/g,' ').trim().split(/\s+/).map(scalar);
   if(tokens.some(x=>privilegedEvent.test(x.replace(/:$/,''))))return true;
@@ -135,8 +144,8 @@ function splitFlowEntries(content){
    continue;
   }
   if(c==='"'||c==="'"){quote=c;continue;}
-  if(c==='{')depth++;
-  else if(c==='}')depth=Math.max(0,depth-1);
+  if(c==='{'||c==='[')depth++;
+  else if(c==='}'||c===']')depth=Math.max(0,depth-1);
   else if(c===','&&depth===0){chunks.push(content.slice(begin,i));begin=i+1;}
  }
  chunks.push(content.slice(begin));
@@ -255,11 +264,18 @@ function inRealPermissionsMap(lines,index){
 }
 // Read actions only from jobs.<job>.steps sequence items. Looking for "uses:"
  // anywhere in YAML also matches unrelated environment variables and run scripts.
-function jobStepRanges(lines){
+function jobStepRanges(lines,audit={}){
  const ranges=[];
  for(let i=0;i<lines.length;i++){
   const kv=keyValue(lines[i]);
-  if(kv?.key!=='steps'||kv.value.trim()||!inRealPermissionsMap(lines,i))continue;
+  if(kv?.key!=='steps'||!inRealPermissionsMap(lines,i))continue;
+  const value=withoutLeadingAnchor(kv.value);
+  if(value){
+   // Aliases and unsupported inline representations cannot certify that
+   // every step was inspected. [] is a known-empty sequence.
+   if(value!=='[]')audit.partial=true;
+   continue;
+  }
   const parentIndent=lines[i].match(/^\s*/)[0].length,heads=[];
   let itemIndent=null;
   for(let j=i+1;j<lines.length;j++){
@@ -373,8 +389,8 @@ function stepAction(lines,step){
 // complete YAML parser. Treat them as INCOMPLETE rather than silently clear.
 // Only scope aliases inside on/permissions mappings or checkout inputs,
 // never arbitrary labels, descriptions, comments or action names.
-function hasSensitiveAliases(lines){
- let scope=null,stepRanges=jobStepRanges(lines);
+function hasSensitiveAliases(lines,stepRanges=jobStepRanges(lines)){
+ let scope=null;
  for(let i=0;i<lines.length;i++){
   const row=lines[i],trim=row.trim();
   if(!trim||trim.startsWith('#'))continue;
@@ -433,9 +449,11 @@ function reviewWorkflows({sha,expected,sources={}}={}){
    coverage.partial=true;continue;
   }
   coverage.scanned++;
-  const lines=code.split('\n'),privileged=privilegedTrigger(lines);
-  if(hasSensitiveAliases(lines))coverage.partial=true;
-  for(const step of jobStepRanges(lines)){
+  const lines=code.split('\n'),audit={partial:false};
+  const privileged=privilegedTrigger(lines,audit);
+  const steps=jobStepRanges(lines,audit);
+  if(audit.partial||hasSensitiveAliases(lines,steps))coverage.partial=true;
+  for(const step of steps){
    const details=stepAction(lines,step);
    if(details.incomplete)coverage.partial=true;
    const action=details.action;
