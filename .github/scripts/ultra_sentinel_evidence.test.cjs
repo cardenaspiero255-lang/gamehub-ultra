@@ -4,7 +4,7 @@ const E=require('./ultra_sentinel_evidence.cjs');
 const SHA='a'.repeat(40),OTHER='b'.repeat(40),RUN=123456789;
 const run=(overrides={})=>({
  id:RUN,head_sha:SHA,status:'completed',conclusion:'success',
- name:'Android build',event:'pull_request',run_attempt:1,
+ name:'Android build',event:'push',head_branch:'main',run_attempt:1,
  repository:{full_name:'cardenaspiero255-lang/gamehub-ultra'},
  html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+RUN,
  ...overrides
@@ -16,9 +16,13 @@ const issue=(id,release)=>({
 });
 test('reject every incorrect workflow attestation and stale SHA',()=>{
  assert.equal(E.validateRun(run(),SHA)?.sha,SHA);
+ assert.equal(E.validateRun(run({event:'workflow_dispatch'}),SHA)?.sha,SHA);
  for(const override of [
   {head_sha:OTHER},{conclusion:'failure'},{status:'in_progress'},{name:'Other workflow'},
-  {repository:{full_name:'attacker/fork'}},{id:0},{event:'workflow_dispatch'},
+  {repository:{full_name:'attacker/fork'}},{id:0},
+  {event:'pull_request'}, {event:'push',head_branch:'feature/unsafe'},
+  {event:'workflow_dispatch',head_branch:'feature/unsafe'},
+  {event:'schedule',head_branch:'main'},
   {html_url:'https://evil.example/actions/runs/'+RUN}
  ])assert.equal(E.validateRun(run(override),SHA),null);
 });
@@ -29,13 +33,16 @@ test('fixed-domain GitHub query never accepts path injection or partial SHA',()=
 });
 test('release association demands exact 40-char commit, never substring',()=>{
  assert.equal(E.releaseSha(issue(1,SHA)),SHA);
+ assert.equal(E.releaseSha(issue(1,'gamehub-ultra@'+SHA)),SHA);
+ assert.equal(E.releaseSha(issue(1,'unknown-app@'+SHA)),null);
+ assert.equal(E.releaseSha(issue(1,'gamehub-ultra@'+SHA+'-untrusted')),null);
  assert.equal(E.releaseSha(issue(1,'com.example.game@2.1+'+SHA)),SHA);
  assert.equal(E.releaseSha(issue(1,'legacy-'+SHA+'-unverified')),null);
  assert.equal(E.releaseSha(issue(1,OTHER)),OTHER);
  assert.equal(E.releaseSha(issue(1,'LATEST')),null);
 });
 test('correlation requires a independently attested CI match and redacts user data',()=>{
- const raw=[issue(12,SHA),issue(13,OTHER),issue(14,'not-a-release')];
+ const raw=[issue(12,'gamehub-ultra@'+SHA),issue(13,OTHER),issue(14,'not-a-release')];
  const trusted=E.attachVerifiedReleases(raw,[E.validateRun(run(),SHA)]);
  assert.equal(trusted.length,1);
  assert.equal(trusted[0].sha,SHA);
