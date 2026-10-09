@@ -35,6 +35,85 @@ class VoiceAssistantControllerRobolectricTest {
         assertEquals(UltraSpeechLocalePolicy.FALLBACK_TAG, languageField.get(controller))
     }
 
+
+    @Test
+    fun activeControllerForwardsRecognitionEventsBeforeRelease() {
+        val listeningEvents = mutableListOf<Boolean>()
+        val transcripts = mutableListOf<String>()
+        val partials = mutableListOf<String>()
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = listeningEvents::add,
+            onTranscript = transcripts::add,
+            onError = {},
+            onPartialTranscript = partials::add,
+        )
+        val listener = VoiceAssistantController::class.java
+            .getDeclaredField("listener")
+            .apply { isAccessible = true }
+            .get(controller) as RecognitionListener
+
+        // Exercise the active side of the lifecycle guards. The other test
+        // exercises these same callbacks after release() has become terminal.
+        listener.onEndOfSpeech()
+        listener.onResults(android.os.Bundle().apply {
+            putStringArrayList(
+                SpeechRecognizer.RESULTS_RECOGNITION,
+                arrayListOf("que es una estrella")
+            )
+        })
+        listener.onPartialResults(android.os.Bundle().apply {
+            putStringArrayList(
+                SpeechRecognizer.RESULTS_RECOGNITION,
+                arrayListOf("que es")
+            )
+        })
+
+        assertEquals(listOf(false, false), listeningEvents)
+        assertEquals(listOf("que es una estrella"), transcripts)
+        assertEquals(listOf("que es"), partials)
+        controller.release()
+    }
+
+    @Test
+    fun activeControllerCanAttemptListeningStopAndQueuedRetryBeforeRelease() {
+        val listeningEvents = mutableListOf<Boolean>()
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = listeningEvents::add,
+            onTranscript = {},
+            onError = {},
+        )
+        // Robolectric may have no installed recognizer or microphone grant.
+        // The startup guard must contain either condition in Ultra's error channel.
+        // This intentionally tests the pre-release paths, not a hardware microphone.
+        controller.startListening()
+        controller.stopListening()
+
+        // The retry runnable was captured before release; while the controller
+        // is active it still delegates to the guarded recognizer startup.
+        val pendingRetry = VoiceAssistantController::class.java
+            .getDeclaredField("fallbackRetry")
+            .apply { isAccessible = true }
+            .get(controller) as Runnable
+        pendingRetry.run()
+
+        // Test the live speak() guard independently of Robolectric's TTS engine,
+        // retaining the original instance so release() can clean it up.
+        val ttsField = VoiceAssistantController::class.java
+            .getDeclaredField("tts")
+            .apply { isAccessible = true }
+        val tts = ttsField.get(controller)
+        try {
+            ttsField.set(controller, null)
+            controller.speak("prueba de voz")
+        } finally {
+            ttsField.set(controller, tts)
+            controller.release()
+        }
+        kotlin.test.assertTrue(listeningEvents.isNotEmpty())
+    }
+
     @Test
     fun releasedControllerIgnoresLateRecognizerCallbacksAndCannotRestart() {
         val listeningEvents = mutableListOf<Boolean>()
