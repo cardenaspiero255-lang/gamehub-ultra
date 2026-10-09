@@ -193,3 +193,17 @@ test('single-line nested Kotlin block comments are not executable',()=>{
  ])]);
  assert.ok(!rules(result).includes('BLOCKING_ANDROID_CALL'));
 });
+
+test('Java block comments do not nest: executable call after first closer stays visible',()=>{
+ const java=analyze([file(app+'Legacy.java',[
+  '/* outer /* inner */',
+  'Thread.sleep(1000);'
+ ])]);
+ assert.ok(rules(java).includes('BLOCKING_ANDROID_CALL'));
+ const kotlin=analyze([file(app+'Modern.kt',[
+  '/* outer /* inner */',
+  'Thread.sleep(1000);',
+  '*/'
+ ])]);
+ assert.ok(!rules(kotlin).includes('BLOCKING_ANDROID_CALL'));
+});
