@@ -13,9 +13,35 @@ const scalar=v=>{
  if(s.length>=2&&((s[0]==='"'&&s.at(-1)==='"')||(s[0]==="'"&&s.at(-1)==="'")))s=s.slice(1,-1);
  return s.trim();
 };
+// Only decode bounded YAML quoted-key escapes, not arbitrary expressions.
+// Unknown escaped keys are marked unresolved so audit cannot report clean.
+function decodeYamlKey(raw){
+ const known={ '0':'\0',a:'\x07',b:'\b',t:'\t',n:'\n',v:'\v',
+  f:'\f',r:'\r',e:'\x1b',' ':' ', '"':'"','/':'/','\\':'\\',
+  N:'\u0085','_':'\u00a0',L:'\u2028',P:'\u2029' };
+ let out='';
+ for(let i=0;i<raw.length;i++){
+  if(raw[i]!=='\\'){out+=raw[i];continue;}
+  const escape=raw[++i];
+  if(escape==='x'||escape==='u'||escape==='U'){
+   const count=escape==='x'?2:escape==='u'?4:8;
+   const hex=raw.slice(i+1,i+count+1);
+   if(hex.length!==count||!/^[\da-fA-F]+$/.test(hex))return null;
+   const code=parseInt(hex,16);
+   if(code>0x10ffff||(code>=0xd800&&code<=0xdfff))return null;
+   out+=String.fromCodePoint(code);
+   i+=count;
+  }else if(Object.prototype.hasOwnProperty.call(known,escape))out+=known[escape];
+  else return null;
+ }
+ return out;
+}
 const keyValue=line=>{
- const m=String(line).match(/^\s*(?:"([^"]+)"|'([^']+)'|([a-zA-Z][\w-]*))\s*:\s*([\s\S]*)$/);
- return m?{key:m[1]||m[2]||m[3],value:m[4]}:null;
+ const m=String(line).match(/^\s*(?:"((?:\\.|[^"\\])*)"|'((?:''|[^'])*)'|([a-zA-Z][\w-]*))\s*:\s*([\s\S]*)$/);
+ if(!m)return null;
+ const key=m[1]!==undefined?decodeYamlKey(m[1]):
+  m[2]!==undefined?m[2].replace(/''/g,"'"):m[3];
+ return {key:key??'__UNKNOWN_QUOTED_KEY__',value:m[4],unresolved:key===null};
 };
 
 function withoutYamlComment(value){
@@ -456,6 +482,8 @@ function reviewWorkflows({sha,expected,sources={}}={}){
   }
   coverage.scanned++;
   const lines=code.split('\n'),audit={partial:false};
+  // Unknown YAML key escapes must not silently certify a workflow clean.
+  if(lines.some(line=>keyValue(line)?.unresolved))coverage.partial=true;
   const privileged=privilegedTrigger(lines,audit);
   const steps=jobStepRanges(lines,audit);
   if(audit.partial||hasSensitiveAliases(lines,steps))coverage.partial=true;
