@@ -42,7 +42,7 @@ test('release correlation requires exact verified SHA and successful Android bui
  ],builds);
  assert.equal(mapped.length,1);
  assert.equal(mapped[0].sha,A);
- assert.equal(mapped[0].verification,'verified-ci-artifact');
+ assert.equal(mapped[0].verification,'ci-input-matched');
  assert.equal(correlateBuilds(normalizeIssues([issue(1)]),[{issueId:'1',sha:C}],builds).length,0);
 });
 test('insufficient sample or baseline gives INSUFFICIENT_EVIDENCE, never invented cause',()=>{
@@ -73,7 +73,7 @@ test('human-approved repair memory requires immutable RED/GREEN and valid eviden
   evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/167',
   rule:'SPEECH_REENTRANT_RETRY',summary:'Fix voice recognition reentrancy lifecycle',
   expiresAt:'2026-11-08T10:00:00Z'};
- assert.equal(recordVerifiedRepair(valid).status,'VERIFIED');
+ assert.equal(recordVerifiedRepair(valid).status,'PROVENANCE_RECORDED');
  assert.equal(recordVerifiedRepair({...valid,approval:'suggested'}).status,'REJECTED');
  assert.equal(recordVerifiedRepair({...valid,redTestSha:null}).status,'REJECTED');
  assert.equal(recordVerifiedRepair({...valid,expiresAt:'2026-01-01T00:00:00Z'}).status,'REJECTED');
