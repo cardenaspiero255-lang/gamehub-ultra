@@ -16,7 +16,7 @@ function attestCi({sha,repo,runs,apiComplete=true,trustedWorkflows,changedFiles,
   status:'UNKNOWN',counts:{...counts},workflows:[],autoApproveAllowed:false,autoMergeAllowed:false
  });
  if(typeof sha!=='string'||!SHA.test(sha)||repo!==REPO||!Array.isArray(runs)||
-  apiComplete!==true||runs.length>100||
+  apiComplete!==true||runs.length>1000||
   changedFilesComplete!==true||!Array.isArray(changedFiles)||
   !trustedWorkflows||typeof trustedWorkflows!=='object')return empty();
  // A modified CI definition can emit success without doing the intended checks.
