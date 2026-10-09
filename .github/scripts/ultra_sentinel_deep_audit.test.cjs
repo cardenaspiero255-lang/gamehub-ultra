@@ -62,3 +62,53 @@ test('P1 Judge requires explicit immutable expected SHA even when CI and source 
  const result=judge(proposal,{checks,source:CONTENT,findings:[FINDING]});
  assert.equal(result.status,'REJECT',JSON.stringify(result));
 });
+
+test('Codex P1 mixed-case checkout inputs cannot hide mutable foreign repository',()=>{
+ const src=['on: issue_comment','jobs:','  audit:','    steps:',
+  '      - uses: actions/checkout@'+SHA,
+  '        with:',
+  '          Repository: attacker/evil',
+  '          Ref: main'].join('\n');
+ const r=inspectWorkflow(src,{trustedRepository:REPO});
+ assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_EXTERNAL_MUTABLE_CHECKOUT'&&f.severity==='BLOCKER'),JSON.stringify(r));
+});
+test('Codex P1 colliding case-insensitive checkout input names fail closed',()=>{
+ const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - uses: actions/checkout@'+SHA,
+  '        with:',
+  '          repository: '+REPO,
+  '          Repository: attacker/evil',
+  '          ref: main'].join('\n');
+ const r=inspectWorkflow(src,{trustedRepository:REPO});
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('Codex P1 alternate github-server-url cannot impersonate the trusted same-name repo',()=>{
+ const src=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - uses: actions/checkout@'+SHA,
+  '        with:',
+  '          repository: '+REPO,
+  '          ref: main',
+  '          github-server-url: https://attacker.example'].join('\n');
+ const r=inspectWorkflow(src,{trustedRepository:REPO});
+ assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_ALTERNATE_GITHUB_SERVER'&&f.severity==='BLOCKER'),JSON.stringify(r));
+});
+test('Codex P1 dynamic alternate GitHub server must fail closed',()=>{
+ const src=['on: issue_comment','jobs:','  audit:','    steps:',
+  '      - uses: actions/checkout@'+SHA,
+  '        with:',
+  '          github-server-url: ${{ inputs.server }}'].join('\n');
+ const r=inspectWorkflow(src,{trustedRepository:REPO});
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('secure github-server-url variants cannot produce bogus blockers',()=>{
+ for(const server of ['https://github.com','${{ github.server_url }}']){
+  const src=['on: issue_comment','jobs:','  audit:','    steps:',
+   '      - uses: actions/checkout@'+SHA,
+   '        with:',
+   '          repository: '+REPO,
+   '          ref: main',
+   '          github-server-url: '+server].join('\n');
+  const r=inspectWorkflow(src,{trustedRepository:REPO});
+  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ }
+});
