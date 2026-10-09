@@ -6,6 +6,7 @@ const https=require('node:https');
 const fs=require('node:fs');
 const path=require('node:path');
 const {normalizeIssues,analyzeIncidents,safeSummary}=require('./ultra_sentinel_incidents.cjs');
+const {releaseSha,attachVerifiedReleases,assessRelease,fetchVerifiedRuns}=require('./ultra_sentinel_evidence.cjs');
 const IDENTIFIER=/^[a-z0-9][a-z0-9-]{0,49}$/;
 const HOST='sentry.io';
 const MAX_BODY=1024*1024;
@@ -45,11 +46,16 @@ function fetchIssues({org,project,token,request=https.request}){
 function buildSanitizedReport(raw,options={}){
  const issues=normalizeIssues(raw);
  const analysis=analyzeIncidents(issues,{...options,consent:options.consent===true});
+ const attestedRuns=options.consent===true&&Array.isArray(options.attestedRuns)?options.attestedRuns:[];
+ const verifiedReleases=attachVerifiedReleases(raw,attestedRuns);
+ const releaseHealth={};
+ for(const linked of verifiedReleases)releaseHealth[linked.sha]=assessRelease(linked.sha,attestedRuns,options.consent);
  return {
   schema:'ultra-sentinel-sentry-summary/v1',
   source:'sentry-issues-read-only',
   window:'24h',snapshotCount:issues.length,
   summary:safeSummary(issues),assessment:analysis,
+  verifiedReleases,releaseHealth,
   privacy:{
    rawTitles:false,rawStackTraces:false,rawDeviceIds:false,rawUsers:false,
    rawBreadcrumbs:false,rawAudio:false,tokens:false,
@@ -65,7 +71,15 @@ async function main(env=process.env){
  if(env.ULTRA_SENTINEL_INCIDENTS_CONSENT!=='true')throw Error('Incident monitoring requires explicit consent');
  if(!env.RUNNER_TEMP||!path.isAbsolute(env.RUNNER_TEMP))throw Error('Runner temporary output directory missing');
  const raw=await fetchIssues({org,project,token});
- const report=buildSanitizedReport(raw,{consent:true});
+ // Only GitHub's own API can attest the latest CI results; no client-supplied
+ // status can authorize a release correlation or automated rollback.
+ const releaseShas=[...new Set(raw.map(releaseSha).filter(Boolean))].slice(0,4);
+ const attestedRuns=[];
+ for(const sha of releaseShas){
+  const validated=await fetchVerifiedRuns({sha,token:env.GITHUB_TOKEN});
+  attestedRuns.push(...validated);
+ }
+ const report=buildSanitizedReport(raw,{consent:true,attestedRuns});
  const destination=path.join(env.RUNNER_TEMP,'ultra-sentinel-incident-summary.json');
  fs.writeFileSync(destination,JSON.stringify(report,null,2)+'\n',{encoding:'utf8',mode:0o600,flag:'wx'});
  console.log('Ultra Sentinel: '+report.snapshotCount+' sanitized issues assessed; decision='+report.assessment.decision);
