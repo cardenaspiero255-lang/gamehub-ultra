@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ultra-sentinel-sentry-intake
@@ -33,13 +34,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node --test .github/scripts/ultra_sentinel_incidents.test.cjs .github/scripts/ultra_sentinel_sentry_ingest.test.cjs
+          node --test .github/scripts/ultra_sentinel_incidents.test.cjs .github/scripts/ultra_sentinel_sentry_ingest.test.cjs .github/scripts/ultra_sentinel_evidence.test.cjs
       - name: Fetch Sentry issues with project-read token and export sanitized aggregate only
         shell: bash
         env:
           SENTRY_ORG_SLUG: ${{ vars.SENTRY_ORG_SLUG }}
           SENTRY_PROJECT_SLUG: ${{ vars.SENTRY_PROJECT_SLUG }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           ULTRA_SENTINEL_INCIDENTS_CONSENT: "true"
         run: |
           set -euo pipefail
