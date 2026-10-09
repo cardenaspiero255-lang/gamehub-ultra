@@ -37,7 +37,7 @@ jobs:
           if test -f package-lock.json && test -f .github/scripts/ultra_sentinel_yaml_ast.cjs; then
             npm ci --ignore-scripts --no-audit --no-fund
           else
-            echo "::warning::Trusted main parser not deployed yet; legacy trusted review remains active."
+            echo "::error::Trusted main structural parser is absent; independent security review will fail closed."
           fi
       - name: Analyze the immutable PR diff and save local reports
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
@@ -95,8 +95,19 @@ jobs:
             let protectedChanges=null,structural=null;
             if(deployed){
               protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
-              if(protectedChanges.status!=='OK')
-                core.setFailed('Required security control deleted/renamed or incomplete PR file list.');
+              if(protectedChanges.status==='BLOCKED'||protectedChanges.status==='INCOMPLETE')
+                core.setFailed('Protected control removed/renamed or incomplete PR file list.');
+              if(protectedChanges.status==='REVIEW_REQUIRED'){
+                let approved=false;
+                try{
+                  const reviews=await github.paginate(github.rest.pulls.listReviews,
+                    {owner,repo,pull_number:number,per_page:100});
+                  const hasIndependentHumanApproval=require(
+                    path.resolve('.github/scripts/ultra_sentinel_policy.cjs')).hasIndependentHumanApproval;
+                  approved=hasIndependentHumanApproval(reviews,{sha:pr.head.sha,author:pr.user.login});
+                }catch(error){core.warning('Trusted human approval unavailable: fail closed.');}
+                if(!approved)core.setFailed('Protected control change needs non-author human approval for current SHA.');
+              }
               const expected=files.filter(f=>f.status!=='removed'&&
                 /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(f.filename||''))
                 .map(f=>f.filename);
