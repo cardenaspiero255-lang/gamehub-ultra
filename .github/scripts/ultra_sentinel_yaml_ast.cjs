@@ -103,14 +103,24 @@ function remotePipeline(v){
 function hasUntrustedEventInterpolation(script){
  if(typeof script!=='string')return false;
  return [...script.matchAll(/\$\{\{\s*([\s\S]{0,800}?)\s*\}\}/g)].some(m=>{
-  const expr=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
-  // Serialization of an entire event object embeds attacker-authored text
-  // (title/body/etc.) even when the expression never spells those keys.
+  const expr=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*|\*)\1\s*\]/g,'.$2');
+  // Serialization of an entire event object or wildcard property filter
+  // embeds attacker-authored text even when title/body are not named.
   // Only known numeric IDs and the fixed event action string are scalar.
-  const jsonObjects=[...expr.matchAll(/\btoJSON\s*\(\s*(github\.event(?:\.[A-Za-z_][A-Za-z0-9_]*){0,8})\s*\)/gi)];
+  const jsonObjects=[...expr.matchAll(/\btoJSON\s*\(\s*(github\.event(?:\.[A-Za-z_][A-Za-z0-9_]*|\.\*){0,8})\s*\)/gi)];
   if(jsonObjects.some(m=>!/\.(?:number|id|action)$/.test(m[1])))return true;
   return /\bgithub\.head_ref\b|\b(?:inputs\.[A-Za-z_][A-Za-z0-9_]*|github\.event\.(?:(?:comment|review|review_comment|issue|discussion|pull_request|release|deployment)\.(?:title|body|name|description|head\.(?:ref|label))|workflow_run\.(?:head_branch|name)|head_commit\.message|inputs\.[A-Za-z_][A-Za-z0-9_]*|client_payload\.[A-Za-z_][A-Za-z0-9_]*))\b/.test(expr);
  });
+}
+// Failing to parse an expression is never evidence of safety. Even when a
+// short-list rule cannot recognize its source, fail closed for long/unclosed
+// expressions rather than silently omitting them from the audit.
+function hasUninspectableEventInterpolation(script){
+ if(typeof script!=='string')return true;
+ const starts=[...script.matchAll(/\$\{\{/g)].length;
+ const expressions=[...script.matchAll(/\$\{\{([\s\S]*?)\}\}/g)];
+ return expressions.length!==starts||
+  expressions.some(match=>match[1].length>800);
 }
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
  const findings=[],coverage={partial:false,parser:'js-yaml@4.1.1'};
@@ -182,8 +192,11 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      }
      if(ambiguous||typeof inputs.script!=='string'||!inputs.script.trim())
       coverage.partial=true;
-     else if(hasUntrustedEventInterpolation(inputs.script))
-      emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+     else{
+      if(hasUninspectableEventInterpolation(inputs.script))coverage.partial=true;
+      if(hasUntrustedEventInterpolation(inputs.script))
+       emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+     }
     }
     if(privileged&&/^actions\/checkout@/i.test(step.uses)){
      // Actions runner exposes every input as INPUT_<UPPERCASE_NAME>.
@@ -240,8 +253,11 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     if(typeof step.run!=='string'||!step.run.trim())coverage.partial=true;
     else{
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
-     if(privileged&&hasUntrustedEventInterpolation(step.run))
-      emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+     if(privileged){
+      if(hasUninspectableEventInterpolation(step.run))coverage.partial=true;
+      if(hasUntrustedEventInterpolation(step.run))
+       emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+     }
     }
    }
    if((step.run===undefined&&step.uses===undefined)||
