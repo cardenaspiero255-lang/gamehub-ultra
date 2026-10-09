@@ -477,7 +477,12 @@ function structuralYamlRowMask(lines){
   if(!trimmed||trimmed.startsWith('#'))continue;
   const kv=keyValue(line)||keyValue(line.replace(/^\s*-\s*/,''));
   if(kv&&/^[>|](?:(?:[+-][1-9]?)|(?:[1-9][+-]?)|[+-])?$/.test(
-    withoutYamlComment(kv.value).trim()))blockIndent=indent;
+    withoutYamlComment(kv.value).trim())){
+   // Sequence mapping keys start after "- "; literal content has deeper
+   // indentation, but subsequent uses/with siblings are at key indentation.
+   const sequencePrefix=line.match(/^(\s*)-\s+/);
+   blockIndent=sequencePrefix?sequencePrefix[0].length:indent;
+  }
  }
  return mask;
 }
