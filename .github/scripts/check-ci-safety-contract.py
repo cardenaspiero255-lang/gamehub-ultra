@@ -899,8 +899,14 @@ def main() -> None:
         fail("coverage shard strategy is missing")
     if coverage_strategy.get("fail-fast") is not False:
         fail("coverage shards must keep fail-fast disabled")
-    if coverage_strategy.get("max-parallel") != 4:
-        fail("coverage physical concurrency changed")
+    if coverage_strategy.get("max-parallel") != 8:
+        fail("coverage physical concurrency must preserve the 8 independently verified runners")
+    # GitHub-hosted public repositories have a finite concurrent-runner budget.
+    # Bound the primary critical-path jobs instead of launching unbounded waves.
+    # Android: 4 tests + 4 emulators + release + lint + contracts = 11;
+    # Coverage: 8 test shards, total <= 20 before tiny fan-in jobs.
+    if (4 + 4 + 1 + 1 + 1 + coverage_strategy.get("max-parallel")) > 20:
+        fail("combined Android and Coverage jobs exceed 20-runner budget")
     coverage_matrix = coverage_strategy.get("matrix")
     if (
         not isinstance(coverage_matrix, dict)
