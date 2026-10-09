@@ -96,7 +96,8 @@ function unknownCheckoutExpression(value,field){
 // This remains a bounded, conservative heuristic (not a full shell parser).
 function pipelineCommands(v){
  const withoutEscaped=String(v).replace(/\\\r?\n/g,'');
- return withoutEscaped.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ').split(/\r?\n/);
+ const normalized=withoutEscaped.replace(/\\(?=[A-Za-z])/g,'');
+ return normalized.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ').split(/\r?\n/);
 }
 function remotePipeline(v){
  return typeof v==='string'&&pipelineCommands(v).some(line=>REMOTE.test(line));
@@ -240,18 +241,34 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(Object.keys(service).some(key=>key!=='image'))coverage.partial=true;
   }
  };
+ const checkEnvSources=(value,where)=>{
+  if(value===undefined)return;
+  if(!isMap(value)){coverage.partial=true;return;}
+  for(const item of Object.values(value)){
+   if(typeof item!=='string'){
+    if(item!==null&&typeof item!=='number'&&typeof item!=='boolean')coverage.partial=true;
+    continue;
+   }
+   if(!item.includes(String.fromCharCode(36,123,123)))continue;
+   const check=auditExecutableExpressions(item);
+   if(check.unsafe)emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
+   if(check.incomplete)coverage.partial=true;
+  }
+ };
  const checkDefaults=(defaults,where)=>{
   if(defaults===undefined)return;
   if(!isMap(defaults)||!isMap(defaults.run)){coverage.partial=true;return;}
   checkExecutableShell(defaults.run.shell,where);
  };
  checkDefaults(document.defaults,path);
+ checkEnvSources(document.env,path);
  checkPermissions(document.permissions,path);
  for(const [name,job] of Object.entries(document.jobs)){
   const where=path; // Deliberately no attempt to fabricate AST line locations.
   if(!isMap(job)){coverage.partial=true;continue;}
   checkPermissions(job.permissions,where);
   checkDefaults(job.defaults,where);
+  checkEnvSources(job.env,where);
   if(privileged){
    checkRunner(job['runs-on'],where);
    checkContainer(job.container,where);
@@ -261,11 +278,17 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(typeof job.uses==='string'){
     // Local same-repository reusable workflows follow this commit; only
     // third-party reusable workflows must be full SHA pinned.
-    if(!/^\.\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(job.uses)){
+    const local=/^\.\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(job.uses);
+    if(!local){
      const external=job.uses.match(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@(.+)$/);
      if(!external||!PINNED.test(external[1]))
       emit('UNPINNED_REUSABLE_WORKFLOW','BLOCKER',where);
+    }else if(privileged){
+     // A caller cannot independently certify an uninspected callee graph.
+     coverage.partial=true;
     }
+    checkEnvSources(job.with,where);
+    if(privileged&&job.secrets!==undefined)coverage.partial=true;
     continue;
    }
    // Dynamic job.uses cannot be verified as a fixed action source.
@@ -275,6 +298,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
    if(!isMap(step)){coverage.partial=true;continue;}
+   checkEnvSources(step.env,where);
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
