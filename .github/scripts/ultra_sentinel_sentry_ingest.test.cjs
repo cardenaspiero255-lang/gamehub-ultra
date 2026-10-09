@@ -183,3 +183,32 @@ test('invalid Sentry incidents never consume SHA attestation lookup budget',asyn
   assert.equal(report.verifiedReleases[0].sha,good);
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 });
+
+test('Root cause: no releases must not be reported as fully CI verified',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ultra-sentinel-norelease-'));
+ try{
+  const result=await main({
+   RUNNER_TEMP:dir,ULTRA_SENTINEL_INCIDENTS_CONSENT:'true',
+   SENTRY_ORG_SLUG:'demo',SENTRY_PROJECT_SLUG:'gamehub-ultra',
+   SENTRY_AUTH_TOKEN:'s'.repeat(20),GITHUB_TOKEN:'g'.repeat(20)
+  },{fetchIssues:async()=>[],fetchVerifiedRuns:async()=>[]});
+  assert.equal(result.attestation.status,'NOT_APPLICABLE',JSON.stringify(result.attestation));
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
+test('Root cause: empty verified CI run list cannot be called COMPLETE',async()=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ultra-sentinel-unverified-'));
+ try{
+  const sha='a'.repeat(40);
+  const issue={id:'323',project:{slug:'gamehub-ultra'},level:'error',count:'5',
+   firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
+   firstRelease:{version:'gamehub-ultra@'+sha}};
+  const result=await main({
+   RUNNER_TEMP:dir,ULTRA_SENTINEL_INCIDENTS_CONSENT:'true',
+   SENTRY_ORG_SLUG:'demo',SENTRY_PROJECT_SLUG:'gamehub-ultra',
+   SENTRY_AUTH_TOKEN:'s'.repeat(20),GITHUB_TOKEN:'g'.repeat(20)
+  },{fetchIssues:async()=>[issue],fetchVerifiedRuns:async()=>[]});
+  assert.equal(result.attestation.status,'INCOMPLETE',JSON.stringify(result.attestation));
+ }finally{fs.rmSync(dir,{recursive:true,force:true})}
+});
