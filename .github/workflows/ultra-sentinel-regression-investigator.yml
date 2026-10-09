@@ -63,14 +63,32 @@ jobs:
           cat > "$OUT/run-test.sh" <<'SCRIPT'
           #!/bin/sh
           set -eu
+          # A timeout (124) is not evidence that this revision is defective.
+          # Git bisect uses 125 for skipped/unreliable test results.
+          rc=0
           if [ "$SUITE" = architecture ]; then
-            timeout 420 gradle --no-daemon :app:testDebugUnitTest --tests 'com.cardenaspiero255.gamehubultra.architecture.ArchitectureBoundaryGuardTest'
+            timeout 420 gradle --no-daemon :app:testDebugUnitTest --tests 'com.cardenaspiero255.gamehubultra.architecture.ArchitectureBoundaryGuardTest' || rc=$?
           else
-            timeout 420 gradle --no-daemon :app:testDebugUnitTest
+            timeout 420 gradle --no-daemon :app:testDebugUnitTest || rc=$?
           fi
+          if [ "$rc" -eq 124 ]; then exit 125; fi
+          exit "$rc"
           SCRIPT
           chmod +x "$OUT/run-test.sh"
           export SUITE
+          # Git bisect assumes BAD is failing, so verify that assumption first.
+          set +e
+          "$OUT/run-test.sh" > "$OUT/bad-endpoint.log" 2>&1
+          bad_code=$?
+          set -e
+          if [ "$bad_code" -eq 0 ]; then
+            echo "::error::Current main passes the selected suite; no verified bad endpoint to bisect."
+            exit 1
+          fi
+          if [ "$bad_code" -eq 125 ] || [ "$bad_code" -ge 126 ]; then
+            echo "::error::Current main cannot be classified: timeout or infrastructure error (exit $bad_code)."
+            exit 1
+          fi
           git bisect start "$BAD" "$GOOD"
           set +e
           git bisect run "$OUT/run-test.sh" > "$OUT/bisect.log" 2>&1

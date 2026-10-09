@@ -174,6 +174,27 @@ class VoiceAssistantControllerRobolectricTest {
     }
 
     @Test
+    fun releaseWithoutTtsStillClosesControllerAndNotifiesOnce() {
+        val changes = mutableListOf<Boolean>()
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = changes::add,
+            onTranscript = {},
+            onError = {}
+        )
+        // Cover the absent-TTS path after the engine has already shut down.
+        // The other tests exercise stop() and shutdown() on a live TTS.
+        val field = VoiceAssistantController::class.java
+            .getDeclaredField("tts").apply { isAccessible = true }
+        (field.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
+        field.set(controller, null)
+        controller.release()
+        controller.release()
+        kotlin.test.assertNull(field.get(controller))
+        assertEquals(listOf(false), changes)
+    }
+
+    @Test
     fun releasedControllerIgnoresLateRecognizerCallbacksAndCannotRestart() {
         val listeningEvents = mutableListOf<Boolean>()
         val errors = mutableListOf<Int>()
