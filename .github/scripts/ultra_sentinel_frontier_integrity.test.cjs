@@ -98,3 +98,10 @@ test('Codex P2: missing ordering metadata cannot let stale green CI pass',()=>{
   assert.ok(result.counts.pending>0||result.counts.failed>0,JSON.stringify({broken,result}));
  }
 });
+
+test('CI provenance accepts complete more-than-100 run records but fails closed if truncated',()=>{
+ const extra=Array.from({length:110},(_,i)=>run('unrelated workflow',{id:i+1000,run_number:i+1}));
+ assert.equal(ci([...extra,run('Android build'),run('Unit Test Coverage')]).status,'PASS');
+ assert.equal(ci([...extra,run('Android build'),run('Unit Test Coverage')],{apiComplete:false}).status,'UNKNOWN');
+ assert.equal(ci(Array.from({length:1001},(_,i)=>run('unrelated workflow',{id:i+1000}))).status,'UNKNOWN');
+});
