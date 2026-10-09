@@ -162,3 +162,34 @@ test('added raw opening with known beginning of Kotlin file remains safely disti
  assert.equal(result.coverage.partial,false);
  assert.equal(result.findings.filter(f=>f.rule==='BLOCKING_ANDROID_CALL').length,1);
 });
+
+test('Codex P2: nested Kotlin block comment does not trigger a blocking-call finding',()=>{
+ const result=analyze([file(app+'Nested.kt',[
+ '/* outer documentation',
+ '/* nested inner */',
+ 'runBlocking { example() }',
+ '*/',
+ 'val safe = 1'
+ ])]);
+ assert.ok(!rules(result).includes('BLOCKING_ANDROID_CALL'));
+});
+test('nested Kotlin comments close only at outer end and then executable calls are visible',()=>{
+ const result=analyze([file(app+'Nested.kt',[
+ '/* outer */',
+ '/* second outer',
+ '/* nested */',
+ 'runBlocking { commentOnly() }',
+ '*/',
+ 'runBlocking { actualCall() }'
+ ])]);
+ const blocking=result.findings.filter(x=>x.rule==='BLOCKING_ANDROID_CALL');
+ assert.equal(blocking.length,1);
+ assert.equal(blocking[0].line,6);
+});
+test('single-line nested Kotlin block comments are not executable',()=>{
+ const result=analyze([file(app+'Nested.kt',[
+ '/* outer /* nested */ runBlocking { hidden() } */',
+ 'val safe = 1'
+ ])]);
+ assert.ok(!rules(result).includes('BLOCKING_ANDROID_CALL'));
+});
