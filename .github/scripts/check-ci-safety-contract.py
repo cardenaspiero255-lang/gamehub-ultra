@@ -836,7 +836,7 @@ def main() -> None:
         fail("Android test shard strategy is missing")
     if android_test_strategy.get("fail-fast") is not False:
         fail("Android test shards must keep fail-fast disabled")
-    if android_test_strategy.get("max-parallel") != 4:
+    if android_test_strategy.get("max-parallel") != 5:
         fail("Android test physical concurrency changed")
     android_test_matrix = android_test_strategy.get("matrix")
     if (
@@ -903,9 +903,9 @@ def main() -> None:
         fail("coverage physical concurrency must preserve the 8 independently verified runners")
     # GitHub-hosted public repositories have a finite concurrent-runner budget.
     # Bound the primary critical-path jobs instead of launching unbounded waves.
-    # Android: 4 tests + 4 emulators + release + lint + contracts = 11;
+    # Android: 5 tests + 4 emulators + release + lint + contracts = 12;
     # Coverage: 8 test shards, total <= 20 before tiny fan-in jobs.
-    if (4 + 4 + 1 + 1 + 1 + coverage_strategy.get("max-parallel")) > 20:
+    if (5 + 4 + 1 + 1 + 1 + coverage_strategy.get("max-parallel")) > 20:
         fail("combined Android and Coverage jobs exceed 20-runner budget")
     coverage_matrix = coverage_strategy.get("matrix")
     if (
