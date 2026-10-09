@@ -308,13 +308,14 @@ function hasSensitiveAliases(lines){
   // intentionally unresolved and must fail closed, including quoted aliases.
   // A flow-step begins with "- {"; ref aliases there are nested in the
   // sequence item, so keyValue(row) cannot expose that syntax.
-  const flowRefAlias=stepRanges.some(s=>s.start===i) &&
-   /^\s*-\s*\{/.test(row) &&
-   /(?:^|[,{\s])(?:ref|uses|with)\s*:\s*\*[-A-Za-z0-9_]+\b/.test(row);
-  const flowNestedRefAlias=stepRanges.some(s=>s.start===i) &&
-   /^\s*-\s*\{/.test(row) &&
-   /(?:^|[,{\s])ref\s*:\s*\*[-A-Za-z0-9_]+\b/.test(row);
-  if(flowRefAlias||flowNestedRefAlias||
+  // Check the *entire* compact flow step, including continued lines and
+  // YAML-quoted mapping keys. A ref alias is not a verified checkout target.
+  // Only inspect real job steps, never arbitrary env/run text named "uses".
+  const flowStep=stepRanges.find(s=>s.start===i);
+  const flowStepAlias=flowStep && /^\s*-\s*\{/.test(row) &&
+   /(?:^|[,{]\s*)(?:"(?:ref|uses|with)"|'(?:ref|uses|with)'|(?:ref|uses|with))\s*:\s*\*[-A-Za-z0-9_]+\b/
+    .test(lines.slice(flowStep.start,flowStep.end).join('\n'));
+  if(flowStepAlias||
      /(?:^|[\s,[{,:"'])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
  }
  return false;
