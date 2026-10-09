@@ -114,10 +114,23 @@ function analyze(files,config={}){
    // Feed all unchanged context lines through the stateful lexer first.
    // Only added lines are eligible to produce findings. Never infer that
    // the first added line begins outside a raw string or a comment.
-   let lexState={},previousLine=null;
+   let lexState={},previousLine=null,unknownHunkStart=true;
    const executableByLine=new Map();
    for(const entry of patch.scan){
-     if(previousLine!==null&&entry.line!==previousLine+1)lexState={};
+     // Diff context is not necessarily the beginning of the Kotlin file.
+     // An unchanged triple quote can therefore CLOSE a raw string opened
+     // outside the hunk; treating it as an opener hides later executable code.
+     // Without trusted pre-hunk state, fail closed instead of claiming clean.
+     if(previousLine===null||entry.line!==previousLine+1){
+       lexState={};
+       unknownHunkStart=entry.line!==1;
+     }
+     if(android&&path.endsWith('.kt')&&unknownHunkStart&&!entry.added&&
+        /"""|\*\//.test(entry.text)){
+       partial=true;
+       warnings.push('Estado léxico Kotlin previo al hunk desconocido; revisar contexto completo: '+sanitize(path));
+       unknownHunkStart=false;
+     }
      const code=executableText(entry.text.trim(),lexState);
      if(entry.added)executableByLine.set(entry.line,code);
      previousLine=entry.line;
