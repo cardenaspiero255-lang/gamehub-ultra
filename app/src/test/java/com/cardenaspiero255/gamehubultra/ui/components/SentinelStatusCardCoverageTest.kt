@@ -44,4 +44,13 @@ class SentinelStatusCardCoverageTest {
             visited
         )
     }
+
+    @Test
+    @Config(qualifiers = "en")
+    fun sentinelPanelSupportsEnglishLocalization() {
+        composeRule.setContent { SentinelStatusCard() }
+        composeRule.onNodeWithTag("sentinel_status_panel").assertExists()
+        composeRule.onNodeWithText("CI status: check GitHub").assertExists()
+        composeRule.onNodeWithText("View reviews on GitHub").assertExists()
+    }
 }
