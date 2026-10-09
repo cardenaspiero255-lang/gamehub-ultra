@@ -116,3 +116,49 @@ test('ROOT-2: out-of-order fresh green and stale red uses newest verified attemp
    coverage,android]);
  assert.equal(result.status,'PASS',JSON.stringify(result));
 });
+
+
+test('ROOT-3: privileged step shell is executable and cannot use attacker issue text',()=>{
+ for(const expr of ['${{ github.event.issue.title }}',
+  '${{ format("bash -c {0} -- {1}", github.event.issue.body, 0) }}']){
+  const source=['on: issues','jobs:','  audit:','    steps:',
+   '      - run: echo safe','        shell: '+expr].join('\\n').replaceAll('\\n','\n');
+  const result=inspectWorkflow(source);
+  assert.ok(result.status==='INCOMPLETE'||result.findings.some(f=>f.severity==='BLOCKER'),JSON.stringify({expr,result}));
+  assert.notEqual(result.status,'NO_RISK_PATTERN');
+ }
+});
+test('ROOT-3: unknown shell template is inconclusive, literal standard shell remains accepted',()=>{
+ for(const shell of ['${{ matrix.shell }}','${{ steps.selector.outputs.shell }}']){
+  const source=['on: issues','jobs:','  audit:','    steps:',
+   '      - run: echo safe','        shell: '+shell].join('\n');
+  const result=inspectWorkflow(source);
+  assert.equal(result.status,'INCOMPLETE',JSON.stringify({shell,result}));
+ }
+ const good=['on: issues','jobs:','  audit:','    steps:',
+  '      - run: echo safe','        shell: bash'].join('\n');
+ assert.equal(inspectWorkflow(good).status,'NO_RISK_PATTERN');
+});
+test('ROOT-3: uninspectable shell defaults and nonstring shell cannot be verified cleanly',()=>{
+ for(const src of [
+  ['on: issues','defaults:','  run:','    shell: ${{ inputs.shell }}',
+   'jobs:','  audit:','    steps:','      - run: echo safe'].join('\n'),
+  ['on: issues','jobs:','  audit:','    defaults:','      run:',
+   '        shell: ${{ inputs.shell }}','    steps:','      - run: echo safe'].join('\n'),
+  ['on: issues','jobs:','  audit:','    steps:',
+   '      - run: echo safe','        shell: [bash]'].join('\n')
+ ]){
+  const result=inspectWorkflow(src);
+  assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+ }
+});
+test('ROOT-1: delimiters in quoted expression literals do not suppress attacker input',()=>{
+ for(const expr of [
+  "\${{ format('x}}{0}', github.event.issue.title) }}",
+  "\${{ format('a''}}b{0}',github.event.issue.body) }}",
+  "\${{ join(github.event.*.title, '') }}"
+ ]){
+  const result=inspectWorkflow(workflow('issues',expr));
+  assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify({expr,result}));
+ }
+});
