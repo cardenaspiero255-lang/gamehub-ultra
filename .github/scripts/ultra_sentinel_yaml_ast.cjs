@@ -63,7 +63,10 @@ function privilegedTrigger(value){
  // payloads or refs can be attacker-controlled. Treat checkouts of PR code
  // as privileged even when the workflow does not use pull_request_target.
  const privileged=new Set(['pull_request_target','workflow_run','issue_comment',
-  'pull_request_review','pull_request_review_comment','discussion_comment']);
+  'issues','discussion','discussion_comment','pull_request_review',
+  'pull_request_review_comment','release','repository_dispatch',
+  'workflow_dispatch','check_run','check_suite','deployment',
+  'deployment_status','gollum','fork','watch','label','milestone','public']);
  return events.some(event=>privileged.has(event));
 }
 function unsafePrRef(v){
@@ -101,7 +104,7 @@ function hasUntrustedEventInterpolation(script){
  if(typeof script!=='string')return false;
  return [...script.matchAll(/\$\{\{\s*([\s\S]{0,800}?)\s*\}\}/g)].some(m=>{
   const expr=m[1].replace(/\[\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*\]/g,'.$2');
-  return /\bgithub\.head_ref\b|\bgithub\.event\.(?:(?:comment|review|review_comment|issue|discussion|pull_request)\.(?:title|body|name|head\.(?:ref|label))|workflow_run\.(?:head_branch|name)|head_commit\.message)\b/.test(expr);
+  return /\bgithub\.head_ref\b|\b(?:inputs\.[A-Za-z_][A-Za-z0-9_]*|github\.event\.(?:(?:comment|review|review_comment|issue|discussion|pull_request|release|deployment)\.(?:title|body|name|description|head\.(?:ref|label))|workflow_run\.(?:head_branch|name)|head_commit\.message|inputs\.[A-Za-z_][A-Za-z0-9_]*|client_payload\.[A-Za-z_][A-Za-z0-9_]*))\b/.test(expr);
  });
 }
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
@@ -156,6 +159,26 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     if(!step.uses.startsWith('./')){
      const action=ACTION.exec(step.uses);
      if(!action||!PINNED.test(action[1]))emit('UNPINNED_ACTION','HIGH',where);
+    }
+    if(privileged&&/^actions\/github-script@/i.test(step.uses)){
+     // github-script compiles its script input as JavaScript after Github
+     // expressions are substituted. Use runner-equivalent input names.
+     const inputs=Object.create(null);
+     let ambiguous=step.with===undefined||!isMap(step.with);
+     if(!ambiguous){
+      for(const [key,value] of Object.entries(step.with)){
+       const folded=key.toLowerCase();
+       if(!/^[A-Za-z0-9_-]+$/.test(key)||
+          Object.prototype.hasOwnProperty.call(inputs,folded)){
+        ambiguous=true;break;
+       }
+       inputs[folded]=value;
+      }
+     }
+     if(ambiguous||typeof inputs.script!=='string'||!inputs.script.trim())
+      coverage.partial=true;
+     else if(hasUntrustedEventInterpolation(inputs.script))
+      emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
     }
     if(privileged&&/^actions\/checkout@/i.test(step.uses)){
      // Actions runner exposes every input as INPUT_<UPPERCASE_NAME>.
