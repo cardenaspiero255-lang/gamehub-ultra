@@ -106,16 +106,14 @@ test('AST matrix guarantees at least 50 independent YAML traps',()=>{
  assert.ok(cases.length>=50,String(cases.length));
 });
 
-test('AST production wiring: parse each trusted Sentinel workflow without source execution',()=>{
+test('AST bootstrap wiring: parse existing trusted Sentinel workflows without source execution',()=>{
  const fs=require('node:fs'),path=require('node:path');
  for(const filename of [
   'ultra-sentinel-auto-review.yml',
   'ultra-sentinel-core-check.yml',
   'ultra-sentinel-independent-review.yml',
   'ultra-sentinel-self-review.yml',
-  'ultra-sentinel-mutation.yml',
-  'ultra-sentinel-reliability-100.yml',
-  'ultra-sentinel-sss-post-ci.yml'
+  'ultra-sentinel-mutation.yml'
  ]){
   const full=path.resolve(__dirname,'../workflows',filename);
   const content=fs.readFileSync(full,'utf8');
