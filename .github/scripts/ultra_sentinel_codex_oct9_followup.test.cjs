@@ -7,7 +7,7 @@ const {analyze}=require('./ultra_sentinel_core.cjs');
 const SHA='a'.repeat(40), REPO='cardenaspiero255-lang/gamehub-ultra';
 const K='app/src/main/java/com/cardenaspiero255/gamehubultra/Engine.kt';
 function checkout(repository,ref){
- return ['on: pull_request_target','jobs:','  test:','    steps:',
+ return ['on: pull_request_target','permissions: read-all','jobs:','  test:','    steps:',
  '      - uses: actions/checkout@'+SHA,'        with:',
  '          repository: '+repository,'          ref: '+ref].join('\n');
 }
