@@ -681,3 +681,34 @@ test('DEEP negative: folded step name with legitimate pinned checkout has no fal
  const r=scan(yaml);
  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
 });
+
+test('DEEP P1: unresolved sequence item alias cannot certify job steps clean',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - *external_step'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.equal(r.coverage.partial,true);
+});
+test('DEEP P1: anchored unresolved step alias cannot certify job steps clean',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - &shared.step *external_step'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.equal(r.coverage.partial,true);
+});
+test('DEEP P1: YAML step merge key alias requires review, not silent success',()=>{
+ const yaml=['on: pull_request_target','jobs:','  audit:','    steps:',
+  '      - <<: *checkout_definition'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.equal(r.coverage.partial,true);
+});
+test('DEEP negative: quoted alias-looking step name is ordinary text',()=>{
+ const yaml=['on: push','jobs:','  audit:','    steps:',
+  '      - name: "*not_real_alias"',
+  '        uses: actions/checkout@'+SHA,
+  '        with:','          ref: main'].join('\n');
+ const r=scan(yaml);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.coverage.partial,false);
+});
