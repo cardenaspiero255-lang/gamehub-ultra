@@ -241,3 +241,56 @@ test('P2: independent review must preserve AST attestation to final report',()=>
  assert.ok(source.includes('report.structuralYaml=structural;'));
  assert.ok(source.includes('report.protectedChanges=protectedChanges;'));
 });
+
+test('proactive: unpinned reusable workflow is BLOCKER, not advisory-only',()=>{
+ const y=['on: push','jobs:','  exposed:',
+ '    uses: malicious/repo/.github/workflows/run.yml@main',
+ '    secrets: inherit'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.ok(r.findings.some(f=>f.rule==='UNPINNED_REUSABLE_WORKFLOW'&&f.severity==='BLOCKER'),JSON.stringify(r));
+});
+test('proactive: dynamic reusable workflow expression must never be treated as pinned',()=>{
+ const y=['on: pull_request_target','jobs:','  exposed:',
+ '    uses: ${{ inputs.workflow }}'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.ok(r.findings.some(f=>f.rule==='UNPINNED_REUSABLE_WORKFLOW'&&f.severity==='BLOCKER'),JSON.stringify(r));
+});
+test('proactive: privileged checkout with unresolved repository input fails closed',()=>{
+ const y=['on: pull_request_target','jobs:','  t:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          repository: ${{ inputs.repository }}', '          ref: main'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.equal(r.coverage.partial,true);
+});
+test('proactive: privileged checkout with unresolved ref input fails closed',()=>{
+ const y=['on: pull_request_target','jobs:','  t:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          repository: owner/trusted', '          ref: ${{ inputs.ref }}'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('proactive: privileged checkout of same repository and github.sha is accepted',()=>{
+ const y=['on: pull_request_target','jobs:','  t:','    steps:',
+ '      - uses: actions/checkout@'+SHA,'        with:',
+ '          repository: ${{ github.repository }}', '          ref: ${{ github.sha }}'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+});
+test('proactive: a job containing both uses and steps cannot be certified',()=>{
+ const y=['on: push','jobs:','  t:',
+ '    uses: vendor/repo/.github/workflows/run.yml@'+SHA,
+ '    steps:', '      - run: echo harmless'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('proactive: empty jobs mapping does not certify executable workflow',()=>{
+ const r=inspectWorkflow('on: pull_request_target\njobs: {}\n');
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
+test('proactive: step lacking run and uses is invalid evidence',()=>{
+ const y=['on: push','jobs:','  t:','    steps:',
+ '      - name: I do not have a command'].join('\n');
+ const r=inspectWorkflow(y);
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+});
