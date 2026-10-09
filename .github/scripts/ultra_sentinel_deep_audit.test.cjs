@@ -46,3 +46,19 @@ test('P1 Judge rejects different finding line even when proposal diff is syntact
  const got=judge(proposal,{sha:SHA,checks,source:CONTENT,findings:[{...FINDING,line:3}]});
  assert.equal(got.status,'REJECT',JSON.stringify(got));
 });
+
+test('P2 AST rejects a job with an empty steps sequence as incomplete evidence',()=>{
+ const src=['on: pull_request_target','jobs:','  audit:','    steps: []'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+});
+test('P2 AST rejects an empty run command as incomplete evidence',()=>{
+ const src=['on: issue_comment','jobs:','  audit:','    steps:','      - run: ""'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.equal(result.status,'INCOMPLETE',JSON.stringify(result));
+});
+test('P1 Judge requires explicit immutable expected SHA even when CI and source match',()=>{
+ const proposal=candidate({filename:FILE,content:CONTENT,sha:SHA,findings:[FINDING]});
+ const result=judge(proposal,{checks,source:CONTENT,findings:[FINDING]});
+ assert.equal(result.status,'REJECT',JSON.stringify(result));
+});
