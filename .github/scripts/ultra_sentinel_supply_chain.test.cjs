@@ -60,3 +60,12 @@ test('invalid immutable SHA marks evidence explicitly partial (fail-closed)',()=
  assert.equal(r.coverage.partial,true);
  assert.equal(r.autoApproveAllowed,false);
 });
+
+test('P1: quoted YAML flow ref aliases on privileged checkout fail closed',()=>{
+ for(const key of ['"ref"',"'ref'",'ref']){
+  const workflow='on: pull_request_target\njobs:\n  scan:\n    steps:\n      - {uses: actions/checkout@'+SHA+', with: {'+key+': *danger}}\n';
+  const result=scan(workflow);
+  assert.equal(result.status,'INCOMPLETE','ref key '+key);
+  assert.equal(result.coverage.partial,true,'ref key '+key);
+ }
+});
