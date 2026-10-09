@@ -89,6 +89,6 @@ test('both review workflows lookup trusted main identities and changed files for
 test('automatic and post-CI reviewers fail rather than report green on untrusted CI definitions',()=>{
  for(const file of ['ultra-sentinel-auto-review.yml','ultra-sentinel-sss-post-ci.yml']){
   const code=fs.readFileSync(path.resolve(__dirname,'../workflows',file),'utf8');
-  assert.match(code,/if\s*\(\s*ci\.status===['"]UNTRUSTED['"]\s*\)\s*core\.setFailed/);
+  assert.match(code,/if\s*\(\s*(?:ci\.status===['"]UNTRUSTED['"]|ci\.status!==['"]PASS['"])\s*\)\s*core\.setFailed/);
  }
 });
