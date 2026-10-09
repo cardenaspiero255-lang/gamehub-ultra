@@ -6,8 +6,8 @@
  */
 const fs=require('node:fs'),path=require('node:path');
 const SCHEMA='ultra-sentinel-omega/v1';
-const STATES=['IDLE','RETRY_PENDING'],EVENTS=['SCHEDULE','DISPATCH','RESET'];
-const REQUIRED=['BLOCK_REENTRANT_SCHEDULE','DISPATCH_TO_IDLE','RESET_TO_IDLE','FIRST_SCHEDULE_ALLOWED','TOTAL_DETERMINISTIC'];
+const STATES=['IDLE','RETRY_PENDING','CLOSED'],EVENTS=['SCHEDULE','DISPATCH','RESET','CLOSE'];
+const REQUIRED=['BLOCK_REENTRANT_SCHEDULE','DISPATCH_TO_IDLE','RESET_TO_IDLE','FIRST_SCHEDULE_ALLOWED','TOTAL_DETERMINISTIC','CLOSE_TERMINAL','LATE_CALLBACK_CANNOT_REOPEN'];
 const CONTRACT='voice-retry-gate-v1';
 function key(a,b){return a+'\u0000'+b}
 function check(spec){
@@ -34,13 +34,17 @@ function check(spec){
   const k=key(t.from,t.event);
   if(table.has(k))fail('Nondeterministic duplicate transition: '+t.from+'/'+t.event);
   else table.set(k,t);
+  let target,accepted=null;
   if(t.event==='SCHEDULE'){
-   const expected=t.from==='IDLE';
-   if(t.accepted!==expected||t.to!==(expected?'RETRY_PENDING':'RETRY_PENDING'))
-    fail('Scheduling rule violated in '+t.from,[t.from,t.event,t.to]);
-  }else if(t.accepted!==null||t.to!=='IDLE'){
-   fail('DISPATCH/RESET must return IDLE: '+t.from+'/'+t.event,[t.from,t.event,t.to]);
+    accepted=t.from==='IDLE';
+    target=accepted?'RETRY_PENDING':t.from;
+  }else if(t.event==='CLOSE'){
+    target='CLOSED';
+  }else{
+    target=t.from==='CLOSED'?'CLOSED':'IDLE';
   }
+  if(t.to!==target||t.accepted!==accepted)
+    fail('Invalid transition: '+t.from+'/'+t.event,[t.from,t.event,t.to]);
  }
  for(const a of STATES)for(const e of EVENTS)if(!table.has(key(a,e)))fail('Missing transition: '+a+'/'+e);
  const reached=new Set(['IDLE']);const queue=[{state:'IDLE',trace:[]}];
@@ -54,7 +58,7 @@ function check(spec){
  for(const a of STATES)if(!reached.has(a))fail('Unreachable state: '+a);
  return {schema:SCHEMA,contract:CONTRACT,valid:errors.length===0,errors,counterexamples,
   transitionsChecked:table.size,reachableStates:[...reached].sort(),
-  guarantee:'Abstract two-state transition model only; Kotlin behavior validated separately by regression tests.'};
+  guarantee:'Abstract three-state transition model only; Kotlin behavior validated separately by regression tests.'};
 }
 function readAndCheck(root=path.resolve(__dirname,'../sentinel-contracts')){
  const file=path.join(root,'voice-retry.omega.json');
