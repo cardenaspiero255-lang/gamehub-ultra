@@ -29,3 +29,13 @@ test('consensus gracefully handles 403 and does not certify missing reviewers',(
  assert.match(wf,/if \(fresh === 0\) core\.warning/);
  assert.match(wf,/Independent Sentinel Core failed/);
 });
+
+test('paid model providers require explicit opt-in, never consume exhausted quotas on every PR push',()=>{
+ const wf=text();
+ assert.match(wf,/run_external_providers:\s*\n\s*description:/);
+ assert.match(wf,/type: boolean\s*\n\s*default: false/);
+ const providerBlock=wf.split('\n  providers:\n')[1].split('\n  consensus:\n')[0];
+ assert.match(providerBlock,/github\.event_name == 'workflow_dispatch'/);
+ assert.match(providerBlock,/inputs\.run_external_providers == true/);
+ assert.doesNotMatch(providerBlock,/github\.event\.pull_request\.head\.repo\.full_name == github\.repository\s*$/m);
+});
