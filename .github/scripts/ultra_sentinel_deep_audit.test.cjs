@@ -197,3 +197,37 @@ test('Codex P1: serializing trusted numeric fields is not a code-injection findi
  const result=inspectWorkflow(workflow('issues',"echo '"+'$'+'{{ toJSON(github.event.issue.number) }}'+"'"));
  assert.ok(!result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(result));
 });
+
+test('Codex P1: serialized wildcard issue fields cannot bypass privileged shell review',()=>{
+ for(const expr of [
+  '${{ toJSON(github.event.issue.*) }}',
+  '${{ toJson(github.event.issue.*.name) }}',
+  '${{ toJSON(github.event["issue"].*) }}'
+ ]){
+  const result=inspectWorkflow(workflow('issues',"echo '"+expr+"'"));
+  assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify({expr,result}));
+ }
+});
+test('Codex P1: wildcard event serialization inside github-script is unsafe',()=>{
+ const src=['on: issue_comment','jobs:','  audit:','    steps:',
+  '      - uses: actions/github-script@'+SHA,
+  '        with:',
+  '          script: core.info("${{ toJSON(github.event.comment.*) }}")'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.ok(result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'&&f.severity==='BLOCKER'),JSON.stringify(result));
+});
+test('Codex P1: oversized expression cannot silently become NO_RISK_PATTERN in run',()=>{
+ const expr='${{ format("'+ 'x'.repeat(801) +'{0}", github.event.issue.title) }}';
+ const result=inspectWorkflow(workflow('issues',"echo '"+expr+"'"));
+ assert.notEqual(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+ assert.ok(result.status==='INCOMPLETE'||result.findings.some(f=>f.rule==='PRIVILEGED_EVENT_SCRIPT_INJECTION'),JSON.stringify(result));
+});
+test('Codex P1: oversized github-script expressions fail closed rather than clean',()=>{
+ const expr='${{ format("'+ 'x'.repeat(801) +'{0}", github.event.comment.body) }}';
+ const src=['on: issue_comment','jobs:','  audit:','    steps:',
+  '      - uses: actions/github-script@'+SHA,
+  '        with:',
+  '          script: core.info("'+expr+'")'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.notEqual(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+});
