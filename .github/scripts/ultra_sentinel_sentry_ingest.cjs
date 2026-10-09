@@ -43,11 +43,26 @@ function fetchIssues({org,project,token,request=https.request}){
   req.end();
  });
 }
+// Keep release lookup tied to exactly the incidents that passed the strict
+// count, timestamp, identity and duplicate checks in normalizeIssues.
+function acceptedReleaseIssues(raw){
+ if(!Array.isArray(raw))return [];
+ const accepted=new Set(normalizeIssues(raw).map(item=>item.fingerprint));
+ const seen=new Set(),out=[];
+ for(const candidate of raw.slice(0,100)){
+  const normalized=normalizeIssues([candidate])[0];
+  if(!normalized||!accepted.has(normalized.fingerprint)||
+     seen.has(normalized.fingerprint))continue;
+  seen.add(normalized.fingerprint);
+  out.push(candidate);
+ }
+ return out;
+}
 function buildSanitizedReport(raw,options={}){
  const issues=normalizeIssues(raw);
  const analysis=analyzeIncidents(issues,{...options,consent:options.consent===true});
  const attestedRuns=options.consent===true&&Array.isArray(options.attestedRuns)?options.attestedRuns:[];
- const verifiedReleases=attachVerifiedReleases(raw,attestedRuns);
+ const verifiedReleases=attachVerifiedReleases(acceptedReleaseIssues(raw),attestedRuns);
  const releaseHealth={};
  for(const linked of verifiedReleases)releaseHealth[linked.sha]=assessRelease(linked.sha,attestedRuns,options.consent);
  return {
@@ -73,7 +88,7 @@ async function main(env=process.env,clients={}){
  const raw=await (clients.fetchIssues||fetchIssues)({org,project,token});
  // Only GitHub's own API can attest the latest CI results; no client-supplied
  // status can authorize a release correlation or automated rollback.
- const releaseShas=[...new Set(raw.map(releaseSha).filter(Boolean))].slice(0,4);
+ const releaseShas=[...new Set(acceptedReleaseIssues(raw).map(releaseSha).filter(Boolean))].slice(0,4);
  const attestedRuns=[];
  let failedLookups=0;
  for(const sha of releaseShas){
