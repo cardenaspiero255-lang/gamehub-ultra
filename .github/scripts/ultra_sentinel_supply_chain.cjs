@@ -188,7 +188,9 @@ function jobStepRanges(lines){
    const ln=lines[j],trim=ln.trim(),indent=ln.match(/^\s*/)[0].length;
    if(!trim||trim.startsWith('#'))continue;
    if(indent<=parentIndent)break;
-   if(/^\s*-\s+/.test(ln)){
+   // A YAML sequence item may be a bare '-' on its own line.
+   // Its 'uses' and 'with' mapping then appear on child lines.
+   if(/^\s*-(?:\s+|$)/.test(ln)){
     if(itemIndent===null)itemIndent=indent;
     if(indent===itemIndent)heads.push(j);
    }
@@ -369,6 +371,20 @@ function reviewWorkflows({sha,expected,sources={}}={}){
    const permissionKey=keyValue(line);
    if(permissionKey?.key==='permissions'&&inRealPermissionsMap(lines,i)){
     if(writableLine(line))flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    // Flow permission maps may continue on following lines and contain
+    // several comma-delimited entries on the same physical line. Parse the
+    // collected flow *entries*, not each physical line as a single scalar.
+    const permissionValue=permissionKey.value.trim();
+    if(permissionValue.startsWith('{')){
+     let flow=permissionValue,at=i;
+     while(!flow.includes('}')&&at+1<lines.length&&at-i<65){
+      flow+=' '+lines[++at].trim();
+     }
+     const close=flow.indexOf('}');
+     if(close<0)coverage.partial=true;
+     else if(splitFlowEntries(flow.slice(1,close)).some(part=>writableLine(part.trim())))
+      flag('PRIVILEGED_WRITE_TOKEN','HIGH',name,i+1);
+    }
     if(/^[>|][+-]?$/.test(permissionKey.value.trim())){
      const items=[];
      for(let k=i+1;k<Math.min(lines.length,i+65);k++){
