@@ -97,7 +97,7 @@ jobs:
             --output "$RUNNER_TEMP/ultra-sentinel-kotlin-mutation.json"
       - name: Upload outcome (no source or log secrets)
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 Node 24
         with:
           name: sentinel-kotlin-thermal-mutation
           path: ${{ runner.temp }}/ultra-sentinel-kotlin-mutation.json

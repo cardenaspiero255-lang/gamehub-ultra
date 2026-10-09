@@ -31,3 +31,25 @@ test('partial patch evidence or BLOCKER does not silently produce a green gate',
  assert.match(x,/severity === "BLOCKER"/);
  assert.match(x,/core\.setFailed/);
 });
+
+test('Sentinel workflows pin Node 24 artifact uploads and GitHub API scripting',()=>{
+ const workflows=[
+  'ultra-sentinel-independent-review.yml',
+  'ultra-sentinel-auto-review.yml',
+  'ultra-sentinel-sentry-incidents.yml',
+  'ultra-sentinel-regression-investigator.yml',
+  'ultra-sentinel-mutation.yml',
+  'ultra-sentinel-kotlin-mutation.yml'
+ ];
+ for(const name of workflows){
+  const content=fs.readFileSync(path.resolve(__dirname,'../workflows',name),'utf8');
+  assert.match(content,/actions\\/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f/,
+   name+' must use audited Node 24 artifact action');
+  assert.doesNotMatch(content,/actions\\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+ }
+ for(const name of workflows.slice(0,2)){
+  const content=fs.readFileSync(path.resolve(__dirname,'../workflows',name),'utf8');
+  assert.match(content,/actions\\/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd/,
+   name+' must use SHA-pinned Node 24 GitHub script');
+ }
+});

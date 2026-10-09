@@ -45,7 +45,7 @@ jobs:
           node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
           node .github/scripts/ultra_sentinel_benchmark.cjs
       - name: Analyze PR evidence and publish read-only reports
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # pinned v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
         with:
           github-token: ${{ github.token }}
           script: |
@@ -119,7 +119,7 @@ jobs:
               core.warning("HIGH risk signals are hypotheses requiring reproduction and tests.");
       - name: Upload SHA-pinned read-only Sentinel report
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0 Node 24
         with:
           name: ultra-sentinel-core-report-${{ github.event.pull_request.number || inputs.pr_number }}
           path: ${{ runner.temp }}/ultra-sentinel-core-report/
