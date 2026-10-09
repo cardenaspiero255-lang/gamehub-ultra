@@ -306,7 +306,16 @@ function hasSensitiveAliases(lines){
    scope&&indent>scope.indent?trim:'';
   // A leading *alias or an alias nested in a flow sequence/map is
   // intentionally unresolved and must fail closed, including quoted aliases.
-  if(/(?:^|[\s,[{,:"'])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
+  // A flow-step begins with "- {"; ref aliases there are nested in the
+  // sequence item, so keyValue(row) cannot expose that syntax.
+  const flowRefAlias=stepRanges.some(s=>s.start===i) &&
+   /^\s*-\s*\{/.test(row) &&
+   /(?:^|[,{\s])(?:ref|uses|with)\s*:\s*\*[-A-Za-z0-9_]+\b/.test(row);
+  const flowNestedRefAlias=stepRanges.some(s=>s.start===i) &&
+   /^\s*-\s*\{/.test(row) &&
+   /(?:^|[,{\s])ref\s*:\s*\*[-A-Za-z0-9_]+\b/.test(row);
+  if(flowRefAlias||flowNestedRefAlias||
+     /(?:^|[\s,[{,:"'])\*[-A-Za-z0-9_]+(?:\b|$)/.test(examined))return true;
  }
  return false;
 }

@@ -59,6 +59,7 @@ jobs:
             const {annotate} = require(path.resolve(".github/scripts/ultra_sentinel_feedback.cjs"));
             const {attestCi,summarizeDrafts} = require(path.resolve(".github/scripts/ultra_sentinel_frontier_integrity.cjs"));
             const {reviewWorkflows} = require(path.resolve(".github/scripts/ultra_sentinel_supply_chain.cjs"));
+            const {selectRepairTargets} = require(path.resolve(".github/scripts/ultra_sentinel_orchestrator.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -112,14 +113,13 @@ jobs:
             // Hunter -> Fixer -> Judge: proposals only, no execution or PR writes.
             // Fetch at most 3 exact Kotlin files as untrusted DATA, never checkout PR head.
             const sources={};
-            for(const risk of evidence.findings.filter(x=>x.rule==="FORCED_GC").slice(0,3)){
-              if(!/^app\/src\/main\/[A-Za-z0-9_/.-]+\.(?:kt|java)$/.test(risk.path)||risk.path.includes(".."))continue;
+            for(const filename of selectRepairTargets(evidence.findings,3)){
               try{
                 const {data: source}=await github.rest.repos.getContent({
-                  owner,repo,path:risk.path,ref:pr.head.sha
+                  owner,repo,path:filename,ref:pr.head.sha
                 });
                 if(source.type==="file"&&source.encoding==="base64"&&source.size<=240000)
-                  sources[risk.path]=Buffer.from(source.content,"base64").toString("utf8");
+                  sources[filename]=Buffer.from(source.content,"base64").toString("utf8");
               }catch(error){core.warning("Safe repair source unavailable ("+(error.status||"API error")+").");}
             }
             const repairs=summarizeDrafts({analysis:evidence,sources,sha:pr.head.sha});

@@ -10,6 +10,19 @@ const SRC=/^app\/src\/main\/[a-zA-Z0-9_/.-]+\.(?:kt|java)$/;
 function isPath(file){
  return typeof file==='string'&&file.length<230&&SRC.test(file)&&!file.includes('..')&&!file.includes('//');
 }
+// Select only source files with supported, isolated candidate families.
+ // Deduplicating before download keeps privileged GitHub API reads bounded.
+function selectRepairTargets(findings,max=8){
+ const limit=Number.isSafeInteger(max)?Math.max(0,Math.min(max,8)):0;
+ const selected=[],seen=new Set();
+ for(const f of Array.isArray(findings)?findings:[]){
+  if(selected.length>=limit)break;
+  if(!f||!['FORCED_GC','POTENTIAL_PRIVATE_LOG'].includes(f.rule)||
+     !isPath(f.path)||seen.has(f.path))continue;
+  seen.add(f.path);selected.push(f.path);
+ }
+ return selected;
+}
 function candidate({filename,content,sha,findings}){
  if(!isPath(filename))return {status:'NO_SAFE_TEMPLATE',reason:'Ruta fuera de Kotlin/Java de producción.'};
  if(typeof content!=='string'||content.length>MAX_SOURCE||!content.endsWith('\n'))
@@ -116,4 +129,4 @@ function orchestrate({analysis,sources={},sha,checks={}}){
    verdict:risk?'INSUFFICIENT_EVIDENCE':proposals.length?'PATCHES_REQUIRE_VALIDATION':'NO_SAFE_AUTOFIX'},
   note:'This tool only drafts; it never executes untrusted PR code or changes branches.'};
 }
-module.exports={candidate,judge,orchestrate,VERSION};
+module.exports={candidate,judge,orchestrate,selectRepairTargets,VERSION};

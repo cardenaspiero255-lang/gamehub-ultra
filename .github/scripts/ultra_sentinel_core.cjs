@@ -14,15 +14,15 @@ function sanitize(s){
 }
 function parsePatch(text){
  if(typeof text!=='string')return {added:[],partial:true};
- let n=0,active=false;const added=[];
+ let n=0,active=false;const added=[],scan=[];
  for(const row of text.slice(0,MAX_PATCH).split('\n')){
    const h=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
    if(h){n=+h[1];active=true;continue;}
    if(!active||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
-   if(row.startsWith('+')){added.push({line:n,text:row.slice(1)});n++;}
-   else if(row.startsWith(' '))n++;
+   if(row.startsWith('+')){const item={line:n,text:row.slice(1)};added.push(item);scan.push({...item,added:true});n++;}
+   else if(row.startsWith(' ')){scan.push({line:n,text:row.slice(1),added:false});n++;}
  }
- return {added,partial:text.length>MAX_PATCH};
+ return {added,scan,partial:text.length>MAX_PATCH};
 }
 function production(path){
  return /^(app\/src\/main\/|supabase\/functions\/|\.github\/(?:workflows|scripts)\/|control-center\/)/.test(path)
@@ -111,12 +111,20 @@ function analyze(files,config={}){
    const all=rows.map(x=>x.text).join('\n');
    const android=path.startsWith('app/src/main/');
    const workflow=/^\.github\/workflows\/.*\.ya?ml$/i.test(path);
-   let lexState={block:false,triple:false},previousLine=null;
+   // Feed all unchanged context lines through the stateful lexer first.
+   // Only added lines are eligible to produce findings. Never infer that
+   // the first added line begins outside a raw string or a comment.
+   let lexState={},previousLine=null;
+   const executableByLine=new Map();
+   for(const entry of patch.scan){
+     if(previousLine!==null&&entry.line!==previousLine+1)lexState={};
+     const code=executableText(entry.text.trim(),lexState);
+     if(entry.added)executableByLine.set(entry.line,code);
+     previousLine=entry.line;
+   }
    for(let i=0;i<rows.length;i++){
      const x=rows[i],t=x.text.trim();
-     if(previousLine!==null&&x.line!==previousLine+1)lexState={block:false,triple:false};
-     const code=executableText(t,lexState);
-     previousLine=x.line;
+     const code=executableByLine.get(x.line)||'';
      if(!t||/^(\/\/|\/\*|\*|#)/.test(t))continue;
      if(android&&/\bGlobalScope\s*\.\s*(launch|async)\b/.test(code))
        put('UNSCOPED_COROUTINE','HIGH','high',path,x.line,t,'Una tarea puede superar el ciclo de vida Android.','Probar cancelación de Activity y Service.');
