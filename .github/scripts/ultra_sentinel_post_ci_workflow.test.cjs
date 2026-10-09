@@ -35,7 +35,7 @@ test('post-CI action remains read-only and cannot merge or mutate an issue',()=>
 });
 test('post-CI reports never equate a pending/unknown result with approval',()=>{
  const wf=yaml();
- assert.match(wf,/CI still pending or unavailable/);
+ assert.match(wf,/if\s*\(\s*ci\.status\s*!==\s*['"]PASS['"]\s*\)\s*core\.setFailed/);
  assert.match(wf,/No automated merge or approval/);
  assert.match(wf,/if-no-files-found: error/);
 });
