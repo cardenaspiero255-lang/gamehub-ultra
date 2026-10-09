@@ -282,3 +282,30 @@ test('Codex P2: disconnected Kotlin hunk cannot inherit falsely trusted lexer co
  assert.equal(result.verdict,'INCOMPLETE',JSON.stringify(result));
  assert.ok(!result.findings.some(f=>f.rule==='BLOCKING_ANDROID_CALL'),JSON.stringify(result.findings));
 });
+
+test('P2 full source: aligned immutable Kotlin source restores exact executable detection',()=>{
+ const patch=['@@ -5,2 +5,3 @@',' val message = "hello"',
+  '+runBlocking { realWork() }',' val end = true'].join('\n');
+ const fullSource=['val a = 1','val b = 2','val c = 3','val d = 4',
+  'val message = "hello"','runBlocking { realWork() }','val end = true'].join('\n');
+ const result=analyze([{filename:app+'Service.kt',patch,changes:1,fullSource}]);
+ assert.equal(result.coverage.partial,false,JSON.stringify(result.warnings));
+ assert.ok(rules(result).includes('BLOCKING_ANDROID_CALL'),JSON.stringify(result.findings));
+});
+test('P2 full source: matching patch inside multiline comment stays inert and complete',()=>{
+ const patch=['@@ -5,2 +5,3 @@',' * docs',
+  '+System.gc()',' * docs'].join('\n');
+ const fullSource=['/*',' * heading',' * background',' * guidance',' * docs',
+  'System.gc()',' * docs',' */'].join('\n');
+ const result=analyze([{filename:app+'Service.kt',patch,changes:1,fullSource}]);
+ assert.equal(result.coverage.partial,false,JSON.stringify(result.warnings));
+ assert.ok(!rules(result).includes('FORCED_GC'),JSON.stringify(result.findings));
+});
+test('P2 full source: mismatch to immutable patch must be INCOMPLETE and never propose fixes',()=>{
+ const patch=['@@ -1,1 +1,2 @@',' val x = 1','+System.gc()'].join('\n');
+ const result=analyze([{filename:app+'Service.kt',patch,changes:1,
+  fullSource:'val x = 1\nfun safe() {}'}]);
+ assert.equal(result.verdict,'INCOMPLETE');
+ assert.ok(!rules(result).includes('FORCED_GC'),JSON.stringify(result.findings));
+ assert.ok(!result.remediations?.suggestions?.some(s=>s.rule==='FORCED_GC'));
+});
