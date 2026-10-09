@@ -370,3 +370,83 @@ test('anchored read permission values remain benign in block and flow maps',()=>
   assert.equal(result.coverage.partial,false);
  }
 });
+
+test('ADVERSARIAL P1: single-quoted YAML trailing backslash cannot hide later uses and with entries',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps:',
+  "      - {name: 'safe\\', uses: actions/checkout@v6, with: {ref: \""+('$'+'{{ github.head_ref }}')+"\"}}"].join('\n');
+ const r=scan(y);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'),JSON.stringify(r));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('ADVERSARIAL P1: doubled apostrophes in YAML flow scalar do not merge action entries',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps:',
+  "      - {name: 'it''s safe, okay', uses: actions/checkout@v6, with: {ref: \""+('$'+'{{ github.head_ref }}')+"\"}}"].join('\n');
+ const r=scan(y);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('ADVERSARIAL: YAML nested maps and comma inside valid single-quoted strings preserve trusted action',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps:',
+  "      - {name: 'safe\\', uses: actions/checkout@"+SHA+", with: {ref: main, fetch-depth: 1}}"].join('\n');
+ const r=scan(y);
+ assert.equal(r.status,'NO_RISK_PATTERN');
+ assert.equal(r.coverage.partial,false);
+});
+test('ADVERSARIAL: multiline flow step with escaped single quote then dangerous checkout is detected',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps:',
+  '      - {',
+  "          name: 'it''s okay, safe',",
+  '          with: {ref: "'+('$'+'{{ github.head_ref }}')+'"},',
+  '          uses: actions/checkout@v6',
+  '        }'].join('\n');
+ const r=scan(y);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'),JSON.stringify(r));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('ADVERSARIAL P1: dotted anchors on flow steps cannot hide unpinned checkout',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps:',
+  '      - &danger.step {uses: actions/checkout@v6, with: {ref: "'+('$'+'{{ github.head_ref }}')+'"}}'].join('\n');
+ const r=scan(y);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'),JSON.stringify(r));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
+});
+test('ADVERSARIAL P1: dotted anchors on step sequences still inspect child items',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps: &shared.steps',
+  '      - uses: actions/checkout@v6',
+  '        with:','          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ const r=scan(y);
+ assert.ok(rules(r).includes('UNPINNED_ACTION'));
+ assert.ok(rules(r).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('ADVERSARIAL P1: dotted aliases on steps fail closed',()=>{
+ const y=['on: pull_request_target','jobs:','  guard:','    steps: *shared.steps'].join('\n');
+ const r=scan(y);
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.coverage.partial,true);
+});
+test('ADVERSARIAL P1: dotted anchors on on trigger preserve privilege detection',()=>{
+ const y=['on: &events.trigger','  pull_request_target:', 'jobs:','  guard:','    steps:',
+  '      - uses: actions/checkout@'+SHA,'        with:',
+  '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ assert.ok(rules(scan(y)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
+test('ADVERSARIAL P2: anchored permission leaf with dotted name and write is flagged in block',()=>{
+ const y=['on: pull_request','permissions:','  contents: &write.scope write'].join('\n');
+ assert.ok(rules(scan(y)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('ADVERSARIAL P2: anchored permission leaf with dotted name and write is flagged in flow',()=>{
+ const y=['on: pull_request','permissions: {contents: &write.scope write, issues: read}'].join('\n');
+ assert.ok(rules(scan(y)).includes('PRIVILEGED_WRITE_TOKEN'));
+});
+test('ADVERSARIAL: dotted anchored read permission is not writable',()=>{
+ const y=['on: pull_request','permissions: {contents: &read.scope read, issues: read}'].join('\n');
+ const r=scan(y);
+ assert.ok(!rules(r).includes('PRIVILEGED_WRITE_TOKEN'));
+ assert.equal(r.coverage.partial,false);
+});
+test('ADVERSARIAL: flow trigger with YAML single-quoted backslash does not hide privileged event',()=>{
+ const y=['on: {push: {branches: ['+"'safe\\'"+']}, pull_request_target: {types: [opened]}}',
+ 'jobs:','  guard:','    steps:','      - uses: actions/checkout@'+SHA,'        with:',
+ '          ref: '+('$'+'{{ github.head_ref }}')].join('\n');
+ assert.ok(rules(scan(y)).includes('PRIVILEGED_PR_CODE_CHECKOUT'));
+});
