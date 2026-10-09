@@ -563,10 +563,17 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "coverage physical concurrency raised",
+        "coverage physical concurrency regressed to two waves",
         coverage_replace=(
-            "      max-parallel: 4\n",
             "      max-parallel: 8\n",
+            "      max-parallel: 4\n",
+        ),
+    )
+    reject_mutation(
+        "coverage physical concurrency exceeds the runner budget",
+        coverage_replace=(
+            "      max-parallel: 8\n",
+            "      max-parallel: 16\n",
         ),
     )
     reject_mutation(
