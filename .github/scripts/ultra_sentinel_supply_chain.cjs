@@ -39,7 +39,7 @@ function withoutYamlComment(value){
 }
 function withoutLeadingAnchor(value){
  return withoutYamlComment(String(value??'')
-  .replace(/^\s*&[A-Za-z0-9_-]+(?=\s|$)/,'')).trim();
+  .replace(/^\s*&[^\s[\]{},]+(?=\s|$)/,'')).trim();
 }
 function containsYamlAlias(value){
  const s=withoutYamlComment(value);
@@ -138,9 +138,14 @@ function splitFlowEntries(content){
  for(let i=0;i<content.length;i++){
   const c=content[i];
   if(quote){
-   if(escaped){escaped=false;continue;}
-   if(c==='\\'){escaped=true;continue;}
-   if(c===quote)quote=null;
+   // YAML backslash escapes apply to double-quoted scalars only.
+   // Single-quoted scalars escape an apostrophe by doubling it.
+   if(quote==='"'&&escaped){escaped=false;continue;}
+   if(quote==='"'&&c==='\\'){escaped=true;continue;}
+   if(c===quote){
+    if(quote==="'"&&content[i+1]==="'"){i++;continue;}
+    quote=null;
+   }
    continue;
   }
   if(c==='"'||c==="'"){quote=c;continue;}
