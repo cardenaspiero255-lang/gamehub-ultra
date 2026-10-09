@@ -141,7 +141,7 @@ jobs:
                 'Android build':{id:android.data.id,path:android.data.path},
                 'Unit Test Coverage':{id:coverage.data.id,path:coverage.data.path}
               };
-              changedFiles=files.map(f=>f.filename);
+              changedFiles=files.map(f=>({filename:f.filename,status:f.status,previous_filename:f.previous_filename}));
               changedFilesComplete=files.length===pr.changed_files;
             }catch(error){
               core.warning("Trusted CI identity unavailable ("+(error.status||"API error")+"); no approval inferred.");
