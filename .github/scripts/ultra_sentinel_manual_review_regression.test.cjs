@@ -41,3 +41,27 @@ test('P2: post-CI never marks UNKNOWN/WAITING as green certification',()=>{
  const script=fs.readFileSync(path.join(__dirname,'../workflows/ultra-sentinel-sss-post-ci.yml'),'utf8');
  assert.match(script,/if\s*\(\s*ci\.status\s*!==\s*['"]PASS['"]\s*\)\s*core\.setFailed\s*\(/);
 });
+
+test('Root cause: pinned third-party action receiving secret input is not clean',()=>{
+ const value='${{ secrets.PROD_TOKEN }}';
+ const source=['on: workflow_dispatch','permissions: {contents: read}','jobs:','  audit:','    steps:',
+ '      - uses: vendor/repo@'+SHA,'        with:','          token: '+value].join('\n');
+ const result=inspectWorkflow(source);
+ assert.notEqual(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+});
+test('Root cause: pinned third-party action receiving secret environment is not clean',()=>{
+ const source=['on: workflow_dispatch','permissions: {contents: read}','jobs:','  audit:','    steps:',
+ '      - uses: vendor/repo@'+SHA,'        env:','          TOKEN: ${{ secrets.PROD_TOKEN }}'].join('\n');
+ const result=inspectWorkflow(source);
+ assert.notEqual(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+});
+test('Root cause: privileged disabled job cannot be certified clean',()=>{
+ const source=['on: workflow_dispatch','permissions: {contents: read}','jobs:','  audit:',
+ '    if: false','    steps:','      - run: echo hello'].join('\n');
+ assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN');
+});
+test('Root cause: privileged ignored failed step cannot be certified clean',()=>{
+ const source=['on: workflow_dispatch','permissions: {contents: read}','jobs:','  audit:',
+ '    steps:','      - run: echo hello','        continue-on-error: true'].join('\n');
+ assert.notEqual(inspectWorkflow(source).status,'NO_RISK_PATTERN');
+});
