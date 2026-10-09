@@ -8,7 +8,7 @@ const good=()=>candidate({filename:FILE,content:SOURCE,sha:SHA,findings:[FINDING
 const checks={'sentinel-core-tests':'success','android-build':'success',
  'unit-test-coverage':'success','architecture-boundary':'success'};
 test('US-027: valid one-line human-review draft remains eligible, never executable',()=>{
- const r=judge(good(),{sha:SHA,checks});
+ const r=judge(good(),{sha:SHA,checks,source:SOURCE,findings:[FINDING]});
  assert.equal(r.status,'ELIGIBLE_FOR_HUMAN_REVIEW');
  assert.equal(r.autoCommitAllowed,false);assert.equal(r.autoMergeAllowed,false);
 });
@@ -23,7 +23,7 @@ test('US-027: Judge refuses tampered or second-target patch despite green CI',()
   {...approved,patch:approved.patch.replace('-  System.gc()','-  System.gc()\n-  println("ok")')}
  ];
  for(const modified of variants){
-  const r=judge(modified,{sha:SHA,checks});
+  const r=judge(modified,{sha:SHA,checks,source:SOURCE,findings:[FINDING]});
   assert.equal(r.status,'REJECT',JSON.stringify({rule:modified.rule,status:r.status,patch:modified.patch.slice(0,100)}));
  }
 });
