@@ -26,3 +26,19 @@ for(const c of cases){
   if(c.status==='INCOMPLETE')assert.equal(r.partial,true);
  });
 }
+
+const {hasIndependentHumanApproval}=require('./ultra_sentinel_policy.cjs');
+const CURRENT_SHA='a'.repeat(40);
+const approval=(id,override={})=>({id,state:'APPROVED',commit_id:CURRENT_SHA,
+ user:{login:'independent-reviewer',type:'User'},author_association:'COLLABORATOR',...override});
+test('Protected workflow changes require a trusted non-author human review of same head SHA',()=>{
+ assert.equal(hasIndependentHumanApproval([approval(1)],{sha:CURRENT_SHA,author:'pr-author'}),true);
+ for(const invalid of [
+  approval(1,{commit_id:'b'.repeat(40)}),
+  approval(1,{user:{login:'pr-author',type:'User'}}),
+  approval(1,{user:{login:'bot[bot]',type:'Bot'}}),
+  approval(1,{author_association:'NONE'}),
+  approval(1,{state:'COMMENTED'})
+ ])assert.equal(hasIndependentHumanApproval([invalid],{sha:CURRENT_SHA,author:'pr-author'}),false);
+ assert.equal(hasIndependentHumanApproval([approval(1),approval(2,{state:'CHANGES_REQUESTED'})],{sha:CURRENT_SHA,author:'pr-author'}),false);
+});
