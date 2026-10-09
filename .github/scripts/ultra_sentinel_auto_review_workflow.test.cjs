@@ -29,7 +29,12 @@ test('analyzes PR with trusted main engine and verifies current immutable SHA', 
   assert.match(wf, /github\.rest\.pulls\.listFiles/);
   assert.match(wf, /after\.head\.sha !== pr\.head\.sha/);
   assert.match(wf, /evidence\.coverage\.partial/);
-  assert.match(wf, /evidence\.findings\.some\(f => f\.severity === "BLOCKER"\)/);
+  // All three finding channels must fail closed, not merely produce warnings.
+  for(const source of ['structuralYaml','supplyChain','evidence']){
+    const pattern=new RegExp(source+
+      String.raw`\.findings\.some\(f=>f\.severity==='HIGH'\|\|f\.severity==='BLOCKER'\)\)\s*core\.setFailed\(`);
+    assert.match(wf,pattern,source+' must fail on HIGH and BLOCKER');
+  }
   assert.doesNotMatch(wf, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}|auto-merge\s*:\s*true/);
 });
 
@@ -49,6 +54,6 @@ test('self tests remain mandatory and potential critical defects still fail the 
   assert.match(wf, /node --test .*ultra_sentinel_core\.test\.cjs/);
   assert.match(wf, /node .*ultra_sentinel_benchmark\.cjs/);
   assert.match(wf, /Incomplete patch coverage/);
-  assert.match(wf, /Potential BLOCKER detected/);
+  assert.match(wf, /Engine HIGH\/BLOCKER must be reproduced and resolved before merge/);
   assert.match(wf, /No external provider approval is required/);
 });
