@@ -23,10 +23,10 @@ function makeReports(root,out,sha='f'.repeat(40)){
  const ids=[...Array.from({length:13},(_,i)=>'m'+String(i).padStart(2,'0')),'b0','b1'];
  for(const id of ids){
   const planned=m.plan(id,root),count=planned.kind==='matrix'?
-   38500+(planned.index===0?2:0):id==='b0'?10240:9760;
+   38500+(planned.index===0?2:0):m.BASELINE_TEST_COUNTS[id];
   fs.writeFileSync(path.join(out,id+'.json'),JSON.stringify({
    schema:'sentinel-core-shard/v1',...planned,sha,exitCode:0,signal:null,
-   counters:{tests:count,pass:count,fail:0,skipped:0,todo:0},
+   counters:{tests:count,pass:count,fail:0,skipped:0,todo:0,cancelled:0},
    tapSha256:'a'.repeat(64),passed:true
   }));
  }
@@ -52,16 +52,16 @@ test('reject invalid shard selectors and missing core files',t=>{
  assert.throws(()=>m.plan('m00',root),/Missing/);
 });
 test('TAP parser rejects missing counters and counts actual executions',()=>{
- const tap='TAP version 13\n# tests 10000\n# pass 10000\n# fail 0\n# skipped 0\n# todo 0\n';
+ const tap='TAP version 13\n# tests 10000\n# pass 10000\n# fail 0\n# skipped 0\n# todo 0\n# cancelled 0\n';
  const counters=m.parseTap(tap);
- assert.deepEqual(counters,{tests:10000,pass:10000,fail:0,skipped:0,todo:0,cancelled:null});
+ assert.deepEqual(counters,{tests:10000,pass:10000,fail:0,skipped:0,todo:0,cancelled:0});
 });
 test('aggregator demands all 15 reports, exact filenames and minimum 150k',t=>{
  const root=fakeRoot(t),out=fs.mkdtempSync(path.join(os.tmpdir(),'sentinel-reports-'));
  t.after(()=>fs.rmSync(out,{recursive:true,force:true}));
  const sha='f'.repeat(40),ids=makeReports(root,out,sha);
  const result=m.aggregate(out,sha,root);
- assert.equal(result.executed,520502);
+ assert.equal(result.executed,521687);
  assert.equal(result.jobs,15);
  assert.equal(result.passed,true);
  fs.unlinkSync(path.join(out,ids[2]+'.json'));
@@ -85,5 +85,23 @@ test('aggregator fails closed on stale SHA, inflated counters, skips and tampere
  const baseline=path.join(out,'b1.json');
  const ok=JSON.parse(fs.readFileSync(baseline,'utf8'));
  fs.writeFileSync(baseline,JSON.stringify({...ok,counters:{...ok.counters,tests:1,pass:1}}));
- assert.throws(()=>m.aggregate(out,sha,root),/Baseline shard unexpectedly small/);
+ assert.throws(()=>m.aggregate(out,sha,root),/Baseline shard count mismatch/);
+ fs.writeFileSync(baseline,JSON.stringify({...ok,counters:{...ok.counters,tests:1000,pass:1000}}));
+ assert.throws(()=>m.aggregate(out,sha,root),/Baseline shard count mismatch/);
+ fs.writeFileSync(baseline,JSON.stringify(ok));
+ const matrix=path.join(out,'m01.json');
+ const originalMatrix=JSON.parse(fs.readFileSync(matrix,'utf8'));
+ for(const value of [1,null,undefined]){
+  const counters={...originalMatrix.counters,cancelled:value};
+  if(value===undefined)delete counters.cancelled;
+  fs.writeFileSync(matrix,JSON.stringify({...originalMatrix,counters}));
+  assert.throws(()=>m.aggregate(out,sha,root),/Failed or incomplete/);
+ }
+ fs.writeFileSync(matrix,JSON.stringify(originalMatrix));
+ for(const value of [1,null,undefined]){
+  const counters={...ok.counters,cancelled:value};
+  if(value===undefined)delete counters.cancelled;
+  fs.writeFileSync(baseline,JSON.stringify({...ok,counters}));
+  assert.throws(()=>m.aggregate(out,sha,root),/Failed or incomplete/);
+ }
 });

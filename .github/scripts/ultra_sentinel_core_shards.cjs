@@ -22,6 +22,9 @@ const MATRIX_CASES=500500;
 const CASES_PER_SHARD=10000;
 const EXTRA_CASES_PER_SHARD=28500;
 const MINIMUM=500000;
+// Reviewed expected registration totals; any new baseline test requires an intentional update.
+// A PR must never attest fewer real baseline tests just because 500k matrix cases pass.
+const BASELINE_TEST_COUNTS=Object.freeze({b0:10242,b1:10943});
 
 function testFiles(root=ROOT){
  return fs.readdirSync(root).filter(f=>/^ultra_sentinel_.*\.test\.cjs$/.test(f)).sort();
@@ -59,11 +62,11 @@ function validateReport(report,expected,sha){
   throw Error('Invalid or stale report '+expected.id);
  const c=report.counters;
  if(!c||!Number.isSafeInteger(c.tests)||c.tests<=0||
-    c.fail!==0||c.skipped!==0||c.todo!==0||
+    c.fail!==0||c.skipped!==0||c.todo!==0||c.cancelled!==0||
     c.pass!==c.tests||report.passed!==true)
   throw Error('Failed or incomplete cases in '+expected.id);
- if(expected.kind==='baseline'&&c.tests<1000)
-  throw Error('Baseline shard unexpectedly small '+expected.id);
+ if(expected.kind==='baseline'&&c.tests!==BASELINE_TEST_COUNTS[expected.id])
+  throw Error('Baseline shard count mismatch '+expected.id);
  if(expected.kind==='matrix'&&c.tests!==CASES_PER_SHARD+EXTRA_CASES_PER_SHARD+(expected.index===0?2:0))
   throw Error('Missing or duplicated matrix cases in '+expected.id);
  if(!/^[a-f0-9]{64}$/.test(report.tapSha256||''))
@@ -120,7 +123,8 @@ function runShard(id,outDir){
   tapSha256:crypto.createHash('sha256').update(tap).digest('hex'),
   elapsedMs:Date.now()-start,passed:run.status===0&&run.signal===null&&
    counters.tests>0&&counters.fail===0&&counters.skipped===0&&
-   counters.todo===0&&counters.pass===counters.tests};
+   counters.todo===0&&counters.cancelled===0&&
+   counters.pass===counters.tests};
  fs.writeFileSync(path.join(outDir,id+'.json'),JSON.stringify(report)+'\n');
  try{validateReport(report,expected,sha);}
  catch(error){
@@ -128,7 +132,7 @@ function runShard(id,outDir){
   console.error('Sentinel shard FAILED:',error.message,'Failed test IDs:',failures);
   process.exitCode=1;return;
  }
- console.log('Sentinel shard '+id+': '+counters.tests+' executed; 0 fail, 0 skip, 0 todo');
+ console.log('Sentinel shard '+id+': '+counters.tests+' executed; 0 fail, 0 skip, 0 todo, 0 cancelled');
  fs.unlinkSync(tapFile); // Keep only small evidence JSON; no TAP flood/artifact.
 }
 if(require.main===module){
@@ -150,4 +154,5 @@ if(require.main===module){
  }catch(error){console.error(error.message);process.exitCode=1;}
 }
 module.exports={plan,testFiles,parseTap,validateReport,aggregate,
- SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,MINIMUM};
+ SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,
+ BASELINE_TEST_COUNTS,MINIMUM};
