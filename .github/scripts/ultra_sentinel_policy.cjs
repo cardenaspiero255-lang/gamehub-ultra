@@ -83,4 +83,24 @@ function hasIndependentHumanApproval(reviews,{sha,author}={}){
  return current.some(review=>review.state==='APPROVED'&&
   typeof review.commit_id==='string'&&review.commit_id.toLowerCase()===sha.toLowerCase());
 }
-module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval};
+
+/**
+ * Explicit SHA-scoped owner acknowledgement for a verified solo-maintainer
+ * repository. It does NOT authorize merging or replace a trusted-main scan.
+ * Only independent trusted-main workflows may consume this GitHub API evidence.
+ */
+const SOLO_REPO='cardenaspiero255-lang/gamehub-ultra';
+function hasSoloOwnerAcknowledgement(comments,{repo,prNumber,sha,author}={}){
+ if(repo!==SOLO_REPO||author?.toLowerCase()!==SOLO_REPO.split('/')[0]||
+    !Number.isSafeInteger(prNumber)||prNumber<=0||
+    !/^[a-f0-9]{40}$/i.test(sha||'')||!Array.isArray(comments)||
+    comments.length>1000)return false;
+ const expected='ULTRA-SENTINEL-SOLO-ACK PR#'+prNumber+' SHA='+sha.toLowerCase();
+ return comments.some(c=>c&&Number.isSafeInteger(c.id)&&c.id>0&&
+  c.user?.type==='User'&&
+  c.user.login?.toLowerCase()===author.toLowerCase()&&
+  c.author_association==='OWNER'&&
+  typeof c.body==='string'&&c.body.trim()===expected);
+}
+
+module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval,hasSoloOwnerAcknowledgement};

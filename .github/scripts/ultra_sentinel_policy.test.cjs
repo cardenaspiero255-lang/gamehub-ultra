@@ -41,4 +41,20 @@ test('Protected workflow changes require a trusted non-author human review of sa
   approval(1,{state:'COMMENTED'})
  ])assert.equal(hasIndependentHumanApproval([invalid],{sha:CURRENT_SHA,author:'pr-author'}),false);
  assert.equal(hasIndependentHumanApproval([approval(1),approval(2,{state:'CHANGES_REQUESTED'})],{sha:CURRENT_SHA,author:'pr-author'}),false);
+
+ // Solo mode requires a real OWNER's exact SHA-scoped, authenticated comment.
+ const {hasSoloOwnerAcknowledgement}=require('./ultra_sentinel_policy.cjs');
+ const good={id:11,user:{login:'cardenaspiero255-lang',type:'User'},
+  author_association:'OWNER',body:'ULTRA-SENTINEL-SOLO-ACK PR#169 SHA='+CURRENT_SHA};
+ const arg={repo:'cardenaspiero255-lang/gamehub-ultra',prNumber:169,sha:CURRENT_SHA,author:'cardenaspiero255-lang'};
+ assert.equal(hasSoloOwnerAcknowledgement([good],arg),true);
+ for(const [records,parameters] of [
+  [[{...good,user:{login:'intruder',type:'User'}}],arg],
+  [[{...good,user:{login:'cardenaspiero255-lang',type:'Bot'}}],arg],
+  [[{...good,author_association:'MEMBER'}],arg],
+  [[{...good,body:good.body.replace('PR#169','PR#168')}],arg],
+  [[{...good,body:good.body.replace(CURRENT_SHA,'b'.repeat(40))}],arg],
+  [[good],{...arg,author:'other-author'}],
+  [[good],{...arg,repo:'other-account/gamehub-ultra'}]
+ ])assert.equal(hasSoloOwnerAcknowledgement(records,parameters),false);
 });

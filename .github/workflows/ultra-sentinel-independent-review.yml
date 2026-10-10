@@ -17,6 +17,8 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  checks: read
+  issues: read
 
 concurrency:
   group: sentinel-independent-${{ github.event.pull_request.number }}
@@ -115,7 +117,40 @@ jobs:
                     path.resolve('.github/scripts/ultra_sentinel_policy.cjs')).hasIndependentHumanApproval;
                   approved=hasIndependentHumanApproval(reviews,{sha:pr.head.sha,author:pr.user.login});
                 }catch(error){core.warning('Trusted human approval unavailable: fail closed.');}
-                if(!approved)core.setFailed('Protected control change needs non-author human approval for current SHA.');
+                if(!approved){
+                  // Solo-maintainer exception only if the *trusted main* gate,
+                  // Core, Android, Coverage, mutation and reliability all pass.
+                  // Candidate PR claims are not authority; fetch GitHub API.
+                  let solo=false;
+                  try{
+                    const {hasSoloOwnerAcknowledgement}=require(
+                      path.resolve('.github/scripts/ultra_sentinel_policy.cjs'));
+                    const comments=await github.paginate(github.rest.issues.listComments,
+                      {owner,repo,issue_number:number,per_page:100});
+                    const ack=hasSoloOwnerAcknowledgement(comments,{
+                      repo:owner+'/'+repo,prNumber:number,sha:pr.head.sha,author:pr.user.login
+                    });
+                    if(ack){
+                      const {data: checks}=await github.rest.checks.listForRef({
+                        owner,repo,ref:pr.head.sha,per_page:100
+                      });
+                      const required=[
+                        'Trusted main Sentinel inspects Sentinel changes',
+                        'Sentinel Core / full regression suite',
+                        'coverage','quality','android-test-shards','device-validation',
+                        'Mutation resilience / reviewer engine',
+                        'Sentinel Reliability / 100 scenarios'
+                      ];
+                      solo=checks.total_count<=100&&required.every(name=>
+                        checks.check_runs.some(x=>x.name===name&&
+                          x.status==='completed'&&x.conclusion==='success'));
+                    }
+                  }catch(error){
+                    core.warning('Solo owner attestation/check evidence unavailable: fail closed.');
+                  }
+                  if(!solo)core.setFailed(
+                    'Protected control requires independent human approval OR verified sole-owner SHA acknowledgement with all trusted CI checks green.');
+                }
               }
               const expected=files.filter(f=>f.status!=='removed'&&
                 /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(f.filename||''))
