@@ -114,7 +114,8 @@ function normalizeInvocation(command,flag){
 const CURL_VALUE_FLAGS=new Set([
  '-A','--user-agent','-H','--header','-b','--cookie','-c','--cookie-jar',
  '-w','--write-out','-E','--cert','--cert-type','--key-type',
- '--oauth2-bearer',
+ '--oauth2-bearer','--trace','--trace-ascii','--trace-config',
+ '-D','--dump-header',
  '-d','--data','--data-raw','--data-binary','--data-urlencode','-F','--form',
  '--form-string','-e','--referer','-u','--user','-x','--proxy','-X','--request',
  '-K','--config','--url','--url-query','--resolve','--connect-to','--interface',
@@ -383,7 +384,7 @@ function findingsForScript(source,{shell=''}={}){
   if(output.unknownDownloaderOption&&!findings.has('REMOTE_DOWNLOADED_FILE_EXECUTION')&&
      commands.some(inv=>inv.start>=d.end&&(
       /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)||
-      /^(?:\.\/?|\.\.\/|\/)\S+/.test(inv.name))))
+      (typeof inv.name==='string'&&inv.name.includes('/')))))
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
