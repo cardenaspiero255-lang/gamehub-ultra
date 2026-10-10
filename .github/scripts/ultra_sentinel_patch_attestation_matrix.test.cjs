@@ -34,7 +34,7 @@ function scenario(i){
   SOURCE,undefined][evidence];
  const findings=evidence===2?[{...FINDING,line:3}]:[FINDING];
  const expectedSha=[SHA,undefined,WRONG,SHA.toUpperCase()][identity];
- const args={sha:expectedSha,checks,source,findings};
+ const args={sha:expectedSha,currentHeadSha:SHA,checks,source,findings};
  const shouldReject=tamper!==0||evidence!==0||identity!==0;
  const allGreen=checksMask===15;
  const status=shouldReject?'REJECT':allGreen?
