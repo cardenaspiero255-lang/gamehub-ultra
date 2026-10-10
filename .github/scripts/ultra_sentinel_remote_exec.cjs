@@ -1,6 +1,5 @@
 'use strict';
-// Shared read-only detection of downloaded code executed via process substitution.
-// Only classify; NEVER execute scripts, shell commands or workflow data.
+// Shared read-only classification. Sources are UNTRUSTED DATA: do not execute.
 const EXECUTOR='(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\\.[0-9]+)?)?|node(?:js)?|ruby|perl|php|pwsh|powershell)';
 const DOWNLOAD='(?:curl|wget)';
 const executorSubstitution=new RegExp(
@@ -12,8 +11,17 @@ const sourceSubstitution=new RegExp(
 const redirectSubstitution=new RegExp(
  '\\b'+DOWNLOAD+'\\b[^\\n;|&]{0,160}>\\s*>\\(\\s*'+EXECUTOR+'\\b','i'
 );
+const codeArgumentSubstitution=new RegExp(
+ '(?:^|[\\s;|&])'+EXECUTOR+'\\b(?:\\s+[-\\w=./]+){0,4}\\s+-(?:c|e|r)\\s+["\\x27]?\\$\\(\\s*'+DOWNLOAD+'\\b','i'
+);
+const evalSubstitution=new RegExp(
+ '(?:^|[\\s;|&])eval\\s+["\\x27]?\\$\\(\\s*'+DOWNLOAD+'\\b','i'
+);
+const downloaderOutputOption=new RegExp(
+ '\\b'+DOWNLOAD+'\\b[^\\n;|&]{0,160}\\s+-(?:o|O)\\s+>\\(\\s*'+EXECUTOR+'\\b','i'
+);
 function normalizeShellTokens(input){
- // Bounded canonicalization for conservative scanning, NOT shell evaluation.
+ // Bounded shell-token canonicalization for scanning, not evaluation.
  return String(input).replace(/\\\r?\n/g,'')
   .replace(/\\(?=[A-Za-z])/g,'')
   .replace(/\x24\x27([A-Za-z]*)\x27/g,'$1')
@@ -23,6 +31,10 @@ function hasRemoteProcessSubstitution(script){
  if(typeof script!=='string')return false;
  const source=normalizeShellTokens(script);
  return executorSubstitution.test(source)||
-  sourceSubstitution.test(source)||redirectSubstitution.test(source);
+  sourceSubstitution.test(source)||
+  redirectSubstitution.test(source)||
+  codeArgumentSubstitution.test(source)||
+  evalSubstitution.test(source)||
+  downloaderOutputOption.test(source);
 }
 module.exports={hasRemoteProcessSubstitution};
