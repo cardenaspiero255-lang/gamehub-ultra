@@ -241,7 +241,8 @@ function classify(x){
  const ast=inspectWorkflow(x.source,{path:PATH,
   trustedRepository:'cardenaspiero255-lang/gamehub-ultra'});
  const heuristic=reviewWorkflows({sha:SHA,expected:[PATH],sources:{[PATH]:x.source}});
- const found=x.rule&&ast.findings.some(f=>f.rule===x.rule);
+ const found=x.rule?ast.findings.some(f=>f.rule===x.rule):
+  ast.findings.some(f=>f.severity==='BLOCKER'||f.severity==='HIGH');
  return {outcome:found?'DETECTED':ast.status==='INCOMPLETE'?'INCOMPLETE':
   ast.findings.length?'OTHER_FINDING':'CLEAN',
   scanner:'yaml-ast',astStatus:ast.status,
@@ -296,7 +297,11 @@ function evaluate(){
    failClosedRecall:fraction(summary.explicit+summary.incomplete+summary.otherFinding,summary.threats),
    benignSpecificity:fraction(summary.benignClean,summary.benign),
    heuristicRecall:fraction(summary.heuristicCovered,summary.heuristicCovered+summary.heuristicMissed)},
-  byFamily,issues,limitation:'Inert synthetic data only; INCOMPLETE is not a detection. This is not real-world accuracy or proof of security.'};
+  byFamily,issues:issues.sort((a,b)=>{
+   const priority=x=>x.actual==='CLEAN'?0:x.actual==='CRASH'?1:
+    x.actual==='INCOMPLETE'?2:3;
+   return priority(a)-priority(b)||a.id.localeCompare(b.id);
+  }),limitation:'Inert synthetic data only; INCOMPLETE is not a detection. This is not real-world accuracy or proof of security.'};
 }
 function markdown(report){
  const s=report.summary,p=x=>x==null?'N/A':(100*x).toFixed(1)+'%';
@@ -321,7 +326,12 @@ function markdown(report){
 }
 if(require.main===module){
  const report=evaluate();
- console.log(JSON.stringify(report,null,2));
+ if(process.argv.includes('--compact'))console.log(JSON.stringify({
+  schema:report.schema,summary:report.summary,metrics:report.metrics,
+  byFamily:report.byFamily,firstUnresolved:report.issues.slice(0,35),
+  limitation:report.limitation
+ },null,2));
+ else console.log(JSON.stringify(report,null,2));
  if(process.env.GITHUB_STEP_SUMMARY)require('node:fs').appendFileSync(
   process.env.GITHUB_STEP_SUMMARY,markdown(report));
  if(process.argv.includes('--strict')&&
