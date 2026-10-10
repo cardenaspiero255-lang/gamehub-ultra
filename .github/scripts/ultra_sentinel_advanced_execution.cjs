@@ -37,12 +37,19 @@ function findingsForScript(source,{shell=''}={}){
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
  const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
+ // Only trust a directory target without '/' when this same script
+ // explicitly created it before the linking operation.
+ const createdDirs=[...active.matchAll(/(?:^|[;\n]|&&)\s*mkdir\s+(?:-p\s+)?([a-z0-9_./-]+)(?=\s|$|[;&])/gi)]
+  .map(m=>({at:m.index,name:normalizedFile(m[1])}));
  const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))\s+(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))(?=\s|$|[;&])/gi)]
   .map(m=>{
    const kind=m[1].toLowerCase(),origin=m[3]||m[4]||m[5];
    const destination=m[6]||m[7]||m[8];
    // Directory destinations create basename(source) at that location.
-   const to=normalizedFile(destination.endsWith('/')?
+   const destinationPath=normalizedFile(destination);
+   const targetIsDirectory=destination.endsWith('/')||
+    createdDirs.some(d=>d.name===destinationPath&&d.at<m.index);
+   const to=normalizedFile(targetIsDirectory?
     posix.join(destination,posix.basename(origin)):destination);
    // ln -s resolves its relative target from the link's own directory.
    // cp/mv and hard links resolve their source from the working directory.
@@ -57,14 +64,17 @@ function findingsForScript(source,{shell=''}={}){
   // Recognize bounded no-argument short-flag clusters before -o/-O.
   // An unrestricted greedy [A-Za-z]* would eat filename letters up to a
   // later 'o' (e.g. -fsSLopayload -> incorrectly parsed as file 'ad').
-  const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
+  const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/i.exec(command);
   if(!output)continue;
-  const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/gi)];
-  // Repeated flags: curl uses the last --output-dir value.
-  const outputDir=outputDirs.at(-1);
-  // A constant --output-dir changes where the downloaded bytes land.
-  const file=normalizedFile(outputDir&&!output[2].startsWith('/')?
-   posix.join(outputDir[2],output[2]):output[2]);
+  const outputFile=literalFileToken(output[1]);
+  if(!outputFile){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+  const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
+  // Apply the final --output-dir (earlier values are superseded).
+  const rawOutputDir=outputDirs.at(-1);
+  const outputDir=rawOutputDir?literalFileToken(rawOutputDir[1]):null;
+  if(rawOutputDir&&!outputDir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+  const file=normalizedFile(outputDir&&!outputFile.startsWith('/')?
+   posix.join(outputDir,outputFile):outputFile);
   if(file==='-'||file==='.'||file==='..')continue;
   const after=active.slice(d.index+d[0].length);
   // Parse literal invocation words once; partial quote spans are supported.
@@ -146,7 +156,7 @@ function findingsForScript(source,{shell=''}={}){
  const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+uriArgs+endpoint;
  // WebRequest's response object needs .Content; RestMethod can return the
  // response body directly as a string, which is executable by iex.
- const trailingSwitches=String.raw`(?:\s+-(?:UseBasicParsing|Verbose|Debug)){0,4}`;
+ const trailingSwitches=String.raw`(?:\s+-[A-Za-z][A-Za-z0-9-]*(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|[a-zA-Z0-9._/-]+))?){0,6}`;
  const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*(?:`+fetchWeb+trailingSwitches+String.raw`\s*\)\s*\.Content|`+fetchRest+trailingSwitches+String.raw`\s*\)(?:\s*\.Content)?)\s*\)*`;
  const argument=new RegExp(String.raw`(?:^|[;\n])\s*`+argumentSource,'i');
  const explicitArgument=new RegExp(String.raw`(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*`+argumentSource,'i');
