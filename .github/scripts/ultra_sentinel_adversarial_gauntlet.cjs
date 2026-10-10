@@ -5,6 +5,7 @@ const {reviewWorkflows}=require('./ultra_sentinel_supply_chain.cjs');
 const {analyze}=require('./ultra_sentinel_core.cjs');
 const {candidate,judge}=require('./ultra_sentinel_orchestrator.cjs');
 const {evaluateProtectedChanges}=require('./ultra_sentinel_policy.cjs');
+const {extremeFixtures}=require('./ultra_sentinel_gauntlet_extreme.cjs');
 const SHA='a'.repeat(40),SECOND_SHA='b'.repeat(40);
 const PATH='.github/workflows/gauntlet.yml';
 const ROOT='app/src/main/java/com/cardenaspiero255/gamehubultra/';
@@ -39,7 +40,9 @@ const mutation=[
  ['crlf',s=>s.replace(/\n/g,'\r\n')],
  ['quoted-key',s=>s.replace(/^on:/,"'on':")],
  ['unicode-key',s=>s.replace(/^on:/,'"\\u006fn":')],
- ['comments',s=>'# Test fixture only, not executable\n'+s+'# End fixture\n']
+ ['comments',s=>'# Test fixture only, not executable\n'+s+'# End fixture\n'],
+ ['rename-job',s=>s.replace('  audit:','  adversarial_job_7:')],
+ ['quoted-jobs',s=>s.replace(/^jobs:/m,'"jobs":')]
 ];
 const addAttack=(id,group,src,rule=null,other={})=>add(id,group,'attack',src,rule,other);
 const addSafe=(id,group,src)=>add(id,group,'safe',src);
@@ -200,6 +203,15 @@ for(const [name,entry,kind] of [
  ['rename',{filename:'docs/new.md',previous_filename:'.github/workflows/android.yml',status:'renamed'},'policy-attack'],
  ['docs',{filename:'docs/README.md',status:'modified'},'policy-safe']
 ])add('policy-'+name,'protected-files',kind,null,null,{entry});
+// These are deliberately challenging out-of-distribution cases. Any escape
+// must be visible in the score; unknown is not secretly counted as detected.
+const hard=extremeFixtures();
+for(const [name,family,run] of hard.unsafe)
+ addAttack('extreme-'+name,family,wf({run}),null,{tier:'extreme'});
+for(const [name,family,run] of hard.uncertain)
+ addUnknown('extreme-'+name,family,wf({run}));
+for(const [name,family,run] of hard.benign)
+ addSafe('extreme-'+name,family,wf({run}));
 function variants(){
  const result=[];
  for(const item of cases){
