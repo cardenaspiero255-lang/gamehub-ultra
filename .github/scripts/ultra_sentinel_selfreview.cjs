@@ -27,13 +27,58 @@ function parseAdded(patch){
 // lines inside each diff hunk; strings are data, not executable statements.
 // Multiline templates are conservatively treated as unknown.
 const JS_BACKTICK=String.fromCharCode(96);
-function jsExecutableLine(line,state){
+
+// Treat regex character classes as regex data, not line comments. Nested
+// templates get inspected only inside executable interpolation expressions.
+function templateExpressionsHaveSink(body,state,depth){
+ if(depth>4){state.unknown=true;return;}
+ let cursor=0;
+ while(cursor<body.length){
+  const start=body.indexOf('$'+'{',cursor);
+  if(start<0)return;
+  let end=start+2,nesting=1,quote=null;
+  for(;end<body.length;end++){
+   const ch=body[end];
+   if(quote){
+    if(ch==='\\'){end++;continue;}
+    if(ch===quote)quote=null;
+    continue;
+   }
+   if(ch==="'"||ch==='"'||ch===JS_BACKTICK){quote=ch;continue;}
+   if(ch==='{')nesting++;
+   else if(ch==='}'&&--nesting===0)break;
+  }
+  if(nesting!==0){state.unknown=true;return;}
+  const expression=body.slice(start+2,end);
+  const nested={block:false,unknown:false,danger:false};
+  const code=jsExecutableLine(expression,nested,depth+1);
+  if(nested.unknown||nested.block)state.unknown=true;
+  if(nested.danger||DYNAMIC_JS_SINK.test(code))state.danger=true;
+  cursor=end+1;
+ }
+}
+function jsExecutableLine(line,state,depth=0){
  let code='',i=0;
  while(i<line.length){
   if(state.block){
    const end=line.indexOf('*/',i);
    if(end<0)return code;
    state.block=false;code+=' ';i=end+2;continue;
+  }
+  if(line[i]==='/'&&line[i+1]!=='/'&&line[i+1]!=='*'&&
+     /(?:^|[=({[:,!?;])$/.test(code.trimEnd())){
+   let j=i+1,inClass=false,closed=false;
+   for(;j<line.length;j++){
+    const ch=line[j];
+    if(ch==='\\'){j++;continue;}
+    if(ch==='['){inClass=true;continue;}
+    if(ch===']'){inClass=false;continue;}
+    if(ch==='/'&&!inClass){closed=true;break;}
+   }
+   if(!closed){state.unknown=true;break;}
+   i=j+1;
+   while(i<line.length&&/[a-z]/i.test(line[i]))i++;
+   code+=' ';continue;
   }
   if(line.startsWith('//',i))break;
   if(line.startsWith('/*',i)){
@@ -51,9 +96,7 @@ function jsExecutableLine(line,state){
    if(!closed)state.unknown=true;
    if(quote===JS_BACKTICK&&body.includes('$'+'{')){
     code+=' __SENTINEL_DYNAMIC_TEMPLATE__ ';
-    // Executable template interpolations can themselves contain a sink.
-    if(/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\s*\.\s*runIn(?:This|New)Context\s*\()/.test(body))
-     state.danger=true;
+    templateExpressionsHaveSink(body,state,depth);
    }else code+=' ';
    continue;
   }
@@ -61,19 +104,38 @@ function jsExecutableLine(line,state){
  }
  return code;
 }
-function jsAddedExecutableByLine(patch){
- const found=new Map(),state={block:false,unknown:false,danger:false};
- let line=0,active=false;
+function jsAddedExecutableByLine(patch,fullSource){
+ const found=new Map();
+ const source=typeof fullSource==='string'&&Buffer.byteLength(fullSource,'utf8')<=160000?
+  fullSource.split(/\r?\n/):null;
+ let line=0,active=false,state=null,prior='';
  for(const row of patch.split('\n')){
   const h=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-  if(h){line=+h[1];active=true;state.block=false;continue;}
+  if(h){
+   line=+h[1];active=true;prior='';
+   state={block:false,unknown:false,danger:false,contextUnknown:false};
+   if(source){
+    for(let n=0;n<line-1;n++){
+     const scanned=jsExecutableLine(source[n]||'',state);
+     prior=(prior+' '+scanned).slice(-384);
+    }
+    state.danger=false;
+   }else if(line>1)state.contextUnknown=true;
+   continue;
+  }
   if(!active||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
-  if(row.startsWith('+')){
-   const before=state.danger,unknown=state.unknown;
+  if(row.startsWith('+')||row.startsWith(' ')){
+   const added=row[0]==='+';
+   const before=state.danger,previousSink=DYNAMIC_JS_SINK.test(prior);
    const code=jsExecutableLine(row.slice(1),state);
-   found.set(line++,{code,danger:state.danger&&!before,unknown:state.unknown&&!unknown});
-  }else if(row.startsWith(' ')){
-   jsExecutableLine(row.slice(1),state);line++;
+   const together=(prior+' '+code).slice(-768);
+   if(added)found.set(line,{
+    sink:DYNAMIC_JS_SINK.test(together)&&(!previousSink||DYNAMIC_JS_SINK.test(code)),
+    danger:state.danger&&!before,
+    unknown:state.unknown||state.contextUnknown
+   });
+   prior=together;
+   line++;
   }
  }
  return found;
@@ -106,7 +168,7 @@ function scan(files,sha){
    flag('INCOMPLETE_DIFF','BLOCKER',file,0,'Diff truncated or missing');continue;
   }
   const inspectJs=file.endsWith('.cjs')&&!file.endsWith('.test.cjs');
-  const executableByLine=inspectJs?jsAddedExecutableByLine(f.patch):null;
+  const executableByLine=inspectJs?jsAddedExecutableByLine(f.patch,f.fullSource):null;
   for(const a of additions){
    // Normalize YAML list prefixes, quotes and trailing comments before rules.
    const line=a.text.trim().replace(/\s+#.*$/,'').trim()
@@ -126,8 +188,10 @@ function scan(files,sha){
       flag('MUTABLE_ACTION','BLOCKER',file,a.line,'New action is not pinned to a commit');
    }
    const js=executableByLine?.get(a.line);
-   if(inspectJs&&(js?.unknown||js?.danger||DYNAMIC_JS_SINK.test(js?.code||'')))
-    flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Dynamic or inconclusive execution in reviewer');
+   if(inspectJs&&js?.unknown)
+    flag('JS_CONTEXT_INCOMPLETE','BLOCKER',file,a.line,'Cannot attest JavaScript lexical context');
+   else if(inspectJs&&(js?.danger||js?.sink))
+    flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Executable dynamic code in reviewer');
    if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&!file.endsWith('ultra_sentinel_mutation.cjs')&&/\bauto(?:Merge|Commit)Allowed:\s*true\b/.test(line))
     flag('UNREVIEWED_AUTOMATION','BLOCKER',file,a.line,'Automated commit or merge enabled');
   }
@@ -162,6 +226,26 @@ async function reviewRemote(env=process.env){
   files.push(...group);if(group.length<100)break;
  }
  if(files.length!==metadata.changed_files)throw Error('Truncated pull request');
+ // Exact-SHA read-only source context is needed for hunks beginning inside
+ // existing JS comments. Never execute, import, or evaluate PR source.
+ const javascriptFiles=files.filter(f=>f.status!=='removed'&&
+  SCOPE.test(f.filename)&&f.filename.endsWith('.cjs')&&
+  !f.filename.endsWith('.test.cjs')&&typeof f.patch==='string');
+ for(let i=0;i<javascriptFiles.length;i+=8){
+  await Promise.all(javascriptFiles.slice(i,i+8).map(async f=>{
+   try{
+    const safePath=f.filename.split('/').map(encodeURIComponent).join('/');
+    const payload=await get('https://api.github.com/repos/'+repo+'/contents/'+
+     safePath+'?ref='+sha,token);
+    if(payload.type==='file'&&payload.encoding==='base64'&&
+       Number.isSafeInteger(payload.size)&&payload.size<=160000&&
+       typeof payload.content==='string'){
+     const data=Buffer.from(payload.content,'base64');
+     if(data.length===payload.size)f.fullSource=data.toString('utf8');
+    }
+   }catch(error){ /* Missing exact-SHA source fails closed in scan(). */ }
+  }));
+ }
  const result=scan(files,sha);
  const after=await get(base,token);
  if(after.state!=='open'||after.head?.sha!==sha)throw Error('Stale PR analysis');
