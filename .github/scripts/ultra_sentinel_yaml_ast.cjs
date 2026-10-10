@@ -655,7 +655,12 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      if(hasRemoteProcessSubstitution(step.run)||
        /\b(?:bash|sh|zsh)\s*-c\s*["']?\$\(\s*(?:curl|wget)\b/.test(step.run))
       emit('REMOTE_SHELL_SUBSTITUTION','HIGH',where);
-     for(const rule of findingsForScript(step.run))emit(rule,'HIGH',where);
+     // Bash aliases change the meaning of later command words; unsupported
+     // expansions must not be certified as safe when an alias is declared.
+     if(/(?:^|[;\n])\s*alias\s+[A-Za-z_][A-Za-z0-9_]*\s*=/m.test(step.run))
+      coverage.partial=true;
+     for(const rule of findingsForScript(step.run,{shell:step.shell||job.defaults?.run?.shell||document.defaults?.run?.shell||''}))
+      emit(rule,'HIGH',where);
      {
       const inspection=auditExecutableExpressions(step.run);
       if(inspection.incomplete)coverage.partial=true;
