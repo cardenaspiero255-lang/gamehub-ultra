@@ -140,13 +140,17 @@ function findingsForScript(source,{shell=''}={}){
   if(!/\bhttps?:\/\//i.test(command))continue;
   // Keep curl/wget output option grammar bounded; literalFileToken rejects
   // dynamic paths instead of trusting partial or interpolated matches.
-  // Every -o output from a curl multi-transfer command is potentially tainted.
-  // Never trust only the first output (which may be a harmless decoy).
+  // curl -o/-output stores remote bytes. wget -o/--output-file
+  // stores DIAGNOSTIC LOGS, not remote bytes; only -O/--output-document
+  // writes the response body. Keep tool-specific option semantics.
+  const optionPattern=d.name.toLowerCase()==='wget'?
+   /(?:^|\s)(?:-[a-zA-Z]*O\s*|--output-document(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g:
+   /(?:^|\s)(?:-[fsSLkvIqNn]*o\s*|--output(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g;
   const outputs=[
-   ...command.matchAll(/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/gi),
-   // curl's response can also be written with the shell stdout redirect.
-   // Consume >, >>, 1> and 1>> (but not stderr-only 2>).
-   ...command.matchAll(/(?:^|\s)1?>{1,2}\s*([a-z0-9_./'"-]+)(?=\s|$)/gi)
+   ...command.matchAll(optionPattern),
+   // Model Bash stdout operators without mistaking stderr-only 2> for
+   // downloaded payloads: >, >>, 1>, 1>>, >|, >&, &>, &>>.
+   ...command.matchAll(/(?:^|\s)(?:1?>{1,2}[&|]?|&>{1,2})\s*([a-z0-9_./'"-]+)(?=\s|$)/g)
   ];
   if(!outputs.length)continue;
   const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
