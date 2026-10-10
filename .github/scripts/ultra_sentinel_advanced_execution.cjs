@@ -58,6 +58,15 @@ function normalizeInvocation(command,flag){
     if(args[i]==='--'){i++;break;}
     flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
    }
+  }else if(name==='builtin'){
+   // The builtin command prefix invokes the nested Bash builtin.
+   // Only transparently unwrap recognized compositions.
+   i++;
+   const nested=literalCommandName(args[i]||'');
+   if(nested==='command'||nested==='builtin')continue;
+   if(args.slice(i).some(w=>/^(?:curl|wget|bash|sh|install|eval)$/.test(w)))
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   return null;
   }else if(name==='env'){
    i++;
    while(i<args.length){
@@ -101,7 +110,10 @@ function downloadedFiles(command,flag){
  const outputPattern=wget?
   /(?:^|\s)(?:-[a-zA-Z]*O\s*|--output-document(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g:
   /(?:^|\s)(?:-[fsSLkvIqNn]*o\s*|--output(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g;
- const direct=[...raw.matchAll(outputPattern)];
+ const allDirect=[...raw.matchAll(outputPattern)];
+ // Wget -O/--output-document is a global output setting: the LAST
+ // occurrence determines the destination. Curl -o describes each transfer.
+ const direct=wget?allDirect.slice(-1):allDirect;
  const outputDirs=[...raw.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
  const outDir=outputDirs.at(-1);
  const dir=outDir?literalFileToken(outDir[1]):null;
@@ -116,14 +128,26 @@ function downloadedFiles(command,flag){
  }
  // Track fd 1 and fd 2, including duplication/closing. A prior ">temp"
  // only truncates temp; if stdout is redirected again, temp is not tainted.
- const fds={1:null,2:null};
- const redirects=/(?:^|\s)([12]?>{1,2}[&|]?|&>{1,2})\s*([a-z0-9_./'"-]+)(?=\s|$)/g;
+ const MAX_FD=32; // bounded FD model, never execute shell syntax
+ const fds=new Map([[1,null],[2,null]]);
+ const redirects=/(?:^|\s)((?:\d{0,3})?>{1,2}[&|]?|&>{1,2})\s*([a-z0-9_./'"-]+)(?=\s|$)/g;
  for(const match of raw.matchAll(redirects)){
   const op=match[1],argument=match[2];
+  const numbered=/^(\d+)>/.exec(op);
+  const destFd=numbered?Number(numbered[1]):1;
+  if(!Number.isSafeInteger(destFd)||destFd>MAX_FD){
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
+  }
   const isDup=op.endsWith('&');
-  const destFd=op.startsWith('2')?2:1;
-  if(isDup&&(/^[012]$/.test(argument)||argument==='-')){
-   fds[destFd]=argument==='-'?null:fds[argument]||null;
+  // A digit operand of >& denotes an FD copy, including >&3.
+  // An unknown source is NOT an output filename named "3".
+  if(isDup&&(/^\d+$/.test(argument)||argument==='-')){
+   const sourceFd=Number(argument);
+   if(argument!=='-'&&(!Number.isSafeInteger(sourceFd)||sourceFd>MAX_FD||
+     !fds.has(sourceFd))){
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
+   }
+   fds.set(destFd,argument==='-'?null:(fds.get(sourceFd)||null));
    continue;
   }
   const dest=literalFileToken(argument);
@@ -132,8 +156,8 @@ function downloadedFiles(command,flag){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
   if(op.startsWith('&')||op==='>&'){
-   fds[1]=dest;fds[2]=dest;
-  }else fds[destFd]=dest;
+   fds.set(1,dest);fds.set(2,dest);
+  }else fds.set(destFd,dest);
  }
  const urlCount=command.words.slice(1).filter(w=>/^['"]?https?:\/\//i.test(w)).length;
  // GNU Wget normally emits the document into a file, not stdout. Curl
@@ -141,8 +165,9 @@ function downloadedFiles(command,flag){
  const finalOutput=direct.at(-1);
  const wgetStdout=!!finalOutput&&literalFileToken(finalOutput[1])==='-';
  const mayEmitRemoteStdout=wget?wgetStdout:urlCount>direct.length;
- if(mayEmitRemoteStdout&&fds[1]&&fds[1]!=='.'&&fds[1]!=='..')
-  files.add(normalizedFile(fds[1]));
+ const finalStdout=fds.get(1);
+ if(mayEmitRemoteStdout&&finalStdout&&finalStdout!=='.'&&finalStdout!=='..')
+  files.add(normalizedFile(finalStdout));
  return [...files];
 }
 function findingsForScript(source,{shell=''}={}){
