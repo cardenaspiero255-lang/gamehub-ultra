@@ -40,8 +40,8 @@ test('dynamic JS execution is blocked',()=>{
  // Codex: an executable computed globalThis call cannot be certified safe
  // merely because template interpolation splits the dangerous identifier.
  for(const line of [
-  "globalThis[`ev\al`](userPatch)",
-  "new globalThis[`Fun\ction`](userPatch)",
+  "globalThis[`ev${'al'}`](userPatch)",
+  "new globalThis[`Fun${'ction'}`](userPatch)",
   'vm /* trivia */ . runInThisContext(userPatch)',
   'vm /* trivia */ . runInNewContext(userPatch)'
  ])assert.equal(scan([file(src,line)],SHA).status,'BLOCKED',line);
