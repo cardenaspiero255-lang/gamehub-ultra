@@ -55,6 +55,26 @@ test('dynamic JS execution is blocked',()=>{
  ])assert.equal(scan([file(src,...lines)],SHA).status,'ADVISORY',JSON.stringify(lines));
  // Closing a multiline comment must not mask subsequent active JavaScript.
  assert.equal(scan([file(src,'/*','inert description','*/','eval(userPatch)')],SHA).status,'BLOCKED');
+ // A slash in a regex character class is not a JS line comment.
+ assert.equal(scan([file(src,'const slash=/[//]/; eval(userPatch)')],SHA).status,'BLOCKED');
+ // JavaScript tokens remain adjacent across multiline block-comment trivia.
+ assert.equal(scan([file(src,'vm /* trivia','*/ . runInThisContext(userPatch)')],SHA).status,'BLOCKED');
+ for(const line of [
+  'const s=`eval(userPatch) '+ '$' + '{name}`;',
+  'const s=`'+ '$' + '{"eval(userPatch)"}`;',
+  'const s=`text '+ '$' + '{ordinaryIdentifier}`;'
+ ])assert.equal(scan([file(src,line)],SHA).status,'ADVISORY',line);
+ // Hunk starts inside a previously existing comment: full-source context
+ // must suppress false confirmed DYNAMIC_EVAL. Missing context fails closed.
+ const earlier=['/*',...Array.from({length:98},()=>'* inert')];
+ const fullSource=[...earlier,'eval(userPatch)','*/','const ok=true;'].join('\n');
+ const midHunk={filename:src,status:'modified',changes:1,
+  patch:'@@ -100,0 +100,1 @@\n+eval(userPatch)',fullSource};
+ assert.equal(scan([midHunk],SHA).status,'ADVISORY');
+ const missing=scan([{...midHunk,fullSource:undefined}],SHA);
+ assert.equal(missing.status,'BLOCKED');
+ assert.ok(missing.findings.some(x=>x.rule==='JS_CONTEXT_INCOMPLETE'));
+ assert.ok(!missing.findings.some(x=>x.rule==='DYNAMIC_EVAL'));
 });
 test('autocommit and automerge authorization in changed reviewer code are blocked',()=>{
  for(const line of ['autoMergeAllowed:true','autoCommitAllowed:true'])
