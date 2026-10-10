@@ -28,8 +28,10 @@ function findingsForScript(source,{shell=''}={}){
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
-  // Both -o file and compact -ofile / -Ofile are accepted by curl/wget.
-  const output=/(?:^|\s)(?:-[a-zA-Z]*[oO]\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
+  // Recognize bounded no-argument short-flag clusters before -o/-O.
+  // An unrestricted greedy [A-Za-z]* would eat filename letters up to a
+  // later 'o' (e.g. -fsSLopayload -> incorrectly parsed as file 'ad').
+  const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
   if(!output)continue;
   const file=normalizedFile(output[2]);
   if(file==='-'||file==='.'||file==='..')continue;
