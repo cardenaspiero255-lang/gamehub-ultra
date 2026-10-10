@@ -83,7 +83,7 @@ function findingsForScript(source,{shell=''}={}){
  for(const m of active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\b([^\r\n;&|]{1,2048})/gi)){
   const kind=m[1].toLowerCase(),tokens=shellLiteralWords(m[2]);
   if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
-  const flags=[],operands=[];let afterDash=false,invalid=false;
+  const flags=[],operands=[],rawOperands=[];let afterDash=false,invalid=false;
   for(const word of tokens){
    if(!afterDash&&word==='--'){afterDash=true;continue;}
    if(!afterDash&&word.startsWith('-')){
@@ -93,6 +93,7 @@ function findingsForScript(source,{shell=''}={}){
    const operand=literalFileToken(word);
    if(!operand){invalid=true;break;}
    operands.push(operand);
+   rawOperands.push(word);
   }
   if(invalid||operands.length!==2){
    // Never report a complex alias command as analyzed-and-clean.
@@ -100,7 +101,9 @@ function findingsForScript(source,{shell=''}={}){
   }
   const [origin,destination]=operands;
   const destinationPath=normalizedFile(destination);
-  const targetIsDirectory=destination.endsWith('/')||
+  // lexical normalization strips trailing '/', so preserve the original
+  // complete shell word. Both dir/ and 'dir/' designate directories.
+  const targetIsDirectory=/\/['"]*$/.test(rawOperands[1])||
    createdDirs.some(d=>d.name===destinationPath&&d.at<m.index);
   const to=normalizedFile(targetIsDirectory?
    posix.join(destination,posix.basename(origin)):destination);
