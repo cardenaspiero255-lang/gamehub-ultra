@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/sentinel-fixtures/**'
       - '.github/workflows/ultra-sentinel-adversarial-gauntlet.yml'
       - '.github/workflows/ultra-sentinel-core-check.yml'
       - 'package.json'

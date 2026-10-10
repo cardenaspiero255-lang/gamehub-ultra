@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/sentinel-fixtures/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/scripts/install_sentinel_hook.sh'

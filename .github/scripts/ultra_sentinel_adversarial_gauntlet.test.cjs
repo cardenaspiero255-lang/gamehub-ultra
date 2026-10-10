@@ -7,6 +7,8 @@ const report=evaluate();
 const {summary:s,metrics:m}=report;
 test('Red-team gauntlet generates numerous distinct, fixed-seed mutations',()=>{
  const variantsSet=variants();
+ const trigger=fs.readFileSync(require('node:path').resolve(__dirname,'../workflows/ultra-sentinel-adversarial-gauntlet.yml'),'utf8');
+ assert.ok(trigger.includes('.github/sentinel-fixtures/**'),'JSON fixture-only PR must trigger gauntlet');
  // Original inert fixture families must survive separation from reviewer code.
  const {extremeFixtures}=require('./ultra_sentinel_gauntlet_extreme.cjs');
  const fixtureGroups=extremeFixtures();
