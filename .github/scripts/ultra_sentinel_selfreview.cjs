@@ -34,10 +34,26 @@ const JS_BACKTICK=String.fromCharCode(96);
 // A regex can occur after an operator or a control-flow keyword. Read the
 // entire literal (including bracket classes) before interpreting // or }.
 // Unknown/unclosed constructs are not certified as safe.
+function controlStatementRegexBody(prefix){
+ if(!prefix.endsWith(')'))return false;
+ let nesting=0;
+ for(let i=prefix.length-1;i>=0;i--){
+  if(prefix[i]===')')nesting++;
+  else if(prefix[i]==='('&&--nesting===0){
+   // A property call such as obj.if(...) is not an if statement.
+   const leading=prefix.slice(0,i).trimEnd();
+   return /(?:^|[;{}]|\))\s*(?:if|while|for|with)$/.test(leading);
+  }
+ }
+ return false;
+}
 function expectsJsRegex(prefix){
  const p=prefix.trimEnd();
- return p===''||/[=({[:,!?;+\-*%&|^~<>/]$/.test(p)||
-  /\b(?:return|throw|case|yield|await|void|delete|typeof|instanceof|in)$/.test(p);
+ if(p===''||/[=({[:,!?;+\-*%&|^~<>/]$/.test(p))return true;
+ // Keywords must be independent syntax tokens, never property identifiers.
+ const keyword=p.match(/\b(?:return|throw|case|yield|await|void|delete|typeof|instanceof|in|do|else)$/);
+ if(keyword&&!p.slice(0,keyword.index).trimEnd().endsWith('.'))return true;
+ return controlStatementRegexBody(p);
 }
 function readJsRegexEnd(source,start){
  let inClass=false,i=start+1;
