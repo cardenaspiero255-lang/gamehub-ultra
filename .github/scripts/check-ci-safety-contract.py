@@ -362,6 +362,20 @@ def require_sdk_fast_path(workflow: dict[str, Any], job_name: str) -> None:
         for candidate in steps[steps.index(slow) + 1:]
     ):
         fail(f"SDK install/recovery logic missing from {job_name}")
+    if job_name == "device-validation-shard":
+        selector = require_step(
+            workflow, job_name, "Use current Android command-line tools",
+            shell="bash",
+        )
+        for expected in (
+            'SDK_BIN="$SDK_ROOT/cmdline-tools/latest/bin"',
+            'if [ ! -x "$SDK_BIN/sdkmanager" ]; then',
+            'printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"',
+        ):
+            require_run_fragment(selector, "non-destructive SDK selection", expected)
+        if 'rm -rf "$SDK_ROOT/cmdline-tools/latest"' in str(selector.get("run", "")):
+            fail("Emulator SDK selector destroys the hosted-runner latest installation")
+
 
 
 def main() -> None:
