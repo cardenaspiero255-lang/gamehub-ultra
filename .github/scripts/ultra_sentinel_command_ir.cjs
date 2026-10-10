@@ -110,4 +110,4 @@ function parseShellCommands(source){
  if(quote||escaped)incomplete=true;
  return {commands,incomplete};
 }
-module.exports={literalFileToken,parseShellCommands,MAX_SOURCE};
+module.exports={literalFileToken,literalCommandName,parseShellCommands,MAX_SOURCE};
