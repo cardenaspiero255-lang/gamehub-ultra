@@ -35,6 +35,8 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install SHA512-locked parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate the PR's own self-review checker
         run: |
           node --check .github/scripts/ultra_sentinel_selfreview.cjs
@@ -51,7 +53,11 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: |
             .github/scripts
+            package.json
+            package-lock.json
           persist-credentials: false
+      - name: Install trusted parser from main lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate trusted meta-review unit tests
         run: |
           node --check .github/scripts/ultra_sentinel_selfreview.cjs

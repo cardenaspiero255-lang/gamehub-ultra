@@ -23,182 +23,124 @@ function parseAdded(patch){
  return added;
 }
 
-// Read-only bounded JS lexer. Preserve comment state across added/context
-// lines inside each diff hunk; strings are data, not executable statements.
-// Multiline templates are conservatively treated as unknown.
-const JS_BACKTICK=String.fromCharCode(96);
-
-// Treat regex character classes as regex data, not line comments. Nested
-// templates get inspected only inside executable interpolation expressions.
-
-// A regex can occur after an operator or a control-flow keyword. Read the
-// entire literal (including bracket classes) before interpreting // or }.
-// Unknown/unclosed constructs are not certified as safe.
-function controlStatementRegexBody(prefix){
- if(!prefix.endsWith(')'))return false;
- let nesting=0;
- for(let i=prefix.length-1;i>=0;i--){
-  if(prefix[i]===')')nesting++;
-  else if(prefix[i]==='('&&--nesting===0){
-   // A property call such as obj.if(...) is not an if statement.
-   const leading=prefix.slice(0,i).trimEnd();
-   return /(?:^|[;{}]|\))\s*(?:if|while|for|with)$/.test(leading);
-  }
- }
- return false;
-}
-function expectsJsRegex(prefix){
- const p=prefix.trimEnd();
- if(p===''||/[=({[:,!?;+\-*%&|^~<>/]$/.test(p))return true;
- // Keywords must be independent syntax tokens, never property identifiers.
- const keyword=p.match(/\b(?:return|throw|case|yield|await|void|delete|typeof|instanceof|in|do|else)$/);
- if(keyword&&!p.slice(0,keyword.index).trimEnd().endsWith('.'))return true;
- return controlStatementRegexBody(p);
-}
-function readJsRegexEnd(source,start){
- let inClass=false,i=start+1;
- for(;i<source.length;i++){
-  const ch=source[i];
-  if(ch==='\\'){i++;continue;}
-  if(ch==='['){inClass=true;continue;}
-  if(ch===']'){inClass=false;continue;}
-  if(ch==='/'&&!inClass){
-   i++;
-   while(i<source.length&&/[a-z]/i.test(source[i]))i++;
-   return i;
-  }
- }
- return -1;
-}
-function findTemplateExpressionEnd(body,start,state){
- let i=start+2,nesting=1,code='';
- while(i<body.length){
-  const ch=body[i];
-  if(body.startsWith('/*',i)){
-   const end=body.indexOf('*/',i+2);
-   if(end<0){state.unknown=true;return -1;}
-   code+=' ';i=end+2;continue;
-  }
-  if(body.startsWith('//',i)){
-   const end=body.indexOf('\n',i+2);
-   if(end<0){state.unknown=true;return -1;}
-   code+=' ';i=end+1;continue;
-  }
-  if(ch==='/'&&expectsJsRegex(code)){
-   const end=readJsRegexEnd(body,i);
-   if(end<0){state.unknown=true;return -1;}
-   code+=' ';i=end;continue;
-  }
-  if(ch==="'"||ch==='"'){
-   const quote=ch;let end=i+1,closed=false;
-   while(end<body.length){
-    if(body[end]==='\\'){end+=2;continue;}
-    if(body[end++]===quote){closed=true;break;}
+// Real JavaScript grammar, not an ad-hoc regex/division/comment lexer.
+// Acorn is installed from a SHA512-locked npm artifact, with no lifecycle scripts.
+// The fetched candidate source is parsed as DATA and is never imported or run.
+const acorn=require('acorn');
+const AST_NODE_LIMIT=50000;
+function staticJsString(node,depth=0){
+ if(!node||depth>8)return null;
+ if(node.type==='Literal')return typeof node.value==='string'?node.value:null;
+ if(node.type==='TemplateLiteral'){
+  let s='';
+  for(let i=0;i<node.quasis.length;i++){
+   if(typeof node.quasis[i]?.value?.cooked!=='string')return null;
+   s+=node.quasis[i].value.cooked;
+   if(i<node.expressions.length){
+    const sub=staticJsString(node.expressions[i],depth+1);
+    if(sub===null)return null;
+    s+=sub;
    }
-   if(!closed){state.unknown=true;return -1;}
-   code+=' ';i=end;continue;
   }
-  if(ch===JS_BACKTICK){
-   // A nested template requires a full JS grammar to disambiguate safely.
-   state.unknown=true;return -1;
-  }
-  if(ch==='{')nesting++;
-  if(ch==='}'&&--nesting===0)return i;
-  code+=ch;i++;
+  return s;
  }
- state.unknown=true;return -1;
-}
-function templateExpressionsHaveSink(body,state,depth){
- if(depth>4){state.unknown=true;return;}
- let cursor=0;
- while(cursor<body.length){
-  const start=body.indexOf('$'+'{',cursor);
-  if(start<0)return;
-  const end=findTemplateExpressionEnd(body,start,state);
-  if(end<0)return;
-  const expression=body.slice(start+2,end);
-  const nested={block:false,unknown:false,danger:false};
-  const code=jsExecutableLine(expression,nested,depth+1);
-  if(nested.unknown||nested.block)state.unknown=true;
-  if(nested.danger||DYNAMIC_JS_SINK.test(code))state.danger=true;
-  cursor=end+1;
+ if(node.type==='BinaryExpression'&&node.operator==='+'){
+  const l=staticJsString(node.left,depth+1),r=staticJsString(node.right,depth+1);
+  return l===null||r===null?null:l+r;
  }
+ return null;
 }
-function jsExecutableLine(line,state,depth=0){
- let code='',i=0;
- while(i<line.length){
-  if(state.block){
-   const end=line.indexOf('*/',i);
-   if(end<0)return code;
-   state.block=false;code+=' ';i=end+2;continue;
-  }
-  if(line[i]==='/'&&line[i+1]!=='/'&&line[i+1]!=='*'&&
-     expectsJsRegex(code)){
-   const end=readJsRegexEnd(line,i);
-   if(end<0){state.unknown=true;break;}
-   i=end;code+=' ';continue;
-  }
-  if(line.startsWith('//',i))break;
-  if(line.startsWith('/*',i)){
-   state.block=true;code+=' ';i+=2;continue;
-  }
-  const quote=line[i];
-  if(quote==="'"||quote==='"'||quote===JS_BACKTICK){
-   i++;let body='',closed=false;
-   while(i<line.length){
-    const ch=line[i++];
-    if(ch==='\\'){i++;continue;}
-    if(ch===quote){closed=true;break;}
-    body+=ch;
-   }
-   if(!closed)state.unknown=true;
-   if(quote===JS_BACKTICK&&body.includes('$'+'{')){
-    code+=' __SENTINEL_DYNAMIC_TEMPLATE__ ';
-    templateExpressionsHaveSink(body,state,depth);
-   }else code+=' ';
-   continue;
-  }
-  code+=line[i++];
+function memberKey(node){
+ if(!node||node.type!=='MemberExpression')return null;
+ return node.computed?staticJsString(node.property):
+  node.property?.type==='Identifier'?node.property.name:null;
+}
+function globalRoot(node){
+ while(node?.type==='ChainExpression')node=node.expression;
+ return node?.type==='Identifier'&&['globalThis','global'].includes(node.name);
+}
+function dynamicJsNode(node,parent,key){
+ if(node.type==='Identifier'&&['eval','Function','AsyncFunction','GeneratorFunction'].includes(node.name)){
+  // Property names are not references: obj.eval() may be an ordinary method.
+  if(parent?.type==='MemberExpression'&&key==='property'&&!parent.computed)return false;
+  if(parent?.type==='Property'&&key==='key'&&!parent.computed)return false;
+  if(parent?.type==='MethodDefinition'&&key==='key'&&!parent.computed)return false;
+  return true; // Cover aliased constructor and eval references before they escape.
  }
- return code;
+ if(node.type==='MemberExpression'){
+  const name=memberKey(node);
+  return !!(globalRoot(node.object)&&['eval','Function','AsyncFunction','GeneratorFunction'].includes(name));
+ }
+ if(node.type!=='CallExpression'&&node.type!=='NewExpression')return false;
+ let callee=node.callee;
+ while(callee?.type==='ChainExpression')callee=callee.expression;
+ if(callee?.type==='Identifier')
+  return ['eval','Function','AsyncFunction','GeneratorFunction'].includes(callee.name);
+ if(callee?.type!=='MemberExpression')return false;
+ const name=memberKey(callee);
+ if(['runInThisContext','runInNewContext','runInContext'].includes(name))return true;
+ if(name==='Script'&&callee.object?.type==='CallExpression'&&
+    callee.object.callee?.name==='require')return true;
+ if(name==='constructor')return true; // Dynamic constructor invocation cannot be attested safe.
+ return globalRoot(callee.object)&&callee.computed&&name===null;
 }
-function jsAddedExecutableByLine(patch,fullSource){
- const found=new Map();
- const source=typeof fullSource==='string'&&Buffer.byteLength(fullSource,'utf8')<=160000?
-  fullSource.split(/\r?\n/):null;
- let line=0,active=false,state=null,prior='';
+function jsDiffSource(patch){
+ let started=false,last=0,first=true,lines=[];
  for(const row of patch.split('\n')){
-  const h=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-  if(h){
-   line=+h[1];active=true;prior='';
-   state={block:false,unknown:false,danger:false,contextUnknown:false};
-   if(source){
-    for(let n=0;n<line-1;n++){
-     const scanned=jsExecutableLine(source[n]||'',state);
-     if(scanned.trim())prior=(prior+' '+scanned).slice(-384);
-    }
-    state.danger=false;
-   }else if(line>1)state.contextUnknown=true;
-   continue;
+  const m=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  if(m){
+   const start=Number(m[1]);
+   if(first&&start!==1)return null;
+   if(!first&&start!==last+1)return null;
+   first=false;started=true;last=start-1;continue;
   }
-  if(!active||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
-  if(row.startsWith('+')||row.startsWith(' ')){
-   const added=row[0]==='+';
-   const before=state.danger,previousSink=DYNAMIC_JS_SINK.test(prior);
-   const code=jsExecutableLine(row.slice(1),state);
-   const together=code.trim()?(prior+' '+code).slice(-768):prior;
-   if(added)found.set(line,{
-    sink:DYNAMIC_JS_SINK.test(together)&&(!previousSink||DYNAMIC_JS_SINK.test(code)),
-    danger:state.danger&&!before,
-    unknown:state.unknown||state.contextUnknown
-   });
-   prior=together;
-   line++;
+  if(!started||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
+  if(row[0]==='+'||row[0]===' '){lines.push(row.slice(1));last++;}
+ }
+ return first?null:lines.join('\n');
+}
+function jsAstByLine(patch,fullSource){
+ const additions=parseAdded(patch),map=new Map();
+ if(!additions?.length)return map;
+ const fail=(rule)=>{map.set(additions[0].line,{unknown:true,reason:rule});return map;};
+ const exact=typeof fullSource==='string';
+ if(exact&&Buffer.byteLength(fullSource,'utf8')>160000)return fail('SOURCE_TOO_LARGE');
+ const text=exact?fullSource:jsDiffSource(patch);
+ if(text===null||Buffer.byteLength(text,'utf8')>160000)return fail('JS_CONTEXT_UNAVAILABLE');
+ let ast;
+ try{
+  ast=acorn.parse(text,{ecmaVersion:'latest',sourceType:'script',
+   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+   locations:true});
+ }catch(_){return fail('JS_PARSE_ERROR');}
+ const sinks=[],budget={nodes:0};
+ function visit(node,parent=null,key=''){
+  if(!node||typeof node!=='object')return;
+  if(!Array.isArray(node)&&typeof node.type!=='string')return;
+  if(++budget.nodes>AST_NODE_LIMIT)throw Error('AST node budget exceeded');
+  if(dynamicJsNode(node,parent,key))sinks.push(node);
+  for(const [k,v] of Object.entries(node)){
+   if(k==='start'||k==='end'||k==='loc'||k==='range')continue;
+   if(Array.isArray(v)){for(const child of v)visit(child,node,k);}
+   else if(v&&typeof v==='object'&&typeof v.type==='string')visit(v,node,k);
   }
  }
- return found;
+ try{visit(ast);}catch(_){return fail('AST_BUDGET_EXCEEDED');}
+ if(sinks.length){
+  // With exact source, also catch added syntax that exposes an old sink.
+  // Reviewers are security-critical: a pre-existing sink still blocks edits.
+  const first=additions[0].line;
+  for(const sink of sinks){
+   const line=sink.loc?.start?.line||first;
+   const added=additions.find(a=>a.line===line)||additions.find(a=>
+    a.line>=(sink.loc?.start?.line||first)&&a.line<=(sink.loc?.end?.line||first));
+   const slot=added?.line||first;
+   map.set(slot,{sink:true});
+  }
+ }
+ return map;
 }
-const DYNAMIC_JS_SINK=/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\s*\.\s*runIn(?:This|New)Context\s*\(|\b(?:globalThis|global)\s*\[\s*__SENTINEL_DYNAMIC_TEMPLATE__\s*\]\s*\()/;
+
 function scan(files,sha){
  const findings=[],changed=[];
  function flag(rule,severity,file,line,reason){findings.push({rule,severity,file,line,reason})}
@@ -226,7 +168,7 @@ function scan(files,sha){
    flag('INCOMPLETE_DIFF','BLOCKER',file,0,'Diff truncated or missing');continue;
   }
   const inspectJs=file.endsWith('.cjs')&&!file.endsWith('.test.cjs');
-  const executableByLine=inspectJs?jsAddedExecutableByLine(f.patch,f.fullSource):null;
+  const executableByLine=inspectJs?jsAstByLine(f.patch,f.fullSource):null;
   for(const a of additions){
    // Normalize YAML list prefixes, quotes and trailing comments before rules.
    const line=a.text.trim().replace(/\s+#.*$/,'').trim()
@@ -247,8 +189,8 @@ function scan(files,sha){
    }
    const js=executableByLine?.get(a.line);
    if(inspectJs&&js?.unknown)
-    flag('JS_CONTEXT_INCOMPLETE','BLOCKER',file,a.line,'Cannot attest JavaScript lexical context');
-   else if(inspectJs&&(js?.danger||js?.sink))
+    flag('JS_CONTEXT_INCOMPLETE','BLOCKER',file,a.line,'Cannot attest JavaScript grammar or complete context');
+   else if(inspectJs&&js?.sink)
     flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Executable dynamic code in reviewer');
    if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&!file.endsWith('ultra_sentinel_mutation.cjs')&&/\bauto(?:Merge|Commit)Allowed:\s*true\b/.test(line))
     flag('UNREVIEWED_AUTOMATION','BLOCKER',file,a.line,'Automated commit or merge enabled');
