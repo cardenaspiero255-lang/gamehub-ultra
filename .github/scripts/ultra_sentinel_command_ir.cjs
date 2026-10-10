@@ -9,6 +9,10 @@
  */
 const posix=require('node:path').posix;
 const MAX_SOURCE=160000,MAX_COMMANDS=4096,MAX_WORDS=64,MAX_WORD_LENGTH=2048;
+// Reserved control words introduce compound shell flow beyond this bounded IR.
+// Fail closed rather than interpreting `then curl` as an ordinary command.
+const COMPOUND_WORDS=new Set(['if','then','elif','else','fi','while','until',
+ 'do','done','for','select','case','esac','in','function','coproc']);
 function literalFileToken(token){
  if(typeof token!=='string'||token.length>MAX_WORD_LENGTH)return null;
  let quote=null,decoded='';
@@ -57,7 +61,7 @@ function parseShellCommands(source){
    if(commands.length>=MAX_COMMANDS)incomplete=true;
    else{
     const name=literalCommandName(words[0]);
-    if(name===null)incomplete=true;
+    if(name===null||COMPOUND_WORDS.has(name))incomplete=true;
     commands.push({name:name||words[0],words,raw:source.slice(start,end).trimEnd(),start,end,operator:pending});
    }
   }
@@ -71,7 +75,12 @@ function parseShellCommands(source){
    if(i<source.length){pending='\n';continue;}
    break;
   }
-  if(!quote&&!escaped&&(ch===';'||ch==='\n'||ch==='|'||ch==='&')){
+  // Bash combined stdout redirects (>&, >|, &>, &>>) are NOT control
+  // operators. Leave them in the command so the sink analyzer can read them.
+  const redirectionPart=!quote&&!escaped&&(
+   ((ch==='&'||ch==='|')&&source[i-1]==='>')||
+   (ch==='&'&&source[i+1]==='>'));
+  if(!quote&&!escaped&&!redirectionPart&&(ch===';'||ch==='\n'||ch==='|'||ch==='&')){
    commandDone(i);
    let operator=ch;
    if((ch==='|'||ch==='&')&&source[i+1]===ch){operator+=ch;i++;}
