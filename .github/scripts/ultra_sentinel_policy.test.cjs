@@ -48,7 +48,7 @@ const {isAuthorizedSoloMaintainerPR}=require('./ultra_sentinel_policy.cjs');
 const MAIN_REPO='cardenaspiero255-lang/gamehub-ultra';
 const mainSha='a'.repeat(40);
 const ownerPr={
- state:'open',number:169,user:{login:'cardenaspiero255-lang',type:'User'},
+ state:'open',number:169,user:{login:'cardenaspiero255-lang',type:'User',id:322222186},
  author_association:'OWNER',
  head:{sha:mainSha,repo:{full_name:MAIN_REPO}},
  base:{ref:'main',repo:{full_name:MAIN_REPO}}
@@ -61,7 +61,9 @@ test('solo-owner exception fails closed for forks, bots, external authors and st
  const cases=[
   {...ownerPr,state:'closed'},
   {...ownerPr,user:{login:'random-contributor',type:'User'}},
-  {...ownerPr,user:{login:'cardenaspiero255-lang',type:'Bot'}},
+  {...ownerPr,user:{login:'cardenaspiero255-lang',type:'Bot',id:322222186}},
+  {...ownerPr,user:{login:'cardenaspiero255-lang',type:'User',id:123}},
+  {...ownerPr,user:{login:'random-contributor',type:'User',id:322222186}},
   {...ownerPr,author_association:'COLLABORATOR'},
   {...ownerPr,head:{...ownerPr.head,repo:{full_name:'external/fork'}}},
   {...ownerPr,base:{...ownerPr.base,ref:'develop'}},
