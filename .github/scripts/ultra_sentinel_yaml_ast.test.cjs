@@ -106,16 +106,14 @@ test('AST matrix guarantees at least 50 independent YAML traps',()=>{
  assert.ok(cases.length>=50,String(cases.length));
 });
 
-test('AST production wiring: parse each trusted Sentinel workflow without source execution',()=>{
+test('AST bootstrap wiring: parse existing trusted Sentinel workflows without source execution',()=>{
  const fs=require('node:fs'),path=require('node:path');
  for(const filename of [
   'ultra-sentinel-auto-review.yml',
   'ultra-sentinel-core-check.yml',
   'ultra-sentinel-independent-review.yml',
   'ultra-sentinel-self-review.yml',
-  'ultra-sentinel-mutation.yml',
-  'ultra-sentinel-reliability-100.yml',
-  'ultra-sentinel-sss-post-ci.yml'
+  'ultra-sentinel-mutation.yml'
  ]){
   const full=path.resolve(__dirname,'../workflows',filename);
   const content=fs.readFileSync(full,'utf8');
@@ -195,7 +193,7 @@ test('Codex P1 AST: dynamic fork repository with fixed commit must still BLOCK',
  assert.ok(r.findings.some(f=>f.rule==='PRIVILEGED_PR_CODE_CHECKOUT'),JSON.stringify(r));
 });
 test('Codex P1 AST: normal literal repository and main ref remain safe',()=>{
- const y=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    steps:',
+ const y=['on: pull_request_target','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest','    steps:',
  '      - uses: actions/checkout@'+SHA,
  '        with:', '          repository: cardenaspiero255-lang/gamehub-ultra',
  '          ref: main'].join('\n');
@@ -223,11 +221,12 @@ test('Codex P1 AST: external workflow pinned by 40-char SHA is accepted',()=>{
  assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
  assert.equal(r.coverage.partial,false);
 });
-test('Codex P1 AST: local reusable workflow does not require 40-char remote SHA',()=>{
+test('Local reusable workflow does not need remote SHA but callee is unverified',()=>{
  const y=['on: push','jobs:', '  local:',
  '    uses: ./.github/workflows/build.yml'].join('\n');
  const r=inspectWorkflow(y);
- assert.equal(r.status,'NO_RISK_PATTERN',JSON.stringify(r));
+ assert.equal(r.status,'INCOMPLETE',JSON.stringify(r));
+ assert.ok(!r.findings.some(f=>f.rule==='UNPINNED_REUSABLE_WORKFLOW'),JSON.stringify(r));
 });
 test('Codex P1 AST: non-string job uses fails closed',()=>{
  const y=['on: push','jobs:', '  external:',
@@ -324,4 +323,23 @@ test('ROOT security: trusted independent review cannot pass green without AST de
  const fs=require('node:fs'),path=require('node:path');
  const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
  assert.match(workflow,/core\.setFailed\(['"]Trusted main structural parser not deployed/);
+});
+
+test('AST production wiring: parse each trusted Sentinel workflow without source execution',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ for(const filename of [
+  'ultra-sentinel-auto-review.yml',
+  'ultra-sentinel-core-check.yml',
+  'ultra-sentinel-independent-review.yml',
+  'ultra-sentinel-self-review.yml',
+  'ultra-sentinel-mutation.yml',
+  'ultra-sentinel-reliability-100.yml',
+  'ultra-sentinel-sss-post-ci.yml'
+ ]){
+  const full=path.resolve(__dirname,'../workflows',filename);
+  const content=fs.readFileSync(full,'utf8');
+  const verdict=inspectWorkflow(content,{path:'.github/workflows/'+filename});
+  assert.notEqual(verdict.status,'INCOMPLETE',
+   filename+': '+JSON.stringify(verdict));
+ }
 });
