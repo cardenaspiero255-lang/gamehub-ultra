@@ -62,6 +62,8 @@ function validateReport(report,expected,sha){
     c.fail!==0||c.skipped!==0||c.todo!==0||
     c.pass!==c.tests||report.passed!==true)
   throw Error('Failed or incomplete cases in '+expected.id);
+ if(expected.kind==='baseline'&&c.tests<1000)
+  throw Error('Baseline shard unexpectedly small '+expected.id);
  if(expected.kind==='matrix'&&c.tests!==CASES_PER_SHARD+EXTRA_CASES_PER_SHARD+(expected.index===0?2:0))
   throw Error('Missing or duplicated matrix cases in '+expected.id);
  if(!/^[a-f0-9]{64}$/.test(report.tapSha256||''))

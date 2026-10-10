@@ -85,5 +85,5 @@ test('aggregator fails closed on stale SHA, inflated counters, skips and tampere
  const baseline=path.join(out,'b1.json');
  const ok=JSON.parse(fs.readFileSync(baseline,'utf8'));
  fs.writeFileSync(baseline,JSON.stringify({...ok,counters:{...ok.counters,tests:1,pass:1}}));
- assert.throws(()=>m.aggregate(out,sha,root),/floor/);
+ assert.throws(()=>m.aggregate(out,sha,root),/Baseline shard unexpectedly small/);
 });
