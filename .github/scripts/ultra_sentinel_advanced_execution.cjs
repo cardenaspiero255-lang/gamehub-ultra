@@ -74,10 +74,16 @@ function normalizeInvocation(command,flag){
     break;
    }
   }else if(/^(?:sudo|nohup|nice|timeout|stdbuf|setsid|time)$/.test(name||'')){
-   // Further wrappers have option parsers of their own. Do not certify them.
-   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
+   // These wrappers have their own semantics. Fail closed only where a
+   // remote-source or execution command could be hidden behind the wrapper;
+   // ordinary privileged administrative commands are not findings.
+   if(args.slice(i+1).some(w=>/^(?:curl|wget|bash|sh|dash|zsh|python(?:[0-9.]+)?|node|install)$/.test(w)))
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   return null;
   }else{
-   if(!name){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+   // A dynamic/compound word has already been reported by the bounded IR
+   // when relevant. Do not produce standalone false positives for inert code.
+   if(!name)return null;
    return {...command,name,words:args.slice(i),raw:args.slice(i).join(' ')};
   }
   if(i>=args.length)return null;
