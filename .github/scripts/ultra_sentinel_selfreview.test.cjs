@@ -23,8 +23,19 @@ test('unpinned action is blocked, SHA-pinned action is permitted',()=>{
  assert.equal(scan([file(wf,'uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803')],SHA).status,'ADVISORY');
 });
 test('dynamic JS execution is blocked',()=>{
- for(const line of ['eval(userPatch)','new Function(userPatch)','vm.runInNewContext(userPatch)'])
-  assert.equal(scan([file(src,line)],SHA).status,'BLOCKED');
+ for(const line of [
+  'eval(userPatch)','new Function(userPatch)','vm.runInNewContext(userPatch)',
+  'const doc="hello"; eval(userPatch)',
+  'const doc="safe"; new Function(userPatch)'
+ ])assert.equal(scan([file(src,line)],SHA).status,'BLOCKED',line);
+ // The red-team fixtures are inert strings: only executable JS is dangerous.
+ const fixture='.github/scripts/ultra_sentinel_gauntlet_extreme.cjs';
+ for(const line of [
+  'const text="eval(userPatch)"',
+  "const text='new Function(userPatch)'",
+  'const text="done"; // eval(userPatch)',
+  'const text="done"; /* eval(userPatch) */ const ok=1'
+ ])assert.equal(scan([file(fixture,line)],SHA).status,'ADVISORY',line);
 });
 test('autocommit and automerge authorization in changed reviewer code are blocked',()=>{
  for(const line of ['autoMergeAllowed:true','autoCommitAllowed:true'])

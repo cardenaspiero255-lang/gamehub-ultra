@@ -22,6 +22,30 @@ function parseAdded(patch){
  }
  return added;
 }
+// Interpret inert JavaScript strings as data, never execute the candidate.
+function executableJsTokens(line){
+ if(typeof line!=='string'||line.length>8000)return null;
+ let text='',quote=null,escaped=false;
+ for(let i=0;i<line.length;i++){
+  const ch=line[i],next=line[i+1];
+  if(quote){
+   if(escaped){escaped=false;text+=' ';continue;}
+   if(ch==='\\'){escaped=true;text+=' ';continue;}
+   if(quote.charCodeAt(0)===96&&ch==='$'&&next==='{')return null;
+   if(ch===quote)quote=null;
+   text+=' ';continue;
+  }
+  if(ch==='/'&&next==='/'){text+=' '.repeat(line.length-i);break;}
+  if(ch==='/'&&next==='*'){
+   const k=line.indexOf('*/',i+2);
+   if(k<0)return null;
+   text+=' '.repeat(k+2-i);i=k+1;continue;
+  }
+  if(ch==='"'||ch==="'"||ch.charCodeAt(0)===96){quote=ch;text+=' ';continue;}
+  text+=ch;
+ }
+ return quote?null:text;
+}
 function scan(files,sha){
  const findings=[],changed=[];
  function flag(rule,severity,file,line,reason){findings.push({rule,severity,file,line,reason})}
@@ -66,8 +90,15 @@ function scan(files,sha){
       !/^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/i.test(action))
       flag('MUTABLE_ACTION','BLOCKER',file,a.line,'New action is not pinned to a commit');
    }
-   if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\.runIn(?:This|New)Context\s*\()/.test(line))
-    flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Dynamic execution added to reviewer');
+   if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')){
+    const tokens=executableJsTokens(line);
+    const dynamicCall=/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\.runIn(?:This|New)Context\s*\()/;
+    if(tokens===null){
+     if(/\b(?:eval|Function|runIn(?:This|New)Context)\b/.test(line))
+      flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Ambiguous dynamic execution syntax');
+    }else if(dynamicCall.test(tokens))
+     flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Dynamic execution added to reviewer');
+   }
    if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&!file.endsWith('ultra_sentinel_mutation.cjs')&&/\bauto(?:Merge|Commit)Allowed:\s*true\b/.test(line))
     flag('UNREVIEWED_AUTOMATION','BLOCKER',file,a.line,'Automated commit or merge enabled');
   }
