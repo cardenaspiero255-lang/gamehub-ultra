@@ -8,33 +8,56 @@ const MAX_SCRIPT=160000;
 const posix=require('node:path').posix;
 const normalizedFile=name=>posix.normalize(name.replace(/^(?:\.\/)+/,''));
 function findingsForScript(source,{shell=''}={}){
- if(typeof source!=='string'||source.length>MAX_SCRIPT)return [];
+ if(typeof source!=='string')return [];
+ // Direct callers must never interpret an unscannable script as clean.
+ // Workflow YAML parsing independently rejects oversized sources.
+ if(source.length>MAX_SCRIPT)return ['REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'];
  const findings=new Set();
  const flag=rule=>findings.add(rule);
  const lines=source.split(/\r?\n/);
  // Literal echo/printf of attack documentation is not executable code.
  const active=lines.filter(line=>!(/^\s*(?:echo|printf)\s+(['"])[^$\x60]*\1\s*$/.test(line)||
   /^\s*#/.test(line))).join('\n');
- // Download then execute same local filename (multi-line, && and ;).
+ // Analyze filename aliases with command ordering: a link created *after*
+ // an attempted execution must not turn an unrelated command into a finding.
+ // Links created before a download are considered: curl can overwrite the
+ // linked inode, so that alias can still execute the downloaded bytes.
  const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
+ const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(?:ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)]
+  .map(m=>({at:m.index,from:normalizedFile(m[2]),to:normalizedFile(m[3])}));
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
+  // Both -o file and compact -ofile / -Ofile are accepted by curl/wget.
   const output=/(?:^|\s)(?:-(?:o|O)\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
   if(!output)continue;
   const file=normalizedFile(output[2]);
   if(file==='-'||file==='.'||file==='..')continue;
   const after=active.slice(d.index+d[0].length);
-  // Track simple local file aliases created after the download. Paths are
-  // normalized lexically, without touching the filesystem or executing code.
-  const targets=new Set([file]);
-  for(const alias of active.matchAll(/(?:^|[;\n]|&&)\s*(?:ln(?:\s+-s)?|cp|mv)\s+([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)){
-   if(targets.has(normalizedFile(alias[1])))targets.add(normalizedFile(alias[2]));
-  }
-  for(const candidate of targets){
+  const candidates=new Set([file,...aliases.map(a=>a.to)]);
+  let detected=false;
+  for(const candidate of candidates){
    const escape=candidate.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
-   const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:\\.\\/)?(?:'+escape+')(?=\\s|$|[;&])','i');
-   if(invocation.test(after)){flag('REMOTE_DOWNLOADED_FILE_EXECUTION');break;}
+   const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:\\.\\/)?(?:'+escape+')(?=\\s|$|[;&])','gi');
+   for(const match of after.matchAll(invocation)){
+    const executedAt=d.index+d[0].length+match.index;
+    const visible=aliases.filter(a=>a.at<executedAt);
+    const tainted=new Set([file]);
+    // Compute transitive closure for bounded aliases; no filesystem reads.
+    for(let i=0;i<visible.length;i++){
+     let changed=false;
+     for(const alias of visible){
+      if(tainted.has(alias.from)&&!tainted.has(alias.to)){
+       tainted.add(alias.to);changed=true;
+      }
+     }
+     if(!changed)break;
+    }
+    if(tainted.has(candidate)){
+     flag('REMOTE_DOWNLOADED_FILE_EXECUTION');detected=true;break;
+    }
+   }
+   if(detected)break;
   }
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
@@ -57,6 +80,11 @@ function findingsForScript(source,{shell=''}={}){
   if(interpreter&&evaluatesRemote(interpreter[1],current))
    flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
  }
+ // A quoted -c program may span physical lines; parsing by each line
+ // separately would lose its network fetch or eval/exec sink.
+ for(const cmd of active.matchAll(/(?:^|[;&\n])\s*(python(?:[0-9.]+)?)\s+-c\s+(['"])([\s\S]{0,8192}?)\2(?=\s|$|[;&])/gi)){
+  if(evaluatesRemote(cmd[1],cmd[3]))flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
+ }
  const segments=active.split('\n');
  for(let i=0;i<segments.length;i++){
   const match=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl|php)\b[^\n]*?<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*(?:&|;|&&|\|\|)?\s*(?:[012]?>{1,2}\s*[A-Za-z0-9_./-]+)?\s*$/.exec(segments[i]);
@@ -75,20 +103,24 @@ function findingsForScript(source,{shell=''}={}){
   (/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))&&
    /(?:^|[;\n])\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)))
   flag('REMOTE_POWERSHELL_EXECUTION');
- // PowerShell also evaluates a fetched response through an argument:
- // iex (iwr URL).Content or Invoke-Expression (Invoke-WebRequest URL).Content.
- // Accept direct script under pwsh shell, or an explicit pwsh -Command call.
- const pwshArgument=/(?:^|[;\n])\s*(?:iex|Invoke-Expression)\s*\(\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\s+https?:\/\/[^\r\n)"']+\s*\)\s*\.Content\b/i;
- const explicitPwshArgument=/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iex|Invoke-Expression)\s*\(\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\s+https?:\/\/[^\r\n)"']+\s*\)\s*\.Content\b/i;
- if((/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))&&
-     pwshArgument.test(active))||explicitPwshArgument.test(active))
-  flag('REMOTE_POWERSHELL_EXECUTION');
- // PowerShell's native WebClient is an alternative fetch-and-eval path,
- // including steps already running under shell: pwsh (no pwsh prefix).
+ // Argument evaluation is execution even without a pipeline. Accept quoted
+ // endpoints and runtime variables, as well as -Command and nested grouping.
+ // Require an actual fetch expression consumed by the sink; iwr alone is safe.
  const powershellScript=/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))||
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
- if(powershellScript&&
-   /\b(?:New-Object\s+Net\.WebClient|System\.Net\.WebClient)\b[\s\S]{0,300}\bDownloadString\s*\([\s\S]{0,200}\)\s*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active))
+ const fetch=String.raw`(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s)\r\n]+)`;
+ const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*`+fetch+String.raw`\s*\)\s*\.Content\s*\)*`;
+ const argument=new RegExp(String.raw`(?:^|[;\n])\s*`+argumentSource,'i');
+ const explicitArgument=new RegExp(String.raw`(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*`+argumentSource,'i');
+ if((powershellScript&&argument.test(active))||explicitArgument.test(active))
+  flag('REMOTE_POWERSHELL_EXECUTION');
+ // WebClient DownloadString can feed iex through the argument as well as a
+ // pipeline. Avoid interpreting quoted Write-Host documentation as commands.
+ const webclient=String.raw`(?:New-Object\s+Net\.WebClient|System\.Net\.WebClient)\b[\s\S]{0,200}\bDownloadString\s*\([\s\S]{0,200}?\)`;
+ const webclientPipe=new RegExp(webclient+String.raw`\s*\)*\s*\|\s*&?\s*(?:iex|Invoke-Expression)\b`,'i');
+ const webclientArgument=new RegExp(String.raw`(?:^|[;\n])\s*(?:iex|Invoke-Expression)\s+\(*\s*`+webclient+String.raw`\s*\)*`,'i');
+ const explicitWebclient=new RegExp(String.raw`(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iex|Invoke-Expression)\s+\(*\s*`+webclient,'i');
+ if(powershellScript&&(webclientPipe.test(active)||webclientArgument.test(active)||explicitWebclient.test(active)))
   flag('REMOTE_POWERSHELL_EXECUTION');
  // Shell continuations and lines following a trailing | form one pipeline.
  // Keep canonicalization bounded and never execute decoded content.
