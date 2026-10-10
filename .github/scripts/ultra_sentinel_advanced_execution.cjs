@@ -20,11 +20,11 @@ function findingsForScript(source){
   if(!/\bhttps?:\/\//i.test(command))continue;
   const output=/(?:^|\s)-(?:o|O)\s+([a-z0-9_./-]+)(?=\s|$)/i.exec(command);
   if(!output)continue;
-  const file=output[1];
+  const file=output[1].replace(/^(?:\.\/)+/,'');
   if(file==='-'||file==='.'||file==='..')continue;
   const escape=file.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
   const after=active.slice(d.index+d[0].length);
-  const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:'+escape+')(?=\\s|$|[;&])','i');
+  const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:\\.\\/)?(?:'+escape+')(?=\\s|$|[;&])','i');
   if(invocation.test(after))flag('REMOTE_DOWNLOADED_FILE_EXECUTION');
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
