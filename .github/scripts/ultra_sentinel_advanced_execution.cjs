@@ -200,7 +200,7 @@ function findingsForScript(source,{shell=''}={}){
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
  const suppressesPowerShellOutput=script=>
   /(?:^|\s)-OutFile(?=\s|:|$)/i.test(script)&&
-  !/(?:^|\s)-PassThru(?=\s|$)/i.test(script);
+  !/(?:^|\s)-PassThru(?=\s|[)"']|$)/i.test(script);
  const powershellPipelines=/(?:^|[;\n])\s*(?:(?:pwsh|powershell)(?:\.exe)?\b[^\r\n;|]{0,300}?\s+-(?:Command|c)\s+["']?\s*)?((?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n;|]{0,4096})\|\s*&?\s*(?:iex|Invoke-Expression)\b/gi;
  if(powershellScript){
   for(const p of active.matchAll(powershellPipelines)){
