@@ -64,6 +64,19 @@ test('dynamic JS execution is blocked',()=>{
   'const s=`'+ '$' + '{"eval(userPatch)"}`;',
   'const s=`text '+ '$' + '{ordinaryIdentifier}`;'
  ])assert.equal(scan([file(src,line)],SHA).status,'ADVISORY',line);
+ // Codex P1: arrow function can precede a regex containing two slashes.
+ assert.equal(scan([file(src,'const slash = () => /[//]/; eval(userPatch)')],SHA).status,'BLOCKED','arrow regex bypass');
+ // Regex braces inside template interpolation do not close the ${expression}.
+ const interpolation='const s = `'+'$'+'{x / /}/.test(y) ? 1 : eval(userPatch)}`;';
+ assert.equal(scan([file(src,interpolation)],SHA).status,'BLOCKED','interpolation regex brace bypass');
+ // 760 comment-only lines must not erase the significant vm token.
+ const longComment=['vm /*',...Array.from({length:760},(_,i)=>' harmless comment '+i),'*/ . runInThisContext(userPatch)'];
+ const prolonged=scan([file(src,...longComment)],SHA);
+ assert.equal(prolonged.status,'BLOCKED','very long multiline comment bypass');
+ assert.ok(prolonged.findings.some(x=>x.rule==='DYNAMIC_EVAL'));
+ // Equivalent inoperative comments, string literals and regex expressions stay advisory.
+ assert.equal(scan([file(src,'const slash = () => /[//]/; const ok = true')],SHA).status,'ADVISORY');
+ assert.equal(scan([file(src,'const s = `'+'$'+'{x / /}/.test(y) ? 1 : 2}`;')],SHA).status,'ADVISORY');
  // Hunk starts inside a previously existing comment: full-source context
  // must suppress false confirmed DYNAMIC_EVAL. Missing context fails closed.
  const earlier=['/*',...Array.from({length:98},()=>'* inert')];
