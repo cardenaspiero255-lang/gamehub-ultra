@@ -76,3 +76,37 @@ test('Full base-trusted independent review is re-triggered on submitted and dism
  assert.match(raw,/persist-credentials: false/);
  assert.doesNotMatch(raw,/^\s+pull-requests:\s+write\s*$/m);
 });
+
+for(const [label,source] of [
+ ['empty pull_request_target event types',
+  'on: {pull_request_target: {types: []}}'],
+ ['empty pull_request_target branch filters',
+  'on: {pull_request_target: {branches: []}}'],
+ ['empty pull_request_target path filters',
+  'on: {pull_request_target: {paths: []}}'],
+ ['empty push branches',
+  'on: {push: {branches: []}}'],
+ ['cron with missing cron string',
+  'on: {schedule: [{}]}'],
+ ['cron with blank cron string',
+  'on: {schedule: [{cron: "  "}]}'],
+ ['event spec scalar impossible to schedule',
+  'on: {pull_request_target: "random"}']
+]){
+ test('Invalid or inert trigger shape fails closed: '+label,()=>{
+  const src=[source,'permissions: read-all','jobs:','  audit:',
+   '    runs-on: ubuntu-latest','    steps:','      - run: echo safe'].join('\n');
+  const verdict=inspectWorkflow(src);
+  assert.equal(verdict.status,'INCOMPLETE',JSON.stringify(verdict));
+ });
+}
+for(const [label,condition] of [
+ ['uppercase expression property', "GITHUB.EVENT_NAME == 'push'"],
+ ['unknown event dependent function', "contains(fromJSON('[\"push\"]'), github.event_name)"],
+ ['dynamic event concatenation', "format('{0}', github.event_name) == 'push'"]
+]){
+ test('Unknown event-gate expression is never silently clean: '+label,()=>{
+  const verdict=check('pull_request_target',condition);
+  assert.equal(verdict.status,'INCOMPLETE',JSON.stringify(verdict));
+ });
+}
