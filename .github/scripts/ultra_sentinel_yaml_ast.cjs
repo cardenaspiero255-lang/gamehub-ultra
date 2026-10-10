@@ -65,8 +65,31 @@ function parseWorkflow(source){
      (isMap(trigger)&&!Object.keys(trigger).length)||
      (typeof trigger==='string'&&!trigger.trim()))
    return {ok:false,reason:'EMPTY_TRIGGER'};
-  if(isMap(trigger)&&Array.isArray(trigger.schedule)&&!trigger.schedule.length)
-   return {ok:false,reason:'EMPTY_SCHEDULE'};
+  if(isMap(trigger)){
+   const filters=new Set(['types','branches','branches-ignore','paths',
+    'paths-ignore','tags','tags-ignore','workflows']);
+   for(const [event,configuration] of Object.entries(trigger)){
+    // An empty event type/branch/path filter can silently disable the only
+    // security gate. Treat malformed GitHub Actions trigger shapes as unknown.
+    if(typeof event!=='string'||!event.trim())
+     return {ok:false,reason:'INVALID_TRIGGER_EVENT'};
+    if(event==='schedule'){
+     if(!Array.isArray(configuration)||!configuration.length||
+       configuration.some(item=>!isMap(item)||typeof item.cron!=='string'||
+         !item.cron.trim()))
+      return {ok:false,reason:'INVALID_CRON_TRIGGER'};
+     continue;
+    }
+    if(configuration===null)continue;
+    if(!isMap(configuration))return {ok:false,reason:'INVALID_TRIGGER_CONFIGURATION'};
+    for(const [name,value] of Object.entries(configuration)){
+     if(!filters.has(name))continue;
+     if(!Array.isArray(value)||!value.length||
+       value.some(item=>typeof item!=='string'||!item.trim()))
+      return {ok:false,reason:'INVALID_TRIGGER_FILTER'};
+    }
+   }
+  }
   return {ok:true,workflow:doc};
  }catch(e){
   // Do not emit raw attacker-controlled snippets or throw from CI gating.
@@ -334,10 +357,13 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   // even if other boolean operands may make the whole expression true.
   const events=new Set(typeof document.on==='string'?[document.on]:
     Array.isArray(document.on)?document.on:Object.keys(document.on));
-  const normalized=body.replace(/\bgithub\s*\[\s*(['"])event_name\1\s*\]/g,
-    'github.event_name').replace(/\bgithub\s*\.\s*event_name\b/g,
+  const normalized=body.replace(/\bgithub\s*\[\s*(['"])event_name\1\s*\]/gi,
+    'github.event_name').replace(/\bgithub\s*\.\s*event_name\b/gi,
     'github.event_name');
   const comparisons=[];
+  if(/\bgithub\.event_name\b/i.test(normalized)&&
+     !/(?:^|[^A-Za-z0-9_.])github\.event_name\s*(?:==|!=)|(?:==|!=)\s*github\.event_name\b/i.test(normalized))
+   coverage.partial=true;
   for(const match of normalized.matchAll(/\bgithub\.event_name\s*(==|!=)\s*(['"])([A-Za-z0-9_-]+)\2/g)){
    comparisons.push({operator:match[1],event:match[3],start:match.index,forward:true});
   }
