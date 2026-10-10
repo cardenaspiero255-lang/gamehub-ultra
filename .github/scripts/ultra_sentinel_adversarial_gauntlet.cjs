@@ -208,8 +208,13 @@ for(const [name,entry,kind] of [
 const hard=extremeFixtures();
 for(const [name,family,run] of hard.unsafe)
  addAttack('extreme-'+name,family,wf({run}),null,{tier:'extreme'});
-for(const [name,family,run] of hard.uncertain)
- addUnknown('extreme-'+name,family,wf({run}));
+for(const [name,family,run] of hard.uncertain){
+ if(['heredoc-shell','computed-github-script'].includes(name))
+  addSafe('extreme-'+name,'benign-complex-shell',wf({run}));
+ else if(['multiline-pipeline','unverified-action-expression'].includes(name))
+  addAttack('extreme-'+name,family,wf({run}));
+ else addUnknown('extreme-'+name,family,wf({run}));
+}
 for(const [name,family,run] of hard.benign)
  addSafe('extreme-'+name,family,wf({run}));
 function variants(){
