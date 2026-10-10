@@ -159,6 +159,71 @@ function recordVerifiedRepair(record,now=Date.now()){
   evidenceUrl:record.evidenceUrl,
   verification:'human-claimed-tests-not-externally-attested',autoApply:false};
 }
+// Regla estricta CAR/FAMILY-001: no cerrar un error aislado mientras
+// existan variantes CONFIRMADAS dentro de su familia causal.
+// This validates caller-supplied evidence SHAPE only; independent CI and
+// human review must verify that referenced tests genuinely ran on this SHA.
+const FAMILY_CATEGORIES=Object.freeze(['original','alternate','boundary','benign_control']);
+const MAX_FAMILIES=32,MAX_FAMILY_VARIANTS=200;
+function evaluateFamilyResolution(families,{sha}={}){
+ const reasons=[];
+ const reject=reason=>{if(!reasons.includes(reason))reasons.push(reason);};
+ if(!SHA.test(sha||'')||!Array.isArray(families)||
+   families.length<1||families.length>MAX_FAMILIES){
+  reject('error_family_missing_evidence');
+  return {status:'BLOCKED',reasons,verified:false};
+ }
+ const seenFamilies=new Set();
+ for(const family of families){
+  if(!family||typeof family!=='object'||Array.isArray(family)){
+   reject('error_family_invalid_record');continue;
+  }
+  if(!/^[A-Z][A-Z0-9_]{2,79}$/.test(family.id||'')||
+    seenFamilies.has(family.id))reject('error_family_invalid_identity');
+  seenFamilies.add(family.id);
+  if(typeof family.sha!=='string'||family.sha.toLowerCase()!==sha.toLowerCase())
+   reject('error_family_stale_sha');
+  if(typeof family.rootCause!=='string'||family.rootCause.trim().length<25||
+    family.rootCause.length>600||typeof family.scope!=='string'||
+    family.scope.trim().length<20||family.scope.length>500)
+   reject('error_family_missing_root_cause_or_scope');
+  if(family.unresolvedConfirmed!==0||!Array.isArray(family.knownGaps)||
+    family.knownGaps.length!==0||family.unknownSyntax!=='fail_closed')
+   reject('error_family_variant_gaps');
+  const variants=family.variants;
+  if(!Array.isArray(variants)||variants.length<4||
+    variants.length>MAX_FAMILY_VARIANTS){
+   reject('error_family_missing_variant_coverage');continue;
+  }
+  const types=new Set(),ids=new Set();
+  for(const variant of variants){
+   if(!variant||typeof variant!=='object'||Array.isArray(variant)){
+    reject('error_family_invalid_variant');continue;
+   }
+   if(typeof variant.id!=='string'||!/^[a-z0-9][a-z0-9_-]{3,99}$/.test(variant.id)||
+     ids.has(variant.id))reject('error_family_duplicate_or_invalid_variant');
+   ids.add(variant.id);
+   if(!FAMILY_CATEGORIES.includes(variant.kind))reject('error_family_invalid_variant');
+   else types.add(variant.kind);
+   // Do not accept arbitrary paths, parent-directory hops or claim test runs
+   // from non-test source files. Tests may be JavaScript, Python, or Android.
+   const path=variant.testFile;
+   if(typeof path!=='string'||path.length>240||path.includes('..')||
+      path.includes('//')||path.startsWith('/')||
+      !/^(?:\.github\/scripts\/|app\/src\/(?:test|androidTest)\/|tests?\/)[A-Za-z0-9_./-]+\.(?:test\.(?:cjs|js|ts|py)|spec\.(?:cjs|js|ts|py)|kt|java)$/.test(path))
+    reject('error_family_invalid_test_file');
+   if(variant.status!=='passed_after_fix')reject('error_family_unverified_variant');
+   if(variant.kind==='original'&&variant.red!=='failed_before_fix')
+    reject('error_family_original_red_missing');
+  }
+  if(FAMILY_CATEGORIES.some(kind=>!types.has(kind)))
+   reject('error_family_missing_variant_coverage');
+ }
+ return {status:reasons.length?'BLOCKED':'VERIFIED_CLAIM',reasons,
+  verified:false,familyCount:families.length,
+  provenance:'caller-provided structured claim; confirm actual distinct cases, red/green tests, CI SHA and independent reviewer before merge',
+  autoMerge:false};
+}
 function evaluateRepairGate(input){
  const failures=[];
  if(!input||typeof input!=='object')return {status:'BLOCKED',reasons:['invalid_input'],autoMerge:false};
@@ -171,6 +236,7 @@ function evaluateRepairGate(input){
  for(const name of ['Android build','Unit Test Coverage','Ultra Sentinel Core Tests'])
   if(input.checks?.[name]!=='success')failures.push('required_check_'+name);
  if(input.independentReview!=='approved')failures.push('independent_review_missing');
+ failures.push(...evaluateFamilyResolution(input.familyEvidence,{sha:input.sha}).reasons);
  return {status:failures.length?'BLOCKED':'READY_FOR_HUMAN_MERGE',
   reasons:failures,autoMerge:false,autoDeploy:false,approvedBy:failures.length?null:input.approvedBy};
 }
@@ -185,5 +251,5 @@ function safeSummary(records){
 }
 module.exports={
  policy,normalizeIssues,correlateBuilds,analyzeIncidents,sanitizeBreadcrumbs,
- recordVerifiedRepair,evaluateRepairGate,safeSummary,verifiedBuild
+ recordVerifiedRepair,evaluateRepairGate,evaluateFamilyResolution,safeSummary,verifiedBuild
 };
