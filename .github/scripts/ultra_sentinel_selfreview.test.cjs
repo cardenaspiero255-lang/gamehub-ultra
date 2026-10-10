@@ -92,6 +92,42 @@ test('dynamic JS execution is blocked',()=>{
  // Equivalent inoperative comments, string literals and regex expressions stay advisory.
  assert.equal(scan([file(src,'const slash = () => /[//]/; const ok = true')],SHA).status,'ADVISORY');
  assert.equal(scan([file(src,'const s = `'+'$'+'{x / /}/.test(y) ? 1 : 2}`;')],SHA).status,'ADVISORY');
+ // Structural regression family (RED): JavaScript must be parsed, not guessed.
+ for(const code of [
+  'const result=numerator\n/ eval(userPatch) / divisor;',
+  'let x=4; x++ / eval(userPatch) / divisor;',
+  'let x=4; x-- / eval(userPatch) / divisor;',
+  'class C { #return=2; m(){ return this.#return / eval(userPatch) / divisor; }} new C().m();',
+  'async function f(xs){ for await (const x of xs) /[//]/; eval(userPatch) }',
+  "globalThis['eval'](userPatch)",
+  "global['eval'](userPatch)",
+  "new globalThis['Function'](userPatch)",
+  "globalThis['ev'+'al'](userPatch)",
+  "globalThis['ev\\x61l'](userPatch)",
+  "const hidden=globalThis['eval']; hidden(userPatch)",
+  "eval?.(userPatch)",
+  "(0,eval)(userPatch)",
+  "const renderer=\`Hello \${eval(userPatch)}\`;",
+  "require('node:vm').runInThisContext(userPatch)"
+ ]) {
+  const result=scan([file(src,...code.split('\n'))],SHA);
+  assert.equal(result.status,'BLOCKED',code);
+  assert.ok(result.findings.some(f=>f.rule==='DYNAMIC_EVAL'),code);
+ }
+ for(const code of [
+  "const x=numerator / divisor;",
+  "let x=4; x++ / size / divisor;",
+  "class C { #return=2; m(){ return this.#return / factor; }}",
+  "async function f(xs){ for await (const x of xs) /[//]/; }",
+  "const text=\`eval(userPatch)\`;",
+  "// globalThis['eval'](userPatch)",
+  "const description=\"globalThis['eval'](userPatch)\";",
+  "const rx=/[//]/; const x='eval(userPatch)';",
+  "const value={eval:()=>123}; value.eval()"
+ ]) assert.equal(scan([file(src,...code.split('\n'))],SHA).status,'ADVISORY',code);
+ const malformed=scan([file(src,'const x = (eval(userPatch)')],SHA);
+ assert.equal(malformed.status,'BLOCKED','partial syntax must never be certified safe');
+ assert.ok(malformed.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'));
  // Hunk starts inside a previously existing comment: full-source context
  // must suppress false confirmed DYNAMIC_EVAL. Missing context fails closed.
  const earlier=['/*',...Array.from({length:98},()=>'* inert')];
