@@ -64,6 +64,9 @@ function normalizeInvocation(command,flag){
    i++;
    const nested=literalCommandName(args[i]||'');
    if(nested==='command'||nested==='builtin')continue;
+   if(nested==='source'||nested==='.'){
+    return {...command,name:nested,words:args.slice(i),raw:args.slice(i).join(' ')};
+   }
    if(args.slice(i).some(w=>/^(?:curl|wget|bash|sh|install|eval)$/.test(w)))
     flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
    return null;
@@ -107,11 +110,13 @@ function normalizeInvocation(command,flag){
  */
 function downloadedFiles(command,flag){
  const words=command.words.slice(1),wget=command.name==='wget';
- const allDirect=[];let dir=null,outputDirSeen=false;
+ const allDirect=[];let dir=null,outputDirSeen=false,optionsActive=true;
  // Read distinct shell WORDS, not a rejoined string. Rejoining words made
  // options/redirections embedded in quoted -H/-A values executable tokens.
  for(let i=0;i<words.length;i++){
   const word=words[i],literal=literalCommandName(word)||word;
+  if(literal==='--'){optionsActive=false;continue;}
+  if(!optionsActive)continue;
   let value=null,isOutput=false;
   if(wget){
    const adjacent=/^-[A-Za-z]*O(.*)$/.exec(literal);
@@ -167,17 +172,19 @@ function downloadedFiles(command,flag){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
   const isDup=op.endsWith('&');
-  if(isDup&&(/^\d+$/.test(argument)||argument==='-')){
-   const sourceFd=Number(argument);
-   if(argument!=='-'&&(!Number.isSafeInteger(sourceFd)||sourceFd>MAX_FD||
+  // Perform literal shell quote removal before deciding whether >&"3"
+  // is an FD copy. Escaped/dynamic operands remain inconclusive.
+  const dest=literalFileToken(argument);
+  if(!dest){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+  if(isDup&&(/^\d+$/.test(dest)||dest==='-')){
+   const sourceFd=Number(dest);
+   if(dest!=='-'&&(!Number.isSafeInteger(sourceFd)||sourceFd>MAX_FD||
      !fds.has(sourceFd))){
     flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
    }
-   fds.set(destFd,argument==='-'?null:(fds.get(sourceFd)||null));
+   fds.set(destFd,dest==='-'?null:(fds.get(sourceFd)||null));
    continue;
   }
-  const dest=literalFileToken(argument);
-  if(!dest){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   if(isDup&&op!=='>&'){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
