@@ -39,8 +39,24 @@ function findingsForScript(source,{shell=''}={}){
  const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
  // Only trust a directory target without '/' when this same script
  // explicitly created it before the linking operation.
- const createdDirs=[...active.matchAll(/(?:^|[;\n]|&&)\s*mkdir\s+(?:-p\s+)?([a-z0-9_./-]+)(?=\s|$|[;&])/gi)]
-  .map(m=>({at:m.index,name:normalizedFile(m[1])}));
+ // mkdir accepts multiple directory operands. Preserve the command index
+ // so only directories created before a copy/link can affect its destination.
+ const createdDirs=[];
+ for(const mkdir of active.matchAll(/(?:^|[;\n]|&&)\s*mkdir\b([^\r\n;&|]{1,2048})/gi)){
+  const tokens=mkdir[1].match(/"[^"\r\n]{0,256}"|'[^'\r\n]{0,256}'|[^\s"']{1,256}/g)||[];
+  let options=true,unknown=false;
+  for(const token of tokens){
+   if(options&&token==='--'){options=false;continue;}
+   if(options&&/^(?:-p|--parents|-v|--verbose)$/.test(token))continue;
+   if(options&&token.startsWith('-')){unknown=true;break;}
+   options=false;
+   const name=literalFileToken(token);
+   if(!name){unknown=true;break;}
+   createdDirs.push({at:mkdir.index,name});
+  }
+  // Unsupported/dynamic mkdir arguments must not be silently certified.
+  if(unknown)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+ }
  const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))\s+(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))(?=\s|$|[;&])/gi)]
   .map(m=>{
    const kind=m[1].toLowerCase(),origin=m[3]||m[4]||m[5];
@@ -156,11 +172,20 @@ function findingsForScript(source,{shell=''}={}){
  const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+uriArgs+endpoint;
  // WebRequest's response object needs .Content; RestMethod can return the
  // response body directly as a string, which is executable by iex.
- const trailingSwitches=String.raw`(?:\s+-[A-Za-z][A-Za-z0-9-]*(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|[a-zA-Z0-9._/-]+))?){0,6}`;
+ // PowerShell supports literal hashtables such as -Headers @{Accept='...'}.
+ // Keep bounded composite values as data; never evaluate the expression.
+ const psOptionValue=String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[a-zA-Z0-9._/-]+|@\{[^}\r\n]{1,300}\})`;
+ const trailingSwitches=String.raw`(?:\s+-[A-Za-z][A-Za-z0-9-]*(?:\s+`+psOptionValue+String.raw`)?)`+'{0,6}';
  const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*(?:`+fetchWeb+trailingSwitches+String.raw`\s*\)\s*\.Content|`+fetchRest+trailingSwitches+String.raw`\s*\)(?:\s*\.Content)?)\s*\)*`;
  const argument=new RegExp(String.raw`(?:^|[;\n])\s*`+argumentSource,'i');
  const explicitArgument=new RegExp(String.raw`(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*`+argumentSource,'i');
- if((powershellScript&&argument.test(active))||explicitArgument.test(active))
+ const matchesArgument=(match)=>!!match&&
+  // -OutFile suppresses a WebRequest response unless -PassThru is set.
+  // In that case .Content does not carry remote code into Invoke-Expression.
+  (!/(?:^|\s)-OutFile\b/i.test(match[0])||
+    /(?:^|\s)-PassThru\b/i.test(match[0]));
+ if((powershellScript&&matchesArgument(argument.exec(active)))||
+   matchesArgument(explicitArgument.exec(active)))
   flag('REMOTE_POWERSHELL_EXECUTION');
  // WebClient DownloadString can feed iex through the argument as well as a
  // pipeline. Avoid interpreting quoted Write-Host documentation as commands.
