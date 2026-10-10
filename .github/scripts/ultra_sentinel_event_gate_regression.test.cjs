@@ -110,3 +110,16 @@ for(const [label,condition] of [
   assert.equal(verdict.status,'INCOMPLETE',JSON.stringify(verdict));
  });
 }
+
+test('Trusted read-only reviewer must FAIL CLOSED for fork PRs, never skip its only job',()=>{
+ const yaml=require('js-yaml');
+ const source=fs.readFileSync(path.join(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
+ const parsed=yaml.load(source);
+ const job=parsed?.jobs?.['read-only-review'];
+ assert.ok(job,'independent job missing');
+ assert.equal(job.if,undefined,'job-level if SKIPS forks and can count as green required check');
+ const script=job.steps.find(step=>step.name==='Analyze the immutable PR diff and save local reports')?.with?.script;
+ assert.equal(typeof script,'string');
+ assert.match(script,/pr\.head\.repo\?\.full_name\s*!==\s*owner\s*\+\s*['"]\/['"]\s*\+\s*repo/);
+ assert.match(script,/core\.setFailed\(["']Only open same-repo PRs can be scanned/);
+});
