@@ -101,6 +101,13 @@ for(const [name,expr] of [
  addAttack('arithmetic-'+name,'arithmetic-and-indirection',
   wf({env:['A: "'+EXPR('github.event.issue.title')+'"','B: "'+expr+'"'],run:'eval "$B"'}));
 }
+// Codex P1: bare Bash arithmetic commands and let recursively evaluate
+// attacker-controlled variable subscripts even without a $ prefix.
+for(const run of ['(( A ))','(( A + 1 ))','let A+=1','let "A + 1"']){
+ addAttack('arithmetic-command-'+run.replace(/[^a-z0-9]/ig,'-'),
+  'arithmetic-command',
+  wf({env:['A: "'+EXPR('github.event.issue.title')+'"'],run}));
+}
 // Attack family 4: supply chain, privileged refs and permissions.
 for(const [name,version] of [
  ['v4','v4'],['tag','stable'],['semver','1.2.3'],
