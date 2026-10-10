@@ -54,13 +54,13 @@ function findingsForScript(source,{shell=''}={}){
  // an attempted execution must not turn an unrelated command into a finding.
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
- const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
+ const download=/(?:^|[;&\n]|\|\|)\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
  // Only trust a directory target without '/' when this same script
  // explicitly created it before the linking operation.
  // mkdir accepts multiple directory operands. Preserve the command index
  // so only directories created before a copy/link can affect its destination.
  const createdDirs=[];
- for(const mkdir of active.matchAll(/(?:^|[;\n]|&&)\s*mkdir\b([^\r\n;&|]{1,2048})/gi)){
+ for(const mkdir of active.matchAll(/(?:^|[;\n]|\|\|)\s*mkdir\b([^\r\n;&|]{1,2048})/gi)){
   const tokens=shellLiteralWords(mkdir[1]);
   if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   let options=true,unknown=false;
@@ -80,12 +80,29 @@ function findingsForScript(source,{shell=''}={}){
  // commands: mkdir, ln, cp and mv. This closes the entire partial-quote
  // operand family instead of adding another special-case regular expression.
  const aliases=[];
- for(const m of active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\b([^\r\n;&|]{1,2048})/gi)){
+ for(const m of active.matchAll(/(?:^|[;\n]|\|\|)\s*(ln|cp|mv)\b([^\r\n;&|]{1,2048})/gi)){
   const kind=m[1].toLowerCase(),tokens=shellLiteralWords(m[2]);
   if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
-  const flags=[],operands=[],rawOperands=[];let afterDash=false,invalid=false;
-  for(const word of tokens){
+  const flags=[],operands=[],rawOperands=[];
+  let afterDash=false,invalid=false,targetDir=null;
+  for(let i=0;i<tokens.length;i++){
+   const word=tokens[i];
    if(!afterDash&&word==='--'){afterDash=true;continue;}
+   // GNU cp/mv/ln -t DIR / --target-directory=DIR consume a destination.
+   // Do not classify the destination as a file source.
+   if(!afterDash&&(word==='-t'||word==='--target-directory')){
+    const value=tokens[++i];
+    targetDir=value?literalFileToken(value):null;
+    if(!targetDir){invalid=true;break;}
+    flags.push(word);continue;
+   }
+   if(!afterDash&&(/^-t.+/.test(word)||word.startsWith('--target-directory='))){
+    const value=word.startsWith('--target-directory=')?
+     word.slice('--target-directory='.length):word.slice(2);
+    targetDir=literalFileToken(value);
+    if(!targetDir){invalid=true;break;}
+    flags.push('-t');continue;
+   }
    if(!afterDash&&word.startsWith('-')){
     if(!/^(?:--[a-z-]+|-[a-zA-Z]+)$/.test(word)){invalid=true;break;}
     flags.push(word);continue;
@@ -95,15 +112,13 @@ function findingsForScript(source,{shell=''}={}){
    operands.push(operand);
    rawOperands.push(word);
   }
-  if(invalid||operands.length!==2){
-   // Never report a complex alias command as analyzed-and-clean.
+  if(invalid||(targetDir?operands.length!==1:operands.length!==2)){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
-  const [origin,destination]=operands;
+  const origin=operands[0],destination=targetDir||operands[1];
   const destinationPath=normalizedFile(destination);
-  // lexical normalization strips trailing '/', so preserve the original
-  // complete shell word. Both dir/ and 'dir/' designate directories.
-  const targetIsDirectory=/\/['"]*$/.test(rawOperands[1])||
+  const targetIsDirectory=!!targetDir||
+   /\/['"]*$/.test(rawOperands[1]||'')||
    createdDirs.some(d=>d.name===destinationPath&&d.at<m.index);
   const to=normalizedFile(targetIsDirectory?
    posix.join(destination,posix.basename(origin)):destination);
@@ -200,7 +215,7 @@ function findingsForScript(source,{shell=''}={}){
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
  const suppressesPowerShellOutput=script=>
   /(?:^|\s)-OutFile(?=\s|:|$)/i.test(script)&&
-  !/(?:^|\s)-PassThru(?=\s|[)"']|$)/i.test(script);
+  !/(?:^|\s)-PassThru(?:(?=\s|[)"']|$)|:\s*\$true(?=\s|[)"']|$))/i.test(script);
  const powershellPipelines=/(?:^|[;\n])\s*(?:(?:pwsh|powershell)(?:\.exe)?\b[^\r\n;|]{0,300}?\s+-(?:Command|c)\s+["']?\s*)?((?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n;|]{0,4096})\|\s*&?\s*(?:iex|Invoke-Expression)\b/gi;
  if(powershellScript){
   for(const p of active.matchAll(powershellPipelines)){
@@ -212,7 +227,7 @@ function findingsForScript(source,{shell=''}={}){
  // The same bounded parameter grammar is applied both BEFORE and AFTER
  // -Uri. Values can be simple literals, quoted strings or @{...} hashtables.
  const psOptionValue=String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[a-zA-Z0-9._/-]+|@\{[^}\r\n]{1,300}\})`;
- const psNamedOption=String.raw`-[A-Za-z][A-Za-z0-9-]*(?:\s+`+psOptionValue+String.raw`)?`;
+ const psNamedOption=String.raw`-[A-Za-z][A-Za-z0-9-]*(?::(?:\$true|\$false))?(?:\s+`+psOptionValue+String.raw`)?`;
  const uriArgs=String.raw`(?:`+psNamedOption+String.raw`\s+){0,6}(?:-Uri(?:\s+|:))?`;
  const fetchWeb=String.raw`(?:iwr|Invoke-WebRequest)\b\s+`+uriArgs+endpoint;
  const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+uriArgs+endpoint;
