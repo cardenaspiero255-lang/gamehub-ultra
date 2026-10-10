@@ -54,19 +54,24 @@ function findingsForScript(source){
    if(segments[j].trim()===delimiter){i=j;found=true;break;}
    body.push(segments[j]);
   }
-  if(!found)continue; // Other checks handle invalid/partial shell grammar.
+  // A missing terminator still feeds the remaining script to the interpreter.
+  // Inspect body until EOF rather than silently skipping this program.
   if(evaluatesRemote(match[1],body.join('\n')))
    flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
  }
- if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*(?:iex|Invoke-Expression)\b/i.test(active))
+ if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active))
   flag('REMOTE_POWERSHELL_EXECUTION');
+ // Shell continuations and lines following a trailing | form one pipeline.
+ // Keep canonicalization bounded and never execute decoded content.
+ const shellActive=active.replace(/\\\r?\n/g,'')
+  .replace(/\|[ \t]*\n[ \t]*/g,'| ');
  // Encoded bytes routed into eval or interpreter code argument.
- if(/(?:^|[;&\n])\s*(?:eval|python(?:[0-9.]+)?\s+-c|bash\s+-c|node\s+-e)\b[^\r\n]*\$\([^\r\n]*\|\s*base64\s+(?:-d|--decode)\b/i.test(active)||
-  /\|\s*base64\s+(?:-d|--decode)\b[^\r\n]*?\|\s*(?:bash|sh|dash|zsh|ksh|python(?:[0-9.]+)?|node|ruby|perl|php)\b/i.test(active))
+ if(/(?:^|[;&\n])\s*(?:eval|python(?:[0-9.]+)?\s+-c|bash\s+-c|node\s+-e)\b[^\r\n]*\$\([^\r\n]*\|\s*base64\s+(?:-d|--decode)\b/i.test(shellActive)||
+  /\|\s*base64\s+(?:-d|--decode)\b[^\r\n]*?\|\s*(?:bash|sh|dash|zsh|ksh|python(?:[0-9.]+)?|node|ruby|perl|php)\b/i.test(shellActive))
   flag('REMOTE_ENCODED_EVAL');
  // Mutable package tags and container tags are not content-addressed.
  if(/(?:^|[;&\n])\s*(?:npx(?:\s+--yes)?|pnpm\s+dlx)\s+[\w@./-]+@(?:latest|next|canary|alpha|beta|dev|master|main)\b/i.test(active)||
-  /(?:^|[;&\n])\s*(?:npx|npm\s+exec)\b[^\r\n;|&]{0,2000}--package(?:=|\s+)[\w@./-]+@(?:latest|next|canary|alpha|beta|dev|master|main)\b/i.test(active))
+  /(?:^|[;&\n])\s*(?:npx|npm\s+exec)\b[^\r\n;|&]{0,2000}(?:--package|-p)(?:=|\s+)[\w@./-]+@(?:latest|next|canary|alpha|beta|dev|master|main)\b/i.test(active))
   flag('MUTABLE_PACKAGE_EXECUTION');
  if(/(?:^|[;&\n])\s*docker\s+run\b[^\r\n]*\s+(?:[\w./-]+:)(?:latest|edge|nightly|dev|stable|main)\b/i.test(active))
   flag('MUTABLE_CONTAINER_EXECUTION');
