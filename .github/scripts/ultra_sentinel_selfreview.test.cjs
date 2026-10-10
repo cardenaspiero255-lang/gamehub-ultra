@@ -37,6 +37,24 @@ test('dynamic JS execution is blocked',()=>{
   'const text="done"; // eval(userPatch)',
   'const text="done"; /* eval(userPatch) */ const ok=1'
  ])assert.equal(scan([file(fixture,line)],SHA).status,'ADVISORY',line);
+ // Codex: an executable computed globalThis call cannot be certified safe
+ // merely because template interpolation splits the dangerous identifier.
+ for(const line of [
+  "globalThis[`ev\al`](userPatch)",
+  "new globalThis[`Fun\ction`](userPatch)",
+  'vm /* trivia */ . runInThisContext(userPatch)',
+  'vm /* trivia */ . runInNewContext(userPatch)'
+ ])assert.equal(scan([file(src,line)],SHA).status,'BLOCKED',line);
+ // Comment contents and ordinary string literals are not executable sinks.
+ for(const lines of [
+  ['/*','eval(userPatch)','*/','const a=1;'],
+  ['const a=1; /*','new Function(userPatch)','*/ const b=2;'],
+  ['const description="eval(userPatch)";'],
+  ['// vm.runInThisContext(userPatch)'],
+  ['const x="safe"; /* eval(userPatch) */']
+ ])assert.equal(scan([file(src,...lines)],SHA).status,'ADVISORY',JSON.stringify(lines));
+ // Closing a multiline comment must not mask subsequent active JavaScript.
+ assert.equal(scan([file(src,'/*','inert description','*/','eval(userPatch)')],SHA).status,'BLOCKED');
 });
 test('autocommit and automerge authorization in changed reviewer code are blocked',()=>{
  for(const line of ['autoMergeAllowed:true','autoCommitAllowed:true'])
