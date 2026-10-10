@@ -23,6 +23,21 @@ function literalFileToken(token){
  if(quote!==null||!/^(?:\.\/)?[a-z0-9_.\/-]+$/i.test(decoded))return null;
  return posix.normalize(decoded.replace(/^(?:\.\/)+/,''));
 }
+// Command names get shell quote removal without path normalization.
+// Relative local executables (./curl) must NOT impersonate curl in PATH.
+function literalCommandName(word){
+ if(typeof word!=='string'||word.length>MAX_WORD_LENGTH)return null;
+ let quote=null,result='';
+ for(const ch of word){
+  if(ch==="'"||ch==='"'){
+   if(quote===ch){quote=null;continue;}
+   if(!quote){quote=ch;continue;}
+  }
+  if(ch==='$'||ch==='\\'||ch.charCodeAt(0)===96)return null;
+  result+=ch;
+ }
+ return quote||!/^[a-zA-Z0-9_./-]+$/.test(result)?null:result;
+}
 /**
  * @returns {{commands:Array<{name:string,words:string[],raw:string,start:number,end:number,operator:string|null}>,incomplete:boolean}}
  */
@@ -40,7 +55,11 @@ function parseShellCommands(source){
   wordDone();
   if(words.length&&start>=0){
    if(commands.length>=MAX_COMMANDS)incomplete=true;
-   else commands.push({name:words[0],words,raw:source.slice(start,end).trimEnd(),start,end,operator:pending});
+   else{
+    const name=literalCommandName(words[0]);
+    if(name===null)incomplete=true;
+    commands.push({name:name||words[0],words,raw:source.slice(start,end).trimEnd(),start,end,operator:pending});
+   }
   }
   words=[];start=-1;
  };
@@ -61,6 +80,10 @@ function parseShellCommands(source){
   }
   if(!quote&&!escaped&&/\s/.test(ch)){wordDone();continue;}
   if(start<0)start=i;
+  // Dynamic expansions and grouping are outside the bounded IR grammar.
+  // Refuse to certify these scripts clean if a remote-source command occurs.
+  if(!escaped&&quote!=="'"&&(ch==='$'||ch.charCodeAt(0)===96||
+    (!quote&&/[()<>]/.test(ch))))incomplete=true;
   if(ch==='\\'&&quote!=="'"&&!escaped){escaped=true;word+=ch;}
   else{
    if(escaped){
