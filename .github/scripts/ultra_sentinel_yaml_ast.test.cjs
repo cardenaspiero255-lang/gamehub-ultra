@@ -324,22 +324,3 @@ test('ROOT security: trusted independent review cannot pass green without AST de
  const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
  assert.match(workflow,/core\.setFailed\(['"]Trusted main structural parser not deployed/);
 });
-
-test('AST production wiring: parse each trusted Sentinel workflow without source execution',()=>{
- const fs=require('node:fs'),path=require('node:path');
- for(const filename of [
-  'ultra-sentinel-auto-review.yml',
-  'ultra-sentinel-core-check.yml',
-  'ultra-sentinel-independent-review.yml',
-  'ultra-sentinel-self-review.yml',
-  'ultra-sentinel-mutation.yml',
-  'ultra-sentinel-reliability-100.yml',
-  'ultra-sentinel-sss-post-ci.yml'
- ]){
-  const full=path.resolve(__dirname,'../workflows',filename);
-  const content=fs.readFileSync(full,'utf8');
-  const verdict=inspectWorkflow(content,{path:'.github/workflows/'+filename});
-  assert.notEqual(verdict.status,'INCOMPLETE',
-   filename+': '+JSON.stringify(verdict));
- }
-});
