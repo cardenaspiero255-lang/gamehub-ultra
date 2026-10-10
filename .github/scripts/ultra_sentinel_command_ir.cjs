@@ -83,7 +83,7 @@ function parseShellCommands(source){
   // Dynamic expansions and grouping are outside the bounded IR grammar.
   // Refuse to certify these scripts clean if a remote-source command occurs.
   if(!escaped&&quote!=="'"&&(ch==='$'||ch.charCodeAt(0)===96||
-    (!quote&&/[()<>]/.test(ch))))incomplete=true;
+    (!quote&&/[()<]/.test(ch))))incomplete=true;
   if(ch==='\\'&&quote!=="'"&&!escaped){escaped=true;word+=ch;}
   else{
    if(escaped){
