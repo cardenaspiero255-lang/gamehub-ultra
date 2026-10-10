@@ -7,6 +7,9 @@
  */
 const crypto=require('node:crypto');
 const SHA=/^[a-f0-9]{40}$/i;
+const validSha=value=>typeof value==='string'&&SHA.test(value);
+const validLogin=value=>typeof value==='string'&&
+ /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i.test(value);
 const ISO=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 const ID=/^[0-9]{1,18}$/;
 const PROJECT=/^[a-z0-9][a-z0-9-]{0,49}$/;
@@ -50,7 +53,7 @@ function normalizeIssues(records,settings={}){
  return out;
 }
 function verifiedBuild(build){
- return !!build&&SHA.test(build.sha||'')&&build.source==='github-actions'&&
+ return !!build&&validSha(build.sha)&&build.source==='github-actions'&&
   build.status==='success'&&build.workflow==='Android build'&&
   (!build.repo||build.repo===REPO);
 }
@@ -60,7 +63,7 @@ function correlateBuilds(incidents,links,builds){
  const fingerprinted=new Set(incidents.slice(0,policy.maxIssues).map(x=>x.fingerprint));
  const out=[],seen=new Set();
  for(const row of links.slice(0,200)){
-  if(!row||!ID.test(String(row.issueId??''))||!SHA.test(row.sha||''))continue;
+  if(!row||!ID.test(String(row.issueId??''))||!validSha(row.sha))continue;
   const sha=row.sha.toLowerCase();
   // Associate only with issues that actually appeared in the allowed input.
   // Project must be explicit in link if caller uses anything other than default.
@@ -140,7 +143,7 @@ function recordVerifiedRepair(record,now=Date.now()){
  const rejected=reason=>({status:'REJECTED',reason});
  if(!record||typeof record!=='object')return rejected('invalid_record');
  if(!/^[a-z0-9-]{6,80}$/.test(record.id||'')||
-  ![record.fixSha,record.redTestSha,record.greenTestSha].every(x=>SHA.test(x||'')))
+  ![record.fixSha,record.redTestSha,record.greenTestSha].every(validSha))
   return rejected('missing_immutable_provenance');
  if(!/^[A-Z][A-Z0-9_]{2,75}$/.test(record.rule||'')||
   record.approval!=='approved'||!/^[a-z0-9_-]{3,70}$/i.test(record.approvedBy||''))
@@ -168,7 +171,7 @@ const MAX_FAMILIES=32,MAX_FAMILY_VARIANTS=200;
 function evaluateFamilyResolution(families,{sha}={}){
  const reasons=[];
  const reject=reason=>{if(!reasons.includes(reason))reasons.push(reason);};
- if(!SHA.test(sha||'')||!Array.isArray(families)||
+ if(!validSha(sha)||!Array.isArray(families)||
    families.length<1||families.length>MAX_FAMILIES){
   reject('error_family_missing_evidence');
   return {status:'BLOCKED',reasons,verified:false};
@@ -227,9 +230,11 @@ function evaluateFamilyResolution(families,{sha}={}){
 function evaluateRepairGate(input){
  const failures=[];
  if(!input||typeof input!=='object')return {status:'BLOCKED',reasons:['invalid_input'],autoMerge:false};
- if(!SHA.test(input.sha||'')||input.sha.toLowerCase()!==String(input.currentSha||'').toLowerCase())
+ if(!validSha(input.sha)||!validSha(input.currentSha)||
+    input.sha.toLowerCase()!==input.currentSha.toLowerCase())
   failures.push('stale_or_invalid_sha');
- if(!input.proposedBy||!input.approvedBy||input.approvedBy===input.proposedBy||
+ if(!validLogin(input.proposedBy)||!validLogin(input.approvedBy)||
+    input.approvedBy.toLowerCase()===input.proposedBy.toLowerCase()||
   input.approval!=='approved')failures.push('no_independent_human_approval');
  if(input.tests?.red!=='failed_before_fix'||input.tests?.green!=='passed_after_fix')
   failures.push('red_green_missing');
