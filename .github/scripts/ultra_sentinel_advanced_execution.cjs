@@ -129,7 +129,7 @@ const WGET_VALUE_FLAGS=new Set([
 ]);
 function downloadedFiles(command,flag){
  const words=command.words.slice(1),wget=command.name==='wget';
- const allDirect=[];let dir=null,outputDirSeen=false,optionsActive=true;
+ const allDirect=[];let dir=null,outputDirSeen=false,optionsActive=true,unknownDownloaderOption=false;
  const valueFlags=wget?WGET_VALUE_FLAGS:CURL_VALUE_FLAGS;
  // Read distinct shell WORDS, not a rejoined string. Rejoining words made
  // options/redirections embedded in quoted -H/-A values executable tokens.
@@ -165,7 +165,7 @@ function downloadedFiles(command,flag){
     outputDirSeen=true;
     const rawDir=dirInline?dirInline[1]:words[++i];
     dir=literalFileToken(rawDir);
-    if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return [];}
+    if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {files:[],unknownDownloaderOption:true};}
    }
   }
   if(!isOutput&&word.startsWith('-')&&literal!=='-'&&
@@ -173,7 +173,7 @@ function downloadedFiles(command,flag){
      !/^(?:--(?:silent|show-error|fail|location|insecure|verbose|head|include|no-buffer|netrc|compressed|disable|progress-bar|fail-with-body|location-trusted|retry-all-errors|no-progress|quiet)|-q)$/.test(literal)){
    // A value-bearing unmodelled option can swallow '--' or the next token.
    // Never certify a possibly executed remote download as harmless.
-   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   unknownDownloaderOption=true;
   }
   if(isOutput){
    if(typeof value!=='string'){
@@ -235,7 +235,7 @@ function downloadedFiles(command,flag){
  const finalStdout=fds.get(1);
  if(mayEmitRemoteStdout&&finalStdout&&finalStdout!=='.'&&finalStdout!=='..')
   files.add(normalizedFile(finalStdout));
- return [...files];
+ return {files:[...files],unknownDownloaderOption};
 }
 function findingsForScript(source,{shell=''}={}){
  if(typeof source!=='string')return [];
@@ -353,7 +353,8 @@ function findingsForScript(source,{shell=''}={}){
  for(const d of commands.filter(c=>/^(?:curl|wget)$/i.test(c.name))){
   const command=d.words.slice(1).join(' ');
   if(!/\bhttps?:\/\//i.test(command))continue;
-  for(const file of downloadedFiles(d,flag)){
+  const output=downloadedFiles(d,flag);
+  for(const file of output.files){
    for(const inv of commands.filter(c=>c.start>=d.end)){
     const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
     const word=interpreter?interpreterFileOperand(inv,flag):inv.words[0];
@@ -375,6 +376,13 @@ function findingsForScript(source,{shell=''}={}){
     if(tainted.has(calledFile)){flag('REMOTE_DOWNLOADED_FILE_EXECUTION');break;}
    }
   }
+  // Unknown downloader flags matter when downstream execution could occur.
+  // A confirmed HIGH remains HIGH (not downgraded to INCOMPLETE); download-only
+  // workflows are not condemned solely for options outside our small grammar.
+  if(output.unknownDownloaderOption&&!findings.has('REMOTE_DOWNLOADED_FILE_EXECUTION')&&
+     commands.some(inv=>inv.start>=d.end&&
+      /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)))
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
  // commonly appear on different lines. Use the declared delimiter rather
