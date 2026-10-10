@@ -20,6 +20,12 @@ const evalSubstitution=new RegExp(
 const downloaderOutputOption=new RegExp(
  '\\b'+DOWNLOAD+'\\b[^\\n;|&]{0,160}\\s+-(?:o|O)\\s+>\\(\\s*'+EXECUTOR+'\\b','i'
 );
+const stdinProcessSubstitution=new RegExp(
+ '(?:^|[\\s;|&])'+EXECUTOR+'\\b(?:\\s+[-\\w=./]+){0,4}\\s+<\\s*<\\(\\s*'+DOWNLOAD+'\\b','i'
+);
+const stdinCommandSubstitution=new RegExp(
+ '(?:^|[\\s;|&])'+EXECUTOR+'\\b(?:\\s+[-\\w=./]+){0,4}\\s+<{3}\\s*["\\x27]?\\$\\(\\s*'+DOWNLOAD+'\\b','i'
+);
 function normalizeShellTokens(input){
  // Bounded shell-token canonicalization for scanning, not evaluation.
  return String(input).replace(/\\\r?\n/g,'')
@@ -35,6 +41,8 @@ function hasRemoteProcessSubstitution(script){
   redirectSubstitution.test(source)||
   codeArgumentSubstitution.test(source)||
   evalSubstitution.test(source)||
-  downloaderOutputOption.test(source);
+  downloaderOutputOption.test(source)||
+  stdinProcessSubstitution.test(source)||
+  stdinCommandSubstitution.test(source);
 }
 module.exports={hasRemoteProcessSubstitution};
