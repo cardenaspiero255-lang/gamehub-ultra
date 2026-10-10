@@ -19,6 +19,7 @@ permissions:
   pull-requests: read
   checks: read
   issues: read
+  actions: read
 
 concurrency:
   group: sentinel-independent-${{ github.event.pull_request.number }}
@@ -144,6 +145,40 @@ jobs:
                       const {hasAllLatestTrustedChecks}=require(
                         path.resolve('.github/scripts/ultra_sentinel_policy.cjs'));
                       solo=hasAllLatestTrustedChecks(checks,required);
+                      if(solo){
+                        // Do not trust check names by themselves: PR workflows
+                        // can imitate a named check. Verify trusted GitHub
+                        // Actions provenance of the latest successful jobs.
+                        const provenance={
+                          'Trusted main Sentinel inspects Sentinel changes':['ultra-sentinel-self-review.yml','pull_request_target'],
+                          'Sentinel Core / full regression suite':['ultra-sentinel-core-check.yml','pull_request'],
+                          'coverage':['coverage.yml','pull_request'],
+                          'quality':['android.yml','pull_request'],
+                          'android-test-shards':['android.yml','pull_request'],
+                          'device-validation':['android.yml','pull_request'],
+                          'Mutation resilience / reviewer engine':['ultra-sentinel-mutation.yml','pull_request'],
+                          'Sentinel Reliability / 100 scenarios':['ultra-sentinel-reliability-100.yml','pull_request']
+                        };
+                        for(const name of required){
+                          const check=checks.check_runs.filter(x=>x.name===name)
+                            .sort((a,b)=>b.id-a.id)[0];
+                          const match=String(check.details_url||'').match(
+                            new RegExp('^https://github\\.com/'+owner+'/'+repo+
+                              '/actions/runs/([0-9]+)/job/[0-9]+$'));
+                          if(!match){solo=false;break;}
+                          const {data: run}=await github.rest.actions.getWorkflowRun({
+                            owner,repo,run_id:Number(match[1])
+                          });
+                          if(run.id!==Number(match[1])||
+                            run.path!=='.github/workflows/'+provenance[name][0]||
+                            run.event!==provenance[name][1]||
+                            run.repository?.full_name!==owner+'/'+repo||
+                            run.head_sha!==pr.head.sha||
+                            run.conclusion!=='success'){
+                            solo=false;break;
+                          }
+                        }
+                      }
                     }
                   }catch(error){
                     core.warning('Solo owner attestation/check evidence unavailable: fail closed.');
