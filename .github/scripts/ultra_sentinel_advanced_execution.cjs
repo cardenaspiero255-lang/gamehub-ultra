@@ -24,7 +24,16 @@ function findingsForScript(source,{shell=''}={}){
  // linked inode, so that alias can still execute the downloaded bytes.
  const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
  const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))\s+(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))(?=\s|$|[;&])/gi)]
-  .map(m=>({at:m.index,kind:m[1].toLowerCase(),from:normalizedFile(m[3]||m[4]||m[5]),to:normalizedFile(m[6]||m[7]||m[8])}));
+  .map(m=>{
+   const kind=m[1].toLowerCase(),to=normalizedFile(m[6]||m[7]||m[8]);
+   const origin=m[3]||m[4]||m[5];
+   // ln -s resolves its relative target from the link's own directory.
+   // cp/mv and hard links resolve their source from the working directory.
+   const symbolic=kind==='ln'&&/(?:--symbolic|-[A-Za-z]*s[A-Za-z]*)/.test(m[2]);
+   const from=normalizedFile(symbolic&&!origin.startsWith('/')?
+    posix.join(posix.dirname(to),origin):origin);
+   return {at:m.index,kind,from,to};
+  });
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
@@ -33,14 +42,17 @@ function findingsForScript(source,{shell=''}={}){
   // later 'o' (e.g. -fsSLopayload -> incorrectly parsed as file 'ad').
   const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
   if(!output)continue;
-  const file=normalizedFile(output[2]);
+  const outputDir=/(?:^|\s)--output-dir(?:=|\s+)(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
+  // A constant --output-dir changes where the downloaded bytes land.
+  const file=normalizedFile(outputDir&&!output[2].startsWith('/')?
+   posix.join(outputDir[2],output[2]):output[2]);
   if(file==='-'||file==='.'||file==='..')continue;
   const after=active.slice(d.index+d[0].length);
   const candidates=new Set([file,...aliases.map(a=>a.to)]);
   let detected=false;
   for(const candidate of candidates){
    const escape=candidate.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
-   const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:\\.\\/)?(?:'+escape+')(?=\\s|$|[;&])','gi');
+   const invocation=new RegExp(String.raw`(?:^|[;\n]|&&|\|\|)\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)\s+(?:[-\w]+\s+)*|)(?:(["'])(?:\.\/)?`+escape+String.raw`\1|(?:\.\/)?`+escape+String.raw`)(?=\s|$|[;&])`,'gi');
    for(const match of after.matchAll(invocation)){
     const executedAt=d.index+d[0].length+match.index;
     // A copy or move made BEFORE the download holds old bytes. Only ln
@@ -113,8 +125,11 @@ function findingsForScript(source,{shell=''}={}){
  const powershellScript=/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))||
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
  const endpoint=String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s)\r\n]+)`;
- const fetchWeb=String.raw`(?:iwr|Invoke-WebRequest)\b\s+`+endpoint;
- const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+endpoint;
+ // Bounded PowerShell argument forms, including -Uri and non-executing
+ // switches that may precede the endpoint.
+ const uriArgs=String.raw`(?:(?:-(?:Verbose|Debug|UseBasicParsing)\s+){0,3})?(?:-Uri(?:\s+|:))?`;
+ const fetchWeb=String.raw`(?:iwr|Invoke-WebRequest)\b\s+`+uriArgs+endpoint;
+ const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+uriArgs+endpoint;
  // WebRequest's response object needs .Content; RestMethod can return the
  // response body directly as a string, which is executable by iex.
  const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*(?:`+fetchWeb+String.raw`\s*\)\s*\.Content|`+fetchRest+String.raw`\s*\)(?:\s*\.Content)?)\s*\)*`;
