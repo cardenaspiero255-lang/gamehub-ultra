@@ -98,6 +98,16 @@ object RuntimeDiagnosticsProvider : UltraToolContract<Context, RuntimeDiagnostic
             get(request)
         }
 
+    /**
+     * Lightweight connectivity snapshot for network probes. Avoids repeating
+     * thermal, battery and peripheral collection after a latency measurement.
+     */
+    fun connectivity(context: Context): ConnectivityTelemetry =
+        runCatching { readConnectivity(context.applicationContext) }
+            .getOrDefault(
+                ConnectivityTelemetry(null, false, false, true, null, null, null)
+            )
+
     fun get(context: Context): RuntimeDiagnostics {
         val appContext = context.applicationContext
         return RuntimeDiagnostics(
@@ -107,8 +117,7 @@ object RuntimeDiagnosticsProvider : UltraToolContract<Context, RuntimeDiagnostic
                 .getOrDefault(BatteryRuntimeTelemetry(null, false, false)),
             refresh = runCatching { readRefresh(appContext) }
                 .getOrDefault(RefreshTelemetry(emptySet(), null)),
-            connectivity = runCatching { readConnectivity(appContext) }
-                .getOrDefault(ConnectivityTelemetry(null, false, false, true, null, null, null)),
+            connectivity = connectivity(appContext),
             storage = runCatching { readStorage() }
                 .getOrDefault(StorageTelemetry(0L, 0L)),
             memory = runCatching { readMemory(appContext) }
