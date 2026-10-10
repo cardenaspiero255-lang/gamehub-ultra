@@ -175,29 +175,35 @@ const WGET_VALUE_FLAGS=new Set([
  '--certificate','--private-key','--password','--user'
 ]);
 // Canonicalize literal HTTP(S) words by stripping shell quotes, never evaluating.
-function literalRemoteUrlToken(token){
- if(typeof token!=='string'||token.length>2048)return false;
+function literalShellWord(token){
+ if(typeof token!=='string'||token.length>2048)return null;
  let quote=null,decoded='';
  for(const ch of token){
   if(ch==='"'||ch==="'"){
    if(quote===ch){quote=null;continue;}
    if(quote===null){quote=ch;continue;}
   }
-  if(ch==='\\'||ch==='$'||ch.charCodeAt(0)===96)return false;
+  if(ch==='\\'||ch==='$'||ch.charCodeAt(0)===96)return null;
   decoded+=ch;
  }
- return quote===null&&/^https?:\/\/[a-z0-9][a-z0-9._:-]*(?:[/?#][^\s]*)?$/i.test(decoded);
+ return quote===null&&decoded!==''&&!/\s/.test(decoded)?decoded:null;
+}
+function literalRemoteUrlToken(token){
+ const decoded=literalShellWord(token);
+ // Accept DNS/IPv4 and bracketed IPv6 authorities; no dynamic shell words.
+ return decoded!==null&&
+  /^https?:\/\/(?:[a-z0-9][a-z0-9._:-]*|\[[0-9a-f:.%]*:[0-9a-f:.%]*\](?::[0-9]{1,5})?)(?:[/?#][^\s]*)?$/i.test(decoded);
 }
 function hasRemoteSource(command){
  const words=command.words.slice(1);
  const valueFlags=command.name==='wget'?WGET_VALUE_FLAGS:CURL_VALUE_FLAGS;
  for(let i=0;i<words.length;i++){
-  const w=literalCommandName(words[i])||words[i];
+  const w=literalShellWord(words[i])||words[i];
   if(w==='--url'){
    if(++i<words.length&&literalRemoteUrlToken(words[i]))return true;
    continue;
   }
-  if(words[i].startsWith('--url=')&&literalRemoteUrlToken(words[i].slice(6)))return true;
+  if(w.startsWith('--url=')&&literalRemoteUrlToken(w.slice(6)))return true;
   if(valueFlags.has(w)){i++;continue;}
   if([...valueFlags].some(name=>name.startsWith('--')&&w.startsWith(name+'=')))continue;
   if(literalRemoteUrlToken(words[i]))return true;
@@ -456,9 +462,17 @@ function findingsForScript(source,{shell=''}={}){
      const nested=target.length?normalizeInvocation({...inv,
       name:literalCommandName(target[0])||target[0],
       words:target,raw:target.join(' ')},flag):null;
-     word=!nested?null:
-      /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(nested.name)?
-       interpreterFileOperand(nested,flag):nested.words[0];
+     if(!nested){word=null;}
+     else{
+      const basename=posix.basename(nested.name);
+      const knownInterpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(basename);
+      const trustedInterpreterPath=nested.name===basename||
+       /^\/(?:usr\/(?:local\/)?)?bin\/[^/]+$/.test(nested.name);
+      if(knownInterpreter&&!trustedInterpreterPath)
+       flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+      word=knownInterpreter&&trustedInterpreterPath?
+       interpreterFileOperand({...nested,name:basename},flag):nested.words[0];
+     }
     }
     if(!word)continue;
     const calledFile=literalFileToken(word);
