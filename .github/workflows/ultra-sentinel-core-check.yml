@@ -17,6 +17,9 @@ on:
       - 'app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGateContractTest.kt'
       - 'app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceAssistantControllerRobolectricTest.kt'
   workflow_dispatch:
+concurrency:
+  group: ultra-sentinel-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -26,7 +29,7 @@ jobs:
     timeout-minutes: 25
     strategy:
       fail-fast: false
-      max-parallel: 15
+      max-parallel: 4
       matrix:
         id: [m00, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10, m11, m12, b0, b1]
     steps:
@@ -41,9 +44,10 @@ jobs:
           set -euo pipefail
           node --check .github/scripts/ultra_sentinel_core_shards.cjs
           node --check .github/scripts/ultra_sentinel_150k_unique_matrix.test.cjs
+          node --check .github/scripts/ultra_sentinel_500k_advanced_matrix.test.cjs
           sh -n .githooks/pre-commit
           sh -n .github/scripts/install_sentinel_hook.sh
-      - name: Execute independent 10k matrix or baseline partition
+      - name: Execute bounded 38500-case matrix or baseline partition
         shell: bash
         env:
           SENTINEL_SHARD_ID: ${{ matrix.id }}
@@ -77,7 +81,7 @@ jobs:
           path: ${{ runner.temp }}/sentinel-core-reports
       - name: Fail closed on missing/duplicated reports, coverage gaps or failed shards
         env:
-          CORE_MIN_TESTS: '150000'
+          CORE_MIN_TESTS: '500000'
           SENTINEL_MATRIX_RESULT: ${{ needs.core-shard.result }}
         shell: bash
         run: |

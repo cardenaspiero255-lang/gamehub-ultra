@@ -7,9 +7,9 @@ const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentin
 const matrix=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_150k_unique_matrix.test.cjs'),'utf8');
 const shards=require('./ultra_sentinel_core_shards.cjs');
 test('Core gate requires 150k executed checks across exactly 15 independent shards',()=>{
- assert.match(workflow,/CORE_MIN_TESTS:\s*['"]?150000/);
+ assert.match(workflow,/CORE_MIN_TESTS:\s*['"]?500000/);
  assert.match(workflow,/fail-fast:\s*false/);
- assert.match(workflow,/max-parallel:\s*15/);
+ assert.match(workflow,/max-parallel:\s*4/);
  for(let i=0;i<13;i++)assert.match(workflow,new RegExp('m'+String(i).padStart(2,'0')));
  assert.match(workflow,/\bb0\b/);
  assert.match(workflow,/\bb1\b/);
@@ -18,8 +18,8 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  assert.match(workflow,/needs:\s*\[core-shard\]/);
  assert.match(workflow,/download-artifact@[a-f0-9]{40}/);
  assert.equal(shards.SHARD_COUNT,15);
- assert.equal(shards.MATRIX_CASES,130000);
- assert.equal(shards.MINIMUM,150000);
+ assert.equal(shards.MATRIX_CASES,500500);
+ assert.equal(shards.MINIMUM,500000);
 });
 test('Each matrix shard selects only its own 10k cases and shard zero verifies all unique SHA inputs',()=>{
  assert.match(matrix,/SENTINEL_MATRIX_SHARD/);
@@ -27,6 +27,9 @@ test('Each matrix shard selects only its own 10k cases and shard zero verifies a
  assert.match(matrix,/index=shardStart;index<shardEnd/);
  assert.match(matrix,/shardIndex===0/);
  assert.match(matrix,/hashes\.has\(fingerprint\)/);
+ assert.equal(shards.EXTRA_CASES_PER_SHARD,28500);
+ const extra=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_500k_advanced_matrix.test.cjs'),'utf8');
+ assert.match(extra,/seen\.has\(fingerprint\)/);
 });
 test('Core gate never hides skipped, failed or incomplete reports',()=>{
  assert.match(workflow,/if:\s*always\(\)/);

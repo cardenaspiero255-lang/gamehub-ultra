@@ -359,7 +359,24 @@ function findingsForScript(source,{shell=''}={}){
   for(const file of output.files){
    for(const inv of commands.filter(c=>c.start>=d.end)){
     const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
-    const word=interpreter?interpreterFileOperand(inv,flag):inv.words[0];
+    let word=interpreter?interpreterFileOperand(inv,flag):inv.words[0];
+    if(inv.name==='exec'){
+     let j=1,opaque=false;
+     while(j<inv.words.length){
+      const token=literalFileToken(inv.words[j]);
+      if(!token){opaque=true;break;}
+      if(token==='--'){j++;break;}
+      if(token==='-c'||token==='-l'){j++;continue;}
+      if(token==='-a'){
+       if(j+1>=inv.words.length){opaque=true;break;}
+       j+=2;continue;
+      }
+      if(token.startsWith('-')){opaque=true;break;}
+      break;
+     }
+     if(opaque)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+     word=opaque?null:inv.words[j]||null;
+    }
     if(!word)continue;
     const calledFile=literalFileToken(word);
     if(!calledFile)continue;
@@ -384,7 +401,8 @@ function findingsForScript(source,{shell=''}={}){
   if(output.unknownDownloaderOption&&!findings.has('REMOTE_DOWNLOADED_FILE_EXECUTION')&&
      commands.some(inv=>inv.start>=d.end&&(
       /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)||
-      (typeof inv.name==='string'&&inv.name.includes('/')))))
+      (typeof inv.name==='string'&&inv.name.includes('/'))||
+      (inv.name==='exec'&&inv.words.length>1))))
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval

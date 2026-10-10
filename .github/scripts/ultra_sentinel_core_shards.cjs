@@ -11,15 +11,17 @@ const {spawnSync}=require('node:child_process');
 
 const ROOT=__dirname;
 const MATRIX='ultra_sentinel_150k_unique_matrix.test.cjs';
+const EXTRA='ultra_sentinel_500k_advanced_matrix.test.cjs';
 const BASE_A=new Set([
  'ultra_sentinel_review_authority_matrix.test.cjs',
  'ultra_sentinel_patch_attestation_matrix.test.cjs'
 ]);
 const SHARD_COUNT=15;
 const MATRIX_SHARDS=13;
-const MATRIX_CASES=130000;
+const MATRIX_CASES=500500;
 const CASES_PER_SHARD=10000;
-const MINIMUM=150000;
+const EXTRA_CASES_PER_SHARD=28500;
+const MINIMUM=500000;
 
 function testFiles(root=ROOT){
  return fs.readdirSync(root).filter(f=>/^ultra_sentinel_.*\.test\.cjs$/.test(f)).sort();
@@ -27,16 +29,18 @@ function testFiles(root=ROOT){
 function plan(id,root=ROOT){
  if(!/^m(?:0[0-9]|1[0-2])$|^b[01]$/.test(id))throw Error('Invalid shard id');
  const files=testFiles(root);
- if(!files.includes(MATRIX)||![...BASE_A].every(f=>files.includes(f)))
+ if(!files.includes(MATRIX)||!files.includes(EXTRA)||![...BASE_A].every(f=>files.includes(f)))
   throw Error('Missing core test file; refuse incomplete shard coverage');
  const isMatrix=id.startsWith('m');
  const index=Number(id.slice(1));
- const selected=isMatrix?[MATRIX]:files.filter(f=>f!==MATRIX&&
+ const selected=isMatrix?[MATRIX,EXTRA]:files.filter(f=>f!==MATRIX&&f!==EXTRA&&
   (id==='b0'?BASE_A.has(f):!BASE_A.has(f)));
  if(selected.length===0)throw Error('Empty shard '+id);
  return {id,kind:isMatrix?'matrix':'baseline',index,files:selected,
   start:isMatrix?index*CASES_PER_SHARD:null,
-  end:isMatrix?(index+1)*CASES_PER_SHARD:null};
+  end:isMatrix?(index+1)*CASES_PER_SHARD:null,
+  extraStart:isMatrix?index*EXTRA_CASES_PER_SHARD:null,
+  extraEnd:isMatrix?(index+1)*EXTRA_CASES_PER_SHARD:null};
 }
 function parseTap(content){
  const fields={tests:null,pass:null,fail:null,skipped:null,todo:null,cancelled:null};
@@ -49,6 +53,7 @@ function validateReport(report,expected,sha){
  if(!report||report.schema!=='sentinel-core-shard/v1'||report.id!==expected.id||
     report.kind!==expected.kind||report.index!==expected.index||
     report.start!==expected.start||report.end!==expected.end||
+    report.extraStart!==expected.extraStart||report.extraEnd!==expected.extraEnd||
     JSON.stringify(report.files)!==JSON.stringify(expected.files)||
     report.sha!==sha||report.exitCode!==0||report.signal!==null)
   throw Error('Invalid or stale report '+expected.id);
@@ -57,7 +62,7 @@ function validateReport(report,expected,sha){
     c.fail!==0||c.skipped!==0||c.todo!==0||
     c.pass!==c.tests||report.passed!==true)
   throw Error('Failed or incomplete cases in '+expected.id);
- if(expected.kind==='matrix'&&c.tests!==CASES_PER_SHARD+(expected.index===0?1:0))
+ if(expected.kind==='matrix'&&c.tests!==CASES_PER_SHARD+EXTRA_CASES_PER_SHARD+(expected.index===0?2:0))
   throw Error('Missing or duplicated matrix cases in '+expected.id);
  if(!/^[a-f0-9]{64}$/.test(report.tapSha256||''))
   throw Error('Missing execution trace checksum '+expected.id);
@@ -84,7 +89,7 @@ function aggregate(dir,sha,root=ROOT){
   }
   details.push({id,count});
  }
- const other=testFiles(root).filter(f=>f!==MATRIX);
+ const other=testFiles(root).filter(f=>f!==MATRIX&&f!==EXTRA);
  if(JSON.stringify([...seenFiles].sort())!==JSON.stringify(other))
   throw Error('Core test files missing from baseline plan');
  if(tests<MINIMUM)throw Error('Core floor not met: '+tests+' < '+MINIMUM);
@@ -143,4 +148,4 @@ if(require.main===module){
  }catch(error){console.error(error.message);process.exitCode=1;}
 }
 module.exports={plan,testFiles,parseTap,validateReport,aggregate,
- SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,CASES_PER_SHARD,MINIMUM};
+ SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,MINIMUM};

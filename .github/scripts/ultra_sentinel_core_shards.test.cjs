@@ -11,6 +11,7 @@ function fakeRoot(t){
  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  for(const name of [
   'ultra_sentinel_150k_unique_matrix.test.cjs',
+  'ultra_sentinel_500k_advanced_matrix.test.cjs',
   'ultra_sentinel_review_authority_matrix.test.cjs',
   'ultra_sentinel_patch_attestation_matrix.test.cjs',
   'ultra_sentinel_protected_file_matrix.test.cjs',
@@ -22,7 +23,7 @@ function makeReports(root,out,sha='f'.repeat(40)){
  const ids=[...Array.from({length:13},(_,i)=>'m'+String(i).padStart(2,'0')),'b0','b1'];
  for(const id of ids){
   const planned=m.plan(id,root),count=planned.kind==='matrix'?
-   10000+(planned.index===0?1:0):id==='b0'?10240:9760;
+   38500+(planned.index===0?2:0):id==='b0'?10240:9760;
   fs.writeFileSync(path.join(out,id+'.json'),JSON.stringify({
    schema:'sentinel-core-shard/v1',...planned,sha,exitCode:0,signal:null,
    counters:{tests:count,pass:count,fail:0,skipped:0,todo:0},
@@ -36,11 +37,12 @@ test('15 shards deterministically cover 130k matrix indexes and every baseline f
  for(let i=0;i<13;i++){
   const s=m.plan('m'+String(i).padStart(2,'0'),root);
   assert.equal(s.start,i*10000);assert.equal(s.end,s.start+10000);
-  assert.deepEqual(s.files,['ultra_sentinel_150k_unique_matrix.test.cjs']);
+  assert.deepEqual(s.files,['ultra_sentinel_150k_unique_matrix.test.cjs','ultra_sentinel_500k_advanced_matrix.test.cjs']);
+  assert.equal(s.extraStart,i*28500);assert.equal(s.extraEnd,(i+1)*28500);
  }
  for(const id of ['b0','b1'])all.push(...m.plan(id,root).files);
  assert.equal(new Set(all).size,all.length);
- assert.deepEqual([...all].sort(),m.testFiles(root).filter(x=>!x.includes('150k_unique_matrix')));
+ assert.deepEqual([...all].sort(),m.testFiles(root).filter(x=>!x.includes('150k_unique_matrix')&&!x.includes('500k_advanced_matrix')));
 });
 test('reject invalid shard selectors and missing core files',t=>{
  const root=fakeRoot(t);
@@ -59,7 +61,7 @@ test('aggregator demands all 15 reports, exact filenames and minimum 150k',t=>{
  t.after(()=>fs.rmSync(out,{recursive:true,force:true}));
  const sha='f'.repeat(40),ids=makeReports(root,out,sha);
  const result=m.aggregate(out,sha,root);
- assert.equal(result.executed,150001);
+ assert.equal(result.executed,520502);
  assert.equal(result.jobs,15);
  assert.equal(result.passed,true);
  fs.unlinkSync(path.join(out,ids[2]+'.json'));
