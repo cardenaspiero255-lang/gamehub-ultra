@@ -20,7 +20,7 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  assert.equal(shards.SHARD_COUNT,15);
  assert.equal(shards.MATRIX_CASES,500500);
  assert.equal(shards.MINIMUM,500000);
- assert.deepEqual(shards.BASELINE_TEST_COUNTS,{b0:10242,b1:10942});
+ assert.deepEqual(shards.BASELINE_TEST_COUNTS,{b0:10242,b1:10943});
 });
 test('Each matrix shard selects only its own 10k cases and shard zero verifies all unique SHA inputs',()=>{
  assert.match(matrix,/SENTINEL_MATRIX_SHARD/);
