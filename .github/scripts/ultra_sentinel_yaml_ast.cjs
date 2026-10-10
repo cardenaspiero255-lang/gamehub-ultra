@@ -287,6 +287,22 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  };
  // Treat event-backed env as tainted DATA, not automatically as injected
  // code. A github-script that merely logs process.env is not a vulnerability.
+ // Bash arithmetic performs recursive variable lookups and can evaluate
+ // attacker-controlled array subscripts. A simple $VAR regex is insufficient.
+ // Certify only expressions consisting entirely of numeric literals/operators;
+ // symbolic, nested-dynamic or malformed expressions fail closed.
+ const hasOpaqueArithmetic=(input)=>{
+  if(typeof input!=='string')return false;
+  let seen=0,opaque=false;
+  const matches=/\$\(\(([\s\S]*?)\)\)|\$\[([^\]\n]*?)\]/g;
+  for(const match of input.matchAll(matches)){
+   seen++;
+   const inner=match[1]===undefined?match[2]:match[1];
+   if(!/^[\d\s()+\-*/%]*$/.test(inner))opaque=true;
+  }
+  const openings=(input.match(/\$\(\(|\$\[/g)||[]).length;
+  return opaque||openings>seen;
+ };
  const collectEnvSources=(value,inherited=new Set(),knownNames=new Set())=>{
   // Environment values are not expanded automatically; shell eval and
   // interpreter commands can expand aliases. Trace through all env scopes.
@@ -305,6 +321,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     const check=auditExecutableExpressions(item);
     if(check.unsafe||check.incomplete)tainted.add(name);
    }
+   if(hasOpaqueArithmetic(item))tainted.add(name);
    // Track bare, braced, default-value and indirect shell references.
    // A reverse graph computes transitive taint without recursive evaluation.
    for(const ref of item.matchAll(/\$(?:\{!?([A-Za-z_][A-Za-z0-9_]*)[^}]*\}|([A-Za-z_][A-Za-z0-9_]*))/g)){
@@ -338,6 +355,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   }
  };
  const auditShellEnvUse=(script,tainted,where)=>{
+  // Dynamic Bash arithmetic is not safely modeled by literal token scans.
+  // Fail closed even when the direct dependency cannot be reconstructed.
+  if(hasOpaqueArithmetic(script))coverage.partial=true;
   for(const key of tainted){
    const bare='\\$(?:\\{'+key+'\\}|'+key+'\\b)';
    // Bash parameter operators retain the tainted source. Unknown valid
