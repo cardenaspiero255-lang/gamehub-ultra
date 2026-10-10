@@ -111,6 +111,15 @@ function judge(proposal,options={}){
   if(!/^[a-f0-9]{40}$/.test(proposal.sha||''))reasons.push('SHA inválido');
   if(!/^[a-f0-9]{40}$/.test(options.sha||''))reasons.push('Falta SHA esperado inmutable');
   if(options.sha&&proposal.sha!==options.sha)reasons.push('El PR cambió de SHA');
+  // An independently attested PR head must agree with the trusted source
+  // identity, even if a forged proposal and stale expected SHA agree.
+  // The caller must obtain currentHeadSha from the trusted GitHub API,
+  // never from PR content, comments, suggested patches, or a candidate job.
+  if(Object.prototype.hasOwnProperty.call(options,'currentHeadSha')&&
+     (!/^[a-f0-9]{40}$/i.test(options.currentHeadSha||'')||
+      options.currentHeadSha.toLowerCase()!==String(options.sha||'').toLowerCase()||
+      options.currentHeadSha.toLowerCase()!==String(proposal.sha||'').toLowerCase()))
+   reasons.push('SHA del parche no coincide con HEAD comprobado independientemente');
   if(proposal.patch&&/(?:GITHUB_TOKEN|PRIVATE_KEY|SENTRY_AUTH_TOKEN|github\.event\.pull_request\.head)/.test(proposal.patch))
     reasons.push('Posible material sensible');
  }
