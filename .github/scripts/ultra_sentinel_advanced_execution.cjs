@@ -21,6 +21,24 @@ function literalFileToken(token){
  if(quote!==null||!/^(?:\.\/)?[a-z0-9_.\/-]+$/i.test(decoded))return null;
  return normalizedFile(decoded);
 }
+// Bounded lexer: split on whitespace OUTSIDE shell quotes and preserve each
+// complete word for literalFileToken(). Never interpolate or execute values.
+function shellLiteralWords(raw){
+ const words=[];let token='',quote=null;
+ for(const ch of raw){
+  if(ch==='"'||ch==="'"){
+   if(quote===ch)quote=null;
+   else if(!quote)quote=ch;
+   token+=ch;
+  }else if(/\s/.test(ch)&&!quote){
+   if(token){words.push(token);token='';}
+  }else token+=ch;
+  if(token.length>256||words.length>64)return null;
+ }
+ if(quote)return null;
+ if(token)words.push(token);
+ return words;
+}
 function findingsForScript(source,{shell=''}={}){
  if(typeof source!=='string')return [];
  // Direct callers must never interpret an unscannable script as clean.
@@ -43,7 +61,8 @@ function findingsForScript(source,{shell=''}={}){
  // so only directories created before a copy/link can affect its destination.
  const createdDirs=[];
  for(const mkdir of active.matchAll(/(?:^|[;\n]|&&)\s*mkdir\b([^\r\n;&|]{1,2048})/gi)){
-  const tokens=mkdir[1].match(/"[^"\r\n]{0,256}"|'[^'\r\n]{0,256}'|[^\s"']{1,256}/g)||[];
+  const tokens=shellLiteralWords(mkdir[1]);
+  if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   let options=true,unknown=false;
   for(const token of tokens){
    if(options&&token==='--'){options=false;continue;}
@@ -155,35 +174,33 @@ function findingsForScript(source,{shell=''}={}){
   if(evaluatesRemote(match[1],body.join('\n')))
    flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
  }
- if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)||
-  (/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))&&
-   /(?:^|[;\n])\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)))
-  flag('REMOTE_POWERSHELL_EXECUTION');
- // Argument evaluation is execution even without a pipeline. Accept quoted
- // endpoints and runtime variables, as well as -Command and nested grouping.
- // Require an actual fetch expression consumed by the sink; iwr alone is safe.
+ // A fetch piped into iex is a sink only when the downloaded response can
+ // actually reach the pipeline. -OutFile without -PassThru suppresses output.
  const powershellScript=/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))||
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
+ const suppressesPowerShellOutput=script=>
+  /(?:^|\s)-OutFile(?=\s|:|$)/i.test(script)&&
+  !/(?:^|\s)-PassThru(?=\s|$)/i.test(script);
+ const powershellPipelines=/(?:^|[;\n])\s*(?:(?:pwsh|powershell)(?:\.exe)?\b[^\r\n;|]{0,300}?\s+-(?:Command|c)\s+["']?\s*)?((?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n;|]{0,4096})\|\s*&?\s*(?:iex|Invoke-Expression)\b/gi;
+ if(powershellScript){
+  for(const p of active.matchAll(powershellPipelines)){
+   if(!suppressesPowerShellOutput(p[1])){flag('REMOTE_POWERSHELL_EXECUTION');break;}
+  }
+ }
+ // Fetch expressions passed as arguments to iex (not necessarily pipelines).
  const endpoint=String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s)\r\n]+)`;
- // Bounded PowerShell argument forms, including -Uri and non-executing
- // switches that may precede the endpoint.
- const uriArgs=String.raw`(?:(?:-(?:Verbose|Debug|UseBasicParsing)\s+){0,3})?(?:-Uri(?:\s+|:))?`;
+ // The same bounded parameter grammar is applied both BEFORE and AFTER
+ // -Uri. Values can be simple literals, quoted strings or @{...} hashtables.
+ const psOptionValue=String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[a-zA-Z0-9._/-]+|@\{[^}\r\n]{1,300}\})`;
+ const psNamedOption=String.raw`-[A-Za-z][A-Za-z0-9-]*(?:\s+`+psOptionValue+String.raw`)?`;
+ const uriArgs=String.raw`(?:`+psNamedOption+String.raw`\s+){0,6}(?:-Uri(?:\s+|:))?`;
  const fetchWeb=String.raw`(?:iwr|Invoke-WebRequest)\b\s+`+uriArgs+endpoint;
  const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+uriArgs+endpoint;
- // WebRequest's response object needs .Content; RestMethod can return the
- // response body directly as a string, which is executable by iex.
- // PowerShell supports literal hashtables such as -Headers @{Accept='...'}.
- // Keep bounded composite values as data; never evaluate the expression.
- const psOptionValue=String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[a-zA-Z0-9._/-]+|@\{[^}\r\n]{1,300}\})`;
- const trailingSwitches=String.raw`(?:\s+-[A-Za-z][A-Za-z0-9-]*(?:\s+`+psOptionValue+String.raw`)?)`+'{0,6}';
+ const trailingSwitches=String.raw`(?:\s+`+psNamedOption+String.raw`){0,6}`;
  const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*(?:`+fetchWeb+trailingSwitches+String.raw`\s*\)\s*\.Content|`+fetchRest+trailingSwitches+String.raw`\s*\)(?:\s*\.Content)?)\s*\)*`;
  const argument=new RegExp(String.raw`(?:^|[;\n])\s*`+argumentSource,'i');
  const explicitArgument=new RegExp(String.raw`(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*`+argumentSource,'i');
- const matchesArgument=(match)=>!!match&&
-  // -OutFile suppresses a WebRequest response unless -PassThru is set.
-  // In that case .Content does not carry remote code into Invoke-Expression.
-  (!/(?:^|\s)-OutFile\b/i.test(match[0])||
-    /(?:^|\s)-PassThru\b/i.test(match[0]));
+ const matchesArgument=(match)=>!!match&&!suppressesPowerShellOutput(match[0]);
  if((powershellScript&&matchesArgument(argument.exec(active)))||
    matchesArgument(explicitArgument.exec(active)))
   flag('REMOTE_POWERSHELL_EXECUTION');
