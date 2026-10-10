@@ -7,6 +7,12 @@ on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
+  # A human review can arrive after an earlier fail-closed result. Re-run
+  # the trusted base-branch reviewer whenever approval is submitted/dismissed.
+  # This event uses the workflow from the default branch, never the PR head.
+  pull_request_review:
+    types: [submitted, dismissed]
+    branches: [main]
 
 permissions:
   contents: read
