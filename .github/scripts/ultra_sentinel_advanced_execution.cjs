@@ -5,7 +5,9 @@
  * This is a bounded scanner, not a full shell interpreter.
  */
 const MAX_SCRIPT=160000;
-function findingsForScript(source){
+const posix=require('node:path').posix;
+const normalizedFile=name=>posix.normalize(name.replace(/^(?:\.\/)+/,''));
+function findingsForScript(source,{shell=''}={}){
  if(typeof source!=='string'||source.length>MAX_SCRIPT)return [];
  const findings=new Set();
  const flag=rule=>findings.add(rule);
@@ -18,9 +20,9 @@ function findingsForScript(source){
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
-  const output=/(?:^|\s)-(?:o|O)\s+([a-z0-9_./-]+)(?=\s|$)/i.exec(command);
+  const output=/(?:^|\s)(?:-(?:o|O)\s+|--output(?:=|\s+))([a-z0-9_./-]+)(?=\s|$)/i.exec(command);
   if(!output)continue;
-  const file=output[1].replace(/^(?:\.\/)+/,'');
+  const file=normalizedFile(output[1]);
   if(file==='-'||file==='.'||file==='..')continue;
   const escape=file.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
   const after=active.slice(d.index+d[0].length);
@@ -37,17 +39,18 @@ function findingsForScript(source){
   if(/^node/i.test(lang))return /\bfetch\s*\(/i.test(body)&&/\beval\s*\(/i.test(body);
   if(lang==='ruby')return /\b(?:URI\.open|open-uri)\b/i.test(body)&&/\beval\b/i.test(body);
   if(lang==='perl')return /\b(?:LWP::Simple|get\s*\()/i.test(body)&&/\beval\b/i.test(body);
+  if(lang==='php')return /\bfile_get_contents\s*\(/i.test(body)&&/\beval\s*\(/i.test(body);
   return false;
  };
  for(const line of active.split('\n')){
   const current=line.trim();
-  const interpreter=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl)\b/i.exec(current);
+  const interpreter=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl|php)\b/i.exec(current);
   if(interpreter&&evaluatesRemote(interpreter[1],current))
    flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
  }
  const segments=active.split('\n');
  for(let i=0;i<segments.length;i++){
-  const match=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl)\b[^\n]*?<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*$/.exec(segments[i]);
+  const match=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl|php)\b[^\n]*?<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*(?:&|;|&&|\|\|)?\s*$/.exec(segments[i]);
   if(!match)continue;
   const body=[],delimiter=match[2];let found=false;
   for(let j=i+1;j<segments.length;j++){
