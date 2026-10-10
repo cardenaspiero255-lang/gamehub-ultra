@@ -60,7 +60,7 @@ function findingsForScript(source,{shell=''}={}){
  // mkdir accepts multiple directory operands. Preserve the command index
  // so only directories created before a copy/link can affect its destination.
  const createdDirs=[];
- for(const mkdir of active.matchAll(/(?:^|[;\n]|\|\|)\s*mkdir\b([^\r\n;&|]{1,2048})/gi)){
+ for(const mkdir of active.matchAll(/(?:^|[;\n]|&&|\|\|)\s*mkdir\b([^\r\n;&|]{1,2048})/gi)){
   const tokens=shellLiteralWords(mkdir[1]);
   if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   let options=true,unknown=false;
@@ -80,7 +80,7 @@ function findingsForScript(source,{shell=''}={}){
  // commands: mkdir, ln, cp and mv. This closes the entire partial-quote
  // operand family instead of adding another special-case regular expression.
  const aliases=[];
- for(const m of active.matchAll(/(?:^|[;\n]|\|\|)\s*(ln|cp|mv)\b([^\r\n;&|]{1,2048})/gi)){
+ for(const m of active.matchAll(/(?:^|[;\n]|&&|\|\|)\s*(ln|cp|mv)\b([^\r\n;&|]{1,2048})/gi)){
   const kind=m[1].toLowerCase(),tokens=shellLiteralWords(m[2]);
   if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   const flags=[],operands=[],rawOperands=[];
