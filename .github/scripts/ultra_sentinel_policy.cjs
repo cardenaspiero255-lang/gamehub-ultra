@@ -32,9 +32,8 @@ function isProtectedPath(path){
   (critical.has(path)||path.startsWith('.github/'));
 }
 function evaluateProtectedChanges(files,{expectedCount}={}){
- // A green gate must NOT certify a PR that modifies its own enforcer.
- // There is no safe self-approval in a candidate branch: a trusted reviewer
- // and explicit maintainer approval are required for any critical edit.
+ // Protected edits require trusted-main review. The verified sole-owner
+ // exception is decided only by the trusted workflow, never by PR code.
  const incomplete={status:'INCOMPLETE',removed:[],modified:[],partial:true};
  const allowed=new Set(['added','modified','removed','renamed','copied','unchanged']);
  if(!Array.isArray(files)||!Number.isSafeInteger(expectedCount)||expectedCount<0||
@@ -83,4 +82,23 @@ function hasIndependentHumanApproval(reviews,{sha,author}={}){
  return current.some(review=>review.state==='APPROVED'&&
   typeof review.commit_id==='string'&&review.commit_id.toLowerCase()===sha.toLowerCase());
 }
-module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval};
+
+// A trusted-main exception for the only maintainer of this *specific* repo.
+// GitHub API supplied identities are checked against immutable user ID,
+// exact repository, same-repository PR and immutable current SHA. No candidate
+// PR code, comment, label or env value can authorize this exception.
+const SOLO_OWNER_REPOSITORY='cardenaspiero255-lang/gamehub-ultra';
+const SOLO_OWNER_LOGIN='cardenaspiero255-lang';
+const SOLO_OWNER_USER_ID=322222186;
+function isAuthorizedSoloMaintainerPR(pr,{repository,expectedSha}={}){
+ if(repository!==SOLO_OWNER_REPOSITORY||
+   typeof expectedSha!=='string'||!/^[a-f0-9]{40}$/i.test(expectedSha)||
+   !pr||pr.state!=='open'||pr.author_association!=='OWNER'||
+   pr.user?.login!==SOLO_OWNER_LOGIN||pr.user?.id!==SOLO_OWNER_USER_ID||
+   pr.user?.type!=='User'||pr.head?.repo?.full_name!==SOLO_OWNER_REPOSITORY||
+   pr.base?.repo?.full_name!==SOLO_OWNER_REPOSITORY||
+   pr.base?.ref!=='main'||typeof pr.head?.sha!=='string'||
+   pr.head.sha.toLowerCase()!==expectedSha.toLowerCase())return false;
+ return true;
+}
+module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval,isAuthorizedSoloMaintainerPR};
