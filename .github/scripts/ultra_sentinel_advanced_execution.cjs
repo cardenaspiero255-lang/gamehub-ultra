@@ -8,6 +8,39 @@ const MAX_SCRIPT=160000;
 const posix=require('node:path').posix;
 const normalizedFile=name=>posix.normalize(name.replace(/^(?:\.\/)+/,''));
 const {parseShellCommands,literalFileToken}=require('./ultra_sentinel_command_ir.cjs');
+// Consume arguments of interpreter flags before identifying the script file.
+// Unknown options fail closed instead of treating their values as executables.
+function interpreterFileOperand(command,flag){
+ const language=command.name.toLowerCase(),argv=command.words.slice(1);
+ const python=/^python(?:[0-9.]+)?$/.test(language);
+ const node=language==='node';
+ const valueOptions=python?new Set(['-W','-X','--check-hash-based-pycs']):
+  node?new Set(['-r','--require','--import','--loader',
+    '--experimental-loader','--conditions','-C']):new Set();
+ const evalOptions=python?new Set(['-c','-m']):node?new Set(['-e','--eval','-p','--print']):
+  new Set(['-c','-e','-r']);
+ const plainFlags=python?
+  /^-(?:B|E|I|O|OO|P|q|s|S|u|v|V|x)$/:
+  node?/^-(?:v|V|h|i)$/:
+  /^-(?:e|f|i|l|n|r|s|u|v|x|p)$/;
+ for(let i=0;i<argv.length;i++){
+  const a=argv[i];
+  if(a==='--')return argv[i+1]||null;
+  if(evalOptions.has(a))return null; // Inline code/module is not a script path.
+  if(valueOptions.has(a)){
+   if(++i>=argv.length)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   continue;
+  }
+  if(python&&/^-(?:W|X).+/.test(a))continue;
+  if(node&&/^(?:--require=|--import=|--loader=|--conditions=|-r.).+/.test(a))continue;
+  if(a.startsWith('-')){
+   if(plainFlags.test(a)||/^-[BEOIPqSsuvx]+$/.test(a))continue;
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
+  }
+  return a;
+ }
+ return null;
+}
 function findingsForScript(source,{shell=''}={}){
  if(typeof source!=='string')return [];
  // Direct callers must never interpret an unscannable script as clean.
@@ -107,42 +140,39 @@ function findingsForScript(source,{shell=''}={}){
   if(!/\bhttps?:\/\//i.test(command))continue;
   // Keep curl/wget output option grammar bounded; literalFileToken rejects
   // dynamic paths instead of trusting partial or interpolated matches.
-  const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/i.exec(command);
-  if(!output)continue;
-  const outputFile=literalFileToken(output[1]);
-  if(!outputFile){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+  // Every -o output from a curl multi-transfer command is potentially tainted.
+  // Never trust only the first output (which may be a harmless decoy).
+  const outputs=[...command.matchAll(/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/gi)];
+  if(!outputs.length)continue;
   const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
   const rawOutputDir=outputDirs.at(-1);
   const outputDir=rawOutputDir?literalFileToken(rawOutputDir[1]):null;
   if(rawOutputDir&&!outputDir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
-  const file=normalizedFile(outputDir&&!outputFile.startsWith('/')?
-   posix.join(outputDir,outputFile):outputFile);
-  if(file==='-'||file==='.'||file==='..')continue;
-  for(const inv of commands.filter(c=>c.start>=d.end)){
-   const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
-   let word=inv.words[0];
-   if(interpreter){
-    word=inv.words.slice(1).find(x=>!x.startsWith('-'));
-   }
-   if(!word)continue;
-   const calledFile=literalFileToken(word);
-   if(!calledFile)continue;
-   const executedAt=inv.start;
-   // Copies/moves before the fetch refer to old content; symbolic/hard
-   // links can predate the download and still point to downloaded bytes.
-   const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.start||a.kind==='ln'));
-   const tainted=new Set([file]);
-   for(let i=0;i<visible.length;i++){
-    let changed=false;
-    for(const alias of visible){
-     if(tainted.has(alias.from)&&!tainted.has(alias.to)){
-      tainted.add(alias.to);changed=true;
+  for(const output of outputs){
+   const outputFile=literalFileToken(output[1]);
+   if(!outputFile){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+   const file=normalizedFile(outputDir&&!outputFile.startsWith('/')?
+    posix.join(outputDir,outputFile):outputFile);
+   if(file==='-'||file==='.'||file==='..')continue;
+   for(const inv of commands.filter(c=>c.start>=d.end)){
+    const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
+    const word=interpreter?interpreterFileOperand(inv,flag):inv.words[0];
+    if(!word)continue;
+    const calledFile=literalFileToken(word);
+    if(!calledFile)continue;
+    const executedAt=inv.start;
+    const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.start||a.kind==='ln'));
+    const tainted=new Set([file]);
+    for(let i=0;i<visible.length;i++){
+     let changed=false;
+     for(const alias of visible){
+      if(tainted.has(alias.from)&&!tainted.has(alias.to)){
+       tainted.add(alias.to);changed=true;
+      }
      }
+     if(!changed)break;
     }
-    if(!changed)break;
-   }
-   if(tainted.has(calledFile)){
-    flag('REMOTE_DOWNLOADED_FILE_EXECUTION');break;
+    if(tainted.has(calledFile)){flag('REMOTE_DOWNLOADED_FILE_EXECUTION');break;}
    }
   }
  }
@@ -189,9 +219,26 @@ function findingsForScript(source,{shell=''}={}){
  // actually reach the pipeline. -OutFile without -PassThru suppresses output.
  const powershellScript=/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))||
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
- const suppressesPowerShellOutput=script=>
-  /(?:^|\s)-OutFile(?=\s|:|$)/i.test(script)&&
-  !/(?:^|\s)-PassT(?:h(?:r(?:u)?)?)?(?:(?=\s|[)"']|$)|:\s*\$true(?=\s|[)"']|$))/i.test(script);
+ // Interpret only actual unquoted PowerShell switches. Options embedded
+ // inside UserAgent/Headers strings must NOT cancel -OutFile suppression.
+ const suppressesPowerShellOutput=script=>{
+  const switches=[];let quote=null,word='',escaped=false;
+  const push=()=>{if(word){switches.push(word);word='';}};
+  for(const ch of script){
+   if(quote){
+    if(quote==='"'&&ch.charCodeAt(0)===96){escaped=!escaped;continue;}
+    if(ch===quote&&!escaped)quote=null;
+    escaped=false;continue;
+   }
+   if(ch==='"'||ch==="'"){push();quote=ch;continue;}
+   if(/[\s(),|]/.test(ch)){push();continue;}
+   word+=ch;
+  }
+  push();
+  const out=switches.some(w=>/^-OutFile(?::.*)?$/i.test(w));
+  const pass=switches.some(w=>/^-PassT(?:h(?:r(?:u)?)?)?(?::\$true)?$/i.test(w));
+  return out&&!pass;
+ };
  const powershellPipelines=/(?:^|[;\n])\s*(?:(?:pwsh|powershell)(?:\.exe)?\b[^\r\n;|]{0,300}?\s+-(?:Command|c)\s+["']?\s*)?((?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n;|]{0,4096})\|\s*&?\s*(?:iex|Invoke-Expression)\b/gi;
  if(powershellScript){
   for(const p of active.matchAll(powershellPipelines)){
