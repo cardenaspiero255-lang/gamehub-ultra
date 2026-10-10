@@ -102,7 +102,7 @@ test('Codex P1 dynamic alternate GitHub server must fail closed',()=>{
 });
 test('secure github-server-url variants cannot produce bogus blockers',()=>{
  for(const server of ['https://github.com','${{ github.server_url }}']){
-  const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    steps:',
+  const src=['on: issue_comment','permissions: read-all','jobs:','  audit:','    runs-on: ubuntu-latest','    steps:',
    '      - uses: actions/checkout@'+SHA,
    '        with:',
    '          repository: '+REPO,
