@@ -1,0 +1,33 @@
+name: Ultra Sentinel Adversarial Gauntlet
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/workflows/ultra-sentinel-adversarial-gauntlet.yml'
+      - '.github/workflows/ultra-sentinel-core-check.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  adversarial-gauntlet:
+    name: Strict read-only red-team benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout untrusted PR without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install exact parser without lifecycle hooks
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate static test scripts
+        run: |
+          node --check .github/scripts/ultra_sentinel_adversarial_gauntlet.cjs
+          node --check .github/scripts/ultra_sentinel_gauntlet_extreme.cjs
+          node --check .github/scripts/ultra_sentinel_adversarial_gauntlet.test.cjs
+      - name: Fail on any synthetic evasion, false positive or undetected unknown
+        run: |
+          node .github/scripts/ultra_sentinel_adversarial_gauntlet.cjs --strict --compact
