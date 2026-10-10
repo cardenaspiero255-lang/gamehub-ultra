@@ -4,6 +4,7 @@
 // Dependency: js-yaml 4.3.2, pinned with sha512 integrity in package-lock.json.
 const yaml=require('js-yaml');
 const {hasRemoteProcessSubstitution}=require('./ultra_sentinel_remote_exec.cjs');
+const {findingsForScript}=require('./ultra_sentinel_advanced_execution.cjs');
 const MAX_SOURCE=160000,MAX_NODES=4096,MAX_DEPTH=35,MAX_FINDINGS=40;
 const PINNED=/^[a-f0-9]{40}$/i, ACTION=/^[-A-Za-z0-9_.\/]+@([^\s]+)$/;
 const REMOTE=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|$)/;
@@ -645,6 +646,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      if(hasRemoteProcessSubstitution(step.run)||
        /\b(?:bash|sh|zsh)\s*-c\s*["']?\$\(\s*(?:curl|wget)\b/.test(step.run))
       emit('REMOTE_SHELL_SUBSTITUTION','HIGH',where);
+     for(const rule of findingsForScript(step.run))emit(rule,'HIGH',where);
      {
       const inspection=auditExecutableExpressions(step.run);
       if(inspection.incomplete)coverage.partial=true;
