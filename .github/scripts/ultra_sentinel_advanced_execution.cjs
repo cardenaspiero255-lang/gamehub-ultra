@@ -76,23 +76,40 @@ function findingsForScript(source,{shell=''}={}){
   // Unsupported/dynamic mkdir arguments must not be silently certified.
   if(unknown)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
- const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))\s+(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))(?=\s|$|[;&])/gi)]
-  .map(m=>{
-   const kind=m[1].toLowerCase(),origin=m[3]||m[4]||m[5];
-   const destination=m[6]||m[7]||m[8];
-   // Directory destinations create basename(source) at that location.
-   const destinationPath=normalizedFile(destination);
-   const targetIsDirectory=destination.endsWith('/')||
-    createdDirs.some(d=>d.name===destinationPath&&d.at<m.index);
-   const to=normalizedFile(targetIsDirectory?
-    posix.join(destination,posix.basename(origin)):destination);
-   // ln -s resolves its relative target from the link's own directory.
-   // cp/mv and hard links resolve their source from the working directory.
-   const symbolic=kind==='ln'&&/(?:--symbolic|-[A-Za-z]*s[A-Za-z]*)/.test(m[2]);
-   const from=normalizedFile(symbolic&&!origin.startsWith('/')?
-    posix.join(posix.dirname(to),origin):origin);
-   return {at:m.index,kind,from,to};
-  });
+ // Use the SAME literal shell-word tokenizer for all path-producing
+ // commands: mkdir, ln, cp and mv. This closes the entire partial-quote
+ // operand family instead of adding another special-case regular expression.
+ const aliases=[];
+ for(const m of active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\b([^\r\n;&|]{1,2048})/gi)){
+  const kind=m[1].toLowerCase(),tokens=shellLiteralWords(m[2]);
+  if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+  const flags=[],operands=[];let afterDash=false,invalid=false;
+  for(const word of tokens){
+   if(!afterDash&&word==='--'){afterDash=true;continue;}
+   if(!afterDash&&word.startsWith('-')){
+    if(!/^(?:--[a-z-]+|-[a-zA-Z]+)$/.test(word)){invalid=true;break;}
+    flags.push(word);continue;
+   }
+   const operand=literalFileToken(word);
+   if(!operand){invalid=true;break;}
+   operands.push(operand);
+  }
+  if(invalid||operands.length!==2){
+   // Never report a complex alias command as analyzed-and-clean.
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
+  }
+  const [origin,destination]=operands;
+  const destinationPath=normalizedFile(destination);
+  const targetIsDirectory=destination.endsWith('/')||
+   createdDirs.some(d=>d.name===destinationPath&&d.at<m.index);
+  const to=normalizedFile(targetIsDirectory?
+   posix.join(destination,posix.basename(origin)):destination);
+  const symbolic=kind==='ln'&&flags.some(x=>
+   x==='--symbolic'||/^-[a-zA-Z]*s[a-zA-Z]*$/.test(x));
+  const from=normalizedFile(symbolic&&!origin.startsWith('/')?
+   posix.join(posix.dirname(to),origin):origin);
+  aliases.push({at:m.index,kind,from,to});
+ }
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
