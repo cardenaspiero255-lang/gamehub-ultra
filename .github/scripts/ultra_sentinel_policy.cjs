@@ -25,6 +25,12 @@ const PROTECTED_FILES=Object.freeze([
   '.github/scripts/ultra_sentinel_sentry_ingest.cjs'
 ]);
 const critical=new Set(PROTECTED_FILES);
+// Protect the entire executable GitHub automation trust domain, including
+// future helpers, local actions, contracts and new workflow names.
+function isProtectedPath(path){
+ return typeof path==='string'&&
+  (critical.has(path)||path.startsWith('.github/'));
+}
 function evaluateProtectedChanges(files,{expectedCount}={}){
  // A green gate must NOT certify a PR that modifies its own enforcer.
  // There is no safe self-approval in a candidate branch: a trusted reviewer
@@ -34,17 +40,20 @@ function evaluateProtectedChanges(files,{expectedCount}={}){
  if(!Array.isArray(files)||!Number.isSafeInteger(expectedCount)||expectedCount<0||
    files.length!==expectedCount||files.some(f=>!f||typeof f.filename!=='string'||
     typeof f.status!=='string'||!allowed.has(f.status)||
-    f.status==='renamed'&&typeof f.previous_filename!=='string')){
+    ['renamed','copied'].includes(f.status)&&typeof f.previous_filename!=='string')){
   return incomplete;
  }
+ // Duplicates can hide omitted files in an otherwise complete API response.
+ if(new Set(files.map(f=>f.filename)).size!==files.length)return incomplete;
  const removed=[],modified=[];
  for(const f of files){
-  const old=f.status==='renamed'?f.previous_filename:f.filename;
-  if((f.status==='removed'||f.status==='renamed')&&critical.has(old))
-   removed.push(old);
-  else if(['modified','added','copied'].includes(f.status)&&
-          (critical.has(old)||critical.has(f.filename)))
-   modified.push(f.filename);
+  const old=['renamed','copied'].includes(f.status)?f.previous_filename:f.filename;
+  const oldProtected=isProtectedPath(old),newProtected=isProtectedPath(f.filename);
+  if(f.status==='removed'&&newProtected)removed.push(f.filename);
+  else if(f.status==='renamed'&&oldProtected)removed.push(old);
+  else if(f.status==='renamed'&&newProtected)modified.push(f.filename);
+  else if(f.status==='copied'&&(oldProtected||newProtected))modified.push(f.filename);
+  else if(['modified','added'].includes(f.status)&&newProtected)modified.push(f.filename);
  }
  return {status:removed.length?'BLOCKED':modified.length?'REVIEW_REQUIRED':'OK',
    removed,modified,partial:false};
@@ -74,4 +83,4 @@ function hasIndependentHumanApproval(reviews,{sha,author}={}){
  return current.some(review=>review.state==='APPROVED'&&
   typeof review.commit_id==='string'&&review.commit_id.toLowerCase()===sha.toLowerCase());
 }
-module.exports={evaluateProtectedChanges,PROTECTED_FILES,hasIndependentHumanApproval};
+module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval};
