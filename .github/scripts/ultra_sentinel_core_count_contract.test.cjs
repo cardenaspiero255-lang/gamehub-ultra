@@ -4,15 +4,39 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-core-check.yml'),'utf8');
-test('Core gate enforces minimum 150,000 executed tests rather than counting file names',()=>{
+const matrix=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_150k_unique_matrix.test.cjs'),'utf8');
+const shards=require('./ultra_sentinel_core_shards.cjs');
+test('Core gate requires 150k executed checks across exactly 15 independent shards',()=>{
  assert.match(workflow,/CORE_MIN_TESTS:\s*['"]?150000/);
- assert.match(workflow,/node --test \.github\/scripts\/ultra_sentinel_\*\.test\.cjs/);
- assert.match(workflow,/tee\s/);
- assert.match(workflow,/# tests/);
- assert.match(workflow,/process\.exit\(1\)/);
+ assert.match(workflow,/fail-fast:\s*false/);
+ assert.match(workflow,/max-parallel:\s*15/);
+ for(let i=0;i<13;i++)assert.match(workflow,new RegExp('m'+String(i).padStart(2,'0')));
+ assert.match(workflow,/\bb0\b/);
+ assert.match(workflow,/\bb1\b/);
+ assert.match(workflow,/ultra_sentinel_core_shards\.cjs run/);
+ assert.match(workflow,/ultra_sentinel_core_shards\.cjs aggregate/);
+ assert.match(workflow,/needs:\s*\[core-shard\]/);
+ assert.match(workflow,/download-artifact@[a-f0-9]{40}/);
+ assert.equal(shards.SHARD_COUNT,15);
+ assert.equal(shards.MATRIX_CASES,130000);
+ assert.equal(shards.MINIMUM,150000);
 });
-test('Core gate refuses silent skip and failures',()=>{
- assert.match(workflow,/# skipped/);
- assert.match(workflow,/# fail/);
- assert.match(workflow,/set -euo pipefail/);
+test('Each matrix shard selects only its own 10k cases and shard zero verifies all unique SHA inputs',()=>{
+ assert.match(matrix,/SENTINEL_MATRIX_SHARD/);
+ assert.match(matrix,/shardStart\s*=\s*sharded/);
+ assert.match(matrix,/index=shardStart;index<shardEnd/);
+ assert.match(matrix,/shardIndex===0/);
+ assert.match(matrix,/hashes\.has\(fingerprint\)/);
+});
+test('Core gate never hides skipped, failed or incomplete reports',()=>{
+ assert.match(workflow,/if:\s*always\(\)/);
+ assert.match(workflow,/sentinel-core-report-/);
+ assert.match(workflow,/merge-multiple:\s*true/);
+ assert.match(workflow,/test "\$\{\{ needs\.core-shard\.result \}\}" = "success"/);
+ const code=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_core_shards.cjs'),'utf8');
+ assert.match(code,/c\.fail!==0/);
+ assert.match(code,/c\.skipped!==0/);
+ assert.match(code,/c\.todo!==0/);
+ assert.match(code,/report\.sha!==sha/);
+ assert.match(code,/tests<MINIMUM/);
 });
