@@ -494,6 +494,14 @@ def main() -> None:
         ),
     )
     reject_mutation(
+        "device SDK selector destructively removes preinstalled latest",
+        android_replace=(
+            '          printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"\n',
+            '          rm -rf "$SDK_ROOT/cmdline-tools/latest"\n'
+            '          printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"\n',
+        ),
+    )
+    reject_mutation(
         "quality lint made advisory",
         android_replace=(
             "      - name: Run fast quality gates\n        shell: bash\n",
