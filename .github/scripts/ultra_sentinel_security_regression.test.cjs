@@ -92,3 +92,15 @@ test('automatic and post-CI reviewers fail rather than report green on untrusted
   assert.match(code,/if\s*\(\s*(?:ci\.status===['"]UNTRUSTED['"]|ci\.status!==['"]PASS['"])\s*\)\s*core\.setFailed/);
  }
 });
+
+
+test('safe repair proposals use the scoped first-party GitHub token and admit full YAML review',()=>{
+ const source=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-repair-proposals.yml'),'utf8');
+ const {inspectWorkflow}=require('./ultra_sentinel_yaml_ast.cjs');
+ assert.match(source,/github-token:\s*\$\{\{\s*github\.token\s*\}\}/);
+ const scan=inspectWorkflow(source,{
+  path:'.github/workflows/ultra-sentinel-repair-proposals.yml',
+  trustedRepository:REPO
+ });
+ assert.equal(scan.status,'NO_RISK_PATTERN',JSON.stringify(scan));
+});
