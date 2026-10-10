@@ -41,6 +41,8 @@ La tasa de detección se calcula únicamente con los ataques etiquetados: `detec
 
 ## Límites y resolución
 
+**Validez del benchmark:** cada inyección usa el evento de GitHub que realmente expone el contexto simulado (por ejemplo, `pull_request_target`, `pull_request_review` o `repository_dispatch`). No se etiqueta una vulnerabilidad si no consume la fuente de datos adversarial. El analizador estructural y el heurístico comparten el detector de ejecución remota, por lo que sus aciertos están **correlacionados** y nunca se publican como corroboración independiente.
+
 La batería es un conjunto de ejemplos etiquetados, **no** una evaluación de vulnerabilidades reales en todas las configuraciones, ni una prueba de inmunidad. Muchos casos son variantes de una misma raíz; no son muestras independientes para calcular precisión sobre el mundo real. No se debe reemplazar revisión experta, SAST, análisis dinámico, CI Android/Coverage ni aprobación independiente con este marcador.
 
 Ante un escape: conservar su identificador, crear un test RED reproducible, corregir la familia en el motor, demostrar GREEN y repetir las regresiones. Los resultados del workflow deben seguir en rojo hasta que no queden escapes o falsos positivos incluidos en el contrato estricto. No borrar pruebas difíciles ni reinterpretarlas como seguras para maquillar resultados.
