@@ -142,7 +142,12 @@ function findingsForScript(source,{shell=''}={}){
   // dynamic paths instead of trusting partial or interpolated matches.
   // Every -o output from a curl multi-transfer command is potentially tainted.
   // Never trust only the first output (which may be a harmless decoy).
-  const outputs=[...command.matchAll(/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/gi)];
+  const outputs=[
+   ...command.matchAll(/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/gi),
+   // curl's response can also be written with the shell stdout redirect.
+   // Consume >, >>, 1> and 1>> (but not stderr-only 2>).
+   ...command.matchAll(/(?:^|\s)1?>{1,2}\s*([a-z0-9_./'"-]+)(?=\s|$)/gi)
+  ];
   if(!outputs.length)continue;
   const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
   const rawOutputDir=outputDirs.at(-1);
