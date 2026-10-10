@@ -57,10 +57,13 @@ test('Adversarial expression cases use the real event context they claim to atta
 });
 test('Arithmetic threat labels must actually depend on the injected event field',()=>{
  const c=cases.find(x=>x.id==='arithmetic-unknown');
- assert.ok(!c||c.kind==='safe'||c.source.includes('A'));// detect benign relabel
+ assert.ok(c&&c.kind==='attack'&&c.source.includes('A + UNKNOWN'),
+  'Arithmetic injection must actually reference the event-tainted A variable');
 });
 test('Correlated heuristics must not be advertised as independent detector recall',()=>{
  assert.ok(!Object.prototype.hasOwnProperty.call(m,'heuristicRecall'),
   'The alternate heuristic imports the same remote-execution classifier.');
+ assert.ok(m.heuristicCorrelatedHitRate>=0&&m.heuristicCorrelatedHitRate<=1);
  assert.ok(report.limitation.includes('shared')||report.limitation.includes('correlated'));
+ assert.ok(report.limitation.includes('not independent'));
 });
