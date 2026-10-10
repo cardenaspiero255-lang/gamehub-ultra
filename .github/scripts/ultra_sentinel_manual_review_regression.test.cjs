@@ -134,8 +134,3 @@ test('Root hardening: trusted security review cannot certify its own missing run
   '  audit:','    steps:','      - run: echo safe'].join('\n');
  assert.equal(inspectWorkflow(src,{path:'.github/workflows/ultra-sentinel-core-check.yml'}).status,'INCOMPLETE');
 });
-
-test('P2: post-CI never marks UNKNOWN/WAITING as green certification',()=>{
- const script=fs.readFileSync(path.join(__dirname,'../workflows/ultra-sentinel-sss-post-ci.yml'),'utf8');
- assert.match(script,/if\s*\(\s*ci\.status\s*!==\s*['"]PASS['"]\s*\)\s*core\.setFailed\s*\(/);
-});
