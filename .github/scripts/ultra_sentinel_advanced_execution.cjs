@@ -108,15 +108,40 @@ function normalizeInvocation(command,flag){
  * intermediate shell redirection targets. Descriptors evolve left-to-right.
  * Redirects are distinct from curl -o and wget -O output-document options.
  */
+// Value-bearing flags are consumed before recognizing the standalone `--`
+// delimiter. A literal `--` may itself be an option's VALUE.
+// This is a bounded allowlist, not a complete curl/wget option parser.
+const CURL_VALUE_FLAGS=new Set([
+ '-A','--user-agent','-H','--header','-b','--cookie','-c','--cookie-jar',
+ '-d','--data','--data-raw','--data-binary','--data-urlencode','-F','--form',
+ '--form-string','-e','--referer','-u','--user','-x','--proxy','-X','--request',
+ '-K','--config','--url','--url-query','--resolve','--connect-to','--interface',
+ '--cacert','--capath','--cert','--key','--limit-rate','--retry',
+ '--retry-delay','--retry-max-time','--max-time','--connect-timeout'
+]);
+const WGET_VALUE_FLAGS=new Set([
+ '-U','--user-agent','--referer','-e','--execute','-t','--tries',
+ '-T','--timeout','--header','--post-data','--post-file','--proxy-user',
+ '--proxy-password','-i','--input-file','-P','--directory-prefix',
+ '-A','--accept','-R','--reject','--bind-address','--ca-certificate',
+ '--certificate','--private-key','--password','--user'
+]);
 function downloadedFiles(command,flag){
  const words=command.words.slice(1),wget=command.name==='wget';
  const allDirect=[];let dir=null,outputDirSeen=false,optionsActive=true;
+ const valueFlags=wget?WGET_VALUE_FLAGS:CURL_VALUE_FLAGS;
  // Read distinct shell WORDS, not a rejoined string. Rejoining words made
  // options/redirections embedded in quoted -H/-A values executable tokens.
  for(let i=0;i<words.length;i++){
   const word=words[i],literal=literalCommandName(word)||word;
   if(literal==='--'){optionsActive=false;continue;}
   if(!optionsActive)continue;
+  // Consume the next word, even if its raw text is exactly '--'. This
+  // prevents an option operand from switching off all subsequent scanning.
+  if(valueFlags.has(literal)){
+   if(++i>=words.length)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   continue;
+  }
   let value=null,isOutput=false;
   if(wget){
    const adjacent=/^-[A-Za-z]*O(.*)$/.exec(literal);
