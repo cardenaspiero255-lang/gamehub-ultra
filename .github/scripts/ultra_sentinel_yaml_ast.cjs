@@ -1,7 +1,7 @@
 'use strict';
 // Structural, read-only YAML review. Source is UNTRUSTED DATA: never execute
 // parsed values, never interpolate them into a command, never load custom tags.
-// Dependency: js-yaml 4.1.1, pinned with sha512 integrity in package-lock.json.
+// Dependency: js-yaml 4.3.2, pinned with sha512 integrity in package-lock.json.
 const yaml=require('js-yaml');
 const MAX_SOURCE=160000,MAX_NODES=4096,MAX_DEPTH=35,MAX_FINDINGS=40;
 const PINNED=/^[a-f0-9]{40}$/i, ACTION=/^[-A-Za-z0-9_.\/]+@([^\s]+)$/;
@@ -34,9 +34,19 @@ function parseWorkflow(source){
   return {ok:false,reason:'INVALID_SOURCE_SIZE'};
  try{
   const input=source.charCodeAt(0)===0xfeff?source.slice(1):source;
+  // Guard inexpensive lexical budgets BEFORE the parser. js-yaml 4.3.2
+  // patches known merge DoS issues, but future regressions must fail closed.
+  const aliasCount=(input.match(/(?:^|[\s,\[{])\*[A-Za-z0-9_-]+/g)||[]).length;
+  const merges=(input.match(/(?:^|[\s,{])<<\s*:/g)||[]).length;
+  const largeMergeList=[...input.matchAll(/<<\s*:\s*\[([^\n]{0,8192}?)\]/g)]
+    .some(x=>(x[1].match(/\*[A-Za-z0-9_-]+/g)||[]).length>16);
+  if(aliasCount>256||merges>128||largeMergeList)
+   return {ok:false,reason:'YAML_PREPARSE_LIMIT'};
   // DEFAULT_SCHEMA is YAML 1.2-compatible for GitHub's 'on' key; unlike
   // PyYAML's unmodified YAML 1.1 loader, 'on' stays a string.
+  // Resource budgets apply DURING parsing; boundedGraph runs only afterward.
   const doc=yaml.load(input,{schema:yaml.DEFAULT_SCHEMA,json:false,
+   maxDepth:MAX_DEPTH,maxMergeSeqLength:16,maxTotalMergeKeys:2048,
    onWarning:()=>{throw Error('yaml-warning');}});
   if(!isMap(doc))return {ok:false,reason:'INVALID_ROOT'};
   boundedGraph(doc);
@@ -55,6 +65,31 @@ function parseWorkflow(source){
      (isMap(trigger)&&!Object.keys(trigger).length)||
      (typeof trigger==='string'&&!trigger.trim()))
    return {ok:false,reason:'EMPTY_TRIGGER'};
+  if(isMap(trigger)){
+   const filters=new Set(['types','branches','branches-ignore','paths',
+    'paths-ignore','tags','tags-ignore','workflows']);
+   for(const [event,configuration] of Object.entries(trigger)){
+    // An empty event type/branch/path filter can silently disable the only
+    // security gate. Treat malformed GitHub Actions trigger shapes as unknown.
+    if(typeof event!=='string'||!event.trim())
+     return {ok:false,reason:'INVALID_TRIGGER_EVENT'};
+    if(event==='schedule'){
+     if(!Array.isArray(configuration)||!configuration.length||
+       configuration.some(item=>!isMap(item)||typeof item.cron!=='string'||
+         !item.cron.trim()))
+      return {ok:false,reason:'INVALID_CRON_TRIGGER'};
+     continue;
+    }
+    if(configuration===null)continue;
+    if(!isMap(configuration))return {ok:false,reason:'INVALID_TRIGGER_CONFIGURATION'};
+    for(const [name,value] of Object.entries(configuration)){
+     if(!filters.has(name))continue;
+     if(!Array.isArray(value)||!value.length||
+       value.some(item=>typeof item!=='string'||!item.trim()))
+      return {ok:false,reason:'INVALID_TRIGGER_FILTER'};
+    }
+   }
+  }
   return {ok:true,workflow:doc};
  }catch(e){
   // Do not emit raw attacker-controlled snippets or throw from CI gating.
@@ -162,7 +197,7 @@ function auditExecutableExpressions(script){
  return {unsafe,incomplete};
 }
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
- const findings=[],coverage={partial:false,parser:'js-yaml@4.1.1'};
+ const findings=[],coverage={partial:false,parser:'js-yaml@4.3.2'};
  const emit=(rule,severity,where)=>{
   if(findings.length>=MAX_FINDINGS){coverage.partial=true;return;}
   if(!findings.some(x=>x.rule===rule&&x.path===where))
@@ -306,18 +341,47 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(condition===undefined||condition===true)return;
   if(condition===false||typeof condition!=='string'){coverage.partial=true;return;}
   const trimmed=condition.trim();
-  // Generic event-conditioned jobs may be legitimate; security-critical
-  // workflow edits require independent human review at the policy layer.
-  // Detect constant-false or statically disabled expressions without
-  // interpreting untrusted expressions as executable JavaScript.
-  if(/^(?:false|0)$/i.test(trimmed)){coverage.partial=true;return;}
+  // GitHub evaluates both bare expressions and the explicit template form.
+  // These checks conservatively flag statically disabled or unverifiable
+  // constant comparisons without executing arbitrary expression code.
   const expression=/^\$\{\{([\s\S]*)\}\}$/.exec(trimmed);
-  if(expression){
-   const body=expression[1].trim();
-   const withoutLiterals=body.replace(/'(?:[^']|'')*'|"(?:[^"\\]|\\.)*"/g,'');
-   if(/\bfalse\b|!\s*true\b/i.test(withoutLiterals))
-    coverage.partial=true;
+  const body=expression?expression[1].trim():trimmed;
+  const withoutLiterals=body.replace(/'(?:[^']|'')*'|"(?:[^"\\]|\\.)*"/g,'');
+  if(/^(?:false|0)$/i.test(body)||/\bfalse\b|!\s*true\b/i.test(withoutLiterals)||
+     /\b\d+\s*(?:==|!=|<=|>=|<|>)\s*\d+\b/.test(withoutLiterals))
+   coverage.partial=true;
+  // A gate demanding an event absent from on: can NEVER run. This covers
+  // jobs and steps, bare and wrapped expressions, quoted / bracket syntax,
+  // and reversed literal comparisons without evaluating untrusted code.
+  // Conservative: an impossible subcondition forces an independent review
+  // even if other boolean operands may make the whole expression true.
+  const events=new Set(typeof document.on==='string'?[document.on]:
+    Array.isArray(document.on)?document.on:Object.keys(document.on));
+  const normalized=body.replace(/\bgithub\s*\[\s*(['"])event_name\1\s*\]/gi,
+    'github.event_name').replace(/\bgithub\s*\.\s*event_name\b/gi,
+    'github.event_name');
+  const comparisons=[];
+  if(/\bgithub\.event_name\b/i.test(normalized)&&
+     !/(?:^|[^A-Za-z0-9_.])github\.event_name\s*(?:==|!=)|(?:==|!=)\s*github\.event_name\b/i.test(normalized))
+   coverage.partial=true;
+  for(const match of normalized.matchAll(/\bgithub\.event_name\s*(==|!=)\s*(['"])([A-Za-z0-9_-]+)\2/g)){
+   comparisons.push({operator:match[1],event:match[3],start:match.index,forward:true});
   }
+  for(const match of normalized.matchAll(/(['"])([A-Za-z0-9_-]+)\1\s*(==|!=)\s*\bgithub\.event_name\b/g)){
+   comparisons.push({operator:match[3],event:match[2],start:match.index,forward:false});
+  }
+  for(const comparison of comparisons){
+   const impossible=comparison.operator==='=='?
+     !events.has(comparison.event):
+     events.size===1&&events.has(comparison.event);
+   if(impossible)coverage.partial=true;
+   // Simple !(event == 'trigger') is also impossible for a singleton event.
+   if(comparison.operator==='=='&&events.size===1&&events.has(comparison.event)){
+    const before=normalized.slice(0,comparison.start);
+    if(/!\s*\(\s*$/.test(before))coverage.partial=true;
+   }
+  }
+
  };
  const sensitiveExpression=value=>typeof value==='string'&&
   value.includes(String.fromCharCode(36,123,123))&&
@@ -376,8 +440,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      const external=job.uses.match(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@(.+)$/);
      if(!external||!PINNED.test(external[1]))
       emit('UNPINNED_REUSABLE_WORKFLOW','BLOCKER',where);
-    }else if(privileged){
-     // A caller cannot independently certify an uninspected callee graph.
+    }else{
+     // Local reusable workflows execute an uninspected transitive code graph.
      coverage.partial=true;
     }
     checkReusableInputs(job.with,where);
@@ -391,7 +455,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   // Critical Sentinel gates must execute on a real runner. For arbitrary
   // candidate workflows NO_RISK_PATTERN means pattern-only, not validation
   // of all required GitHub Actions schema fields.
-  if(/^\.github\/workflows\/ultra-sentinel-[A-Za-z0-9_.-]+\.ya?ml$/.test(path)&&
+  if((/^\.github\/workflows\/ultra-sentinel-[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
+       (typeof trustedRepository==='string'&&trustedRepository.length>0))&&
      job['runs-on']===undefined)coverage.partial=true;
   if(!Array.isArray(job.steps)||job.steps.length===0){coverage.partial=true;continue;}
   for(const step of job.steps){
@@ -402,7 +467,10 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
-    if(!step.uses.startsWith('./')){
+    if(step.uses.startsWith('./')){
+     // Local actions load additional code/metadata; inspect the entire graph.
+     coverage.partial=true;
+    }else{
      const action=ACTION.exec(step.uses);
      if(!action||!PINNED.test(action[1]))emit('UNPINNED_ACTION','HIGH',where);
     }
@@ -537,7 +605,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
 }
 function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={}){
  const results=[],findings=[],coverage={partial:false,requested:expected.length,
-  scanned:0,parser:'js-yaml@4.1.1'};
+  scanned:0,parser:'js-yaml@4.3.2'};
  if(!Array.isArray(expected)||expected.length>25)return {status:'INCOMPLETE',findings,
   coverage:{...coverage,partial:true},results};
  for(const path of expected){
