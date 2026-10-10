@@ -13,7 +13,7 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  for(let i=0;i<13;i++)assert.match(workflow,new RegExp('m'+String(i).padStart(2,'0')));
  assert.match(workflow,/\bb0\b/);
  assert.match(workflow,/\bb1\b/);
- assert.match(workflow,/ultra_sentinel_core_shards\\.cjs run-env/);
+ assert.match(workflow,/ultra_sentinel_core_shards\.cjs run-env/);
  assert.match(workflow,/ultra_sentinel_core_shards\.cjs aggregate/);
  assert.match(workflow,/needs:\s*\[core-shard\]/);
  assert.match(workflow,/download-artifact@[a-f0-9]{40}/);
