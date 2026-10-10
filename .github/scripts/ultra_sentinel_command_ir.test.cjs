@@ -16,7 +16,7 @@ test('IR preserves logical operators, line boundaries and source order',()=>{
  const result=parseShellCommands(s);
  assert.equal(result.incomplete,false);
  assert.deepEqual(result.commands.map(c=>[c.name,c.operator]),
- [['mkdir',null],['false','&&'],['curl','||'],['cp',';'],['tee','|'],['bash','\n']]);
+ [['mkdir',null],['false','&&'],['curl','||'],['cp','\n'],['tee','|'],['bash','\n']]);
  assert.ok(result.commands.every((c,i,a)=>i===0||c.start>a[i-1].start));
 });
 test('IR never treats operators or commands within quotes as executable',()=>{
