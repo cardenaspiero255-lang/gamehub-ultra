@@ -224,7 +224,7 @@ function downloadedFiles(command,flag){
   // when the value looks like an option terminator or a filename argument.
   if([...valueFlags].some(flagName=>flagName.startsWith('--')&&
      literal.startsWith(flagName+'=')))continue;
-  let value=null,isOutput=false;
+  let value=null,isOutput=false,knownDirectoryOption=false;
   if(wget){
    const adjacent=/^-[A-Za-z]*O(.*)$/.exec(literal);
    const long=/^--output-document=(.*)$/.exec(literal);
@@ -239,13 +239,14 @@ function downloadedFiles(command,flag){
    else if(long){isOutput=true;value=long[1];}
    const dirInline=/^--output-dir=(.*)$/.exec(literal);
    if(literal==='--output-dir'||dirInline){
+    knownDirectoryOption=true;
     outputDirSeen=true;
     const rawDir=dirInline?dirInline[1]:words[++i];
     dir=literalFileToken(rawDir);
     if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {files:[],unknownDownloaderOption:true};}
    }
   }
-  if(!isOutput&&literal.startsWith('-')&&literal!=='-'&&
+  if(!isOutput&&!knownDirectoryOption&&literal.startsWith('-')&&literal!=='-'&&
      !/^-([fsSLkvIqNn]+)$/.test(literal)&&
      !/^(?:--(?:silent|show-error|fail|location|insecure|verbose|head|include|no-buffer|netrc|compressed|disable|progress-bar|fail-with-body|location-trusted|retry-all-errors|no-progress|quiet)|-q)$/.test(literal)){
    // A value-bearing unmodelled option can swallow '--' or the next token.
