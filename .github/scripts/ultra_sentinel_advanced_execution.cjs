@@ -23,13 +23,13 @@ function findingsForScript(source,{shell=''}={}){
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
  const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
- const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)]
-  .map(m=>({at:m.index,kind:m[1].toLowerCase(),from:normalizedFile(m[3]),to:normalizedFile(m[4])}));
+ const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))\s+(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))(?=\s|$|[;&])/gi)]
+  .map(m=>({at:m.index,kind:m[1].toLowerCase(),from:normalizedFile(m[3]||m[4]||m[5]),to:normalizedFile(m[6]||m[7]||m[8])}));
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
   // Both -o file and compact -ofile / -Ofile are accepted by curl/wget.
-  const output=/(?:^|\s)(?:-(?:o|O)\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
+  const output=/(?:^|\s)(?:-[a-zA-Z]*[oO]\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
   if(!output)continue;
   const file=normalizedFile(output[2]);
   if(file==='-'||file==='.'||file==='..')continue;
@@ -84,7 +84,7 @@ function findingsForScript(source,{shell=''}={}){
  }
  // A quoted -c program may span physical lines; parsing by each line
  // separately would lose its network fetch or eval/exec sink.
- for(const cmd of active.matchAll(/(?:^|[;&\n])\s*(python(?:[0-9.]+)?)\s+-c\s+(['"])([\s\S]{0,8192}?)\2(?=\s|$|[;&])/gi)){
+ for(const cmd of active.matchAll(/(?:^|[;&\n])\s*(python(?:[0-9.]+)?)\s+(?:(?:-[A-Za-z]{1,5})\s+){0,8}-c\s+(['"])([\s\S]{0,8192}?)\2(?=\s|$|[;&])/gi)){
   if(evaluatesRemote(cmd[1],cmd[3]))flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
  }
  const segments=active.split('\n');
@@ -110,8 +110,12 @@ function findingsForScript(source,{shell=''}={}){
  // Require an actual fetch expression consumed by the sink; iwr alone is safe.
  const powershellScript=/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))||
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
- const fetch=String.raw`(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s)\r\n]+)`;
- const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*`+fetch+String.raw`\s*\)\s*\.Content\s*\)*`;
+ const endpoint=String.raw`(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s)\r\n]+)`;
+ const fetchWeb=String.raw`(?:iwr|Invoke-WebRequest)\b\s+`+endpoint;
+ const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+endpoint;
+ // WebRequest's response object needs .Content; RestMethod can return the
+ // response body directly as a string, which is executable by iex.
+ const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*(?:`+fetchWeb+String.raw`\s*\)\s*\.Content|`+fetchRest+String.raw`\s*\)(?:\s*\.Content)?)\s*\)*`;
  const argument=new RegExp(String.raw`(?:^|[;\n])\s*`+argumentSource,'i');
  const explicitArgument=new RegExp(String.raw`(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*`+argumentSource,'i');
  if((powershellScript&&argument.test(active))||explicitArgument.test(active))
