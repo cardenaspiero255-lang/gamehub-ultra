@@ -40,6 +40,8 @@ for(const [name,script,rule,shell] of attacks){
 }
 const benign=[
  ['link-after-invocation','curl -fsSL '+U+' -o payload; bash target.sh; ln payload target.sh'],
+ ['copy-before-download','cp -f payload target.sh; curl -fsSL '+U+' -o payload; bash target.sh'],
+ ['move-before-download','mv -f payload target.sh; curl -fsSL '+U+' -o payload; bash target.sh'],
  ['hardlink-no-invocation','curl -fsSL '+U+' -o payload; ln -f payload target.sh; echo target.sh'],
  ['copy-not-invoked','curl -fsSL '+U+' -o payload; cp -f payload target.sh'],
  ['move-not-invoked','curl -fsSL '+U+' -o payload; mv -f payload target.sh'],
