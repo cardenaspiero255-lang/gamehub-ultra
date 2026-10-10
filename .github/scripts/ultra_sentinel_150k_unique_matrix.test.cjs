@@ -177,6 +177,14 @@ function verify(entry){
   default:assert.fail('Unexpected family');
  }
 }
+const shardRaw=process.env.SENTINEL_MATRIX_SHARD;
+const sharded=shardRaw!==undefined;
+if(sharded&&!/^(?:[0-9]|1[0-2])$/.test(shardRaw))
+ throw Error('Invalid 130k matrix shard; must be an integer 0..12');
+const shardIndex=sharded?Number(shardRaw):null;
+const shardStart=sharded?shardIndex*10000:0;
+const shardEnd=sharded?shardStart+10000:TOTAL;
+if(!sharded||shardIndex===0)
 test('150k matrix integrity: 130k distinct security inputs, balanced families and reproducible results',()=>{
  assert.equal(TOTAL,130000);
  const hashes=new Set();
@@ -191,7 +199,7 @@ test('150k matrix integrity: 130k distinct security inputs, balanced families an
  assert.equal(hashes.size,TOTAL);
  for(const [category,count] of Object.entries(seq))assert.equal(count,PER_FAMILY,category);
 });
-for(let index=0;index<TOTAL;index++){
+for(let index=shardStart;index<shardEnd;index++){
  const family=['policy','review','judge','remote','yaml'][Math.floor(index/PER_FAMILY)];
  test('security-matrix '+family+' #'+index,()=>{
   const entry=make(index);
