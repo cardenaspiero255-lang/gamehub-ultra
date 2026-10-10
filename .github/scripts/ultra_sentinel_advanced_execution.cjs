@@ -123,13 +123,31 @@ function findingsForScript(source,{shell=''}={}){
   if(unknown)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  const aliases=[];
- for(const m of commands.filter(c=>/^(?:ln|cp|mv)$/.test(c.name))){
+ for(const m of commands.filter(c=>/^(?:ln|cp|mv|install)$/.test(c.name))){
   const kind=m.name,tokens=m.words.slice(1);
   const flags=[],operands=[],rawOperands=[];
-  let afterDash=false,invalid=false,targetDir=null;
+  let afterDash=false,invalid=false,targetDir=null,directoryOnly=false;
   for(let i=0;i<tokens.length;i++){
    const word=tokens[i];
    if(!afterDash&&word==='--'){afterDash=true;continue;}
+   if(kind==='install'&&!afterDash){
+    // GNU install copies files unless -d/--directory creates directories.
+    if(word==='-d'||word==='--directory'){directoryOnly=true;continue;}
+    if(/^-([vCDTbpcs]+)d$/.test(word)){directoryOnly=true;continue;}
+    if(/^(?:-m|--mode|-g|--group|-o|--owner)$/.test(word)){
+     const value=tokens[++i];
+     if(!value||/[$\`]/.test(value)){invalid=true;break;}
+     continue;
+    }
+    if(/^(?:-[mgo].+|--(?:mode|group|owner)=.+)$/.test(word))continue;
+    if(/^(?:-D|-T|-v|-C|-p|-s|--compare|--no-target-directory|--verbose|--preserve-timestamps|--strip)$/.test(word)){
+     flags.push(word);continue;
+    }
+    if(word.startsWith('--')&&!/^(?:--target-directory(?:=.+)?)$/.test(word)){
+     invalid=true;break;
+    }
+   }
+
    if(!afterDash&&(word==='-t'||word==='--target-directory')){
     const value=tokens[++i];
     targetDir=value?literalFileToken(value):null;
@@ -164,6 +182,7 @@ function findingsForScript(source,{shell=''}={}){
    operands.push(operand);
    rawOperands.push(word);
   }
+  if(kind==='install'&&directoryOnly)continue;
   if(invalid||(targetDir?operands.length!==1:operands.length!==2)){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
