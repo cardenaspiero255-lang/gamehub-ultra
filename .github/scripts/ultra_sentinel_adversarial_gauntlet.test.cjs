@@ -8,7 +8,7 @@ const {summary:s,metrics:m}=report;
 test('Red-team gauntlet generates numerous distinct, fixed-seed mutations',()=>{
  const variantsSet=variants();
  // Original inert fixture families must survive separation from reviewer code.
- const {extremeFixtures}=require('./ultra_sentinel_gauntlet_extreme_data.test.cjs');
+ const {extremeFixtures}=require('./ultra_sentinel_gauntlet_extreme.cjs');
  const fixtureGroups=extremeFixtures();
  assert.equal(fixtureGroups.unsafe.length,41);
  assert.equal(fixtureGroups.uncertain.length,5);

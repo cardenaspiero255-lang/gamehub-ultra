@@ -83,44 +83,4 @@ function hasIndependentHumanApproval(reviews,{sha,author}={}){
  return current.some(review=>review.state==='APPROVED'&&
   typeof review.commit_id==='string'&&review.commit_id.toLowerCase()===sha.toLowerCase());
 }
-
-/**
- * Explicit SHA-scoped owner acknowledgement for a verified solo-maintainer
- * repository. It does NOT authorize merging or replace a trusted-main scan.
- * Only independent trusted-main workflows may consume this GitHub API evidence.
- */
-const SOLO_REPO='cardenaspiero255-lang/gamehub-ultra';
-function hasSoloOwnerAcknowledgement(comments,{repo,prNumber,sha,author}={}){
- if(repo!==SOLO_REPO||author?.toLowerCase()!==SOLO_REPO.split('/')[0]||
-    !Number.isSafeInteger(prNumber)||prNumber<=0||
-    !/^[a-f0-9]{40}$/i.test(sha||'')||!Array.isArray(comments)||
-    comments.length>1000)return false;
- const expected='ULTRA-SENTINEL-SOLO-ACK PR#'+prNumber+' SHA='+sha.toLowerCase();
- return comments.some(c=>c&&Number.isSafeInteger(c.id)&&c.id>0&&
-  c.user?.type==='User'&&
-  c.user.login?.toLowerCase()===author.toLowerCase()&&
-  c.author_association==='OWNER'&&
-  typeof c.body==='string'&&c.body.trim()===expected);
-}
-
-
-/** Check GitHub's most recent result for each required trusted check.
- * A prior green check must never override a subsequent failure/cancellation.
- * Exact enumeration is required: no partial/paginated evidence is accepted.
- */
-function hasAllLatestTrustedChecks(response,required){
- const items=response?.check_runs;
- if(!Array.isArray(items)||!Number.isSafeInteger(response.total_count)||
-    response.total_count!==items.length||items.length>100||
-    !Array.isArray(required)||required.length===0||
-    required.some(name=>typeof name!=='string'||!name))return false;
- for(const name of required){
-  const matching=items.filter(x=>x?.name===name&&Number.isSafeInteger(x.id)&&x.id>0)
-   .sort((a,b)=>b.id-a.id);
-  if(matching.length===0||matching[0].status!=='completed'||
-     matching[0].conclusion!=='success')return false;
- }
- return true;
-}
-
-module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval,hasSoloOwnerAcknowledgement,hasAllLatestTrustedChecks};
+module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval};
