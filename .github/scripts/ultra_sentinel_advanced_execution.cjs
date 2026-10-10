@@ -23,8 +23,8 @@ function findingsForScript(source,{shell=''}={}){
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
  const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
- const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(?:ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)]
-  .map(m=>({at:m.index,from:normalizedFile(m[2]),to:normalizedFile(m[3])}));
+ const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)]
+  .map(m=>({at:m.index,kind:m[1].toLowerCase(),from:normalizedFile(m[3]),to:normalizedFile(m[4])}));
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
@@ -41,7 +41,9 @@ function findingsForScript(source,{shell=''}={}){
    const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:\\.\\/)?(?:'+escape+')(?=\\s|$|[;&])','gi');
    for(const match of after.matchAll(invocation)){
     const executedAt=d.index+d[0].length+match.index;
-    const visible=aliases.filter(a=>a.at<executedAt);
+    // A copy or move made BEFORE the download holds old bytes. Only ln
+    // aliases can continue to address an inode overwritten by curl/wget.
+    const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.index||a.kind==='ln'));
     const tainted=new Set([file]);
     // Compute transitive closure for bounded aliases; no filesystem reads.
     for(let i=0;i<visible.length;i++){
