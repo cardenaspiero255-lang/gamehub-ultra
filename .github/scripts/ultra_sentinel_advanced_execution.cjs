@@ -7,6 +7,20 @@
 const MAX_SCRIPT=160000;
 const posix=require('node:path').posix;
 const normalizedFile=name=>posix.normalize(name.replace(/^(?:\.\/)+/,''));
+// Concatenated quote spans form one literal shell path, never executable input.
+function literalFileToken(token){
+ let quote=null,decoded='';
+ for(const ch of token){
+  if(ch==='"'||ch==="'"){
+   if(quote===ch){quote=null;continue}
+   if(quote===null){quote=ch;continue}
+  }
+  if(ch==='\\'||ch==='$'||ch.charCodeAt(0)===96)return null;
+  decoded+=ch;
+ }
+ if(quote!==null||!/^(?:\.\/)?[a-z0-9_.\/-]+$/i.test(decoded))return null;
+ return normalizedFile(decoded);
+}
 function findingsForScript(source,{shell=''}={}){
  if(typeof source!=='string')return [];
  // Direct callers must never interpret an unscannable script as clean.
@@ -25,8 +39,11 @@ function findingsForScript(source,{shell=''}={}){
  const download=/(?:^|[;&\n])\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
  const aliases=[...active.matchAll(/(?:^|[;\n]|&&)\s*(ln|cp|mv)\s+((?:(?:--[a-z-]+|-[a-zA-Z]+|--)\s+){0,4})(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))\s+(?:"([a-z0-9_./-]+)"|'([a-z0-9_./-]+)'|([a-z0-9_./-]+))(?=\s|$|[;&])/gi)]
   .map(m=>{
-   const kind=m[1].toLowerCase(),to=normalizedFile(m[6]||m[7]||m[8]);
-   const origin=m[3]||m[4]||m[5];
+   const kind=m[1].toLowerCase(),origin=m[3]||m[4]||m[5];
+   const destination=m[6]||m[7]||m[8];
+   // Directory destinations create basename(source) at that location.
+   const to=normalizedFile(destination.endsWith('/')?
+    posix.join(destination,posix.basename(origin)):destination);
    // ln -s resolves its relative target from the link's own directory.
    // cp/mv and hard links resolve their source from the working directory.
    const symbolic=kind==='ln'&&/(?:--symbolic|-[A-Za-z]*s[A-Za-z]*)/.test(m[2]);
@@ -40,40 +57,37 @@ function findingsForScript(source,{shell=''}={}){
   // Recognize bounded no-argument short-flag clusters before -o/-O.
   // An unrestricted greedy [A-Za-z]* would eat filename letters up to a
   // later 'o' (e.g. -fsSLopayload -> incorrectly parsed as file 'ad').
-  const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
+  const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
   if(!output)continue;
-  const outputDir=/(?:^|\s)--output-dir(?:=|\s+)(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
+  const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/gi)];
+  // Repeated flags: curl uses the last --output-dir value.
+  const outputDir=outputDirs.at(-1);
   // A constant --output-dir changes where the downloaded bytes land.
   const file=normalizedFile(outputDir&&!output[2].startsWith('/')?
    posix.join(outputDir[2],output[2]):output[2]);
   if(file==='-'||file==='.'||file==='..')continue;
   const after=active.slice(d.index+d[0].length);
-  const candidates=new Set([file,...aliases.map(a=>a.to)]);
-  let detected=false;
-  for(const candidate of candidates){
-   const escape=candidate.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
-   const invocation=new RegExp(String.raw`(?:^|[;\n]|&&|\|\|)\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)\s+(?:[-\w]+\s+)*|)(?:(["'])(?:\.\/)?`+escape+String.raw`\1|(?:\.\/)?`+escape+String.raw`)(?=\s|$|[;&])`,'gi');
-   for(const match of after.matchAll(invocation)){
-    const executedAt=d.index+d[0].length+match.index;
-    // A copy or move made BEFORE the download holds old bytes. Only ln
-    // aliases can continue to address an inode overwritten by curl/wget.
-    const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.index||a.kind==='ln'));
-    const tainted=new Set([file]);
-    // Compute transitive closure for bounded aliases; no filesystem reads.
-    for(let i=0;i<visible.length;i++){
-     let changed=false;
-     for(const alias of visible){
-      if(tainted.has(alias.from)&&!tainted.has(alias.to)){
-       tainted.add(alias.to);changed=true;
-      }
+  // Parse literal invocation words once; partial quote spans are supported.
+  const invocations=/(?:^|[;\n]|&&|\|\|)\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)\s+(?:[-\w]+\s+)*|)([a-z0-9_.\/'"-]+)(?=\s|$|[;&])/gi;
+  for(const match of after.matchAll(invocations)){
+   const calledFile=literalFileToken(match[1]);
+   if(!calledFile)continue;
+   const executedAt=d.index+d[0].length+match.index;
+   // A copy or move before the download contains old bytes; an ln may not.
+   const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.index||a.kind==='ln'));
+   const tainted=new Set([file]);
+   for(let i=0;i<visible.length;i++){
+    let changed=false;
+    for(const alias of visible){
+     if(tainted.has(alias.from)&&!tainted.has(alias.to)){
+      tainted.add(alias.to);changed=true;
      }
-     if(!changed)break;
     }
-    if(tainted.has(candidate)){
-     flag('REMOTE_DOWNLOADED_FILE_EXECUTION');detected=true;break;
-    }
+    if(!changed)break;
    }
-   if(detected)break;
+   if(tainted.has(calledFile)){
+    flag('REMOTE_DOWNLOADED_FILE_EXECUTION');break;
+   }
   }
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
@@ -132,7 +146,8 @@ function findingsForScript(source,{shell=''}={}){
  const fetchRest=String.raw`(?:irm|Invoke-RestMethod)\b\s+`+uriArgs+endpoint;
  // WebRequest's response object needs .Content; RestMethod can return the
  // response body directly as a string, which is executable by iex.
- const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*(?:`+fetchWeb+String.raw`\s*\)\s*\.Content|`+fetchRest+String.raw`\s*\)(?:\s*\.Content)?)\s*\)*`;
+ const trailingSwitches=String.raw`(?:\s+-(?:UseBasicParsing|Verbose|Debug)){0,4}`;
+ const argumentSource=String.raw`(?:iex|Invoke-Expression)\s+(?:-Command\s+)?\(*\s*(?:`+fetchWeb+trailingSwitches+String.raw`\s*\)\s*\.Content|`+fetchRest+trailingSwitches+String.raw`\s*\)(?:\s*\.Content)?)\s*\)*`;
  const argument=new RegExp(String.raw`(?:^|[;\n])\s*`+argumentSource,'i');
  const explicitArgument=new RegExp(String.raw`(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*`+argumentSource,'i');
  if((powershellScript&&argument.test(active))||explicitArgument.test(active))
