@@ -61,7 +61,7 @@ function globalRoot(node){
 }
 function dynamicJsNode(node,parent,key){
  if(node.type==='Identifier'&&['eval','Function','AsyncFunction','GeneratorFunction'].includes(node.name)){
-  // Property names are not references: obj.eval() may be an ordinary method.
+  // Property names are not references: ordinary objects may share method names.
   if(parent?.type==='MemberExpression'&&key==='property'&&!parent.computed)return false;
   if(parent?.type==='Property'&&key==='key'&&!parent.computed)return false;
   if(parent?.type==='MethodDefinition'&&key==='key'&&!parent.computed)return false;
