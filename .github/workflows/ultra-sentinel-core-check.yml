@@ -39,7 +39,7 @@ jobs:
           sh -n .github/scripts/install_sentinel_hook.sh
       - name: Run all isolated engine and orchestrator tests
         env:
-          CORE_MIN_TESTS: '2000'
+          CORE_MIN_TESTS: '20000'
         run: |
           set -euo pipefail
           node --test .github/scripts/ultra_sentinel_*.test.cjs | tee "$RUNNER_TEMP/sentinel-core.tap"
