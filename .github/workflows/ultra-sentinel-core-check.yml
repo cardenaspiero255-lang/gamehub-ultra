@@ -23,7 +23,7 @@ jobs:
   core-tests:
     name: Sentinel Core / full regression suite
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 15
     steps:
       - name: Checkout tested PR in restricted runner
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -39,10 +39,19 @@ jobs:
           sh -n .github/scripts/install_sentinel_hook.sh
       - name: Run all isolated engine and orchestrator tests
         env:
-          CORE_MIN_TESTS: '20000'
+          CORE_MIN_TESTS: '150000'
         run: |
           set -euo pipefail
-          node --test .github/scripts/ultra_sentinel_*.test.cjs | tee "$RUNNER_TEMP/sentinel-core.tap"
+          # Capture high-volume TAP without flooding the GitHub logs.
+          # On failure, print the first useful failing cases before exiting.
+          if node --test .github/scripts/ultra_sentinel_*.test.cjs | tee "$RUNNER_TEMP/sentinel-core.tap" >/dev/null; then
+            echo 'Node Core suite completed; validating TAP counters.'
+          else
+            echo 'Node Core tests failed. First failures:'
+            grep -A 14 '^not ok ' "$RUNNER_TEMP/sentinel-core.tap" | head -n 160 || true
+            tail -n 24 "$RUNNER_TEMP/sentinel-core.tap" || true
+            exit 1
+          fi
           node - "$RUNNER_TEMP/sentinel-core.tap" <<'NODE'
           const fs=require('node:fs');
           const tap=fs.readFileSync(process.argv[2],'utf8');
