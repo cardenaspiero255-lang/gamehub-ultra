@@ -327,6 +327,35 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(/^(?:false|0)$/i.test(body)||/\bfalse\b|!\s*true\b/i.test(withoutLiterals)||
      /\b\d+\s*(?:==|!=|<=|>=|<|>)\s*\d+\b/.test(withoutLiterals))
    coverage.partial=true;
+  // A gate demanding an event absent from on: can NEVER run. This covers
+  // jobs and steps, bare and wrapped expressions, quoted / bracket syntax,
+  // and reversed literal comparisons without evaluating untrusted code.
+  // Conservative: an impossible subcondition forces an independent review
+  // even if other boolean operands may make the whole expression true.
+  const events=new Set(typeof document.on==='string'?[document.on]:
+    Array.isArray(document.on)?document.on:Object.keys(document.on));
+  const normalized=body.replace(/\bgithub\s*\[\s*(['"])event_name\1\s*\]/g,
+    'github.event_name').replace(/\bgithub\s*\.\s*event_name\b/g,
+    'github.event_name');
+  const comparisons=[];
+  for(const match of normalized.matchAll(/\bgithub\.event_name\s*(==|!=)\s*(['"])([A-Za-z0-9_-]+)\2/g)){
+   comparisons.push({operator:match[1],event:match[3],start:match.index,forward:true});
+  }
+  for(const match of normalized.matchAll(/(['"])([A-Za-z0-9_-]+)\1\s*(==|!=)\s*\bgithub\.event_name\b/g)){
+   comparisons.push({operator:match[3],event:match[2],start:match.index,forward:false});
+  }
+  for(const comparison of comparisons){
+   const impossible=comparison.operator==='=='?
+     !events.has(comparison.event):
+     events.size===1&&events.has(comparison.event);
+   if(impossible)coverage.partial=true;
+   // Simple !(event == 'trigger') is also impossible for a singleton event.
+   if(comparison.operator==='=='&&events.size===1&&events.has(comparison.event)){
+    const before=normalized.slice(0,comparison.start);
+    if(/!\s*\(\s*$/.test(before))coverage.partial=true;
+   }
+  }
+
  };
  const sensitiveExpression=value=>typeof value==='string'&&
   value.includes(String.fromCharCode(36,123,123))&&
