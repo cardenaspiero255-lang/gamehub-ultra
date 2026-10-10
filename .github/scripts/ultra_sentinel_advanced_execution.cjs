@@ -7,7 +7,7 @@
 const MAX_SCRIPT=160000;
 const posix=require('node:path').posix;
 const normalizedFile=name=>posix.normalize(name.replace(/^(?:\.\/)+/,''));
-const {parseShellCommands,literalFileToken}=require('./ultra_sentinel_command_ir.cjs');
+const {parseShellCommands,literalFileToken,literalCommandName}=require('./ultra_sentinel_command_ir.cjs');
 // Consume arguments of interpreter flags before identifying the script file.
 // Unknown options fail closed instead of treating their values as executables.
 function interpreterFileOperand(command,flag){
@@ -33,12 +33,56 @@ function interpreterFileOperand(command,flag){
   }
   if(python&&/^-(?:W|X).+/.test(a))continue;
   if(node&&/^(?:--require=|--import=|--loader=|--conditions=|-r.).+/.test(a))continue;
-  if(a.startsWith('-')){
-   if(plainFlags.test(a)||/^-[BEOIPqSsuvx]+$/.test(a))continue;
+  if(a.startsWith('-')||a.startsWith('+')){
+   if(plainFlags.test(a)||/^[+-][abefhkmnptuvxBCDEHPT]+$/.test(a)||
+      (python&&/^-[BEOIPqSsuvx]+$/.test(a)))continue;
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
   }
   return a;
  }
+ return null;
+}
+/**
+ * Remove transparent Bash command prefixes before classification. Unknown
+ * wrapper options remain explicitly INCOMPLETE, never silently trusted.
+ */
+function normalizeInvocation(command,flag){
+ const args=command.words;let i=0;
+ for(let depth=0;depth<5;depth++){
+  const name=literalCommandName(args[i]||'');
+  if(name==='command'){
+   i++;
+   while(i<args.length&&/^-[A-Za-z-]+$/.test(args[i])){
+    if(args[i]==='-v'||args[i]==='-V')return null;
+    if(args[i]==='-p'){i++;continue;}
+    if(args[i]==='--'){i++;break;}
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
+   }
+  }else if(name==='env'){
+   i++;
+   while(i<args.length){
+    const w=args[i];
+    if(w==='--'){i++;break;}
+    if(/^[A-Za-z_][\w]*=/.test(w)){i++;continue;}
+    if(/^(?:-i|--ignore-environment|-0|--null)$/.test(w)){i++;continue;}
+    if(/^(?:-u|--unset|-C|--chdir)$/.test(w)){
+     if(++i>=args.length){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+     i++;continue;
+    }
+    if(/^(?:--unset=|--chdir=)/.test(w)){i++;continue;}
+    if(w.startsWith('-')){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+    break;
+   }
+  }else if(/^(?:sudo|nohup|nice|timeout|stdbuf|setsid|time)$/.test(name||'')){
+   // Further wrappers have option parsers of their own. Do not certify them.
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
+  }else{
+   if(!name){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+   return {...command,name,words:args.slice(i),raw:args.slice(i).join(' ')};
+  }
+  if(i>=args.length)return null;
+ }
+ flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  return null;
 }
 function findingsForScript(source,{shell=''}={}){
@@ -57,7 +101,7 @@ function findingsForScript(source,{shell=''}={}){
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
  const parsed=parseShellCommands(active);
- const commands=parsed.commands;
+ const commands=parsed.commands.map(c=>normalizeInvocation(c,flag)).filter(Boolean);
  // No source containing an uncertain path command is certified as clean.
  if(parsed.incomplete&&/\b(?:curl|wget|mkdir|cp|mv|ln)\b/i.test(active))
   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
@@ -136,7 +180,7 @@ function findingsForScript(source,{shell=''}={}){
   aliases.push({at:m.start,kind,from,to});
  }
  for(const d of commands.filter(c=>/^(?:curl|wget)$/i.test(c.name))){
-  const command=d.raw.slice(d.words[0].length);
+  const command=d.words.slice(1).join(' ');
   if(!/\bhttps?:\/\//i.test(command))continue;
   // Keep curl/wget output option grammar bounded; literalFileToken rejects
   // dynamic paths instead of trusting partial or interpolated matches.
