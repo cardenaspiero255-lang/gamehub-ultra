@@ -17,8 +17,11 @@ function interpreterFileOperand(command,flag){
  const valueOptions=python?new Set(['-W','-X','--check-hash-based-pycs']):
   node?new Set(['-r','--require','--import','--loader',
     '--experimental-loader','--conditions','-C']):new Set();
+ // -e (errexit) and -r (restricted) are flags for POSIX shells, not
+ // inline-evaluation switches. Ruby/Perl/PHP have different -e/-r semantics.
+ const isShell=/^(?:bash|sh|dash|zsh|ksh|fish)$/.test(language);
  const evalOptions=python?new Set(['-c','-m']):node?new Set(['-e','--eval','-p','--print']):
-  new Set(['-c','-e','-r']);
+  isShell?new Set(['-c']):new Set(['-c','-e','-r']);
  const plainFlags=python?
   /^-(?:B|E|I|O|OO|P|q|s|S|u|v|V|x)$/:
   node?/^-(?:v|V|h|i)$/:
