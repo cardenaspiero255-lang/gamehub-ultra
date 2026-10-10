@@ -38,7 +38,24 @@ jobs:
           sh -n .githooks/pre-commit
           sh -n .github/scripts/install_sentinel_hook.sh
       - name: Run all isolated engine and orchestrator tests
-        run: node --test .github/scripts/ultra_sentinel_*.test.cjs
+        env:
+          CORE_MIN_TESTS: '2000'
+        run: |
+          set -euo pipefail
+          node --test .github/scripts/ultra_sentinel_*.test.cjs | tee "$RUNNER_TEMP/sentinel-core.tap"
+          node - "$RUNNER_TEMP/sentinel-core.tap" <<'NODE'
+          const fs=require('node:fs');
+          const tap=fs.readFileSync(process.argv[2],'utf8');
+          const tests=Number([...tap.matchAll(/^# tests (\d+)$/gm)].at(-1)?.[1]||0);
+          const failed=Number([...tap.matchAll(/^# fail (\d+)$/gm)].at(-1)?.[1]||-1);
+          const skipped=Number([...tap.matchAll(/^# skipped (\d+)$/gm)].at(-1)?.[1]||-1);
+          const floor=Number(process.env.CORE_MIN_TESTS);
+          if(tests<floor||failed!==0||skipped!==0){
+            console.error(`Sentinel Core invalid: tests=${tests}, floor=${floor}, fail=${failed}, skipped=${skipped}`);
+            process.exit(1);
+          }
+          console.log(`Sentinel Core gate passed: ${tests} executed, zero failures/skips (minimum ${floor})`);
+          NODE
       - name: Verify OMEGA abstract voice-state contracts
         run: |
           node .github/scripts/ultra_sentinel_omega.cjs
