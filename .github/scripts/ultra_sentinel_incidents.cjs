@@ -142,13 +142,15 @@ function sanitizeBreadcrumbs(records,{consent=false}={}){
 function recordVerifiedRepair(record,now=Date.now()){
  const rejected=reason=>({status:'REJECTED',reason});
  if(!record||typeof record!=='object')return rejected('invalid_record');
- if(!/^[a-z0-9-]{6,80}$/.test(record.id||'')||
+ if(typeof record.id!=='string'||!/^[a-z0-9-]{6,80}$/.test(record.id)||
   ![record.fixSha,record.redTestSha,record.greenTestSha].every(validSha))
   return rejected('missing_immutable_provenance');
- if(!/^[A-Z][A-Z0-9_]{2,75}$/.test(record.rule||'')||
-  record.approval!=='approved'||!/^[a-z0-9_-]{3,70}$/i.test(record.approvedBy||''))
+ if(typeof record.rule!=='string'||!/^[A-Z][A-Z0-9_]{2,75}$/.test(record.rule)||
+  record.approval!=='approved'||!validLogin(record.approvedBy)||
+  record.approvedBy.length<3)
   return rejected('missing_human_review');
- if(!/^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[0-9a-f]+\/?$/i.test(record.evidenceUrl||''))
+ if(typeof record.evidenceUrl!=='string'||
+  !/^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[0-9a-f]+\/?$/i.test(record.evidenceUrl))
   return rejected('untrusted_evidence_url');
  const verified=validTime(record.verifiedAt),expire=validTime(record.expiresAt);
  if(verified===null||expire===null||expire<=verified||expire<=now||
