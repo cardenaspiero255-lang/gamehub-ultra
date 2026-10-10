@@ -1,4 +1,5 @@
 'use strict';
+const {hasRemoteProcessSubstitution}=require('./ultra_sentinel_remote_exec.cjs');
 /* Read-only, bounded workflow-source heuristics. Workflow and PR data are
  * untrusted. Findings require human verification; never run PR source. */
 const SHA=/^[a-f0-9]{40}$/i;
@@ -414,6 +415,7 @@ function matchesRemotePipeline(value){
   .replace(/\x24\x27([A-Za-z]*)\x27/g,'$1')
   .replace(/(['"])([A-Za-z]*)\1/g,'$2');
   return remoteShellPattern.test(normalized)||
+   hasRemoteProcessSubstitution(normalized)||
    /\b(?:bash|sh|zsh)\s*(?:<\(|-c\s*["']?\$\()\s*(?:curl|wget)\b/.test(normalized);
 }
 function shellPipelinesInStep(lines,step){
