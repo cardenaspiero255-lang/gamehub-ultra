@@ -30,25 +30,76 @@ const JS_BACKTICK=String.fromCharCode(96);
 
 // Treat regex character classes as regex data, not line comments. Nested
 // templates get inspected only inside executable interpolation expressions.
+
+// A regex can occur after an operator or a control-flow keyword. Read the
+// entire literal (including bracket classes) before interpreting // or }.
+// Unknown/unclosed constructs are not certified as safe.
+function expectsJsRegex(prefix){
+ const p=prefix.trimEnd();
+ return p===''||/[=({[:,!?;+\-*%&|^~<>/]$/.test(p)||
+  /\b(?:return|throw|case|yield|await|void|delete|typeof|instanceof|in)$/.test(p);
+}
+function readJsRegexEnd(source,start){
+ let inClass=false,i=start+1;
+ for(;i<source.length;i++){
+  const ch=source[i];
+  if(ch==='\\'){i++;continue;}
+  if(ch==='['){inClass=true;continue;}
+  if(ch===']'){inClass=false;continue;}
+  if(ch==='/'&&!inClass){
+   i++;
+   while(i<source.length&&/[a-z]/i.test(source[i]))i++;
+   return i;
+  }
+ }
+ return -1;
+}
+function findTemplateExpressionEnd(body,start,state){
+ let i=start+2,nesting=1,code='';
+ while(i<body.length){
+  const ch=body[i];
+  if(body.startsWith('/*',i)){
+   const end=body.indexOf('*/',i+2);
+   if(end<0){state.unknown=true;return -1;}
+   code+=' ';i=end+2;continue;
+  }
+  if(body.startsWith('//',i)){
+   const end=body.indexOf('\n',i+2);
+   if(end<0){state.unknown=true;return -1;}
+   code+=' ';i=end+1;continue;
+  }
+  if(ch==='/'&&expectsJsRegex(code)){
+   const end=readJsRegexEnd(body,i);
+   if(end<0){state.unknown=true;return -1;}
+   code+=' ';i=end;continue;
+  }
+  if(ch==="'"||ch==='"'){
+   const quote=ch;let end=i+1,closed=false;
+   while(end<body.length){
+    if(body[end]==='\\'){end+=2;continue;}
+    if(body[end++]===quote){closed=true;break;}
+   }
+   if(!closed){state.unknown=true;return -1;}
+   code+=' ';i=end;continue;
+  }
+  if(ch===JS_BACKTICK){
+   // A nested template requires a full JS grammar to disambiguate safely.
+   state.unknown=true;return -1;
+  }
+  if(ch==='{')nesting++;
+  if(ch==='}'&&--nesting===0)return i;
+  code+=ch;i++;
+ }
+ state.unknown=true;return -1;
+}
 function templateExpressionsHaveSink(body,state,depth){
  if(depth>4){state.unknown=true;return;}
  let cursor=0;
  while(cursor<body.length){
   const start=body.indexOf('$'+'{',cursor);
   if(start<0)return;
-  let end=start+2,nesting=1,quote=null;
-  for(;end<body.length;end++){
-   const ch=body[end];
-   if(quote){
-    if(ch==='\\'){end++;continue;}
-    if(ch===quote)quote=null;
-    continue;
-   }
-   if(ch==="'"||ch==='"'||ch===JS_BACKTICK){quote=ch;continue;}
-   if(ch==='{')nesting++;
-   else if(ch==='}'&&--nesting===0)break;
-  }
-  if(nesting!==0){state.unknown=true;return;}
+  const end=findTemplateExpressionEnd(body,start,state);
+  if(end<0)return;
   const expression=body.slice(start+2,end);
   const nested={block:false,unknown:false,danger:false};
   const code=jsExecutableLine(expression,nested,depth+1);
@@ -66,19 +117,10 @@ function jsExecutableLine(line,state,depth=0){
    state.block=false;code+=' ';i=end+2;continue;
   }
   if(line[i]==='/'&&line[i+1]!=='/'&&line[i+1]!=='*'&&
-     /(?:^|[=({[:,!?;])$/.test(code.trimEnd())){
-   let j=i+1,inClass=false,closed=false;
-   for(;j<line.length;j++){
-    const ch=line[j];
-    if(ch==='\\'){j++;continue;}
-    if(ch==='['){inClass=true;continue;}
-    if(ch===']'){inClass=false;continue;}
-    if(ch==='/'&&!inClass){closed=true;break;}
-   }
-   if(!closed){state.unknown=true;break;}
-   i=j+1;
-   while(i<line.length&&/[a-z]/i.test(line[i]))i++;
-   code+=' ';continue;
+     expectsJsRegex(code)){
+   const end=readJsRegexEnd(line,i);
+   if(end<0){state.unknown=true;break;}
+   i=end;code+=' ';continue;
   }
   if(line.startsWith('//',i))break;
   if(line.startsWith('/*',i)){
@@ -117,7 +159,7 @@ function jsAddedExecutableByLine(patch,fullSource){
    if(source){
     for(let n=0;n<line-1;n++){
      const scanned=jsExecutableLine(source[n]||'',state);
-     prior=(prior+' '+scanned).slice(-384);
+     if(scanned.trim())prior=(prior+' '+scanned).slice(-384);
     }
     state.danger=false;
    }else if(line>1)state.contextUnknown=true;
@@ -128,7 +170,7 @@ function jsAddedExecutableByLine(patch,fullSource){
    const added=row[0]==='+';
    const before=state.danger,previousSink=DYNAMIC_JS_SINK.test(prior);
    const code=jsExecutableLine(row.slice(1),state);
-   const together=(prior+' '+code).slice(-768);
+   const together=code.trim()?(prior+' '+code).slice(-768):prior;
    if(added)found.set(line,{
     sink:DYNAMIC_JS_SINK.test(together)&&(!previousSink||DYNAMIC_JS_SINK.test(code)),
     danger:state.danger&&!before,
