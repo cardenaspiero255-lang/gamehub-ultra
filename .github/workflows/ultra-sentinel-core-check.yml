@@ -45,9 +45,11 @@ jobs:
           sh -n .github/scripts/install_sentinel_hook.sh
       - name: Execute independent 10k matrix or baseline partition
         shell: bash
+        env:
+          SENTINEL_SHARD_ID: ${{ matrix.id }}
         run: |
           set -euo pipefail
-          node .github/scripts/ultra_sentinel_core_shards.cjs run "${{ matrix.id }}" "$RUNNER_TEMP/sentinel-core"
+          node .github/scripts/ultra_sentinel_core_shards.cjs run-env "$RUNNER_TEMP/sentinel-core"
       - name: Upload compact evidence from this shard
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -76,11 +78,11 @@ jobs:
       - name: Fail closed on missing/duplicated reports, coverage gaps or failed shards
         env:
           CORE_MIN_TESTS: '150000'
+          SENTINEL_MATRIX_RESULT: ${{ needs.core-shard.result }}
         shell: bash
         run: |
           set -euo pipefail
           node .github/scripts/ultra_sentinel_core_shards.cjs aggregate "$RUNNER_TEMP/sentinel-core-reports"
-          test "${{ needs.core-shard.result }}" = "success"
       - name: Install locked parser for regression contracts
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify OMEGA abstract voice-state contracts
