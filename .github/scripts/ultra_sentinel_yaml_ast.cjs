@@ -3,6 +3,7 @@
 // parsed values, never interpolate them into a command, never load custom tags.
 // Dependency: js-yaml 4.3.2, pinned with sha512 integrity in package-lock.json.
 const yaml=require('js-yaml');
+const {hasRemoteProcessSubstitution}=require('./ultra_sentinel_remote_exec.cjs');
 const MAX_SOURCE=160000,MAX_NODES=4096,MAX_DEPTH=35,MAX_FINDINGS=40;
 const PINNED=/^[a-f0-9]{40}$/i, ACTION=/^[-A-Za-z0-9_.\/]+@([^\s]+)$/;
 const REMOTE=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|$)/;
@@ -286,19 +287,38 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  };
  // Treat event-backed env as tainted DATA, not automatically as injected
  // code. A github-script that merely logs process.env is not a vulnerability.
- const collectEnvSources=(value)=>{
-  const tainted=new Set();
+ const collectEnvSources=(value,inherited=new Set())=>{
+  // Environment values are not expanded automatically; shell eval and
+  // interpreter commands can expand aliases. Trace through all env scopes.
+  const tainted=new Set(inherited);
   if(value===undefined)return tainted;
   if(!isMap(value)){coverage.partial=true;return tainted;}
+  const dependents=new Map();
   for(const [name,item] of Object.entries(value)){
    if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)){coverage.partial=true;continue;}
    if(typeof item!=='string'){
     if(item!==null&&typeof item!=='number'&&typeof item!=='boolean')coverage.partial=true;
     continue;
    }
-   if(!item.includes(String.fromCharCode(36,123,123)))continue;
-   const check=auditExecutableExpressions(item);
-   if(check.unsafe||check.incomplete)tainted.add(name);
+   if(item.includes(String.fromCharCode(36,123,123))){
+    const check=auditExecutableExpressions(item);
+    if(check.unsafe||check.incomplete)tainted.add(name);
+   }
+   // Track bare, braced, default-value and indirect shell references.
+   // A reverse graph computes transitive taint without recursive evaluation.
+   for(const ref of item.matchAll(/\$(?:\{!?([A-Za-z_][A-Za-z0-9_]*)[^}]*\}|([A-Za-z_][A-Za-z0-9_]*))/g)){
+    const source=ref[1]||ref[2];
+    if(!dependents.has(source))dependents.set(source,new Set());
+    dependents.get(source).add(name);
+   }
+  }
+  const queue=[...tainted];
+  for(let i=0;i<queue.length;i++){
+   for(const alias of dependents.get(queue[i])||[]){
+    if(tainted.has(alias))continue;
+    tainted.add(alias);
+    queue.push(alias);
+   }
   }
   return tainted;
  };
@@ -425,7 +445,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(privileged && job.permissions==null && document.permissions==null)
    coverage.partial=true;
   checkDefaults(job.defaults,where);
-  const jobTaint=new Set([...workflowTaint,...collectEnvSources(job.env)]);
+  const jobTaint=collectEnvSources(job.env,workflowTaint);
   if(privileged){
    checkRunner(job['runs-on'],where);
    checkContainer(job.container,where);
@@ -463,7 +483,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(!isMap(step)){coverage.partial=true;continue;}
    checkGateControl(step);
    if(step.uses!==undefined)checkActionCredentialHandoff(step,job);
-   const stepTaint=new Set([...jobTaint,...collectEnvSources(step.env)]);
+   const stepTaint=collectEnvSources(step.env,jobTaint);
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
@@ -585,7 +605,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      else if(unknownDownloadPipeline(step.run))coverage.partial=true;
      // Unsupported Bash ANSI-C quotes or indirect download execution are not clean.
      if(step.run.includes(String.fromCharCode(36,39)))coverage.partial=true;
-     if(/\b(?:bash|sh|zsh)\s*(?:<\(|-c\s*["']?\$\()\s*(?:curl|wget)\b/.test(step.run))
+     if(hasRemoteProcessSubstitution(step.run)||
+       /\b(?:bash|sh|zsh)\s*-c\s*["']?\$\(\s*(?:curl|wget)\b/.test(step.run))
       emit('REMOTE_SHELL_SUBSTITUTION','HIGH',where);
      {
       const inspection=auditExecutableExpressions(step.run);
