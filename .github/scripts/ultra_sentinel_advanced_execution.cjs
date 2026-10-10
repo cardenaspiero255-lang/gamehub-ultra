@@ -24,10 +24,18 @@ function findingsForScript(source,{shell=''}={}){
   if(!output)continue;
   const file=normalizedFile(output[1]);
   if(file==='-'||file==='.'||file==='..')continue;
-  const escape=file.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
   const after=active.slice(d.index+d[0].length);
-  const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:\\.\\/)?(?:'+escape+')(?=\\s|$|[;&])','i');
-  if(invocation.test(after))flag('REMOTE_DOWNLOADED_FILE_EXECUTION');
+  // Track simple local file aliases created after the download. Paths are
+  // normalized lexically, without touching the filesystem or executing code.
+  const targets=new Set([file]);
+  for(const alias of after.matchAll(/(?:^|[;\n]|&&)\s*(?:ln\s+-s|cp|mv)\s+([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)){
+   if(targets.has(normalizedFile(alias[1])))targets.add(normalizedFile(alias[2]));
+  }
+  for(const candidate of targets){
+   const escape=candidate.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
+   const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:\\.\\/)?(?:'+escape+')(?=\\s|$|[;&])','i');
+   if(invocation.test(after)){flag('REMOTE_DOWNLOADED_FILE_EXECUTION');break;}
+  }
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
  // commonly appear on different lines. Use the declared delimiter rather
@@ -62,7 +70,9 @@ function findingsForScript(source,{shell=''}={}){
   if(evaluatesRemote(match[1],body.join('\n')))
    flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
  }
- if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active))
+ if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)||
+  (/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))&&
+   /(?:^|[;\n])\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)))
   flag('REMOTE_POWERSHELL_EXECUTION');
  // Shell continuations and lines following a trailing | form one pipeline.
  // Keep canonicalization bounded and never execute decoded content.
