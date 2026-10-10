@@ -74,6 +74,21 @@ test('dynamic JS execution is blocked',()=>{
  const prolonged=scan([file(src,...longComment)],SHA);
  assert.equal(prolonged.status,'BLOCKED','very long multiline comment bypass');
  assert.ok(prolonged.findings.some(x=>x.rule==='DYNAMIC_EVAL'));
+ // Codex next P1 round: return used as a property is not a keyword.
+ for(const script of [
+  'obj.return / eval(userPatch) / divisor;',
+  'const s=`'+'$'+'{obj.return / eval(userPatch) / divisor}`;'
+ ])assert.equal(scan([file(src,script)],SHA).status,'BLOCKED',script);
+ // A regex can also be the immediate body of a control statement.
+ for(const script of [
+  'if (enabled) /[//]/; eval(userPatch)',
+  'while (enabled) /[//]/; eval(userPatch)',
+  'for (; enabled ;) /[//]/; eval(userPatch)',
+  'with (obj) /[//]/; eval(userPatch)',
+  'do /[//]/; while (false); eval(userPatch)'
+ ])assert.equal(scan([file(src,script)],SHA).status,'BLOCKED',script);
+ assert.equal(scan([file(src,'const q=obj.return / size / divisor')],SHA).status,'ADVISORY');
+ assert.equal(scan([file(src,'if (enabled) /[//]/; const ok=true;')],SHA).status,'ADVISORY');
  // Equivalent inoperative comments, string literals and regex expressions stay advisory.
  assert.equal(scan([file(src,'const slash = () => /[//]/; const ok = true')],SHA).status,'ADVISORY');
  assert.equal(scan([file(src,'const s = `'+'$'+'{x / /}/.test(y) ? 1 : 2}`;')],SHA).status,'ADVISORY');
