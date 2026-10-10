@@ -114,6 +114,7 @@ function normalizeInvocation(command,flag){
 const CURL_VALUE_FLAGS=new Set([
  '-A','--user-agent','-H','--header','-b','--cookie','-c','--cookie-jar',
  '-w','--write-out','-E','--cert','--cert-type','--key-type',
+ '--oauth2-bearer',
  '-d','--data','--data-raw','--data-binary','--data-urlencode','-F','--form',
  '--form-string','-e','--referer','-u','--user','-x','--proxy','-X','--request',
  '-K','--config','--url','--url-query','--resolve','--connect-to','--interface',
@@ -168,7 +169,7 @@ function downloadedFiles(command,flag){
     if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {files:[],unknownDownloaderOption:true};}
    }
   }
-  if(!isOutput&&word.startsWith('-')&&literal!=='-'&&
+  if(!isOutput&&literal.startsWith('-')&&literal!=='-'&&
      !/^-([fsSLkvIqNn]+)$/.test(literal)&&
      !/^(?:--(?:silent|show-error|fail|location|insecure|verbose|head|include|no-buffer|netrc|compressed|disable|progress-bar|fail-with-body|location-trusted|retry-all-errors|no-progress|quiet)|-q)$/.test(literal)){
    // A value-bearing unmodelled option can swallow '--' or the next token.
@@ -380,8 +381,9 @@ function findingsForScript(source,{shell=''}={}){
   // A confirmed HIGH remains HIGH (not downgraded to INCOMPLETE); download-only
   // workflows are not condemned solely for options outside our small grammar.
   if(output.unknownDownloaderOption&&!findings.has('REMOTE_DOWNLOADED_FILE_EXECUTION')&&
-     commands.some(inv=>inv.start>=d.end&&
-      /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)))
+     commands.some(inv=>inv.start>=d.end&&(
+      /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)||
+      /^(?:\.\/?|\.\.\/|\/)\S+/.test(inv.name))))
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
