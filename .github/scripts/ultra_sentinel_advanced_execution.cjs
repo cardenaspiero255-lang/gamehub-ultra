@@ -7,38 +7,7 @@
 const MAX_SCRIPT=160000;
 const posix=require('node:path').posix;
 const normalizedFile=name=>posix.normalize(name.replace(/^(?:\.\/)+/,''));
-// Concatenated quote spans form one literal shell path, never executable input.
-function literalFileToken(token){
- let quote=null,decoded='';
- for(const ch of token){
-  if(ch==='"'||ch==="'"){
-   if(quote===ch){quote=null;continue}
-   if(quote===null){quote=ch;continue}
-  }
-  if(ch==='\\'||ch==='$'||ch.charCodeAt(0)===96)return null;
-  decoded+=ch;
- }
- if(quote!==null||!/^(?:\.\/)?[a-z0-9_.\/-]+$/i.test(decoded))return null;
- return normalizedFile(decoded);
-}
-// Bounded lexer: split on whitespace OUTSIDE shell quotes and preserve each
-// complete word for literalFileToken(). Never interpolate or execute values.
-function shellLiteralWords(raw){
- const words=[];let token='',quote=null;
- for(const ch of raw){
-  if(ch==='"'||ch==="'"){
-   if(quote===ch)quote=null;
-   else if(!quote)quote=ch;
-   token+=ch;
-  }else if(/\s/.test(ch)&&!quote){
-   if(token){words.push(token);token='';}
-  }else token+=ch;
-  if(token.length>256||words.length>64)return null;
- }
- if(quote)return null;
- if(token)words.push(token);
- return words;
-}
+const {parseShellCommands,literalFileToken}=require('./ultra_sentinel_command_ir.cjs');
 function findingsForScript(source,{shell=''}={}){
  if(typeof source!=='string')return [];
  // Direct callers must never interpret an unscannable script as clean.
@@ -54,15 +23,16 @@ function findingsForScript(source,{shell=''}={}){
  // an attempted execution must not turn an unrelated command into a finding.
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
- const download=/(?:^|[;&\n]|\|\|)\s*(?:curl|wget)\b([^\r\n;|&]{1,4096})/gi;
- // Only trust a directory target without '/' when this same script
- // explicitly created it before the linking operation.
- // mkdir accepts multiple directory operands. Preserve the command index
- // so only directories created before a copy/link can affect its destination.
+ const parsed=parseShellCommands(active);
+ const commands=parsed.commands;
+ // No source containing an uncertain path command is certified as clean.
+ if(parsed.incomplete&&/\b(?:curl|wget|mkdir|cp|mv|ln)\b/i.test(active))
+  flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+ // Data-flow facts use one command IR. The command boundary, argument words
+ // and source offsets can no longer disagree across downloads and aliases.
  const createdDirs=[];
- for(const mkdir of active.matchAll(/(?:^|[;\n]|&&|\|\|)\s*mkdir\b([^\r\n;&|]{1,2048})/gi)){
-  const tokens=shellLiteralWords(mkdir[1]);
-  if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+ for(const mkdir of commands.filter(c=>c.name==='mkdir')){
+  const tokens=mkdir.words.slice(1);
   let options=true,unknown=false;
   for(const token of tokens){
    if(options&&token==='--'){options=false;continue;}
@@ -71,40 +41,45 @@ function findingsForScript(source,{shell=''}={}){
    options=false;
    const name=literalFileToken(token);
    if(!name){unknown=true;break;}
-   createdDirs.push({at:mkdir.index,name});
+   createdDirs.push({at:mkdir.start,name});
   }
-  // Unsupported/dynamic mkdir arguments must not be silently certified.
   if(unknown)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
- // Use the SAME literal shell-word tokenizer for all path-producing
- // commands: mkdir, ln, cp and mv. This closes the entire partial-quote
- // operand family instead of adding another special-case regular expression.
  const aliases=[];
- for(const m of active.matchAll(/(?:^|[;\n]|&&|\|\|)\s*(ln|cp|mv)\b([^\r\n;&|]{1,2048})/gi)){
-  const kind=m[1].toLowerCase(),tokens=shellLiteralWords(m[2]);
-  if(!tokens){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+ for(const m of commands.filter(c=>/^(?:ln|cp|mv)$/.test(c.name))){
+  const kind=m.name,tokens=m.words.slice(1);
   const flags=[],operands=[],rawOperands=[];
   let afterDash=false,invalid=false,targetDir=null;
   for(let i=0;i<tokens.length;i++){
    const word=tokens[i];
    if(!afterDash&&word==='--'){afterDash=true;continue;}
-   // GNU cp/mv/ln -t DIR / --target-directory=DIR consume a destination.
-   // Do not classify the destination as a file source.
    if(!afterDash&&(word==='-t'||word==='--target-directory')){
     const value=tokens[++i];
     targetDir=value?literalFileToken(value):null;
     if(!targetDir){invalid=true;break;}
-    flags.push(word);continue;
+    flags.push('-t');continue;
    }
-   if(!afterDash&&(/^-t.+/.test(word)||word.startsWith('--target-directory='))){
-    const value=word.startsWith('--target-directory=')?
-     word.slice('--target-directory='.length):word.slice(2);
-    targetDir=literalFileToken(value);
+   if(!afterDash&&word.startsWith('--target-directory=')){
+    targetDir=literalFileToken(word.slice('--target-directory='.length));
     if(!targetDir){invalid=true;break;}
     flags.push('-t');continue;
    }
+   // GNU short options may be clustered: -vt DIR, -svt DIR and
+   // -vtdir all have the same -t operand semantics.
+   if(!afterDash&&/^-[A-Za-z]+$/.test(word)){
+    const t=word.indexOf('t',1);
+    if(t>=0){
+     if(t>1)flags.push('-'+word.slice(1,t));
+     const attached=word.slice(t+1);
+     const rawDest=attached||tokens[++i];
+     targetDir=rawDest?literalFileToken(rawDest):null;
+     if(!targetDir){invalid=true;break;}
+     flags.push('-t');
+    }else flags.push(word);
+    continue;
+   }
    if(!afterDash&&word.startsWith('-')){
-    if(!/^(?:--[a-z-]+|-[a-zA-Z]+)$/.test(word)){invalid=true;break;}
+    if(!/^--[a-z-]+$/.test(word)){invalid=true;break;}
     flags.push(word);continue;
    }
    const operand=literalFileToken(word);
@@ -116,45 +91,46 @@ function findingsForScript(source,{shell=''}={}){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
   const origin=operands[0],destination=targetDir||operands[1];
-  const destinationPath=normalizedFile(destination);
   const targetIsDirectory=!!targetDir||
    /\/['"]*$/.test(rawOperands[1]||'')||
-   createdDirs.some(d=>d.name===destinationPath&&d.at<m.index);
+   createdDirs.some(d=>d.name===normalizedFile(destination)&&d.at<m.start);
   const to=normalizedFile(targetIsDirectory?
    posix.join(destination,posix.basename(origin)):destination);
   const symbolic=kind==='ln'&&flags.some(x=>
-   x==='--symbolic'||/^-[a-zA-Z]*s[a-zA-Z]*$/.test(x));
+   x==='--symbolic'||/^-[A-Za-z]*s[A-Za-z]*$/.test(x));
   const from=normalizedFile(symbolic&&!origin.startsWith('/')?
    posix.join(posix.dirname(to),origin):origin);
-  aliases.push({at:m.index,kind,from,to});
+  aliases.push({at:m.start,kind,from,to});
  }
- for(const d of active.matchAll(download)){
-  const command=d[1];
+ for(const d of commands.filter(c=>/^(?:curl|wget)$/i.test(c.name))){
+  const command=d.raw.slice(d.words[0].length);
   if(!/\bhttps?:\/\//i.test(command))continue;
-  // Recognize bounded no-argument short-flag clusters before -o/-O.
-  // An unrestricted greedy [A-Za-z]* would eat filename letters up to a
-  // later 'o' (e.g. -fsSLopayload -> incorrectly parsed as file 'ad').
+  // Keep curl/wget output option grammar bounded; literalFileToken rejects
+  // dynamic paths instead of trusting partial or interpolated matches.
   const output=/(?:^|\s)(?:-[fsSLkvIqNn]*[oO]\s*|--output(?:-document)?(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/i.exec(command);
   if(!output)continue;
   const outputFile=literalFileToken(output[1]);
   if(!outputFile){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
-  // Apply the final --output-dir (earlier values are superseded).
   const rawOutputDir=outputDirs.at(-1);
   const outputDir=rawOutputDir?literalFileToken(rawOutputDir[1]):null;
   if(rawOutputDir&&!outputDir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   const file=normalizedFile(outputDir&&!outputFile.startsWith('/')?
    posix.join(outputDir,outputFile):outputFile);
   if(file==='-'||file==='.'||file==='..')continue;
-  const after=active.slice(d.index+d[0].length);
-  // Parse literal invocation words once; partial quote spans are supported.
-  const invocations=/(?:^|[;\n]|&&|\|\|)\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)\s+(?:[-\w]+\s+)*|)([a-z0-9_.\/'"-]+)(?=\s|$|[;&])/gi;
-  for(const match of after.matchAll(invocations)){
-   const calledFile=literalFileToken(match[1]);
+  for(const inv of commands.filter(c=>c.start>=d.end)){
+   const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
+   let word=inv.words[0];
+   if(interpreter){
+    word=inv.words.slice(1).find(x=>!x.startsWith('-'));
+   }
+   if(!word)continue;
+   const calledFile=literalFileToken(word);
    if(!calledFile)continue;
-   const executedAt=d.index+d[0].length+match.index;
-   // A copy or move before the download contains old bytes; an ln may not.
-   const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.index||a.kind==='ln'));
+   const executedAt=inv.start;
+   // Copies/moves before the fetch refer to old content; symbolic/hard
+   // links can predate the download and still point to downloaded bytes.
+   const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.start||a.kind==='ln'));
    const tainted=new Set([file]);
    for(let i=0;i<visible.length;i++){
     let changed=false;
@@ -215,7 +191,7 @@ function findingsForScript(source,{shell=''}={}){
   /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
  const suppressesPowerShellOutput=script=>
   /(?:^|\s)-OutFile(?=\s|:|$)/i.test(script)&&
-  !/(?:^|\s)-PassThru(?:(?=\s|[)"']|$)|:\s*\$true(?=\s|[)"']|$))/i.test(script);
+  !/(?:^|\s)-PassT(?:h(?:r(?:u)?)?)?(?:(?=\s|[)"']|$)|:\s*\$true(?=\s|[)"']|$))/i.test(script);
  const powershellPipelines=/(?:^|[;\n])\s*(?:(?:pwsh|powershell)(?:\.exe)?\b[^\r\n;|]{0,300}?\s+-(?:Command|c)\s+["']?\s*)?((?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n;|]{0,4096})\|\s*&?\s*(?:iex|Invoke-Expression)\b/gi;
  if(powershellScript){
   for(const p of active.matchAll(powershellPipelines)){
