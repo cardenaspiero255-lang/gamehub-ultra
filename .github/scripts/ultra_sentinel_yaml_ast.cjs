@@ -659,6 +659,15 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      // expansions must not be certified as safe when an alias is declared.
      if(/(?:^|[;\n])\s*alias\s+[A-Za-z_][A-Za-z0-9_]*\s*=/m.test(step.run))
       coverage.partial=true;
+     // Shell functions redefine commands, and lexical cwd changes can alter
+     // the identity of a downloaded file. Without a full shell interpreter,
+     // both constructs must be inconclusive rather than silently clean.
+     if(/(?:^|[;\n])\s*(?:(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{|function\s+[A-Za-z_]\w*\s*\{)/m.test(step.run))
+      coverage.partial=true;
+     if(/(?:^|[;\n])\s*cd\s+/.test(step.run)&&
+       /\b(?:curl|wget)\b/.test(step.run)&&
+       /\b(?:bash|sh|source|python|node|ruby|perl|php)\s+[\w./-]+/.test(step.run))
+      coverage.partial=true;
      for(const rule of findingsForScript(step.run,{shell:step.shell||job.defaults?.run?.shell||document.defaults?.run?.shell||''}))
       emit(rule,'HIGH',where);
      {
