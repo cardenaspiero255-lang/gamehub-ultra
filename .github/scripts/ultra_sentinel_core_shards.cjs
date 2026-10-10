@@ -128,7 +128,10 @@ if(require.main===module){
  try{
   const [mode,arg,dir]=process.argv.slice(2);
   if(mode==='run')runShard(arg,dir||process.cwd());
+  else if(mode==='run-env')runShard(process.env.SENTINEL_SHARD_ID,arg||process.cwd());
   else if(mode==='aggregate'){
+   if(process.env.SENTINEL_MATRIX_RESULT!=='success')
+    throw Error('Matrix job not successful; reject core attestation');
    const result=aggregate(arg,process.env.GITHUB_SHA);
    console.log(JSON.stringify(result));
    const summary=process.env.GITHUB_STEP_SUMMARY;
@@ -136,7 +139,7 @@ if(require.main===module){
     '## Ultra Sentinel Core — validated\n\n'+
     result.executed+' executed, 0 failures/skips, '+result.jobs+
     ' disjoint shards, GitHub SHA '+result.sha+'\n');
-  }else throw Error('Usage: node ultra_sentinel_core_shards.cjs run SHARD DIR | aggregate DIR');
+  }else throw Error('Usage: node ultra_sentinel_core_shards.cjs run-env DIR | aggregate DIR');
  }catch(error){console.error(error.message);process.exitCode=1;}
 }
 module.exports={plan,testFiles,parseTap,validateReport,aggregate,
