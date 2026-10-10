@@ -107,7 +107,8 @@ function normalizeInvocation(command,flag){
     const raw=args[i];
     // GNU env parses quote-stripped arguments (including '--' and -i).
     // Variable assignments are data; their contents are not executed.
-    if(/^[A-Za-z_][\w]*=/.test(raw)){i++;continue;}
+    if(/^[A-Za-z_][\w]*=/.test(raw)||/^(?:'[^']*'|"[^"]*")$/.test(raw)&&
+       /^[A-Za-z_][\w]*=/.test(raw.slice(1,-1))){i++;continue;}
     const w=literalCommandName(raw);
     if(w===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
     if(w==='--'){i++;break;}
