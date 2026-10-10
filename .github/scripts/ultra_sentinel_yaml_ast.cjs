@@ -142,7 +142,12 @@ function pipelineCommands(v){
  const normalized=withoutEscaped.replace(/\\(?=[A-Za-z])/g,'')
   .replace(/\x24\x27([A-Za-z]*)\x27/g,'$1')
   .replace(/(['"])([A-Za-z]*)\1/g,'$2');
- return normalized.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ').split(/\r?\n/);
+ // Echoing a fully quoted, literal documentation string does NOT pipe
+ // downloaded bytes into an interpreter. Exclude only complete echo/printf
+ // statements, never echo followed by a real pipe or code substitution.
+ return normalized.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ')
+  .split(/\r?\n/).map(line=>
+   /^\s*(?:echo|printf)\s+(?:"[^"$\x60]*"|'[^']*')\s*(?:#.*)?$/.test(line)?'':line);
 }
 function remotePipeline(v){
  return typeof v==='string'&&pipelineCommands(v).some(line=>REMOTE.test(line));
@@ -638,6 +643,10 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(step.run!==undefined){
     if(typeof step.run!=='string'||!step.run.trim())coverage.partial=true;
     else{
+     // A variable as the shell command word is unmodeled executable code.
+     // Treat it as INCOMPLETE even when its value looks local in the PR.
+     if(/(?:^|[;\n]|&&|\|\|)\s*\$(?:\{[A-Za-z_]\w*[^}]*\}|[A-Za-z_]\w*)(?=\s|$)/m.test(step.run))
+      coverage.partial=true;
      auditShellEnvUse(step.run,stepTaint,where);
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
      else if(unknownDownloadPipeline(step.run))coverage.partial=true;
