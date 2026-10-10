@@ -287,13 +287,14 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  };
  // Treat event-backed env as tainted DATA, not automatically as injected
  // code. A github-script that merely logs process.env is not a vulnerability.
- const collectEnvSources=(value,inherited=new Set())=>{
+ const collectEnvSources=(value,inherited=new Set(),knownNames=new Set())=>{
   // Environment values are not expanded automatically; shell eval and
   // interpreter commands can expand aliases. Trace through all env scopes.
   const tainted=new Set(inherited);
   if(value===undefined)return tainted;
   if(!isMap(value)){coverage.partial=true;return tainted;}
   const dependents=new Map();
+  const available=new Set([...knownNames,...Object.keys(value)]);
   for(const [name,item] of Object.entries(value)){
    if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)){coverage.partial=true;continue;}
    if(typeof item!=='string'){
@@ -308,6 +309,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    // A reverse graph computes transitive taint without recursive evaluation.
    for(const ref of item.matchAll(/\$(?:\{!?([A-Za-z_][A-Za-z0-9_]*)[^}]*\}|([A-Za-z_][A-Za-z0-9_]*))/g)){
     const source=ref[1]||ref[2];
+    // An alias to an unverified runtime variable cannot be certified safe.
+    // Preserve conservative taint; only execution sinks become BLOCKER.
+    if(!available.has(source))tainted.add(name);
     if(!dependents.has(source))dependents.set(source,new Set());
     dependents.get(source).add(name);
    }
@@ -434,6 +438,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  };
  checkDefaults(document.defaults,path);
  const workflowTaint=collectEnvSources(document.env);
+  const workflowEnvNames=new Set(isMap(document.env)?Object.keys(document.env):[]);
  checkPermissions(document.permissions,path);
  for(const [name,job] of Object.entries(document.jobs)){
   const where=path; // Deliberately no attempt to fabricate AST line locations.
@@ -445,7 +450,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(privileged && job.permissions==null && document.permissions==null)
    coverage.partial=true;
   checkDefaults(job.defaults,where);
-  const jobTaint=collectEnvSources(job.env,workflowTaint);
+  const jobTaint=collectEnvSources(job.env,workflowTaint,workflowEnvNames);
+   const jobEnvNames=new Set([...workflowEnvNames,...(isMap(job.env)?Object.keys(job.env):[])]);
   if(privileged){
    checkRunner(job['runs-on'],where);
    checkContainer(job.container,where);
@@ -483,7 +489,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(!isMap(step)){coverage.partial=true;continue;}
    checkGateControl(step);
    if(step.uses!==undefined)checkActionCredentialHandoff(step,job);
-   const stepTaint=collectEnvSources(step.env,jobTaint);
+   const stepTaint=collectEnvSources(step.env,jobTaint,jobEnvNames);
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
