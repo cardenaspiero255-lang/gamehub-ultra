@@ -350,4 +350,4 @@ if(require.main===module){
   (report.summary.missed||report.summary.benignFlagged||report.summary.unknownClean||report.summary.crashes))
   process.exitCode=1;
 }
-module.exports={cases,variants,evaluate,markdown};
+module.exports={cases,variants,evaluate,markdown,classify};
