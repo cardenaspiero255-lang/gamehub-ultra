@@ -293,15 +293,26 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  // symbolic, nested-dynamic or malformed expressions fail closed.
  const hasOpaqueArithmetic=(input)=>{
   if(typeof input!=='string')return false;
-  let seen=0,opaque=false;
-  const matches=/\$\(\(([\s\S]*?)\)\)|\$\[([^\]\n]*?)\]/g;
-  for(const match of input.matchAll(matches)){
-   seen++;
-   const inner=match[1]===undefined?match[2]:match[1];
-   if(!/^[\d\s()+\-*/%]*$/.test(inner))opaque=true;
+  // Bash evaluates symbolic arithmetic recursively, including bare commands
+  // (( A )), conditional arithmetic and the "let" builtin. Never treat an
+  // unmodeled symbolic expression as proof of safety.
+  const uncertain=inner=>!/^[\d\s()+\-*/%]*$/.test(inner);
+  let observed=0;
+  for(const match of input.matchAll(/\$\(\(([\s\S]*?)\)\)|\$\[([^\]\n]*?)\]/g)){
+   observed++;
+   if(uncertain(match[1]===undefined?match[2]:match[1]))return true;
   }
-  const openings=(input.match(/\$\(\(|\$\[/g)||[]).length;
-  return opaque||openings>seen;
+  if((input.match(/\$\(\(|\$\[/g)||[]).length>observed)return true;
+  const command=/(?:^|[;\n]|\&\&|\|\||\b(?:if|while|until|for)\s+)\s*\(\(([\s\S]*?)\)\)/g;
+  for(const match of input.matchAll(command)){
+   if(uncertain(match[1]))return true;
+  }
+  const letCommand=/(?:^|[;\n]|\&\&|\|\|)\s*let(?:\s+|$)([^\n;]*)/gm;
+  for(const match of input.matchAll(letCommand)){
+   const value=match[1].trim().replace(/^(["'])([\s\S]*)\1$/,'$2');
+   if(!value||uncertain(value))return true;
+  }
+  return false;
  };
  const collectEnvSources=(value,inherited=new Set(),knownNames=new Set())=>{
   // Environment values are not expanded automatically; shell eval and
