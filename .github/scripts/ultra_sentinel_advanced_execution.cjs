@@ -106,41 +106,67 @@ function normalizeInvocation(command,flag){
  * Redirects are distinct from curl -o and wget -O output-document options.
  */
 function downloadedFiles(command,flag){
- const raw=command.words.slice(1).join(' '),wget=command.name==='wget';
- const outputPattern=wget?
-  /(?:^|\s)(?:-[a-zA-Z]*O\s*|--output-document(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g:
-  /(?:^|\s)(?:-[fsSLkvIqNn]*o\s*|--output(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g;
- const allDirect=[...raw.matchAll(outputPattern)];
- // Wget -O/--output-document is a global output setting: the LAST
- // occurrence determines the destination. Curl -o describes each transfer.
+ const words=command.words.slice(1),wget=command.name==='wget';
+ const allDirect=[];let dir=null,outputDirSeen=false;
+ // Read distinct shell WORDS, not a rejoined string. Rejoining words made
+ // options/redirections embedded in quoted -H/-A values executable tokens.
+ for(let i=0;i<words.length;i++){
+  const word=words[i],literal=literalCommandName(word)||word;
+  let value=null,isOutput=false;
+  if(wget){
+   const adjacent=/^-[A-Za-z]*O(.*)$/.exec(literal);
+   const long=/^--output-document=(.*)$/.exec(literal);
+   if(adjacent){isOutput=true;value=adjacent[1]||words[++i];}
+   else if(literal==='--output-document'){isOutput=true;value=words[++i];}
+   else if(long){isOutput=true;value=long[1];}
+  }else{
+   const adjacent=/^-[fsSLkvIqNn]*o(.*)$/.exec(literal);
+   const long=/^--output=(.*)$/.exec(literal);
+   if(adjacent){isOutput=true;value=adjacent[1]||words[++i];}
+   else if(literal==='--output'){isOutput=true;value=words[++i];}
+   else if(long){isOutput=true;value=long[1];}
+   const dirInline=/^--output-dir=(.*)$/.exec(literal);
+   if(literal==='--output-dir'||dirInline){
+    outputDirSeen=true;
+    const rawDir=dirInline?dirInline[1]:words[++i];
+    dir=literalFileToken(rawDir);
+    if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return [];}
+   }
+  }
+  if(isOutput){
+   if(typeof value!=='string'){
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
+   }
+   allDirect.push(value);
+  }
+ }
  const direct=wget?allDirect.slice(-1):allDirect;
- const outputDirs=[...raw.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
- const outDir=outputDirs.at(-1);
- const dir=outDir?literalFileToken(outDir[1]):null;
- if(outDir&&!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return [];}
  const files=new Set();
- for(const d of direct){
-  const file=literalFileToken(d[1]);
+ for(const value of direct){
+  const file=literalFileToken(value);
   if(!file){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
   if(file==='-'||file==='.'||file==='..')continue;
-  files.add(normalizedFile(dir&&!file.startsWith('/')?
+  files.add(normalizedFile(outputDirSeen&&dir&&!file.startsWith('/')?
    posix.join(dir,file):file));
  }
- // Track fd 1 and fd 2, including duplication/closing. A prior ">temp"
- // only truncates temp; if stdout is redirected again, temp is not tainted.
- const MAX_FD=32; // bounded FD model, never execute shell syntax
+ // Simulate fd redirections left-to-right. Only a literal shell redirect
+ // operator at a word's START counts; quoted argument text is inert data.
+ const MAX_FD=32;
  const fds=new Map([[1,null],[2,null]]);
- const redirects=/(?:^|\s)((?:\d{0,3})?>{1,2}[&|]?|&>{1,2})\s*([a-z0-9_./'"-]+)(?=\s|$)/g;
- for(const match of raw.matchAll(redirects)){
-  const op=match[1],argument=match[2];
+ const redirect=/^((?:\d{0,3})?>{1,2}[&|]?|&>{1,2})(.*)$/;
+ for(let i=0;i<words.length;i++){
+  const match=redirect.exec(words[i]);
+  if(!match)continue;
+  const op=match[1],argument=match[2]||words[++i];
   const numbered=/^(\d+)>/.exec(op);
   const destFd=numbered?Number(numbered[1]):1;
   if(!Number.isSafeInteger(destFd)||destFd>MAX_FD){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
+  if(typeof argument!=='string'){
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
+  }
   const isDup=op.endsWith('&');
-  // A digit operand of >& denotes an FD copy, including >&3.
-  // An unknown source is NOT an output filename named "3".
   if(isDup&&(/^\d+$/.test(argument)||argument==='-')){
    const sourceFd=Number(argument);
    if(argument!=='-'&&(!Number.isSafeInteger(sourceFd)||sourceFd>MAX_FD||
@@ -159,11 +185,8 @@ function downloadedFiles(command,flag){
    fds.set(1,dest);fds.set(2,dest);
   }else fds.set(destFd,dest);
  }
- const urlCount=command.words.slice(1).filter(w=>/^['"]?https?:\/\//i.test(w)).length;
- // GNU Wget normally emits the document into a file, not stdout. Curl
- // emits response bytes to stdout only for URLs lacking -o destinations.
- const finalOutput=direct.at(-1);
- const wgetStdout=!!finalOutput&&literalFileToken(finalOutput[1])==='-';
+ const urlCount=words.filter(w=>/^['"]?https?:\/\//i.test(w)).length;
+ const wgetStdout=direct.length>0&&literalFileToken(direct.at(-1))==='-';
  const mayEmitRemoteStdout=wget?wgetStdout:urlCount>direct.length;
  const finalStdout=fds.get(1);
  if(mayEmitRemoteStdout&&finalStdout&&finalStdout!=='.'&&finalStdout!=='..')
