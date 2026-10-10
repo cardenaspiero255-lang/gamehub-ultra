@@ -21,36 +21,52 @@ function findingsForScript(source){
   const output=/(?:^|\s)-(?:o|O)\s+([a-z0-9_./-]+)(?=\s|$)/i.exec(command);
   if(!output)continue;
   const file=output[1];
-  if(!file.includes('/')||file==='-')continue;
+  if(file==='-'||file==='.'||file==='..')continue;
   const escape=file.replace(/[.*+?^$()|[\]{}\\]/g,'\\$&');
   const after=active.slice(d.index+d[0].length);
   const invocation=new RegExp('(?:^|[;\\n]|&&|\\|\\|)\\s*(?:(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\\.)\\s+(?:[-\\w]+\\s+)*|)(?:'+escape+')(?=\\s|$|[;&])','i');
   if(invocation.test(after))flag('REMOTE_DOWNLOADED_FILE_EXECUTION');
  }
- // Native interpreter network fetch paired with code evaluation.
+ // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
+ // commonly appear on different lines. Use the declared delimiter rather
+ // than mixing unrelated shell commands or interpreting any input as code.
+ const evaluatesRemote=(lang,body)=>{
+  if(!/\bhttps?:\/\//i.test(body))return false;
+  if(/^python/i.test(lang))return /\b(?:urllib(?:\.request)?|requests(?:\.get)?)\b/i.test(body)&&
+    /\bexec\s*\(/i.test(body);
+  if(/^node/i.test(lang))return /\bfetch\s*\(/i.test(body)&&/\beval\s*\(/i.test(body);
+  if(lang==='ruby')return /\b(?:URI\.open|open-uri)\b/i.test(body)&&/\beval\b/i.test(body);
+  if(lang==='perl')return /\b(?:LWP::Simple|get\s*\()/i.test(body)&&/\beval\b/i.test(body);
+  return false;
+ };
  for(const line of active.split('\n')){
   const current=line.trim();
-  if(!/\bhttps?:\/\//i.test(current))continue;
-  if(/\bpython(?:[0-9.]+)?\b/i.test(current)&&
-   /\b(?:urllib(?:\.request)?|requests(?:\.get)?)\b/i.test(current)&&
-   /\bexec\s*\(/i.test(current))flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
-  if(/\bnode(?:js)?\b/i.test(current)&&
-   /\bfetch\s*\(/i.test(current)&&/\beval\s*\(/i.test(current))
-   flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
-  if(/\bruby\b/i.test(current)&&
-   /\b(?:URI\.open|open-uri)\b/i.test(current)&&/\beval\b/i.test(current))
-   flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
-  if(/\bperl\b/i.test(current)&&
-   /\b(?:LWP::Simple|get\s*\()/i.test(current)&&/\beval\b/i.test(current))
+  const interpreter=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl)\b/i.exec(current);
+  if(interpreter&&evaluatesRemote(interpreter[1],current))
    flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
  }
- if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*\b(?:irm|Invoke-RestMethod)\b[^\r\n]*\|\s*(?:iex|Invoke-Expression)\b/i.test(active))
+ const segments=active.split('\n');
+ for(let i=0;i<segments.length;i++){
+  const match=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl)\b[^\n]*?<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*$/.exec(segments[i]);
+  if(!match)continue;
+  const body=[],delimiter=match[2];let found=false;
+  for(let j=i+1;j<segments.length;j++){
+   if(segments[j].trim()===delimiter){i=j;found=true;break;}
+   body.push(segments[j]);
+  }
+  if(!found)continue; // Other checks handle invalid/partial shell grammar.
+  if(evaluatesRemote(match[1],body.join('\n')))
+   flag('REMOTE_INTERPRETER_FETCH_EXECUTION');
+ }
+ if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*(?:iex|Invoke-Expression)\b/i.test(active))
   flag('REMOTE_POWERSHELL_EXECUTION');
  // Encoded bytes routed into eval or interpreter code argument.
- if(/(?:^|[;&\n])\s*(?:eval|python(?:[0-9.]+)?\s+-c|bash\s+-c|node\s+-e)\b[^\r\n]*\$\([^\r\n]*\|\s*base64\s+(?:-d|--decode)\b/i.test(active))
+ if(/(?:^|[;&\n])\s*(?:eval|python(?:[0-9.]+)?\s+-c|bash\s+-c|node\s+-e)\b[^\r\n]*\$\([^\r\n]*\|\s*base64\s+(?:-d|--decode)\b/i.test(active)||
+  /\|\s*base64\s+(?:-d|--decode)\b[^\r\n]*?\|\s*(?:bash|sh|dash|zsh|ksh|python(?:[0-9.]+)?|node|ruby|perl|php)\b/i.test(active))
   flag('REMOTE_ENCODED_EVAL');
  // Mutable package tags and container tags are not content-addressed.
- if(/(?:^|[;&\n])\s*(?:npx(?:\s+--yes)?|pnpm\s+dlx)\s+[\w@./-]+@(?:latest|next|canary|alpha|beta|dev|master|main)\b/i.test(active))
+ if(/(?:^|[;&\n])\s*(?:npx(?:\s+--yes)?|pnpm\s+dlx)\s+[\w@./-]+@(?:latest|next|canary|alpha|beta|dev|master|main)\b/i.test(active)||
+  /(?:^|[;&\n])\s*(?:npx|npm\s+exec)\b[^\r\n;|&]{0,2000}--package(?:=|\s+)[\w@./-]+@(?:latest|next|canary|alpha|beta|dev|master|main)\b/i.test(active))
   flag('MUTABLE_PACKAGE_EXECUTION');
  if(/(?:^|[;&\n])\s*docker\s+run\b[^\r\n]*\s+(?:[\w./-]+:)(?:latest|edge|nightly|dev|stable|main)\b/i.test(active))
   flag('MUTABLE_CONTAINER_EXECUTION');
