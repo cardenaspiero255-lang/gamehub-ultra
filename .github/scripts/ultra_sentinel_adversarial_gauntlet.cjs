@@ -96,7 +96,7 @@ for(let count=1;count<=10;count++){
 for(const [name,expr] of [
  ['numeric','$'+'((A))'],['nested','$'+'(( (A) + 1 ))'],
  ['bracket','$'+'[A+1]'],['indirect','$'+'{!A}'],
- ['default','
+ ['default','$'+'{A:-default}'],['unknown','$'+'((A + UNKNOWN))']
 ]){
  addAttack('arithmetic-'+name,'arithmetic-and-indirection',
   wf({env:['A: "'+EXPR('github.event.issue.title')+'"','B: "'+expr+'"'],run:'eval "$B"'}));
