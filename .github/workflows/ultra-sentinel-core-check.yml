@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/ultra_sentinel_*.cjs'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/scripts/install_sentinel_hook.sh'
       - '.githooks/pre-commit'
       - '.github/workflows/ultra-sentinel-*.yml'
@@ -27,6 +29,8 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Install locked parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate JavaScript parser and shell hook
         run: |
           set -eu
