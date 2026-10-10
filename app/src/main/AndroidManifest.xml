@@ -69,6 +69,10 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <receiver
+            android:name=".session.NightProfileApprovalReceiver"
+            android:exported="false" />
+
         <service
             android:name=".session.SessionCoachMonitorService"
             android:exported="false"

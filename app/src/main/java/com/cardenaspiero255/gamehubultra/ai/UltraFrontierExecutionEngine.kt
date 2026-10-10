@@ -43,6 +43,12 @@ class UltraFrontierExecutionEngine(
     private val critic: UltraFrontierCritic = UltraFrontierCritic(),
     private val specialistExecutor: UltraFrontierSpecialistExecutor =
         UltraFrontierSpecialistExecutor(),
+    private val v2HierarchicalPlanner: UltraFrontierV2HierarchicalPlanner =
+        UltraFrontierV2HierarchicalPlanner(),
+    private val v2BranchAllocator: UltraFrontierV2BranchAllocator =
+        UltraFrontierV2BranchAllocator(),
+    private val v2Replanner: UltraFrontierV2Replanner =
+        UltraFrontierV2Replanner(),
     private val networkAvailable: () -> Boolean = { true },
     private val auditTrail: UltraFrontierAuditTrail = UltraFrontierAuditTrail(),
     private val nanoTime: () -> Long = System::nanoTime,
@@ -123,6 +129,9 @@ class UltraFrontierExecutionEngine(
             )?.let { return it }
         }
 
+        // Per-query cursor. Replanning can change the budgets of later
+        // attempts, so previous slot consumption must be remembered.
+        val nextStableProviderOffset = intArrayOf(request.researchProviderOffset)
         var attempt = 1
         var previousRetryProgress: UltraFrontierRetryProgress? = null
         recordAttempt(request, plan, attempt)
@@ -131,7 +140,8 @@ class UltraFrontierExecutionEngine(
             plan = plan,
             attempt = attempt,
             executionStartedNanos = executionStartedNanos,
-            localChat = localChat
+            localChat = localChat,
+            nextStableProviderOffset = nextStableProviderOffset
         )
 
         while (true) {
@@ -326,7 +336,8 @@ class UltraFrontierExecutionEngine(
                         plan = plan,
                         attempt = attempt,
                         executionStartedNanos = executionStartedNanos,
-                        localChat = localChat
+                        localChat = localChat,
+                        nextStableProviderOffset = nextStableProviderOffset
                     )
                 }
 
@@ -350,108 +361,6 @@ class UltraFrontierExecutionEngine(
     }
 
     fun auditSnapshot(): List<UltraFrontierAuditRecord> = auditTrail.snapshot()
-
-    private fun deepTaskGraphAnswer(
-        request: UltraGeneralQueryRequest,
-        plan: UltraFrontierPlan,
-        executionStartedNanos: Long
-    ): UltraQueryExecutionAnswer? {
-        val plannedResearchTasks = plan.tasks.filter {
-            it.specialist == UltraFrontierSpecialist.RESEARCH
-        }
-        if (plannedResearchTasks.size < 2) return null
-
-        val executableTasks = plannedResearchTasks.map {
-            it.copy(dependsOn = emptySet())
-        }
-        val latencies =
-            java.util.concurrent.ConcurrentHashMap<String, Long>()
-        val remainingMillis = remainingResearchMillis(
-            plan = plan,
-            executionStartedNanos = executionStartedNanos
-        )
-        if (remainingMillis <= 0L) return null
-
-        val results = try {
-            specialistExecutor.execute(
-                tasks = executableTasks,
-                maxParallelism = executableTasks.size.coerceIn(1, 4),
-                timeoutMillis = remainingMillis.coerceAtLeast(1L)
-            ) { task ->
-                val branchIndex = executableTasks.indexOfFirst {
-                    it.id == task.id
-                }.coerceAtLeast(0)
-                val branchBudget = (
-                    plan.sourceBudget + executableTasks.size - 1
-                    ) / executableTasks.size
-                val branchRequest = requestForAttempt(
-                    request = request,
-                    plan = plan,
-                    attempt = 1,
-                    executionStartedNanos = executionStartedNanos
-                ).copy(
-                    researchProviderBudget = branchBudget.coerceAtLeast(1),
-                    researchProviderOffset =
-                        request.researchProviderOffset +
-                            branchIndex * branchBudget.coerceAtLeast(1)
-                )
-                val started = nanoTime()
-                val result = coordinator.answer(
-                    request = branchRequest,
-                    localChat = { null }
-                )
-                latencies[task.id] = TimeUnit.NANOSECONDS.toMillis(
-                    (nanoTime() - started).coerceAtLeast(0L)
-                )
-                result
-            }
-        } catch (_: Exception) {
-            return null
-        }
-
-        val accepted = executableTasks.mapNotNull { task ->
-            val answer = results[task.id] ?: return@mapNotNull null
-            val verdict = critic.review(
-                plan = plan,
-                candidate = answer.toFrontierCandidate(attempt = 1)
-            )
-            if (verdict != UltraFrontierVerdict.ACCEPT) {
-                return@mapNotNull null
-            }
-            answer to (latencies[task.id] ?: 0L)
-        }
-        if (accepted.isEmpty()) return null
-
-        val selected = evolution.synthesizeResearch(accepted)
-            ?: return null
-
-        auditTrail.record(
-            correlationId = request.correlationId,
-            lane = plan.lane,
-            event = UltraFrontierAuditEvent.ENSEMBLE_COMPARE,
-            attempt = 1,
-            reasonCode = "FRONTIER_DEEP_TASK_GRAPH"
-        )
-        accepted
-            .asSequence()
-            .map { it.first }
-            .filter { it != selected }
-            .forEach { unselected ->
-                recordEvolutionOutcome(
-                    request = request,
-                    plan = plan,
-                    answer = unselected,
-                    executionStartedNanos = executionStartedNanos
-                )
-            }
-
-        return complete(
-            request = request,
-            plan = plan,
-            answer = selected,
-            executionStartedNanos = executionStartedNanos
-        )
-    }
 
     private fun adaptiveEnsembleAnswer(
         request: UltraGeneralQueryRequest,
@@ -636,7 +545,8 @@ class UltraFrontierExecutionEngine(
         plan: UltraFrontierPlan,
         attempt: Int,
         executionStartedNanos: Long,
-        localChat: () -> String?
+        localChat: () -> String?,
+        nextStableProviderOffset: IntArray
     ): UltraQueryExecutionAnswer {
         val attemptRequest = requestForAttempt(
             request = request,
@@ -644,9 +554,55 @@ class UltraFrontierExecutionEngine(
             attempt = attempt,
             executionStartedNanos = executionStartedNanos
         )
-        val researchTasks = plan.tasks
+        val remainingMillis = remainingResearchMillis(
+            plan = plan,
+            executionStartedNanos = executionStartedNanos
+        ).coerceAtLeast(1L)
+        val baseResearchTaskIds = plan.tasks
+            .filter { it.specialist == UltraFrontierSpecialist.RESEARCH }
+            .mapTo(linkedSetOf()) { it.id }
+        val replanned = if (attempt > 1 && baseResearchTaskIds.isNotEmpty()) {
+            v2Replanner.replan(
+                tasks = plan.tasks,
+                failedTaskIds = baseResearchTaskIds,
+                remainingTimeMillis = remainingMillis,
+                recoveryOrdinal = attempt
+            )
+        } else {
+            UltraFrontierV2ReplanResult(
+                tasks = plan.tasks,
+                changed = false,
+                replacedTaskIds = emptySet()
+            )
+        }
+        if (replanned.changed) {
+            auditTrail.record(
+                correlationId = request.correlationId,
+                lane = plan.lane,
+                event = UltraFrontierAuditEvent.REPLAN,
+                attempt = attempt,
+                reasonCode = "FRONTIER_V2_RESEARCH_RECOVERY"
+            )
+        }
+
+        val v2Request = UltraFrontierRequest(
+            message = request.originalText,
+            query = request,
+            networkAvailable = true
+        )
+        val hierarchy = v2HierarchicalPlanner.plan(
+            request = v2Request,
+            lane = plan.lane,
+            tasks = replanned.tasks
+        )
+        val evidenceTaskIds = hierarchy.phases
+            .firstOrNull { it.phase == UltraFrontierV2Phase.EVIDENCE }
+            ?.taskIds
+            .orEmpty()
+        val researchTasks = replanned.tasks
             .filter {
-                it.specialist == UltraFrontierSpecialist.RESEARCH
+                it.specialist == UltraFrontierSpecialist.RESEARCH &&
+                    (evidenceTaskIds.isEmpty() || it.id in evidenceTaskIds)
             }
             .map {
                 // Routing/context prerequisites have already been resolved by
@@ -664,37 +620,109 @@ class UltraFrontierExecutionEngine(
             )
         }
 
-        val taskIndexes = researchTasks
-            .mapIndexed { index, task -> task.id to index }
-            .toMap()
         val latencies = java.util.concurrent.ConcurrentHashMap<String, Long>()
-        val remainingMillis = remainingResearchMillis(
-            plan = plan,
-            executionStartedNanos = executionStartedNanos
-        ).coerceAtLeast(1L)
+        val capacity = coordinator.providerPartitionCapacity
+            ?.takeIf { it > 0 }
         val maxParallelism = evolution
             .budget(request, frontier.policy)
             .maxParallelism
             .coerceIn(1, researchTasks.size)
+            .let { if (capacity != null) it.coerceAtMost(capacity) else it }
+        val totalBudget =
+            attemptRequest.researchProviderBudget
+                ?: plan.sourceBudget.coerceAtLeast(1)
+        val signals = researchTasks.map { task ->
+            UltraFrontierV2BranchSignal(
+                taskId = task.id,
+                reliability = if (task.mandatory) 0.75 else 0.55,
+                novelty = 0.80,
+                urgency = if (plan.requiresFreshResearch) 0.90 else 0.60
+            )
+        }
+        val nominalAllocation = v2BranchAllocator.allocate(
+            totalSourceBudget = capacity?.let { minOf(totalBudget, it) }
+                ?: totalBudget,
+            maxParallelism = maxParallelism,
+            signals = signals
+        )
+        // Each attempt advances by all slots consumed in the previous
+        // partition. A constrained single worker consumes one slot at a
+        // time; a multi-branch attempt uses its complete allocation.
+        val partitionStride = if (capacity != null) {
+            if (nominalAllocation.size < 2) 1
+            else nominalAllocation.values.sum()
+        } else {
+            maxOf(plan.maxSourceBudget, totalBudget, 1)
+        }
+        val attemptProviderOffset = if (capacity != null) {
+            nextStableProviderOffset[0]
+        } else {
+            request.researchProviderOffset + (attempt - 1) * partitionStride
+        }
+        if (capacity != null && attemptProviderOffset >= capacity) {
+            return UltraQueryExecutionAnswer(
+                message = "Ya consulté los proveedores disponibles sin obtener " +
+                    "nuevas evidencias suficientes.",
+                verified = false,
+                abstained = true,
+                retryable = false,
+                reasonCode = "FRONTIER_PROVIDER_PARTITIONS_EXHAUSTED",
+                stage = "frontier-provider-partition"
+            )
+        }
+        val allocation = if (capacity != null) {
+            v2BranchAllocator.allocate(
+                totalSourceBudget = minOf(totalBudget, capacity - attemptProviderOffset),
+                maxParallelism = maxParallelism,
+                signals = signals
+            )
+        } else {
+            nominalAllocation
+        }
+        val allocatedTasks = researchTasks.filter {
+            allocation.containsKey(it.id)
+        }
+        if (capacity != null) {
+            // Single-worker fallback queries exactly one slot; branched calls
+            // consume their actual post-capacity allocation, not a nominal
+            // budget recomputed from the current retry.
+            val used = if (allocatedTasks.size < 2) {
+                1
+            } else {
+                allocation.values.sum()
+            }
+            nextStableProviderOffset[0] =
+                (attemptProviderOffset + used).coerceAtMost(capacity)
+        }
+        if (allocatedTasks.size < 2) {
+            return coordinator.answer(
+                request = attemptRequest.copy(
+                    researchProviderOffset = attemptProviderOffset,
+                    researchProviderBudget = if (capacity != null) 1
+                        else attemptRequest.researchProviderBudget
+                ),
+                localChat = localChat
+            )
+        }
+
+        val providerOffsets = linkedMapOf<String, Int>()
+        var nextProviderOffset = attemptProviderOffset
+        allocatedTasks.forEach { task ->
+            providerOffsets[task.id] = nextProviderOffset
+            nextProviderOffset += allocation.getValue(task.id)
+        }
 
         val results = try {
             specialistExecutor.execute(
-                tasks = researchTasks,
-                maxParallelism = maxParallelism,
+                tasks = allocatedTasks,
+                maxParallelism = allocatedTasks.size.coerceIn(1, maxParallelism),
                 timeoutMillis = remainingMillis
             ) { task ->
-                val branchIndex = taskIndexes.getValue(task.id)
-                val totalBudget =
-                    attemptRequest.researchProviderBudget
-                        ?: plan.sourceBudget.coerceAtLeast(1)
-                val branchBudget =
-                    ((totalBudget + researchTasks.size - 1) / researchTasks.size)
-                        .coerceAtLeast(1)
+                val branchBudget = allocation.getValue(task.id)
                 val branchRequest = attemptRequest.copy(
                     researchProviderBudget = branchBudget,
                     researchProviderOffset =
-                        request.researchProviderOffset +
-                            branchIndex * branchBudget
+                        providerOffsets.getValue(task.id)
                 )
                 val started = nanoTime()
                 val result = coordinator.answer(
@@ -708,19 +736,23 @@ class UltraFrontierExecutionEngine(
             }
         } catch (_: Exception) {
             return coordinator.answer(
-                request = attemptRequest,
+                request = attemptRequest.copy(
+                    researchProviderOffset = attemptProviderOffset
+                ),
                 localChat = localChat
             )
         }
 
-        val candidates = researchTasks.mapNotNull { task ->
+        val candidates = allocatedTasks.mapNotNull { task ->
             results[task.id]?.let { answer ->
                 answer to (latencies[task.id] ?: 0L)
             }
         }
         return evolution.synthesizeResearch(candidates)
             ?: coordinator.answer(
-                request = attemptRequest,
+                request = attemptRequest.copy(
+                    researchProviderOffset = attemptProviderOffset
+                ),
                 localChat = localChat
             )
     }

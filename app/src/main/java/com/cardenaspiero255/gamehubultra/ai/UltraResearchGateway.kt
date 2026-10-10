@@ -33,6 +33,13 @@ interface UltraResearchGateway :
     val supportsProviderPartitioning: Boolean
         get() = false
 
+    /**
+     * Number of currently usable provider slots, if known. Null means the
+     * gateway owns an unbounded/opaque partition space.
+     */
+    val providerPartitionCapacity: Int?
+        get() = null
+
     fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult
 
     override fun execute(

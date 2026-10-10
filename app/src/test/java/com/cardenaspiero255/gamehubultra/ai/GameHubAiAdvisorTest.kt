@@ -32,6 +32,36 @@ class GameHubAiAdvisorTest {
     )
 
     @Test
+    fun localSessionMemoryIsAnswerableBeforeGenerativeResearch() {
+        val advisor = GameHubAiAdvisor(
+            gameSessionHistory = {
+                listOf(
+                    com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession(
+                        packageName = "com.example.game",
+                        startedAtMillis = 1_000L,
+                        endedAtMillis = 10_000L,
+                        measuredSampleCount = 6,
+                        typicalRefreshRateHz = 120,
+                        minimumBatteryPercent = 30,
+                        maximumThermalStatus = 4,
+                        playedAtNight = false
+                    )
+                )
+            }
+        )
+        val result = assertNotNull(
+            advisor.generalKnowledgeChatOrNull(
+                "¿Cómo estuvo mi última sesión?",
+                healthyContext,
+                emptyList()
+            )
+        )
+        assertTrue(result.contains("120 Hz"))
+        assertTrue(result.contains("estado térmico 4"))
+        assertFalse(result.contains("45 °C"))
+    }
+
+    @Test
     fun reportedStableDefinitionsRemainAnswerableWithoutLocalModel() {
         val advisor = GameHubAiAdvisor()
 
