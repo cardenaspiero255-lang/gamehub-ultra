@@ -27,7 +27,7 @@ jobs:
       - name: Generate bounded repair candidates from API data
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             const fs=require('node:fs'),path=require('node:path');
             const {analyze}=require(path.resolve('.github/scripts/ultra_sentinel_core.cjs'));
