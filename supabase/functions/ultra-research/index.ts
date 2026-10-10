@@ -110,7 +110,14 @@ Deno.serve(async (req: Request) => {
     ? body.correlationId
     : crypto.randomUUID();
   const kind = body.kind ?? "";
-  const verificationMode = body.verificationMode ?? "";
+  const verificationMode = body.verificationMode ?? "OPTIONAL";
+  if (
+    verificationMode !== "LOCAL" &&
+    verificationMode !== "OPTIONAL" &&
+    verificationMode !== "REQUIRED"
+  ) {
+    return json({ error: "Invalid verification mode" }, 400);
+  }
 
   if (!quietRequestLogs) {
     console.info(JSON.stringify({
@@ -133,6 +140,7 @@ Deno.serve(async (req: Request) => {
       },
       context,
       kind,
+      verificationMode,
     );
 
     if (!quietRequestLogs) {

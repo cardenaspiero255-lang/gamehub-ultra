@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import java.util.Collections
+import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -60,4 +61,460 @@ class UltraFrontierDeepTaskGraphExecutionTest {
         assertTrue(answer.verified)
         assertEquals("Candidato A", answer.message)
     }
+
+    @Test
+    fun constrainedFrontierV2FallsBackToSingleResearchWorker() {
+        UltraFrontierWorldStateRegistry.clear()
+        val requests = Collections.synchronizedList(
+            mutableListOf<Pair<Int, Int?>>()
+        )
+        try {
+            UltraFrontierWorldStateRegistry.update(
+                UltraFrontierWorldState(
+                    selectedGamePackage = "test.game",
+                    sessionActive = true,
+                    selectedProfile = PerformanceProfile.BALANCED,
+                    networkValidated = true,
+                    networkLatencyMs = 40L,
+                    batteryPercent = 12,
+                    charging = false,
+                    thermalStatus = null,
+                    thermalHeadroom = null,
+                    thermalTrend = null,
+                    thermalRisk = null,
+                    thermalConfidence = null,
+                    batteryRecommendation = null,
+                    preventAggressiveProfiles = true,
+                    adaptiveScore = null,
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+            val gateway = object : UltraResearchGateway {
+                override val supportsProviderPartitioning: Boolean = true
+
+                override fun answer(
+                    request: UltraGeneralQueryRequest
+                ): UltraVerifiedResearchResult {
+                    requests += request.researchProviderOffset to request.researchProviderBudget
+                    return UltraVerifiedResearchResult(
+                        message = "Respuesta verificada con uso prudente.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("official-a", "official-b"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+            val evolution = UltraFrontierEvolutionController()
+            val engine = UltraFrontierExecutionEngine(
+                coordinator = UltraQueryExecutionCoordinator(gateway),
+                evolution = evolution,
+                frontier = UltraFrontierOrchestrator(evolution = evolution)
+            )
+            val answer = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Compara profundamente dos teléfonos actuales"
+                )
+            ) { null }
+
+            assertTrue(answer.verified)
+            assertFalse(answer.abstained)
+            assertEquals(1, requests.size)
+            assertEquals(0, requests.single().first)
+            assertTrue((requests.single().second ?: 0) >= 2)
+        } finally {
+            UltraFrontierWorldStateRegistry.clear()
+        }
+    }
+
+    @Test
+    fun constrainedRetryUsesFreshProviderPartitionRatherThanRepeatingCachedFailure() {
+        UltraFrontierWorldStateRegistry.clear()
+        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        try {
+            UltraFrontierWorldStateRegistry.update(
+                UltraFrontierWorldState(
+                    selectedGamePackage = "constrained.game",
+                    sessionActive = true,
+                    selectedProfile = PerformanceProfile.BALANCED,
+                    networkValidated = true,
+                    networkLatencyMs = 40L,
+                    batteryPercent = 12,
+                    charging = false,
+                    thermalStatus = null,
+                    thermalHeadroom = null,
+                    thermalTrend = null,
+                    thermalRisk = null,
+                    thermalConfidence = null,
+                    batteryRecommendation = null,
+                    preventAggressiveProfiles = true,
+                    adaptiveScore = null,
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+            val gateway = object : UltraResearchGateway {
+                override val supportsProviderPartitioning: Boolean = true
+
+                override fun answer(
+                    request: UltraGeneralQueryRequest
+                ): UltraVerifiedResearchResult {
+                    offsets += request.researchProviderOffset
+                    return if (request.researchProviderOffset < 7) {
+                        UltraVerifiedResearchResult(
+                            message = "No hay información suficiente.",
+                            confidence = UltraAnswerConfidence.LOW,
+                            sources = emptyList(),
+                            independentSourceCount = 0,
+                            abstained = true,
+                            retryable = true,
+                            reasonCode = "CONSTRAINED_PARTITION_EXHAUSTED"
+                        )
+                    } else {
+                        UltraVerifiedResearchResult(
+                            message = "Información recuperada de nuevas fuentes.",
+                            confidence = UltraAnswerConfidence.HIGH,
+                            sources = listOf("official-a", "official-b"),
+                            independentSourceCount = 2,
+                            abstained = false
+                        )
+                    }
+                }
+            }
+            val evolution = UltraFrontierEvolutionController()
+            val engine = UltraFrontierExecutionEngine(
+                coordinator = UltraQueryExecutionCoordinator(gateway),
+                evolution = evolution,
+                frontier = UltraFrontierOrchestrator(
+                    policy = UltraFrontierPolicy(
+                        verifiedSourceBudget = 6,
+                        deepSourceBudget = 7,
+                        deepResearchPassBudget = 2
+                    ),
+                    evolution = evolution
+                )
+            )
+            val answer = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Compara profundamente dos teléfonos actuales"
+                )
+            ) { null }
+            assertEquals(listOf(0, 7), offsets.toList())
+            assertTrue(answer.verified)
+            assertFalse(answer.abstained)
+        } finally {
+            UltraFrontierWorldStateRegistry.clear()
+        }
+    }
+
+    @Test
+    fun constrainedRetryWithTwoActualProvidersUsesInRangeNextSlot() {
+        UltraFrontierWorldStateRegistry.clear()
+        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        try {
+            UltraFrontierWorldStateRegistry.update(
+                UltraFrontierWorldState(
+                    selectedGamePackage = "constrained.game",
+                    sessionActive = true,
+                    selectedProfile = PerformanceProfile.BALANCED,
+                    networkValidated = true,
+                    networkLatencyMs = 40L,
+                    batteryPercent = 12,
+                    charging = false,
+                    thermalStatus = null,
+                    thermalHeadroom = null,
+                    thermalTrend = null,
+                    thermalRisk = null,
+                    thermalConfidence = null,
+                    batteryRecommendation = null,
+                    preventAggressiveProfiles = true,
+                    adaptiveScore = null,
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+            val gateway = object : UltraResearchGateway {
+                override val supportsProviderPartitioning: Boolean = true
+                override val providerPartitionCapacity: Int = 2
+
+                override fun answer(
+                    request: UltraGeneralQueryRequest
+                ): UltraVerifiedResearchResult {
+                    offsets += request.researchProviderOffset
+                    return if (request.researchProviderOffset == 0) {
+                        UltraVerifiedResearchResult(
+                            message = "No hay información suficiente.",
+                            confidence = UltraAnswerConfidence.LOW,
+                            sources = emptyList(),
+                            independentSourceCount = 0,
+                            abstained = true,
+                            retryable = true,
+                            reasonCode = "CONSTRAINED_PARTITION_EXHAUSTED"
+                        )
+                    } else {
+                        UltraVerifiedResearchResult(
+                            message = "Información recuperada de nuevas fuentes.",
+                            confidence = UltraAnswerConfidence.HIGH,
+                            sources = listOf("official-a", "official-b"),
+                            independentSourceCount = 2,
+                            abstained = false
+                        )
+                    }
+                }
+            }
+            val evolution = UltraFrontierEvolutionController()
+            val engine = UltraFrontierExecutionEngine(
+                coordinator = UltraQueryExecutionCoordinator(gateway),
+                evolution = evolution,
+                frontier = UltraFrontierOrchestrator(
+                    policy = UltraFrontierPolicy(
+                        verifiedSourceBudget = 6,
+                        deepSourceBudget = 7,
+                        deepResearchPassBudget = 2
+                    ),
+                    evolution = evolution
+                )
+            )
+            val answer = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Compara profundamente dos teléfonos actuales y verifica nuevas fuentes"
+                )
+            ) { null }
+            assertEquals(listOf(0, 1), offsets.toList())
+            assertTrue(answer.verified)
+            assertFalse(answer.abstained)
+        } finally {
+            UltraFrontierWorldStateRegistry.clear()
+        }
+    }
+
+    @Test
+    fun retriesExploreAllUnusedProviderSlotsBeforeRepeatingSources() {
+        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+            override val providerPartitionCapacity: Int = 4
+
+            override fun answer(
+                request: UltraGeneralQueryRequest
+            ): UltraVerifiedResearchResult {
+                val offset = request.researchProviderOffset
+                offsets += offset
+                return if (offset < 2) {
+                    UltraVerifiedResearchResult(
+                        message = "Proveedores iniciales sin datos.",
+                        confidence = UltraAnswerConfidence.LOW,
+                        sources = emptyList(),
+                        independentSourceCount = 0,
+                        abstained = true,
+                        retryable = true,
+                        reasonCode = "RETRYABLE_WEAK_SOURCES"
+                    )
+                } else {
+                    UltraVerifiedResearchResult(
+                        message = "Resultado recuperado de un proveedor nuevo.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("trusted-$offset", "independent-$offset"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = UltraFrontierOrchestrator(
+                policy = UltraFrontierPolicy(
+                    verifiedSourceBudget = 2,
+                    deepSourceBudget = 2,
+                    deepResearchPassBudget = 2
+                ),
+                evolution = evolution
+            )
+        )
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos teléfonos y revisa fuentes nuevas"
+            )
+        ) { null }
+        assertTrue(0 in offsets && 1 in offsets)
+        assertTrue(2 in offsets && 3 in offsets)
+        assertTrue(offsets.indexOf(2) > offsets.indexOf(1))
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+    }
+
+    @Test
+    fun growingRetryBudgetDoesNotSkipUnconsumedCapacitySlots() {
+        val observed = Collections.synchronizedList(mutableListOf<Int>())
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+            override val providerPartitionCapacity: Int = 8
+
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                val offset = request.researchProviderOffset
+                observed += offset
+                return if (offset < 3) {
+                    UltraVerifiedResearchResult(
+                        message = "Faltan pruebas.",
+                        confidence = UltraAnswerConfidence.LOW,
+                        abstained = true,
+                        retryable = true,
+                        reasonCode = "INSUFFICIENT_CORROBORATION"
+                    )
+                } else {
+                    UltraVerifiedResearchResult(
+                        message = "Nueva fuente encontrada.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("source-$offset", "independent-$offset"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = UltraFrontierOrchestrator(
+                policy = UltraFrontierPolicy(
+                    verifiedSourceBudget = 3,
+                    deepSourceBudget = 3,
+                    deepResearchPassBudget = 2,
+                    researchRetrySourceBudgetStep = 2
+                ),
+                evolution = evolution
+            )
+        )
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos móviles con evidencia independiente"
+            )
+        ) { null }
+        assertTrue(3 in observed, "The next attempt must start at the first unconsumed slot")
+        assertTrue(answer.verified)
+    }
+
+    @Test
+    fun frontierV2DeepResearchNeverOverspendsPlannedSourceBudget() {
+        UltraFrontierWorldStateRegistry.clear()
+        val partitions = Collections.synchronizedList(
+            mutableListOf<Pair<Int, Int>>()
+        )
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                val budget = request.researchProviderBudget ?: 0
+                partitions += request.researchProviderOffset to budget
+                return UltraVerifiedResearchResult(
+                    message = "Mismo candidato",
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("source-" + request.researchProviderOffset),
+                    independentSourceCount = 2,
+                    abstained = false
+                )
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val frontier = UltraFrontierOrchestrator(
+            policy = UltraFrontierPolicy(
+                verifiedSourceBudget = 6,
+                deepSourceBudget = 7
+            ),
+            evolution = evolution
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = frontier
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos teléfonos actuales"
+            )
+        ) { null }
+
+        val firstAttempt = partitions
+            .sortedBy { it.first }
+            .take(2)
+
+        assertEquals(2, firstAttempt.size)
+        assertEquals(7, firstAttempt.sumOf { it.second })
+        assertTrue(firstAttempt[1].first >= firstAttempt[0].first + firstAttempt[0].second)
+        assertFalse(answer.abstained)
+        UltraFrontierWorldStateRegistry.clear()
+    }
+
+
+    @Test
+    fun frontierV2RetryReplansOntoFreshProviderPartitions() {
+        UltraFrontierWorldStateRegistry.clear()
+        val offsets = Collections.synchronizedList(mutableListOf<Int>())
+        val audit = UltraFrontierAuditTrail()
+        val gateway = object : UltraResearchGateway {
+            override val supportsProviderPartitioning: Boolean = true
+
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                offsets += request.researchProviderOffset
+                return if (request.researchProviderOffset < 7) {
+                    UltraVerifiedResearchResult(
+                        message = "Evidencia insuficiente.",
+                        confidence = UltraAnswerConfidence.LOW,
+                        sources = emptyList(),
+                        independentSourceCount = 0,
+                        abstained = true,
+                        retryable = true,
+                        reasonCode = "V2_BRANCH_WEAK"
+                    )
+                } else {
+                    UltraVerifiedResearchResult(
+                        message = "Respuesta recuperada.",
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("source-" + request.researchProviderOffset),
+                        independentSourceCount = 2,
+                        abstained = false
+                    )
+                }
+            }
+        }
+        val evolution = UltraFrontierEvolutionController()
+        val frontier = UltraFrontierOrchestrator(
+            policy = UltraFrontierPolicy(
+                verifiedSourceBudget = 6,
+                deepSourceBudget = 7,
+                deepResearchPassBudget = 2
+            ),
+            evolution = evolution
+        )
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            evolution = evolution,
+            frontier = frontier,
+            auditTrail = audit
+        )
+
+        val answer = engine.answer(
+            UltraGeneralQueryRouter.classify(
+                "Compara profundamente dos teléfonos actuales"
+            )
+        ) { null }
+
+        val observed = offsets.toList()
+        assertEquals(4, observed.size)
+        assertTrue(observed.take(2).all { it < 7 })
+        assertTrue(observed.drop(2).all { it >= 7 })
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+        assertTrue(
+            audit.snapshot().any {
+                it.event == UltraFrontierAuditEvent.REPLAN &&
+                    it.attempt == 2
+            }
+        )
+        UltraFrontierWorldStateRegistry.clear()
+    }
+
 }

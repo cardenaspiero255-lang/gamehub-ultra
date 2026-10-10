@@ -106,6 +106,33 @@ jobs:
           cat "$log" || true
           exit 1
 
+      - name: Verify optional protocol compatibility and invalid modes
+        if: ${{ matrix.shard == 0 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$RUNNER_TEMP/research-compat-response.json"
+          status="$(curl --max-time 20 -sS -o "$response" -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -H 'apikey: ci-smoke-key' \
+            -d '{"query":"¿Qué es un lápiz?","kind":"GENERAL_KNOWLEDGE"}' \
+            "$ULTRA_RESEARCH_ENDPOINT")"
+          if [ "$status" != "200" ]; then
+            echo "::error::Omitted verificationMode must default to OPTIONAL; HTTP $status"
+            cat "$response"
+            exit 1
+          fi
+          status="$(curl --max-time 20 -sS -o "$response" -w '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -H 'apikey: ci-smoke-key' \
+            -d '{"query":"¿Qué es un lápiz?","verificationMode":"BOGUS"}' \
+            "$ULTRA_RESEARCH_ENDPOINT")"
+          if [ "$status" != "400" ]; then
+            echo "::error::Invalid verificationMode must return HTTP 400; got $status"
+            cat "$response"
+            exit 1
+          fi
+
       - name: Build reproducible 50000-question broad-spectrum smoke plan
         shell: bash
         run: |
@@ -852,7 +879,7 @@ jobs:
                   "query": case["query"],
                   "clientEngineVersion": "20",
                   "kind": case["kind"],
-                  "verificationMode": "STRICT",
+                  "verificationMode": "OPTIONAL",
                   "requiresFreshData": case["fresh"],
                   "correlationId": case["correlationId"],
               }, ensure_ascii=False).encode("utf-8")
