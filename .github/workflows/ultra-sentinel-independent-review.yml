@@ -2,8 +2,16 @@ name: Ultra Sentinel - Independent Read-only Review
 # A review on the PR merge event using ONLY the trusted engine from main.
 # No PR source is executed; no secrets or GitHub comment write permissions.
 on:
-  pull_request:
+  # GitHub evaluates this workflow from trusted main, never from the PR merge.
+  # No PR head checkout, third-party secrets, or write token permissions.
+  pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+  # A human review can arrive after an earlier fail-closed result. Re-run
+  # the trusted base-branch reviewer whenever approval is submitted/dismissed.
+  # This event uses the workflow from the default branch, never the PR head.
+  pull_request_review:
+    types: [submitted, dismissed]
     branches: [main]
 
 permissions:
@@ -16,7 +24,8 @@ concurrency:
 
 jobs:
   read-only-review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Always run the independent gate: a skipped job may count as a green
+    # required check. The trusted github-script explicitly FAILS on fork PRs.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
