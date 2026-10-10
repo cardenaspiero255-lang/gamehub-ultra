@@ -113,6 +113,7 @@ function normalizeInvocation(command,flag){
 // This is a bounded allowlist, not a complete curl/wget option parser.
 const CURL_VALUE_FLAGS=new Set([
  '-A','--user-agent','-H','--header','-b','--cookie','-c','--cookie-jar',
+ '-w','--write-out','-E','--cert','--cert-type','--key-type',
  '-d','--data','--data-raw','--data-binary','--data-urlencode','-F','--form',
  '--form-string','-e','--referer','-u','--user','-x','--proxy','-X','--request',
  '-K','--config','--url','--url-query','--resolve','--connect-to','--interface',
@@ -142,6 +143,10 @@ function downloadedFiles(command,flag){
    if(++i>=words.length)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
    continue;
   }
+  // Attached values of supported long switches belong to the switch, even
+  // when the value looks like an option terminator or a filename argument.
+  if([...valueFlags].some(flagName=>flagName.startsWith('--')&&
+     literal.startsWith(flagName+'=')))continue;
   let value=null,isOutput=false;
   if(wget){
    const adjacent=/^-[A-Za-z]*O(.*)$/.exec(literal);
@@ -162,6 +167,13 @@ function downloadedFiles(command,flag){
     dir=literalFileToken(rawDir);
     if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return [];}
    }
+  }
+  if(!isOutput&&word.startsWith('-')&&literal!=='-'&&
+     !/^-([fsSLkvIqNn]+)$/.test(literal)&&
+     !/^(?:--(?:silent|show-error|fail|location|insecure|verbose|head|include|no-buffer|netrc|compressed|disable|progress-bar|fail-with-body|location-trusted|retry-all-errors|no-progress|quiet)|-q)$/.test(literal)){
+   // A value-bearing unmodelled option can swallow '--' or the next token.
+   // Never certify a possibly executed remote download as harmless.
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
   }
   if(isOutput){
    if(typeof value!=='string'){
