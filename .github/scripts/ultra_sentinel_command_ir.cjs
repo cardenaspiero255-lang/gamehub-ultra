@@ -78,7 +78,7 @@ function parseShellCommands(source){
   // Bash combined stdout redirects (>&, >|, &>, &>>) are NOT control
   // operators. Leave them in the command so the sink analyzer can read them.
   const redirectionPart=!quote&&!escaped&&(
-   ((ch==='&'||ch==='|')&&source[i-1]==='>')||
+   ((ch==='&'||ch==='|')&&(source[i-1]==='>'||source[i-1]==='<'))||
    (ch==='&'&&source[i+1]==='>'));
   if(!quote&&!escaped&&!redirectionPart&&(ch===';'||ch==='\n'||ch==='|'||ch==='&')){
    commandDone(i);
@@ -92,7 +92,10 @@ function parseShellCommands(source){
   // Dynamic expansions and grouping are outside the bounded IR grammar.
   // Refuse to certify these scripts clean if a remote-source command occurs.
   if(!escaped&&quote!=="'"&&(ch==='$'||ch.charCodeAt(0)===96||
-    (!quote&&/[()<]/.test(ch))))incomplete=true;
+    (!quote&&(/[()]/.test(ch)||
+      // Literal input redirects (<, <>, <&) are shell grammar, but
+      // heredocs and process substitution stay outside the bounded IR.
+      (ch==='<'&&(source[i-1]==='<'||source[i+1]==='<'||source[i+1]==='('))))))incomplete=true;
   if(ch==='\\'&&quote!=="'"&&!escaped){escaped=true;word+=ch;}
   else{
    if(escaped){
