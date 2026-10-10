@@ -42,3 +42,35 @@ test('Protected workflow changes require a trusted non-author human review of sa
  ])assert.equal(hasIndependentHumanApproval([invalid],{sha:CURRENT_SHA,author:'pr-author'}),false);
  assert.equal(hasIndependentHumanApproval([approval(1),approval(2,{state:'CHANGES_REQUESTED'})],{sha:CURRENT_SHA,author:'pr-author'}),false);
 });
+
+
+const {isAuthorizedSoloMaintainerPR}=require('./ultra_sentinel_policy.cjs');
+const MAIN_REPO='cardenaspiero255-lang/gamehub-ultra';
+const mainSha='a'.repeat(40);
+const ownerPr={
+ state:'open',number:169,user:{login:'cardenaspiero255-lang',type:'User'},
+ author_association:'OWNER',
+ head:{sha:mainSha,repo:{full_name:MAIN_REPO}},
+ base:{ref:'main',repo:{full_name:MAIN_REPO}}
+};
+const authOpts={repository:MAIN_REPO,expectedSha:mainSha};
+test('trusted main: sole owner of exact repository does not need a second human approver',()=>{
+ assert.equal(isAuthorizedSoloMaintainerPR(ownerPr,authOpts),true);
+});
+test('solo-owner exception fails closed for forks, bots, external authors and stale SHA',()=>{
+ const cases=[
+  {...ownerPr,state:'closed'},
+  {...ownerPr,user:{login:'random-contributor',type:'User'}},
+  {...ownerPr,user:{login:'cardenaspiero255-lang',type:'Bot'}},
+  {...ownerPr,author_association:'COLLABORATOR'},
+  {...ownerPr,head:{...ownerPr.head,repo:{full_name:'external/fork'}}},
+  {...ownerPr,base:{...ownerPr.base,ref:'develop'}},
+  {...ownerPr,head:{...ownerPr.head,sha:'b'.repeat(40)}},
+  {...ownerPr,user:null},
+  {...ownerPr,head:{sha:mainSha}},
+  {...ownerPr,base:{ref:'main'}},
+ ];
+ for(const entry of cases)assert.equal(isAuthorizedSoloMaintainerPR(entry,authOpts),false);
+ assert.equal(isAuthorizedSoloMaintainerPR(ownerPr,{...authOpts,repository:'someone/other'}),false);
+ assert.equal(isAuthorizedSoloMaintainerPR(ownerPr,{...authOpts,expectedSha:'invalid'}),false);
+});
