@@ -141,9 +141,9 @@ jobs:
                         'Mutation resilience / reviewer engine',
                         'Sentinel Reliability / 100 scenarios'
                       ];
-                      solo=checks.total_count<=100&&required.every(name=>
-                        checks.check_runs.some(x=>x.name===name&&
-                          x.status==='completed'&&x.conclusion==='success'));
+                      const {hasAllLatestTrustedChecks}=require(
+                        path.resolve('.github/scripts/ultra_sentinel_policy.cjs'));
+                      solo=hasAllLatestTrustedChecks(checks,required);
                     }
                   }catch(error){
                     core.warning('Solo owner attestation/check evidence unavailable: fail closed.');

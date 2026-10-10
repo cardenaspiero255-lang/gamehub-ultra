@@ -103,4 +103,24 @@ function hasSoloOwnerAcknowledgement(comments,{repo,prNumber,sha,author}={}){
   typeof c.body==='string'&&c.body.trim()===expected);
 }
 
-module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval,hasSoloOwnerAcknowledgement};
+
+/** Check GitHub's most recent result for each required trusted check.
+ * A prior green check must never override a subsequent failure/cancellation.
+ * Exact enumeration is required: no partial/paginated evidence is accepted.
+ */
+function hasAllLatestTrustedChecks(response,required){
+ const items=response?.check_runs;
+ if(!Array.isArray(items)||!Number.isSafeInteger(response.total_count)||
+    response.total_count!==items.length||items.length>100||
+    !Array.isArray(required)||required.length===0||
+    required.some(name=>typeof name!=='string'||!name))return false;
+ for(const name of required){
+  const matching=items.filter(x=>x?.name===name&&Number.isSafeInteger(x.id)&&x.id>0)
+   .sort((a,b)=>b.id-a.id);
+  if(matching.length===0||matching[0].status!=='completed'||
+     matching[0].conclusion!=='success')return false;
+ }
+ return true;
+}
+
+module.exports={evaluateProtectedChanges,PROTECTED_FILES,isProtectedPath,hasIndependentHumanApproval,hasSoloOwnerAcknowledgement,hasAllLatestTrustedChecks};

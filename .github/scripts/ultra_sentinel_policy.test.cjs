@@ -57,4 +57,18 @@ test('Protected workflow changes require a trusted non-author human review of sa
   [[good],{...arg,author:'other-author'}],
   [[good],{...arg,repo:'other-account/gamehub-ultra'}]
  ])assert.equal(hasSoloOwnerAcknowledgement(records,parameters),false);
+ const {hasAllLatestTrustedChecks}=require('./ultra_sentinel_policy.cjs');
+ const green={name:'Trusted main Sentinel inspects Sentinel changes',
+  id:55,status:'completed',conclusion:'success'};
+ const req=[green.name,'Sentinel Core / full regression suite'];
+ const core={name:req[1],id:56,status:'completed',conclusion:'success'};
+ assert.equal(hasAllLatestTrustedChecks({total_count:2,check_runs:[core,green]},req),true);
+ assert.equal(hasAllLatestTrustedChecks({total_count:3,check_runs:[
+  {...green,id:50},core,{...green,id:60,conclusion:'failure'}]},req),false);
+ assert.equal(hasAllLatestTrustedChecks({total_count:3,check_runs:[
+  {...green,id:50},core,{...green,id:60,conclusion:'cancelled'}]},req),false);
+ assert.equal(hasAllLatestTrustedChecks({total_count:3,check_runs:[
+  {...green,id:50,conclusion:'failure'},core,{...green,id:60}]},req),true);
+ assert.equal(hasAllLatestTrustedChecks({total_count:3,check_runs:[green,core]},req),false);
+ assert.equal(hasAllLatestTrustedChecks({total_count:2,check_runs:[green,core]},[...req,'missing']),false);
 });
