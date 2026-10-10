@@ -46,8 +46,33 @@ function interpreterFileOperand(command,flag){
  * Remove transparent Bash command prefixes before classification. Unknown
  * wrapper options remain explicitly INCOMPLETE, never silently trusted.
  */
+
+/**
+ * Redirects are shell syntax, not executable operands. Remove only bounded,
+ * literal output/fd redirects when examining an exec invocation; an opaque
+ * target fails closed rather than silently certifying remote execution clean.
+ * Quoted redirection-like arguments are not redirections.
+ */
+function stripExecRedirections(words,flag){
+ const kept=[];
+ for(let i=0;i<words.length;i++){
+  const token=words[i];
+  const redirect=/^(?:(?:[0-9]+)?(?:>>?|>\||>&)|&>>?)(.*)$/.exec(token);
+  if(!redirect){kept.push(token);continue;}
+  const target=redirect[1]||words[++i];
+  const valid=!!target&&(literalFileToken(target)!==null||
+    /^(?:&[0-9]+|&-)$/.test(target)||/^(?:[0-9]+|-)$/.test(target));
+  if(!valid){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+ }
+ return kept;
+}
+
 function normalizeInvocation(command,flag){
- const args=command.words;let i=0;
+ // A redirect may appear before, between or after executable words in Bash.
+ const hasExec=command.words.some(w=>literalCommandName(w)==='exec');
+ const args=hasExec?stripExecRedirections(command.words,flag):command.words;
+ if(!args)return null;
+ let i=0;
  for(let depth=0;depth<5;depth++){
   const name=literalCommandName(args[i]||'');
   if(name==='command'){
@@ -59,9 +84,10 @@ function normalizeInvocation(command,flag){
     flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
    }
   }else if(name==='builtin'){
-   // The builtin command prefix invokes the nested Bash builtin.
-   // Only transparently unwrap recognized compositions.
+   // Bash builtin accepts -- before the nested builtin, including repeated
+   // command/builtin wrappers. The sentinel must not lose this execution sink.
    i++;
+   if(args[i]==='--')i++;
    const nested=literalCommandName(args[i]||'');
    if(nested==='command'||nested==='builtin')continue;
    if(nested==='source'||nested==='.'||nested==='exec'){
