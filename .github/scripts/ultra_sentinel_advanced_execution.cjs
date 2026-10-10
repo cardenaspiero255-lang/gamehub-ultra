@@ -85,6 +85,60 @@ function normalizeInvocation(command,flag){
  flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  return null;
 }
+/**
+ * Infer only filenames that receive remote RESPONSE bytes, not logs and not
+ * intermediate shell redirection targets. Descriptors evolve left-to-right.
+ * Redirects are distinct from curl -o and wget -O output-document options.
+ */
+function downloadedFiles(command,flag){
+ const raw=command.words.slice(1).join(' '),wget=command.name==='wget';
+ const outputPattern=wget?
+  /(?:^|\s)(?:-[a-zA-Z]*O\s*|--output-document(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g:
+  /(?:^|\s)(?:-[fsSLkvIqNn]*o\s*|--output(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g;
+ const direct=[...raw.matchAll(outputPattern)];
+ const outputDirs=[...raw.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
+ const outDir=outputDirs.at(-1);
+ const dir=outDir?literalFileToken(outDir[1]):null;
+ if(outDir&&!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return [];}
+ const files=new Set();
+ for(const d of direct){
+  const file=literalFileToken(d[1]);
+  if(!file){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+  if(file==='-'||file==='.'||file==='..')continue;
+  files.add(normalizedFile(dir&&!file.startsWith('/')?
+   posix.join(dir,file):file));
+ }
+ // Track fd 1 and fd 2, including duplication/closing. A prior ">temp"
+ // only truncates temp; if stdout is redirected again, temp is not tainted.
+ const fds={1:null,2:null};
+ const redirects=/(?:^|\s)([12]?>{1,2}[&|]?|&>{1,2})\s*([a-z0-9_./'"-]+)(?=\s|$)/g;
+ for(const match of raw.matchAll(redirects)){
+  const op=match[1],argument=match[2];
+  const isDup=op.endsWith('&');
+  const destFd=op.startsWith('2')?2:1;
+  if(isDup&&(/^[012]$/.test(argument)||argument==='-')){
+   fds[destFd]=argument==='-'?null:fds[argument]||null;
+   continue;
+  }
+  const dest=literalFileToken(argument);
+  if(!dest){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
+  if(isDup&&op!=='>&'){
+   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
+  }
+  if(op.startsWith('&')||op==='>&'){
+   fds[1]=dest;fds[2]=dest;
+  }else fds[destFd]=dest;
+ }
+ const urlCount=command.words.slice(1).filter(w=>/^['"]?https?:\/\//i.test(w)).length;
+ // GNU Wget normally emits the document into a file, not stdout. Curl
+ // emits response bytes to stdout only for URLs lacking -o destinations.
+ const finalOutput=direct.at(-1);
+ const wgetStdout=!!finalOutput&&literalFileToken(finalOutput[1])==='-';
+ const mayEmitRemoteStdout=wget?wgetStdout:urlCount>direct.length;
+ if(mayEmitRemoteStdout&&fds[1]&&fds[1]!=='.'&&fds[1]!=='..')
+  files.add(normalizedFile(fds[1]));
+ return [...files];
+}
 function findingsForScript(source,{shell=''}={}){
  if(typeof source!=='string')return [];
  // Direct callers must never interpret an unscannable script as clean.
@@ -201,31 +255,7 @@ function findingsForScript(source,{shell=''}={}){
  for(const d of commands.filter(c=>/^(?:curl|wget)$/i.test(c.name))){
   const command=d.words.slice(1).join(' ');
   if(!/\bhttps?:\/\//i.test(command))continue;
-  // Keep curl/wget output option grammar bounded; literalFileToken rejects
-  // dynamic paths instead of trusting partial or interpolated matches.
-  // curl -o/-output stores remote bytes. wget -o/--output-file
-  // stores DIAGNOSTIC LOGS, not remote bytes; only -O/--output-document
-  // writes the response body. Keep tool-specific option semantics.
-  const optionPattern=d.name.toLowerCase()==='wget'?
-   /(?:^|\s)(?:-[a-zA-Z]*O\s*|--output-document(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g:
-   /(?:^|\s)(?:-[fsSLkvIqNn]*o\s*|--output(?:=|\s+))([a-z0-9_./'"-]+)(?=\s|$)/g;
-  const outputs=[
-   ...command.matchAll(optionPattern),
-   // Model Bash stdout operators without mistaking stderr-only 2> for
-   // downloaded payloads: >, >>, 1>, 1>>, >|, >&, &>, &>>.
-   ...command.matchAll(/(?:^|\s)(?:1?>{1,2}[&|]?|&>{1,2})\s*([a-z0-9_./'"-]+)(?=\s|$)/g)
-  ];
-  if(!outputs.length)continue;
-  const outputDirs=[...command.matchAll(/(?:^|\s)--output-dir(?:=|\s+)([a-z0-9_./'"-]+)(?=\s|$)/gi)];
-  const rawOutputDir=outputDirs.at(-1);
-  const outputDir=rawOutputDir?literalFileToken(rawOutputDir[1]):null;
-  if(rawOutputDir&&!outputDir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
-  for(const output of outputs){
-   const outputFile=literalFileToken(output[1]);
-   if(!outputFile){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;}
-   const file=normalizedFile(outputDir&&!outputFile.startsWith('/')?
-    posix.join(outputDir,outputFile):outputFile);
-   if(file==='-'||file==='.'||file==='..')continue;
+  for(const file of downloadedFiles(d,flag)){
    for(const inv of commands.filter(c=>c.start>=d.end)){
     const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
     const word=interpreter?interpreterFileOperand(inv,flag):inv.words[0];
