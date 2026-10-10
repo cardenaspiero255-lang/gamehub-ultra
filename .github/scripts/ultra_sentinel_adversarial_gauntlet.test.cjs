@@ -43,3 +43,24 @@ console.log('[SENTINEL RED TEAM] '+JSON.stringify({
 if(process.env.GITHUB_STEP_SUMMARY){
  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,markdown(report));
 }
+
+test('Adversarial expression cases use the real event context they claim to attack',()=>{
+ const match={issue:'issue_comment',comment:'issue_comment',
+  'pr-title':'pull_request_target','head-ref':'pull_request_target',
+  review:'pull_request_review',dispatch:'repository_dispatch'};
+ for(const [name,trigger] of Object.entries(match)){
+  for(const c of cases.filter(x=>x.id.startsWith('event-'+name+'-'))){
+   assert.ok(c.source.startsWith('on: '+trigger+'\n'),c.id+
+    ' uses an incompatible trigger instead of '+trigger);
+  }
+ }
+});
+test('Arithmetic threat labels must actually depend on the injected event field',()=>{
+ const c=cases.find(x=>x.id==='arithmetic-unknown');
+ assert.ok(!c||c.kind==='safe'||c.source.includes('A'));// detect benign relabel
+});
+test('Correlated heuristics must not be advertised as independent detector recall',()=>{
+ assert.ok(!Object.prototype.hasOwnProperty.call(m,'heuristicRecall'),
+  'The alternate heuristic imports the same remote-execution classifier.');
+ assert.ok(report.limitation.includes('shared')||report.limitation.includes('correlated'));
+});
