@@ -109,7 +109,7 @@ function normalizeInvocation(command,flag){
    if(args.slice(i).some(w=>/^(?:curl|wget|bash|sh|install|eval)$/.test(w)))
     flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
    return null;
-  }else if(name==='env'){
+  }else if(name==='env'||/^\/(?:usr\/(?:local\/)?)?bin\/env$/.test(name)){
    i++;
    while(i<args.length){
     const raw=args[i];
@@ -192,7 +192,7 @@ function literalRemoteUrlToken(token){
  const decoded=literalShellWord(token);
  // Accept DNS/IPv4 and bracketed IPv6 authorities; no dynamic shell words.
  return decoded!==null&&
-  /^https?:\/\/(?:[a-z0-9][a-z0-9._:-]*|\[[0-9a-f:.%]*:[0-9a-f:.%]*\](?::[0-9]{1,5})?)(?:[/?#][^\s]*)?$/i.test(decoded);
+  /^https?:\/\/(?:[a-z0-9._~!%:-]+@)?(?:[a-z0-9][a-z0-9._:-]*|\[[0-9a-f:.]+(?:%25[a-z0-9._~-]+)?\](?::[0-9]{1,5})?)(?:[/?#][^\s]*)?$/i.test(decoded);
 }
 function hasRemoteSource(command){
  const words=command.words.slice(1);
@@ -203,7 +203,9 @@ function hasRemoteSource(command){
    if(++i<words.length&&literalRemoteUrlToken(words[i]))return true;
    continue;
   }
-  if(w.startsWith('--url=')&&literalRemoteUrlToken(w.slice(6)))return true;
+  // curl accepts "--url VALUE", not "--url=VALUE"; never assert a download
+  // for an invalid option solely because it embeds a URL.
+  if(w.startsWith('--url='))continue;
   if(valueFlags.has(w)){i++;continue;}
   if([...valueFlags].some(name=>name.startsWith('--')&&w.startsWith(name+'=')))continue;
   if(literalRemoteUrlToken(words[i]))return true;
