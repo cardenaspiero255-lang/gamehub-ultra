@@ -29,7 +29,8 @@ test('dynamic JS execution is blocked',()=>{
   'const doc="safe"; new Function(userPatch)'
  ])assert.equal(scan([file(src,line)],SHA).status,'BLOCKED',line);
  // The red-team fixtures are inert strings: only executable JS is dangerous.
- const fixture='.github/scripts/ultra_sentinel_gauntlet_extreme.cjs';
+ // Inert fixtures live in the unprivileged test-only module, not reviewer production code.
+ const fixture='.github/scripts/ultra_sentinel_gauntlet_extreme_data.test.cjs';
  for(const line of [
   'const text="eval(userPatch)"',
   "const text='new Function(userPatch)'",
