@@ -20,15 +20,15 @@ function findingsForScript(source,{shell=''}={}){
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
-  const output=/(?:^|\s)(?:-(?:o|O)\s+|--output(?:=|\s+))([a-z0-9_./-]+)(?=\s|$)/i.exec(command);
+  const output=/(?:^|\s)(?:-(?:o|O)\s+|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
   if(!output)continue;
-  const file=normalizedFile(output[1]);
+  const file=normalizedFile(output[2]);
   if(file==='-'||file==='.'||file==='..')continue;
   const after=active.slice(d.index+d[0].length);
   // Track simple local file aliases created after the download. Paths are
   // normalized lexically, without touching the filesystem or executing code.
   const targets=new Set([file]);
-  for(const alias of after.matchAll(/(?:^|[;\n]|&&)\s*(?:ln\s+-s|cp|mv)\s+([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)){
+  for(const alias of active.matchAll(/(?:^|[;\n]|&&)\s*(?:ln\s+-s|cp|mv)\s+([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)){
    if(targets.has(normalizedFile(alias[1])))targets.add(normalizedFile(alias[2]));
   }
   for(const candidate of targets){
@@ -41,7 +41,8 @@ function findingsForScript(source,{shell=''}={}){
  // commonly appear on different lines. Use the declared delimiter rather
  // than mixing unrelated shell commands or interpreting any input as code.
  const evaluatesRemote=(lang,body)=>{
-  if(!/\bhttps?:\/\//i.test(body))return false;
+  // An opaque/dynamically concatenated URL does not make fetch+eval safe.
+  // The network fetch and execution sink together are the trust violation.
   if(/^python/i.test(lang))return /\b(?:urllib(?:\.request)?|requests(?:\.get)?)\b/i.test(body)&&
     /\bexec\s*\(/i.test(body);
   if(/^node/i.test(lang))return /\bfetch\s*\(/i.test(body)&&/\beval\s*\(/i.test(body);
@@ -58,7 +59,7 @@ function findingsForScript(source,{shell=''}={}){
  }
  const segments=active.split('\n');
  for(let i=0;i<segments.length;i++){
-  const match=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl|php)\b[^\n]*?<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*(?:&|;|&&|\|\|)?\s*$/.exec(segments[i]);
+  const match=/^\s*(python(?:[0-9.]+)?|node(?:js)?|ruby|perl|php)\b[^\n]*?<<-?\s*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?\s*(?:&|;|&&|\|\|)?\s*(?:[012]?>{1,2}\s*[A-Za-z0-9_./-]+)?\s*$/.exec(segments[i]);
   if(!match)continue;
   const body=[],delimiter=match[2];let found=false;
   for(let j=i+1;j<segments.length;j++){
@@ -73,6 +74,13 @@ function findingsForScript(source,{shell=''}={}){
  if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)||
   (/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))&&
    /(?:^|[;\n])\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)))
+  flag('REMOTE_POWERSHELL_EXECUTION');
+ // PowerShell's native WebClient is an alternative fetch-and-eval path,
+ // including steps already running under shell: pwsh (no pwsh prefix).
+ const powershellScript=/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))||
+  /(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b/i.test(active);
+ if(powershellScript&&
+   /\b(?:New-Object\s+Net\.WebClient|System\.Net\.WebClient)\b[\s\S]{0,300}\bDownloadString\s*\([\s\S]{0,200}\)\s*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active))
   flag('REMOTE_POWERSHELL_EXECUTION');
  // Shell continuations and lines following a trailing | form one pipeline.
  // Keep canonicalization bounded and never execute decoded content.
