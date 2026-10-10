@@ -24,7 +24,8 @@ concurrency:
 
 jobs:
   read-only-review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Always run the independent gate: a skipped job may count as a green
+    # required check. The trusted github-script explicitly FAILS on fork PRs.
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
