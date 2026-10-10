@@ -30,8 +30,8 @@ function interpreterFileOperand(command,flag){
   let a=literalCommandName(raw);
   // Bash permits +x/+e option bundles; do not regress legitimate flags.
   // Both quoted and unquoted forms represent the same literal argument.
-  if(a===null&&/^\\+[a-zA-Z]+$/.test(raw))a=raw;
-  const plusQuoted=/^(['"])(\\+[a-zA-Z]+)\\1$/.exec(raw);
+  if(a===null&&/^\+[a-zA-Z]+$/.test(raw))a=raw;
+  const plusQuoted=/^(['"])(\+[a-zA-Z]+)\1$/.exec(raw);
   if(a===null&&plusQuoted)a=plusQuoted[2];
   if(a===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
   if(a==='--')return argv[i+1]||null;
