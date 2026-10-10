@@ -22,6 +22,63 @@ function parseAdded(patch){
  }
  return added;
 }
+
+// Read-only bounded JS lexer. Preserve comment state across added/context
+// lines inside each diff hunk; strings are data, not executable statements.
+// Multiline templates are conservatively treated as unknown.
+const JS_BACKTICK=String.fromCharCode(96);
+function jsExecutableLine(line,state){
+ let code='',i=0;
+ while(i<line.length){
+  if(state.block){
+   const end=line.indexOf('*/',i);
+   if(end<0)return code;
+   state.block=false;code+=' ';i=end+2;continue;
+  }
+  if(line.startsWith('//',i))break;
+  if(line.startsWith('/*',i)){
+   state.block=true;code+=' ';i+=2;continue;
+  }
+  const quote=line[i];
+  if(quote==="'"||quote==='"'||quote===JS_BACKTICK){
+   i++;let body='',closed=false;
+   while(i<line.length){
+    const ch=line[i++];
+    if(ch==='\\'){i++;continue;}
+    if(ch===quote){closed=true;break;}
+    body+=ch;
+   }
+   if(!closed)state.unknown=true;
+   if(quote===JS_BACKTICK&&body.includes('$'+'{')){
+    code+=' __SENTINEL_DYNAMIC_TEMPLATE__ ';
+    // Executable template interpolations can themselves contain a sink.
+    if(/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\s*\.\s*runIn(?:This|New)Context\s*\()/.test(body))
+     state.danger=true;
+   }else code+=' ';
+   continue;
+  }
+  code+=line[i++];
+ }
+ return code;
+}
+function jsAddedExecutableByLine(patch){
+ const found=new Map(),state={block:false,unknown:false,danger:false};
+ let line=0,active=false;
+ for(const row of patch.split('\n')){
+  const h=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  if(h){line=+h[1];active=true;state.block=false;continue;}
+  if(!active||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
+  if(row.startsWith('+')){
+   const before=state.danger,unknown=state.unknown;
+   const code=jsExecutableLine(row.slice(1),state);
+   found.set(line++,{code,danger:state.danger&&!before,unknown:state.unknown&&!unknown});
+  }else if(row.startsWith(' ')){
+   jsExecutableLine(row.slice(1),state);line++;
+  }
+ }
+ return found;
+}
+const DYNAMIC_JS_SINK=/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\s*\.\s*runIn(?:This|New)Context\s*\(|\b(?:globalThis|global)\s*\[\s*__SENTINEL_DYNAMIC_TEMPLATE__\s*\]\s*\()/;
 function scan(files,sha){
  const findings=[],changed=[];
  function flag(rule,severity,file,line,reason){findings.push({rule,severity,file,line,reason})}
@@ -48,6 +105,8 @@ function scan(files,sha){
   if(!additions||((Number(f.changes)||0)>0&&!additions.length)){
    flag('INCOMPLETE_DIFF','BLOCKER',file,0,'Diff truncated or missing');continue;
   }
+  const inspectJs=file.endsWith('.cjs')&&!file.endsWith('.test.cjs');
+  const executableByLine=inspectJs?jsAddedExecutableByLine(f.patch):null;
   for(const a of additions){
    // Normalize YAML list prefixes, quotes and trailing comments before rules.
    const line=a.text.trim().replace(/\s+#.*$/,'').trim()
@@ -66,8 +125,9 @@ function scan(files,sha){
       !/^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/i.test(action))
       flag('MUTABLE_ACTION','BLOCKER',file,a.line,'New action is not pinned to a commit');
    }
-   if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\.runIn(?:This|New)Context\s*\()/.test(line))
-    flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Dynamic execution added to reviewer');
+   const js=executableByLine?.get(a.line);
+   if(inspectJs&&(js?.unknown||js?.danger||DYNAMIC_JS_SINK.test(js?.code||'')))
+    flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Dynamic or inconclusive execution in reviewer');
    if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&!file.endsWith('ultra_sentinel_mutation.cjs')&&/\bauto(?:Merge|Commit)Allowed:\s*true\b/.test(line))
     flag('UNREVIEWED_AUTOMATION','BLOCKER',file,a.line,'Automated commit or merge enabled');
   }
