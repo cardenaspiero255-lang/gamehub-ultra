@@ -20,7 +20,7 @@ function findingsForScript(source,{shell=''}={}){
  for(const d of active.matchAll(download)){
   const command=d[1];
   if(!/\bhttps?:\/\//i.test(command))continue;
-  const output=/(?:^|\s)(?:-(?:o|O)\s+|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
+  const output=/(?:^|\s)(?:-(?:o|O)\s*|--output(?:=|\s+))(['"]?)([a-z0-9_./-]+)\1(?=\s|$)/i.exec(command);
   if(!output)continue;
   const file=normalizedFile(output[2]);
   if(file==='-'||file==='.'||file==='..')continue;
@@ -28,7 +28,7 @@ function findingsForScript(source,{shell=''}={}){
   // Track simple local file aliases created after the download. Paths are
   // normalized lexically, without touching the filesystem or executing code.
   const targets=new Set([file]);
-  for(const alias of active.matchAll(/(?:^|[;\n]|&&)\s*(?:ln\s+-s|cp|mv)\s+([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)){
+  for(const alias of active.matchAll(/(?:^|[;\n]|&&)\s*(?:ln(?:\s+-s)?|cp|mv)\s+([a-z0-9_./-]+)\s+([a-z0-9_./-]+)(?=\s|$|[;&])/gi)){
    if(targets.has(normalizedFile(alias[1])))targets.add(normalizedFile(alias[2]));
   }
   for(const candidate of targets){
@@ -44,7 +44,7 @@ function findingsForScript(source,{shell=''}={}){
   // An opaque/dynamically concatenated URL does not make fetch+eval safe.
   // The network fetch and execution sink together are the trust violation.
   if(/^python/i.test(lang))return /\b(?:urllib(?:\.request)?|requests(?:\.get)?)\b/i.test(body)&&
-    /\bexec\s*\(/i.test(body);
+    /\b(?:exec|eval)\s*\(/i.test(body);
   if(/^node/i.test(lang))return /\bfetch\s*\(/i.test(body)&&/\beval\s*\(/i.test(body);
   if(lang==='ruby')return /\b(?:URI\.open|open-uri)\b/i.test(body)&&/\beval\b/i.test(body);
   if(lang==='perl')return /\b(?:LWP::Simple|get\s*\()/i.test(body)&&/\beval\b/i.test(body);
@@ -74,6 +74,14 @@ function findingsForScript(source,{shell=''}={}){
  if(/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)||
   (/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))&&
    /(?:^|[;\n])\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n]*\|\s*&?\s*(?:iex|Invoke-Expression)\b/i.test(active)))
+  flag('REMOTE_POWERSHELL_EXECUTION');
+ // PowerShell also evaluates a fetched response through an argument:
+ // iex (iwr URL).Content or Invoke-Expression (Invoke-WebRequest URL).Content.
+ // Accept direct script under pwsh shell, or an explicit pwsh -Command call.
+ const pwshArgument=/(?:^|[;\n])\s*(?:iex|Invoke-Expression)\s*\(\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\s+https?:\/\/[^\r\n)"']+\s*\)\s*\.Content\b/i;
+ const explicitPwshArgument=/(?:^|[;\n])\s*(?:pwsh|powershell)(?:\.exe)?\b[^\r\n]*?\s+-(?:Command|c)\s+["']?\s*(?:iex|Invoke-Expression)\s*\(\s*(?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\s+https?:\/\/[^\r\n)"']+\s*\)\s*\.Content\b/i;
+ if((/^(?:pwsh|powershell)(?:\.exe)?(?:\s|$)/i.test(String(shell))&&
+     pwshArgument.test(active))||explicitPwshArgument.test(active))
   flag('REMOTE_POWERSHELL_EXECUTION');
  // PowerShell's native WebClient is an alternative fetch-and-eval path,
  // including steps already running under shell: pwsh (no pwsh prefix).
