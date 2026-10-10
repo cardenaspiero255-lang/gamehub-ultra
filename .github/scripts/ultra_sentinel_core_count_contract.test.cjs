@@ -13,7 +13,7 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  for(let i=0;i<13;i++)assert.match(workflow,new RegExp('m'+String(i).padStart(2,'0')));
  assert.match(workflow,/\bb0\b/);
  assert.match(workflow,/\bb1\b/);
- assert.match(workflow,/ultra_sentinel_core_shards\.cjs run/);
+ assert.match(workflow,/ultra_sentinel_core_shards\\.cjs run-env/);
  assert.match(workflow,/ultra_sentinel_core_shards\.cjs aggregate/);
  assert.match(workflow,/needs:\s*\[core-shard\]/);
  assert.match(workflow,/download-artifact@[a-f0-9]{40}/);
@@ -32,7 +32,9 @@ test('Core gate never hides skipped, failed or incomplete reports',()=>{
  assert.match(workflow,/if:\s*always\(\)/);
  assert.match(workflow,/sentinel-core-report-/);
  assert.match(workflow,/merge-multiple:\s*true/);
- assert.match(workflow,/test "\$\{\{ needs\.core-shard\.result \}\}" = "success"/);
+ assert.match(workflow,/SENTINEL_MATRIX_RESULT:/);
+ assert.match(workflow,/SENTINEL_SHARD_ID:/);
+ assert.doesNotMatch(workflow,/run[^\n]*\$\{\{ matrix\.id \}\}/);
  const code=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_core_shards.cjs'),'utf8');
  assert.match(code,/c\.fail!==0/);
  assert.match(code,/c\.skipped!==0/);
