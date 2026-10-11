@@ -601,11 +601,11 @@ function findCapabilities(ast){
       return provenReadOnlyCall(callee.callee.object,depth+1,new Set(seen));
      if(callee.type==='MemberExpression'){
       const wrapper=stableMethodName(callee);
-      if(['call','apply','bind'].includes(wrapper)&&pristineWrappers())
-       return provenReadOnlyCall(callee.object,depth+1,new Set(seen));
       if(wrapper==='apply'&&callee.object?.type==='Identifier'&&
          symbol(callee.object)==='free:Reflect'&&call?.callee===callee)
        return provenReadOnlyCall(call.arguments?.[0],depth+1,new Set(seen));
+      if(['call','apply','bind'].includes(wrapper)&&pristineWrappers())
+       return provenReadOnlyCall(callee.object,depth+1,new Set(seen));
      }
      // Parameter initializers execute even when the function body is inert.
      // Destructuring or executable defaults must invalidate purity proof.
