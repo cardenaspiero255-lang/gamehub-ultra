@@ -521,8 +521,8 @@ function findingsForScript(source,{shell=''}={}){
      if(opaque)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
      // exec replaces this shell with a nested program and its script operand.
      const target=opaque?[]:inv.words.slice(j);
-     const nested=target.length?normalizeInvocation({name:literalCommandName(target[0])||target[0],
-      words:target,raw:target.join(' '),start:inv.start,end:inv.end},flag):null;
+     const nested=normalizeInvocation({name:literalCommandName(target[0]||'')||String(''),
+      words:target,raw:target.join(' '),start:inv.start,end:inv.end},flag);
      if(!nested||!nested.name){word=null;}
      else{
       const basename=posix.basename(nested.name);
