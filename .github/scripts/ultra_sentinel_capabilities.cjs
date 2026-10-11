@@ -221,7 +221,20 @@ function findCapabilities(ast){
         aliases.has(symbol(value))&&!aliases.has(symbol(pattern))){
       aliases.add(symbol(pattern));changed=true;return;
      }
-     if(pattern.type==='AssignmentPattern')return project(pattern.left,value,depth+1);
+     if(pattern.type==='AssignmentPattern'){
+      // Defaults run when the projected slot is absent or evaluates to undefined.
+      // Such defaults may alias an existing mutable array. Include both
+      // reachable branches whenever the projected value is uncertain.
+      const omitted=!value||
+       (value.type==='Identifier'&&value.name==='undefined')||
+       (value.type==='UnaryExpression'&&value.operator==='void');
+      if(omitted)return project(pattern.left,pattern.right,depth+1);
+      project(pattern.left,value,depth+1);
+      const certainlyPresent=['ArrayExpression','ObjectExpression','Literal',
+       'FunctionExpression','ArrowFunctionExpression','ClassExpression'].includes(value.type);
+      if(!certainlyPresent)project(pattern.left,pattern.right,depth+1);
+      return;
+     }
      if(pattern.type==='ArrayPattern'&&value.type==='ArrayExpression')
       for(let i=0;i<pattern.elements.length;i++)
        project(pattern.elements[i],value.elements[i],depth+1);
