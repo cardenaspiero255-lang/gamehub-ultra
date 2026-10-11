@@ -255,6 +255,24 @@ function findCapabilities(ast){
    seen.add(id);
    return nativeSliceHandle(defs[0].node.init,depth+1,seen);
   }
+  // Resolve a callable's intrinsic constructor through direct and immutable
+  // lexical aliases. A mere property spelled "constructor" on an unrelated
+  // object is never evidence of the shared Function.prototype identity.
+  function nativeSliceConstructor(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(value.type==='MemberExpression')
+    return stableMethodName(value)==='constructor'&&
+     nativeSliceHandle(value.object,depth+1,new Set(seen));
+   if(value.type!=='Identifier')return false;
+   const id=symbol(value);
+   if(!id||typeof id!=='object'||seen.has(id))return false;
+   const defs=id.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier'||
+      id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   seen.add(id);
+   return nativeSliceConstructor(defs[0].node.init,depth+1,seen);
+  }
   // A native slice handle inherits call/apply from Function.prototype.
   // Writes to that shared prototype (or to a stable alias of it) invalidate
   // the entire native fast-path; unproven escapes fail closed.
@@ -262,8 +280,10 @@ function findCapabilities(ast){
    if(!value||depth>MAX_DEPTH)return false;
    if(value.type==='MemberExpression'){
     const method=stableMethodName(value);
-    return method==='prototype'&&value.object?.type==='Identifier'&&
-      symbol(value.object)==='free:Function'||
+    return method==='prototype'&&(
+      value.object?.type==='Identifier'&&
+       symbol(value.object)==='free:Function'||
+      nativeSliceConstructor(value.object,depth+1,new Set(seen)))||
      method==='__proto__'&&nativeSliceHandle(value.object,depth+1,new Set(seen));
    }
    if(value.type==='Identifier'){
@@ -416,7 +436,7 @@ function findCapabilities(ast){
       if(!parent)return false;
       if(parent.type==='Program')return true;
       if(!['MemberExpression','AssignmentExpression','ExpressionStatement',
-            'UpdateExpression','UnaryExpression'].includes(parent.type))return false;
+            'UpdateExpression','UnaryExpression','SequenceExpression'].includes(parent.type))return false;
       cursor=parent;
      }
      return false;
@@ -459,6 +479,27 @@ function findCapabilities(ast){
      if(!original)return false;
      // Conservatively retain INCOMPLETE for writes to the source at ANY
      // position: a later write could put the captured array into a carrier.
+     // Recognize direct, computed and immutable aliases of property and
+     // prototype mutators. All mutate the observed carrier, so neither
+     // post-snapshot escape nor an apparently inert literal can be trusted.
+     function mutatorName(expr,depth=0,seen=new Set()){
+      if(!expr||depth>MAX_DEPTH)return null;
+      if(expr.type==='MemberExpression'){
+       const name=stableMethodName(expr);
+       return ['set','defineProperty','defineProperties','assign',
+        'setPrototypeOf','__defineGetter__','__defineSetter__'].includes(name)?
+        name:null;
+      }
+      if(expr.type!=='Identifier')return null;
+      const id=symbol(expr);
+      if(!id||typeof id!=='object'||seen.has(id))return null;
+      const defs=id.defs||[];
+      if(defs.length!==1||defs[0].parent?.kind!=='const'||
+         defs[0].node?.id?.type!=='Identifier'||
+         id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+      seen.add(id);
+      return mutatorName(defs[0].node.init,depth+1,seen);
+     }
      let modified=false;
      traverse(ast,(candidate,parent)=>{
       if(modified)return;
@@ -471,9 +512,7 @@ function findCapabilities(ast){
           parent?.type==='CallExpression'&&parent.callee===candidate))
        modified=true;
       if(candidate.type==='CallExpression'&&
-         candidate.callee?.type==='MemberExpression'&&
-         ['set','defineProperty','defineProperties','assign'].includes(
-          stableMethodName(candidate.callee))&&
+         mutatorName(candidate.callee)!==null&&
          inertLiteralSource(candidate.arguments?.[0])===original)
        modified=true;
      });
