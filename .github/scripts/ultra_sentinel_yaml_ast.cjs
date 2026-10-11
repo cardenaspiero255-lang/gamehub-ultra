@@ -220,8 +220,11 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      verification:'Verify the complete trusted GitHub Actions workflow.'});
  };
  const parsed=parseWorkflow(source);
- if(!parsed.ok)return {status:'INCOMPLETE',findings,coverage:{...coverage,partial:true},
-  reason:parsed.reason};
+ if(!parsed.ok){
+  const status='INCOMPLETE',reason=parsed.reason;
+  const incompleteCoverage={...coverage,partial:true};
+  return {status,findings,coverage:incompleteCoverage,reason};
+ }
  const document=parsed.workflow;
  const privileged=privilegedTrigger(document.on);
  const checkPermissions=(value,where)=>{
@@ -703,7 +706,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   markIncomplete('UNMODELED_WORKFLOW_FEATURE');
  const status=coverage.partial?'INCOMPLETE':
   findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN';
- return {status,findings,coverage,reason:null};
+ const reason=null;
+ return {status,findings,coverage,reason};
 }
 function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={}){
  // Only finite, source-independent reason codes cross the trust boundary.
@@ -717,11 +721,13 @@ function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={
  };
  if(!Array.isArray(expected)||expected.length>25){
   markIncomplete('INVALID_EXPECTED_LIST');
-  return {status:'INCOMPLETE',findings,coverage,results};
+  const status='INCOMPLETE';
+  return {status,findings,coverage,results};
  }
  if(!sources||typeof sources!=='object'||Array.isArray(sources)){
   markIncomplete('INVALID_WORKFLOW_SOURCES');
-  return {status:'INCOMPLETE',findings,coverage,results};
+  const status='INCOMPLETE';
+  return {status,findings,coverage,results};
  }
  for(const path of expected){
   if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)){
@@ -741,7 +747,8 @@ function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={
   }
   findings.push(...r.findings);
  }
- return {status:coverage.partial?'INCOMPLETE':
-  findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN',findings,coverage,results};
+ const status=coverage.partial?'INCOMPLETE':
+  findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN';
+ return {status,findings,coverage,results};
 }
 module.exports={parseWorkflow,inspectWorkflow,reviewWorkflowSources};
