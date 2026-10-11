@@ -1286,3 +1286,12 @@ for(const [name,source] of benign){
    ])assert.equal(result(sample),'CLEAR',variant+' was blocked despite a proven benign receiver');
   } });
 }
+
+test('P1 helper default parameter cannot mutate the captured array invisibly',()=>{
+ const source="function bad(g){g.eval('x')} function expose(o,{x=o.__defineGetter__('get',()=>a)}={}){return 1} const a=[()=>1],empty={}; const {x=a}=empty; expose(empty); empty.get.fill(bad); a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR','effectful parameter default must not be classified safe');
+});
+test('P2 genuinely pure helper with literal default remains clear',()=>{
+ const source="function noop(o,x=1){return 1} const a=[()=>1],empty={}; const {x=a}=empty; noop(empty); a[0]()";
+ assert.equal(result(source),'CLEAR','inert scalar defaults must not cause false positives');
+});
