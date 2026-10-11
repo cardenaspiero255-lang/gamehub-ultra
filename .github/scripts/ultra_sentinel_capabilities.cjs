@@ -664,7 +664,8 @@ function findCapabilities(ast){
       if(!parent)return false;
       if(parent.type==='Program'){inTopLevelStatement=true;break;}
       if(!['MemberExpression','CallExpression','ExpressionStatement',
-            'UpdateExpression','UnaryExpression','SequenceExpression'].includes(
+            'UpdateExpression','UnaryExpression','SequenceExpression',
+             'ArrayExpression'].includes(
             parent.type))return false;
       cursor=parent;
      }
