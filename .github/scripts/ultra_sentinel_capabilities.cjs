@@ -199,6 +199,56 @@ function findCapabilities(ast){
  // Array bindings declared with const still permit writes to their elements.
  // Closure over a known initial array is safe only while none of its lexical
  // aliases can mutate the slots or send it into an unknown caller.
+ // Slice-copy provenance holds only if Array.prototype.slice has not been
+ // modified. Reads of that intrinsic remain benign; writes and escapes of
+ // the shared prototype are uncertain, including through const aliases.
+ let nativeSliceIntegrity=null;
+ function nativeArraySliceTrusted(){
+  if(nativeSliceIntegrity!==null)return nativeSliceIntegrity;
+  const constructors=new Set(['free:Array']),prototypes=new Set();
+  let converged=false;
+  for(let round=0;round<MAX_ROUNDS;round++){
+   let changed=false;
+   traverse(ast,node=>{
+    if(node.type!=='VariableDeclarator'||node.id?.type!=='Identifier')return;
+    const target=symbol(node.id),source=node.init;
+    if(!target||typeof target!=='object'||!source)return;
+    if(source.type==='Identifier'&&constructors.has(symbol(source))&&
+       !constructors.has(target)){constructors.add(target);changed=true;}
+    if((source.type==='Identifier'&&prototypes.has(symbol(source)))||
+       (source.type==='MemberExpression'&&stableMethodName(source)==='prototype'&&
+        source.object?.type==='Identifier'&&constructors.has(symbol(source.object)))){
+     if(!prototypes.has(target)){prototypes.add(target);changed=true;}
+    }
+   });
+   if(!changed){converged=true;break;}
+  }
+  if(!converged)throw Error('Native slice alias closure budget exceeded');
+  const proto=x=>Boolean(x&&(x.type==='Identifier'&&prototypes.has(symbol(x))||
+   x.type==='MemberExpression'&&stableMethodName(x)==='prototype'&&
+    x.object?.type==='Identifier'&&constructors.has(symbol(x.object))));
+  let changed=false;
+  traverse(ast,(node,parent)=>{
+   if(changed)return;
+   if(node.type==='MemberExpression'&&proto(node.object)){
+    const key=stableMethodName(node);
+    if(key==='slice'||key===null){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)changed=true;
+    }
+    if(parent?.type==='CallExpression'&&parent.callee===node)changed=true;
+   }
+   if(node.type==='CallExpression'&&node.arguments?.some(proto))changed=true;
+   if(node.type==='Property'&&proto(node.value)||node.type==='ArrayExpression'&&
+      node.elements?.some(proto)||node.type==='ReturnStatement'&&proto(node.argument))
+    changed=true;
+   if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
+  });
+  nativeSliceIntegrity=!changed;
+  return nativeSliceIntegrity;
+ }
  function ensureStableArray(variable){
   if(stableArrayCache.has(variable)){
    if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated');
@@ -402,7 +452,7 @@ function findCapabilities(ast){
      const nativeSliceWrapper=['call','apply'].includes(method)&&
       node.object?.type==='MemberExpression'&&
       stableMethodName(node.object)==='slice'&&
-      descendsFromArray(node.object.object);
+      descendsFromArray(node.object.object)&&nativeArraySliceTrusted();
      if(method===null||(!/^(0|[1-9][0-9]*)$/.test(method)&&
         !readonly.has(method)&&!callbackIntrinsic&&!nativeSliceWrapper))
       uncertain=true;
@@ -418,7 +468,7 @@ function findCapabilities(ast){
      callee.object?.type==='MemberExpression'&&
      stableMethodName(callee.object)==='slice'&&
      descendsFromArray(callee.object.object)&&
-     parent.arguments?.[0]===node;
+     parent.arguments?.[0]===node&&nativeArraySliceTrusted();
     if(!safeSlice)uncertain=true;
    }
    // A local callback array can escape into object or array carriers.
@@ -489,7 +539,7 @@ function findCapabilities(ast){
    function sliceMethod(expr,level=0,seenMethods=new Set()){
     if(!expr||level>MAX_DEPTH)return false;
     if(expr.type==='MemberExpression')
-     return stableMethodName(expr)==='slice';
+     return stableMethodName(expr)==='slice'&&nativeArraySliceTrusted();
     if(expr.type==='Identifier'){
      const id=symbol(expr);
      if(!id||typeof id!=='object'||seenMethods.has(id))return false;
