@@ -55,12 +55,6 @@ function memberKey(node){
  return node.computed?staticJsString(node.property):
   node.property?.type==='Identifier'?node.property.name:null;
 }
-// Capability provenance is intentionally conservative and module-wide:
-// ambiguity/shadowing can cause BLOCKED, never a false approval.
-const GLOBAL_NAMES=new Set(['globalThis','global']);
-const EXEC_NAMES=new Set(['eval','Function','AsyncFunction','GeneratorFunction']);
-const VM_SINKS=new Set(['runInThisContext','runInNewContext','runInContext',
- 'compileFunction','Script']);
 // These sets model capabilities, not merely variable names. Incomplete
 // provenance is denied conservatively. No candidate expression is evaluated.
 const GLOBAL_NAMES=new Set(['globalThis','global']);
