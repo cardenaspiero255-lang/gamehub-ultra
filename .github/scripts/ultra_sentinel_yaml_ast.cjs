@@ -552,23 +552,24 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     if(/^actions\/github-script@/i.test(step.uses)){
      // github-script compiles its script input as JavaScript after Github
      // expressions are substituted. Use runner-equivalent input names.
-     const inputs=new Map();
+     const inputPairs=[];
      let ambiguous=step.with===undefined||!isMap(step.with);
      if(!ambiguous){
       for(const __workflowEntry6 of Object.entries(step.with)){
    const key=__workflowEntry6[0],value=__workflowEntry6[1];
        const folded=key.toLowerCase();
        if(!/^[A-Za-z0-9_-]+$/.test(key)||
-          inputs.has(folded)){
+          inputPairs.some(pair=>pair[0]===folded)){
         ambiguous=true;break;
        }
-       inputs.set(folded,value);
+       inputPairs.push([folded,value]);
       }
      }
-     if(ambiguous||typeof inputs.get('script')!=='string'||!inputs.get('script').trim())
+     const inputs=Object.fromEntries(inputPairs);
+     if(ambiguous||typeof inputs.script!=='string'||!inputs.script.trim())
       coverage.partial=true;
      else{
-      const inspection=auditExecutableExpressions(inputs.get('script'));
+      const inspection=auditExecutableExpressions(inputs.script);
       if(inspection.incomplete)coverage.partial=true;
       if(inspection.unsafe)
        emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
@@ -577,19 +578,19 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
       // Destructuring, aliases and computed process.env reads can carry
       // tainted values to executable JavaScript without spelling CMD twice.
       // Unless the entire script is a plain direct log, do not certify it.
-      const directLog=/^\s*core\.info\(\s*process\.env\.([A-Za-z_][A-Za-z0-9_]*)\s*\);?\s*$/.exec(inputs.get('script'));
+      const directLog=/^\s*core\.info\(\s*process\.env\.([A-Za-z_][A-Za-z0-9_]*)\s*\);?\s*$/.exec(inputs.script);
       const accessEnv=/\bprocess\s*(?:\.\s*env|\[\s*['"]env['"]\s*\])/;
-      if(stepTaint.size>0&&accessEnv.test(inputs.get('script'))&&
+      if(stepTaint.size>0&&accessEnv.test(inputs.script)&&
          !(directLog&&stepTaint.has(directLog[1])))
        coverage.partial=true;
       for(const name of stepTaint){
-       const used=inputs.get('script').includes('process.env.'+name)||
-        inputs.get('script').includes("process.env['"+name+"']")||
-        inputs.get('script').includes('process.env["'+name+'"]');
+       const used=inputs.script.includes('process.env.'+name)||
+        inputs.script.includes("process.env['"+name+"']")||
+        inputs.script.includes('process.env["'+name+'"]');
        if(!used)continue;
-       if(/\b(?:eval|Function|exec|execSync|spawn|spawnSync)\s*\(/.test(inputs.get('script')))
+       if(/\b(?:eval|Function|exec|execSync|spawn|spawnSync)\s*\(/.test(inputs.script))
         emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
-       else if(!/^\s*core\.info\(\s*process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*\);?\s*$/.test(inputs.get('script')))
+       else if(!/^\s*core\.info\(\s*process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*\);?\s*$/.test(inputs.script))
         coverage.partial=true;
       }
      }
@@ -598,30 +599,31 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      // Actions runner exposes every input as INPUT_<UPPERCASE_NAME>.
      // YAML preserves case, so Ref/ref and Repository/repository must share
      // the same effective slot; reject ambiguity or non-ASCII key tricks.
-     const inputs=new Map();
+     const inputPairs=[];
      let invalidInputs=step.with!==undefined&&!isMap(step.with);
      if(!invalidInputs&&isMap(step.with)){
       for(const __workflowEntry7 of Object.entries(step.with)){
    const key=__workflowEntry7[0],value=__workflowEntry7[1];
        const k=key.toLowerCase();
        if(!/^[A-Za-z0-9_-]+$/.test(key)||
-          inputs.has(k)){
+          inputPairs.some(pair=>pair[0]===k)){
         invalidInputs=true;break;
        }
-       inputs.set(k,value);
+       inputPairs.push([k,value]);
       }
      }
+     const inputs=Object.fromEntries(inputPairs);
      if(invalidInputs)coverage.partial=true;
      else{
       // Even a static branch or tag can point to attacker-controlled code.
       // Only the repository's reviewed main branch, an immutable SHA, or
       // exactly base-scoped GitHub expressions can be certified here.
-      const ref=typeof inputs.get('ref')==='string'?inputs.get('ref').trim():null;
+      const ref=typeof inputs.ref==='string'?inputs.ref.trim():null;
       const trustedBaseRef=ref==='main'||ref==='refs/heads/main'||
         /^\$\{\{\s*(?:github\.(?:sha|ref)|github\.event\.pull_request\.base\.sha|github\.event\.repository\.default_branch)\s*\}\}$/.test(ref||'');
       if(ref!==null&&!trustedBaseRef&&!PINNED.test(ref)&&!unsafePrRef(ref))
        coverage.partial=true;
-      const server=inputs.get('github-server-url');
+      const server=inputs['github-server-url'];
       if(server!==undefined){
        if(typeof server!=='string')coverage.partial=true;
        else if(/^\$\{\{\s*github\.server_url\s*\}\}$/.test(server.trim())||
@@ -630,16 +632,16 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
        }else if(server.includes('$'+'{{'))coverage.partial=true;
        else emit('PRIVILEGED_ALTERNATE_GITHUB_SERVER','BLOCKER',where);
       }
-      if((inputs.get('ref')!==undefined&&typeof inputs.get('ref')!=='string')||
-         (inputs.get('repository')!==undefined&&typeof inputs.get('repository')!=='string')){
+      if((inputs.ref!==undefined&&typeof inputs.ref!=='string')||
+         (inputs.repository!==undefined&&typeof inputs.repository!=='string')){
        coverage.partial=true;
-      }else if(unsafePrRef(inputs.get('ref'))||unsafePrRef(inputs.get('repository'))){
+      }else if(unsafePrRef(inputs.ref)||unsafePrRef(inputs.repository)){
        emit('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',where);
-      }else if(unknownCheckoutExpression(inputs.get('ref'),'ref')||
-                unknownCheckoutExpression(inputs.get('repository'),'repository')){
+      }else if(unknownCheckoutExpression(inputs.ref,'ref')||
+                unknownCheckoutExpression(inputs.repository,'repository')){
        coverage.partial=true;
-      }else if(typeof inputs.get('repository')==='string'){
-       const repository=inputs.get('repository').trim();
+      }else if(typeof inputs.repository==='string'){
+       const repository=inputs.repository.trim();
        const trusted=typeof trustedRepository==='string'&&
          /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trustedRepository);
        if(/^\$\{\{\s*github\.repository\s*\}\}$/.test(repository)){
@@ -647,7 +649,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
        }else if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!trusted){
         coverage.partial=true;
        }else if(repository.toLowerCase()!==trustedRepository.toLowerCase()&&
-                !PINNED.test(inputs.get('ref')||'')){
+                !PINNED.test(inputs.ref||'')){
         emit('PRIVILEGED_EXTERNAL_MUTABLE_CHECKOUT','BLOCKER',where);
        }
       }

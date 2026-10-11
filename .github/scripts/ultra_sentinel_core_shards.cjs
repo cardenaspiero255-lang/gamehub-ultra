@@ -120,8 +120,8 @@ function runShard(id,outDir){
  // Create a fresh child environment without a mutable or unverified
  // property-write receiver. Preserve every inherited key except the
  // shard selector, which must be controlled solely by the execution plan.
- const envEntries=Object.entries(process.env).filter(([name])=>
-  name!=='SENTINEL_MATRIX_SHARD');
+ const envEntries=Object.entries(process.env).filter(entry=>
+  entry[0]!=='SENTINEL_MATRIX_SHARD');
  if(expected.kind==='matrix')
   envEntries.push(['SENTINEL_MATRIX_SHARD',String(expected.index)]);
  const childEnv=Object.fromEntries(envEntries);
@@ -177,4 +177,7 @@ if(require.main===module){
 }
 module.exports={plan,testFiles,parseTap,validateReport,aggregate,
  SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,MATRIX_EXTRA_AUDITS,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,
- BASELINE_TEST_COUNTS,MINIMUM};
+ // Export a detached immutable schema snapshot: never publish mutable
+ // references to the validator's internal baseline attestation policy.
+ BASELINE_TEST_COUNTS:{b0:10242,b1:11550},MINIMUM};
+Object.freeze(module.exports.BASELINE_TEST_COUNTS);
