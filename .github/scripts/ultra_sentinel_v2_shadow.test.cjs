@@ -46,3 +46,19 @@ test('baseline and independent shadow agree on a direct global sink',()=>{
  assert.equal(report.primary,'BLOCKER');
  assert.notEqual(report.disposition,'ESCALATE');
 });
+
+test('shadow refuses pathological nesting before expensive scope resolution',()=>{
+ const root={type:'Program',sourceType:'script',body:[]};
+ let current=root;
+ for(let index=0;index<300;index++){
+  const child={type:'BlockStatement',body:[]};
+  current.body.push(child);
+  current=child;
+ }
+ assert.throws(()=>directSinkEvidence(root),/Shadow AST nesting budget exceeded/);
+});
+test('shadow refuses cyclic AST input instead of traversing forever',()=>{
+ const root={type:'Program',sourceType:'script',body:[]};
+ root.body.push(root);
+ assert.throws(()=>directSinkEvidence(root),/Shadow AST cycle or sharing rejected/);
+});
