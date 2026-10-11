@@ -918,6 +918,22 @@ for(const [name,source] of nativeSliceBenign)
 for(const [name,source] of nativeSliceDangerous)
  test(name,()=>assert.notEqual(result(source),'CLEAR',name));
 
+// Codex P1 family: project a const ObjectPattern source through lexical aliases;
+// no alias may silently lose a write to its original array callback slots.
+const objectDefaultAliasDangerous=[
+ ["P1 ObjectPattern default follows immutable object alias","function bad(g){g.eval('attack')}function safe(){}const a=[safe],empty={};const {x=a}=empty;x.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 ObjectPattern default follows chained immutable aliases","function bad(g){g.eval('attack')}function safe(){}const a=[safe],empty={},alias=empty;const {x=a}=alias;x.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 fake slice.call must not whitelist an array argument","function bad(g){g.eval('attack')}function safe(){}const fake={slice:{call(a){a.fill(bad)}}};const a=[safe];fake.slice.call(a);a[0](globalThis)"]
+];
+const objectDefaultAliasBenign=[
+ ["P2 ObjectPattern alias with present slot remains CLEAR","const a=[()=>1],holder={x:[()=>2]},alias=holder;const {x=a}=alias;x[0]();a[0]()"],
+ ["P2 ObjectPattern absent slot without mutation remains CLEAR","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;a[0]()"]
+];
+for(const [name,source] of objectDefaultAliasDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of objectDefaultAliasBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
