@@ -1338,3 +1338,19 @@ test('P1 a rewritten local method may still mutate Array.prototype',()=>{
  const source="const api={defineProperty(){return 1}};api.defineProperty=function(target,key,descriptor){Object.defineProperty(target,key,descriptor)};api.defineProperty(Array.prototype,'slice',{value:function(){return []}});const a=[()=>1];const c=a.slice.call(a);c[0]()";
  assert.notEqual(result(source),'CLEAR','a mutated local method must not be accepted as inert');
 });
+
+// Block 3: regression cases for Codex P1 returned native slice handles.
+// A helper can expose a slice function which an attacker then shadows.
+// Each source is parsed as data; no source string is executed by this suite.
+const returnedNativeSliceCases=[
+ ["P1 returned native slice handle via ordinary helper",
+  "function bad(g){g.eval('x')}const a=[()=>1];function get(){return a.slice}Object.defineProperty(get(),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 returned native slice handle through lexical alias",
+  "function bad(g){g.eval('x')}const a=[()=>1],handle=a.slice;function get(){return handle}Reflect.defineProperty(get(),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 returned native slice handle from concise arrow",
+  "function bad(g){g.eval('x')}const a=[()=>1];const get=()=>a.slice;Object.defineProperty(get(),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 returned native slice handle from conditional helper",
+  "function bad(g){g.eval('x')}const a=[()=>1];function get(flag){return flag?a.slice:null}Object.defineProperty(get(true),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"]
+];
+for(const [name,source] of returnedNativeSliceCases)
+ test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
