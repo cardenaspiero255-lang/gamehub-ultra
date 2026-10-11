@@ -326,6 +326,17 @@ function findCapabilities(ast){
    if(slots)ensureStableArray(variable);
    return slots;
   }
+  // Preserve provenance of nested arrays and aliases to their rows.
+  if(node.type==='MemberExpression'){
+   if(!node.computed)return null;
+   const outer=knownArraySlots(node.object,depth+1,new Set(seen));
+   if(!outer)return null;
+   const index=staticArrayIndex(node.property);
+   if(index===null||index>=outer.length||!outer[index]||
+      outer[index].type==='SpreadElement')
+    throw Error('Unknown nested array slot provenance');
+   return knownArraySlots(outer[index],depth+1,new Set(seen));
+  }
   if(node.type==='SequenceExpression')
    return knownArraySlots(node.expressions?.at(-1),depth+1,seen);
   if(node.type==='CallExpression'){
@@ -348,6 +359,32 @@ function findCapabilities(ast){
  // This is an invocation value, not an eagerly executed call.
  // A native Function.prototype intrinsic has a distinct provenance kind.
  // When extracted, its name is not enough: check shadowing on its source.
+ // Resolve built-in property writers through immutable, lexical aliases.
+ // Do not accept a locally shadowed Object/Reflect as a trusted definer.
+ function definerOperation(node,depth=0,seen=new Set()){
+  if(!node||depth>MAX_DEPTH)return null;
+  if(node.type==='MemberExpression'&&node.object?.type==='Identifier'){
+   const root=symbol(node.object),method=stableMethodName(node);
+   if(root==='free:Object'&&
+      ['defineProperty','defineProperties','assign'].includes(method))return method;
+   if(root==='free:Reflect'&&method==='defineProperty')return method;
+   return null;
+  }
+  if(node.type==='Identifier'){
+   const key=symbol(node);
+   if(!key||typeof key!=='object'||seen.has(key))return null;
+   const defs=key.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return null;
+   if(key.references?.some(ref=>ref.isWrite()&&!ref.init))
+    throw Error('Mutable property definer alias provenance');
+   seen.add(key);
+   return definerOperation(defs[0].node?.init,depth+1,seen);
+  }
+  if(node.type==='SequenceExpression')
+   return definerOperation(node.expressions?.at(-1),depth+1,seen);
+  return null;
+ }
  function hasIntrinsicOverride(receiver,method){
   if(receiver?.type!=='Identifier')return false;
   const id=symbol(receiver);
@@ -369,14 +406,12 @@ function findCapabilities(ast){
     if(node.type==='UpdateExpression'&&node.argument?.type==='MemberExpression'&&
        node.argument.object?.type==='Identifier'&&aliases.has(symbol(node.argument.object)))
      overrides.add(stableMethodName(node.argument)||'*');
-    if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
-       node.callee.object?.type==='Identifier'&&
-       symbol(node.callee.object)==='free:Object'&&
-       ['defineProperty','defineProperties','assign'].includes(stableMethodName(node.callee))&&
+    if(node.type==='CallExpression'&&
        node.arguments?.[0]?.type==='Identifier'&&
        aliases.has(symbol(node.arguments[0]))){
-     const op=stableMethodName(node.callee);
-     overrides.add(op==='defineProperty'?stableKeyValue(node.arguments[1])||'*':'*');
+     const op=definerOperation(node.callee);
+     if(op)overrides.add(op==='defineProperty'?
+      stableKeyValue(node.arguments[1])||'*':'*');
     }
    });
    intrinsicShadowCache.set(id,overrides);
@@ -466,6 +501,23 @@ function findCapabilities(ast){
   }
   if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
      stableMethodName(node.callee)==='bind'){
+   // Binding an extracted native call/apply must retain the original target.
+   const native=intrinsicName(node.callee.object,depth+1);
+   if(native){
+    if(native==='bind')throw Error('Nested native bind target unresolved');
+    const fn=resolveFunction(node.arguments?.[0],depth+1);
+    if(!fn)throw Error('Unknown native intrinsic bind target');
+    if(!node.arguments?.[1]||
+       (node.arguments||[]).some(arg=>arg?.type==='SpreadElement'))
+     throw Error('Unknown native intrinsic bind arguments');
+    if(native==='call')
+     return {fn,args:node.arguments.slice(2),receiver:node.arguments[1]};
+    const values=node.arguments[2];
+    if(!values)return {fn,args:[],receiver:node.arguments[1]};
+    if(values.type!=='ArrayExpression'||values.elements.some(e=>!e||e.type==='SpreadElement'))
+     throw Error('Unknown native apply bind argument array');
+    return {fn,args:values.elements,receiver:node.arguments[1]};
+   }
    const earlier=boundCallable(node.callee.object,depth+1,seen);
    const fn=earlier?.fn||resolveFunction(node.callee.object,depth+1);
    if(!fn)return null;
@@ -554,24 +606,34 @@ function findCapabilities(ast){
   return null;
  }
  function invocation(node,depth=0){
-  // Function.prototype.call.call(fn, thisArg, arg) and apply.call are
-  // interprocedural function invocations, not ordinary member calls.
-  if(node.callee?.type==='MemberExpression'&&stableMethodName(node.callee)==='call'){
-   const intrinsic=intrinsicName(node.callee.object,depth+1);
-   if(['call','apply','bind'].includes(intrinsic)){
-    const innerArgs=node.arguments||[];
-    const linked=boundCallable(innerArgs[0],depth+1);
-    const actual=linked?.fn||resolveFunction(innerArgs[0],depth+1);
-    if(!actual)throw Error('Unresolved indirect Function intrinsic target');
-    if(intrinsic==='bind')return {fn:null,args:[],receiver:null};
-    let passed=null;
-    if(intrinsic==='call')passed=innerArgs.slice(2);
-    else if(innerArgs[2]?.type==='ArrayExpression')passed=innerArgs[2].elements;
-    else throw Error('Unresolved indirect apply argument provenance');
-    if(passed.some(arg=>!arg||arg.type==='SpreadElement'))
-     throw Error('Unknown indirect call argument provenance');
-    return {fn:actual,args:[...(linked?.args||[]),...passed],
-     receiver:linked?.receiver||innerArgs[1]||null};
+  // Native call/apply wrappers around extracted call/apply/bind are
+  // interprocedural invocations, not opaque member calls.
+  if(node.callee?.type==='MemberExpression'){
+   const outer=stableMethodName(node.callee);
+   if(outer==='call'||outer==='apply'){
+    const native=intrinsicName(node.callee.object,depth+1);
+    if(['call','apply','bind'].includes(native)){
+     let innerArgs=node.arguments||[];
+     if(outer==='apply'){
+      const supplied=node.arguments?.[1];
+      if(supplied?.type!=='ArrayExpression'||
+         supplied.elements.some(e=>!e||e.type==='SpreadElement'))
+       throw Error('Unresolved extracted intrinsic apply arguments');
+      innerArgs=[node.arguments[0],...supplied.elements];
+     }
+     const linked=boundCallable(innerArgs[0],depth+1);
+     const actual=linked?.fn||resolveFunction(innerArgs[0],depth+1);
+     if(!actual)throw Error('Unresolved indirect Function intrinsic target');
+     if(native==='bind')return {fn:null,args:[],receiver:null};
+     let passed=null;
+     if(native==='call')passed=innerArgs.slice(2);
+     else if(innerArgs[2]?.type==='ArrayExpression')passed=innerArgs[2].elements;
+     else throw Error('Unresolved indirect apply argument provenance');
+     if(passed.some(arg=>!arg||arg.type==='SpreadElement'))
+      throw Error('Unknown indirect call argument provenance');
+     return {fn:actual,args:[...(linked?.args||[]),...passed],
+      receiver:linked?.receiver||innerArgs[1]||null};
+    }
    }
   }
   const bound=boundCallable(node.callee,depth+1);
@@ -942,9 +1004,10 @@ function findCapabilities(ast){
      const element=slots[i];
      if(!element)continue;
      if(element.type==='SpreadElement')throw Error('Array projection with spread unknown');
+     const native=intrinsicName(element);
      const linked=boundCallable(element),fn=resolveFunction(element);
      const cap=kind(element),nested=propertyKinds(element);
-     const descriptor=linked?{bound:linked}:fn?{functionNode:fn}:
+     const descriptor=native?{intrinsic:native}:linked?{bound:linked}:fn?{functionNode:fn}:
       nested?{properties:nested}:cap&&cap!=='local-object'?cap:
       ['Literal','TemplateLiteral'].includes(element.type)?PRESENT:UNKNOWN;
      descriptors.set(String(i),descriptor);
