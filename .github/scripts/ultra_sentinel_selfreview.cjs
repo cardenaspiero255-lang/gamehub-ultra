@@ -55,34 +55,120 @@ function memberKey(node){
  return node.computed?staticJsString(node.property):
   node.property?.type==='Identifier'?node.property.name:null;
 }
-function globalRoot(node){
- while(node?.type==='ChainExpression')node=node.expression;
- return node?.type==='Identifier'&&['globalThis','global'].includes(node.name);
+// Capability provenance is intentionally conservative and module-wide:
+// ambiguity/shadowing can cause BLOCKED, never a false approval.
+const GLOBAL_NAMES=new Set(['globalThis','global']);
+const EXEC_NAMES=new Set(['eval','Function','AsyncFunction','GeneratorFunction']);
+const VM_SINKS=new Set(['runInThisContext','runInNewContext','runInContext',
+ 'compileFunction','Script']);
+function isVmLoader(node){
+ if(node?.type==='AwaitExpression')return isVmLoader(node.argument);
+ if(node?.type==='ImportExpression')
+  return ['vm','node:vm'].includes(staticJsString(node.source));
+ return node?.type==='CallExpression'&&node.callee?.type==='Identifier'&&
+  node.callee.name==='require'&&
+  ['vm','node:vm'].includes(staticJsString(node.arguments?.[0]));
 }
-function dynamicJsNode(node,parent,key){
- if(node.type==='Identifier'&&['eval','Function','AsyncFunction','GeneratorFunction'].includes(node.name)){
-  // Property names are not references: ordinary objects may share method names.
+function capabilityKind(node,aliases){
+ if(!node)return null;
+ if(node.type==='ChainExpression'||node.type==='AwaitExpression')
+  return capabilityKind(node.expression||node.argument,aliases);
+ if(node.type==='Identifier'){
+  if(aliases.execs.has(node.name))return 'exec';
+  if(aliases.globals.has(node.name))return 'global';
+  if(aliases.vms.has(node.name))return 'vm';
+  return null;
+ }
+ if(isVmLoader(node))return 'vm';
+ if(node.type==='MemberExpression'){
+  const root=capabilityKind(node.object,aliases),name=memberKey(node);
+  if(root==='global'&&(EXEC_NAMES.has(name)||(node.computed&&name===null)))return 'exec';
+  if(root==='vm'&&(VM_SINKS.has(name)||(node.computed&&name===null)))return 'exec';
+ }
+ if(node.type==='CallExpression'){
+  const callee=node.callee;
+  if(callee?.type==='MemberExpression'&&callee.object?.name==='Reflect'&&
+    memberKey(callee)==='get'){
+   const kind=capabilityKind(node.arguments?.[0],aliases),key=staticJsString(node.arguments?.[1]);
+   if(kind==='global'&&(EXEC_NAMES.has(key)||key===null))return 'exec';
+   if(kind==='vm'&&(VM_SINKS.has(key)||key===null))return 'exec';
+  }
+ }
+ return null;
+}
+function collectExecutionAliases(ast){
+ const aliases={globals:new Set(GLOBAL_NAMES),execs:new Set(EXEC_NAMES),vms:new Set(['vm'])};
+ const bindings=[];let visited=0;
+ function gather(node){
+  if(!node||typeof node!=='object'||typeof node.type!=='string')return;
+  if(++visited>AST_NODE_LIMIT)throw Error('AST node budget exceeded');
+  if(node.type==='VariableDeclarator'&&node.init)
+   bindings.push([node.id,node.init]);
+  else if(node.type==='AssignmentExpression'&&node.operator==='=')
+   bindings.push([node.left,node.right]);
+  for(const [k,v] of Object.entries(node)){
+   if(k==='start'||k==='end'||k==='loc'||k==='range')continue;
+   if(Array.isArray(v))for(const child of v)gather(child);
+   else if(v&&typeof v.type==='string')gather(v);
+  }
+ }
+ gather(ast);
+ function add(set,name){if(typeof name!=='string'||set.has(name))return false;set.add(name);return true;}
+ function destructure(id,kind){
+  let changed=false;
+  if(id.type!=='ObjectPattern'||(kind!=='global'&&kind!=='vm'))return false;
+  for(const property of id.properties){
+   if(property.type==='RestElement'){
+    if(property.argument?.type==='Identifier')
+     changed=add(kind==='global'?aliases.globals:aliases.vms,property.argument.name)||changed;
+    continue;
+   }
+   const name=property.computed?staticJsString(property.key):
+     property.key?.type==='Identifier'?property.key.name:staticJsString(property.key);
+   const binding=property.value?.type==='AssignmentPattern'?property.value.left:property.value;
+   if(binding?.type!=='Identifier')continue;
+   if(kind==='global'&&(EXEC_NAMES.has(name)||name===null))
+    changed=add(aliases.execs,binding.name)||changed;
+   if(kind==='vm'&&(VM_SINKS.has(name)||name===null))
+    changed=add(aliases.execs,binding.name)||changed;
+  }
+  return changed;
+ }
+ for(let round=0;round<=32;round++){
+  let changed=false;
+  for(const [left,right] of bindings){
+   const kind=capabilityKind(right,aliases);
+   if(left.type==='Identifier'){
+    if(kind==='global')changed=add(aliases.globals,left.name)||changed;
+    if(kind==='vm')changed=add(aliases.vms,left.name)||changed;
+    if(kind==='exec')changed=add(aliases.execs,left.name)||changed;
+   }else changed=destructure(left,kind)||changed;
+  }
+  if(!changed)return aliases;
+ }
+ throw Error('Alias chain exceeds conservative limit');
+}
+function dynamicJsNode(node,parent,key,aliases){
+ if(node.type==='Identifier'&&aliases.execs.has(node.name)){
+  // Identifier keys and ordinary object methods are not executable references.
   if(parent?.type==='MemberExpression'&&key==='property'&&!parent.computed)return false;
   if(parent?.type==='Property'&&key==='key'&&!parent.computed)return false;
   if(parent?.type==='MethodDefinition'&&key==='key'&&!parent.computed)return false;
-  return true; // Cover aliased constructor and eval references before they escape.
+  return true;
  }
- if(node.type==='MemberExpression'){
-  const name=memberKey(node);
-  return !!(globalRoot(node.object)&&['eval','Function','AsyncFunction','GeneratorFunction'].includes(name));
- }
+ if(node.type==='MemberExpression')return capabilityKind(node,aliases)==='exec';
  if(node.type!=='CallExpression'&&node.type!=='NewExpression')return false;
+ if(capabilityKind(node,aliases)==='exec')return true;
  let callee=node.callee;
  while(callee?.type==='ChainExpression')callee=callee.expression;
- if(callee?.type==='Identifier')
-  return ['eval','Function','AsyncFunction','GeneratorFunction'].includes(callee.name);
- if(callee?.type!=='MemberExpression')return false;
- const name=memberKey(callee);
- if(['runInThisContext','runInNewContext','runInContext'].includes(name))return true;
- if(name==='Script'&&callee.object?.type==='CallExpression'&&
-    callee.object.callee?.name==='require')return true;
- if(name==='constructor')return true; // Dynamic constructor invocation cannot be attested safe.
- return globalRoot(callee.object)&&callee.computed&&name===null;
+ if(capabilityKind(callee,aliases)==='exec')return true;
+ if(callee?.type==='MemberExpression'){
+  const method=memberKey(callee);
+  if(VM_SINKS.has(method)&&method!=='Script'&&
+    capabilityKind(callee.object,aliases)==='vm')return true;
+  if(method==='constructor')return true;
+ }
+ return false;
 }
 function jsDiffSource(patch){
  let started=false,last=0,first=true,lines=[];
@@ -114,11 +200,13 @@ function jsAstByLine(patch,fullSource){
    locations:true});
  }catch(_){return fail('JS_PARSE_ERROR');}
  const sinks=[],budget={nodes:0};
+ let aliases;
+ try{aliases=collectExecutionAliases(ast);}catch(_){return fail('ALIAS_PROVENANCE_INCOMPLETE');}
  function visit(node,parent=null,key=''){
   if(!node||typeof node!=='object')return;
   if(!Array.isArray(node)&&typeof node.type!=='string')return;
   if(++budget.nodes>AST_NODE_LIMIT)throw Error('AST node budget exceeded');
-  if(dynamicJsNode(node,parent,key))sinks.push(node);
+  if(dynamicJsNode(node,parent,key,aliases))sinks.push(node);
   for(const [k,v] of Object.entries(node)){
    if(k==='start'||k==='end'||k==='loc'||k==='range')continue;
    if(Array.isArray(v)){for(const child of v)visit(child,node,k);}
