@@ -1688,6 +1688,7 @@ test('CommonJS executable exports and dynamic exports remain fail-closed',()=>{
   "module.exports={opaque:unknownSource};",
   "let value=1;value=unknownSource;module.exports={value};",
   "var value=1;value=unknownSource;module.exports={value};",
+  "const value=1;value=unknownSource;module.exports={value};",
   "let value=1;function mutate(){value=unknownSource;}mutate();module.exports={value};",
   "module.exports=unknownSource;",
   "module.require=eval;",
