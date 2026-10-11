@@ -1300,3 +1300,36 @@ test('P1 hijacked console.log getter cannot be treated as a pure carrier escape'
  const source="function bad(g){g.eval('x')} const a=[()=>1],empty={}; const {x=a}=empty; console.__defineGetter__('log',()=>o=>o.__defineGetter__('get',()=>a)); console.log(empty); empty.get.fill(bad); a[0](globalThis)";
  assert.notEqual(result(source),'CLEAR','untrusted console.log may expose the captured callback array');
 });
+
+test('P1 packed native slice handle passed through apply cannot be CLEAR',()=>{
+ const source="function bad(g){g.eval('x')} const a=[()=>1];Object.defineProperty.apply(Object,[a.slice,'call',{value:function(x){x.fill(bad)}}]);a.slice.call(a);a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR');
+});
+test('P1 globalThis.console.log replacement cannot be accepted as pure',()=>{
+ const source="function bad(g){g.eval('x')} const a=[()=>1],empty={};const {x=a}=empty;globalThis.console.log=o=>o.__defineGetter__('get',()=>a);console.log(empty);empty.get.fill(bad);a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR');
+});
+test('P2 local defineProperty method cannot poison global Array prototype',()=>{
+ const source="const api={defineProperty(){return 1}};api.defineProperty(Array.prototype,'slice',{value:1});const a=[()=>1];const c=a.slice.call(a);c[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via call is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop.call(null,empty);a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via apply is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop.apply(null,[empty]);a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via Reflect.apply is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;Reflect.apply(noop,null,[empty]);a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via bind is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop.bind(null,empty)();a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P1 effectful local helper wrapped by call must remain not CLEAR',()=>{
+ const source="function bad(g){g.eval('x')}function expose(o){o.get=a}const a=[()=>1],empty={};const {x=a}=empty;expose.call(null,empty);empty.get.fill(bad);a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR');
+});
