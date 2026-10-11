@@ -2057,6 +2057,47 @@ function findCapabilities(ast){
     throw Error('Unknown constructor capability');
   }
  });
+ // The normal descriptor engine cannot yet attest callback-array provenance
+ // when a destructured default competes with a computed source key supplied
+ // through a lexical identifier. Reject that precise uncertain family instead
+ // of silently selecting the default and reporting a false CLEAR.
+ function sourceObjectForDefault(expr,depth=0,seen=new Set()){
+  if(!expr||depth>MAX_DEPTH)return null;
+  if(expr.type==='ObjectExpression')return expr;
+  if(expr.type!=='Identifier')return null;
+  const id=symbol(expr);
+  if(!id||typeof id!=='object'||seen.has(id))return null;
+  const defs=id.defs||[];
+  if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
+     defs[0].node?.id?.type!=='Identifier'||
+     id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+  seen.add(id);
+  return sourceObjectForDefault(defs[0].node.init,depth+1,seen);
+ }
+ function unprovenComputedArrayDefault(pattern,value){
+  if(pattern?.type!=='ObjectPattern')return false;
+  const source=sourceObjectForDefault(value);
+  if(!source)return false;
+  for(const entry of pattern.properties||[]){
+   if(entry.type!=='Property'||entry.value?.type!=='AssignmentPattern')continue;
+   const desired=stablePatternKey(entry);
+   for(const p of source.properties||[]){
+    if(p.type!=='Property'||!p.computed||
+       ['Literal','TemplateLiteral'].includes(p.key?.type)||
+       !['ArrayExpression','Identifier'].includes(p.value?.type))continue;
+    const key=stablePatternKey(p);
+    if(key===null||desired===null||key===desired)return true;
+   }
+  }
+  return false;
+ }
+ traverse(ast,node=>{
+  if(node.type==='VariableDeclarator'&&
+     unprovenComputedArrayDefault(node.id,node.init)||
+     node.type==='AssignmentExpression'&&node.operator==='='&&
+     unprovenComputedArrayDefault(node.left,node.right))
+   throw Error('Unproven computed callback-array default provenance');
+ });
  return sinks;
 }
 module.exports={findCapabilities};
