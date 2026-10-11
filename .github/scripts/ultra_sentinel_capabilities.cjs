@@ -77,6 +77,7 @@ function findCapabilities(ast){
    for(const id of variable.identifiers)declaration.set(id,variable);
  }
  const kinds=new Map(), objects=new Map(),bindings=[];
+ const arrayBindings=new Map();
  // Preserve Function.bind closures across object/array destructuring and aliases.
  const boundValues=new Map();
  const intrinsicValues=new Map();
@@ -316,6 +317,9 @@ function findCapabilities(ast){
   if(node.type==='Identifier'){
    const variable=symbol(node);
    if(!variable||typeof variable!=='object'||seen.has(variable))return null;
+   if(arrayBindings.has(variable)){
+    ensureStableArray(variable);return arrayBindings.get(variable);
+   }
    seen.add(variable);
    const defs=variable.defs||[];
    if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
@@ -361,13 +365,32 @@ function findCapabilities(ast){
  // When extracted, its name is not enough: check shadowing on its source.
  // Resolve built-in property writers through immutable, lexical aliases.
  // Do not accept a locally shadowed Object/Reflect as a trusted definer.
+ // Root identity is lexical and read-only, not merely a spelling.
+ function definerRoot(node,depth=0,seen=new Set()){
+  if(!node||depth>MAX_DEPTH)return null;
+  if(node.type==='Identifier'){
+   const id=symbol(node);
+   if(id==='free:Object')return 'Object';
+   if(id==='free:Reflect')return 'Reflect';
+   if(!id||typeof id!=='object'||seen.has(id))return null;
+   const defs=id.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return null;
+   if(id.references?.some(ref=>ref.isWrite()&&!ref.init))
+    throw Error('Mutable native definer root');
+   seen.add(id);return definerRoot(defs[0].node?.init,depth+1,seen);
+  }
+  if(node.type==='SequenceExpression')
+   return definerRoot(node.expressions?.at(-1),depth+1,seen);
+  return null;
+ }
  function definerOperation(node,depth=0,seen=new Set()){
   if(!node||depth>MAX_DEPTH)return null;
-  if(node.type==='MemberExpression'&&node.object?.type==='Identifier'){
-   const root=symbol(node.object),method=stableMethodName(node);
-   if(root==='free:Object'&&
+  if(node.type==='MemberExpression'){
+   const root=definerRoot(node.object,depth+1),method=stableMethodName(node);
+   if(root==='Object'&&
       ['defineProperty','defineProperties','assign'].includes(method))return method;
-   if(root==='free:Reflect'&&method==='defineProperty')return method;
+   if(root==='Reflect'&&method==='defineProperty')return method;
    return null;
   }
   if(node.type==='Identifier'){
@@ -384,6 +407,22 @@ function findCapabilities(ast){
   if(node.type==='SequenceExpression')
    return definerOperation(node.expressions?.at(-1),depth+1,seen);
   return null;
+ }
+ function definerInvocation(node){
+  if(node?.type!=='CallExpression')return null;
+  const direct=definerOperation(node.callee);
+  if(direct)return {op:direct,args:node.arguments||[]};
+  if(node.callee?.type!=='MemberExpression')return null;
+  const outer=stableMethodName(node.callee);
+  if(outer!=='call'&&outer!=='apply')return null;
+  const op=definerOperation(node.callee.object);
+  if(!op)return null;
+  if(outer==='call')return {op,args:(node.arguments||[]).slice(1)};
+  const supplied=node.arguments?.[1];
+  if(supplied?.type!=='ArrayExpression'||
+     supplied.elements.some(e=>!e||e.type==='SpreadElement'))
+   throw Error('Unresolved native definer apply arguments');
+  return {op,args:supplied.elements};
  }
  function hasIntrinsicOverride(receiver,method){
   if(receiver?.type!=='Identifier')return false;
@@ -406,12 +445,11 @@ function findCapabilities(ast){
     if(node.type==='UpdateExpression'&&node.argument?.type==='MemberExpression'&&
        node.argument.object?.type==='Identifier'&&aliases.has(symbol(node.argument.object)))
      overrides.add(stableMethodName(node.argument)||'*');
-    if(node.type==='CallExpression'&&
-       node.arguments?.[0]?.type==='Identifier'&&
-       aliases.has(symbol(node.arguments[0]))){
-     const op=definerOperation(node.callee);
-     if(op)overrides.add(op==='defineProperty'?
-      stableKeyValue(node.arguments[1])||'*':'*');
+    if(node.type==='CallExpression'){
+     const call=definerInvocation(node);
+     if(call?.args?.[0]?.type==='Identifier'&&aliases.has(symbol(call.args[0])))
+      overrides.add(call.op==='defineProperty'?
+       stableKeyValue(call.args[1])||'*':'*');
     }
    });
    intrinsicShadowCache.set(id,overrides);
@@ -486,18 +524,26 @@ function findCapabilities(ast){
    if(descriptor?.optional)throw Error('Unresolved bound member identity');
    return descriptor?.bound||null;
   }
-  // Function.prototype.bind.call(fn,thisArg,...args) returns a bound callable.
-  // The first argument is the target function; it is not invoked at bind time.
+  // Native bind.call and bind.apply both return a bound value.
   if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
-     stableMethodName(node.callee)==='call'&&
+     ['call','apply'].includes(stableMethodName(node.callee))&&
      intrinsicName(node.callee.object,depth+1)==='bind'){
-   const target=boundCallable(node.arguments?.[0],depth+1,seen);
-   const fn=target?.fn||resolveFunction(node.arguments?.[0],depth+1);
-   if(!fn)throw Error('Unknown indirect Function.bind target');
-   const boundArgs=[...(target?.args||[]),...(node.arguments||[]).slice(2)];
-   if(boundArgs.some(arg=>arg?.type==='SpreadElement'))
-    throw Error('Unresolved indirect bind spread');
-   return {fn,args:boundArgs,receiver:target?.receiver||node.arguments?.[1]||null};
+   const outer=stableMethodName(node.callee);
+   let args=node.arguments||[];
+   if(outer==='apply'){
+    const supplied=node.arguments?.[1];
+    if(supplied?.type!=='ArrayExpression'||
+       supplied.elements.some(e=>!e||e.type==='SpreadElement'))
+     throw Error('Unknown native bind.apply argument array');
+    args=[node.arguments[0],...supplied.elements];
+   }
+   const linked=boundCallable(args[0],depth+1,seen);
+   const fn=linked?.fn||resolveFunction(args[0],depth+1);
+   if(!fn)throw Error('Unknown indirect bind target');
+   const boundArgs=[...(linked?.args||[]),...args.slice(2)];
+   if(boundArgs.some(arg=>!arg||arg.type==='SpreadElement'))
+    throw Error('Unknown prebound spread');
+   return {fn,args:boundArgs,receiver:linked?.receiver||args[1]||null};
   }
   if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
      stableMethodName(node.callee)==='bind'){
@@ -949,6 +995,11 @@ function findCapabilities(ast){
      changed=rememberBound(symbol(dest),present.bound)||changed;
     if(present?.intrinsic)
      changed=rememberIntrinsic(symbol(dest),present.intrinsic)||changed;
+    if(present?.arraySlots){
+     const id=symbol(dest),previous=arrayBindings.get(id);
+     if(previous&&previous!==present.arraySlots)throw Error('Conflicting array row');
+     if(!previous){arrayBindings.set(id,present.arraySlots);changed=true;}
+    }
     changed=assignIdentifier(dest,scalar,nested,!!properties||!!root)||changed;
    }else if(dest?.type==='ObjectPattern'){
     if(!nested&&!scalar)throw Error('Nested destructuring source unknown');
@@ -1004,10 +1055,11 @@ function findCapabilities(ast){
      const element=slots[i];
      if(!element)continue;
      if(element.type==='SpreadElement')throw Error('Array projection with spread unknown');
-     const native=intrinsicName(element);
+     const native=intrinsicName(element),arraySlots=knownArraySlots(element);
      const linked=boundCallable(element),fn=resolveFunction(element);
      const cap=kind(element),nested=propertyKinds(element);
-     const descriptor=native?{intrinsic:native}:linked?{bound:linked}:fn?{functionNode:fn}:
+     const descriptor=native?{intrinsic:native}:arraySlots?{arraySlots}:
+      linked?{bound:linked}:fn?{functionNode:fn}:
       nested?{properties:nested}:cap&&cap!=='local-object'?cap:
       ['Literal','TemplateLiteral'].includes(element.type)?PRESENT:UNKNOWN;
      descriptors.set(String(i),descriptor);
