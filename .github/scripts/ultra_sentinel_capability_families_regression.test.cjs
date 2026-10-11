@@ -811,6 +811,26 @@ for(const [name,source] of round4P2)
 for(const [name,source] of round4Benign)
  test(name+' stays CLEAR',()=>assert.equal(result(source),'CLEAR',name));
 
+// Round five: shadowed function intrinsic through lexical aliases and
+// Function.prototype intrinsics extracted from statically indexed arrays.
+const round5Dangerous=[
+ ["P1 call extracted from indexed array","function bad(g){g.eval('attack')}const ops=[(()=>{}).call];const c=ops[0];c.call(bad,null,globalThis)"],
+ ["P1 apply extracted through indexed array alias","function bad(g){g.eval('attack')}const ops=[(()=>{}).apply];const copy=ops;const key=0;const op=copy[key];op.call(bad,null,[globalThis])"],
+ ["P1 method override via aliased function reference","function bad(g){g.eval('attack')}function innocent(){}const alias=innocent;Object.defineProperty(alias,'call',{value:function(target,g){target(g)}});innocent.call(bad,globalThis)"],
+ ["P1 direct method override through function alias","function bad(g){g.eval('attack')}function innocent(){}const alias=innocent;alias.call=function(target,g){target(g)};innocent.call(bad,globalThis)"]
+];
+const round5Benign=[
+ ["P2 harmless indexed intrinsic call","const ops=[(()=>{}).call];const f=x=>x+1;ops[0].call(f,null,41)"],
+ ["P2 uncertain overwritten call via alias remains INCOMPLETE","function bad(g){g.eval('attack')}function innocent(){}const alias=innocent;Object.defineProperty(alias,'call',{value:{call(){}}});innocent.call.call(bad,null,globalThis)"]
+];
+for(const [name,source] of round5Dangerous)
+ test(name+' cannot silently pass',()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of round5Benign)
+ test(name+' preserves conservative precision',()=>{
+  if(name.startsWith('P2 harmless'))assert.equal(result(source),'CLEAR',name);
+  else assert.match(result(source),/^INCOMPLETE:/,name);
+ });
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
