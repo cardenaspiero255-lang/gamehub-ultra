@@ -86,7 +86,7 @@ function normalizeInvocation(command,flag){
   if(literalCommandName(rawWord)==='exec'){hasExec=true;break;}
  }
  const args=hasExec?stripExecRedirections(command.words,flag):command.words;
- if(!args)return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+ if(!args)return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
  let i=0;
  for(let depth=0;depth<5;depth++){
   const name=literalCommandName(args[i]||'');
@@ -94,10 +94,10 @@ function normalizeInvocation(command,flag){
    i++;
    while(i<args.length&&/^-[A-Za-z-]+$/.test(literalCommandName(args[i]||'')||'')){
     const option=literalCommandName(args[i]);
-    if(option==='-v'||option==='-V')return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+    if(option==='-v'||option==='-V')return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
     if(option==='-p'){i++;continue;}
     if(option==='--'){i++;break;}
-    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
    }
   }else if(name==='builtin'){
    // Bash builtin accepts -- before the nested builtin, including repeated
@@ -117,7 +117,7 @@ function normalizeInvocation(command,flag){
     }
    }
    if(unverifiedBuiltin)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
-   return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+   return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
   }else if(name==='env'||/^\/(?:usr\/(?:local\/)?)?bin\/env$/.test(name)){
    i++;
    while(i<args.length){
@@ -127,15 +127,15 @@ function normalizeInvocation(command,flag){
     if(/^[A-Za-z_][\w]*=/.test(raw)||/^(?:'[^']*'|"[^"]*")$/.test(raw)&&
        /^[A-Za-z_][\w]*=/.test(raw.slice(1,-1))){i++;continue;}
     const w=literalCommandName(raw);
-    if(w===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:'',start:command.start,end:command.end};}
+    if(w===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};}
     if(w==='--'){i++;break;}
     if(/^(?:-i|--ignore-environment|-0|--null)$/.test(w)){i++;continue;}
     if(/^(?:-u|--unset|-C|--chdir)$/.test(w)){
-     if(++i>=args.length){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:'',start:command.start,end:command.end};}
+     if(++i>=args.length){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};}
      i++;continue;
     }
     if(/^(?:--unset=|--chdir=)/.test(w)){i++;continue;}
-    if(w.startsWith('-')){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:'',start:command.start,end:command.end};}
+    if(w.startsWith('-')){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};}
     break;
    }
   }else if(/^(?:sudo|nohup|nice|timeout|stdbuf|setsid|time)$/.test(name||'')){
@@ -149,18 +149,18 @@ function normalizeInvocation(command,flag){
     }
    }
    if(unverifiedWrapper)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
-   return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+   return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
   }else{
    // A dynamic/compound word has already been reported by the bounded IR
    // when relevant. Do not produce standalone false positives for inert code.
-   if(!name)return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+   if(!name)return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
    return {name,words:args.slice(i),raw:args.slice(i).join(' '),
     start:command.start,end:command.end};
   }
-  if(i>=args.length)return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+  if(i>=args.length)return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
  }
  flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
- return {name:String(''),words:[],raw:'',start:command.start,end:command.end};
+ return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
 }
 /**
  * Infer only filenames that receive remote RESPONSE bytes, not logs and not
