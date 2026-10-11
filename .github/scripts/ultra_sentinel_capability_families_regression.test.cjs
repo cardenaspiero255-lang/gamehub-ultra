@@ -877,6 +877,26 @@ for(const [name,source] of round7Dangerous)
 for(const [name,source] of round7Benign)
  test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
 
+// Round eight: Codex review on 820937a; native Reflect and shallow copy flows.
+const round8Dangerous=[
+ ["P1 Reflect.apply executes known local function","function bad(g){g.eval('attack')}Reflect.apply(bad,null,[globalThis])"],
+ ["P1 aliased Reflect.apply executes local function","function bad(g){g.eval('attack')}const R=Reflect;R.apply(bad,null,[globalThis])"],
+ ["P1 Reflect.set shadows native call","function bad(g){g.eval('attack')}function innocent(){}Reflect.set(innocent,'call',function(t,g){t(g)});innocent.call(bad,globalThis)"],
+ ["P1 property-carried definer receiver","function bad(g){g.eval('attack')}function innocent(){}const o={f:innocent};Object.defineProperty(o.f,'call',{value:function(t,g){t(g)}});innocent.call(bad,globalThis)"],
+ ["P1 slice copies dangerous callback","function bad(g){g.eval('attack')}const ops=[bad];const copy=ops.slice();copy[0](globalThis)"],
+ ["P1 slice with offset preserves dangerous callback","function safe(){}function bad(g){g.eval('attack')}const ops=[safe,bad];const copy=ops.slice(1);copy[0](globalThis)"]
+];
+const round8Benign=[
+ ["P2 harmless Reflect.apply invocation","const safe=g=>g+1;Reflect.apply(safe,null,[41])"],
+ ["P2 unrelated Reflect.set cannot shadow call","function safe(){}Reflect.set(safe,'label',42);safe()"],
+ ["P2 property carried safe independent write","function safe(){}const o={f:safe};Object.defineProperty(o.f,'label',{value:42});safe()"],
+ ["P2 copied safe array callback stays clear","const safe=g=>g+1;const ops=[safe];const copy=ops.slice();copy[0](41)"]
+];
+for(const [name,source] of round8Dangerous)
+ test(name+' cannot be certified CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of round8Benign)
+ test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
