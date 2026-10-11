@@ -36,7 +36,7 @@ function evaluate(corpus,reports,{expectedSha}={}){
  const results={};
  const providers=new Set();
  for(const report of reports){
-  if(!report||!['ultra-sentinel','coderabbit','qodo','baseline'].includes(report.provider)||
+  if(!report||!['ultra-sentinel','codex','coderabbit','qodo','baseline'].includes(report.provider)||
    !seen.has(report.caseId)||report.sha!==expectedSha||
    !Array.isArray(report.findings)||report.findings.length>100||
    (report.durationMs!==undefined&&(!Number.isFinite(report.durationMs)||report.durationMs<0))||
