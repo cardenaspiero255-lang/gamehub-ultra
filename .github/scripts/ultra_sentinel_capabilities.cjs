@@ -255,11 +255,50 @@ function findCapabilities(ast){
    seen.add(id);
    return nativeSliceHandle(defs[0].node.init,depth+1,seen);
   }
+  // A native slice handle inherits call/apply from Function.prototype.
+  // Writes to that shared prototype (or to a stable alias of it) invalidate
+  // the entire native fast-path; unproven escapes fail closed.
+  function sliceCallablePrototype(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(value.type==='MemberExpression'){
+    const method=stableMethodName(value);
+    return method==='prototype'&&value.object?.type==='Identifier'&&
+      symbol(value.object)==='free:Function'||
+     method==='__proto__'&&nativeSliceHandle(value.object,depth+1,new Set(seen));
+   }
+   if(value.type==='Identifier'){
+    const id=symbol(value);
+    if(!id||typeof id!=='object'||seen.has(id))return false;
+    const defs=id.defs||[];
+    if(defs.length!==1||defs[0].parent?.kind!=='const'||
+       defs[0].node?.id?.type!=='Identifier'||
+       id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+    seen.add(id);
+    return sliceCallablePrototype(defs[0].node.init,depth+1,seen);
+   }
+   if(value.type==='CallExpression'){
+    const callee=value.callee;
+    return callee?.type==='MemberExpression'&&
+     stableMethodName(callee)==='getPrototypeOf'&&
+     value.arguments?.length===1&&
+     nativeSliceHandle(value.arguments[0],depth+1,new Set(seen));
+   }
+   return false;
+  }
   let changed=false;
   traverse(ast,(node,parent)=>{
    if(changed)return;
    // Function.prototype.call/apply can be shadowed on a native slice
    // handle independently of Array.prototype.slice itself.
+   if(node.type==='MemberExpression'&&sliceCallablePrototype(node.object)){
+    const method=stableMethodName(node);
+    if(method===null||['call','apply'].includes(method)){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)changed=true;
+    }
+   }
    if(node.type==='MemberExpression'&&nativeSliceHandle(node.object)&&
       ['call','apply'].includes(stableMethodName(node))){
     if(parent?.type==='AssignmentExpression'&&parent.left===node||
@@ -282,7 +321,8 @@ function findCapabilities(ast){
     // escape: aliases of Object.defineProperty, setPrototypeOf, etc. can
     // overwrite .call/.apply without a direct, recognizable method name.
     // Native slice.call(array) hands off the ARRAY, not this callable.
-    if(node.arguments?.some(argument=>nativeSliceHandle(argument)))changed=true;
+    if(node.arguments?.some(argument=>nativeSliceHandle(argument)||
+        sliceCallablePrototype(argument)))changed=true;
     // Also recognize the direct global spelling: scope resolvers may not
     // materialize a builtin Array binding in every scope configuration.
     const intrinsicMutator=node.callee?.type==='MemberExpression'&&
@@ -290,7 +330,7 @@ function findCapabilities(ast){
       stableMethodName(node.callee));
     const directArrayPrototype=arg=>arg?.type==='MemberExpression'&&
      stableMethodName(arg)==='prototype'&&arg.object?.type==='Identifier'&&
-     arg.object.name==='Array';
+     arg.object.name==='Array'&&symbol(arg.object)==='free:Array';
     if(node.arguments?.some(proto)||intrinsicMutator&&
        node.arguments?.some(directArrayPrototype))changed=true;
     if(intrinsicMutator&&nativeSliceHandle(node.arguments?.[0])){
@@ -304,6 +344,10 @@ function findCapabilities(ast){
       node.elements?.some(proto)||node.type==='ReturnStatement'&&proto(node.argument))
     changed=true;
    if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
+   if(node.type==='AssignmentExpression'&&sliceCallablePrototype(node.right))
+    changed=true;
+   if(node.type==='ReturnStatement'&&sliceCallablePrototype(node.argument))
+    changed=true;
   });
   nativeSliceIntegrity=!changed;
   return nativeSliceIntegrity;
