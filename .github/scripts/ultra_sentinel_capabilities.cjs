@@ -238,6 +238,61 @@ function findCapabilities(ast){
       return projectedValueDefined(value.right,depth+1,seen);
      return false;
     }
+    // Project ObjectPattern defaults through stable lexical object aliases.
+    // Unknown writes/escapes invalidate certification rather than silently
+    // dropping the array alias that is mutated by the destructured variable.
+    function immutableObjectSource(value,depth=0,seen=new Set()){
+     if(!value||depth>MAX_DEPTH)return null;
+     if(value.type==='ObjectExpression')return value;
+     if(value.type!=='Identifier')return null;
+     const root=symbol(value);
+     if(!root||typeof root!=='object'||seen.has(root))return null;
+     const queue=[root],visited=new Set();
+     while(queue.length){
+      if(visited.size>MAX_ROUNDS)throw Error('Object alias provenance budget exceeded');
+      const current=queue.pop();
+      if(visited.has(current))continue;
+      visited.add(current);
+      for(const ref of current.references||[]){
+       if(ref.isWrite()){
+        if(ref.init)continue;
+        throw Error('Mutable object source alias');
+       }
+       const id=ref.identifier,parent=parentOf.get(id);
+       if(parent?.type==='VariableDeclarator'&&parent.init===id){
+        if(parent.id?.type==='Identifier'&&parentOf.get(parent)?.kind==='const'){
+         const alias=symbol(parent.id);
+         if(!alias||typeof alias!=='object')throw Error('Unknown object source alias');
+         queue.push(alias);
+        }else if(parent.id?.type!=='ObjectPattern')
+         throw Error('Unknown object carrier escape');
+        continue;
+       }
+       if(parent?.type==='MemberExpression'&&parent.object===id){
+        const outer=parentOf.get(parent);
+        if(outer?.type==='AssignmentExpression'&&outer.left===parent||
+           outer?.type==='UpdateExpression'&&outer.argument===parent||
+           outer?.type==='UnaryExpression'&&outer.operator==='delete'&&outer.argument===parent||
+           outer?.type==='CallExpression'&&outer.callee===parent)
+         throw Error('Object source property mutation unknown');
+        continue;
+       }
+       throw Error('Object source escape or mutation unknown');
+      }
+     }
+     const defs=root.defs||[];
+     if(defs.length!==1||defs[0].parent?.kind!=='const'||
+        defs[0].node?.id?.type!=='Identifier')return null;
+     seen.add(root);
+     const init=defs[0].node.init;
+     if(init?.type==='ObjectExpression'){
+      if(init.properties.some(p=>p.type!=='Property'||p.kind!=='init'||
+         stablePatternKey(p)==='__proto__'))
+       throw Error('Object source accessor/spread/prototype unknown');
+      return init;
+     }
+     return immutableObjectSource(init,depth+1,seen);
+    }
     function project(pattern,value,depth=0){
      if(!pattern||depth>MAX_DEPTH)return;
      // Do not skip an AssignmentPattern merely because its slot is missing:
@@ -259,15 +314,17 @@ function findCapabilities(ast){
      if(pattern.type==='ArrayPattern'&&value.type==='ArrayExpression')
       for(let i=0;i<pattern.elements.length;i++)
        project(pattern.elements[i],value.elements[i],depth+1);
-     if(pattern.type==='ObjectPattern'&&value.type==='ObjectExpression')
-      for(const entry of pattern.properties){
+     if(pattern.type==='ObjectPattern'){
+      const sourceObject=immutableObjectSource(value,depth+1);
+      if(sourceObject)for(const entry of pattern.properties){
        if(entry.type!=='Property')continue;
        const key=stablePatternKey(entry);
-       const source=value.properties.find(prop=>prop.type==='Property'&&
+       const source=sourceObject.properties.find(prop=>prop.type==='Property'&&
          stablePatternKey(prop)===key);
        if(source)project(entry.value,source.value,depth+1);
        else project(entry.value,null,depth+1);
       }
+     }
     }
     if(node.type==='VariableDeclarator'&&node.init)
      project(node.id,node.init);
