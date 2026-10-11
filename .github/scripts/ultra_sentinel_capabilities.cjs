@@ -760,7 +760,7 @@ function findCapabilities(ast){
  }
  function ensureStableArray(variable){
   if(stableArrayCache.has(variable)){
-   if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated');
+   if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated at lexical line '+String(variable?.identifiers?.[0]?.loc?.start?.line??'unknown'));
    return;
   }
   const aliases=new Set([variable]);
@@ -1407,7 +1407,7 @@ function findCapabilities(ast){
    }
   });
   stableArrayCache.set(variable,uncertain);
-  if(uncertain)throw Error('Array callback slots may be mutated'+
+  if(uncertain)throw Error('Array callback slots may be mutated at lexical line '+String(variable?.identifiers?.[0]?.loc?.start?.line??'unknown')+
    (unknownAliasWrite?' (unknown lexical write)':' (carrier or receiver)'));
  }
  function knownArraySlots(node,depth=0,seen=new Set()){
