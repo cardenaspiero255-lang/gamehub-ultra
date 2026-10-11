@@ -710,7 +710,13 @@ for(const [name,source] of dangerous){
    for(const [variant,sample] of [
     ['bound local function','function f(x=eval(userPatch)){};f(1);const wrapped=f.bind(null);wrapped()'],
     ['bound object method','function f(x=eval(userPatch)){};f(1);const o={f};o.f.bind(null)()'],
-    ['bound computed method','function f(x=eval(userPatch)){};f(1);const wrapped=f[\'bind\'](null);wrapped()']
+    ['bound computed method','function f(x=eval(userPatch)){};f(1);const wrapped=f[\'bind\'](null);wrapped()'],
+    // The method key is a stable lexical constant, not an unknown callback.
+    // Both invocation forms must retain the effective argument list.
+    ['constant computed call with omitted default',"function f(x=eval(userPatch)){};f(1);const key='call';f[key](null)"],
+    ['constant computed call with undefined',"function f(x=eval(userPatch)){};f(1);const key='call';f[key](null,undefined)"],
+    ['constant computed apply with empty array',"function f(x=eval(userPatch)){};f(1);const key='apply';f[key](null,[])"],
+    ['constant computed apply with undefined',"function f(x=eval(userPatch)){};f(1);const key='apply';f[key](null,[undefined])"]
    ])assert.notEqual(result(sample),'CLEAR',variant+' bypassed executable default gate');
   }
  });
@@ -718,5 +724,13 @@ for(const [name,source] of dangerous){
 for(const [name,source] of benign){
  test(name+' stays clear to prevent false-positive review deadlocks',()=>{
   assert.equal(result(source),'CLEAR',name+' unexpectedly blocked');
+  if(name==='P2 bound value suppresses default'){
+   for(const [variant,sample] of [
+    ['constant computed call with value',"function f(x=eval(userPatch)){};f(1);const key='call';f[key](null,42)"],
+    ['constant computed call with null',"function f(x=eval(userPatch)){};f(1);const key='call';f[key](null,null)"],
+    ['constant computed apply with value',"function f(x=eval(userPatch)){};f(1);const key='apply';f[key](null,[42])"],
+    ['constant computed apply with false',"function f(x=eval(userPatch)){};f(1);const key='apply';f[key](null,[false])"]
+   ])assert.equal(result(sample),'CLEAR',variant+' incorrectly enabled an inactive default');
+  }
  });
 }
