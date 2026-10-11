@@ -102,6 +102,25 @@ async function reviewRemote(env=process.env){
   files.push(...group);if(group.length<100)break;
  }
  if(files.length!==metadata.changed_files)throw Error('Truncated pull request');
+
+ const {missingAddedPatch,recoverAddedPatch}=require('./ultra_sentinel_core.cjs');
+ const missingAdded=files.filter(item=>
+  item.status==='added'&&SCOPE.test(String(item.filename||''))&&
+  missingAddedPatch(item)&&!String(item.filename||'').includes('..')).slice(0,24);
+ for(let i=0;i<missingAdded.length;i+=4){
+  await Promise.all(missingAdded.slice(i,i+4).map(async item=>{
+   try{
+    const filename=item.filename.split('/').map(encodeURIComponent).join('/');
+    const body=await get('https://api.github.com/repos/'+repo+
+     '/contents/'+filename+'?ref='+sha,token);
+    const verified=recoverAddedPatch(item,body);
+    if(verified)item.patch=verified;
+    // Otherwise scan() will retain its INCOMPLETE_DIFF blocker.
+   }catch(error){
+    // Failing to retrieve an immutable source must NEVER certify a PR.
+   }
+  }));
+ }
  const result=scan(files,sha);
  const after=await get(base,token);
  if(after.state!=='open'||after.head?.sha!==sha)throw Error('Stale PR analysis');
