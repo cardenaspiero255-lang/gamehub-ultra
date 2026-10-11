@@ -537,6 +537,8 @@ function findCapabilities(ast){
    if(root==='module'&&name==='require')return 'loader';
    if(root==='reflect'&&name==='get')return 'getter';
    if(root==='loader'&&name==='bind')return 'loader';
+   if(node.computed&&name===null&&resolveFunction(node.object,depth+1))
+    return 'uncertain-constructor';
    if(name==='constructor'&&(
     resolveFunction(node.object,depth+1)||
     (node.object?.type==='MemberExpression'&&
@@ -950,6 +952,14 @@ function findCapabilities(ast){
   if(direct!==null)return direct;
   if(node.type==='Literal'&&typeof node.value==='number'&&
      Number.isSafeInteger(node.value)&&node.value>=0)return String(node.value);
+  if(node.type==='MemberExpression'){
+   // Known array element used as a computed string property key.
+   const slots=knownArraySlots(node.object,depth+1);
+   const index=node.computed?staticArrayIndex(node.property):null;
+   if(slots&&index!==null&&index<slots.length&&slots[index])
+    return stableKeyValue(slots[index],depth+1,new Set(seen));
+   return null;
+  }
   if(node.type==='Identifier'){
    const variable=symbol(node);
    if(!variable||typeof variable!=='object'||seen.has(variable))return null;
