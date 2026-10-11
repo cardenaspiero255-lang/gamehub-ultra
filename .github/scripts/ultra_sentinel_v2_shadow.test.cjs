@@ -64,8 +64,15 @@ test('shadow refuses cyclic AST input instead of traversing forever',()=>{
 });
 
 test('shadow does not claim a reassigned globalThis eval is definitely builtin',()=>{
- const source="globalThis={eval(){return 1}};globalThis.eval('safe')";
- assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN');
+ const cases=[
+  "globalThis={eval(){return 1}};globalThis.eval('safe')",
+  "const g=globalThis;g.eval=()=>1;globalThis.eval('safe')",
+  "const g=globalThis;const alias=g;alias['eval']=()=>1;globalThis.eval('safe')",
+  "const g=globalThis;Object.assign(g,{eval:()=>1});globalThis.eval('safe')",
+  "const g=globalThis;Reflect.set(g,'Function',()=>1);globalThis.Function('safe')"
+ ];
+ for(const source of cases)
+  assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN',source);
 });
 test('shadow does not claim a reassigned free eval is definitely builtin',()=>{
  const cases=[
