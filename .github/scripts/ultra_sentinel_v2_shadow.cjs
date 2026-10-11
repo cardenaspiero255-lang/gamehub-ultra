@@ -81,29 +81,75 @@ function directSinkEvidence(ast){
   const name=methodName(expr);
   return owner(expr.object)&&allowedMutators.has(name)?name:null;
  };
- // Compute a bounded fixed point so aliases declared before or after their
- // consumers cannot silently retain a false DEFINITE_SINK verdict.
+ // Compute bounded may-alias closure over declarators, assignments and
+ // structural patterns. Scope identity avoids conflating same-spelled locals;
+ // unknown carriers never certify a native builtin.
  let aliasConverged=false;
  for(let round=0;round<64;round++){
   let changed=false;
-  function visit(node){
-   if(!node||typeof node!=='object'||typeof node.type!=='string')return;
-   if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'){
-    const binding=bindings.get(node.id);
-    if(binding){
-     if(globalObject(node.init)&&!globalAliases.has(binding)){
-      globalAliases.add(binding);changed=true;
+  function markAlias(target,source,depth=0){
+   if(!target||depth>32)return;
+   if(target.type==='Identifier'){
+    const binding=bindings.get(target);
+    if(!binding)return;
+    if(globalObject(source)&&!globalAliases.has(binding)){
+     globalAliases.add(binding);changed=true;
+    }
+    const origin=owner(source);
+    if(origin&&!builtinOwners.has(binding)){
+     builtinOwners.set(binding,origin);changed=true;
+    }
+    const action=mutator(source);
+    if(action&&!builtinMutators.has(binding)){
+     builtinMutators.set(binding,action);changed=true;
+    }
+    return;
+   }
+   if(target.type==='AssignmentPattern'){
+    markAlias(target.left,source,depth+1);
+    markAlias(target.left,target.right,depth+1);
+    return;
+   }
+   if(target.type==='RestElement'){
+    markAlias(target.argument,source,depth+1);return;
+   }
+   if(target.type==='ArrayPattern'&&source?.type==='ArrayExpression'){
+    for(let i=0;i<(target.elements||[]).length;i++)
+     markAlias(target.elements[i],source.elements?.[i],depth+1);
+    return;
+   }
+   if(target.type==='ObjectPattern'){
+    for(const property of target.properties||[]){
+     if(property.type!=='Property')continue;
+     const key=property.key?.type==='Identifier'&&!property.computed?
+      property.key.name:property.key?.type==='Literal'?
+       String(property.key.value):null;
+     if(key===null)continue;
+     const intrinsic=owner(source);
+     if(intrinsic&&allowedMutators.has(key)){
+      // Destructuring a builtin method preserves its callable identity.
+      const name=property.value;
+      if(name?.type==='Identifier'){
+       const binding=bindings.get(name);
+       if(binding&&!builtinMutators.has(binding)){
+        builtinMutators.set(binding,key);changed=true;
+       }
+      }
      }
-     const origin=owner(node.init);
-     if(origin&&!builtinOwners.has(binding)){
-      builtinOwners.set(binding,origin);changed=true;
-     }
-     const action=mutator(node.init);
-     if(action&&!builtinMutators.has(binding)){
-      builtinMutators.set(binding,action);changed=true;
-     }
+     if(source?.type!=='ObjectExpression')continue;
+     const values=(source.properties||[]).filter(item=>
+      item.type==='Property'&&
+       (item.key?.type==='Identifier'&&!item.computed?item.key.name:
+        item.key?.type==='Literal'?String(item.key.value):null)===key);
+     if(values.length)markAlias(property.value,values.at(-1).value,depth+1);
     }
    }
+  }
+  function visit(node){
+   if(!node||typeof node!=='object'||typeof node.type!=='string')return;
+   if(node.type==='VariableDeclarator')markAlias(node.id,node.init);
+   if(node.type==='AssignmentExpression'&&node.operator==='=')
+    markAlias(node.left,node.right);
    for(const [key,value] of Object.entries(node)){
     if(['range','loc','start','end'].includes(key))continue;
     if(Array.isArray(value))for(const element of value)visit(element);
