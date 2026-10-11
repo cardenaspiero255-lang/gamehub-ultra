@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "acorn": "8.14.1",
+    "eslint-scope": "8.4.0",
     "js-yaml": "4.3.2"
   }
 }
