@@ -4,9 +4,9 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const acorn=require('acorn');
 const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
 function result(source){
- const ast=acorn.parse(source,{ecmaVersion:2022,sourceType:'script'});
+ const ast=acorn.parse(source,{ecmaVersion:2022,sourceType:'script',ranges:true});
  try{return findCapabilities(ast).length?'BLOCKER':'CLEAR';}
- catch(error){return 'INCOMPLETE';}
+ catch(error){return 'INCOMPLETE: '+error.message;}
 }
 const dangerous=[
  [
