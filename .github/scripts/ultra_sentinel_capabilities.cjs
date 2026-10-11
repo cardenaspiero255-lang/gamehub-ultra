@@ -192,6 +192,18 @@ function findCapabilities(ast){
    const first=resolveFunction(node.type==='ConditionalExpression'?node.consequent:node.left,depth+1);
    const second=resolveFunction(node.type==='ConditionalExpression'?node.alternate:node.right,depth+1);
    if(first&&second&&first===second)return first;
+   // Different functions may safely join only when both bodies are statically
+   // trivial constants, not capable of executing code or using caller inputs.
+   function pureStatic(fn){
+    if(!fn||fn.params?.length)return false;
+    const b=fn.body;
+    if(b?.type==='Literal'||b?.type==='TemplateLiteral')return true;
+    if(b?.type!=='BlockStatement')return false;
+    return b.body.every(stmt=>stmt.type==='EmptyStatement'||
+      (stmt.type==='ReturnStatement'&&(!stmt.argument||
+       stmt.argument.type==='Literal'||stmt.argument.type==='TemplateLiteral')));
+   }
+   if(first&&second&&pureStatic(first)&&pureStatic(second))return null;
    if(first||second)throw Error('Ambiguous conditional function provenance');
    return null;
   }
