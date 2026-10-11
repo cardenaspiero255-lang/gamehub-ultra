@@ -90,24 +90,50 @@ function findCapabilities(ast){
    return builtin.get(node.name)||null;
   return kinds.get(key)||null;
  }
+ const objectLiterals=new WeakMap();
  function propertyKinds(node,depth=0){
   if(!node)return null;
   if(depth>MAX_DEPTH)throw Error('Object provenance depth exceeded');
   if(node.type==='ObjectExpression'){
-   if(node.properties.some(p=>p.type==='SpreadElement'))return null;
+   if(objectLiterals.has(node))return objectLiterals.get(node);
    const result=new Map();
+   objectLiterals.set(node,result);
    for(const p of node.properties){
-    if(p.type!=='Property')return null;
+    if(p.type==='SpreadElement'){
+     const spread=propertyKinds(p.argument,depth+1);
+     if(!spread)throw Error('Unresolved object spread provenance');
+     for(const [k,v]of spread)result.set(k,v);
+     continue;
+    }
+    if(p.type!=='Property')throw Error('Unsupported object binding');
     const name=keyName(p);
-    if(name===null)return null;
+    if(name===null)throw Error('Computed object key provenance unknown');
+    const nested=propertyKinds(p.value,depth+1);
     const cap=kind(p.value,depth+1);
-    if(cap)result.set(name,cap);
+    if(nested)result.set(name,{properties:nested});
+    else if(cap&&cap!=='local-object')result.set(name,cap);
    }
    return result;
   }
   if(node.type==='Identifier')return objects.get(symbol(node))||null;
+  if(node.type==='MemberExpression'){
+   const parent=propertyKinds(node.object,depth+1),name=propName(node);
+   const entry=parent?.get(name);
+   return entry&&typeof entry==='object'&&entry.properties?entry.properties:null;
+  }
   if(node.type==='AssignmentExpression'&&node.operator==='=')
    return propertyKinds(node.right,depth+1);
+  if(node.type==='ConditionalExpression'){
+   const a=propertyKinds(node.consequent,depth+1),b=propertyKinds(node.alternate,depth+1);
+   if(!a&&!b)return null;
+   if(!a||!b)throw Error('Conditional object provenance incomplete');
+   const merged=new Map(a);
+   for(const [k,v]of b){
+    if(merged.has(k)&&merged.get(k)!==v)throw Error('Ambiguous branch property provenance');
+    merged.set(k,v);
+   }
+   return merged;
+  }
   return null;
  }
  function kind(node,depth=0){
@@ -122,7 +148,8 @@ function findCapabilities(ast){
    const root=kind(node.object,depth+1),name=propName(node);
    const obj=propertyKinds(node.object,depth+1);
    if(obj){
-    if(name!==null)return obj.get(name)||null;
+    if(name!==null){const v=obj.get(name);return typeof v==='string'?v:
+      v&&typeof v==='object'&&v.properties?'local-object':null;}
     if([...obj.values()].some(v=>v==='exec'))return 'exec';
     return null;
    }
@@ -132,6 +159,7 @@ function findCapabilities(ast){
    if(root==='module'&&name==='require')return 'loader';
    if(root==='reflect'&&name==='get')return 'getter';
    if(root==='loader'&&name==='bind')return 'loader';
+   if(name==='constructor'&&['FunctionExpression','ArrowFunctionExpression'].includes(node.object?.type))return 'exec';
    return null;
   }
   if(node.type==='CallExpression'||node.type==='NewExpression'){
@@ -158,7 +186,11 @@ function findCapabilities(ast){
   }
   if(node.type==='ConditionalExpression'){
    const a=kind(node.consequent,depth+1),b=kind(node.alternate,depth+1);
-   return a&&a===b?a:null;
+   if(a===b)return a;
+   if(!a)return b;
+   if(!b)return a;
+   if(a==='local-object'&&b==='local-object')return a;
+   throw Error('Ambiguous conditional capability provenance');
   }
   if(node.type==='AssignmentExpression'&&node.operator==='=')
    return kind(node.right,depth+1);
@@ -167,44 +199,101 @@ function findCapabilities(ast){
   if(node.type==='ObjectExpression')return 'local-object';
   return null;
  }
- function bind(pattern,value){
-  if(!pattern)return false;
-  if(pattern.type==='AssignmentPattern')return bind(pattern.left,value);
-  if(pattern.type==='Identifier'){
-   const key=symbol(pattern),c=kind(value),props=propertyKinds(value);
-   let changed=false;
-   if(c&&c!=='local-object'&&!kinds.has(key)){kinds.set(key,c);changed=true;}
-   if(props){
-    const previous=objects.get(key);
-    if(!previous||[...props].some(([k,v])=>previous.get(k)!==v)){
-     objects.set(key,new Map(props));changed=true;
-    }
-   }
-   return changed;
+ const knownParameterInputs=new Set(),uncertainParameters=new Set();
+ function assignIdentifier(id,cap,props,known=true){
+  if(id?.type!=='Identifier')return false;
+  const key=symbol(id);
+  if(known)knownParameterInputs.add(key);
+  let changed=false;
+  if(cap&&cap!=='local-object'){
+   const prev=kinds.get(key);
+   if(prev&&prev!==cap)throw Error('Conflicting capability bindings');
+   if(!prev){kinds.set(key,cap);changed=true;}
   }
-  if(pattern.type!=='ObjectPattern')return false;
-  const properties=propertyKinds(value),root=kind(value);
+  if(props){
+   const prev=objects.get(key);
+   if(!prev){objects.set(key,new Map(props));changed=true;}
+   else for(const [name,value]of props)
+    if(!prev.has(name)){prev.set(name,value);changed=true;}
+    else if(prev.get(name)!==value&&
+      (typeof value!=='object'||typeof prev.get(name)!=='object'))
+      throw Error('Conflicting property capability');
+  }
+  return changed;
+ }
+ function bindWithDescriptors(pattern,properties,root=null){
+  if(!pattern||pattern.type!=='ObjectPattern')return false;
   let changed=false;
   for(const p of pattern.properties){
    const target=p.type==='RestElement'?p.argument:p.value;
    const dest=target?.type==='AssignmentPattern'?target.left:target;
-   if(dest?.type!=='Identifier')continue;
    const name=p.type==='RestElement'?null:keyName(p);
-   const found=properties?(name===null?null:properties.get(name)):null;
-   let c=found||null;
-   if(!c&&!properties){
-    if(root==='global'&&(EXEC.has(name)||name===null))c='exec';
-    else if(root==='vm'&&(VM.has(name)||name===null))c='exec';
-    else if(root==='reflect'&&name==='get')c='getter';
-    else if(root==='module'&&name==='require')c='loader';
-    else if(!root&&(EXEC.has(name)||VM.has(name)))c='exec';
+   const found=properties&&name!==null?properties.get(name):null;
+   let scalar=typeof found==='string'?found:null;
+   const nested=found&&typeof found==='object'?found.properties:null;
+   if(!scalar&&!nested&&!properties){
+    if(root==='global'&&(EXEC.has(name)||name===null))scalar='exec';
+    else if(root==='vm'&&(VM.has(name)||name===null))scalar='exec';
+    else if(root==='reflect'&&name==='get')scalar='getter';
+    else if(root==='module'&&name==='require')scalar='loader';
    }
-   const key=symbol(dest);
-   if(c&&!kinds.has(key)){kinds.set(key,c);changed=true;}
+   if(dest?.type==='Identifier'){
+    if(!properties&&!root&&name!==null&&(EXEC.has(name)||VM.has(name)))
+     uncertainParameters.add(symbol(dest));
+    changed=assignIdentifier(dest,scalar,nested,!!properties||!!root)||changed;
+   }else if(dest?.type==='ObjectPattern'){
+    if(!nested&&!scalar)throw Error('Nested destructuring source unknown');
+    changed=bindWithDescriptors(dest,nested,scalar)||changed;
+   }else if(dest?.type==='ArrayPattern'){
+    if(!nested)throw Error('Nested array source unknown');
+    throw Error('Nested array destructuring requires manual review');
+   }
   }
   return changed;
  }
+ function bind(pattern,value){
+  if(!pattern)return false;
+  if(pattern.type==='AssignmentPattern')return bind(pattern.left,value);
+  if(pattern.type==='MemberExpression'){
+   const parent=propertyKinds(pattern.object),name=propName(pattern);
+   if(!parent||name===null)throw Error('Unresolved property write provenance');
+   const cap=kind(value),nested=propertyKinds(value);
+   if(nested){const old=parent.get(name);
+    if(!old){parent.set(name,{properties:nested});return true;}
+    if(old.properties!==nested)throw Error('Ambiguous property write');
+    return false;
+   }
+   if(cap&&cap!=='local-object'){
+    const old=parent.get(name);
+    if(old&&old!==cap)throw Error('Conflicting property write');
+    if(!old){parent.set(name,cap);return true;}
+   }
+   return false;
+  }
+  if(pattern.type==='Identifier')
+   return assignIdentifier(pattern,kind(value),propertyKinds(value),value!==null);
+  if(pattern.type==='ObjectPattern')
+   return bindWithDescriptors(pattern,propertyKinds(value),kind(value));
+  if(pattern.type==='ArrayPattern'){
+   let elements=null;
+   if(value?.type==='ArrayExpression')elements=value.elements;
+   if(!elements)throw Error('Array destructuring needs exact provenance');
+   let changed=false;
+   for(let i=0;i<pattern.elements.length;i++){
+    const id=pattern.elements[i];
+    if(id?.type==='RestElement')throw Error('Array rest binding unknown');
+    if(id)changed=bind(id,elements[i])||changed;
+   }
+   return changed;
+  }
+  throw Error('Unsupported binding pattern');
+ }
+ const functions=new Map();
  traverse(ast,(node)=>{
+  if(node.type==='FunctionDeclaration'&&node.id)functions.set(symbol(node.id),node);
+  if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
+      ['ArrowFunctionExpression','FunctionExpression'].includes(node.init?.type))
+   functions.set(symbol(node.id),node.init);
   if(node.type==='VariableDeclarator'&&node.init)
    bindings.push([node.id,node.init]);
   if(node.type==='AssignmentExpression'&&node.operator==='=')
@@ -223,6 +312,12 @@ function findCapabilities(ast){
   if(node.type==='CatchClause'&&node.param?.type==='ObjectPattern')
    bindings.push([node.param,null]);
  });
+ traverse(ast,(node)=>{
+  if(node.type!=='CallExpression'||node.callee?.type!=='Identifier')return;
+  const fn=functions.get(symbol(node.callee));
+  if(fn){for(let i=0;i<(fn.params||[]).length;i++)
+   if(node.arguments?.[i])bindings.push([fn.params[i],node.arguments[i]]);}
+ });
  let converged=false;
  for(let round=0;round<MAX_ROUNDS;round++){
   let changed=false;
@@ -235,6 +330,9 @@ function findCapabilities(ast){
   if(node.type==='Identifier'){
    if(!reference.has(node))return;
    if(parent?.type==='MemberExpression'&&key==='property'&&!parent.computed)return;
+   if(uncertainParameters.has(symbol(node))&&!knownParameterInputs.has(symbol(node))&&
+      parent?.type==='CallExpression'&&key==='callee')
+    throw Error('Unresolved destructured parameter invocation');
    if(kind(node)==='exec')sinks.push(node);
   }else if(node.type==='MemberExpression'){
    if(kind(node)==='exec')sinks.push(node);
