@@ -217,7 +217,102 @@ const codexNewBenign=[
   "const source={safe:(x)=>x,value:42};const {value,...rest}=source;rest.safe(42)"
  ]
 ];
+// Codex P1 regressions: flow-sensitive defaults, explicit this, aliases, optional properties.
+const codexFivePhasesDangerous=[
+ [
+  "P1 explicit this via call",
+  "function run(){this.eval(userPatch)}run.call(globalThis)"
+ ],
+ [
+  "P1 explicit this via apply",
+  "function run(){this.eval(userPatch)}run.apply(globalThis,[])"
+ ],
+ [
+  "P1 alias function this call",
+  "function run(){this.eval(userPatch)}const f=run;f.call(globalThis)"
+ ],
+ [
+  "P1 this invoke multiple callsites",
+  "function run(){this.eval(userPatch)}run.call({eval:x=>x});run.call(globalThis)"
+ ],
+ [
+  "P1 member method alias",
+  "const obj={m(g){g.eval(userPatch)}};const alias=obj.m;alias(globalThis)"
+ ],
+ [
+  "P1 chained member method alias",
+  "const obj={m(g){g.eval(userPatch)}};const alias=obj.m;const again=alias;again(globalThis)"
+ ],
+ [
+  "P1 bracket member alias",
+  "const obj={m(g){g.eval(userPatch)}};const alias=obj['m'];alias(globalThis)"
+ ],
+ [
+  "P1 assigned member alias",
+  "const obj={m(g){g.eval(userPatch)}};let alias;alias=obj.m;alias(globalThis)"
+ ],
+ [
+  "P1 default with two callsites",
+  "function f(x=eval(userPatch)){};f(1);f()"
+ ],
+ [
+  "P1 default empty spread",
+  "function f(x=eval(userPatch)){};f(...[])"
+ ],
+ [
+  "P1 default undefined after value",
+  "function f(x=eval(userPatch)){};f(1);f(undefined)"
+ ],
+ [
+  "P1 default void after value",
+  "function f(x=eval(userPatch)){};f(1);f(void 0)"
+ ],
+ [
+  "P1 conditional optional property",
+  "const src=flag?{x:v=>v}:{};const {x=eval}=src;x(userPatch)"
+ ],
+ [
+  "P1 reversed optional property",
+  "const src=flag?{}:{x:v=>v};const {x=eval}=src;x(userPatch)"
+ ],
+ [
+  "P1 optional global capability default",
+  "const src=flag?{x:v=>v}:{};const {x=globalThis}=src;x.eval(userPatch)"
+ ],
+ [
+  "P1 optional property logical OR",
+  "const src=flag||{x:v=>v};const {x=eval}=src;x(userPatch)"
+ ]
+];
+const codexFivePhasesBenign=[
+ [
+  "P2 safe explicit this argument",
+  "function f(){this.eval(42)}f.call({eval:x=>x})"
+ ],
+ [
+  "P2 safe object method alias",
+  "const o={m(g){g.eval(42)}};const alias=o.m;alias({eval:x=>x})"
+ ],
+ [
+  "P2 single known-active argument keeps default inactive",
+  "function f(x=eval(userPatch)){};f(1)"
+ ],
+ [
+  "P2 all callsites preserve safe defaults",
+  "function f(x=eval(userPatch)){};f(1);f(2)"
+ ],
+ [
+  "P2 equal present properties across branches",
+  "const src=flag?{x:v=>v}:{x:z=>z};const {x=eval}=src;x(42)"
+ ],
+ [
+  "P2 definite own property overrides global default",
+  "const src=flag?{x:v=>v}:{x:z=>z};const {x=globalThis}=src;x(42)"
+ ]
+];
 dangerous.push(...codexNewDangerous);
+dangerous.push(...codexFivePhasesDangerous);
+benign.push(...codexFivePhasesBenign);
 benign.push(...codexNewBenign);
 for(const [name,source] of dangerous){
  test(name+' cannot be certified safe',()=>{
