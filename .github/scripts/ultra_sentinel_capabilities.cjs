@@ -91,7 +91,8 @@ function findCapabilities(ast){
   return kinds.get(key)||null;
  }
  function propertyKinds(node,depth=0){
-  if(!node||depth>MAX_DEPTH)throw Error('Object provenance depth exceeded');
+  if(!node)return null;
+  if(depth>MAX_DEPTH)throw Error('Object provenance depth exceeded');
   if(node.type==='ObjectExpression'){
    if(node.properties.some(p=>p.type==='SpreadElement'))return null;
    const result=new Map();
