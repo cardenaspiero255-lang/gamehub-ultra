@@ -482,6 +482,24 @@ function findCapabilities(ast){
     // is a known read-only builtin or a local function whose entire body
     // consists of returning a literal (or doing nothing). Unknown helpers
     // may write references to the captured callback array into the carrier.
+    // Console calls cannot be certified pure once the global console or its
+    // method identities have been exposed, rebound or modified.
+    let consoleReadOnly=null;
+    function pristineConsoleCalls(){
+     if(consoleReadOnly!==null)return consoleReadOnly;
+     let trusted=true;
+     traverse(ast,(node,parent)=>{
+      if(!trusted||node.type!=='Identifier'||symbol(node)!=='free:console')return;
+      if(parent?.type==='MemberExpression'&&parent.object===node&&
+         ['log','info','warn','error','debug','trace'].includes(stableMethodName(parent))){
+       const usage=parentOf.get(parent);
+       if(usage?.type==='CallExpression'&&usage.callee===parent)return;
+      }
+      trusted=false;
+     });
+     consoleReadOnly=trusted;
+     return trusted;
+    }
     function provenReadOnlyCall(callee,depth=0,seen=new Set()){
      if(!callee||depth>MAX_DEPTH)return false;
      // Parameter initializers execute even when the function body is inert.
@@ -503,7 +521,7 @@ function findCapabilities(ast){
      if(callee.type==='MemberExpression'){
       const name=stableMethodName(callee);
       const owner=callee.object?.type==='Identifier'?symbol(callee.object):null;
-      if(name==='log'&&owner==='free:console')return true;
+      if(name==='log'&&owner==='free:console'&&pristineConsoleCalls())return true;
       if(name==='getPrototypeOf'&&
          (owner==='free:Object'||owner==='free:Reflect'))return true;
       const expr=callee.object;
