@@ -318,6 +318,11 @@ function findCapabilities(ast){
         parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
          parent.argument===node)changed=true;
     }
+    // Legacy function-prototype mutators change inherited call/apply even
+    // though the invoked property is NOT itself named call/apply.
+    if(parent?.type==='CallExpression'&&parent.callee===node&&
+       (method===null||['__defineGetter__','__defineSetter__'].includes(method)))
+     changed=true;
    }
    if(node.type==='MemberExpression'&&nativeSliceHandle(node.object)&&
       ['call','apply'].includes(stableMethodName(node))){
@@ -486,10 +491,16 @@ function findCapabilities(ast){
       if(!expr||depth>MAX_DEPTH)return null;
       if(expr.type==='MemberExpression'){
        const name=stableMethodName(expr);
+       if(['call','apply','bind'].includes(name))
+        return mutatorName(expr.object,depth+1,new Set(seen));
        return ['set','defineProperty','defineProperties','assign',
         'setPrototypeOf','__defineGetter__','__defineSetter__'].includes(name)?
         name:null;
       }
+      // A bound intrinsic remains a mutator even when its use is delayed.
+      if(expr.type==='CallExpression'&&expr.callee?.type==='MemberExpression'&&
+         stableMethodName(expr.callee)==='bind')
+       return mutatorName(expr.callee.object,depth+1,new Set(seen));
       if(expr.type!=='Identifier')return null;
       const id=symbol(expr);
       if(!id||typeof id!=='object'||seen.has(id))return null;
@@ -511,16 +522,51 @@ function findCapabilities(ast){
             parent.argument===candidate||
           parent?.type==='CallExpression'&&parent.callee===candidate))
        modified=true;
-      if(candidate.type==='CallExpression'&&
-         mutatorName(candidate.callee)!==null&&
-         inertLiteralSource(candidate.arguments?.[0])===original)
-       modified=true;
+      if(candidate.type==='CallExpression'){
+       let action=mutatorName(candidate.callee),target=candidate.arguments?.[0];
+       if(candidate.callee?.type==='MemberExpression'){
+        const wrapper=stableMethodName(candidate.callee);
+        if(wrapper==='call')target=candidate.arguments?.[1];
+        else if(wrapper==='apply'){
+         const supplied=candidate.arguments?.[1];
+         target=supplied?.type==='ArrayExpression'?
+          supplied.elements?.[0]:null;
+        }
+       }else if(candidate.callee?.type==='CallExpression'&&
+           candidate.callee.callee?.type==='MemberExpression'&&
+           stableMethodName(candidate.callee.callee)==='bind')
+        target=candidate.callee.arguments?.[1]||candidate.arguments?.[0];
+       // Reflect.apply(fn,receiver,[target,...]) has its own argument shape.
+       if(candidate.callee?.type==='MemberExpression'&&
+          stableMethodName(candidate.callee)==='apply'&&
+          candidate.callee.object?.type==='Identifier'&&
+          symbol(candidate.callee.object)==='free:Reflect'&&
+          mutatorName(candidate.arguments?.[0])){
+        action=mutatorName(candidate.arguments[0]);
+        target=candidate.arguments[2]?.type==='ArrayExpression'?
+         candidate.arguments[2].elements?.[0]:null;
+       }
+       if(action&&(target===null||
+          inertLiteralSource(target)===original))modified=true;
+      }
      });
      return !modified;
     }
+    // Unknown computed keys, accessors, spread and prototype setters must
+    // never be projected as absent slots: they may overwrite the default.
+    function verifiedObjectLiteral(value){
+     if(value?.type!=='ObjectExpression')return null;
+     for(const prop of value.properties){
+      if(prop.type!=='Property'||prop.kind!=='init'||
+         stablePatternKey(prop)===null||
+         stablePatternKey(prop)==='__proto__')
+       throw Error('Unresolved object property identity');
+     }
+     return value;
+    }
     function immutableObjectSource(value,depth=0,seen=new Set(),snapshot=null){
      if(!value||depth>MAX_DEPTH)return null;
-     if(value.type==='ObjectExpression')return value;
+     if(value.type==='ObjectExpression')return verifiedObjectLiteral(value);
      if(value.type!=='Identifier')return null;
      const root=symbol(value);
      if(!root||typeof root!=='object'||seen.has(root))return null;
@@ -569,12 +615,8 @@ function findCapabilities(ast){
         defs[0].node?.id?.type!=='Identifier')return null;
      seen.add(root);
      const init=defs[0].node.init;
-     if(init?.type==='ObjectExpression'){
-      if(init.properties.some(p=>p.type!=='Property'||p.kind!=='init'||
-         stablePatternKey(p)==='__proto__'))
-       throw Error('Object source accessor/spread/prototype unknown');
-      return init;
-     }
+     if(init?.type==='ObjectExpression')
+      return verifiedObjectLiteral(init);
      return immutableObjectSource(init,depth+1,seen,snapshot);
     }
     function project(pattern,value,depth=0){
