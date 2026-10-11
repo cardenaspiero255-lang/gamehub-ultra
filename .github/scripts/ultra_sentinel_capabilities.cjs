@@ -347,7 +347,9 @@ function findCapabilities(ast){
    // A local callback array can escape into object or array carriers.
    // Conservatively invalidate its original element map until the carrier
    // and all writes to its reachable properties can be proved immutable.
-   if(node.type==='Identifier'&&aliases.has(symbol(node))&&
+   // A declaration target in an ObjectPattern is not an escaping value.
+   // Only identifier REFERENCES can escape through object/array carriers.
+   if(node.type==='Identifier'&&reference.has(node)&&aliases.has(symbol(node))&&
       (parent?.type==='Property'&&key==='value'||
        parent?.type==='ArrayExpression'&&key==='elements')){
     // Array-pattern projections are already tracked by the alias closure;
