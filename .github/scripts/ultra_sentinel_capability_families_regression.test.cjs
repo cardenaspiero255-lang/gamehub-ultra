@@ -1072,6 +1072,28 @@ for(const [name,source] of v2PrototypeDangerous)
 for(const [name,source] of v2PrototypeBenign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Cross-review TDD: findings that the trusted-main self-review does not
+// classify, but Codex reproduced through semantic provenance. AST-only.
+const sentinelCodexDangerous=[
+ ["P1 inherited getter shadows native Function.prototype.call","function bad(g){g.eval('attack')}const a=[()=>1],p=a.slice.constructor.prototype;p.__defineGetter__('call',()=>function(x){x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 inherited setter shadows native Function.prototype.apply","function bad(g){g.eval('attack')}const a=[()=>1],p=a.slice.constructor.prototype;p.__defineSetter__('apply',function(x){x.fill(bad)});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 Object.setPrototypeOf.call carries callback array through source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf.call(Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 Reflect.setPrototypeOf.apply targets snapshot source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Reflect.setPrototypeOf.apply(Reflect,[empty,{get:()=>a}]);poison(empty);a[0](globalThis)"],
+ ["P1 mutator bound to Object targets source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;const setter=Object.setPrototypeOf.bind(Object);setter(empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 dynamically keyed ObjectPattern must not default when key matches","function bad(g){g.eval('attack')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=holder;x[0](globalThis)"],
+ ["P1 dynamically keyed source ObjectPattern through alias","function bad(g){g.eval('attack')}const key='x',a=[()=>1],holder={[key]:[bad]},alias=holder;const {x=a}=alias;x[0](globalThis)"]
+];
+const sentinelCodexBenign=[
+ ["P2 unrelated object getter does not shadow native Function.prototype.call","const a=[()=>1],other={};other.__defineGetter__('call',()=>42);const c=a.slice.call(a);c[0]()"],
+ ["P2 static computed key with benign callback stays CLEAR","const a=[()=>1],holder={['x']:[()=>2]};const {x=a}=holder;x[0]();a[0]()"],
+ ["P2 normal native slice still remains CLEAR","const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 ordinary inert post-snapshot object still usable","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"]
+];
+for(const [name,source] of sentinelCodexDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of sentinelCodexBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
