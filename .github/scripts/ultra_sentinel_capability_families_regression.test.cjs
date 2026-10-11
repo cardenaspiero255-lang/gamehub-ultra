@@ -831,6 +831,29 @@ for(const [name,source] of round5Benign)
   else assert.match(result(source),/^INCOMPLETE:/,name);
  });
 
+// Round six: independent Codex review on b36e06b — four P1 families.
+// All snippets are passed only to the static parser; no source is executed.
+const round6Dangerous=[
+ ["P1 extracted call invoked through apply","function bad(g){g.eval('attack')}const ops=[(()=>{}).call];const op=ops[0];op.apply(bad,[null,globalThis])"],
+ ["P1 extracted call invoked through bind","function bad(g){g.eval('attack')}const ops=[(()=>{}).call];const op=ops[0];op.bind(bad,null)(globalThis)"],
+ ["P1 extracted apply invoked through apply","function bad(g){g.eval('attack')}const op=(()=>{}).apply;op.apply(bad,[null,[globalThis]])"],
+ ["P1 Reflect.defineProperty overrides call","function bad(g){g.eval('attack')}function innocent(){}Reflect.defineProperty(innocent,'call',{value:function(t,g){t(g)}});innocent.call(bad,globalThis)"],
+ ["P1 aliased Object.defineProperty overrides call","function bad(g){g.eval('attack')}function innocent(){}const dp=Object.defineProperty;dp(innocent,'call',{value:function(t,g){t(g)}});innocent.call(bad,globalThis)"],
+ ["P1 aliased Reflect.defineProperty overrides call","function bad(g){g.eval('attack')}function innocent(){}const dp=Reflect.defineProperty;dp(innocent,'call',{value:function(t,g){t(g)}});innocent.call(bad,globalThis)"],
+ ["P1 extracted intrinsic via ObjectPattern from array","function bad(g){g.eval('attack')}const ops=[(()=>{}).call];const {0:op}=ops;op.call(bad,null,globalThis)"],
+ ["P1 extracted intrinsic via nested arrays","function bad(g){g.eval('attack')}const ops=[[(()=>{}).call]];ops[0][0].call(bad,null,globalThis)"],
+ ["P1 extracted intrinsic via nested array alias","function bad(g){g.eval('attack')}const ops=[[(()=>{}).call]];const row=ops[0];row[0].call(bad,null,globalThis)"]
+];
+const round6Benign=[
+ ["P2 harmless extracted call invoked via apply","const op=(()=>{}).call;const fn=g=>g+1;op.apply(fn,[null,41])"],
+ ["P2 harmless intrinsic ObjectPattern projection","const ops=[(()=>{}).call];const {0:op}=ops;const fn=g=>g+1;op.call(fn,null,41)"],
+ ["P2 harmless nested array intrinsic","const ops=[[(()=>{}).call]];const fn=g=>g+1;ops[0][0].call(fn,null,41)"]
+];
+for(const [name,source] of round6Dangerous)
+ test(name+' cannot be certified CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of round6Benign)
+ test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
