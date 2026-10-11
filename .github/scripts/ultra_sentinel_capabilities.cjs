@@ -199,6 +199,67 @@ function findCapabilities(ast){
  // Array bindings declared with const still permit writes to their elements.
  // Closure over a known initial array is safe only while none of its lexical
  // aliases can mutate the slots or send it into an unknown caller.
+ // Slice-copy provenance holds only if Array.prototype.slice has not been
+ // modified. Reads of that intrinsic remain benign; writes and escapes of
+ // the shared prototype are uncertain, including through const aliases.
+ let nativeSliceIntegrity=null;
+ function nativeArraySliceTrusted(){
+  if(nativeSliceIntegrity!==null)return nativeSliceIntegrity;
+  const constructors=new Set(['free:Array']),prototypes=new Set();
+  let converged=false;
+  for(let round=0;round<MAX_ROUNDS;round++){
+   let changed=false;
+   traverse(ast,node=>{
+    if(node.type!=='VariableDeclarator'||node.id?.type!=='Identifier')return;
+    const target=symbol(node.id),source=node.init;
+    if(!target||typeof target!=='object'||!source)return;
+    if(source.type==='Identifier'&&constructors.has(symbol(source))&&
+       !constructors.has(target)){constructors.add(target);changed=true;}
+    if((source.type==='Identifier'&&prototypes.has(symbol(source)))||
+       (source.type==='MemberExpression'&&stableMethodName(source)==='prototype'&&
+        source.object?.type==='Identifier'&&constructors.has(symbol(source.object)))){
+     if(!prototypes.has(target)){prototypes.add(target);changed=true;}
+    }
+   });
+   if(!changed){converged=true;break;}
+  }
+  if(!converged)throw Error('Native slice alias closure budget exceeded');
+  const proto=x=>Boolean(x&&(x.type==='Identifier'&&prototypes.has(symbol(x))||
+   x.type==='MemberExpression'&&stableMethodName(x)==='prototype'&&
+    x.object?.type==='Identifier'&&constructors.has(symbol(x.object))));
+  let changed=false;
+  traverse(ast,(node,parent)=>{
+   if(changed)return;
+   if(node.type==='MemberExpression'&&proto(node.object)){
+    const key=stableMethodName(node);
+    if(key==='slice'||key===null){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)changed=true;
+    }
+    if(parent?.type==='CallExpression'&&parent.callee===node)changed=true;
+   }
+   if(node.type==='CallExpression'){
+    // Also recognize the direct global spelling: scope resolvers may not
+    // materialize a builtin Array binding in every scope configuration.
+    const intrinsicMutator=node.callee?.type==='MemberExpression'&&
+     ['set','defineProperty','defineProperties','assign'].includes(
+      stableMethodName(node.callee));
+    const directArrayPrototype=arg=>arg?.type==='MemberExpression'&&
+     stableMethodName(arg)==='prototype'&&arg.object?.type==='Identifier'&&
+     arg.object.name==='Array';
+    if(node.arguments?.some(proto)||intrinsicMutator&&
+       node.arguments?.some(directArrayPrototype))changed=true;
+   }
+   if(node.type==='Property'&&proto(node.value)||node.type==='ArrayExpression'&&
+      node.elements?.some(proto)||node.type==='ReturnStatement'&&proto(node.argument))
+    changed=true;
+   if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
+  });
+  nativeSliceIntegrity=!changed;
+  return nativeSliceIntegrity;
+ }
  function ensureStableArray(variable){
   if(stableArrayCache.has(variable)){
    if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated');
@@ -238,6 +299,61 @@ function findCapabilities(ast){
       return projectedValueDefined(value.right,depth+1,seen);
      return false;
     }
+    // Project ObjectPattern defaults through stable lexical object aliases.
+    // Unknown writes/escapes invalidate certification rather than silently
+    // dropping the array alias that is mutated by the destructured variable.
+    function immutableObjectSource(value,depth=0,seen=new Set()){
+     if(!value||depth>MAX_DEPTH)return null;
+     if(value.type==='ObjectExpression')return value;
+     if(value.type!=='Identifier')return null;
+     const root=symbol(value);
+     if(!root||typeof root!=='object'||seen.has(root))return null;
+     const queue=[root],visited=new Set();
+     while(queue.length){
+      if(visited.size>MAX_ROUNDS)throw Error('Object alias provenance budget exceeded');
+      const current=queue.pop();
+      if(visited.has(current))continue;
+      visited.add(current);
+      for(const ref of current.references||[]){
+       if(ref.isWrite()){
+        if(ref.init)continue;
+        throw Error('Mutable object source alias');
+       }
+       const id=ref.identifier,parent=parentOf.get(id);
+       if(parent?.type==='VariableDeclarator'&&parent.init===id){
+        if(parent.id?.type==='Identifier'&&parentOf.get(parent)?.kind==='const'){
+         const alias=symbol(parent.id);
+         if(!alias||typeof alias!=='object')throw Error('Unknown object source alias');
+         queue.push(alias);
+        }else if(parent.id?.type!=='ObjectPattern')
+         throw Error('Unknown object carrier escape');
+        continue;
+       }
+       if(parent?.type==='MemberExpression'&&parent.object===id){
+        const outer=parentOf.get(parent);
+        if(outer?.type==='AssignmentExpression'&&outer.left===parent||
+           outer?.type==='UpdateExpression'&&outer.argument===parent||
+           outer?.type==='UnaryExpression'&&outer.operator==='delete'&&outer.argument===parent||
+           outer?.type==='CallExpression'&&outer.callee===parent)
+         throw Error('Object source property mutation unknown');
+        continue;
+       }
+       throw Error('Object source escape or mutation unknown');
+      }
+     }
+     const defs=root.defs||[];
+     if(defs.length!==1||defs[0].parent?.kind!=='const'||
+        defs[0].node?.id?.type!=='Identifier')return null;
+     seen.add(root);
+     const init=defs[0].node.init;
+     if(init?.type==='ObjectExpression'){
+      if(init.properties.some(p=>p.type!=='Property'||p.kind!=='init'||
+         stablePatternKey(p)==='__proto__'))
+       throw Error('Object source accessor/spread/prototype unknown');
+      return init;
+     }
+     return immutableObjectSource(init,depth+1,seen);
+    }
     function project(pattern,value,depth=0){
      if(!pattern||depth>MAX_DEPTH)return;
      // Do not skip an AssignmentPattern merely because its slot is missing:
@@ -259,15 +375,17 @@ function findCapabilities(ast){
      if(pattern.type==='ArrayPattern'&&value.type==='ArrayExpression')
       for(let i=0;i<pattern.elements.length;i++)
        project(pattern.elements[i],value.elements[i],depth+1);
-     if(pattern.type==='ObjectPattern'&&value.type==='ObjectExpression')
-      for(const entry of pattern.properties){
+     if(pattern.type==='ObjectPattern'){
+      const sourceObject=immutableObjectSource(value,depth+1);
+      if(sourceObject)for(const entry of pattern.properties){
        if(entry.type!=='Property')continue;
        const key=stablePatternKey(entry);
-       const source=value.properties.find(prop=>prop.type==='Property'&&
+       const source=sourceObject.properties.find(prop=>prop.type==='Property'&&
          stablePatternKey(prop)===key);
        if(source)project(entry.value,source.value,depth+1);
        else project(entry.value,null,depth+1);
       }
+     }
     }
     if(node.type==='VariableDeclarator'&&node.init)
      project(node.id,node.init);
@@ -340,18 +458,28 @@ function findCapabilities(ast){
      const callbackIntrinsic=['call','apply','bind'].includes(method)&&
       node.object?.type==='MemberExpression'&&
       /^(0|[1-9][0-9]*)$/.test(stableMethodName(node.object)||'');
+     // A native Array slice invoked with call/apply is a read-only
+     // operation on its receiver. Shadow writes to slice remain unsafe.
+     const nativeSliceWrapper=['call','apply'].includes(method)&&
+      node.object?.type==='MemberExpression'&&
+      stableMethodName(node.object)==='slice'&&
+      descendsFromArray(node.object.object)&&nativeArraySliceTrusted();
      if(method===null||(!/^(0|[1-9][0-9]*)$/.test(method)&&
-        !readonly.has(method)&&!callbackIntrinsic))
+        !readonly.has(method)&&!callbackIntrinsic&&!nativeSliceWrapper))
       uncertain=true;
     }
    }
    if(node.type==='Identifier'&&aliases.has(symbol(node))&&
       parent?.type==='CallExpression'&&key==='arguments'){
     const callee=parent.callee;
+    // Only a direct, known receiver in slice.call/apply is read-only.
+    // Extra arguments, unrelated objects and method aliases stay unsafe.
     const safeSlice=callee?.type==='MemberExpression'&&
-     stableMethodName(callee)==='call'&&
+     ['call','apply'].includes(stableMethodName(callee))&&
      callee.object?.type==='MemberExpression'&&
-     stableMethodName(callee.object)==='slice';
+     stableMethodName(callee.object)==='slice'&&
+     descendsFromArray(callee.object.object)&&
+     parent.arguments?.[0]===node&&nativeArraySliceTrusted();
     if(!safeSlice)uncertain=true;
    }
    // A local callback array can escape into object or array carriers.
@@ -421,8 +549,14 @@ function findCapabilities(ast){
    // alias to the native method. Unknown boundaries remain INCOMPLETE.
    function sliceMethod(expr,level=0,seenMethods=new Set()){
     if(!expr||level>MAX_DEPTH)return false;
-    if(expr.type==='MemberExpression')
-     return stableMethodName(expr)==='slice';
+    if(expr.type==='MemberExpression'){
+     if(stableMethodName(expr)!=='slice')return false;
+     // Returning false here silently loses the copied callback's identity.
+     // An unproven inherited method MUST be INCOMPLETE, not CLEAR.
+     if(!nativeArraySliceTrusted())
+      throw Error('Inherited array slice intrinsic may be overwritten');
+     return true;
+    }
     if(expr.type==='Identifier'){
      const id=symbol(expr);
      if(!id||typeof id!=='object'||seenMethods.has(id))return false;

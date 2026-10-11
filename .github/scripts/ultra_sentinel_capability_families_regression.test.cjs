@@ -897,6 +897,85 @@ for(const [name,source] of round8Dangerous)
 for(const [name,source] of round8Benign)
  test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
 
+// Ultra Sentinel V2 hardening: method identity must be established before
+// treating indirect Array.prototype.slice invocations as read-only.
+// These are static scanner inputs and are NEVER executed.
+const nativeSliceBenign=[
+ ["P2 native slice.call on a const array remains CLEAR","const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 native slice.call through const array alias remains CLEAR","const a=[()=>1];const b=a;const c=b.slice.call(b);c[0]()"],
+ ["P2 native slice.call with literal bounds remains CLEAR","const a=[()=>1,()=>2];const c=a.slice.call(a,0,1);c[0]()"],
+ ["P2 native slice.apply on a const array remains CLEAR","const a=[()=>1];const c=a.slice.apply(a,[]);c[0]()"]
+];
+const nativeSliceDangerous=[
+ ["P1 slice.call retains executable callback","function bad(g){g.eval('attack')}const a=[bad];const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 slice.apply retains executable callback","function bad(g){g.eval('attack')}const a=[bad];const c=a.slice.apply(a,[]);c[0](globalThis)"],
+ ["P1 overwritten own slice method is never assumed native","function bad(g){g.eval('attack')}const a=[()=>1];a.slice=bad;a.slice.call(null,globalThis)"],
+ ["P1 overwritten slice through alias is never assumed native","function bad(g){g.eval('attack')}const a=[()=>1];const b=a;b.slice=bad;a.slice.call(null,globalThis)"],
+ ["P1 dynamic own slice property cannot certify native","function bad(g){g.eval('attack')}const a=[bad];const k='slice';a[k]=function(){return [()=>1]};a.slice.call(a)[0](globalThis)"]
+];
+for(const [name,source] of nativeSliceBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+for(const [name,source] of nativeSliceDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+
+// Codex P1 family: project a const ObjectPattern source through lexical aliases;
+// no alias may silently lose a write to its original array callback slots.
+const objectDefaultAliasDangerous=[
+ ["P1 ObjectPattern default follows immutable object alias","function bad(g){g.eval('attack')}function safe(){}const a=[safe],empty={};const {x=a}=empty;x.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 ObjectPattern default follows chained immutable aliases","function bad(g){g.eval('attack')}function safe(){}const a=[safe],empty={},alias=empty;const {x=a}=alias;x.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 fake slice.call must not whitelist an array argument","function bad(g){g.eval('attack')}function safe(){}const fake={slice:{call(a){a.fill(bad)}}};const a=[safe];fake.slice.call(a);a[0](globalThis)"]
+];
+const objectDefaultAliasBenign=[
+ ["P2 ObjectPattern alias with present slot remains CLEAR","const a=[()=>1],holder={x:[()=>2]},alias=holder;const {x=a}=alias;x[0]();a[0]()"],
+ ["P2 ObjectPattern absent slot without mutation remains CLEAR","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;a[0]()"]
+];
+for(const [name,source] of objectDefaultAliasDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of objectDefaultAliasBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Bounded deterministic metamorphic matrix: the alias closure must be
+// invariant under equivalent ObjectPattern spellings and mutations.
+const objectDefaultPatterns=[
+ "const {x=a}=alias;",
+ "const {'x':x=a}=alias;",
+ "const {['x']:x=a}=alias;"
+];
+const objectAliasMutations=[
+ "x.splice(0,1,bad);",
+ "x[0]=bad;",
+ "x.fill(bad);"
+];
+for(const [i,projection] of objectDefaultPatterns.entries()){
+ for(const [j,mutation] of objectAliasMutations.entries()){
+  const source="function bad(g){g.eval('attack')}function safe(){}"+
+   "const a=[safe],empty={},alias=empty;"+projection+mutation+
+   "a[0](globalThis)";
+  test('metamorphic ObjectPattern alias '+i+' mutation '+j+' stays unsafe',
+   ()=>assert.notEqual(result(source),'CLEAR'));
+ }
+ const benign="const a=[()=>1],holder={x:[()=>2]},alias=holder;"+
+  projection+"x[0]();a[0]();";
+ test('metamorphic ObjectPattern present value '+i+' stays CLEAR',
+  ()=>assert.equal(result(benign),'CLEAR'));
+}
+
+// Global Array.prototype.slice can be changed without touching a local array
+// identifier. Native method optimization must account for that shared state.
+const prototypeSliceDangerous=[
+ ["P1 Array.prototype.slice directly overwritten before slice.call","function bad(g){g.eval('attack')}const a=[()=>1];Array.prototype.slice=function(){return [bad]};const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 Array.prototype.slice overwritten via Reflect.set","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.set(Array.prototype,'slice',function(){return [bad]});const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 Array.prototype.slice overwritten through const prototype alias","function bad(g){g.eval('attack')}const a=[()=>1],proto=Array.prototype;proto.slice=function(){return [bad]};const c=a.slice.call(a);c[0](globalThis)"]
+];
+const prototypeSliceBenign=[
+ ["P2 reading native slice without changing it stays CLEAR","const a=[()=>1],s=Array.prototype.slice;const c=a.slice.call(a);c[0]()"],
+ ["P2 overwriting an unrelated slice property stays CLEAR","const a=[()=>1],other={};other.slice=function(){};const c=a.slice.call(a);c[0]()"]
+];
+for(const [name,source] of prototypeSliceDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of prototypeSliceBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],

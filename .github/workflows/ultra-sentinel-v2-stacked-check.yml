@@ -1,0 +1,42 @@
+name: Ultra Sentinel V2 Stacked Regression
+# Unprivileged validation of the V2 laboratory PR targeting the #169 branch.
+# Never use pull_request_target here: checkout executes untrusted PR code.
+on:
+  pull_request:
+    branches: [feature/ultra-sentinel-sss-phase1]
+    paths:
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/workflows/ultra-sentinel-v2-stacked-check.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sentinel-v2-stacked-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  provenance-regressions:
+    name: Static provenance / false-positive regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout unprivileged V2 candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Syntax-check analyzer and test contract
+        run: |
+          node --check .github/scripts/ultra_sentinel_capabilities.cjs
+          node --check .github/scripts/ultra_sentinel_capability_families_regression.test.cjs
+          node --check .github/scripts/ultra_sentinel_core_shards.cjs
+          node --check .github/scripts/ultra_sentinel_core_count_contract.test.cjs
+          node --check .github/scripts/ultra_sentinel_v2_shadow.cjs
+          node --check .github/scripts/ultra_sentinel_v2_shadow.test.cjs
+      - name: Run focused adversarial and benign tests
+        run: |
+          node --test .github/scripts/ultra_sentinel_capability_families_regression.test.cjs
+          node --test .github/scripts/ultra_sentinel_core_count_contract.test.cjs
+          node --test .github/scripts/ultra_sentinel_v2_shadow.test.cjs
