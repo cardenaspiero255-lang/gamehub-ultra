@@ -782,6 +782,35 @@ for(const [name,src] of codexThirdUncertain)
 for(const [name,src] of codexThirdBenign)
  test(name+' remains benign',()=>assert.equal(result(src),'CLEAR',name));
 
+// Round four: Codex identified defaulted destructuring aliases,
+// extracted Function.prototype intrinsics and shadowed function properties.
+// All snippets are STATIC inputs to the scanner, never executed.
+const round4P1=[
+ ["P1 array default aliases mutable original","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const [b=a]=[];b.fill(bad);a[0](globalThis)"],
+ ["P1 nested array default aliases mutable original","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const [[b=a]=[]]=[[]];b.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 assignment default aliases mutable original","function bad(g){g.eval('attack')}function safe(){}const a=[safe];let b;[b=a]=[];b.push(bad);a[0](globalThis)"],
+ ["P1 extracted apply through const identifier","function bad(g){g.eval('attack')}const op=(()=>{}).apply;op.call(bad,null,[globalThis])"],
+ ["P1 extracted apply stored in object","function bad(g){g.eval('attack')}const ops={a:(()=>{}).apply};ops.a.call(bad,null,[globalThis])"],
+ ["P1 extracted apply in array pattern","function bad(g){g.eval('attack')}const [op]=[(()=>{}).apply];op.call(bad,null,[globalThis])"],
+ ["P1 extracted bind through const alias","function bad(g){g.eval('attack')}const op=(()=>{}).bind;op.call(bad,null,globalThis)()"]
+];
+const round4P2=[
+ ["P2 own call property via defineProperty must be uncertain","function bad(g){g.eval('attack')}function innocent(){};Object.defineProperty(innocent,'call',{value:{call(){}}});innocent.call.call(bad,null,globalThis)"],
+ ["P2 own call property by direct assignment must be uncertain","function bad(g){g.eval('attack')}function innocent(){};innocent.call={call(){}};innocent.call.call(bad,null,globalThis)"]
+];
+const round4Benign=[
+ ["P2 ordinary extracted apply with harmless arguments","const op=(()=>{}).apply;const fn=g=>g+1;op.call(fn,null,[3])"],
+ ["P2 array default concrete value should not alias original","function safe(){}const a=[safe],replacement=[safe];const [b=a]=[replacement];b.push(safe);a[0]()"]
+];
+for(const [name,source] of round4P1)
+ test(name+' never certifies dynamic execution',()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of round4P2)
+ test(name+' reports uncertain instead of a fabricated execution sink',()=>{
+  assert.match(result(source),/^INCOMPLETE:/,name);
+ });
+for(const [name,source] of round4Benign)
+ test(name+' stays CLEAR',()=>assert.equal(result(source),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
