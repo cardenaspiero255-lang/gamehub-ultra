@@ -120,3 +120,13 @@ test('automatic reviewer matches trusted independent reviewer solo-owner excepti
   assert.match(wf,/if\(ci\.status==='UNTRUSTED'\)core\.setFailed/);
   assert.match(wf,/if\(protectedChanges\.status==='BLOCKED'\|\|protectedChanges\.status==='INCOMPLETE'\)/);
 });
+
+test('trusted automatic reviewer checks out workflow fixtures required by structural YAML tests', () => {
+  const wf=workflow();
+  const sparse=wf.match(/sparse-checkout:\s*\|([^]*?)sparse-checkout-cone-mode:/);
+  assert.ok(sparse,'explicit sparse checkout must remain enabled');
+  assert.match(sparse[1],/\.github\/scripts\//);
+  assert.match(sparse[1],/\.github\/workflows\//,
+    'YAML AST self-tests read trusted workflow fixtures; no missing files permitted');
+  assert.doesNotMatch(wf,/ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+});
