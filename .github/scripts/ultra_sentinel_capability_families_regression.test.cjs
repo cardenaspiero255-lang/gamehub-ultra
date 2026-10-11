@@ -721,6 +721,39 @@ for(const [name,source] of codexFiveNewDangerous)
 for(const [name,source] of codexFiveNewBenign)
  test(name+' does not block local harmless value',()=>assert.equal(result(source),'CLEAR',name));
 
+// Codex independent review of HEAD e1cb319, five additional escape families.
+// Fixtures are parsed, not executed. Sinks proven locally require BLOCKER.
+const codexRound2Dangerous=[
+ ["P1 const constructor key via alias","const a='constructor';const k=a;const C=(()=>{})[k];C('attack')()"],
+ ["P1 constructor key three-hop alias","const a='constructor';const b=a;const k=b;const C=function(){};C[k]('attack')()"],
+ ["P1 factory returns bound executable callable","function bad(g){g.eval('attack')}function make(){return bad.bind(null,globalThis)}make()()"],
+ ["P1 aliased factory bound callable","function bad(g){g.eval('attack')}function make(){return bad.bind(null,globalThis)}const wrapped=make();wrapped()"],
+ ["P1 bound callable held in object","function bad(g){g.eval('attack')}const o={b:bad.bind(null,globalThis)};o.b()"],
+ ["P1 bound callable nested object property","function bad(g){g.eval('attack')}const o={nested:{b:bad.bind(null,globalThis)}};o.nested.b()"],
+ ["P1 bound callable destructured from object","function bad(g){g.eval('attack')}const o={b:bad.bind(null,globalThis)};const {b}=o;b()"],
+ ["P1 computed zero index in object destructuring","function bad(g){g.eval('attack')}const i=0;const {[i]:b}=[bad];b(globalThis)"],
+ ["P1 computed string index through alias","function bad(g){g.eval('attack')}const key='0';const index=key;const {[index]:b}=[bad];b(globalThis)"]
+];
+const codexRound2Uncertain=[
+ ["P1 array splice mutates callback slots","function bad(g){g.eval('attack')}function safe(){}const a=[safe];a.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 array push mutates callback slots","function bad(g){g.eval('attack')}const a=[];a.push(bad);a[0](globalThis)"],
+ ["P1 array fill mutates callback slots","function bad(g){g.eval('attack')}function safe(){}const a=[safe];a.fill(bad);a[0](globalThis)"],
+ ["P1 array alias mutation invalidates cached slots","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const b=a;b.splice(0,1,bad);a[0](globalThis)"]
+];
+const codexRound2Benign=[
+ ["P2 safe constructor alias on local object","const a='constructor';const key=a;const o={constructor:()=>42};o[key]()"],
+ ["P2 factory returns safe bound object","function bad(g){g.eval(10)}function make(){return bad.bind(null,{eval:x=>x})}make()"],
+ ["P2 bound safe object property","function bad(g){g.eval(10)}const o={b:bad.bind(null,{eval:x=>x})};o.b()"],
+ ["P2 computed benign array projection","function safe(g){g.eval(10)}const i=0;const {[i]:b}=[safe];b({eval:x=>x})"],
+ ["P2 array literal safe callback unchanged","function safe(g){g.eval(10)}const a=[safe];a[0]({eval:x=>x})"]
+];
+for(const [name,src] of codexRound2Dangerous)
+ test(name+' provenance is a proven BLOCKER',()=>assert.equal(result(src),'BLOCKER',name));
+for(const [name,src] of codexRound2Uncertain)
+ test(name+' cannot be certified CLEAR after mutation',()=>assert.notEqual(result(src),'CLEAR',name));
+for(const [name,src] of codexRound2Benign)
+ test(name+' remains CLEAR',()=>assert.equal(result(src),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
