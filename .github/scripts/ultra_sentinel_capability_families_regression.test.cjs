@@ -647,6 +647,13 @@ benign.push(...codexNewBenign);
 for(const [name,source] of dangerous){
  test(name+' cannot be certified safe',()=>{
   assert.notEqual(result(source),'CLEAR',name+' unexpectedly passed the security gate');
+  if(name==='P1 escaped default passed to Reflect.apply'){
+   for(const [variant,sample] of [
+    ['bound local function','function f(x=eval(userPatch)){};f(1);const wrapped=f.bind(null);wrapped()'],
+    ['bound object method','function f(x=eval(userPatch)){};f(1);const o={f};o.f.bind(null)()'],
+    ['bound computed method','function f(x=eval(userPatch)){};f(1);const wrapped=f[\'bind\'](null);wrapped()']
+   ])assert.notEqual(result(sample),'CLEAR',variant+' bypassed executable default gate');
+  }
  });
 }
 for(const [name,source] of benign){
