@@ -63,3 +63,26 @@ jobs:
         run: |
           set -euo pipefail
           node .github/scripts/ultra_sentinel_core_shards.cjs run-env "$RUNNER_TEMP/v2-baseline"
+  matrix-shards:
+    name: Sentinel 500k matrix / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [m00, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10, m11, m12]
+    steps:
+      - name: Checkout unprivileged V2 candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute validated deterministic 38,500-case matrix partition
+        shell: bash
+        env:
+          SENTINEL_SHARD_ID: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/ultra_sentinel_core_shards.cjs run-env "$RUNNER_TEMP/v2-matrix"
