@@ -388,6 +388,24 @@ function findCapabilities(ast){
    }
    return false;
   }
+  // Returned native slice handles escape even through concise arrow bodies,
+  // conditional expressions and immutable aliases. Revoke the fast path
+  // rather than assuming Function.prototype.call/apply still applies.
+  function returnedSliceCapability(value,depth=0){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(nativeSliceHandle(value)||sliceCallablePrototype(value))return true;
+   if(value.type==='ConditionalExpression')
+    return returnedSliceCapability(value.consequent,depth+1)||
+     returnedSliceCapability(value.alternate,depth+1);
+   if(value.type==='LogicalExpression')
+    return returnedSliceCapability(value.left,depth+1)||
+     returnedSliceCapability(value.right,depth+1);
+   if(value.type==='SequenceExpression')
+    return returnedSliceCapability(value.expressions?.at(-1),depth+1);
+   if(value.type==='AssignmentExpression'&&value.operator==='=')
+    return returnedSliceCapability(value.right,depth+1);
+   return false;
+  }
   let changed=false;
   traverse(ast,(node,parent)=>{
    if(changed)return;
@@ -458,8 +476,9 @@ function findCapabilities(ast){
    if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
    if(node.type==='AssignmentExpression'&&sliceCallablePrototype(node.right))
     changed=true;
-   if(node.type==='ReturnStatement'&&
-      (sliceCallablePrototype(node.argument)||nativeSliceHandle(node.argument)))
+   if(node.type==='ReturnStatement'&&returnedSliceCapability(node.argument)||
+      node.type==='ArrowFunctionExpression'&&
+       node.body?.type!=='BlockStatement'&&returnedSliceCapability(node.body))
     changed=true;
   });
   nativeSliceIntegrity=!changed;
