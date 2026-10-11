@@ -173,6 +173,46 @@ test('dynamic JS execution is blocked',()=>{
   assert.equal(result.status,'BLOCKED',code);
   assert.ok(result.findings.some(x=>x.rule==='DYNAMIC_EVAL'),code);
  }
+ // Stabilization RED: VM factories, object property flow and true lexical scope.
+ // Each pair is evaluated as a complete source file, never executed.
+ const executableVariants=[
+  "require('node:vm').createScript(userPatch).runInThisContext()",
+  "vm.createScript(userPatch).runInNewContext({})",
+  "const {createScript:c}=require('vm'); c(userPatch).runInNewContext({})",
+  "const v=require('node:vm'); const create=v['create'+'Script']; create(userPatch)",
+  "const {x:g}={x:globalThis}; g.eval(userPatch)",
+  "const {x:v}={x:require('vm')}; v.compileFunction(userPatch)()",
+  "const {x:r}={x:Reflect}; r.get(globalThis,'eval')(userPatch)",
+  "const box={x:globalThis}; const {x:g}=box; g.eval(userPatch)",
+  "const box={x:require('vm')}; const {x:v}=box; v.compileFunction(userPatch)()",
+  "const box={x:Reflect}; const {x:r}=box; r.get(globalThis,'eval')(userPatch)",
+  "const box={x:globalThis}; const next=box; const {x:g}=next; g.eval(userPatch)"
+ ];
+ for(const code of executableVariants){
+  const result=scan([file(src,...code.split('\n'))],SHA);
+  assert.equal(result.status,'BLOCKED',code);
+  assert.ok(result.findings.some(f=>f.rule==='DYNAMIC_EVAL'),code);
+ }
+ const safeShadowing=[
+  "function safe(require){ return require('vm').compileFunction(userPatch) } safe(()=>({compileFunction:x=>x}))",
+  "function safe(globalThis){ return globalThis.eval(userPatch) } safe({eval:x=>x})",
+  "function safe(vm){ return vm.createScript(userPatch) } safe({createScript:x=>x})",
+  "function safe(Reflect){ return Reflect.get(globalThis,'eval') } safe({get:()=>42})",
+  "const safe={x:(n)=>n}; const {x:f}=safe; f(userPatch)",
+  "const safe={x:42}; const {x:x}=safe; const y=x + 2",
+  "function f(){const require=(s)=>({compileFunction:x=>x});require('vm').compileFunction(userPatch)}",
+  "const vm={createScript:x=>x}; vm.createScript(userPatch)",
+  "function safe(global){ return global.eval(userPatch) } safe({eval:x=>x})"
+ ];
+ for(const code of safeShadowing)
+  assert.equal(scan([file(src,...code.split('\n'))],SHA).status,'ADVISORY',code);
+ // The same dangerous operation remains detectable after harmless formatting.
+ for(const gap of ['',' ','/* trivia */']){
+  const code="const {x:g}={x:globalThis}; g"+gap+"['eval'](userPatch)";
+  const result=scan([file(src,code)],SHA);
+  assert.equal(result.status,'BLOCKED',code);
+  assert.ok(result.findings.some(f=>f.rule==='DYNAMIC_EVAL'));
+ }
  // Hunk starts inside a previously existing comment: full-source context
  // must suppress false confirmed DYNAMIC_EVAL. Missing context fails closed.
  const earlier=['/*',...Array.from({length:98},()=>'* inert')];
