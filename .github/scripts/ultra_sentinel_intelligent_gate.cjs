@@ -136,10 +136,12 @@ function review(input){
   findings.sort((a,b)=>a.fingerprint.localeCompare(b.fingerprint));
   const map=new Map();
   for(const f of findings){
-   const row=map.get(f.familyId)||{id:f.familyId,rule:f.rule,severityClass:f.severityClass,variants:0};
-   row.variants++;
-   if(f.severityClass==='BLOCK')row.severityClass='BLOCK';
-   map.set(f.familyId,row);
+   const previous=map.get(f.familyId);
+   map.set(f.familyId,{
+    id:f.familyId,rule:f.rule,
+    severityClass:f.severityClass==='BLOCK'||(previous&&previous.severityClass==='BLOCK')?'BLOCK':f.severityClass,
+    variants:previous?previous.variants+1:1
+   });
   }
   const families=[...map.values()].sort((a,b)=>a.id.localeCompare(b.id));
   const ciStatus=checkCI(input,headSha);
