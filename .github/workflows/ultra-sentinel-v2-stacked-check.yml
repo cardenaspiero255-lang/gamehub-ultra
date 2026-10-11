@@ -9,7 +9,7 @@ on:
       - '.github/workflows/ultra-sentinel-v2-stacked-check.yml'
       - 'package.json'
       - 'package-lock.json'
-  workflow_dispatch:
+  # Manual runs use GitHub's rerun-job action for the immutable PR context.
 permissions:
   contents: read
 concurrency:
