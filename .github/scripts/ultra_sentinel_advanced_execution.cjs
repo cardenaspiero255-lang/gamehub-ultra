@@ -274,7 +274,7 @@ function downloadedFiles(command,flag){
     outputDirSeen=true;
     const rawDir=dirInline?dirInline[1]:words[++i];
     dir=literalFileToken(rawDir);
-    if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {files:[],unknownDownloaderOption:true};}
+    if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {files:[],unknownDownloaderOption:Boolean(true)};}
    }
   }
   if(!isOutput&&!knownDirectoryOption&&literal.startsWith('-')&&literal!=='-'&&
