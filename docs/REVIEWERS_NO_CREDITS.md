@@ -10,9 +10,13 @@
 - Conservar el historial de hallazgos antiguos como evidencia; no cerrarlos como resueltos sin reproducir sus casos y validar las correcciones.
 - No vincular la aprobación de PR a una nueva revisión de Codex mientras esta suspensión siga vigente: usar CI, pruebas adversariales, Ultra Sentinel y una revisión alternativa independiente cuando sea necesaria. Ningún CI verde ni revisor automatizado implica garantía de ausencia de vulnerabilidades.
 
-## Qodo y CodeRabbit — siguen desactivados
+## Qodo Open Source — reactivado con autorización del propietario (11 de octubre de 2026)
 
-No solicitar ni invocar sus revisiones, comentarios o ejecuciones, ni habilitar sus revisiones automáticas hasta nueva autorización explícita. Conservar las configuraciones de desactivación `.coderabbit.yaml` y `.pr_agent.toml` si están presentes. La evaluación de alternativas gratuitas no autoriza su instalación ni reactivación.
+El propietario ha autorizado explícitamente Qodo Open Source como revisor alternativo de GitHub para los PR #173, #169 y las futuras actualizaciones del repositorio. Permitir únicamente `/agentic_review` y su disparo automático al abrir o actualizar PR a través de `.pr_agent.toml`. La aprobación, aplicación de sugerencias, modificación de código y fusión automáticas siguen **prohibidas**. Los hallazgos deben reproducirse y contrastarse con pruebas antes de corregirlos. La instalación de la GitHub App y sus permisos reales se administran fuera del archivo TOML.
+
+## CodeRabbit — sigue desactivado
+
+No solicitar ni invocar revisiones de CodeRabbit, ni habilitar sus revisiones automáticas sin autorización expresa. Conservar `.coderabbit.yaml` con sus disparadores desactivados; su desactivación no desinstala necesariamente la GitHub App.
 
 ## Configuración de GitHub y Codex
 
