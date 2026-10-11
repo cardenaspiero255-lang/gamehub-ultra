@@ -288,12 +288,18 @@ function findCapabilities(ast){
   }
   throw Error('Unsupported binding pattern');
  }
- const functions=new Map();
+ const functions=new Map(),functionAliases=[];
  traverse(ast,(node)=>{
   if(node.type==='FunctionDeclaration'&&node.id)functions.set(symbol(node.id),node);
   if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
       ['ArrowFunctionExpression','FunctionExpression'].includes(node.init?.type))
    functions.set(symbol(node.id),node.init);
+  if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
+     node.init?.type==='Identifier')
+   functionAliases.push([symbol(node.id),symbol(node.init)]);
+  if(node.type==='AssignmentExpression'&&node.operator==='='&&
+     node.left?.type==='Identifier'&&node.right?.type==='Identifier')
+   functionAliases.push([symbol(node.left),symbol(node.right)]);
   if(node.type==='VariableDeclarator'&&node.init)
    bindings.push([node.id,node.init]);
   if(node.type==='AssignmentExpression'&&node.operator==='=')
@@ -312,6 +318,22 @@ function findCapabilities(ast){
   if(node.type==='CatchClause'&&node.param?.type==='ObjectPattern')
    bindings.push([node.param,null]);
  });
+ // Follow lexical aliases before binding arguments to callee parameters.
+ // Unknown or conflicting function provenance is never silently certified.
+ let aliasesConverged=false;
+ for(let pass=0;pass<MAX_ROUNDS;pass++){
+  let changed=false;
+  for(const [destination,source] of functionAliases){
+   const target=functions.get(source);
+   if(!target)continue;
+   const previous=functions.get(destination);
+   if(previous&&previous!==target)
+    throw Error('Ambiguous function alias provenance');
+   if(!previous){functions.set(destination,target);changed=true;}
+  }
+  if(!changed){aliasesConverged=true;break;}
+ }
+ if(!aliasesConverged)throw Error('Function alias budget exceeded');
  traverse(ast,(node)=>{
   if(node.type!=='CallExpression'||node.callee?.type!=='Identifier')return;
   const fn=functions.get(symbol(node.callee));
