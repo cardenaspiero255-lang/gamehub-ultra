@@ -95,6 +95,8 @@ function findCapabilities(ast){
  // A missing marker is NOT equivalent to a benign descriptor when defaults exist.
  const PRESENT=Object.freeze({present:true});
  const UNKNOWN=Object.freeze({unknown:true});
+ // Accessors execute on read. Presence does not prove their returned value.
+ const ACCESSOR=Object.freeze({accessor:true});
  // Optional means a property is known in one branch but absent in another.
  // Presence MUST NOT be inferred merely from Map.has().
  const optional=(value)=>({optional:true,value});
@@ -186,6 +188,13 @@ function findCapabilities(ast){
   if(node.type==='Identifier')return functions.get(symbol(node))||null;
   if(node.type==='ChainExpression')return resolveFunction(node.expression,depth+1);
   if(node.type==='SequenceExpression')return resolveFunction(node.expressions?.at(-1),depth+1);
+  if(node.type==='ConditionalExpression'||node.type==='LogicalExpression'){
+   const first=resolveFunction(node.type==='ConditionalExpression'?node.consequent:node.left,depth+1);
+   const second=resolveFunction(node.type==='ConditionalExpression'?node.alternate:node.right,depth+1);
+   if(first&&second&&first===second)return first;
+   if(first||second)throw Error('Ambiguous conditional function provenance');
+   return null;
+  }
   if(node.type==='MemberExpression'){
    const map=propertyKinds(node.object,depth+1),key=propName(node);
    const descriptor=key===null?null:map?.get(key);
@@ -240,7 +249,7 @@ function findCapabilities(ast){
  function riskyDescriptor(v,depth=0){
   if(depth>MAX_DEPTH)throw Error('Property risk depth exceeded');
   if(v===PRESENT||v?.functionNode)return false;
-  if(v?.optional)return true;
+  if(v===ACCESSOR||v?.optional)return true;
   if(v===UNKNOWN)return true;
   if(typeof v==='string')return true;
   if(v?.properties)return [...v.properties.values()].some(x=>riskyDescriptor(x,depth+1));
@@ -263,6 +272,9 @@ function findCapabilities(ast){
     if(p.type!=='Property')throw Error('Unsupported object binding');
     const name=keyName(p);
     if(name===null)throw Error('Computed object key provenance unknown');
+    if(p.kind!=='init'){
+     result.set(name,ACCESSOR);continue;
+    }
     const nested=propertyKinds(p.value,depth+1);
     const cap=kind(p.value,depth+1);
     if(nested)result.set(name,{properties:nested});
@@ -278,6 +290,7 @@ function findCapabilities(ast){
   if(node.type==='MemberExpression'){
    const parent=propertyKinds(node.object,depth+1),name=propName(node);
    const entry=parent?.get(name);
+   if(entry===ACCESSOR)throw Error('Accessor member value provenance unresolved');
    if(entry?.optional)throw Error('Optional member object provenance cannot be certified');
    return entry&&typeof entry==='object'&&entry.properties?entry.properties:null;
   }
@@ -325,6 +338,7 @@ function findCapabilities(ast){
    if(obj){
     if(name!==null){
      const v=obj.get(name);
+     if(v===ACCESSOR)throw Error('Accessor returned capability cannot be certified');
      if(v?.optional){
       if(typeof v.value==='string')return v.value;
       throw Error('Optional property presence cannot be certified');
@@ -465,6 +479,7 @@ function findCapabilities(ast){
    }
    const hasOwn=!!properties&&name!==null&&properties.has(name);
    const found=hasOwn?properties.get(name):null;
+   if(found===ACCESSOR)throw Error('Accessor destructuring value is not statically known');
    if(found?.optional&&target?.type!=='AssignmentPattern')
     throw Error('Maybe-absent destructuring property without default');
    const present=found?.optional?found.value:found;
@@ -634,10 +649,26 @@ function findCapabilities(ast){
  if(!converged)throw Error('Unbounded alias propagation');
  // A default is dead only if all KNOWN local call-sites prove its argument
  // present. No single invocation may globally suppress an executable RHS.
- function definitelyProvided(node){
-  return !!node&&node.type!=='SpreadElement'&&
-   !(node.type==='Identifier'&&node.name==='undefined')&&
-   !(node.type==='UnaryExpression'&&node.operator==='void');
+ // A syntactically present expression can still evaluate to undefined.
+ // Only suppress a default when every possible value is known defined.
+ function definitelyProvided(node,depth=0){
+  if(!node||depth>MAX_DEPTH)return false;
+  if(['Literal','FunctionExpression','ArrowFunctionExpression',
+      'ObjectExpression','ArrayExpression','ClassExpression',
+      'TemplateLiteral','NewExpression','BinaryExpression',
+      'UpdateExpression'].includes(node.type))return true;
+  if(node.type==='UnaryExpression')return node.operator!=='void';
+  if(node.type==='ConditionalExpression')
+   return definitelyProvided(node.consequent,depth+1)&&
+     definitelyProvided(node.alternate,depth+1);
+  if(node.type==='LogicalExpression')
+   return node.operator==='??'?definitelyProvided(node.right,depth+1):
+     definitelyProvided(node.left,depth+1)&&definitelyProvided(node.right,depth+1);
+  if(node.type==='SequenceExpression')
+   return definitelyProvided(node.expressions?.at(-1),depth+1);
+  if(node.type==='AssignmentExpression'&&node.operator==='=')
+   return definitelyProvided(node.right,depth+1);
+  return false;
  }
  function markArrayInactiveDefaults(pattern,source,depth=0){
   if(pattern?.type!=='ArrayPattern'||source?.type!=='ArrayExpression')return;
@@ -647,9 +678,11 @@ function findCapabilities(ast){
   if(source.elements.some(e=>e?.type==='SpreadElement'))return;
   for(let i=0;i<pattern.elements.length;i++){
    const item=pattern.elements[i],input=source.elements[i];
-   if(item?.type==='AssignmentPattern'&&definitelyProvided(input))
+   if(item?.type==='AssignmentPattern'&&definitelyProvided(input)){
     markInactiveDefault(item.right);
-   else if(item?.type==='ArrayPattern')
+    if(item.left?.type==='ArrayPattern')
+     markArrayInactiveDefaults(item.left,input,depth+1);
+   }else if(item?.type==='ArrayPattern')
     markArrayInactiveDefaults(item,input,depth+1);
   }
  }
@@ -664,7 +697,7 @@ function findCapabilities(ast){
    for(const p of node.id.properties){
     if(p.type!=='Property'||p.value?.type!=='AssignmentPattern')continue;
     const key=keyName(p),entry=key===null?null:props.get(key);
-    if(key!==null&&props.has(key)&&entry!==UNKNOWN&&!entry?.optional)
+    if(key!==null&&props.has(key)&&entry!==UNKNOWN&&entry!==ACCESSOR&&!entry?.optional)
      markInactiveDefault(p.value.right);
    }
   }
@@ -705,13 +738,72 @@ function findCapabilities(ast){
   if(parent.type==='CallExpression'&&key==='arguments'&&!invocation(parent).fn)
    possiblyInvoked.add(fn);
  });
+ // Carrier graph: local aliases can hold arrays, nested objects and function
+ // results. An unknown caller or dynamic property can invoke any callback
+ // reachable through those carriers; never silence its executable default.
+ const valueSources=new Map();
+ for(const [pattern,value] of bindings){
+  if(pattern?.type!=='Identifier'||!value)continue;
+  const key=symbol(pattern),values=valueSources.get(key)||[];
+  values.push(value);valueSources.set(key,values);
+ }
+ function addCarrierFunctions(node,depth=0,seen=new Set()){
+  if(!node)return;
+  if(depth>MAX_DEPTH)throw Error('Carrier provenance depth exceeded');
+  if(node.type==='Identifier'){
+   const key=symbol(node),fn=functions.get(key);
+   if(fn)possiblyInvoked.add(fn);
+   if(seen.has(key))return;
+   seen.add(key);
+   addObjectFunctions(objects.get(key));
+   for(const source of valueSources.get(key)||[])
+    addCarrierFunctions(source,depth+1,seen);
+   return;
+  }
+  if(node.type==='FunctionExpression'||node.type==='ArrowFunctionExpression'){
+   possiblyInvoked.add(node);return;
+  }
+  if(node.type==='ArrayExpression'){
+   for(const item of node.elements)addCarrierFunctions(item,depth+1,seen);
+   return;
+  }
+  if(node.type==='ObjectExpression'){
+   for(const prop of node.properties)
+    addCarrierFunctions(prop.type==='SpreadElement'?prop.argument:prop.value,depth+1,seen);
+   return;
+  }
+  if(node.type==='SpreadElement'||node.type==='ChainExpression'){
+   addCarrierFunctions(node.argument||node.expression,depth+1,seen);return;
+  }
+  if(node.type==='ConditionalExpression'||node.type==='LogicalExpression'){
+   addCarrierFunctions(node.type==='ConditionalExpression'?node.consequent:node.left,depth+1,new Set(seen));
+   addCarrierFunctions(node.type==='ConditionalExpression'?node.alternate:node.right,depth+1,new Set(seen));return;
+  }
+  if(node.type==='SequenceExpression'){
+   addCarrierFunctions(node.expressions?.at(-1),depth+1,seen);return;
+  }
+  if(node.type==='AssignmentExpression'){
+   addCarrierFunctions(node.right,depth+1,seen);return;
+  }
+  if(node.type==='MemberExpression'){
+   const props=propertyKinds(node.object),name=propName(node);
+   if(name===null)addObjectFunctions(props);
+   else addDescriptorFunctions(props?.get(name));
+   addCarrierFunctions(node.object,depth+1,seen);return;
+  }
+  if(node.type==='CallExpression'){
+   const fn=invocation(node).fn;
+   if(fn)for(const output of returnExpressions(fn))
+    addCarrierFunctions(output,depth+1,new Set(seen));
+  }
+ }
  const observed=calls.map(call=>({call,...invocation(call)}));
  for(const {call,fn} of observed){
   if(fn)continue;
   if(call.callee?.type==='MemberExpression'&&propName(call.callee)===null)
-   addObjectFunctions(propertyKinds(call.callee.object));
+   addCarrierFunctions(call.callee.object);
   for(const arg of call.arguments||[])
-   addObjectFunctions(propertyKinds(arg?.type==='SpreadElement'?arg.argument:arg));
+   addCarrierFunctions(arg);
  }
  const localFunctions=new Set(functions.values());
  for(const fn of localFunctions){
