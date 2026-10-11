@@ -1295,3 +1295,8 @@ test('P2 genuinely pure helper with literal default remains clear',()=>{
  const source="function noop(o,x=1){return 1} const a=[()=>1],empty={}; const {x=a}=empty; noop(empty); a[0]()";
  assert.equal(result(source),'CLEAR','inert scalar defaults must not cause false positives');
 });
+
+test('P1 hijacked console.log getter cannot be treated as a pure carrier escape',()=>{
+ const source="function bad(g){g.eval('x')} const a=[()=>1],empty={}; const {x=a}=empty; console.__defineGetter__('log',()=>o=>o.__defineGetter__('get',()=>a)); console.log(empty); empty.get.fill(bad); a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR','untrusted console.log may expose the captured callback array');
+});
