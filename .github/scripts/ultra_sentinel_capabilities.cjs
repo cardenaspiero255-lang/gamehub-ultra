@@ -685,6 +685,16 @@ function findCapabilities(ast){
  function addObjectFunctions(properties){
   if(properties)for(const value of properties.values())addDescriptorFunctions(value);
  }
+ // A bound function retains its default parameters. Treat extracting .bind
+ // from local functions or object methods as an unresolved callable escape:
+ // otherwise f(1); f.bind(null)() could hide an executing default.
+ traverse(ast,node=>{
+  if(node.type!=='MemberExpression'||propName(node)!=='bind')return;
+  const target=resolveFunction(node.object);
+  if(target){possiblyInvoked.add(target);return;}
+  if(node.object?.type==='MemberExpression'&&propName(node.object)===null)
+   addObjectFunctions(propertyKinds(node.object.object));
+ });
  traverse(ast,(node,parent,key)=>{
   if(node.type!=='Identifier'||!reference.has(node))return;
   const fn=functions.get(symbol(node));
