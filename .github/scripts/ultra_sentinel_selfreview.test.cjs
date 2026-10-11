@@ -471,6 +471,8 @@ test('trusted self-review understands the exact benign AST diagnostic and shard-
    const attempts=[];
    const transforms=name.includes('shards')?[
     ['without environment mutation',x=>x.replace('childEnv.SENTINEL_MATRIX_SHARD=String(expected.index);','void 0;')],
+    ['without TAP computed writes',x=>x.replace('fields[match[1]]=Number(match[2]);','void 0;')],
+    ['without all member writes',x=>x.replace('fields[match[1]]=Number(match[2]);','void 0;').replace('childEnv.SENTINEL_MATRIX_SHARD=String(expected.index);','void 0;').replaceAll('process.exitCode=1;','void 0;')],
     ['without exit-code property writes',x=>x.replaceAll('process.exitCode=1;','void 0;')],
     ['without both',x=>x.replace('childEnv.SENTINEL_MATRIX_SHARD=String(expected.index);','void 0;').replaceAll('process.exitCode=1;','void 0;')]
    ]:[
