@@ -24,17 +24,17 @@ test('refuse string/comment containing System.gc()',()=>{
 });
 test('reject stale SHA',()=>{
  const r=p.candidate({filename,content,findings:[f],sha});
- assert.equal(p.judge(r,{sha:'b'.repeat(40)}).status,'REJECT');
+ assert.equal(p.judge(r,{sha:'b'.repeat(40),source:content,findings:[f]}).status,'REJECT');
 });
 test('never auto merge even with all checks success',()=>{
  const r=p.candidate({filename,content,findings:[f],sha});
- const j=p.judge(r,{sha,checks:{'sentinel-core-tests':'success','android-build':'success',
+ const j=p.judge(r,{sha,source:content,findings:[f],checks:{'sentinel-core-tests':'success','android-build':'success',
   'unit-test-coverage':'success','architecture-boundary':'success'}});
  assert.equal(j.status,'ELIGIBLE_FOR_HUMAN_REVIEW');assert.equal(j.autoMergeAllowed,false);
 });
 test('pending build is not a verification',()=>{
  const r=p.candidate({filename,content,findings:[f],sha});
- const j=p.judge(r,{sha});assert.equal(j.status,'REVIEW_PENDING');
+ const j=p.judge(r,{sha,source:content,findings:[f]});assert.equal(j.status,'REVIEW_PENDING');
  assert.ok(j.pendingChecks.includes('android-build'));
 });
 test('orchestrator produces no imaginary patch for unsupported rules',()=>{

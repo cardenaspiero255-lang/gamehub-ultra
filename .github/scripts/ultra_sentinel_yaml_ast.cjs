@@ -3,6 +3,8 @@
 // parsed values, never interpolate them into a command, never load custom tags.
 // Dependency: js-yaml 4.3.2, pinned with sha512 integrity in package-lock.json.
 const yaml=require('js-yaml');
+const {hasRemoteProcessSubstitution}=require('./ultra_sentinel_remote_exec.cjs');
+const {findingsForScript}=require('./ultra_sentinel_advanced_execution.cjs');
 const MAX_SOURCE=160000,MAX_NODES=4096,MAX_DEPTH=35,MAX_FINDINGS=40;
 const PINNED=/^[a-f0-9]{40}$/i, ACTION=/^[-A-Za-z0-9_.\/]+@([^\s]+)$/;
 const REMOTE=/\b(?:curl|wget)\b[^\n]*\|&?\s*(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9]+(?:\.[0-9]+)?)?|pwsh|powershell|node|ruby|perl|php)(?:\b|$)/;
@@ -140,7 +142,12 @@ function pipelineCommands(v){
  const normalized=withoutEscaped.replace(/\\(?=[A-Za-z])/g,'')
   .replace(/\x24\x27([A-Za-z]*)\x27/g,'$1')
   .replace(/(['"])([A-Za-z]*)\1/g,'$2');
- return normalized.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ').split(/\r?\n/);
+ // Echoing a fully quoted, literal documentation string does NOT pipe
+ // downloaded bytes into an interpreter. Exclude only complete echo/printf
+ // statements, never echo followed by a real pipe or code substitution.
+ return normalized.replace(/(\|&?)[ \t]*\r?\n[ \t]*/g,'$1 ')
+  .split(/\r?\n/).map(line=>
+   /^\s*(?:echo|printf)\s+(?:"[^"$\x60]*"|'[^']*')\s*(?:#.*)?$/.test(line)?'':line);
 }
 function remotePipeline(v){
  return typeof v==='string'&&pipelineCommands(v).some(line=>REMOTE.test(line));
@@ -286,19 +293,70 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  };
  // Treat event-backed env as tainted DATA, not automatically as injected
  // code. A github-script that merely logs process.env is not a vulnerability.
- const collectEnvSources=(value)=>{
-  const tainted=new Set();
+ // Bash arithmetic performs recursive variable lookups and can evaluate
+ // attacker-controlled array subscripts. A simple $VAR regex is insufficient.
+ // Certify only expressions consisting entirely of numeric literals/operators;
+ // symbolic, nested-dynamic or malformed expressions fail closed.
+ const hasOpaqueArithmetic=(input)=>{
+  if(typeof input!=='string')return false;
+  // Bash evaluates symbolic arithmetic recursively, including bare commands
+  // (( A )), conditional arithmetic and the "let" builtin. Never treat an
+  // unmodeled symbolic expression as proof of safety.
+  const uncertain=inner=>!/^[\d\s()+\-*/%]*$/.test(inner);
+  let observed=0;
+  for(const match of input.matchAll(/\$\(\(([\s\S]*?)\)\)|\$\[([^\]\n]*?)\]/g)){
+   observed++;
+   if(uncertain(match[1]===undefined?match[2]:match[1]))return true;
+  }
+  if((input.match(/\$\(\(|\$\[/g)||[]).length>observed)return true;
+  const command=/(?:^|[;\n]|\&\&|\|\||\b(?:if|while|until|for)\s+)\s*\(\(([\s\S]*?)\)\)/g;
+  for(const match of input.matchAll(command)){
+   if(uncertain(match[1]))return true;
+  }
+  const letCommand=/(?:^|[;\n]|\&\&|\|\|)\s*let(?:\s+|$)([^\n;]*)/gm;
+  for(const match of input.matchAll(letCommand)){
+   const value=match[1].trim().replace(/^(["'])([\s\S]*)\1$/,'$2');
+   if(!value||uncertain(value))return true;
+  }
+  return false;
+ };
+ const collectEnvSources=(value,inherited=new Set(),knownNames=new Set())=>{
+  // Environment values are not expanded automatically; shell eval and
+  // interpreter commands can expand aliases. Trace through all env scopes.
+  const tainted=new Set(inherited);
   if(value===undefined)return tainted;
   if(!isMap(value)){coverage.partial=true;return tainted;}
+  const dependents=new Map();
+  const available=new Set([...knownNames,...Object.keys(value)]);
   for(const [name,item] of Object.entries(value)){
    if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)){coverage.partial=true;continue;}
    if(typeof item!=='string'){
     if(item!==null&&typeof item!=='number'&&typeof item!=='boolean')coverage.partial=true;
     continue;
    }
-   if(!item.includes(String.fromCharCode(36,123,123)))continue;
-   const check=auditExecutableExpressions(item);
-   if(check.unsafe||check.incomplete)tainted.add(name);
+   if(item.includes(String.fromCharCode(36,123,123))){
+    const check=auditExecutableExpressions(item);
+    if(check.unsafe||check.incomplete)tainted.add(name);
+   }
+   if(hasOpaqueArithmetic(item))tainted.add(name);
+   // Track bare, braced, default-value and indirect shell references.
+   // A reverse graph computes transitive taint without recursive evaluation.
+   for(const ref of item.matchAll(/\$(?:\{!?([A-Za-z_][A-Za-z0-9_]*)[^}]*\}|([A-Za-z_][A-Za-z0-9_]*))/g)){
+    const source=ref[1]||ref[2];
+    // An alias to an unverified runtime variable cannot be certified safe.
+    // Preserve conservative taint; only execution sinks become BLOCKER.
+    if(!available.has(source))tainted.add(name);
+    if(!dependents.has(source))dependents.set(source,new Set());
+    dependents.get(source).add(name);
+   }
+  }
+  const queue=[...tainted];
+  for(let i=0;i<queue.length;i++){
+   for(const alias of dependents.get(queue[i])||[]){
+    if(tainted.has(alias))continue;
+    tainted.add(alias);
+    queue.push(alias);
+   }
   }
   return tainted;
  };
@@ -314,6 +372,9 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   }
  };
  const auditShellEnvUse=(script,tainted,where)=>{
+  // Dynamic Bash arithmetic is not safely modeled by literal token scans.
+  // Fail closed even when the direct dependency cannot be reconstructed.
+  if(hasOpaqueArithmetic(script))coverage.partial=true;
   for(const key of tainted){
    const bare='\\$(?:\\{'+key+'\\}|'+key+'\\b)';
    // Bash parameter operators retain the tainted source. Unknown valid
@@ -414,6 +475,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  };
  checkDefaults(document.defaults,path);
  const workflowTaint=collectEnvSources(document.env);
+  const workflowEnvNames=new Set(isMap(document.env)?Object.keys(document.env):[]);
  checkPermissions(document.permissions,path);
  for(const [name,job] of Object.entries(document.jobs)){
   const where=path; // Deliberately no attempt to fabricate AST line locations.
@@ -425,7 +487,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(privileged && job.permissions==null && document.permissions==null)
    coverage.partial=true;
   checkDefaults(job.defaults,where);
-  const jobTaint=new Set([...workflowTaint,...collectEnvSources(job.env)]);
+  const jobTaint=collectEnvSources(job.env,workflowTaint,workflowEnvNames);
+   const jobEnvNames=new Set([...workflowEnvNames,...(isMap(job.env)?Object.keys(job.env):[])]);
   if(privileged){
    checkRunner(job['runs-on'],where);
    checkContainer(job.container,where);
@@ -463,7 +526,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(!isMap(step)){coverage.partial=true;continue;}
    checkGateControl(step);
    if(step.uses!==undefined)checkActionCredentialHandoff(step,job);
-   const stepTaint=new Set([...jobTaint,...collectEnvSources(step.env)]);
+   const stepTaint=collectEnvSources(step.env,jobTaint,jobEnvNames);
    checkExecutableShell(step.shell,where);
    if(step.uses!==undefined){
     if(typeof step.uses!=='string'){coverage.partial=true;continue;}
@@ -580,13 +643,33 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
    if(step.run!==undefined){
     if(typeof step.run!=='string'||!step.run.trim())coverage.partial=true;
     else{
+     // A variable as the shell command word is unmodeled executable code.
+     // Treat it as INCOMPLETE even when its value looks local in the PR.
+     if(/(?:^|[;\n]|&&|\|\|)\s*\$(?:\{[A-Za-z_]\w*[^}]*\}|[A-Za-z_]\w*)(?=\s|$)/m.test(step.run))
+      coverage.partial=true;
      auditShellEnvUse(step.run,stepTaint,where);
      if(remotePipeline(step.run))emit('REMOTE_SHELL_PIPELINE','HIGH',where);
      else if(unknownDownloadPipeline(step.run))coverage.partial=true;
      // Unsupported Bash ANSI-C quotes or indirect download execution are not clean.
      if(step.run.includes(String.fromCharCode(36,39)))coverage.partial=true;
-     if(/\b(?:bash|sh|zsh)\s*(?:<\(|-c\s*["']?\$\()\s*(?:curl|wget)\b/.test(step.run))
+     if(hasRemoteProcessSubstitution(step.run)||
+       /\b(?:bash|sh|zsh)\s*-c\s*["']?\$\(\s*(?:curl|wget)\b/.test(step.run))
       emit('REMOTE_SHELL_SUBSTITUTION','HIGH',where);
+     // Bash aliases change the meaning of later command words; unsupported
+     // expansions must not be certified as safe when an alias is declared.
+     if(/(?:^|[;\n])\s*alias\s+[A-Za-z_][A-Za-z0-9_]*\s*=/m.test(step.run))
+      coverage.partial=true;
+     // Shell functions redefine commands, and lexical cwd changes can alter
+     // the identity of a downloaded file. Without a full shell interpreter,
+     // both constructs must be inconclusive rather than silently clean.
+     if(/(?:^|[;\n])\s*(?:(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{|function\s+[A-Za-z_]\w*\s*\{)/m.test(step.run))
+      coverage.partial=true;
+     if(/(?:^|[;\n])\s*cd\s+/.test(step.run)&&
+       /\b(?:curl|wget)\b/.test(step.run)&&
+       /\b(?:bash|sh|source|python|node|ruby|perl|php)\s+[\w./-]+/.test(step.run))
+      coverage.partial=true;
+     for(const rule of findingsForScript(step.run,{shell:step.shell||job.defaults?.run?.shell||document.defaults?.run?.shell||''}))
+      emit(rule,'HIGH',where);
      {
       const inspection=auditExecutableExpressions(step.run);
       if(inspection.incomplete)coverage.partial=true;

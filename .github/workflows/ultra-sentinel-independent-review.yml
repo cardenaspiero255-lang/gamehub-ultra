@@ -55,7 +55,7 @@ jobs:
           script: |
             const fs = require("node:fs");
             const path = require("node:path");
-            const {analyze,markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
+            const {analyze,markdown,recoverAddedPatch,missingAddedPatch} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const deployed=fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"))&&
               fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"))&&
@@ -100,23 +100,61 @@ jobs:
                 }
               }));
             }
+
+            // GitHub omits patches for sufficiently large added files.
+            // Recover ONLY added production blobs with their exact Git SHA;
+            // never silently mark incomplete modified/deleted diffs as reviewed.
+            const addedTargets=evidenceFiles.filter(item=>
+              item.status==='added'&&missingAddedPatch(item)&&
+              /^(?:app\/src\/main\/|\.github\/(?:scripts|workflows)\/|control-center\/|supabase\/functions\/)/.test(item.filename||'')&&
+              !String(item.filename||'').includes('..')).slice(0,24);
+            for(let i=0;i<addedTargets.length;i+=4){
+              await Promise.all(addedTargets.slice(i,i+4).map(async item=>{
+                try{
+                  const {data:body}=await github.rest.repos.getContent({
+                    owner,repo,path:item.filename,ref:pr.head.sha
+                  });
+                  const recovered=recoverAddedPatch(item,body);
+                  if(recovered)item.patch=recovered;
+                  else core.warning('Added source proof missing/invalid; review remains INCOMPLETE: '+item.filename);
+                }catch(error){
+                  core.warning('Added source fetch unavailable ('+(error.status||'API error')+'); review remains INCOMPLETE.');
+                }
+              }));
+            }
             const result = analyze(evidenceFiles,{sha:pr.head.sha});
             let protectedChanges=null,structural=null;
             if(deployed){
               protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
               if(protectedChanges.status==='BLOCKED'||protectedChanges.status==='INCOMPLETE')
                 core.setFailed('Protected control removed/renamed or incomplete PR file list.');
+             
               if(protectedChanges.status==='REVIEW_REQUIRED'){
-                let approved=false;
-                try{
-                  const reviews=await github.paginate(github.rest.pulls.listReviews,
-                    {owner,repo,pull_number:number,per_page:100});
-                  const hasIndependentHumanApproval=require(
-                    path.resolve('.github/scripts/ultra_sentinel_policy.cjs')).hasIndependentHumanApproval;
-                  approved=hasIndependentHumanApproval(reviews,{sha:pr.head.sha,author:pr.user.login});
-                }catch(error){core.warning('Trusted human approval unavailable: fail closed.');}
-                if(!approved)core.setFailed('Protected control change needs non-author human approval for current SHA.');
+                const policy=require(
+                  path.resolve('.github/scripts/ultra_sentinel_policy.cjs'));
+                let approved=policy.isAuthorizedSoloMaintainerPR(pr,{
+                  repository:owner+'/'+repo,
+                  expectedSha:pr.head.sha
+                });
+                if(!approved){
+                  try{
+                    const reviews=await github.paginate(
+                      github.rest.pulls.listReviews,
+                      {owner,repo,pull_number:number,per_page:100});
+                    approved=policy.hasIndependentHumanApproval(reviews,{
+                      sha:pr.head.sha,
+                      author:pr.user.login
+                    });
+                  }catch(error){
+                    core.warning('Trusted human approval unavailable: fail closed.');
+                  }
+                }
+                if(!approved){
+                  core.setFailed(
+                    'Protected control change requires authorized approval.');
+                }
               }
+              
               const expected=files.filter(f=>f.status!=='removed'&&
                 /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(f.filename||''))
                 .map(f=>f.filename);

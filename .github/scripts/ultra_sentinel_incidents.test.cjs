@@ -82,7 +82,17 @@ test('repair gates refuse stale SHA, skipped CI, absent consent or self approval
  const req={sha:A,currentSha:A,proposedBy:'bot',approvedBy:'reviewer',approval:'approved',
    tests:{red:'failed_before_fix',green:'passed_after_fix'},
    checks:{'Android build':'success','Unit Test Coverage':'success','Ultra Sentinel Core Tests':'success'},
-   independentReview:'approved'};
+   independentReview:'approved',familyEvidence:[{
+   id:'INCIDENT_REPAIR_FAMILY',sha:A,
+   rootCause:'An isolated repaired incident may recur through nearby equivalent code paths.',
+   scope:'Reported incident pathway and relevant syntactic and boundary variants.',
+   variants:[
+    {id:'original-error',kind:'original',red:'failed_before_fix',status:'passed_after_fix',testFile:'.github/scripts/ultra_sentinel_incidents.test.cjs'},
+    {id:'alternate-shape',kind:'alternate',status:'passed_after_fix',testFile:'.github/scripts/ultra_sentinel_incidents.test.cjs'},
+    {id:'boundary-conditions',kind:'boundary',status:'passed_after_fix',testFile:'.github/scripts/ultra_sentinel_incidents.test.cjs'},
+    {id:'benign-negative',kind:'benign_control',status:'passed_after_fix',testFile:'.github/scripts/ultra_sentinel_incidents.test.cjs'}
+   ],unresolvedConfirmed:0,knownGaps:[],unknownSyntax:'fail_closed'
+  }]};
  assert.equal(evaluateRepairGate(req).status,'READY_FOR_HUMAN_MERGE');
  assert.equal(evaluateRepairGate({...req,currentSha:B}).status,'BLOCKED');
  assert.equal(evaluateRepairGate({...req,checks:{...req.checks,'Unit Test Coverage':'skipped'}}).status,'BLOCKED');
