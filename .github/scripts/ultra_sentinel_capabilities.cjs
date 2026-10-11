@@ -47,6 +47,9 @@ function propName(node){
   node?.property?.type==='Identifier'?node.property.name:stringValue(node?.property);
 }
 function keyName(prop){
+ if(prop?.key?.type==='Literal'&&typeof prop.key.value==='number'&&
+    Number.isSafeInteger(prop.key.value)&&prop.key.value>=0)
+  return String(prop.key.value);
  return prop?.computed?stringValue(prop.key):
   prop?.key?.type==='Identifier'?prop.key.name:stringValue(prop?.key);
 }
@@ -74,6 +77,8 @@ function findCapabilities(ast){
    for(const id of variable.identifiers)declaration.set(id,variable);
  }
  const kinds=new Map(), objects=new Map(),bindings=[];
+ // Preserve Function.bind closures across object/array destructuring and aliases.
+ const boundValues=new Map();
  const unknownIds=new Map();
  function symbol(node){
   if(node?.type!=='Identifier')return null;
@@ -194,8 +199,12 @@ function findCapabilities(ast){
    if(!variable||typeof variable!=='object'||seen.has(variable))return null;
    seen.add(variable);
    const defs=variable.defs||[];
-   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+   if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
       defs[0].node?.id?.type!=='Identifier')return null;
+   // Lexical let is supported while its binding remains stable. Mutations
+   // require a separate conservative invalidation, not silent ADVISORY.
+   if(variable.references?.some(ref=>ref.isWrite()&&!ref.init))
+    throw Error('Reassigned callback array provenance unresolved');
    return knownArraySlots(defs[0].node?.init,depth+1,seen);
   }
   if(node.type==='SequenceExpression')
@@ -225,6 +234,7 @@ function findCapabilities(ast){
   if(node.type==='Identifier'){
    const variable=symbol(node);
    if(!variable||typeof variable!=='object'||seen.has(variable))return null;
+   if(boundValues.has(variable))return boundValues.get(variable);
    seen.add(variable);
    const defs=variable.defs||[];
    if(defs.length!==1||defs[0].parent?.kind!=='const'||
@@ -314,11 +324,14 @@ function findCapabilities(ast){
    // Use the same lexical method resolver as the bind escape guard.
    const name=stableMethodName(node.callee);
    if(name==='call'||name==='apply'){
-    const target=resolveFunction(node.callee.object,depth+1);
+    const linked=boundCallable(node.callee.object,depth+1);
+    const target=linked?.fn||resolveFunction(node.callee.object,depth+1);
     if(target){
-     fn=target;receiver=args[0]||null;
-     if(name==='call')args=args.slice(1);
-     else if(args[1]?.type==='ArrayExpression')args=args[1].elements;
+     fn=target;
+     receiver=linked?.receiver||args[0]||null;
+     const before=linked?.args||[];
+     if(name==='call')args=[...before,...args.slice(1)];
+     else if(args[1]?.type==='ArrayExpression')args=[...before,...args[1].elements];
      else throw Error('Unresolved Function.apply argument provenance');
     }
    }else if(fn)receiver=node.callee.object;
@@ -423,7 +436,7 @@ function findCapabilities(ast){
   if(node.type==='ImportExpression')
    return ['vm','node:vm'].includes(stringValue(node.source))?'vm':null;
   if(node.type==='MemberExpression'){
-   const root=kind(node.object,depth+1),name=propName(node);
+   const root=kind(node.object,depth+1),name=stableMethodName(node);
    const obj=propertyKinds(node.object,depth+1);
    if(obj){
     if(name!==null){
@@ -516,6 +529,17 @@ function findCapabilities(ast){
   return null;
  }
  const knownParameterInputs=new Set(),uncertainParameters=new Set();
+ function rememberBound(destination,bound){
+  if(!destination||!bound)return false;
+  const previous=boundValues.get(destination);
+  if(previous){
+   if(previous.fn!==bound.fn||previous.args.length!==bound.args.length||
+      previous.args.some((node,index)=>node!==bound.args[index]))
+    throw Error('Conflicting bound function provenance');
+   return false;
+  }
+  boundValues.set(destination,bound);return true;
+ }
  function bindFunctionAlias(destination,fn){
   if(!destination||!fn)return false;
   const prev=functions.get(destination);
@@ -591,6 +615,8 @@ function findCapabilities(ast){
      uncertainParameters.add(symbol(dest));
     if(present?.functionNode)
      changed=bindFunctionAlias(symbol(dest),present.functionNode)||changed;
+    if(present?.bound)
+     changed=rememberBound(symbol(dest),present.bound)||changed;
     changed=assignIdentifier(dest,scalar,nested,!!properties||!!root)||changed;
    }else if(dest?.type==='ObjectPattern'){
     if(!nested&&!scalar)throw Error('Nested destructuring source unknown');
@@ -633,10 +659,29 @@ function findCapabilities(ast){
   }
   if(pattern.type==='Identifier'){
    const functionChanged=bindFunctionAlias(symbol(pattern),resolveFunction(value));
-   return assignIdentifier(pattern,kind(value),propertyKinds(value),value!==null)||functionChanged;
+   const boundChanged=rememberBound(symbol(pattern),boundCallable(value));
+   return assignIdentifier(pattern,kind(value),propertyKinds(value),value!==null)||
+    functionChanged||boundChanged;
   }
-  if(pattern.type==='ObjectPattern')
+  if(pattern.type==='ObjectPattern'){
+   const slots=knownArraySlots(value);
+   if(slots){
+    const descriptors=new Map();
+    for(let i=0;i<slots.length;i++){
+     const element=slots[i];
+     if(!element)continue;
+     if(element.type==='SpreadElement')throw Error('Array projection with spread unknown');
+     const linked=boundCallable(element),fn=resolveFunction(element);
+     const cap=kind(element),nested=propertyKinds(element);
+     const descriptor=linked?{bound:linked}:fn?{functionNode:fn}:
+      nested?{properties:nested}:cap&&cap!=='local-object'?cap:
+      ['Literal','TemplateLiteral'].includes(element.type)?PRESENT:UNKNOWN;
+     descriptors.set(String(i),descriptor);
+    }
+    return bindWithDescriptors(pattern,descriptors,null);
+   }
    return bindWithDescriptors(pattern,propertyKinds(value),kind(value));
+  }
   if(pattern.type==='ArrayPattern'){
    let elements=null;
    if(value?.type==='ArrayExpression')elements=value.elements;
