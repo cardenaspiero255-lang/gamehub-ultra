@@ -488,7 +488,22 @@ test('trusted self-review understands the exact benign AST diagnostic and shard-
      attempts.push(label+':CLEAR');
     }catch(e){ attempts.push(label+':'+String(e.message).slice(0,100)); }
    }
-   assert.fail(name+' unresolved source: '+contextReason+'; '+attempts.join(' | '));
+   const sourceAst=acorn.parse(fullSource,{ecmaVersion:'latest',sourceType:'script',locations:true,ranges:true,
+    allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true});
+   const propertyWriteSites=[];
+   const visit=(node)=>{
+    if(!node||typeof node!=='object')return;
+    if(node.type==='AssignmentExpression'&&node.left?.type==='MemberExpression')
+     propertyWriteSites.push(node.loc.start.line+':'+fullSource.slice(node.left.start,node.left.end));
+    for(const [k,v] of Object.entries(node)){
+     if(['loc','range','start','end'].includes(k))continue;
+     if(Array.isArray(v))for(const n of v)visit(n);
+     else if(v&&typeof v==='object')visit(v);
+    }
+   };
+   visit(sourceAst);
+   assert.fail(name+' unresolved source: '+contextReason+'; '+attempts.join(' | ')+
+     '; member assignments: '+propertyWriteSites.join(', '));
   }
  }
 });
