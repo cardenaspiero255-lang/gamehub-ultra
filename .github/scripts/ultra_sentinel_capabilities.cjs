@@ -242,6 +242,12 @@ function findCapabilities(ast){
   }
   if(node.type==='SequenceExpression')
    return boundCallable(node.expressions?.at(-1),depth+1,seen);
+  if(node.type==='MemberExpression'){
+   const props=propertyKinds(node.object,depth+1),key=stableMethodName(node);
+   const descriptor=key===null?null:props?.get(key);
+   if(descriptor?.optional)throw Error('Unresolved bound member identity');
+   return descriptor?.bound||null;
+  }
   if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
      stableMethodName(node.callee)==='bind'){
    const earlier=boundCallable(node.callee.object,depth+1,seen);
@@ -251,6 +257,24 @@ function findCapabilities(ast){
     throw Error('Unknown prebound spread argument provenance');
    return {fn,args:[...(earlier?.args||[]),...(node.arguments||[]).slice(1)],
     receiver:earlier?.receiver||node.arguments?.[0]||null};
+  }
+  if(node.type==='CallExpression'){
+   // A local factory may return a prebound callable, rather than an ordinary
+   // function. Keep that closure's arguments through the return boundary.
+   const {fn}=invocation(node,depth+1);
+   if(!fn)return null;
+   const returns=returnExpressions(fn);
+   if(!returns.length)return null;
+   const candidates=returns.map(expr=>boundCallable(expr,depth+1,new Set(seen)));
+   const available=candidates.filter(Boolean);
+   if(!available.length)return null;
+   if(available.length!==candidates.length)
+    throw Error('Partially known bound factory return');
+   const first=available[0];
+   if(available.some(item=>item.fn!==first.fn||item.args.length!==first.args.length||
+      item.args.some((arg,index)=>arg!==first.args[index])))
+    throw Error('Conflicting bound factory return');
+   return first;
   }
   return null;
  }
@@ -379,7 +403,9 @@ function findCapabilities(ast){
     }
     const nested=propertyKinds(p.value,depth+1);
     const cap=kind(p.value,depth+1);
-    if(nested)result.set(name,{properties:nested});
+    const bound=boundCallable(p.value,depth+1);
+    if(bound)result.set(name,{bound});
+    else if(nested)result.set(name,{properties:nested});
     else if(cap&&cap!=='local-object')result.set(name,cap);
     else if(resolveFunction(p.value,depth+1))
      result.set(name,{functionNode:resolveFunction(p.value,depth+1)});
@@ -853,6 +879,7 @@ function findCapabilities(ast){
  function addDescriptorFunctions(descriptor,depth=0){
   if(!descriptor||depth>MAX_DEPTH)return;
   if(descriptor.functionNode)possiblyInvoked.add(descriptor.functionNode);
+   if(descriptor.bound?.fn)possiblyInvoked.add(descriptor.bound.fn);
   if(descriptor.optional)addDescriptorFunctions(descriptor.value,depth+1);
   if(descriptor.properties)
    for(const value of descriptor.properties.values())
