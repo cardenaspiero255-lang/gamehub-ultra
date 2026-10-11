@@ -278,6 +278,11 @@ function findCapabilities(ast){
     if(parent?.type==='CallExpression'&&parent.callee===node)changed=true;
    }
    if(node.type==='CallExpression'){
+    // Treat a native slice callable handed to any external callee as an
+    // escape: aliases of Object.defineProperty, setPrototypeOf, etc. can
+    // overwrite .call/.apply without a direct, recognizable method name.
+    // Native slice.call(array) hands off the ARRAY, not this callable.
+    if(node.arguments?.some(nativeSliceHandle))changed=true;
     // Also recognize the direct global spelling: scope resolvers may not
     // materialize a builtin Array binding in every scope configuration.
     const intrinsicMutator=node.callee?.type==='MemberExpression'&&
@@ -399,6 +404,11 @@ function findCapabilities(ast){
          throw Error('Unknown object carrier escape');
         continue;
        }
+       // A destructuring assignment reads the same stable local snapshot
+       // as a declaration; an unrelated assignment still fails closed.
+       if(parent?.type==='AssignmentExpression'&&parent.right===id&&
+          parent.operator==='='&&parent.left?.type==='ObjectPattern')
+        continue;
        if(parent?.type==='MemberExpression'&&parent.object===id){
         const outer=parentOf.get(parent);
         if(outer?.type==='AssignmentExpression'&&outer.left===parent||
