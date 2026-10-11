@@ -330,7 +330,14 @@ function findingsForScript(source,{shell=''}={}){
  // Workflow YAML parsing independently rejects oversized sources.
  if(source.length>MAX_SCRIPT)return ['REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'];
  const findings=new Set();
- const flag=rule=>findings.add(rule);
+ // Local mkdir/cp/timeout and dynamic local paths do not by themselves
+ // imply remote downloaded code. Keep all actual downloader uncertainty HIGH,
+ // including quote-concatenated command names resolved by the shell IR.
+ let remotelySourced=false;
+ const flag=rule=>{
+  if(rule==='REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'&&!remotelySourced)return;
+  findings.add(rule);
+ };
  const lines=source.split(/\r?\n/);
  // Literal echo/printf of attack documentation is not executable code.
  const active=lines.filter(line=>!(/^\s*(?:echo|printf)\s+(['"])[^$\x60]*\1\s*$/.test(line)||
@@ -340,6 +347,9 @@ function findingsForScript(source,{shell=''}={}){
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
  const parsed=parseShellCommands(active);
+ remotelySourced=/\b(?:curl|wget)\b/i.test(active)||
+  parsed.commands.some(cmd=>cmd.words.some(word=>
+   /^(?:curl|wget)$/i.test(literalCommandName(word)||'')));
  const commands=parsed.commands.map(c=>normalizeInvocation(c,flag)).filter(Boolean);
  // No source containing an uncertain path command is certified as clean.
  if(parsed.incomplete&&/\b(?:curl|wget|mkdir|cp|mv|ln)\b/i.test(active))
