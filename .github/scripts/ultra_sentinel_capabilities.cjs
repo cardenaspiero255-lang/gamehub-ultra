@@ -219,10 +219,9 @@ function findCapabilities(ast){
   return null;
  }
  function staticArrayIndex(node){
-  if(node?.type!=='Literal')return null;
-  const value=node.value;
-  const index=typeof value==='number'?value:
-   typeof value==='string'&&/^(0|[1-9][0-9]*)$/.test(value)?Number(value):NaN;
+  const value=stableKeyValue(node);
+  if(value===null||!/^(0|[1-9][0-9]*)$/.test(value))return null;
+  const index=Number(value);
   return Number.isSafeInteger(index)&&index>=0?index:null;
  }
  // Bound callables retain the original function and the leading arguments.
@@ -291,7 +290,7 @@ function findCapabilities(ast){
      throw Error('Unknown array-spread callback target');
     return resolveFunction(slots[index],depth+1);
    }
-   const map=propertyKinds(node.object,depth+1),key=propName(node);
+   const map=propertyKinds(node.object,depth+1),key=stableMethodName(node);
    const descriptor=key===null?null:map?.get(key);
    if(descriptor?.optional)throw Error('Optional method identity unresolved');
    return descriptor?.functionNode||null;
@@ -373,7 +372,7 @@ function findCapabilities(ast){
      continue;
     }
     if(p.type!=='Property')throw Error('Unsupported object binding');
-    const name=keyName(p);
+    const name=stablePatternKey(p);
     if(name===null)throw Error('Computed object key provenance unknown');
     if(p.kind!=='init'){
      result.set(name,ACCESSOR);continue;
@@ -391,7 +390,7 @@ function findCapabilities(ast){
   }
   if(node.type==='Identifier')return objects.get(symbol(node))||null;
   if(node.type==='MemberExpression'){
-   const parent=propertyKinds(node.object,depth+1),name=propName(node);
+   const parent=propertyKinds(node.object,depth+1),name=stableMethodName(node);
    const entry=parent?.get(name);
    if(entry===ACCESSOR)throw Error('Accessor member value provenance unresolved');
    if(entry?.optional)throw Error('Optional member object provenance cannot be certified');
@@ -574,14 +573,15 @@ function findCapabilities(ast){
   for(const p of pattern.properties){
    const target=p.type==='RestElement'?p.argument:p.value;
    const dest=target?.type==='AssignmentPattern'?target.left:target;
-   const name=p.type==='RestElement'?null:keyName(p);
+   const name=p.type==='RestElement'?null:stablePatternKey(p);
+   if(p.type!=='RestElement'&&name===null)throw Error('Computed destructuring key unresolved');
    if(p.type==='RestElement'){
     if(!properties)throw Error('Unknown object rest provenance');
     const excluded=new Set();
     for(const previous of pattern.properties){
      if(previous===p)break;
      if(previous.type==='RestElement')throw Error('Multiple object rest bindings');
-     const previousName=keyName(previous);
+     const previousName=stablePatternKey(previous);
      if(previousName===null)throw Error('Computed rest exclusion unknown');
      excluded.add(previousName);
     }
@@ -865,16 +865,45 @@ function findCapabilities(ast){
  // supplied its defaults. But a concrete pre-bound argument cannot invoke its
  // corresponding default, and merely reading .bind is not a function call.
  // Computed keys use immutable lexical const provenance; unknown keys fail closed.
- function stableMethodName(node){
-  const key=propName(node);
-  if(key!==null)return key;
-  if(node?.computed&&node.property?.type==='Identifier'){
-   const variable=symbol(node.property);
-   if(variable&&typeof variable==='object'&&variable.defs?.length===1&&
-      variable.defs[0]?.parent?.kind==='const')
-    return stringValue(variable.defs[0].node?.init);
+ function stableKeyValue(node,depth=0,seen=new Set()){
+  if(!node||depth>MAX_DEPTH)return null;
+  const direct=stringValue(node);
+  if(direct!==null)return direct;
+  if(node.type==='Literal'&&typeof node.value==='number'&&
+     Number.isSafeInteger(node.value)&&node.value>=0)return String(node.value);
+  if(node.type==='Identifier'){
+   const variable=symbol(node);
+   if(!variable||typeof variable!=='object'||seen.has(variable))return null;
+   const defs=variable.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return null;
+   seen.add(variable);
+   return stableKeyValue(defs[0].node?.init,depth+1,seen);
+  }
+  if(node.type==='BinaryExpression'&&node.operator==='+'){
+   const a=stableKeyValue(node.left,depth+1,new Set(seen));
+   const b=stableKeyValue(node.right,depth+1,new Set(seen));
+   return a!==null&&b!==null?a+b:null;
+  }
+  if(node.type==='TemplateLiteral'){
+   let value='';
+   for(let i=0;i<node.quasis.length;i++){
+    value+=node.quasis[i].value.cooked||'';
+    if(i<node.expressions.length){
+     const part=stableKeyValue(node.expressions[i],depth+1,new Set(seen));
+     if(part===null)return null;
+     value+=part;
+    }
+   }
+   return value;
   }
   return null;
+ }
+ function stableMethodName(node){
+  return node?.computed?stableKeyValue(node.property):propName(node);
+ }
+ function stablePatternKey(node){
+  return node?.computed?stableKeyValue(node.key):keyName(node);
  }
  traverse(ast,(node,parent)=>{
   if(node.type!=='MemberExpression')return;
