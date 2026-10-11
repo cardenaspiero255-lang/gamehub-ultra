@@ -282,7 +282,7 @@ function findCapabilities(ast){
     // escape: aliases of Object.defineProperty, setPrototypeOf, etc. can
     // overwrite .call/.apply without a direct, recognizable method name.
     // Native slice.call(array) hands off the ARRAY, not this callable.
-    if(node.arguments?.some(nativeSliceHandle))changed=true;
+    if(node.arguments?.some(argument=>nativeSliceHandle(argument)))changed=true;
     // Also recognize the direct global spelling: scope resolvers may not
     // materialize a builtin Array binding in every scope configuration.
     const intrinsicMutator=node.callee?.type==='MemberExpression'&&
