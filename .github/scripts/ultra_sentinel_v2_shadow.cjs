@@ -14,23 +14,26 @@ const AST_DEPTH_BUDGET=256;
 // oversized or cyclic ASTs BEFORE eslint-scope allocates scope/reference graphs.
 // WeakSet and the traversal stack are per-call: no AST or source is retained.
 function preflightShadowAst(ast){
- const visited=new WeakSet(),pending=[{node:ast,depth:0}];
+ const discovered=new WeakSet(),pending=[];
  let count=0;
+ function enqueue(node,depth){
+  if(!node||typeof node!=='object'||typeof node.type!=='string')return;
+  if(depth>AST_DEPTH_BUDGET)throw Error('Shadow AST nesting budget exceeded');
+  if(discovered.has(node))throw Error('Shadow AST cycle or sharing rejected');
+  discovered.add(node);
+  if(++count>NODE_BUDGET)throw Error('Shadow AST node budget exceeded');
+  pending.push({node,depth});
+ }
+ enqueue(ast,0);
  while(pending.length){
   const {node,depth}=pending.pop();
-  if(!node||typeof node!=='object'||typeof node.type!=='string')continue;
-  if(depth>AST_DEPTH_BUDGET)throw Error('Shadow AST nesting budget exceeded');
-  if(visited.has(node))throw Error('Shadow AST cycle or sharing rejected');
-  visited.add(node);
-  if(++count>NODE_BUDGET)throw Error('Shadow AST node budget exceeded');
-  for(const [key,value] of Object.entries(node)){
-   if(['range','loc','start','end'].includes(key))continue;
+  for(const key in node){
+   if(!Object.hasOwn(node,key)||['range','loc','start','end'].includes(key))continue;
+   const value=node[key];
    if(Array.isArray(value)){
-    for(const element of value)
-     if(element&&typeof element==='object'&&typeof element.type==='string')
-      pending.push({node:element,depth:depth+1});
-   }else if(value&&typeof value==='object'&&typeof value.type==='string')
-    pending.push({node:value,depth:depth+1});
+    if(value.length>NODE_BUDGET)throw Error('Shadow AST node budget exceeded');
+    for(const element of value)enqueue(element,depth+1);
+   }else enqueue(value,depth+1);
   }
  }
 }
@@ -54,6 +57,45 @@ function directSinkEvidence(ast){
    if(!reference.resolved)free.add(reference.identifier);
  const isGlobal=(id,names)=>id?.type==='Identifier'&&
   names.includes(id.name)&&free.has(id);
+ const tainted=new Set();
+ const revoke=name=>{
+  tainted.add(name);
+  if(name==='globalThis'||name==='global'){
+   for(const key of ['globalThis','global','eval','Function'])tainted.add(key);
+  }
+ };
+ function recordWrite(target){
+  if(target?.type==='Identifier'&&
+     isGlobal(target,['globalThis','global','eval','Function']))revoke(target.name);
+  if(target?.type==='MemberExpression'&&
+     isGlobal(target.object,['globalThis','global'])){
+   const name=methodName(target);
+   if(['eval','Function'].includes(name))revoke(name);
+   else if(name===null)revoke('globalThis');
+  }
+ }
+ function scanWrites(node){
+  if(!node||typeof node!=='object'||typeof node.type!=='string')return;
+  if(node.type==='AssignmentExpression')recordWrite(node.left);
+  if(node.type==='UpdateExpression'||node.type==='UnaryExpression'&&
+     node.operator==='delete')recordWrite(node.argument);
+  if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
+     isGlobal(node.callee.object,['Object','Reflect'])){
+   const action=methodName(node.callee);
+   if(['defineProperty','set','setPrototypeOf','assign','defineProperties'].includes(action)&&
+      isGlobal(node.arguments?.[0],['globalThis','global'])){
+    const key=node.arguments?.[1];
+    if(key?.type==='Literal'&&['eval','Function'].includes(key.value))revoke(key.value);
+    else revoke('globalThis');
+   }
+  }
+  for(const [key,value] of Object.entries(node)){
+   if(['range','loc','start','end'].includes(key))continue;
+   if(Array.isArray(value))for(const element of value)scanWrites(element);
+   else scanWrites(value);
+  }
+ }
+ scanWrites(ast);
  const findings=new Set();
  let visited=0;
  function walk(node){
@@ -61,13 +103,14 @@ function directSinkEvidence(ast){
   if(++visited>NODE_BUDGET)throw Error('Shadow AST node budget exceeded');
   if(node.type==='CallExpression'||node.type==='NewExpression'){
    const callee=node.callee;
-   if(isGlobal(callee,['eval']))
+   if(isGlobal(callee,['eval'])&&!tainted.has('eval'))
     findings.add('global-eval');
-   if(isGlobal(callee,['Function']))
+   if(isGlobal(callee,['Function'])&&!tainted.has('Function'))
     findings.add('global-function-constructor');
    if(callee?.type==='MemberExpression'&&
       isGlobal(callee.object,['globalThis','global'])&&
-      ['eval','Function'].includes(methodName(callee)))
+      ['eval','Function'].includes(methodName(callee))&&
+      !tainted.has(callee.object.name)&&!tainted.has(methodName(callee)))
     findings.add('global-member-exec');
   }
   for(const [key,value] of Object.entries(node)){
