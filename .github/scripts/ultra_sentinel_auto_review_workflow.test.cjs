@@ -110,3 +110,13 @@ test('trusted auto-review attests omitted added blobs before Core without relaxi
  assert.match(section,/missingAddedPatch\(item\)/);
  assert.match(wf,/if \(evidence\.coverage\.partial\) core\.setFailed/);
 });
+
+test('automatic reviewer matches trusted independent reviewer solo-owner exception without weakening gates', () => {
+  const wf=workflow();
+  assert.match(wf,/evaluateProtectedChanges,hasIndependentHumanApproval,isAuthorizedSoloMaintainerPR/);
+  assert.match(wf,/isAuthorizedSoloMaintainerPR\(pr,\{\s*repository:owner\+'\/'\+repo,\s*expectedSha:pr\.head\.sha\s*\}\)/);
+  assert.match(wf,/if\(!independentlyApproved\)\s*\{\s*try\s*\{/);
+  assert.match(wf,/if\(!independentlyApproved\)\s*core\.setFailed\('Critical controls changed:/);
+  assert.match(wf,/if\(ci\.status==='UNTRUSTED'\)core\.setFailed/);
+  assert.match(wf,/if\(protectedChanges\.status==='BLOCKED'\|\|protectedChanges\.status==='INCOMPLETE'\)/);
+});
