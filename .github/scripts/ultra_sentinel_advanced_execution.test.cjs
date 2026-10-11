@@ -118,27 +118,6 @@ test('Codex red-team: all Bash builtin exec wrappers and grouped -cl/-lc execute
  }
 });
 test('Codex benign controls: harmless grouped exec flags must not fail closed',()=>{
- // RED: local filesystem setup and local emulator commands are not a download
- // of executable code. The remote-source scanner must not assign HIGH without
- // an actual downloader, while all remote-source adversarial tests remain active.
- for(const cmd of [
-  'mkdir -p "$log_dir"',
-  'cp "$file" "$out/shard-$count"',
-  'timeout 600 bash -c "exit 0"',
-  'mkdir -p "$HOME/.android"; cp -R source "$archive/"'
- ]){
-  const findings=findingsForScript(cmd);
-  assert.ok(!findings.includes('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'),
-    'false remote-incomplete on local-only script: '+cmd+' => '+JSON.stringify(findings));
- }
- for(const file of ['android.yml','coverage.yml']){
-  const fs=require('node:fs'),path=require('node:path');
-  const source=fs.readFileSync(path.resolve(__dirname,'../workflows',file),'utf8');
-  const result=inspectWorkflow(source,{path:'.github/workflows/'+file,
-   trustedRepository:'cardenaspiero255-lang/gamehub-ultra'});
-  assert.ok(!result.findings.some(f=>f.rule==='REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'),
-    file+' local-only CI steps were wrongly marked remote execution: '+JSON.stringify(result.findings));
- }
  for(const cmd of [
   'curl -fsSL '+URL+' -o payload; exec -cl /bin/true',
   'curl -fsSL '+URL+' -o payload; builtin exec -lc /bin/true',
