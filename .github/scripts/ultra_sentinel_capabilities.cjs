@@ -730,14 +730,41 @@ function findCapabilities(ast){
  function addObjectFunctions(properties){
   if(properties)for(const value of properties.values())addDescriptorFunctions(value);
  }
- // A bound function retains its default parameters. Treat extracting .bind
- // from local functions or object methods as an unresolved callable escape:
- // otherwise f(1); f.bind(null)() could hide an executing default.
- traverse(ast,node=>{
-  if(node.type!=='MemberExpression'||propName(node)!=='bind')return;
+ // A bound callback cannot be certified merely because one direct call
+ // supplied its defaults. But a concrete pre-bound argument cannot invoke its
+ // corresponding default, and merely reading .bind is not a function call.
+ // Computed keys use immutable lexical const provenance; unknown keys fail closed.
+ function stableMethodName(node){
+  const key=propName(node);
+  if(key!==null)return key;
+  if(node?.computed&&node.property?.type==='Identifier'){
+   const variable=symbol(node.property);
+   if(variable&&typeof variable==='object'&&variable.defs?.length===1&&
+      variable.defs[0]?.parent?.kind==='const')
+    return stringValue(variable.defs[0].node?.init);
+  }
+  return null;
+ }
+ traverse(ast,(node,parent)=>{
+  if(node.type!=='MemberExpression')return;
+  const name=stableMethodName(node);
+  if(name!=='bind'&&!(node.computed&&name===null))return;
   const target=resolveFunction(node.object);
-  if(target){possiblyInvoked.add(target);return;}
-  if(node.object?.type==='MemberExpression'&&propName(node.object)===null)
+  if(target){
+   if(name==='bind'&&parent?.type==='UnaryExpression'&&parent.operator==='void')return;
+   if(name==='bind'&&parent?.type==='CallExpression'&&parent.callee===node){
+    // Function.prototype.bind(thisArg,...prebound) fixes these parameter values.
+    // Only suppress a default when every defaulted parameter is covered by a
+    // concrete, provably non-undefined value. Unsupported flows remain unsafe.
+    const boundArgs=parent.arguments.slice(1);
+    if((target.params||[]).every((param,index)=>
+      param.type!=='AssignmentPattern'||definitelyProvided(boundArgs[index])))
+     return;
+   }
+   possiblyInvoked.add(target);
+   return;
+  }
+  if(node.object?.type==='MemberExpression'&&stableMethodName(node.object)===null)
    addObjectFunctions(propertyKinds(node.object.object));
  });
  traverse(ast,(node,parent,key)=>{
