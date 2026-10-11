@@ -227,9 +227,46 @@ function findCapabilities(ast){
   const proto=x=>Boolean(x&&(x.type==='Identifier'&&prototypes.has(symbol(x))||
    x.type==='MemberExpression'&&stableMethodName(x)==='prototype'&&
     x.object?.type==='Identifier'&&constructors.has(symbol(x.object))));
+  function localArrayReceiver(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(value.type==='ArrayExpression')return true;
+   if(value.type!=='Identifier')return false;
+   const id=symbol(value);
+   if(!id||typeof id!=='object'||seen.has(id))return false;
+   const defs=id.defs||[];
+   if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
+      defs[0].node?.id?.type!=='Identifier')return false;
+   if(id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   seen.add(id);
+   return localArrayReceiver(defs[0].node.init,depth+1,seen);
+  }
+  function nativeSliceHandle(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(value.type==='MemberExpression')
+    return stableMethodName(value)==='slice'&&
+     (proto(value.object)||localArrayReceiver(value.object));
+   if(value.type!=='Identifier')return false;
+   const id=symbol(value);
+   if(!id||typeof id!=='object'||seen.has(id))return false;
+   const defs=id.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return false;
+   if(id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   seen.add(id);
+   return nativeSliceHandle(defs[0].node.init,depth+1,seen);
+  }
   let changed=false;
   traverse(ast,(node,parent)=>{
    if(changed)return;
+   // Function.prototype.call/apply can be shadowed on a native slice
+   // handle independently of Array.prototype.slice itself.
+   if(node.type==='MemberExpression'&&nativeSliceHandle(node.object)&&
+      ['call','apply'].includes(stableMethodName(node))){
+    if(parent?.type==='AssignmentExpression'&&parent.left===node||
+       parent?.type==='UpdateExpression'&&parent.argument===node||
+       parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+        parent.argument===node)changed=true;
+   }
    if(node.type==='MemberExpression'&&proto(node.object)){
     const key=stableMethodName(node);
     if(key==='slice'||key===null){
@@ -251,6 +288,12 @@ function findCapabilities(ast){
      arg.object.name==='Array';
     if(node.arguments?.some(proto)||intrinsicMutator&&
        node.arguments?.some(directArrayPrototype))changed=true;
+    if(intrinsicMutator&&nativeSliceHandle(node.arguments?.[0])){
+     const operation=stableMethodName(node.callee);
+     const key=stringValue(node.arguments?.[1]);
+     if(['assign','defineProperties'].includes(operation)||key===null||
+        ['call','apply'].includes(key))changed=true;
+    }
    }
    if(node.type==='Property'&&proto(node.value)||node.type==='ArrayExpression'&&
       node.elements?.some(proto)||node.type==='ReturnStatement'&&proto(node.argument))
