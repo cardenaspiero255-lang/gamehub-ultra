@@ -1193,6 +1193,16 @@ for(const [name,source] of differentialRound7Dangerous)
 for(const [name,source] of differentialRound7Benign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Codex-to-Sentinel convergence: prototype provenance across immutable aliases.
+// Sources are AST-only; tests MUST NOT execute attacker-controlled examples.
+const prototypeAliasRound8=[
+ ["P1 mutating source prototype through const Object.getPrototypeOf alias","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Object.getPrototypeOf(empty);Object.defineProperty(proto,'get',{get:()=>a});empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 mutating source prototype through chained const alias","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Object.getPrototypeOf(empty),alias=proto;Object.assign(alias,{get:a});alias.get.fill(bad);a[0](globalThis)"],
+ ["P1 mutating source prototype through Reflect.getPrototypeOf alias","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Reflect.getPrototypeOf(empty);Reflect.set(proto,'get',a);empty.get.fill(bad);a[0](globalThis)"]
+];
+for(const [name,source] of prototypeAliasRound8)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
