@@ -1333,3 +1333,8 @@ test('P1 effectful local helper wrapped by call must remain not CLEAR',()=>{
  const source="function bad(g){g.eval('x')}function expose(o){o.get=a}const a=[()=>1],empty={};const {x=a}=empty;expose.call(null,empty);empty.get.fill(bad);a[0](globalThis)";
  assert.notEqual(result(source),'CLEAR');
 });
+
+test('P1 a rewritten local method may still mutate Array.prototype',()=>{
+ const source="const api={defineProperty(){return 1}};api.defineProperty=function(target,key,descriptor){Object.defineProperty(target,key,descriptor)};api.defineProperty(Array.prototype,'slice',{value:function(){return []}});const a=[()=>1];const c=a.slice.call(a);c[0]()";
+ assert.notEqual(result(source),'CLEAR','a mutated local method must not be accepted as inert');
+});
