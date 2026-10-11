@@ -40,3 +40,26 @@ jobs:
           node --test .github/scripts/ultra_sentinel_capability_families_regression.test.cjs
           node --test .github/scripts/ultra_sentinel_core_count_contract.test.cjs
           node --test .github/scripts/ultra_sentinel_v2_shadow.test.cjs
+  baseline-shards:
+    name: Sentinel full baseline / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [b0, b1]
+    steps:
+      - name: Checkout unprivileged V2 candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute the entire baseline partition without skipped cases
+        shell: bash
+        env:
+          SENTINEL_SHARD_ID: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/ultra_sentinel_core_shards.cjs run-env "$RUNNER_TEMP/v2-baseline"
