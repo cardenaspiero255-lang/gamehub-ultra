@@ -2275,6 +2275,43 @@ function findCapabilities(ast){
   }
   if(pattern.type==='MemberExpression'){
    const parent=propertyKinds(pattern.object),name=propName(pattern);
+   // CommonJS exports are a known Node module boundary, not an arbitrary
+   // property-write receiver. Only a precisely known, declarative object
+   // export is considered analyzable. Unknown or executable values still
+   // fail closed. Shadowed/local "module" variables receive no exception.
+   if(!parent&&name==='exports'&&pattern.object?.type==='Identifier'&&
+      symbol(pattern.object)==='free:module'){
+    if(value?.type!=='ObjectExpression')
+     throw Error('CommonJS export source provenance unknown');
+    const exported=propertyKinds(value);
+    if(!exported)throw Error('CommonJS export properties unknown');
+    for(const item of value.properties){
+     if(item.type!=='Property'||item.kind!=='init')
+      throw Error('CommonJS export descriptor not statically known');
+     const key=stablePatternKey(item);
+     if(key===null)throw Error('CommonJS export key unknown');
+     const descriptor=exported.get(key);
+     if(descriptor===UNKNOWN){
+      // A numeric constant in the same lexical scope is inert data.
+      // Do not generalize this to unknown aliases or imported values.
+      const variable=item.value?.type==='Identifier'?symbol(item.value):null;
+      const def=variable&&typeof variable==='object'&&
+       variable.defs?.length===1?variable.defs[0]:null;
+      const init=def?.type==='Variable'?def.node?.init:null;
+      // The initializer of a let/var alias is not its effective value:
+      // reassignment after that initializer could inject unknown capabilities.
+      // Even a syntactically invalid write to const must never be certified.
+      const postInitWrite=variable&&typeof variable==='object'&&
+       variable.references?.some(ref=>ref.isWrite()&&ref.writeExpr!==init);
+      if(def?.parent?.kind!=='const'||init?.type!=='Literal'||
+         typeof init.value!=='number'||!Number.isFinite(init.value)||
+         postInitWrite)
+       throw Error('Unresolved CommonJS exported value');
+     }else if(riskyDescriptor(descriptor))
+      throw Error('Dangerous CommonJS exported capability');
+    }
+    return false;
+   }
    if(!parent||name===null)throw Error('Unresolved property write provenance');
    const cap=kind(value),nested=propertyKinds(value),fn=resolveFunction(value);
    if(fn){

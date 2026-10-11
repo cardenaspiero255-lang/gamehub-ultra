@@ -9,6 +9,21 @@ const file=(name,...lines)=>({filename:name,patch:patch(...lines),changes:lines.
 test('read-only benign diff remains advisory, never an approval',()=>{
  const result=scan([file(wf,'name: safe','contents: read')],SHA);
  assert.equal(result.status,'ADVISORY');assert.equal(result.autoMergeAllowed,false);assert.equal(result.requiresHuman,true);
+ // RED regression: replay a trusted full-file scan of the real scanner being
+ // modified in #175. Never execute the candidate source, only parse its AST.
+ const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
+ const exact=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_advanced_execution.cjs'),'utf8');
+ const parsed=acorn.parse(exact,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(parsed),
+  'exact scanner AST must be fully analyzable');
+ const probe=scan([{
+  filename:'.github/scripts/ultra_sentinel_advanced_execution.cjs',
+  patch:'@@ -332,0 +333,1 @@\n+// complete context probe',
+  status:'modified',changes:1,fullSource:exact
+ }],SHA);
+ assert.ok(!probe.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),JSON.stringify(probe));
 });
 test('privileged checkout of attacker PR head is blocked',()=>{
  for(const line of ['ref: $'+'{{ github.event.pull_request.head.sha }}','ref: $'+'{{ github.head_ref }}','ref: $'+'{{ github.event.workflow_run.head_sha }}'])
