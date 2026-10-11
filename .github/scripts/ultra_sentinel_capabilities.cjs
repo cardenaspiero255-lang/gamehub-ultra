@@ -541,7 +541,11 @@ function findCapabilities(ast){
    if(emptyDeclaration(ref))return true;
    const writes=(alias.references||[]).filter(r=>
     r.isWrite()&&!r.init&&!emptyDeclaration(r));
-   if(writes.length!==1||writes[0]!==ref)return false;
+   // Scope may emit multiple write references for the same destructuring
+   // identifier. Deduplicate by the exact AST node, never by variable name.
+   // Distinct later write sites still make the array provenance uncertain.
+   if(writes.length===0||writes.some(r=>r.identifier!==ref.identifier))
+    return false;
    // ESLint-scope may expose a write identifier at the outer destructuring
    // assignment instead of directly below the property's default. Verify
    // that the write stays inside the LHS ObjectPattern, not a later write.
