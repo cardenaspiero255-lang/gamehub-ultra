@@ -2033,7 +2033,7 @@ function findCapabilities(ast){
     const returned=returnExpressions(fn).map(n=>propertyKinds(n,depth+1));
     const available=returned.filter(Boolean);
     if(available.length){
-     if(available.length!==returned.length)throw Error('Incomplete returned object provenance');
+     if(available.length!==returned.length)throw Error('Incomplete returned object provenance at function line '+String(fn.loc?.start?.line??'unknown'));
      let merged=new Map(available[0]);
      for(const item of available.slice(1))merged=joinObjectBranches(merged,item,depth+1);
      return merged;
