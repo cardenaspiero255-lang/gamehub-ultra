@@ -934,6 +934,32 @@ for(const [name,source] of objectDefaultAliasDangerous)
 for(const [name,source] of objectDefaultAliasBenign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Bounded deterministic metamorphic matrix: the alias closure must be
+// invariant under equivalent ObjectPattern spellings and mutations.
+const objectDefaultPatterns=[
+ "const {x=a}=alias;",
+ "const {'x':x=a}=alias;",
+ "const {['x']:x=a}=alias;"
+];
+const objectAliasMutations=[
+ "x.splice(0,1,bad);",
+ "x[0]=bad;",
+ "x.fill(bad);"
+];
+for(const [i,projection] of objectDefaultPatterns.entries()){
+ for(const [j,mutation] of objectAliasMutations.entries()){
+  const source="function bad(g){g.eval('attack')}function safe(){}"+
+   "const a=[safe],empty={},alias=empty;"+projection+mutation+
+   "a[0](globalThis)";
+  test('metamorphic ObjectPattern alias '+i+' mutation '+j+' stays unsafe',
+   ()=>assert.notEqual(result(source),'CLEAR'));
+ }
+ const benign="const a=[()=>1],holder={x:[()=>2]},alias=holder;"+
+  projection+"x[0]();a[0]();";
+ test('metamorphic ObjectPattern present value '+i+' stays CLEAR',
+  ()=>assert.equal(result(benign),'CLEAR'));
+}
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
