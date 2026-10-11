@@ -854,6 +854,29 @@ for(const [name,source] of round6Dangerous)
 for(const [name,source] of round6Benign)
  test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
 
+// Round seven: independent Codex findings on 1a82cf7, plus family variants.
+// No source string in this suite is executed; only parsed as untrusted AST.
+const round7Dangerous=[
+ ["P1 extracted bind via apply returns executable closure","function bad(g){g.eval('attack')}const op=(()=>{}).bind;op.apply(bad,[null,globalThis])()"],
+ ["P1 Reflect root alias changes native call","function bad(g){g.eval('attack')}function innocent(){}const R=Reflect;R.defineProperty(innocent,'call',{value:function(t,g){t(g)}});innocent.call(bad,globalThis)"],
+ ["P1 Object root alias changes native call","function bad(g){g.eval('attack')}function innocent(){}const O=Object;O.defineProperty(innocent,'call',{value:function(t,g){t(g)}});innocent.call(bad,globalThis)"],
+ ["P1 aliased Reflect definer invoked by call","function bad(g){g.eval('attack')}function innocent(){}const R=Reflect;const dp=R.defineProperty;dp.call(R,innocent,'call',{value:function(t,g){t(g)}});innocent.call(bad,globalThis)"],
+ ["P1 aliased Reflect definer invoked by apply","function bad(g){g.eval('attack')}function innocent(){}const dp=Reflect.defineProperty;dp.apply(Reflect,[innocent,'call',{value:function(t,g){t(g)}}]);innocent.call(bad,globalThis)"],
+ ["P1 nested row via ObjectPattern preserves native call","function bad(g){g.eval('attack')}const ops=[[(()=>{}).call]];const {0:row}=ops;row[0].call(bad,null,globalThis)"],
+ ["P1 nested array mutator invalidates initial slots","function bad(g){g.eval('attack')}function safe(){}const ops=[[safe]];ops[0].splice(0,1,bad);ops[0][0](globalThis)"],
+ ["P1 mutation through row alias invalidates parent slots","function bad(g){g.eval('attack')}function safe(){}const ops=[[safe]];const row=ops[0];row.splice(0,1,bad);ops[0][0](globalThis)"]
+];
+const round7Benign=[
+ ["P2 harmless native bind through apply","const op=(()=>{}).bind;const safe=g=>g+1;op.apply(safe,[null,41])()"],
+ ["P2 harmless root Reflect alias write","function safe(){}const R=Reflect;R.defineProperty(safe,'label',{value:1});safe()"],
+ ["P2 harmless nested ObjectPattern projection","const ops=[[(()=>{}).call]];const {0:row}=ops;const safe=g=>g+1;row[0].call(safe,null,41)"],
+ ["P2 read-only nested rows remain valid","const ops=[[()=>1]];ops[0].slice(0);ops[0][0]()"]
+];
+for(const [name,source] of round7Dangerous)
+ test(name+' cannot be certified CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of round7Benign)
+ test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
