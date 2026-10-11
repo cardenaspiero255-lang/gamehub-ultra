@@ -340,18 +340,28 @@ function findCapabilities(ast){
      const callbackIntrinsic=['call','apply','bind'].includes(method)&&
       node.object?.type==='MemberExpression'&&
       /^(0|[1-9][0-9]*)$/.test(stableMethodName(node.object)||'');
+     // A native Array slice invoked with call/apply is a read-only
+     // operation on its receiver. Shadow writes to slice remain unsafe.
+     const nativeSliceWrapper=['call','apply'].includes(method)&&
+      node.object?.type==='MemberExpression'&&
+      stableMethodName(node.object)==='slice'&&
+      descendsFromArray(node.object.object);
      if(method===null||(!/^(0|[1-9][0-9]*)$/.test(method)&&
-        !readonly.has(method)&&!callbackIntrinsic))
+        !readonly.has(method)&&!callbackIntrinsic&&!nativeSliceWrapper))
       uncertain=true;
     }
    }
    if(node.type==='Identifier'&&aliases.has(symbol(node))&&
       parent?.type==='CallExpression'&&key==='arguments'){
     const callee=parent.callee;
+    // Only a direct, known receiver in slice.call/apply is read-only.
+    // Extra arguments, unrelated objects and method aliases stay unsafe.
     const safeSlice=callee?.type==='MemberExpression'&&
-     stableMethodName(callee)==='call'&&
+     ['call','apply'].includes(stableMethodName(callee))&&
      callee.object?.type==='MemberExpression'&&
-     stableMethodName(callee.object)==='slice';
+     stableMethodName(callee.object)==='slice'&&
+     descendsFromArray(callee.object.object)&&
+     parent.arguments?.[0]===node;
     if(!safeSlice)uncertain=true;
    }
    // A local callback array can escape into object or array carriers.
