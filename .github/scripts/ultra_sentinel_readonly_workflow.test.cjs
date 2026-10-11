@@ -71,3 +71,16 @@ test('trusted reviewer definition must originate from protected main, not candid
  assert.match(source,/ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
  assert.match(source,/persist-credentials: false/);
 });
+
+test('trusted main reviewer attests missing added blobs at exact PR SHA before analysis',()=>{
+ const x=yaml();
+ const start=x.indexOf('const evidenceFiles=files.map(');
+ const fetch=x.indexOf('recoverAddedPatch(',start);
+ const analyze=x.indexOf('const result = analyze(evidenceFiles',start);
+ assert.ok(start>=0&&fetch>start&&analyze>fetch,'recover before analyze');
+ const segment=x.slice(start,analyze);
+ assert.match(segment,/item\.status==='added'/);
+ assert.match(segment,/ref:pr\.head\.sha/);
+ assert.match(segment,/recoverAddedPatch\(item,body\)/);
+ assert.doesNotMatch(x,/issues:\s*write|pull-requests:\s*write/);
+});
