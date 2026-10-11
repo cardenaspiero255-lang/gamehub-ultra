@@ -338,8 +338,10 @@ function findCapabilities(ast){
    if(kind(node)==='exec')sinks.push(node);
   }else if(node.type==='CallExpression'||node.type==='NewExpression'){
    if(kind(node.callee)==='exec')sinks.push(node);
-   if(node.callee?.type==='MemberExpression'&&propName(node.callee)==='constructor')
-    sinks.push(node);
+   if(node.callee?.type==='MemberExpression'&&propName(node.callee)==='constructor'&&
+      kind(node.callee)!=='exec'&&
+      !propertyKinds(node.callee.object)&&!kind(node.callee.object))
+    throw Error('Unknown constructor capability');
   }
  });
  return sinks;
