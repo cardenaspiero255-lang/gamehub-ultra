@@ -360,3 +360,39 @@ test('structural AST does not invent uncertainty for supported safe workflow',()
  assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
  assert.deepEqual(result.coverage.reasons,[]);
 });
+
+
+test('trusted aggregate fails closed on malformed expected lists with a bounded family code',()=>{
+ const {reviewWorkflowSources}=require('./ultra_sentinel_yaml_ast.cjs');
+ for(const expected of [null,0,{},'not-a-workflow-list',Array(26).fill('.github/workflows/a.yml')]){
+  const result=reviewWorkflowSources({expected,sources:{}});
+  assert.equal(result.status,'INCOMPLETE');
+  assert.ok(result.coverage.partial);
+  assert.ok(result.coverage.reasons.includes('INVALID_EXPECTED_LIST'));
+ }
+});
+test('trusted aggregate fails closed on missing, malformed and invalid workflow sources',()=>{
+ const {reviewWorkflowSources}=require('./ultra_sentinel_yaml_ast.cjs');
+ const good='.github/workflows/known.yml';
+ for(const sources of [null,2,{},[]]){
+  const result=reviewWorkflowSources({expected:[good],sources});
+  assert.equal(result.status,'INCOMPLETE');
+  assert.ok(result.coverage.partial);
+  assert.equal(result.coverage.scanned,0);
+  assert.ok(result.coverage.reasons.some(x=>x==='INVALID_WORKFLOW_SOURCES'||x==='MISSING_WORKFLOW_SOURCE'));
+ }
+ const invalid=reviewWorkflowSources({expected:['../untrusted.yml'],sources:{}});
+ assert.equal(invalid.status,'INCOMPLETE');
+ assert.ok(invalid.coverage.reasons.includes('INVALID_WORKFLOW_PATH'));
+});
+test('trusted aggregate preserves all attested workflow results while flagging a missing source',()=>{
+ const {reviewWorkflowSources}=require('./ultra_sentinel_yaml_ast.cjs');
+ const good='.github/workflows/known.yml',missing='.github/workflows/missing.yml';
+ const result=reviewWorkflowSources({expected:[good,missing],sources:{
+  [good]:['on: push','jobs:','  test:','    runs-on: ubuntu-latest','    steps:','      - run: echo safe'].join('\n')
+ }});
+ assert.equal(result.status,'INCOMPLETE');
+ assert.equal(result.coverage.scanned,1);
+ assert.equal(result.results[0].status,'NO_RISK_PATTERN');
+ assert.ok(result.coverage.reasons.includes('MISSING_WORKFLOW_SOURCE'));
+});
