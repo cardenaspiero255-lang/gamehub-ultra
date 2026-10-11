@@ -95,6 +95,24 @@ function findCapabilities(ast){
  // A missing marker is NOT equivalent to a benign descriptor when defaults exist.
  const PRESENT=Object.freeze({present:true});
  const UNKNOWN=Object.freeze({unknown:true});
+ const ignoredDefaultNodes=new WeakSet();
+ function markInactiveDefault(node){
+  if(node)traverse(node,n=>ignoredDefaultNodes.add(n));
+ }
+ function mergeDescriptor(a,b,depth=0){
+  if(a===b)return a;
+  if(depth>MAX_DEPTH)throw Error('Ambiguous descriptor nesting');
+  if((a===PRESENT||a?.functionNode)&&(b===PRESENT||b?.functionNode))return PRESENT;
+  if(a?.properties&&b?.properties){
+   const merged=new Map(a.properties);
+   for(const [key,value]of b.properties){
+    if(merged.has(key))merged.set(key,mergeDescriptor(merged.get(key),value,depth+1));
+    else merged.set(key,value);
+   }
+   return {properties:merged};
+  }
+  throw Error('Conflicting property capability provenance');
+ }
  const returnCache=new WeakMap();
  function returnExpressions(fn){
   if(returnCache.has(fn))return returnCache.get(fn);
@@ -214,9 +232,7 @@ function findCapabilities(ast){
    if(!left||!right)throw Error('Logical object provenance incomplete');
    const joined=new Map(left);
    for(const [key,capability] of right){
-    if(joined.has(key)&&joined.get(key)!==capability)
-     throw Error('Ambiguous logical object provenance');
-    joined.set(key,capability);
+    joined.set(key,joined.has(key)?mergeDescriptor(joined.get(key),capability):capability);
    }
    return joined;
   }
@@ -226,8 +242,7 @@ function findCapabilities(ast){
    if(!a||!b)throw Error('Conditional object provenance incomplete');
    const merged=new Map(a);
    for(const [k,v]of b){
-    if(merged.has(k)&&merged.get(k)!==v)throw Error('Ambiguous branch property provenance');
-    merged.set(k,v);
+    merged.set(k,merged.has(k)?mergeDescriptor(merged.get(k),v):v);
    }
    return merged;
   }
@@ -375,7 +390,9 @@ function findCapabilities(ast){
    const found=hasOwn?properties.get(name):null;
    let scalar=typeof found==='string'?found:null;
    let nested=found&&typeof found==='object'?found.properties:null;
-   if(target?.type==='AssignmentPattern'&&!hasOwn){
+   if(target?.type==='AssignmentPattern'&&hasOwn&&found!==UNKNOWN)
+    markInactiveDefault(target.right);
+   if(target?.type==='AssignmentPattern'&&(!hasOwn||found===UNKNOWN)){
     const defaultCap=kind(target.right),defaultNested=propertyKinds(target.right);
     if(defaultNested)nested=defaultNested;
     else if(defaultCap&&defaultCap!=='local-object')scalar=defaultCap;
@@ -405,6 +422,7 @@ function findCapabilities(ast){
   if(pattern.type==='AssignmentPattern'){
    const missing=!value||(value.type==='Identifier'&&value.name==='undefined')||
     (value.type==='UnaryExpression'&&value.operator==='void');
+   if(!missing)markInactiveDefault(pattern.right);
    return bind(pattern.left,missing?pattern.right:value);
   }
   if(pattern.type==='MemberExpression'){
@@ -487,23 +505,28 @@ function findCapabilities(ast){
   if(!changed){aliasesConverged=true;break;}
  }
  if(!aliasesConverged)throw Error('Function alias budget exceeded');
- traverse(ast,(node)=>{
-  if(node.type!=='CallExpression')return;
-  const {fn,args}=invocation(node);
-  if(fn)for(let i=0;i<(fn.params||[]).length;i++){
-   const param=fn.params[i],argument=args?.[i]||null;
-   if(argument||param?.type==='AssignmentPattern')bindings.push([param,argument]);
-  }
- });
+ const calls=[];
+ traverse(ast,node=>{if(node.type==='CallExpression')calls.push(node);});
  let converged=false;
  for(let round=0;round<MAX_ROUNDS;round++){
   let changed=false;
   for(const [pattern,value]of bindings)changed=bind(pattern,value)||changed;
+  // Object-method targets are resolved only after object descriptors propagate.
+  // Re-evaluate calls in the same bounded fixed point, not just once at startup.
+  for(const call of calls){
+   const {fn,args}=invocation(call);
+   if(fn)for(let i=0;i<(fn.params||[]).length;i++){
+    const param=fn.params[i],argument=args?.[i]||null;
+    if(argument||param?.type==='AssignmentPattern')
+     changed=bind(param,argument)||changed;
+   }
+  }
   if(!changed){converged=true;break;}
  }
  if(!converged)throw Error('Unbounded alias propagation');
  const sinks=[];
  traverse(ast,(node,parent,key)=>{
+  if(ignoredDefaultNodes.has(node))return;
   if(node.type==='Identifier'){
    if(!reference.has(node))return;
    if(parent?.type==='MemberExpression'&&key==='property'&&!parent.computed)return;
