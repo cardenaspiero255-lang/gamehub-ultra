@@ -273,8 +273,10 @@ function findCapabilities(ast){
    const id=symbol(value);
    if(!id||typeof id!=='object'||seen.has(id))return false;
    const defs=id.defs||[];
-   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+   if(defs.length!==1||!['const','let','var'].includes(defs[0].parent?.kind)||
       defs[0].node?.id?.type!=='Identifier')return false;
+   // A let/var handle is stable only while its binding is not reassigned.
+   // Mutable or multiply-defined handles are separately revoked below.
    if(id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
    seen.add(id);
    return nativeSliceHandle(defs[0].node.init,depth+1,seen);
@@ -305,6 +307,12 @@ function findCapabilities(ast){
    if(value.type==='SpreadElement')return packedSliceHandle(value.argument,depth+1,seen);
    if(value.type==='SequenceExpression')
     return value.expressions.some(x=>packedSliceHandle(x,depth+1,new Set(seen)));
+   if(value.type==='ConditionalExpression')
+    return packedSliceHandle(value.consequent,depth+1,new Set(seen))||
+     packedSliceHandle(value.alternate,depth+1,new Set(seen));
+   if(value.type==='LogicalExpression')
+    return packedSliceHandle(value.left,depth+1,new Set(seen))||
+     packedSliceHandle(value.right,depth+1,new Set(seen));
    if(value.type==='ArrayExpression')
     return value.elements.some(x=>packedSliceHandle(x,depth+1,new Set(seen)));
    if(value.type==='ObjectExpression')
@@ -313,7 +321,8 @@ function findCapabilities(ast){
    if(value.type==='Identifier'){
     const id=symbol(value),defs=id?.defs||[];
     if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
-       defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+       !['const','let','var'].includes(defs[0].parent?.kind)||
+       defs[0].node?.id?.type!=='Identifier'||
        id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
     seen.add(id);
     return packedSliceHandle(defs[0].node.init,depth+1,seen);
@@ -478,6 +487,16 @@ function findCapabilities(ast){
    // expose its call/apply properties; never retain the native fast-path.
    if(node.type==='AssignmentExpression'&&returnedSliceCapability(node.right))
     changed=true;
+   // A mutable declarator may hold a previously native handle and later
+   // overwrite its binding. Such flows cannot use the trusted native path.
+   // Stable let/var aliases remain eligible for ordinary read-only calls.
+   if(node.type==='VariableDeclarator'&&
+      parent?.type==='VariableDeclaration'&&parent.kind!=='const'&&
+      returnedSliceCapability(node.init)){
+    const id=node.id?.type==='Identifier'?symbol(node.id):null;
+    if(!id||typeof id!=='object'||id.defs?.length!==1||
+       id.references?.some(ref=>ref.isWrite()&&!ref.init))changed=true;
+   }
    if(node.type==='ReturnStatement'&&returnedSliceCapability(node.argument)||
       node.type==='ArrowFunctionExpression'&&
        node.body?.type!=='BlockStatement'&&returnedSliceCapability(node.body))
