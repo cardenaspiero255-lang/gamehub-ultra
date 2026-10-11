@@ -204,7 +204,12 @@ function auditExecutableExpressions(script){
  return {unsafe,incomplete};
 }
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
- const findings=[],coverage={partial:false,parser:'js-yaml@4.3.2'};
+ const findings=[],coverage={partial:false,parser:'js-yaml@4.3.2',reasons:[]};
+ // Constant bounded family codes only: never reflect untrusted YAML or secret values.
+ const markIncomplete=code=>{
+  coverage.partial=true;
+  if(coverage.reasons.length<16&&!coverage.reasons.includes(code))coverage.reasons.push(code);
+ };
  const emit=(rule,severity,where)=>{
   if(findings.length>=MAX_FINDINGS){coverage.partial=true;return;}
   if(!findings.some(x=>x.rule===rule&&x.path===where))
@@ -374,7 +379,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  const auditShellEnvUse=(script,tainted,where)=>{
   // Dynamic Bash arithmetic is not safely modeled by literal token scans.
   // Fail closed even when the direct dependency cannot be reconstructed.
-  if(hasOpaqueArithmetic(script))coverage.partial=true;
+  if(hasOpaqueArithmetic(script))markIncomplete('OPAQUE_ARITHMETIC');
   for(const key of tainted){
    const bare='\\$(?:\\{'+key+'\\}|'+key+'\\b)';
    // Bash parameter operators retain the tainted source. Unknown valid
@@ -454,7 +459,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   for(const env of [document.env,job.env,step.env]){
    if(env===undefined)continue;
    if(!isMap(env)){coverage.partial=true;continue;}
-   if(Object.values(env).some(sensitiveExpression))coverage.partial=true;
+   if(Object.values(env).some(sensitiveExpression))
+    markIncomplete('SENSITIVE_ACTION_ENV');
   }
   if(step.with===undefined)return;
   if(!isMap(step.with)){coverage.partial=true;return;}
@@ -658,12 +664,12 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      // Bash aliases change the meaning of later command words; unsupported
      // expansions must not be certified as safe when an alias is declared.
      if(/(?:^|[;\n])\s*alias\s+[A-Za-z_][A-Za-z0-9_]*\s*=/m.test(step.run))
-      coverage.partial=true;
+      markIncomplete('SHELL_ALIAS');
      // Shell functions redefine commands, and lexical cwd changes can alter
      // the identity of a downloaded file. Without a full shell interpreter,
      // both constructs must be inconclusive rather than silently clean.
      if(/(?:^|[;\n])\s*(?:(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{|function\s+[A-Za-z_]\w*\s*\{)/m.test(step.run))
-      coverage.partial=true;
+      markIncomplete('SHELL_FUNCTION');
      if(/(?:^|[;\n])\s*cd\s+/.test(step.run)&&
        /\b(?:curl|wget)\b/.test(step.run)&&
        /\b(?:bash|sh|source|python|node|ruby|perl|php)\s+[\w./-]+/.test(step.run))
@@ -682,6 +688,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
       (step.run!==undefined&&step.uses!==undefined))coverage.partial=true;
   }
  }
+ if(coverage.partial&&coverage.reasons.length===0)
+  markIncomplete('UNMODELED_WORKFLOW_FEATURE');
  const status=coverage.partial?'INCOMPLETE':
   findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN';
  return {status,findings,coverage,reason:null};
@@ -694,7 +702,8 @@ function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={
  for(const path of expected){
   if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
    !Object.prototype.hasOwnProperty.call(sources,path)){coverage.partial=true;continue;}
-  const r=inspectWorkflow(sources[path],{path,trustedRepository});results.push({path,status:r.status,reason:r.reason});
+  const r=inspectWorkflow(sources[path],{path,trustedRepository});
+  results.push({path,status:r.status,reason:r.reason,reasons:r.coverage.reasons||[]});
   coverage.scanned++;
   if(r.coverage.partial)coverage.partial=true;
   findings.push(...r.findings);
