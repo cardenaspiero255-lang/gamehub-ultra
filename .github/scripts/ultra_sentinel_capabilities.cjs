@@ -557,7 +557,12 @@ function findCapabilities(ast){
     function verifiedObjectLiteral(value){
      if(value?.type!=='ObjectExpression')return null;
      for(const prop of value.properties){
+      // The scope engine cannot currently prove a computed identifier's
+      // array callback slots survived destructuring. Even if a separate
+      // constant-folder knows its string value, do NOT project an absent
+      // default until the value provenance is also established.
       if(prop.type!=='Property'||prop.kind!=='init'||
+         prop.computed&&!['Literal','TemplateLiteral'].includes(prop.key?.type)||
          stablePatternKey(prop)===null||
          stablePatternKey(prop)==='__proto__')
        throw Error('Unresolved object property identity');
