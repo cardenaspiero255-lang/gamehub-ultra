@@ -1133,6 +1133,26 @@ for(const [name,source] of sentinelDifferentialRound5Danger)
 for(const [name,source] of sentinelDifferentialRound5Benign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Principal engineer review — latest Codex P1/P2 families: model instance
+// mutators, inherited-prototype mutation and intrinsic identity. Strings
+// below are parsed, never evaluated by the regression runner.
+const rootFamilyRound6Danger=[
+ ["P1 instance getter mutation via .call must invalidate snapshot source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;empty.__defineGetter__.call(empty,'get',()=>a);poison(empty);a[0](globalThis)"],
+ ["P1 instance setter mutation via .call must invalidate snapshot source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;empty.__defineSetter__.call(empty,'get',()=>a);poison(empty);a[0](globalThis)"],
+ ["P1 Object.defineProperty on inherited prototype must invalidate source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.defineProperty(Object.getPrototypeOf(empty),'get',{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 Object.assign onto inherited prototype must invalidate source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.assign(Object.getPrototypeOf(empty),{get:()=>a});poison(empty);a[0](globalThis)"]
+];
+const rootFamilyRound6Benign=[
+ ["P2 unrelated local method named set does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={set(){return 1}};api.set(empty);a[0]()"],
+ ["P2 unrelated local method named assign does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={assign(){return 1}};api.assign(empty);a[0]()"],
+ ["P2 unrelated local method named defineProperty does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={defineProperty(){return 1}};api.defineProperty(empty);a[0]()"],
+ ["P2 user-shadowed Object.defineProperty is not intrinsic","function run(Object){const a=[()=>1],empty={};const {x=a}=empty;Object.defineProperty(empty);a[0]()}run({defineProperty(){return 1}})"]
+];
+for(const [name,source] of rootFamilyRound6Danger)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of rootFamilyRound6Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
