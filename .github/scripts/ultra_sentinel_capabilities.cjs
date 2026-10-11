@@ -300,6 +300,21 @@ function findCapabilities(ast){
    if(descriptor?.optional)throw Error('Unresolved bound member identity');
    return descriptor?.bound||null;
   }
+  // Function.prototype.bind.call(fn,thisArg,...args) returns a bound callable.
+  // The first argument is the target function; it is not invoked at bind time.
+  if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
+     stableMethodName(node.callee)==='call'&&
+     node.callee.object?.type==='MemberExpression'&&
+     stableMethodName(node.callee.object)==='bind'&&
+     resolveFunction(node.callee.object.object,depth+1)){
+   const target=boundCallable(node.arguments?.[0],depth+1,seen);
+   const fn=target?.fn||resolveFunction(node.arguments?.[0],depth+1);
+   if(!fn)throw Error('Unknown indirect Function.bind target');
+   const boundArgs=[...(target?.args||[]),...(node.arguments||[]).slice(2)];
+   if(boundArgs.some(arg=>arg?.type==='SpreadElement'))
+    throw Error('Unresolved indirect bind spread');
+   return {fn,args:boundArgs,receiver:target?.receiver||node.arguments?.[1]||null};
+  }
   if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
      stableMethodName(node.callee)==='bind'){
    const earlier=boundCallable(node.callee.object,depth+1,seen);
@@ -390,6 +405,28 @@ function findCapabilities(ast){
   return null;
  }
  function invocation(node,depth=0){
+  // Function.prototype.call.call(fn, thisArg, arg) and apply.call are
+  // interprocedural function invocations, not ordinary member calls.
+  if(node.callee?.type==='MemberExpression'&&stableMethodName(node.callee)==='call'&&
+     node.callee.object?.type==='MemberExpression'&&
+     resolveFunction(node.callee.object.object,depth+1)){
+   const intrinsic=stableMethodName(node.callee.object);
+   if(['call','apply','bind'].includes(intrinsic)){
+    const innerArgs=node.arguments||[];
+    const linked=boundCallable(innerArgs[0],depth+1);
+    const actual=linked?.fn||resolveFunction(innerArgs[0],depth+1);
+    if(!actual)throw Error('Unresolved indirect Function intrinsic target');
+    if(intrinsic==='bind')return {fn:null,args:[],receiver:null};
+    let passed=null;
+    if(intrinsic==='call')passed=innerArgs.slice(2);
+    else if(innerArgs[2]?.type==='ArrayExpression')passed=innerArgs[2].elements;
+    else throw Error('Unresolved indirect apply argument provenance');
+    if(passed.some(arg=>!arg||arg.type==='SpreadElement'))
+     throw Error('Unknown indirect call argument provenance');
+    return {fn:actual,args:[...(linked?.args||[]),...passed],
+     receiver:linked?.receiver||innerArgs[1]||null};
+   }
+  }
   const bound=boundCallable(node.callee,depth+1);
   let fn=bound?.fn||resolveFunction(node.callee,depth+1);
   let args=bound?[...bound.args,...(node.arguments||[])]:node.arguments||[];
