@@ -15,7 +15,7 @@ function metric(tp,fp,fn){
  const precision=tp+fp?tp/(tp+fp):null;
  const recall=tp+fn?tp/(tp+fn):null;
  return {tp,fp,fn,precision,recall,
-  f1:precision===null||recall===null||precision+recall===0?null:
+  f1:precision===null||recall===null?null:precision+recall===0?0:
    (2*precision*recall)/(precision+recall)};
 }
 function evaluate(corpus,reports,{expectedSha}={}){
