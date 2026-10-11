@@ -522,7 +522,7 @@ function findCapabilities(ast){
    if(node?.type==='MemberExpression')return descendsFromArray(node.object);
    return false;
   };
-  let uncertain=false,unknownAliasWrite=false,aliasDiagnostic='';
+  let uncertain=false,unknownAliasWrite=false;
   function initialObjectPatternAssignment(alias,ref){
    // A single assignment to a previously uninitialized lexical let
    // destructuring target is its first known value, not a later mutation.
@@ -563,21 +563,11 @@ function findCapabilities(ast){
    return false;
   }
   for(const alias of aliases)
-   if(alias?.references?.some(ref=>{
-     if(!ref.isWrite()||ref.init||initialObjectPatternAssignment(alias,ref))
-      return false;
-     const id=ref.identifier,p=parentOf.get(id),p2=parentOf.get(p),
-      p3=parentOf.get(p2),p4=parentOf.get(p3);
-     aliasDiagnostic=[
-      alias?.defs?.[0]?.parent?.kind||'?',Boolean(alias?.defs?.[0]?.node?.init),
-      (alias?.references||[]).filter(x=>x.isWrite()).length,
-      p?.type||'?',p2?.type||'?',p3?.type||'?',p4?.type||'?'
-     ].join('/');
-     return true;
-    })){
+   if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init&&
+      !initialObjectPatternAssignment(alias,ref))){
     unknownAliasWrite=true;uncertain=true;
    }
-  const readonly=new Set(['at','slice','concat','includes','indexOf',
+    const readonly=new Set(['at','slice','concat','includes','indexOf',
    'lastIndexOf','join','keys','values','entries','findIndex','toString']);
   traverse(ast,(node,parent,key)=>{
    if(node.type==='MemberExpression'&&descendsFromArray(node.object)){
@@ -645,7 +635,7 @@ function findCapabilities(ast){
   });
   stableArrayCache.set(variable,uncertain);
   if(uncertain)throw Error('Array callback slots may be mutated'+
-   (unknownAliasWrite?' (unknown lexical write '+aliasDiagnostic+')':' (carrier or receiver)'));
+   (unknownAliasWrite?' (unknown lexical write)':' (carrier or receiver)'));
  }
  function knownArraySlots(node,depth=0,seen=new Set()){
   if(!node)return null;
