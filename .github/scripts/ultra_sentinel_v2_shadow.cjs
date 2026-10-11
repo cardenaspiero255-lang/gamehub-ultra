@@ -128,8 +128,14 @@ function directSinkEvidence(ast){
 function reconcile(primary,evidence){
  if(!['CLEAR','BLOCKER','INCOMPLETE'].includes(primary))
   throw Error('Unknown primary reviewer decision');
+ const allowedRules=new Set(['global-eval','global-function-constructor','global-member-exec']);
+ const rules=evidence?.rules;
  if(!evidence||evidence.schema!==SCHEMA||
-    !['DEFINITE_SINK','NOT_PROVEN'].includes(evidence.decision))
+    !['DEFINITE_SINK','NOT_PROVEN'].includes(evidence.decision)||
+    !Array.isArray(rules)||rules.length>allowedRules.size||
+    rules.some(rule=>!allowedRules.has(rule))||
+    rules.some((rule,index)=>index>0&&rules[index-1]>=rule)||
+    (evidence.decision==='DEFINITE_SINK')!==(rules.length>0))
   throw Error('Unknown or invalid shadow evidence');
  const disposition=evidence.decision==='DEFINITE_SINK'&&primary==='CLEAR'?
   'ESCALATE':evidence.decision==='DEFINITE_SINK'&&primary==='INCOMPLETE'?
