@@ -1382,3 +1382,18 @@ test('P1 conditional carrier block is not unconditionally certified',()=>{
  const source="const a=[()=>1],empty={};const {x=a}=empty;if(flag){empty.x=42;}a[0]()";
  assert.notEqual(result(source),'CLEAR');
 });
+
+// Codex final-head follow-up: declarative mutable slice-handle escapes.
+// Sources remain AST-only fixtures; these snippets are never executed.
+const mutableSliceInitializationEscapes=[
+ ["P1 let initializer exposes native slice via Object.defineProperty.call",
+  "function bad(g){g.eval('x')}const a=[()=>1];let h=a.slice;Object.defineProperty.call(Object,h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 var initializer exposes native slice via Reflect.defineProperty.apply",
+  "function bad(g){g.eval('x')}const a=[()=>1];var h=a.slice;Reflect.defineProperty.apply(Reflect,[h,'apply',{value:x=>x.fill(bad)}]);a.slice.apply(a);a[0](globalThis)"],
+ ["P1 let conditional initializer exposes native slice callable",
+  "function bad(g){g.eval('x')}const a=[()=>1];let h=flag?a.slice:null;Object.defineProperty(h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 let initializer can expose slice despite later reassignment",
+  "function bad(g){g.eval('x')}const a=[()=>1];let h=a.slice;Object.defineProperty(h,'call',{value:x=>x.fill(bad)});h=()=>1;a.slice.call(a);a[0](globalThis)"]
+];
+for(const [name,source] of mutableSliceInitializationEscapes)
+ test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
