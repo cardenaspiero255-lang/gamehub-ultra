@@ -200,6 +200,25 @@ test('Java block comments do not nest: executable call after first closer stays 
   'Thread.sleep(1000);'
  ])]);
  assert.ok(rules(java).includes('BLOCKING_ANDROID_CALL'));
+ // Exact SHA source must disambiguate a Java hunk starting well after line 1.
+ const javaLines=['class Legacy {',
+  ...Array.from({length:58},(_,i)=>'// header '+i),
+  '  void f(){ System.gc(); }','}'];
+ const javaPatch='@@ -60,0 +60,1 @@\n+  void f(){ System.gc(); }';
+ const uncertain=analyze([{filename:app+'Legacy.java',patch:javaPatch,changes:1}]);
+ assert.equal(uncertain.coverage.partial,true);
+ assert.ok(!rules(uncertain).includes('FORCED_GC'));
+ const trusted=analyze([{filename:app+'Legacy.java',patch:javaPatch,
+   fullSource:javaLines.join('\n'),changes:1}]);
+ assert.equal(trusted.coverage.partial,false,'known Java source should remove uncertainty');
+ assert.ok(rules(trusted).includes('FORCED_GC'),'Java active System.gc needs a finding');
+ const javaComment=['class Legacy {','/*',
+  ...Array.from({length:57},(_,i)=>' inert '+i),
+  'System.gc();','*/','}'].join('\n');
+ const inComment=analyze([{filename:app+'Legacy.java',patch:'@@ -60,0 +60,1 @@\n+System.gc();',
+   fullSource:javaComment,changes:1}]);
+ assert.equal(inComment.coverage.partial,false);
+ assert.ok(!rules(inComment).includes('FORCED_GC'),'text inside Java comment stays inert');
  const kotlin=analyze([file(app+'Modern.kt',[
   '/* outer /* inner */',
   'Thread.sleep(1000);',

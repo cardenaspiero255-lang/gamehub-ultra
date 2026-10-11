@@ -47,6 +47,7 @@ test('analyzes PR with trusted main engine and verifies current immutable SHA', 
   assert.match(repair,/ref:pr\.head\.sha/);
   assert.match(repair,/entry\.size>160000/);
   assert.match(repair,/item\.fullSource=bytes\.toString\('utf8'\)/);
+  assert.match(repair,/\.\(\?:kt\|java\)/);
   assert.match(repair,/current\.head\.sha!==pr\.head\.sha/);
   assert.doesNotMatch(wf, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}|auto-merge\s*:\s*true/);
 });

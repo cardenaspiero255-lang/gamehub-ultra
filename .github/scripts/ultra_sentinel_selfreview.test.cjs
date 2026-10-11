@@ -155,6 +155,24 @@ test('dynamic JS execution is blocked',()=>{
   "const {compileFunction:c}={compileFunction:(x)=>x}; c(42)",
   "const tool={compileFunction:x=>x}; tool.compileFunction(42)"
  ]) assert.equal(scan([file(src,code)],SHA).status,'ADVISORY',code);
+ // Codex RED: capability provenance through arguments, iterables and loaders.
+ for(const code of [
+  'function invoke({eval:e}) { e(userPatch) } invoke(globalThis)',
+  "function invoke({runInThisContext:r}) { r(userPatch) } invoke(require('node:vm'))",
+  'for (const {eval:e} of [globalThis]) e(userPatch)',
+  "for (const {runInThisContext:r} of [require('vm')]) r(userPatch)",
+  "module.require('node:vm').compileFunction(userPatch)()",
+  "module['require']('vm')['runInThisContext'](userPatch)",
+  "const req=require; const {runInThisContext:r}=req('vm'); r(userPatch)",
+  "const R=Reflect; R.get(globalThis,'eval')(userPatch)",
+  "const {get}=Reflect; get(globalThis,'eval')(userPatch)",
+  "const R=Reflect; const Next=R; Next.get(globalThis,'eval')(userPatch)",
+  "const req=module.require; req('vm').compileFunction(userPatch)()"
+ ]) {
+  const result=scan([file(src,...code.split('\n'))],SHA);
+  assert.equal(result.status,'BLOCKED',code);
+  assert.ok(result.findings.some(x=>x.rule==='DYNAMIC_EVAL'),code);
+ }
  // Hunk starts inside a previously existing comment: full-source context
  // must suppress false confirmed DYNAMIC_EVAL. Missing context fails closed.
  const earlier=['/*',...Array.from({length:98},()=>'* inert')];
