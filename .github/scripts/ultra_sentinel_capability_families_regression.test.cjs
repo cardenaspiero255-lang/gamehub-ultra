@@ -1671,3 +1671,25 @@ for(const [name,source] of historicalUnresolvedP2)
  test('P2 historical unresolved '+name+' must not be BLOCKER',()=>{
   assert.notEqual(result(source),'BLOCKER',name+' invented a definite sink');
  });
+
+
+// CommonJS boundary: benign literal/function exports are recognized, whereas
+// exported executable capabilities and unresolved source stay fail-closed.
+// These fixtures are parsed as untrusted AST data, never evaluated.
+test('CommonJS exact safe module export is fully analyzable',()=>{
+ const code="const MAX_SCRIPT=160000;function findingsForScript(){return [];}module.exports={findingsForScript,MAX_SCRIPT};";
+ assert.equal(result(code),'CLEAR');
+});
+test('CommonJS executable exports and dynamic exports remain fail-closed',()=>{
+ for(const code of [
+  "module.exports={danger:eval};",
+  "module.exports={danger:Function};",
+  "module.exports={danger:require};",
+  "module.exports={opaque:unknownSource};",
+  "module.exports=unknownSource;",
+  "module.require=eval;",
+  "function go(module){module.exports={safe:1};}go(unknownSource)"
+ ]){
+  assert.notEqual(result(code),'CLEAR',code+' incorrectly certified a dynamic module boundary');
+ }
+});

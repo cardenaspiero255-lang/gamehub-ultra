@@ -81,9 +81,12 @@ function stripExecRedirections(words,flag){
 
 function normalizeInvocation(command,flag){
  // A redirect may appear before, between or after executable words in Bash.
- const hasExec=command.words.some(w=>literalCommandName(w)==='exec');
+ let hasExec=false;
+ for(const rawWord of command.words){
+  if(literalCommandName(rawWord)==='exec'){hasExec=true;break;}
+ }
  const args=hasExec?stripExecRedirections(command.words,flag):command.words;
- if(!args)return null;
+ if(!args)return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
  let i=0;
  for(let depth=0;depth<5;depth++){
   const name=literalCommandName(args[i]||'');
@@ -91,10 +94,10 @@ function normalizeInvocation(command,flag){
    i++;
    while(i<args.length&&/^-[A-Za-z-]+$/.test(literalCommandName(args[i]||'')||'')){
     const option=literalCommandName(args[i]);
-    if(option==='-v'||option==='-V')return null;
+    if(option==='-v'||option==='-V')return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
     if(option==='-p'){i++;continue;}
     if(option==='--'){i++;break;}
-    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
    }
   }else if(name==='builtin'){
    // Bash builtin accepts -- before the nested builtin, including repeated
@@ -104,11 +107,17 @@ function normalizeInvocation(command,flag){
    const nested=literalCommandName(args[i]||'');
    if(nested==='command'||nested==='builtin')continue;
    if(nested==='source'||nested==='.'||nested==='exec'){
-    return {...command,name:nested,words:args.slice(i),raw:args.slice(i).join(' ')};
+    return {name:nested,words:args.slice(i),raw:args.slice(i).join(' '),
+     start:command.start,end:command.end};
    }
-   if(args.slice(i).some(w=>/^(?:curl|wget|bash|sh|install|eval)$/.test(w)))
-    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
-   return null;
+   let unverifiedBuiltin=false;
+   for(const w of args.slice(i)){
+    if(/^(?:curl|wget|bash|sh|install|eval)$/.test(w)){
+     unverifiedBuiltin=true;break;
+    }
+   }
+   if(unverifiedBuiltin)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
   }else if(name==='env'||/^\/(?:usr\/(?:local\/)?)?bin\/env$/.test(name)){
    i++;
    while(i<args.length){
@@ -118,34 +127,40 @@ function normalizeInvocation(command,flag){
     if(/^[A-Za-z_][\w]*=/.test(raw)||/^(?:'[^']*'|"[^"]*")$/.test(raw)&&
        /^[A-Za-z_][\w]*=/.test(raw.slice(1,-1))){i++;continue;}
     const w=literalCommandName(raw);
-    if(w===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+    if(w===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};}
     if(w==='--'){i++;break;}
     if(/^(?:-i|--ignore-environment|-0|--null)$/.test(w)){i++;continue;}
     if(/^(?:-u|--unset|-C|--chdir)$/.test(w)){
-     if(++i>=args.length){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+     if(++i>=args.length){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};}
      i++;continue;
     }
     if(/^(?:--unset=|--chdir=)/.test(w)){i++;continue;}
-    if(w.startsWith('-')){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+    if(w.startsWith('-')){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};}
     break;
    }
   }else if(/^(?:sudo|nohup|nice|timeout|stdbuf|setsid|time)$/.test(name||'')){
    // These wrappers have their own semantics. Fail closed only where a
    // remote-source or execution command could be hidden behind the wrapper;
    // ordinary privileged administrative commands are not findings.
-   if(args.slice(i+1).some(w=>/^(?:curl|wget|bash|sh|dash|zsh|python(?:[0-9.]+)?|node|install)$/.test(w)))
-    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
-   return null;
+   let unverifiedWrapper=false;
+   for(const w of args.slice(i+1)){
+    if(/^(?:curl|wget|bash|sh|dash|zsh|python(?:[0-9.]+)?|node|install)$/.test(w)){
+     unverifiedWrapper=true;break;
+    }
+   }
+   if(unverifiedWrapper)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
   }else{
    // A dynamic/compound word has already been reported by the bounded IR
    // when relevant. Do not produce standalone false positives for inert code.
-   if(!name)return null;
-   return {...command,name,words:args.slice(i),raw:args.slice(i).join(' ')};
+   if(!name)return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
+   return {name,words:args.slice(i),raw:args.slice(i).join(' '),
+    start:command.start,end:command.end};
   }
-  if(i>=args.length)return null;
+  if(i>=args.length)return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
  }
  flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
- return null;
+ return {name:String(''),words:[],raw:String(''),start:command.start,end:command.end};
 }
 /**
  * Infer only filenames that receive remote RESPONSE bytes, not logs and not
@@ -207,7 +222,11 @@ function hasRemoteSource(command){
   // for an invalid option solely because it embeds a URL.
   if(w.startsWith('--url='))continue;
   if(valueFlags.has(w)){i++;continue;}
-  if([...valueFlags].some(name=>name.startsWith('--')&&w.startsWith(name+'=')))continue;
+  let embeddedFlag=false;
+  for(const name of valueFlags)if(name.startsWith('--')&&w.startsWith(name+'=')){
+   embeddedFlag=true;break;
+  }
+  if(embeddedFlag)continue;
   if(literalRemoteUrlToken(words[i]))return true;
  }
  return false;
@@ -230,8 +249,12 @@ function downloadedFiles(command,flag){
   }
   // Attached values of supported long switches belong to the switch, even
   // when the value looks like an option terminator or a filename argument.
-  if([...valueFlags].some(flagName=>flagName.startsWith('--')&&
-     literal.startsWith(flagName+'=')))continue;
+  let embeddedFlag=false;
+  for(const flagName of valueFlags)if(flagName.startsWith('--')&&
+     literal.startsWith(flagName+'=')){
+   embeddedFlag=true;break;
+  }
+  if(embeddedFlag)continue;
   let value=null,isOutput=false,knownDirectoryOption=false;
   if(wget){
    const adjacent=/^-[A-Za-z]*O(.*)$/.exec(literal);
@@ -251,7 +274,7 @@ function downloadedFiles(command,flag){
     outputDirSeen=true;
     const rawDir=dirInline?dirInline[1]:words[++i];
     dir=literalFileToken(rawDir);
-    if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {files:[],unknownDownloaderOption:true};}
+    if(!dir){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {files:[],unknownDownloaderOption:Boolean(true)};}
    }
   }
   if(!isOutput&&!knownDirectoryOption&&literal.startsWith('-')&&literal!=='-'&&
@@ -315,7 +338,8 @@ function downloadedFiles(command,flag){
    fds.set(1,dest);fds.set(2,dest);
   }else fds.set(destFd,dest);
  }
- const urlCount=words.filter(literalRemoteUrlToken).length;
+ let urlCount=0;
+ for(const word of words)if(literalRemoteUrlToken(word))urlCount++;
  const wgetStdout=direct.length>0&&literalFileToken(direct.at(-1))==='-';
  const mayEmitRemoteStdout=wget?wgetStdout:urlCount>direct.length;
  const finalStdout=fds.get(1);
@@ -330,24 +354,49 @@ function findingsForScript(source,{shell=''}={}){
  // Workflow YAML parsing independently rejects oversized sources.
  if(source.length>MAX_SCRIPT)return ['REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'];
  const findings=new Set();
- const flag=rule=>findings.add(rule);
+ // Local mkdir/cp/timeout and dynamic local paths do not by themselves
+ // imply remote downloaded code. Keep all actual downloader uncertainty HIGH,
+ // including quote-concatenated command names resolved by the shell IR.
+ let remotelySourced=false;
+ const flag=rule=>{
+  if(rule==='REMOTE_EXECUTION_ANALYSIS_INCOMPLETE'&&!remotelySourced)return;
+  findings.add(rule);
+ };
  const lines=source.split(/\r?\n/);
  // Literal echo/printf of attack documentation is not executable code.
- const active=lines.filter(line=>!(/^\s*(?:echo|printf)\s+(['"])[^$\x60]*\1\s*$/.test(line)||
-  /^\s*#/.test(line))).join('\n');
+ const activeLines=[];
+ for(const line of lines){
+  if(!(/^\s*(?:echo|printf)\s+(['"])[^$\x60]*\1\s*$/.test(line)||
+   /^\s*#/.test(line)))activeLines.push(line);
+ }
+ const active=activeLines.join('\n');
  // Analyze filename aliases with command ordering: a link created *after*
  // an attempted execution must not turn an unrelated command into a finding.
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
  const parsed=parseShellCommands(active);
- const commands=parsed.commands.map(c=>normalizeInvocation(c,flag)).filter(Boolean);
+ remotelySourced=/\b(?:curl|wget)\b/i.test(active);
+ if(!remotelySourced)for(const cmd of parsed.commands){
+  for(const word of cmd.words){
+   if(/^(?:curl|wget)$/i.test(literalCommandName(word)||'')){
+    remotelySourced=true;break;
+   }
+  }
+  if(remotelySourced)break;
+ }
+ const commands=[];
+ for(const item of parsed.commands){
+  const invoked=normalizeInvocation(item,flag);
+  if(invoked.name)commands.push(invoked);
+ }
  // No source containing an uncertain path command is certified as clean.
  if(parsed.incomplete&&/\b(?:curl|wget|mkdir|cp|mv|ln)\b/i.test(active))
   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  // Data-flow facts use one command IR. The command boundary, argument words
  // and source offsets can no longer disagree across downloads and aliases.
  const createdDirs=[];
- for(const mkdir of commands.filter(c=>c.name==='mkdir')){
+ for(const mkdir of commands){
+  if(mkdir.name!=='mkdir')continue;
   const tokens=mkdir.words.slice(1);
   let options=true,unknown=false;
   for(const token of tokens){
@@ -362,9 +411,11 @@ function findingsForScript(source,{shell=''}={}){
   if(unknown)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  const aliases=[];
- for(const m of commands.filter(c=>/^(?:ln|cp|mv|install)$/.test(c.name))){
+ for(const m of commands){
+  if(!/^(?:ln|cp|mv|install)$/.test(m.name))continue;
   const kind=m.name,tokens=m.words.slice(1);
-  const flags=[],operands=[],rawOperands=[];
+  let operandCount=0,origin=null,destOperand=null,rawDestOperand=null;
+  let symbolic=false;
   let afterDash=false,invalid=false,targetDir=null,directoryOnly=false;
   for(let i=0;i<tokens.length;i++){
    const word=tokens[i];
@@ -380,7 +431,7 @@ function findingsForScript(source,{shell=''}={}){
     }
     if(/^(?:-[mgo].+|--(?:mode|group|owner)=.+)$/.test(word))continue;
     if(/^(?:-D|-T|-v|-C|-p|-s|--compare|--no-target-directory|--verbose|--preserve-timestamps|--strip)$/.test(word)){
-     flags.push(word);continue;
+     continue;
     }
     if(word.startsWith('--')&&!/^(?:--target-directory(?:=.+)?)$/.test(word)){
      invalid=true;break;
@@ -391,57 +442,66 @@ function findingsForScript(source,{shell=''}={}){
     const value=tokens[++i];
     targetDir=value?literalFileToken(value):null;
     if(!targetDir){invalid=true;break;}
-    flags.push('-t');continue;
+    continue;
    }
    if(!afterDash&&word.startsWith('--target-directory=')){
     targetDir=literalFileToken(word.slice('--target-directory='.length));
     if(!targetDir){invalid=true;break;}
-    flags.push('-t');continue;
+    continue;
    }
    // GNU short options may be clustered: -vt DIR, -svt DIR and
    // -vtdir all have the same -t operand semantics.
    if(!afterDash&&/^-[A-Za-z]+$/.test(word)){
     const t=word.indexOf('t',1);
     if(t>=0){
-     if(t>1)flags.push('-'+word.slice(1,t));
+     if(t>1&&kind==='ln'&&word.slice(1,t).includes('s'))symbolic=true;
      const attached=word.slice(t+1);
      const rawDest=attached||tokens[++i];
      targetDir=rawDest?literalFileToken(rawDest):null;
      if(!targetDir){invalid=true;break;}
-     flags.push('-t');
-    }else flags.push(word);
+     // -t sets target directory, not symbolic-link mode.
+    }else if(kind==='ln'&&/^-[A-Za-z]*s[A-Za-z]*$/.test(word))symbolic=true;
     continue;
    }
    if(!afterDash&&word.startsWith('-')){
     if(!/^--[a-z-]+$/.test(word)){invalid=true;break;}
-    flags.push(word);continue;
+    if(kind==='ln'&&word==='--symbolic')symbolic=true;
+    continue;
    }
    const operand=literalFileToken(word);
    if(!operand){invalid=true;break;}
-   operands.push(operand);
-   rawOperands.push(word);
+   if(operandCount===0)origin=operand;
+   if(operandCount===1){destOperand=operand;rawDestOperand=word;}
+   operandCount++;
   }
   if(kind==='install'&&directoryOnly)continue;
-  if(invalid||(targetDir?operands.length!==1:operands.length!==2)){
+  if(invalid||(targetDir?operandCount!==1:operandCount!==2)){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
-  const origin=operands[0],destination=targetDir||operands[1];
+  const destination=targetDir||destOperand;
+  // Conservative reviewer requires no mutable callback-slot carriers.
+  // Explicit iteration preserves directory and symlink decisions unchanged.
+  let preexistingDestinationDir=false;
+  for(const dir of createdDirs){
+   if(dir.name===normalizedFile(destination)&&dir.at<m.start){
+    preexistingDestinationDir=true;break;
+   }
+  }
   const targetIsDirectory=!!targetDir||
-   /\/['"]*$/.test(rawOperands[1]||'')||
-   createdDirs.some(d=>d.name===normalizedFile(destination)&&d.at<m.start);
+   /\/['"]*$/.test(rawDestOperand||'')||preexistingDestinationDir;
   const to=normalizedFile(targetIsDirectory?
    posix.join(destination,posix.basename(origin)):destination);
-  const symbolic=kind==='ln'&&flags.some(x=>
-   x==='--symbolic'||/^-[A-Za-z]*s[A-Za-z]*$/.test(x));
   const from=normalizedFile(symbolic&&!origin.startsWith('/')?
    posix.join(posix.dirname(to),origin):origin);
   aliases.push({at:m.start,kind,from,to});
  }
- for(const d of commands.filter(c=>/^(?:curl|wget)$/i.test(c.name))){
+ for(const d of commands){
+  if(!/^(?:curl|wget)$/i.test(d.name))continue;
   if(!hasRemoteSource(d))continue;
   const output=downloadedFiles(d,flag);
   for(const file of output.files){
-   for(const inv of commands.filter(c=>c.start>=d.end)){
+   for(const inv of commands){
+    if(inv.start<d.end)continue;
     const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
     let word=interpreter?interpreterFileOperand(inv,flag):inv.words[0];
     if(inv.name==='exec'){
@@ -461,10 +521,9 @@ function findingsForScript(source,{shell=''}={}){
      if(opaque)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
      // exec replaces this shell with a nested program and its script operand.
      const target=opaque?[]:inv.words.slice(j);
-     const nested=target.length?normalizeInvocation({...inv,
-      name:literalCommandName(target[0])||target[0],
-      words:target,raw:target.join(' ')},flag):null;
-     if(!nested){word=null;}
+     const nested=normalizeInvocation({name:literalCommandName(target[0]||'')||String(''),
+      words:target,raw:target.join(' '),start:inv.start,end:inv.end},flag);
+     if(!nested||!nested.name){word=null;}
      else{
       const basename=posix.basename(nested.name);
       const knownInterpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(basename);
@@ -473,14 +532,19 @@ function findingsForScript(source,{shell=''}={}){
       if(knownInterpreter&&!trustedInterpreterPath)
        flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
       word=knownInterpreter&&trustedInterpreterPath?
-       interpreterFileOperand({...nested,name:basename},flag):nested.words[0];
+       interpreterFileOperand({name:basename,words:nested.words,raw:nested.raw,
+        start:nested.start,end:nested.end},flag):nested.words[0];
      }
     }
     if(!word)continue;
     const calledFile=literalFileToken(word);
     if(!calledFile)continue;
     const executedAt=inv.start;
-    const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.start||a.kind==='ln'));
+    const visible=[];
+    for(const alias of aliases){
+     if(alias.at<executedAt&&(alias.at>=d.start||alias.kind==='ln'))
+      visible.push(alias);
+    }
     const tainted=new Set([file]);
     for(let i=0;i<visible.length;i++){
      let changed=false;
@@ -497,12 +561,17 @@ function findingsForScript(source,{shell=''}={}){
   // Unknown downloader flags matter when downstream execution could occur.
   // A confirmed HIGH remains HIGH (not downgraded to INCOMPLETE); download-only
   // workflows are not condemned solely for options outside our small grammar.
+  let laterInterpreter=false;
+  for(const inv of commands){
+   if(inv.start<d.end)continue;
+   if(/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)||
+       (typeof inv.name==='string'&&inv.name.includes('/'))||
+       (inv.name==='exec'&&inv.words.length>1)){
+    laterInterpreter=true;break;
+   }
+  }
   if(output.unknownDownloaderOption&&!findings.has('REMOTE_DOWNLOADED_FILE_EXECUTION')&&
-     commands.some(inv=>inv.start>=d.end&&(
-      /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)||
-      (typeof inv.name==='string'&&inv.name.includes('/'))||
-      (inv.name==='exec'&&inv.words.length>1))))
-   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+     laterInterpreter)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
  // commonly appear on different lines. Use the declared delimiter rather
@@ -563,8 +632,11 @@ function findingsForScript(source,{shell=''}={}){
    word+=ch;
   }
   push();
-  const out=switches.some(w=>/^-OutFile(?::.*)?$/i.test(w));
-  const pass=switches.some(w=>/^-PassT(?:h(?:r(?:u)?)?)?(?::\$true)?$/i.test(w));
+  let out=false,pass=false;
+  for(const option of switches){
+   if(/^-OutFile(?::.*)?$/i.test(option))out=true;
+   if(/^-PassT(?:h(?:r(?:u)?)?)?(?::\$true)?$/i.test(option))pass=true;
+  }
   return out&&!pass;
  };
  const powershellPipelines=/(?:^|[;\n])\s*(?:(?:pwsh|powershell)(?:\.exe)?\b[^\r\n;|]{0,300}?\s+-(?:Command|c)\s+["']?\s*)?((?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n;|]{0,4096})\|\s*&?\s*(?:iex|Invoke-Expression)\b/gi;
