@@ -976,6 +976,25 @@ for(const [name,source] of prototypeSliceDangerous)
 for(const [name,source] of prototypeSliceBenign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Independent Codex review of #173: four root-cause families.
+const codex173Dangerous=[
+ ["P1 overwritten native slice.call through defineProperty","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 overwritten native slice.apply through defineProperty","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 stable let ObjectPattern default aliases array","function bad(g){g.eval('attack')}const a=[()=>1];let empty={};const {x=a}=empty;x.fill(bad);a[0](globalThis)"],
+ ["P1 stable let alias chain preserves ObjectPattern default","function bad(g){g.eval('attack')}const a=[()=>1];let empty={};const alias=empty;const {x=a}=alias;x[0]=bad;a[0](globalThis)"],
+ ["P1 last duplicate ObjectPattern property selects undefined","function bad(g){g.eval('attack')}const a=[()=>1],other=[()=>2],holder={x:other,x:undefined};const {x=a}=holder;x.fill(bad);a[0](globalThis)"],
+ ["P1 pre-snapshot object property writes cannot be ignored","function bad(g){g.eval('attack')}const a=[()=>1],holder={x:[()=>2]};holder.x=undefined;const {x=a}=holder;x[0]=bad;a[0](globalThis)"]
+];
+const codex173Benign=[
+ ["P2 later direct object write cannot affect default snapshot","const a=[()=>1],empty={};const {x=a}=empty;empty.x=42;a[0]()"],
+ ["P2 later object alias write cannot affect default snapshot","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;alias.x=42;a[0]()"],
+ ["P2 last duplicate present ObjectPattern property suppresses default","const a=[()=>1],other=[()=>2],holder={x:undefined,x:other};const {x=a}=holder;x[0]();a[0]()"]
+];
+for(const [name,source] of codex173Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of codex173Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
