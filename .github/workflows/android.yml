@@ -100,7 +100,9 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      max-parallel: 4
+      # 5 test jobs + 4 device jobs + 3 Android support + 8 coverage = 20.
+      # Keep 8 physical / 64 logical shards. No test or benchmark removed.
+      max-parallel: 5
       matrix:
         runner: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
@@ -126,7 +128,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Probe preinstalled Android SDK
+        id: sdk_preflight
+        shell: bash
+        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
+
       - name: Set up Android SDK
+        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -313,7 +321,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Probe preinstalled Android SDK
+        id: sdk_preflight
+        shell: bash
+        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
+
       - name: Set up Android SDK
+        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -450,7 +464,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Probe preinstalled Android SDK
+        id: sdk_preflight
+        shell: bash
+        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
+
       - name: Set up Android SDK
+        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -561,7 +581,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Probe preinstalled Android SDK
+        id: sdk_preflight
+        shell: bash
+        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
+
       - name: Set up Android SDK
+        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -572,11 +598,22 @@ jobs:
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
-          test -n "$CMDLINE_DIR"
-          rm -rf "$SDK_ROOT/cmdline-tools/latest"
-          ln -s "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR" "$SDK_ROOT/cmdline-tools/latest"
-          echo "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin" >> "$GITHUB_PATH"
+          # Hosted runners commonly provide only cmdline-tools/latest.
+          # Keep that working installation intact instead of deleting it.
+          SDK_BIN="$SDK_ROOT/cmdline-tools/latest/bin"
+          if [ ! -x "$SDK_BIN/sdkmanager" ]; then
+            CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
+            if [ -z "$CMDLINE_DIR" ]; then
+              echo "::error::No installed Android command-line tools are available."
+              exit 1
+            fi
+            SDK_BIN="$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin"
+          fi
+          if [ ! -x "$SDK_BIN/sdkmanager" ]; then
+            echo "::error::Android command-line tools are missing sdkmanager."
+            exit 1
+          fi
+          printf '%s\n' "$SDK_BIN" >> "$GITHUB_PATH"
 
       - name: Enable KVM for Android emulator
         shell: bash

@@ -14,6 +14,7 @@ COVERAGE_POST = ROOT / ".github/workflows/coverage-post-processing.yml"
 SHADOW_METRICS = ROOT / ".github/workflows/ci-metrics-shadow.yml"
 CHECKER = ROOT / ".github/scripts/check-ci-safety-contract.py"
 CONTRACT = ROOT / ".github/scripts/test-ci-safety-contract.sh"
+SDK_PROBE = ROOT / ".github/scripts/probe-preinstalled-android-sdk.sh"
 
 
 def run_contract(root: Path) -> subprocess.CompletedProcess[str]:
@@ -35,6 +36,119 @@ def current_contract_must_pass() -> None:
             f"--- contract output ---\n{result.stdout}"
         )
 
+
+
+def android_cmdline_selection_behavior_cases() -> None:
+    """Run the real emulator command-line-tool selector against isolated fake SDKs.
+
+    The hosted runner now has a *latest* directory only; it must not be
+    deleted or replaced merely to prefer a version-numbered installation.
+    """
+    import os
+
+    extractor = r'''
+require "yaml"
+workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)
+step = workflow.fetch("jobs").fetch("device-validation-shard").fetch("steps")
+  .find { |candidate| candidate["name"] == "Use current Android command-line tools" }
+abort("device command-line tools step not found") unless step
+print(step.fetch("run"))
+'''
+    parsed = subprocess.run(
+        ["ruby", "-e", extractor, str(ANDROID)],
+        text=True, capture_output=True, check=False,
+    )
+    if parsed.returncode != 0:
+        raise SystemExit(f"Cannot inspect Android SDK selector: {parsed.stderr}")
+    for label, latest, numbered, should_work in (
+        ("hosted-latest-only", True, False, True),
+        ("hosted-latest-and-numbered", True, True, True),
+        ("legacy-numbered-only", False, True, True),
+        ("no-command-line-tools", False, False, False),
+    ):
+        with tempfile.TemporaryDirectory(prefix="gamehub-android-cmdline-") as temp:
+            root = Path(temp)
+            sdk = root / "SDK with spaces"
+            latest_path = sdk / "cmdline-tools/latest/bin/sdkmanager"
+            versioned_path = sdk / "cmdline-tools/15859902/bin/sdkmanager"
+            for present, manager in ((latest, latest_path), (numbered, versioned_path)):
+                if present:
+                    manager.parent.mkdir(parents=True, exist_ok=True)
+                    manager.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                    manager.chmod(0o755)
+            github_path = root / "path"
+            env = dict(os.environ, ANDROID_HOME=str(sdk), GITHUB_PATH=str(github_path))
+            result = subprocess.run(
+                ["bash", "-c", parsed.stdout], env=env, cwd=root,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=10, check=False,
+            )
+            if (result.returncode == 0) != should_work:
+                raise SystemExit(
+                    f"Android SDK selector {label} got rc={result.returncode}; "
+                    f"expected success={should_work}: {result.stdout[-1000:]}"
+                )
+            if latest and (not latest_path.is_file() or not latest_path.exists()):
+                raise SystemExit(f"Android SDK selector destroyed working latest: {label}")
+            if should_work:
+                expected = latest_path.parent if latest else versioned_path.parent
+                entries = github_path.read_text(encoding="utf-8").splitlines() if github_path.exists() else []
+                if str(expected) not in entries:
+                    raise SystemExit(
+                        f"Android SDK selector {label} exported {entries!r}, expected {expected}"
+                    )
+    print("Android emulator SDK current-tools selection preserved installed latest and legacy fallback.")
+
+
+def sdk_probe_behavior_cases() -> None:
+    """Exercise real preinstalled-SDK detection without network or runner mutation."""
+    import os
+
+    cases = (
+        ("ready", True, True, True, "true"),
+        ("manager-missing", False, True, True, "false"),
+        ("adb-missing", True, False, True, "false"),
+        ("licenses-missing", True, True, False, "false"),
+    )
+    for scenario, sdkmanager, adb, licenses, expected in cases:
+        with tempfile.TemporaryDirectory(prefix="gamehub-sdk-probe-") as raw:
+            root = Path(raw)
+            sdk = root / "sdk with spaces"
+            cmd = sdk / "cmdline-tools/latest/bin/sdkmanager"
+            tool = sdk / "platform-tools/adb"
+            license_file = sdk / "licenses/android-sdk-license"
+            for present, file in ((sdkmanager, cmd), (adb, tool), (licenses, license_file)):
+                if present:
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_text("accepted" if file == license_file else "#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+                    if file != license_file:
+                        file.chmod(0o755)
+            outputs = root / "output"
+            paths = root / "githubpath"
+            env = dict(os.environ)
+            env.update({
+                "ANDROID_HOME": str(sdk), "ANDROID_SDK_ROOT": str(sdk),
+                "GITHUB_OUTPUT": str(outputs), "GITHUB_PATH": str(paths),
+            })
+            done = subprocess.run(
+                ["bash", str(SDK_PROBE)], env=env, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=8, check=False,
+            )
+            actual = outputs.read_text(encoding="utf-8").strip() if outputs.exists() else ""
+            want = f"usable={expected}"
+            if done.returncode != 0 or actual != want:
+                raise SystemExit(
+                    f"SDK fast-path {scenario} failed: rc={done.returncode}, "
+                    f"output={actual!r} expected={want!r}; stdout={done.stdout[-500:]}"
+                )
+            path_text = paths.read_text(encoding="utf-8") if paths.exists() else ""
+            if expected == "true":
+                if str(cmd.parent) not in path_text or str(tool.parent) not in path_text:
+                    raise SystemExit(f"SDK fast-path {scenario} did not export both tools to PATH")
+            elif path_text.strip():
+                raise SystemExit(f"SDK fast-path {scenario} leaked PATH despite failing closed")
+    print("Android preinstalled-SDK probe: licensed success and missing-tool fallback validated.")
 
 
 def coverage_retry_behavior_cases() -> None:
@@ -353,9 +467,40 @@ def reject_mutation(
 
 def main() -> None:
     current_contract_must_pass()
+    android_cmdline_selection_behavior_cases()
+    sdk_probe_behavior_cases()
     coverage_retry_behavior_cases()
     android_dependency_retry_behavior_cases()
 
+    reject_mutation(
+        "preinstalled SDK probe removed",
+        coverage_replace=(
+            "      - name: Probe preinstalled Android SDK\n",
+            "      - name: Probe preinstalled Android SDK disabled\n",
+        ),
+    )
+    reject_mutation(
+        "pinned SDK fallback disabled",
+        android_replace=(
+            "        if: steps.sdk_preflight.outputs.usable != 'true'\n",
+            "        if: false\n",
+        ),
+    )
+    reject_mutation(
+        "SDK probe bypasses actual script",
+        android_replace=(
+            "        run: bash .github/scripts/probe-preinstalled-android-sdk.sh\n",
+            "        run: echo probe-skipped\n",
+        ),
+    )
+    reject_mutation(
+        "device SDK selector destructively removes preinstalled latest",
+        android_replace=(
+            '          printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"\n',
+            '          rm -rf "$SDK_ROOT/cmdline-tools/latest"\n'
+            '          printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"\n',
+        ),
+    )
     reject_mutation(
         "quality lint made advisory",
         android_replace=(
@@ -528,9 +673,16 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "Android test physical concurrency raised",
+        "Android physical test concurrency reduced below tuned capacity",
         android_replace=(
+            "      max-parallel: 5\n",
             "      max-parallel: 4\n",
+        ),
+    )
+    reject_mutation(
+        "Android physical test concurrency exceeds GH runner budget",
+        android_replace=(
+            "      max-parallel: 5\n",
             "      max-parallel: 8\n",
         ),
     )
@@ -563,10 +715,24 @@ def main() -> None:
         ),
     )
     reject_mutation(
-        "coverage physical concurrency raised",
+        "coverage physical concurrency regressed to two waves",
         coverage_replace=(
-            "      max-parallel: 4\n",
             "      max-parallel: 8\n",
+            "      max-parallel: 4\n",
+        ),
+    )
+    reject_mutation(
+        "coverage physical concurrency exceeds the runner budget",
+        coverage_replace=(
+            "      max-parallel: 8\n",
+            "      max-parallel: 16\n",
+        ),
+    )
+    reject_mutation(
+        "coverage workers lose shallow clone optimization",
+        coverage_replace=(
+            "          fetch-depth: 1\n",
+            "          fetch-depth: 0\n",
         ),
     )
     reject_mutation(
