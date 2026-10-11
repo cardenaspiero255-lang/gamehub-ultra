@@ -695,17 +695,39 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  return {status,findings,coverage,reason:null};
 }
 function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={}){
- const results=[],findings=[],coverage={partial:false,requested:expected.length,
-  scanned:0,parser:'js-yaml@4.3.2'};
- if(!Array.isArray(expected)||expected.length>25)return {status:'INCOMPLETE',findings,
-  coverage:{...coverage,partial:true},results};
+ // Only finite, source-independent reason codes cross the trust boundary.
+ const results=[],findings=[],coverage={partial:false,
+  requested:Array.isArray(expected)?expected.length:0,
+  scanned:0,parser:'js-yaml@4.3.2',reasons:[]};
+ const markIncomplete=code=>{
+  coverage.partial=true;
+  if(coverage.reasons.length<16&&!coverage.reasons.includes(code))
+   coverage.reasons.push(code);
+ };
+ if(!Array.isArray(expected)||expected.length>25){
+  markIncomplete('INVALID_EXPECTED_LIST');
+  return {status:'INCOMPLETE',findings,coverage,results};
+ }
+ if(!sources||typeof sources!=='object'||Array.isArray(sources)){
+  markIncomplete('INVALID_WORKFLOW_SOURCES');
+  return {status:'INCOMPLETE',findings,coverage,results};
+ }
  for(const path of expected){
-  if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
-   !Object.prototype.hasOwnProperty.call(sources,path)){coverage.partial=true;continue;}
+  if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)){
+   markIncomplete('INVALID_WORKFLOW_PATH');continue;
+  }
+  if(!Object.prototype.hasOwnProperty.call(sources,path)){
+   markIncomplete('MISSING_WORKFLOW_SOURCE');continue;
+  }
   const r=inspectWorkflow(sources[path],{path,trustedRepository});
   results.push({path,status:r.status,reason:r.reason,reasons:r.coverage.reasons||[]});
   coverage.scanned++;
-  if(r.coverage.partial)coverage.partial=true;
+  if(r.coverage.partial){
+   markIncomplete(r.reason?'WORKFLOW_PARSE_FAILURE':'WORKFLOW_SEMANTIC_INCOMPLETE');
+   for(const reason of r.coverage.reasons||[]){
+    if(typeof reason==='string'&&/^[A-Z_]{1,40}$/.test(reason))markIncomplete(reason);
+   }
+  }
   findings.push(...r.findings);
  }
  return {status:coverage.partial?'INCOMPLETE':
