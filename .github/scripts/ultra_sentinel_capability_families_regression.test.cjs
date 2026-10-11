@@ -897,6 +897,28 @@ for(const [name,source] of round8Dangerous)
 for(const [name,source] of round8Benign)
  test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
 
+// Round nine: independent Codex review on 63c77ad, four remaining P1 families.
+const round9Dangerous=[
+ ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
+ ["P1 defaulted ObjectPattern array alias tracks mutation","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const {x=a}={};x.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 immutable alias to Reflect.apply executes callback","function bad(g){g.eval('attack')}const ra=Reflect.apply;ra(bad,null,[globalThis])"],
+ ["P1 extracted Reflect.apply invoked via call","function bad(g){g.eval('attack')}Reflect.apply.call(null,bad,null,[globalThis])"],
+ ["P1 extracted Reflect.apply invoked via apply","function bad(g){g.eval('attack')}const ra=Reflect.apply;ra.apply(null,[bad,null,[globalThis]])"],
+ ["P1 slice through Function.prototype.call retains callback","function bad(g){g.eval('attack')}const a=[bad];const copy=a.slice.call(a);copy[0](globalThis)"],
+ ["P1 aliased slice through Function.prototype.call","function bad(g){g.eval('attack')}const a=[bad];const slicer=a.slice;const copy=slicer.call(a);copy[0](globalThis)"]
+];
+const round9Benign=[
+ ["P2 transient ArrayPattern expression is not an escape","const a=[()=>1];const [b]=[a];b[0]()"],
+ ["P2 ObjectPattern default not invoked with defined benign array","const a=[()=>1],other=[()=>2];const {x=a}={x:other};x[0]()"],
+ ["P2 harmless Reflect.apply alias","const safe=x=>x+1;const ra=Reflect.apply;ra(safe,null,[41])"],
+ ["P2 harmless Reflect.apply through call","const safe=x=>x+1;Reflect.apply.call(null,safe,null,[41])"],
+ ["P2 harmless slice through call","const a=[()=>1];const copy=a.slice.call(a);copy[0]()"]
+];
+for(const [name,source] of round9Dangerous)
+ test(name+' cannot be certified CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of round9Benign)
+ test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
