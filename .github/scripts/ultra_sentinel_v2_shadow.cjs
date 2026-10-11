@@ -9,6 +9,31 @@
  */
 const eslintScope=require('eslint-scope');
 const NODE_BUDGET=50000;
+const AST_DEPTH_BUDGET=256;
+// Preflight is intentionally independent of the primary analyzer. Reject
+// oversized or cyclic ASTs BEFORE eslint-scope allocates scope/reference graphs.
+// WeakSet and the traversal stack are per-call: no AST or source is retained.
+function preflightShadowAst(ast){
+ const visited=new WeakSet(),pending=[{node:ast,depth:0}];
+ let count=0;
+ while(pending.length){
+  const {node,depth}=pending.pop();
+  if(!node||typeof node!=='object'||typeof node.type!=='string')continue;
+  if(depth>AST_DEPTH_BUDGET)throw Error('Shadow AST nesting budget exceeded');
+  if(visited.has(node))throw Error('Shadow AST cycle or sharing rejected');
+  visited.add(node);
+  if(++count>NODE_BUDGET)throw Error('Shadow AST node budget exceeded');
+  for(const [key,value] of Object.entries(node)){
+   if(['range','loc','start','end'].includes(key))continue;
+   if(Array.isArray(value)){
+    for(const element of value)
+     if(element&&typeof element==='object'&&typeof element.type==='string')
+      pending.push({node:element,depth:depth+1});
+   }else if(value&&typeof value==='object'&&typeof value.type==='string')
+    pending.push({node:value,depth:depth+1});
+  }
+ }
+}
 const SCHEMA='ultra-sentinel-shadow/v1';
 function methodName(member){
  if(!member||member.type!=='MemberExpression')return null;
@@ -20,6 +45,7 @@ function methodName(member){
 }
 function directSinkEvidence(ast){
  if(!ast||ast.type!=='Program')throw Error('Shadow oracle requires a parsed Program');
+ preflightShadowAst(ast);
  const scopes=eslintScope.analyze(ast,{ecmaVersion:2022,sourceType:'script',
   optimistic:true,ignoreEval:true,impliedStrict:false});
  const free=new WeakSet();
