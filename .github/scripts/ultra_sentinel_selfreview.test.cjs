@@ -173,6 +173,12 @@ test('dynamic JS execution is blocked',()=>{
   assert.equal(result.status,'BLOCKED',code);
   assert.ok(result.findings.some(x=>x.rule==='DYNAMIC_EVAL'),code);
  }
+ // Scope-engine diagnostics must never silently turn a known sink into INCOMPLETE.
+ const scopeProbe=require('acorn').parse(
+   'function invoke({eval:e}) { e(userPatch) } invoke(globalThis)',
+   {ecmaVersion:'latest',sourceType:'script',locations:true,ranges:true});
+ const capabilityNodes=require('./ultra_sentinel_capabilities.cjs').findCapabilities(scopeProbe);
+ assert.ok(capabilityNodes.some(n=>n.type==='Identifier'&&n.name==='e'));
  // Stabilization RED: VM factories, object property flow and true lexical scope.
  // Each pair is evaluated as a complete source file, never executed.
  const executableVariants=[
