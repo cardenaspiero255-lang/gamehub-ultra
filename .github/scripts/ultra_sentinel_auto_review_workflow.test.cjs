@@ -24,6 +24,14 @@ test('automatic reviewer requires read permissions only and does not try forbidd
 
 test('analyzes PR with trusted main engine and verifies current immutable SHA', () => {
   const wf = workflow();
+  // Protected controls still fail closed; sole-owner exemption is checked using
+  // the same trusted SHA- and identity-bound function as the independent gate.
+  assert.match(wf,/evaluateProtectedChanges,hasIndependentHumanApproval,isAuthorizedSoloMaintainerPR/);
+  assert.match(wf,/isAuthorizedSoloMaintainerPR\(pr,\{\s*repository:owner\+'\/'\+repo,\s*expectedSha:pr\.head\.sha\s*\}\)/);
+  assert.match(wf,/if\(!independentlyApproved\)\s*\{\s*try\s*\{/);
+  assert.match(wf,/if\(!independentlyApproved\)\s*core\.setFailed\('Critical controls changed:/);
+  assert.match(wf,/if\(protectedChanges\.status==='BLOCKED'\|\|protectedChanges\.status==='INCOMPLETE'\)/);
+  assert.match(wf,/if\(ci\.status==='UNTRUSTED'\)core\.setFailed/);
   assert.match(wf, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
   assert.match(wf, /persist-credentials: false/);
   assert.match(wf, /github\.rest\.pulls\.listFiles/);
@@ -65,6 +73,11 @@ test('always writes SHA-pinned artifact and Actions summary without GitHub comme
 
 test('self tests remain mandatory and potential critical defects still fail the gate', () => {
   const wf = workflow();
+  // The trusted engine runs YAML tests which open workflow fixtures on disk.
+  const sparse=wf.match(/sparse-checkout:\s*\|([^]*?)sparse-checkout-cone-mode:/);
+  assert.ok(sparse,'explicit sparse checkout must remain enabled');
+  assert.match(sparse[1],/\.github\/scripts\//);
+  assert.match(sparse[1],/\.github\/workflows\//);
   assert.match(wf, /node --test .*ultra_sentinel_core\.test\.cjs/);
   assert.match(wf, /node .*ultra_sentinel_benchmark\.cjs/);
   assert.match(wf, /Incomplete patch coverage/);
