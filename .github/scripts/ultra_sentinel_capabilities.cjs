@@ -562,7 +562,11 @@ function findCapabilities(ast){
       // constant-folder knows its string value, do NOT project an absent
       // default until the value provenance is also established.
       if(prop.type!=='Property'||prop.kind!=='init'||
-         prop.computed&&!['Literal','TemplateLiteral'].includes(prop.key?.type)||
+         // A computed lexical key can be trusted only when its constant
+         // value is proven and the corresponding property holds an inert
+         // scalar. Callback arrays still require full descriptor tracking.
+         prop.computed&&!['Literal','TemplateLiteral'].includes(prop.key?.type)&&
+          prop.value?.type!=='Literal'||
          stablePatternKey(prop)===null||
          stablePatternKey(prop)==='__proto__')
        throw Error('Unresolved object property identity');
@@ -2063,6 +2067,11 @@ function findCapabilities(ast){
  // of silently selecting the default and reporting a false CLEAR.
  function sourceObjectForDefault(expr,depth=0,seen=new Set()){
   if(!expr||depth>MAX_DEPTH)return null;
+  // SequenceExpression yields its final operand. Earlier operands might
+  // mutate state, so this is used only by the fail-closed ambiguous-default
+  // checker, never to certify a source as safe.
+  if(expr.type==='SequenceExpression')
+   return sourceObjectForDefault(expr.expressions?.at(-1),depth+1,seen);
   if(expr.type==='ObjectExpression')return expr;
   if(expr.type!=='Identifier')return null;
   const id=symbol(expr);
