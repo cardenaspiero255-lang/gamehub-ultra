@@ -1,0 +1,122 @@
+name: Ultra Sentinel V2 Stacked Regression
+# Unprivileged validation of the V2 laboratory PR targeting the #169 branch.
+# Never use pull_request_target here: checkout executes untrusted PR code.
+on:
+  pull_request:
+    branches: [feature/ultra-sentinel-sss-phase1]
+    paths:
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/workflows/ultra-sentinel-v2-stacked-check.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  # Manual runs use GitHub's rerun-job action for the immutable PR context.
+permissions:
+  contents: read
+concurrency:
+  group: sentinel-v2-stacked-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  sentinel-trusted-diff-audit:
+    name: Ultra Sentinel trusted-main review of PR #173 diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Pull-request unprivileged event only; never execute changed code with
+    # write permissions or use pull_request_target for this stacked PR.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout trusted main Sentinel source, not PR code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            package.json
+            package-lock.json
+      - name: Install trusted locked parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run trusted Ultra Sentinel self-review on immutable PR diff
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check .github/scripts/ultra_sentinel_selfreview.cjs
+          node .github/scripts/ultra_sentinel_selfreview.cjs
+  provenance-regressions:
+    name: Static provenance / false-positive regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout unprivileged V2 candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Syntax-check analyzer and test contract
+        run: |
+          node --check .github/scripts/ultra_sentinel_capabilities.cjs
+          node --check .github/scripts/ultra_sentinel_capability_families_regression.test.cjs
+          node --check .github/scripts/ultra_sentinel_core_shards.cjs
+          node --check .github/scripts/ultra_sentinel_core_count_contract.test.cjs
+          node --check .github/scripts/ultra_sentinel_v2_shadow.cjs
+          node --check .github/scripts/ultra_sentinel_v2_shadow.test.cjs
+          node --check .github/scripts/ultra_sentinel_v2_shadow_batch.test.cjs
+      - name: Run focused adversarial and benign tests
+        run: |
+          node --test .github/scripts/ultra_sentinel_capability_families_regression.test.cjs
+          node --test .github/scripts/ultra_sentinel_core_count_contract.test.cjs
+          node --test .github/scripts/ultra_sentinel_v2_shadow.test.cjs
+          node --test .github/scripts/ultra_sentinel_v2_shadow_batch.test.cjs
+  baseline-shards:
+    name: Sentinel full baseline / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: [b0, b1]
+    steps:
+      - name: Checkout unprivileged V2 candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute the entire baseline partition without skipped cases
+        shell: bash
+        env:
+          SENTINEL_SHARD_ID: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/ultra_sentinel_core_shards.cjs run-env "$RUNNER_TEMP/v2-baseline"
+  matrix-shards:
+    name: Sentinel 500k matrix / ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [m00, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10, m11, m12]
+    steps:
+      - name: Checkout unprivileged V2 candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute validated deterministic 38,500-case matrix partition
+        shell: bash
+        env:
+          SENTINEL_SHARD_ID: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/ultra_sentinel_core_shards.cjs run-env "$RUNNER_TEMP/v2-matrix"

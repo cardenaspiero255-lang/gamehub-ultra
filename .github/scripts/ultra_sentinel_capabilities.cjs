@@ -8,6 +8,7 @@
  */
 const eslintScope=require('eslint-scope');
 const NODE_BUDGET=50000;
+const AST_DEPTH_BUDGET=256;
 const MAX_ROUNDS=32;
 const MAX_DEPTH=18;
 const GLOBAL=new Set(['globalThis','global']);
@@ -55,19 +56,28 @@ function keyName(prop){
 }
 function traverse(node,visitor){
  let count=0;
- function walk(current,parent=null,key=''){
+ function walk(current,parent=null,key='',depth=0){
   if(!current||typeof current!=='object'||typeof current.type!=='string')return;
+  if(depth>AST_DEPTH_BUDGET)throw Error('AST nesting budget exceeded');
   if(++count>NODE_BUDGET)throw Error('AST budget exceeded');
   visitor(current,parent,key);
   for(const [k,value] of Object.entries(current)){
    if(k==='range'||k==='loc'||k==='start'||k==='end')continue;
-   if(Array.isArray(value))for(const part of value)walk(part,current,k);
-   else walk(value,current,k);
+   if(Array.isArray(value))for(const part of value)walk(part,current,k,depth+1);
+   else walk(value,current,k,depth+1);
   }
  }
  walk(node);
 }
+function preflightAstBudget(ast){
+ const parentOf=new WeakMap();
+ traverse(ast,(node,parent)=>{if(parent)parentOf.set(node,parent);});
+ return parentOf;
+}
 function findCapabilities(ast){
+ // Reject oversized or pathological ASTs BEFORE the more expensive scope
+ // engine allocates resolution graphs. Unknown input is never CLEAR.
+ const parentOf=preflightAstBudget(ast);
  const manager=eslintScope.analyze(ast,{ecmaVersion:2022,sourceType:'script',
   optimistic:true,ignoreEval:true,impliedStrict:false});
  const reference=new WeakMap(),declaration=new WeakMap();
@@ -76,8 +86,6 @@ function findCapabilities(ast){
   for(const variable of scope.variables)
    for(const id of variable.identifiers)declaration.set(id,variable);
  }
- const parentOf=new WeakMap();
- traverse(ast,(node,parent)=>{if(parent)parentOf.set(node,parent);});
  const kinds=new Map(), objects=new Map(),bindings=[];
  const arrayBindings=new Map();
  // Preserve Function.bind closures across object/array destructuring and aliases.
@@ -199,6 +207,555 @@ function findCapabilities(ast){
  // Array bindings declared with const still permit writes to their elements.
  // Closure over a known initial array is safe only while none of its lexical
  // aliases can mutate the slots or send it into an unknown caller.
+ // Slice-copy provenance holds only if Array.prototype.slice has not been
+ // modified. Reads of that intrinsic remain benign; writes and escapes of
+ // the shared prototype are uncertain, including through const aliases.
+ function intrinsicOwner(value,depth=0,seen=new Set()){
+  if(!value||depth>MAX_DEPTH||value.type!=='Identifier')return null;
+  const id=symbol(value);
+  if(id==='free:Object')return 'Object';
+  if(id==='free:Reflect')return 'Reflect';
+  const defs=id?.defs||[];
+  if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+     defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+     id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+  seen.add(id);
+  return intrinsicOwner(defs[0].node.init,depth+1,seen);
+ }
+ let nativeSliceIntegrity=null;
+ function nativeArraySliceTrusted(){
+  if(nativeSliceIntegrity!==null)return nativeSliceIntegrity;
+  const constructors=new Set(['free:Array']),prototypes=new Set();
+  let converged=false;
+  for(let round=0;round<MAX_ROUNDS;round++){
+   let changed=false;
+   traverse(ast,node=>{
+    if(node.type!=='VariableDeclarator'||node.id?.type!=='Identifier')return;
+    const target=symbol(node.id),source=node.init;
+    if(!target||typeof target!=='object'||!source)return;
+    if(source.type==='Identifier'&&constructors.has(symbol(source))&&
+       !constructors.has(target)){constructors.add(target);changed=true;}
+    if((source.type==='Identifier'&&prototypes.has(symbol(source)))||
+       (source.type==='MemberExpression'&&stableMethodName(source)==='prototype'&&
+        source.object?.type==='Identifier'&&constructors.has(symbol(source.object)))){
+     if(!prototypes.has(target)){prototypes.add(target);changed=true;}
+    }
+   });
+   if(!changed){converged=true;break;}
+  }
+  if(!converged)throw Error('Native slice alias closure budget exceeded');
+  const proto=x=>Boolean(x&&(x.type==='Identifier'&&prototypes.has(symbol(x))||
+   x.type==='MemberExpression'&&stableMethodName(x)==='prototype'&&
+    x.object?.type==='Identifier'&&constructors.has(symbol(x.object))));
+  function localArrayReceiver(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(value.type==='ArrayExpression')return true;
+   if(value.type!=='Identifier')return false;
+   const id=symbol(value);
+   if(!id||typeof id!=='object'||seen.has(id))return false;
+   const defs=id.defs||[];
+   if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
+      defs[0].node?.id?.type!=='Identifier')return false;
+   if(id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   seen.add(id);
+   return localArrayReceiver(defs[0].node.init,depth+1,seen);
+  }
+  function nativeSliceHandle(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   // Comma expressions preserve the identity of their final operand;
+   // never bless a mutatable native slice handle hidden behind (0, fn).
+   if(value.type==='SequenceExpression')
+    return nativeSliceHandle(value.expressions?.at(-1),depth+1,seen);
+   if(value.type==='MemberExpression')
+    return stableMethodName(value)==='slice'&&
+     (proto(value.object)||localArrayReceiver(value.object));
+   if(value.type!=='Identifier')return false;
+   const id=symbol(value);
+   if(!id||typeof id!=='object'||seen.has(id))return false;
+   const defs=id.defs||[];
+   if(defs.length!==1||!['const','let','var'].includes(defs[0].parent?.kind)||
+      defs[0].node?.id?.type!=='Identifier')return false;
+   // A let/var handle is stable only while its binding is not reassigned.
+   // Mutable or multiply-defined handles are separately revoked below.
+   if(id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   seen.add(id);
+   return nativeSliceHandle(defs[0].node.init,depth+1,seen);
+  }
+  // Resolve a callable's intrinsic constructor through direct and immutable
+  // lexical aliases. A mere property spelled "constructor" on an unrelated
+  // object is never evidence of the shared Function.prototype identity.
+  function nativeSliceConstructor(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(value.type==='MemberExpression')
+    return stableMethodName(value)==='constructor'&&
+     (nativeSliceHandle(value.object,depth+1,new Set(seen))||
+      value.object?.type==='Identifier'&&slicePatternAliases.has(symbol(value.object)));
+   if(value.type!=='Identifier')return false;
+   const id=symbol(value);
+   if(!id||typeof id!=='object'||seen.has(id))return false;
+   const defs=id.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier'||
+      id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   seen.add(id);
+   return nativeSliceConstructor(defs[0].node.init,depth+1,seen);
+  }
+  // Native handles hidden inside apply argument arrays or immutable aliases
+  // can escape and be overwritten, so they invalidate intrinsic trust.
+  function packedSliceHandle(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(nativeSliceHandle(value)||sliceCallablePrototype(value))return true;
+   if(value.type==='Identifier'&&slicePatternAliases.has(symbol(value)))return true;
+   if(value.type==='MemberExpression'&&
+      sliceMemberSources(value,depth+1,new Set(seen))
+       .some(part=>packedSliceHandle(part,depth+1,new Set(seen))))return true;
+   // A rest binding or carrier alias can expose a nested slice handle.
+   if(value.type==='MemberExpression'&&value.object?.type==='Identifier'&&
+      slicePatternAliases.has(symbol(value.object)))return true;
+   if(value.type==='SpreadElement')return packedSliceHandle(value.argument,depth+1,seen);
+   if(value.type==='SequenceExpression')
+    return value.expressions.some(x=>packedSliceHandle(x,depth+1,new Set(seen)));
+   if(value.type==='ConditionalExpression')
+    return packedSliceHandle(value.consequent,depth+1,new Set(seen))||
+     packedSliceHandle(value.alternate,depth+1,new Set(seen));
+   if(value.type==='LogicalExpression')
+    return packedSliceHandle(value.left,depth+1,new Set(seen))||
+     packedSliceHandle(value.right,depth+1,new Set(seen));
+   if(value.type==='ArrayExpression')
+    return value.elements.some(x=>packedSliceHandle(x,depth+1,new Set(seen)));
+   if(value.type==='ObjectExpression')
+    return value.properties.some(p=>p.type!=='Property'||
+     packedSliceHandle(p.value,depth+1,new Set(seen)));
+   if(value.type==='Identifier'){
+    const id=symbol(value),defs=id?.defs||[];
+    if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+       !['const','let','var'].includes(defs[0].parent?.kind)||
+       defs[0].node?.id?.type!=='Identifier'||
+       id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+    seen.add(id);
+    return packedSliceHandle(defs[0].node.init,depth+1,seen);
+   }
+   return false;
+  }
+  // A fully local, immutable literal-returning method cannot mutate a native
+  // prototype, even when handed that prototype as a normal argument.
+  function inertLocalMethod(callee){
+   if(callee?.type!=='MemberExpression'||callee.object?.type!=='Identifier')return false;
+   const id=symbol(callee.object),defs=id?.defs||[];
+   if(!id||typeof id!=='object'||defs.length!==1||
+      defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+      id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   const obj=defs[0].node.init;
+   if(obj?.type!=='ObjectExpression'||obj.properties.some(p=>
+      p.type!=='Property'||p.kind!=='init'||p.computed))return false;
+   const props=obj.properties.filter(p=>keyName(p)===stableMethodName(callee));
+   if(props.length!==1)return false;
+   // No local object-method proof survives later reassignments, deletions,
+   // descriptor writes or escapes of its receiver to unknown callees.
+   let pristine=true;
+   traverse(ast,(node,parent)=>{
+    if(!pristine)return;
+    if(node.type==='MemberExpression'&&node.object?.type==='Identifier'&&
+       symbol(node.object)===id){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)pristine=false;
+    }
+    if(node.type==='CallExpression'&&node.arguments?.some(arg=>
+       arg?.type==='Identifier'&&symbol(arg)===id))pristine=false;
+   });
+   if(!pristine)return false;
+   const fn=props[0].value;
+   return ['FunctionExpression','ArrowFunctionExpression'].includes(fn?.type)&&
+    fn.params.every(p=>p.type==='Identifier')&&
+    fn.body?.type==='BlockStatement'&&fn.body.body.length===1&&
+    fn.body.body[0].type==='ReturnStatement'&&
+    fn.body.body[0].argument?.type==='Literal';
+  }
+  // A native slice handle inherits call/apply from Function.prototype.
+  // Writes to that shared prototype (or to a stable alias of it) invalidate
+  // the entire native fast-path; unproven escapes fail closed.
+  function sliceCallablePrototype(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(value.type==='MemberExpression'){
+    const method=stableMethodName(value);
+    return method==='prototype'&&(
+      value.object?.type==='Identifier'&&
+       symbol(value.object)==='free:Function'||
+      nativeSliceConstructor(value.object,depth+1,new Set(seen)))||
+     method==='__proto__'&&
+      (nativeSliceHandle(value.object,depth+1,new Set(seen))||
+       value.object?.type==='Identifier'&&slicePatternAliases.has(symbol(value.object)));
+   }
+   if(value.type==='Identifier'){
+    const id=symbol(value);
+    if(!id||typeof id!=='object'||seen.has(id))return false;
+    const defs=id.defs||[];
+    if(defs.length!==1||defs[0].parent?.kind!=='const'||
+       defs[0].node?.id?.type!=='Identifier'||
+       id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+    seen.add(id);
+    return sliceCallablePrototype(defs[0].node.init,depth+1,seen);
+   }
+   if(value.type==='CallExpression'){
+    const callee=value.callee;
+    return callee?.type==='MemberExpression'&&
+     stableMethodName(callee)==='getPrototypeOf'&&
+     value.arguments?.length===1&&
+     nativeSliceHandle(value.arguments[0],depth+1,new Set(seen));
+   }
+   return false;
+  }
+
+  // Monotone may-alias analysis of slice handles projected by destructuring.
+  // Keep harmless local reads CLEAR; revoke native trust on writes or escapes.
+  const slicePatternAliases=new Set();
+  let sliceProjectionSteps=0;
+  function slicePatternBudget(depth){
+   if(depth>MAX_DEPTH||++sliceProjectionSteps>150000)
+    throw Error('Slice pattern provenance budget exceeded');
+  }
+  function slicePatternKey(node,computed,depth=0,seen=new Set()){
+   if(!computed)return node?.type==='Identifier'?node.name:
+    node?.type==='Literal'?String(node.value):stringValue(node);
+   if(node?.type==='Literal'&&['string','number'].includes(typeof node.value))
+    return String(node.value);
+   const direct=stringValue(node);
+   if(direct!==null)return direct;
+   if(node?.type!=='Identifier'||depth>MAX_DEPTH)return null;
+   const id=symbol(node),defs=id?.defs||[];
+   if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+      defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+      id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+   seen.add(id);
+   return slicePatternKey(defs[0].node.init,true,depth+1,seen);
+  }
+  function sliceLiteralSources(expr,depth=0,seen=new Set()){
+   slicePatternBudget(depth);
+   if(!expr)return [null];
+   if(expr.type==='SequenceExpression')
+    return sliceLiteralSources(expr.expressions?.at(-1),depth+1,seen);
+   if(expr.type==='ConditionalExpression')
+    return [...sliceLiteralSources(expr.consequent,depth+1,new Set(seen)),
+     ...sliceLiteralSources(expr.alternate,depth+1,new Set(seen))];
+   if(expr.type==='LogicalExpression')
+    return [...sliceLiteralSources(expr.left,depth+1,new Set(seen)),
+     ...sliceLiteralSources(expr.right,depth+1,new Set(seen))];
+   if(expr.type==='AssignmentExpression'&&expr.operator==='=')
+    return sliceLiteralSources(expr.right,depth+1,seen);
+   if(expr.type==='Identifier'){
+    const id=symbol(expr),defs=id?.defs||[];
+    if(id&&typeof id==='object'&&!seen.has(id)&&defs.length===1&&
+       ['const','let','var'].includes(defs[0].parent?.kind)&&
+       defs[0].node?.id?.type==='Identifier'&&
+       !id.references?.some(ref=>ref.isWrite()&&!ref.init)){
+     seen.add(id);
+     return sliceLiteralSources(defs[0].node.init,depth+1,seen);
+    }
+   }
+   return [expr];
+  }
+  function sliceArraySlots(expr,depth=0){
+   slicePatternBudget(depth);
+   if(expr?.type!=='ArrayExpression')return null;
+   const slots=[];
+   for(const item of expr.elements||[]){
+    if(item?.type==='SpreadElement'){
+     const branches=sliceLiteralSources(item.argument,depth+1);
+     const expanded=branches.length===1?sliceArraySlots(branches[0],depth+1):null;
+     if(expanded)slots.push(...expanded);
+     else slots.push(item.argument); // unknown spread fails closed on escape
+    }else slots.push(item);
+   }
+   return slots;
+  }
+  function sliceObjectSlots(expr,depth=0){
+   slicePatternBudget(depth);
+   if(expr?.type!=='ObjectExpression')return null;
+   const slots=[];
+   for(const p of expr.properties||[]){
+    if(p.type==='SpreadElement'){
+     for(const v of sliceLiteralSources(p.argument,depth+1)){
+      const spread=sliceObjectSlots(v,depth+1);
+      if(spread)slots.push(...spread);
+      else slots.push({key:null,value:v});
+     }
+    }else if(p.type==='Property')
+     slots.push({key:slicePatternKey(p.key,p.computed),value:p.value});
+    else slots.push({key:null,value:p});
+   }
+   return slots;
+  }
+
+  // Resolve nested literal carriers without conflating their contained
+  // native-slice functions with the object/array carrying the function.
+  function sliceMemberSources(expr,depth=0,seen=new Set()){
+   slicePatternBudget(depth);
+   if(!expr)return [];
+   if(expr.type!=='MemberExpression')return sliceLiteralSources(expr,depth+1,seen);
+   const owners=sliceMemberSources(expr.object,depth+1,new Set(seen));
+   const key=slicePatternKey(expr.property,expr.computed);
+   const candidates=[];
+   for(const owner of owners){
+    const arr=sliceArraySlots(owner,depth+1);
+    if(arr){
+     if(key!==null&&/^(0|[1-9][0-9]*)$/.test(key)){
+      const index=Number(key);
+      if(index<arr.length)candidates.push(arr[index]);
+     }else if(key===null)candidates.push(...arr);
+     continue;
+    }
+    const obj=sliceObjectSlots(owner,depth+1);
+    if(obj){
+     const relevant=obj.filter(x=>key===null||x.key===null||x.key===key);
+     const last=key===null?-1:obj.findLastIndex(x=>x.key===key);
+     candidates.push(...(last<0?relevant:
+      relevant.filter(x=>x.key===null||obj.indexOf(x)>=last)).map(x=>x.value));
+    }
+   }
+   return candidates;
+  }
+  function markSlicePattern(pattern){
+   if(!pattern)return;
+   if(pattern.type==='Identifier'){
+    const id=symbol(pattern);
+    if(id&&typeof id==='object')slicePatternAliases.add(id);
+   }else if(pattern.type==='AssignmentPattern')markSlicePattern(pattern.left);
+   else if(pattern.type==='RestElement')markSlicePattern(pattern.argument);
+   else if(pattern.type==='ArrayPattern')
+    for(const item of pattern.elements||[])markSlicePattern(item);
+   else if(pattern.type==='ObjectPattern')
+    for(const item of pattern.properties||[])
+     markSlicePattern(item.type==='Property'?item.value:item.argument);
+  }
+  function sliceIsUndefined(expr){
+   return !expr||expr.type==='Identifier'&&
+    expr.name==='undefined'&&symbol(expr)==='free:undefined'||
+    expr.type==='UnaryExpression'&&expr.operator==='void';
+  }
+  function sliceIsDefinitelyDefined(expr){
+   return Boolean(expr&&['Literal','ArrayExpression','ObjectExpression',
+    'FunctionExpression','ArrowFunctionExpression','ClassExpression',
+    'TemplateLiteral'].includes(expr.type));
+  }
+  function projectSlicePattern(pattern,expr,depth=0){
+   if(!pattern)return;
+   slicePatternBudget(depth);
+   if(pattern.type==='Identifier'){
+    if(returnedSliceCapability(expr)||
+       expr?.type==='Identifier'&&slicePatternAliases.has(symbol(expr)))
+     markSlicePattern(pattern);
+    return;
+   }
+   if(pattern.type==='AssignmentPattern'){
+    if(!sliceIsUndefined(expr))projectSlicePattern(pattern.left,expr,depth+1);
+    if(sliceIsUndefined(expr)||!sliceIsDefinitelyDefined(expr))
+     projectSlicePattern(pattern.left,pattern.right,depth+1);
+    return;
+   }
+   if(pattern.type==='RestElement'){
+    if(packedSliceHandle(expr))markSlicePattern(pattern.argument);
+    return;
+   }
+   const branches=sliceLiteralSources(expr,depth+1);
+   for(const source of branches){
+    if(pattern.type==='ArrayPattern'){
+     const slots=sliceArraySlots(source,depth+1);
+     if(!slots){
+      if(packedSliceHandle(source))markSlicePattern(pattern);
+      continue;
+     }
+     for(let i=0;i<(pattern.elements||[]).length;i++){
+      const item=pattern.elements[i];
+      if(item?.type==='RestElement'){
+       if(slots.slice(i).some(x=>packedSliceHandle(x)))
+        markSlicePattern(item.argument);
+      }else projectSlicePattern(item,slots[i],depth+1);
+     }
+    }else if(pattern.type==='ObjectPattern'){
+     const slots=sliceObjectSlots(source,depth+1);
+     if(!slots){
+      if(packedSliceHandle(source))markSlicePattern(pattern);
+      continue;
+     }
+     const consumed=new Set();
+     for(const item of pattern.properties||[]){
+      if(item.type==='RestElement'){
+       if(slots.some(x=>!consumed.has(x.key)&&packedSliceHandle(x.value)))
+        markSlicePattern(item.argument);
+       continue;
+      }
+      if(item.type!=='Property')continue;
+      const key=slicePatternKey(item.key,item.computed);
+      if(key!==null)consumed.add(key);
+      const candidates=slots.filter(x=>key===null||x.key===null||x.key===key);
+      const last=key===null?-1:slots.findLastIndex(x=>x.key===key);
+      const selected=last<0?candidates:
+       candidates.filter(x=>x.key===null||slots.indexOf(x)>=last);
+      if(!selected.length)projectSlicePattern(item.value,null,depth+1);
+      else for(const entry of selected)
+       projectSlicePattern(item.value,entry.value,depth+1);
+     }
+    }
+   }
+  }
+  // Reach a fixed point across destructured and normal lexical aliases.
+  let slicePatternConverged=false;
+  for(let round=0;round<MAX_ROUNDS;round++){
+   const oldSize=slicePatternAliases.size;
+   traverse(ast,node=>{
+    if(node.type==='VariableDeclarator'){
+     if(['ArrayPattern','ObjectPattern'].includes(node.id?.type))
+      projectSlicePattern(node.id,node.init);
+     else if(node.id?.type==='Identifier'&&node.init?.type==='Identifier'&&
+             slicePatternAliases.has(symbol(node.init)))
+      markSlicePattern(node.id);
+    }
+    if(node.type==='AssignmentExpression'&&node.operator==='='){
+     if(['ArrayPattern','ObjectPattern'].includes(node.left?.type))
+      projectSlicePattern(node.left,node.right);
+     else if(node.left?.type==='Identifier'&&node.right?.type==='Identifier'&&
+             slicePatternAliases.has(symbol(node.right)))
+      markSlicePattern(node.left);
+    }
+   });
+   if(slicePatternAliases.size===oldSize){slicePatternConverged=true;break;}
+  }
+  if(!slicePatternConverged)
+   throw Error('Slice destructuring alias closure budget exceeded');
+  // Returned native slice handles escape even through concise arrow bodies,
+  // conditional expressions and immutable aliases. Revoke the fast path
+  // rather than assuming Function.prototype.call/apply still applies.
+  function returnedSliceCapability(value,depth=0){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(nativeSliceHandle(value)||sliceCallablePrototype(value))return true;
+   if(value.type==='ConditionalExpression')
+    return returnedSliceCapability(value.consequent,depth+1)||
+     returnedSliceCapability(value.alternate,depth+1);
+   if(value.type==='LogicalExpression')
+    return returnedSliceCapability(value.left,depth+1)||
+     returnedSliceCapability(value.right,depth+1);
+   if(value.type==='SequenceExpression')
+    return returnedSliceCapability(value.expressions?.at(-1),depth+1);
+   if(value.type==='AssignmentExpression'&&value.operator==='=')
+    return returnedSliceCapability(value.right,depth+1);
+   return false;
+  }
+  let changed=false;
+  traverse(ast,(node,parent)=>{
+   if(changed)return;
+   // Function.prototype.call/apply can be shadowed on a native slice
+   // handle independently of Array.prototype.slice itself.
+   if(node.type==='MemberExpression'&&sliceCallablePrototype(node.object)){
+    const method=stableMethodName(node);
+    if(method===null||['call','apply'].includes(method)){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)changed=true;
+    }
+    // Legacy function-prototype mutators change inherited call/apply even
+    // though the invoked property is NOT itself named call/apply.
+    if(parent?.type==='CallExpression'&&parent.callee===node&&
+       (method===null||['__defineGetter__','__defineSetter__'].includes(method)))
+     changed=true;
+   }
+   if(node.type==='MemberExpression'&&node.object?.type==='Identifier'&&
+      slicePatternAliases.has(symbol(node.object))){
+    const method=stableMethodName(node);
+    if(method===null||['call','apply'].includes(method)){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)changed=true;
+    }
+    // Legacy accessors operate on the function object itself, without
+    // passing the native handle as a formal call argument.
+    if(parent?.type==='CallExpression'&&parent.callee===node&&
+       (method===null||['__defineGetter__','__defineSetter__'].includes(method)))
+     changed=true;
+   }
+   if(node.type==='MemberExpression'&&nativeSliceHandle(node.object)&&
+      ['call','apply'].includes(stableMethodName(node))){
+    if(parent?.type==='AssignmentExpression'&&parent.left===node||
+       parent?.type==='UpdateExpression'&&parent.argument===node||
+       parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+        parent.argument===node)changed=true;
+   }
+   if(node.type==='MemberExpression'&&proto(node.object)){
+    const key=stableMethodName(node);
+    if(key==='slice'||key===null){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)changed=true;
+    }
+    if(parent?.type==='CallExpression'&&parent.callee===node)changed=true;
+   }
+   if(node.type==='CallExpression'){
+    // Treat a native slice callable handed to any external callee as an
+    // escape: aliases of Object.defineProperty, setPrototypeOf, etc. can
+    // overwrite .call/.apply without a direct, recognizable method name.
+    // Native slice.call(array) hands off the ARRAY, not this callable.
+    if(node.arguments?.some(argument=>packedSliceHandle(argument)))changed=true;
+    // Also recognize the direct global spelling: scope resolvers may not
+    // materialize a builtin Array binding in every scope configuration.
+    const owner=node.callee?.type==='MemberExpression'?
+     intrinsicOwner(node.callee.object):null;
+    const operation=node.callee?.type==='MemberExpression'?
+     stableMethodName(node.callee):null;
+    const intrinsicMutator=owner==='Object'&&
+     ['defineProperty','defineProperties','assign'].includes(operation)||
+     owner==='Reflect'&&['set','defineProperty'].includes(operation);
+    const directArrayPrototype=arg=>arg?.type==='MemberExpression'&&
+     stableMethodName(arg)==='prototype'&&arg.object?.type==='Identifier'&&
+     arg.object.name==='Array'&&symbol(arg.object)==='free:Array';
+    if(!inertLocalMethod(node.callee)&&
+       (node.arguments?.some(proto)||intrinsicMutator&&
+        node.arguments?.some(directArrayPrototype)))changed=true;
+    if(intrinsicMutator&&nativeSliceHandle(node.arguments?.[0])){
+     const operation=stableMethodName(node.callee);
+     const key=stringValue(node.arguments?.[1]);
+     if(['assign','defineProperties'].includes(operation)||key===null||
+        ['call','apply'].includes(key))changed=true;
+    }
+   }
+   if(node.type==='Property'&&proto(node.value)||node.type==='ArrayExpression'&&
+      node.elements?.some(proto)||node.type==='ReturnStatement'&&proto(node.argument))
+    changed=true;
+   if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
+   // Assigning a native slice handle to a carrier or mutable binding can
+   // expose its call/apply properties; never retain the native fast-path.
+   if(node.type==='AssignmentExpression'&&
+      (returnedSliceCapability(node.right)||packedSliceHandle(node.right)&&
+       node.right?.type!=='Identifier'||
+       node.right?.type==='Identifier'&&slicePatternAliases.has(symbol(node.right))))
+    changed=true;
+   // A mutable declarator may hold a previously native handle and later
+   // overwrite its binding. Such flows cannot use the trusted native path.
+   // Stable let/var aliases remain eligible for ordinary read-only calls.
+   if(node.type==='VariableDeclarator'&&
+      parent?.type==='VariableDeclaration'&&parent.kind!=='const'&&
+      returnedSliceCapability(node.init)){
+    const id=node.id?.type==='Identifier'?symbol(node.id):null;
+    if(!id||typeof id!=='object'||id.defs?.length!==1||
+       id.references?.some(ref=>ref.isWrite()&&!ref.init))changed=true;
+   }
+   // Native handles can escape through returned arrays/objects, generators
+   // and instance fields, not just direct return statements.
+   if(node.type==='ReturnStatement'&&
+      (returnedSliceCapability(node.argument)||packedSliceHandle(node.argument))||
+      node.type==='ArrowFunctionExpression'&&
+       node.body?.type!=='BlockStatement'&&
+       (returnedSliceCapability(node.body)||packedSliceHandle(node.body))||
+      node.type==='YieldExpression'&&packedSliceHandle(node.argument)||
+      node.type==='PropertyDefinition'&&packedSliceHandle(node.value))
+    changed=true;
+  });
+  nativeSliceIntegrity=!changed;
+  return nativeSliceIntegrity;
+ }
  function ensureStableArray(variable){
   if(stableArrayCache.has(variable)){
    if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated');
@@ -238,13 +795,425 @@ function findCapabilities(ast){
       return projectedValueDefined(value.right,depth+1,seen);
      return false;
     }
+    // Project ObjectPattern defaults through stable lexical object aliases.
+    // Unknown writes/escapes invalidate certification rather than silently
+    // dropping the array alias that is mutated by the destructured variable.
+    // Destructuring snapshots cannot be changed by later straight-line
+    // assignments. Branch/loop/closure writes still fail closed.
+    function objectPatternSnapshot(pattern){
+     let cursor=pattern;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent)return null;
+      if(parent.type==='VariableDeclarator'||parent.type==='AssignmentExpression')
+       return Number.isSafeInteger(parent.start)?parent.start:null;
+      cursor=parent;
+     }
+     return null;
+    }
+    function safePostSnapshotWrite(node,snapshot){
+     if(!Number.isSafeInteger(snapshot)||!Number.isSafeInteger(node?.start)||
+        node.start<=snapshot)return false;
+     let cursor=node;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent)return false;
+      if(parent.type==='Program')return true;
+      // Bare nested blocks are unconditional lexical sequences. A conditional,
+      // loop, function, try/catch or labelled block still fails closed since
+      // the ancestor chain cannot reach Program through this whitelist.
+      if(!['MemberExpression','AssignmentExpression','ExpressionStatement',
+            'UpdateExpression','UnaryExpression','SequenceExpression',
+            'BlockStatement'].includes(parent.type))return false;
+      cursor=parent;
+     }
+     return false;
+    }
+    // A defaulted array is already captured at the destructuring snapshot.
+    // A later escape of an originally primitive-only source cannot mutate
+    // that array, PROVIDED no lexical alias ever adds mutable properties.
+    function inertLiteralSource(value,depth=0,seen=new Set()){
+     if(!value||depth>MAX_DEPTH)return null;
+     if(value.type==='ObjectExpression'){
+      return value.properties.every(p=>p.type==='Property'&&p.kind==='init'&&
+        !p.computed&&stablePatternKey(p)!=='__proto__'&&
+        p.value?.type==='Literal')?value:null;
+     }
+     if(value.type!=='Identifier')return null;
+     const id=symbol(value);
+     if(!id||typeof id!=='object'||seen.has(id))return null;
+     const defs=id.defs||[];
+     if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
+        defs[0].node?.id?.type!=='Identifier'||
+        id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+     seen.add(id);
+     return inertLiteralSource(defs[0].node.init,depth+1,seen);
+    }
+    // Only prove a post-snapshot escape harmless if every intervening call
+    // is a known read-only builtin or a local function whose entire body
+    // consists of returning a literal (or doing nothing). Unknown helpers
+    // may write references to the captured callback array into the carrier.
+    // Console calls cannot be certified pure once the global console or its
+    // method identities have been exposed, rebound or modified.
+    function globalCarrier(value,depth=0,seen=new Set()){
+     if(!value||depth>MAX_DEPTH||value.type!=='Identifier')return false;
+     const id=symbol(value);
+     if(id==='free:globalThis'||id==='free:global')return true;
+     const defs=id?.defs||[];
+     if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+        defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+        id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+     seen.add(id);
+     return globalCarrier(defs[0].node.init,depth+1,seen);
+    }
+    let consoleReadOnly=null;
+    function pristineConsoleCalls(){
+     if(consoleReadOnly!==null)return consoleReadOnly;
+     let trusted=true;
+     traverse(ast,(node,parent)=>{
+      if(!trusted)return;
+      // A globalThis.console alias can mutate the same global console object.
+      if(node.type==='MemberExpression'&&stableMethodName(node)==='console'&&
+         globalCarrier(node.object)){trusted=false;return;}
+      if(node.type!=='Identifier'||symbol(node)!=='free:console')return;
+      if(parent?.type==='MemberExpression'&&parent.object===node&&
+         ['log','info','warn','error','debug','trace'].includes(stableMethodName(parent))){
+       const usage=parentOf.get(parent);
+       if(usage?.type==='CallExpression'&&usage.callee===parent)return;
+      }
+      trusted=false;
+     });
+     consoleReadOnly=trusted;
+     return trusted;
+    }
+    let wrappersReadOnly=null;
+    function pristineWrappers(){
+     if(wrappersReadOnly!==null)return wrappersReadOnly;
+     let stable=true;
+     traverse(ast,(node,parent)=>{
+      if(!stable)return;
+      if(node.type==='MemberExpression'&&
+         ['call','apply','bind'].includes(stableMethodName(node))&&
+         (parent?.type==='AssignmentExpression'&&parent.left===node||
+          parent?.type==='UpdateExpression'&&parent.argument===node||
+          parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+           parent.argument===node))stable=false;
+      if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'){
+       const owner=intrinsicOwner(node.callee.object);
+       const method=stableMethodName(node.callee);
+       if(owner==='Object'&&['defineProperty','defineProperties','setPrototypeOf','assign'].includes(method)||
+          owner==='Reflect'&&['defineProperty','setPrototypeOf','set'].includes(method))stable=false;
+      }
+     });
+     wrappersReadOnly=stable;
+     return stable;
+    }
+    function provenReadOnlyCall(callee,depth=0,seen=new Set(),call=null){
+     if(!callee||depth>MAX_DEPTH)return false;
+     if(callee.type==='CallExpression'&&callee.callee?.type==='MemberExpression'&&
+        stableMethodName(callee.callee)==='bind'&&pristineWrappers())
+      return provenReadOnlyCall(callee.callee.object,depth+1,new Set(seen));
+     if(callee.type==='MemberExpression'){
+      const wrapper=stableMethodName(callee);
+      if(wrapper==='apply'&&callee.object?.type==='Identifier'&&
+         symbol(callee.object)==='free:Reflect'&&call?.callee===callee&&
+         pristineWrappers())
+       return provenReadOnlyCall(call.arguments?.[0],depth+1,new Set(seen));
+      if(['call','apply','bind'].includes(wrapper)&&pristineWrappers())
+       return provenReadOnlyCall(callee.object,depth+1,new Set(seen));
+     }
+     // Parameter initializers execute even when the function body is inert.
+     // Destructuring or executable defaults must invalidate purity proof.
+     const inertParameter=param=>param?.type==='Identifier'||
+      param?.type==='RestElement'&&param.argument?.type==='Identifier'||
+      param?.type==='AssignmentPattern'&&param.left?.type==='Identifier'&&
+       param.right?.type==='Literal';
+     const inertFunction=fn=>Boolean(fn&&
+      ['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression'].includes(fn.type)&&
+      fn.params?.every(inertParameter)&&
+      (fn.body?.type==='Literal'||
+       fn.body?.type==='BlockStatement'&&
+        (fn.body.body.length===0||
+         fn.body.body.length===1&&
+         fn.body.body[0]?.type==='ReturnStatement'&&
+         (!fn.body.body[0].argument||
+          fn.body.body[0].argument.type==='Literal'))));
+     if(callee.type==='MemberExpression'){
+      const name=stableMethodName(callee);
+      const owner=callee.object?.type==='Identifier'?symbol(callee.object):null;
+      if(name==='log'&&owner==='free:console'&&pristineConsoleCalls())return true;
+      if(name==='getPrototypeOf'&&
+         (owner==='free:Object'||owner==='free:Reflect'))return true;
+      const expr=callee.object;
+      if(expr?.type!=='Identifier')return false;
+      const id=symbol(expr),defs=id?.defs||[];
+      if(!id||typeof id!=='object'||seen.has(id)||
+         defs.length!==1||defs[0].parent?.kind!=='const'||
+         id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+      const obj=defs[0].node?.init;
+      if(obj?.type!=='ObjectExpression')return false;
+      const matching=obj.properties.filter(p=>p.type==='Property'&&
+        !p.computed&&stablePatternKey(p)===name);
+      return matching.length===1&&inertFunction(matching[0].value);
+     }
+     if(callee.type!=='Identifier')return false;
+     const id=symbol(callee),defs=id?.defs||[];
+     if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+        id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+     seen.add(id);
+     const decl=defs[0].node;
+     if(inertFunction(decl))return true;
+     if(decl?.type==='VariableDeclarator'&&
+        defs[0].parent?.kind==='const'){
+      if(inertFunction(decl.init))return true;
+      return provenReadOnlyCall(decl.init,depth+1,seen);
+     }
+     return false;
+    }
+    function safePostSnapshotEscape(node,value,snapshot){
+     if(!Number.isSafeInteger(snapshot)||!Number.isSafeInteger(node?.start)||
+        node.start<=snapshot)return false;
+     let cursor=node,inTopLevelStatement=false;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent)return false;
+      if(parent.type==='Program'){inTopLevelStatement=true;break;}
+      if(!['MemberExpression','CallExpression','ExpressionStatement',
+            'UpdateExpression','UnaryExpression','SequenceExpression',
+             'ArrayExpression'].includes(
+            parent.type))return false;
+      cursor=parent;
+     }
+     if(!inTopLevelStatement)return false;
+     // Calls are the escape boundary. Every unproved callee is potentially
+     // effectful even if it appears after the object default snapshot.
+     cursor=node;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent||parent.type==='Program')break;
+      if(parent.type==='CallExpression'&&!provenReadOnlyCall(parent.callee,0,new Set(),parent))
+       return false;
+      cursor=parent;
+     }
+     const original=inertLiteralSource(value);
+     if(!original)return false;
+     // Conservatively retain INCOMPLETE for writes to the source at ANY
+     // position: a later write could put the captured array into a carrier.
+     // Recognize direct, computed and immutable aliases of property and
+     // prototype mutators. All mutate the observed carrier, so neither
+     // post-snapshot escape nor an apparently inert literal can be trusted.
+     function mutatorName(expr,depth=0,seen=new Set()){
+      if(!expr||depth>MAX_DEPTH)return null;
+      if(expr.type==='MemberExpression'){
+       const name=stableMethodName(expr);
+       if(['call','apply','bind'].includes(name))
+        return mutatorName(expr.object,depth+1,new Set(seen));
+       // Never grant global-intrinsic privileges solely because a local
+       // method has the same spelling. Bindings are scope-resolved.
+       const owner=expr.object?.type==='Identifier'?symbol(expr.object):null;
+       if(owner==='free:Object'&&
+          ['defineProperty','defineProperties','assign','setPrototypeOf'].includes(name))
+        return name;
+       if(owner==='free:Reflect'&&['set','defineProperty','setPrototypeOf'].includes(name))
+        return name;
+       if(['__defineGetter__','__defineSetter__'].includes(name))
+        return name;
+       return null;
+      }
+      // A bound intrinsic remains a mutator even when its use is delayed.
+      if(expr.type==='CallExpression'&&expr.callee?.type==='MemberExpression'&&
+         stableMethodName(expr.callee)==='bind')
+       return mutatorName(expr.callee.object,depth+1,new Set(seen));
+      if(expr.type!=='Identifier')return null;
+      const id=symbol(expr);
+      if(!id||typeof id!=='object'||seen.has(id))return null;
+      const defs=id.defs||[];
+      if(defs.length!==1||defs[0].parent?.kind!=='const'||
+         defs[0].node?.id?.type!=='Identifier'||
+         id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+      seen.add(id);
+      return mutatorName(defs[0].node.init,depth+1,seen);
+     }
+     // Receiver provenance: writes to an object's current prototype also
+     // alter which properties the source can observe via inheritance.
+     function affectsCarrier(target,depth=0,seen=new Set()){
+      if(!target||depth>MAX_DEPTH)return false;
+      if(inertLiteralSource(target)===original)return true;
+      // The prototype returned by Object.getPrototypeOf(source) or
+      // Reflect.getPrototypeOf(source) is still part of the source's
+      // observable state. Follow only proven immutable lexical aliases.
+      if(target.type==='Identifier'){
+       const variable=symbol(target);
+       if(!variable||typeof variable!=='object'||seen.has(variable))
+        return false;
+       const defs=variable.defs||[];
+       if(defs.length!==1||defs[0].parent?.kind!=='const'||
+          defs[0].node?.id?.type!=='Identifier'||
+          variable.references?.some(ref=>ref.isWrite()&&!ref.init))
+        return false;
+       seen.add(variable);
+       return affectsCarrier(defs[0].node.init,depth+1,seen);
+      }
+      if(target.type==='CallExpression'&&target.arguments?.length===1&&
+         target.callee?.type==='MemberExpression'&&
+         stableMethodName(target.callee)==='getPrototypeOf'&&
+         target.callee.object?.type==='Identifier'&&
+         ['free:Object','free:Reflect'].includes(symbol(target.callee.object))&&
+         inertLiteralSource(target.arguments[0])===original)return true;
+      return false;
+     }
+     let modified=false;
+     traverse(ast,(candidate,parent)=>{
+      if(modified)return;
+      if(candidate.type==='MemberExpression'&&
+         inertLiteralSource(candidate.object)===original&&
+         (parent?.type==='AssignmentExpression'&&parent.left===candidate||
+          parent?.type==='UpdateExpression'&&parent.argument===candidate||
+          parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+            parent.argument===candidate||
+          parent?.type==='CallExpression'&&parent.callee===candidate))
+       modified=true;
+      if(candidate.type==='CallExpression'){
+       let action=mutatorName(candidate.callee),target=candidate.arguments?.[0];
+       if(candidate.callee?.type==='MemberExpression'){
+        const wrapper=stableMethodName(candidate.callee);
+        if(wrapper==='call'){
+         // Each .call layer adds one receiver argument ahead of the
+         // real mutator target. For f.call.call(f,thisArg,target), the
+         // mutation target is arguments[2], never arguments[1].
+         let layers=0,cursor=candidate.callee;
+         while(cursor?.type==='MemberExpression'&&
+               stableMethodName(cursor)==='call'&&layers<MAX_DEPTH){
+          layers++;cursor=cursor.object;
+         }
+         target=layers>=MAX_DEPTH?null:candidate.arguments?.[layers]||null;
+        }else if(wrapper==='apply'){
+         const supplied=candidate.arguments?.[1];
+         target=supplied?.type==='ArrayExpression'?
+          supplied.elements?.[0]:null;
+        }
+       }else if(candidate.callee?.type==='CallExpression'&&
+           candidate.callee.callee?.type==='MemberExpression'&&
+           stableMethodName(candidate.callee.callee)==='bind')
+        target=candidate.callee.arguments?.[1]||candidate.arguments?.[0];
+       // Reflect.apply(fn,receiver,[target,...]) has its own argument shape.
+       if(candidate.callee?.type==='MemberExpression'&&
+          stableMethodName(candidate.callee)==='apply'&&
+          candidate.callee.object?.type==='Identifier'&&
+          symbol(candidate.callee.object)==='free:Reflect'&&
+          mutatorName(candidate.arguments?.[0])){
+        action=mutatorName(candidate.arguments[0]);
+        target=candidate.arguments[2]?.type==='ArrayExpression'?
+         candidate.arguments[2].elements?.[0]:null;
+       }
+       if(['__defineGetter__','__defineSetter__'].includes(action)){
+        // Instance mutators change the receiver (this), not their key
+        // argument. A direct method uses callee.object, .call receiver
+        // is arguments[0], and .call.call receiver is arguments[1].
+        if(candidate.callee?.type==='MemberExpression'){
+         let layers=0,cursor=candidate.callee;
+         while(cursor?.type==='MemberExpression'&&
+               stableMethodName(cursor)==='call'&&layers<MAX_DEPTH){
+          layers++;cursor=cursor.object;
+         }
+         // .apply supplies its mutated receiver directly in arguments[0],
+         // whereas .call wrappers shift the receiver by each call layer.
+         target=layers>0?candidate.arguments?.[layers-1]||null:
+          stableMethodName(candidate.callee)==='apply'?
+           candidate.arguments?.[0]||null:candidate.callee.object;
+        }
+       }
+       if(action&&(target===null||affectsCarrier(target)))modified=true;
+      }
+     });
+     return !modified;
+    }
+    // Unknown computed keys, accessors, spread and prototype setters must
+    // never be projected as absent slots: they may overwrite the default.
+    function verifiedObjectLiteral(value){
+     if(value?.type!=='ObjectExpression')return null;
+     for(const prop of value.properties){
+      // The scope engine cannot currently prove a computed identifier's
+      // array callback slots survived destructuring. Even if a separate
+      // constant-folder knows its string value, do NOT project an absent
+      // default until the value provenance is also established.
+      if(prop.type!=='Property'||prop.kind!=='init'||
+         // A computed lexical key can be trusted only when its constant
+         // value is proven and the corresponding property holds an inert
+         // scalar. Callback arrays still require full descriptor tracking.
+         // A non-literal computed key with an authenticated constant
+         // string may be disjoint from the projected slot regardless of
+         // its value type. Matching keys are screened separately below.
+         prop.computed&&stablePatternKey(prop)===null||
+         stablePatternKey(prop)===null||
+         stablePatternKey(prop)==='__proto__')
+       throw Error('Unresolved object property identity');
+     }
+     return value;
+    }
+    function immutableObjectSource(value,depth=0,seen=new Set(),snapshot=null){
+     if(!value||depth>MAX_DEPTH)return null;
+     if(value.type==='ObjectExpression')return verifiedObjectLiteral(value);
+     if(value.type!=='Identifier')return null;
+     const root=symbol(value);
+     if(!root||typeof root!=='object'||seen.has(root))return null;
+     const queue=[root],visited=new Set();
+     while(queue.length){
+      if(visited.size>MAX_ROUNDS)throw Error('Object alias provenance budget exceeded');
+      const current=queue.pop();
+      if(visited.has(current))continue;
+      visited.add(current);
+      for(const ref of current.references||[]){
+       if(ref.isWrite()){
+        if(ref.init||safePostSnapshotWrite(ref.identifier,snapshot))continue;
+        throw Error('Mutable object source alias');
+       }
+       const id=ref.identifier,parent=parentOf.get(id);
+       if(parent?.type==='VariableDeclarator'&&parent.init===id){
+        if(parent.id?.type==='Identifier'&&['const','let'].includes(parentOf.get(parent)?.kind)){
+         const alias=symbol(parent.id);
+         if(!alias||typeof alias!=='object')throw Error('Unknown object source alias');
+         queue.push(alias);
+        }else if(parent.id?.type!=='ObjectPattern')
+         throw Error('Unknown object carrier escape');
+        continue;
+       }
+       // A destructuring assignment reads the same stable local snapshot
+       // as a declaration; an unrelated assignment still fails closed.
+       if(parent?.type==='AssignmentExpression'&&parent.right===id&&
+          parent.operator==='='&&parent.left?.type==='ObjectPattern')
+        continue;
+       if(parent?.type==='MemberExpression'&&parent.object===id){
+        const outer=parentOf.get(parent);
+        if(outer?.type==='AssignmentExpression'&&outer.left===parent||
+           outer?.type==='UpdateExpression'&&outer.argument===parent||
+           outer?.type==='UnaryExpression'&&outer.operator==='delete'&&outer.argument===parent||
+           outer?.type==='CallExpression'&&outer.callee===parent)
+         if(!safePostSnapshotWrite(parent,snapshot))
+          throw Error('Object source property mutation unknown');
+        continue;
+       }
+       if(safePostSnapshotEscape(id,value,snapshot))continue;
+       throw Error('Object source escape or mutation unknown');
+      }
+     }
+     const defs=root.defs||[];
+     if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
+        defs[0].node?.id?.type!=='Identifier')return null;
+     seen.add(root);
+     const init=defs[0].node.init;
+     if(init?.type==='ObjectExpression')
+      return verifiedObjectLiteral(init);
+     return immutableObjectSource(init,depth+1,seen,snapshot);
+    }
     function project(pattern,value,depth=0){
      if(!pattern||depth>MAX_DEPTH)return;
      // Do not skip an AssignmentPattern merely because its slot is missing:
      // omission is exactly when the default may alias a mutable array.
      if(pattern.type==='AssignmentPattern'){
       const omitted=!value||
-       (value.type==='Identifier'&&value.name==='undefined')||
+       (value.type==='Identifier'&&value.name==='undefined'&&
+        symbol(value)==='free:undefined')||
        (value.type==='UnaryExpression'&&value.operator==='void');
       if(omitted)return project(pattern.left,pattern.right,depth+1);
       project(pattern.left,value,depth+1);
@@ -259,15 +1228,18 @@ function findCapabilities(ast){
      if(pattern.type==='ArrayPattern'&&value.type==='ArrayExpression')
       for(let i=0;i<pattern.elements.length;i++)
        project(pattern.elements[i],value.elements[i],depth+1);
-     if(pattern.type==='ObjectPattern'&&value.type==='ObjectExpression')
-      for(const entry of pattern.properties){
+     if(pattern.type==='ObjectPattern'){
+      const sourceObject=immutableObjectSource(value,depth+1,new Set(),
+       objectPatternSnapshot(pattern));
+      if(sourceObject)for(const entry of pattern.properties){
        if(entry.type!=='Property')continue;
        const key=stablePatternKey(entry);
-       const source=value.properties.find(prop=>prop.type==='Property'&&
+       const source=sourceObject.properties.findLast(prop=>prop.type==='Property'&&
          stablePatternKey(prop)===key);
        if(source)project(entry.value,source.value,depth+1);
        else project(entry.value,null,depth+1);
       }
+     }
     }
     if(node.type==='VariableDeclarator'&&node.init)
      project(node.id,node.init);
@@ -321,10 +1293,52 @@ function findCapabilities(ast){
    if(node?.type==='MemberExpression')return descendsFromArray(node.object);
    return false;
   };
-  let uncertain=false;
+  let uncertain=false,unknownAliasWrite=false;
+  function initialObjectPatternAssignment(alias,ref){
+   // A single assignment to a previously uninitialized lexical let
+   // destructuring target is its first known value, not a later mutation.
+   // Its array provenance is already projected from the source expression.
+   const defs=alias?.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='let'||
+      defs[0].node?.id?.type!=='Identifier'||defs[0].node?.init)
+    return false;
+   // eslint-scope also reports the uninitialized `let x;` declaration
+   // as a write. It has no assigned value and is not a mutation.
+   const emptyDeclaration=reference=>{
+    const node=reference.identifier,parent=parentOf.get(node);
+    return parent?.type==='VariableDeclarator'&&parent.id===node&&
+     !parent.init;
+   };
+   if(emptyDeclaration(ref))return true;
+   const writes=(alias.references||[]).filter(r=>
+    r.isWrite()&&!r.init&&!emptyDeclaration(r));
+   // Scope may emit multiple write references for the same destructuring
+   // identifier. Deduplicate by the exact AST node, never by variable name.
+   // Distinct later write sites still make the array provenance uncertain.
+   if(writes.length===0||writes.some(r=>r.identifier!==ref.identifier))
+    return false;
+   // ESLint-scope may expose a write identifier at the outer destructuring
+   // assignment instead of directly below the property's default. Verify
+   // that the write stays inside the LHS ObjectPattern, not a later write.
+   let child=ref.identifier;
+   for(let depth=0;depth<MAX_DEPTH;depth++){
+    const parent=parentOf.get(child);
+    if(!parent)return false;
+    if(parent.type==='AssignmentExpression')
+     return parent.operator==='='&&parent.left?.type==='ObjectPattern'&&
+      child===parent.left;
+    if(parent.type==='FunctionExpression'||parent.type==='ArrowFunctionExpression'||
+       parent.type==='Program'||parent.type==='VariableDeclarator')return false;
+    child=parent;
+   }
+   return false;
+  }
   for(const alias of aliases)
-   if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init))uncertain=true;
-  const readonly=new Set(['at','slice','concat','includes','indexOf',
+   if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init&&
+      !initialObjectPatternAssignment(alias,ref))){
+    unknownAliasWrite=true;uncertain=true;
+   }
+    const readonly=new Set(['at','slice','concat','includes','indexOf',
    'lastIndexOf','join','keys','values','entries','findIndex','toString']);
   traverse(ast,(node,parent,key)=>{
    if(node.type==='MemberExpression'&&descendsFromArray(node.object)){
@@ -340,18 +1354,28 @@ function findCapabilities(ast){
      const callbackIntrinsic=['call','apply','bind'].includes(method)&&
       node.object?.type==='MemberExpression'&&
       /^(0|[1-9][0-9]*)$/.test(stableMethodName(node.object)||'');
+     // A native Array slice invoked with call/apply is a read-only
+     // operation on its receiver. Shadow writes to slice remain unsafe.
+     const nativeSliceWrapper=['call','apply'].includes(method)&&
+      node.object?.type==='MemberExpression'&&
+      stableMethodName(node.object)==='slice'&&
+      descendsFromArray(node.object.object)&&nativeArraySliceTrusted();
      if(method===null||(!/^(0|[1-9][0-9]*)$/.test(method)&&
-        !readonly.has(method)&&!callbackIntrinsic))
+        !readonly.has(method)&&!callbackIntrinsic&&!nativeSliceWrapper))
       uncertain=true;
     }
    }
    if(node.type==='Identifier'&&aliases.has(symbol(node))&&
       parent?.type==='CallExpression'&&key==='arguments'){
     const callee=parent.callee;
+    // Only a direct, known receiver in slice.call/apply is read-only.
+    // Extra arguments, unrelated objects and method aliases stay unsafe.
     const safeSlice=callee?.type==='MemberExpression'&&
-     stableMethodName(callee)==='call'&&
+     ['call','apply'].includes(stableMethodName(callee))&&
      callee.object?.type==='MemberExpression'&&
-     stableMethodName(callee.object)==='slice';
+     stableMethodName(callee.object)==='slice'&&
+     descendsFromArray(callee.object.object)&&
+     parent.arguments?.[0]===node&&nativeArraySliceTrusted();
     if(!safeSlice)uncertain=true;
    }
    // A local callback array can escape into object or array carriers.
@@ -381,7 +1405,8 @@ function findCapabilities(ast){
    }
   });
   stableArrayCache.set(variable,uncertain);
-  if(uncertain)throw Error('Array callback slots may be mutated');
+  if(uncertain)throw Error('Array callback slots may be mutated'+
+   (unknownAliasWrite?' (unknown lexical write)':' (carrier or receiver)'));
  }
  function knownArraySlots(node,depth=0,seen=new Set()){
   if(!node)return null;
@@ -421,8 +1446,14 @@ function findCapabilities(ast){
    // alias to the native method. Unknown boundaries remain INCOMPLETE.
    function sliceMethod(expr,level=0,seenMethods=new Set()){
     if(!expr||level>MAX_DEPTH)return false;
-    if(expr.type==='MemberExpression')
-     return stableMethodName(expr)==='slice';
+    if(expr.type==='MemberExpression'){
+     if(stableMethodName(expr)!=='slice')return false;
+     // Returning false here silently loses the copied callback's identity.
+     // An unproven inherited method MUST be INCOMPLETE, not CLEAR.
+     if(!nativeArraySliceTrusted())
+      throw Error('Inherited array slice intrinsic may be overwritten');
+     return true;
+    }
     if(expr.type==='Identifier'){
      const id=symbol(expr);
      if(!id||typeof id!=='object'||seenMethods.has(id))return false;
@@ -1608,6 +2639,61 @@ function findCapabilities(ast){
     throw Error('Unknown constructor capability');
   }
  });
+ // The normal descriptor engine cannot yet attest callback-array provenance
+ // when a destructured default competes with a computed source key supplied
+ // through a lexical identifier. Reject that precise uncertain family instead
+ // of silently selecting the default and reporting a false CLEAR.
+ function sourceObjectForDefault(expr,depth=0,seen=new Set()){
+  if(!expr||depth>MAX_DEPTH)return null;
+  // SequenceExpression yields its final operand. Earlier operands might
+  // mutate state, so this is used only by the fail-closed ambiguous-default
+  // checker, never to certify a source as safe.
+  if(expr.type==='SequenceExpression')
+   return sourceObjectForDefault(expr.expressions?.at(-1),depth+1,seen);
+  if(expr.type==='ObjectExpression')return expr;
+  if(expr.type!=='Identifier')return null;
+  const id=symbol(expr);
+  if(!id||typeof id!=='object'||seen.has(id))return null;
+  const defs=id.defs||[];
+  if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
+     defs[0].node?.id?.type!=='Identifier'||
+     id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+  seen.add(id);
+  return sourceObjectForDefault(defs[0].node.init,depth+1,seen);
+ }
+ function unprovenComputedArrayDefault(pattern,value,depth=0){
+  if(pattern?.type!=='ObjectPattern')return false;
+  if(depth>MAX_DEPTH)throw Error('Default projection provenance budget exceeded');
+  if(value?.type==='ConditionalExpression')
+   return unprovenComputedArrayDefault(pattern,value.consequent,depth+1)||
+    unprovenComputedArrayDefault(pattern,value.alternate,depth+1);
+  if(value?.type==='LogicalExpression')
+   return unprovenComputedArrayDefault(pattern,value.left,depth+1)||
+    unprovenComputedArrayDefault(pattern,value.right,depth+1);
+  const source=sourceObjectForDefault(value);
+  if(!source)return false;
+  for(const entry of pattern.properties||[]){
+   if(entry.type!=='Property'||entry.value?.type!=='AssignmentPattern')continue;
+   const desired=stablePatternKey(entry);
+   for(const p of source.properties||[]){
+    if(p.type!=='Property'||!p.computed||
+       ['Literal','TemplateLiteral'].includes(p.key?.type))continue;
+    // Never infer an absent default from a computed key that may match.
+    // Its value can be an array, a function, an object, or an expression
+    // producing one; proving the key disjoint is the only safe shortcut.
+    const key=stablePatternKey(p);
+    if(key===null||desired===null||key===desired)return true;
+   }
+  }
+  return false;
+ }
+ traverse(ast,node=>{
+  if(node.type==='VariableDeclarator'&&
+     unprovenComputedArrayDefault(node.id,node.init)||
+     node.type==='AssignmentExpression'&&node.operator==='='&&
+     unprovenComputedArrayDefault(node.left,node.right))
+   throw Error('Unproven computed callback-array default provenance');
+ });
  return sinks;
 }
-module.exports={findCapabilities};
+module.exports={findCapabilities,preflightAstBudget};

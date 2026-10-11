@@ -28,7 +28,7 @@ const MINIMUM=500000;
 // A PR must never attest fewer real baseline tests just because 500k matrix cases pass.
 // The 12 RED/GREEN Codex round-six regressions in the baseline b1 suite
 // are intentionally counted; never lower the threshold to mask failures.
-const BASELINE_TEST_COUNTS=Object.freeze({b0:10242,b1:11254});
+const BASELINE_TEST_COUNTS=Object.freeze({b0:10242,b1:11526});
 
 function testFiles(root=ROOT){
  return fs.readdirSync(root).filter(f=>/^ultra_sentinel_.*\.test\.cjs$/.test(f)).sort();
@@ -70,7 +70,7 @@ function validateReport(report,expected,sha){
     c.pass!==c.tests||report.passed!==true)
   throw Error('Failed or incomplete cases in '+expected.id);
  if(expected.kind==='baseline'&&c.tests!==BASELINE_TEST_COUNTS[expected.id])
-  throw Error('Baseline shard count mismatch '+expected.id);
+  throw Error('Baseline shard count mismatch '+expected.id+': expected '+BASELINE_TEST_COUNTS[expected.id]+', observed '+c.tests);
  if(expected.kind==='matrix'&&c.tests!==CASES_PER_SHARD+EXTRA_CASES_PER_SHARD+(expected.index===0?MATRIX_EXTRA_AUDITS:0))
   throw Error('Missing or duplicated matrix cases in '+expected.id);
  if(!/^[a-f0-9]{64}$/.test(report.tapSha256||''))

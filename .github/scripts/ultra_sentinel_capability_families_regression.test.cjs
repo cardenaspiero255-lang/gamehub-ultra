@@ -897,6 +897,312 @@ for(const [name,source] of round8Dangerous)
 for(const [name,source] of round8Benign)
  test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
 
+// Ultra Sentinel V2 hardening: method identity must be established before
+// treating indirect Array.prototype.slice invocations as read-only.
+// These are static scanner inputs and are NEVER executed.
+const nativeSliceBenign=[
+ ["P2 native slice.call on a const array remains CLEAR","const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 native slice.call through const array alias remains CLEAR","const a=[()=>1];const b=a;const c=b.slice.call(b);c[0]()"],
+ ["P2 native slice.call with literal bounds remains CLEAR","const a=[()=>1,()=>2];const c=a.slice.call(a,0,1);c[0]()"],
+ ["P2 native slice.apply on a const array remains CLEAR","const a=[()=>1];const c=a.slice.apply(a,[]);c[0]()"]
+];
+const nativeSliceDangerous=[
+ ["P1 slice.call retains executable callback","function bad(g){g.eval('attack')}const a=[bad];const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 slice.apply retains executable callback","function bad(g){g.eval('attack')}const a=[bad];const c=a.slice.apply(a,[]);c[0](globalThis)"],
+ ["P1 overwritten own slice method is never assumed native","function bad(g){g.eval('attack')}const a=[()=>1];a.slice=bad;a.slice.call(null,globalThis)"],
+ ["P1 overwritten slice through alias is never assumed native","function bad(g){g.eval('attack')}const a=[()=>1];const b=a;b.slice=bad;a.slice.call(null,globalThis)"],
+ ["P1 dynamic own slice property cannot certify native","function bad(g){g.eval('attack')}const a=[bad];const k='slice';a[k]=function(){return [()=>1]};a.slice.call(a)[0](globalThis)"]
+];
+for(const [name,source] of nativeSliceBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+for(const [name,source] of nativeSliceDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+
+// Codex P1 family: project a const ObjectPattern source through lexical aliases;
+// no alias may silently lose a write to its original array callback slots.
+const objectDefaultAliasDangerous=[
+ ["P1 ObjectPattern default follows immutable object alias","function bad(g){g.eval('attack')}function safe(){}const a=[safe],empty={};const {x=a}=empty;x.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 ObjectPattern default follows chained immutable aliases","function bad(g){g.eval('attack')}function safe(){}const a=[safe],empty={},alias=empty;const {x=a}=alias;x.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 fake slice.call must not whitelist an array argument","function bad(g){g.eval('attack')}function safe(){}const fake={slice:{call(a){a.fill(bad)}}};const a=[safe];fake.slice.call(a);a[0](globalThis)"]
+];
+const objectDefaultAliasBenign=[
+ ["P2 ObjectPattern alias with present slot remains CLEAR","const a=[()=>1],holder={x:[()=>2]},alias=holder;const {x=a}=alias;x[0]();a[0]()"],
+ ["P2 ObjectPattern absent slot without mutation remains CLEAR","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;a[0]()"]
+];
+for(const [name,source] of objectDefaultAliasDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of objectDefaultAliasBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Bounded deterministic metamorphic matrix: the alias closure must be
+// invariant under equivalent ObjectPattern spellings and mutations.
+const objectDefaultPatterns=[
+ "const {x=a}=alias;",
+ "const {'x':x=a}=alias;",
+ "const {['x']:x=a}=alias;"
+];
+const objectAliasMutations=[
+ "x.splice(0,1,bad);",
+ "x[0]=bad;",
+ "x.fill(bad);"
+];
+for(const [i,projection] of objectDefaultPatterns.entries()){
+ for(const [j,mutation] of objectAliasMutations.entries()){
+  const source="function bad(g){g.eval('attack')}function safe(){}"+
+   "const a=[safe],empty={},alias=empty;"+projection+mutation+
+   "a[0](globalThis)";
+  test('metamorphic ObjectPattern alias '+i+' mutation '+j+' stays unsafe',
+   ()=>assert.notEqual(result(source),'CLEAR'));
+ }
+ const benign="const a=[()=>1],holder={x:[()=>2]},alias=holder;"+
+  projection+"x[0]();a[0]();";
+ test('metamorphic ObjectPattern present value '+i+' stays CLEAR',
+  ()=>assert.equal(result(benign),'CLEAR'));
+}
+
+// Global Array.prototype.slice can be changed without touching a local array
+// identifier. Native method optimization must account for that shared state.
+const prototypeSliceDangerous=[
+ ["P1 Array.prototype.slice directly overwritten before slice.call","function bad(g){g.eval('attack')}const a=[()=>1];Array.prototype.slice=function(){return [bad]};const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 Array.prototype.slice overwritten via Reflect.set","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.set(Array.prototype,'slice',function(){return [bad]});const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 Array.prototype.slice overwritten through const prototype alias","function bad(g){g.eval('attack')}const a=[()=>1],proto=Array.prototype;proto.slice=function(){return [bad]};const c=a.slice.call(a);c[0](globalThis)"]
+];
+const prototypeSliceBenign=[
+ ["P2 reading native slice without changing it stays CLEAR","const a=[()=>1],s=Array.prototype.slice;const c=a.slice.call(a);c[0]()"],
+ ["P2 overwriting an unrelated slice property stays CLEAR","const a=[()=>1],other={};other.slice=function(){};const c=a.slice.call(a);c[0]()"]
+];
+for(const [name,source] of prototypeSliceDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of prototypeSliceBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Independent Codex review of #173: four root-cause families.
+const codex173Dangerous=[
+ ["P1 overwritten native slice.call through defineProperty","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 overwritten native slice.apply through defineProperty","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 stable let ObjectPattern default aliases array","function bad(g){g.eval('attack')}const a=[()=>1];let empty={};const {x=a}=empty;x.fill(bad);a[0](globalThis)"],
+ ["P1 stable let alias chain preserves ObjectPattern default","function bad(g){g.eval('attack')}const a=[()=>1];let empty={};const alias=empty;const {x=a}=alias;x[0]=bad;a[0](globalThis)"],
+ ["P1 last duplicate ObjectPattern property selects undefined","function bad(g){g.eval('attack')}const a=[()=>1],other=[()=>2],holder={x:other,x:undefined};const {x=a}=holder;x.fill(bad);a[0](globalThis)"],
+ ["P1 pre-snapshot object property writes cannot be ignored","function bad(g){g.eval('attack')}const a=[()=>1],holder={x:[()=>2]};holder.x=undefined;const {x=a}=holder;x[0]=bad;a[0](globalThis)"]
+];
+const codex173Benign=[
+ ["P2 later direct object write cannot affect default snapshot","const a=[()=>1],empty={};const {x=a}=empty;empty.x=42;a[0]()"],
+ ["P2 later object alias write cannot affect default snapshot","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;alias.x=42;a[0]()"],
+ ["P2 last duplicate present ObjectPattern property suppresses default","const a=[()=>1],other=[()=>2],holder={x:undefined,x:other};const {x=a}=holder;x[0]();a[0]()"]
+];
+for(const [name,source] of codex173Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of codex173Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Codex 173 follow-up P1/P2: protect the native slice method's prototype
+// and propagate stable object source through assignment destructuring.
+// Snippets are analyzed as static AST only, NEVER evaluated.
+const codex173Round2Dangerous=[
+ ["P1 Object.setPrototypeOf changes inherited native slice.call","function bad(g){g.eval('attack')}const a=[()=>1];Object.setPrototypeOf(a.slice,{call(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 Reflect.setPrototypeOf changes inherited native slice.call","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.setPrototypeOf(a.slice,{call(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 extracted defineProperty replaces native slice.call","function bad(g){g.eval('attack')}const a=[()=>1];const dp=Object.defineProperty;dp(a.slice,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 object alias defineProperty replaces native slice.apply","function bad(g){g.eval('attack')}const a=[()=>1],O=Object;O.defineProperty(a.slice,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"]
+];
+const codex173Round2Benign=[
+ ["P2 assignment ObjectPattern with stable empty RHS stays CLEAR","const a=[()=>1],empty={};let x;({x=a}=empty);x[0]();a[0]()"],
+ ["P2 assignment ObjectPattern through const source alias stays CLEAR","const a=[()=>1],empty={},alias=empty;let x;({x=a}=alias);x[0]();a[0]()"],
+ ["P2 assignment ObjectPattern with present safe slot stays CLEAR","const a=[()=>1],holder={x:[()=>2]};let x;({x=a}=holder);x[0]();a[0]()"]
+];
+for(const [name,source] of codex173Round2Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of codex173Round2Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Prove that admitting a single initialization never exempts later
+// mutations or escapes of the originally aliased callback array.
+const assignmentFollowupUnsafe=[
+ ["P1 assignment-destructured alias mutates original callback array","function bad(g){g.eval('attack')}const a=[()=>1],empty={};let x;({x=a}=empty);x.fill(bad);a[0](globalThis)"],
+ ["P1 assigned alias to original callback later mutates through splice","function bad(g){g.eval('attack')}const a=[()=>1],empty={},source=empty;let x;({x=a}=source);x.splice(0,1,bad);a[0](globalThis)"]
+];
+for(const [name,source] of assignmentFollowupUnsafe)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+
+// Codex review #173 / 273f168: inherited prototype writes, shadowed
+// builtins, and post-snapshot benign source escapes. All payloads stay AST.
+const codex173Round3Dangerous=[
+ ["P1 own native slice inherited __proto__ call overwrite","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice.__proto__,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 computed __proto__ apply overwrite","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.defineProperty(a.slice['__proto__'],'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 direct Function.prototype call overwrite","function bad(g){g.eval('attack')}const a=[()=>1];Function.prototype.call=function(x){x.fill(bad)};a.slice.call(a);a[0](globalThis)"],
+ ["P1 Object.getPrototypeOf native slice mutation","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(Object.getPrototypeOf(a.slice),'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 prototype alias passed to mutator","function bad(g){g.eval('attack')}const a=[()=>1],proto=a.slice.__proto__;Object.defineProperty(proto,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 mutation of source object before snapshot remains uncertain","const a=[()=>1],empty={};mutate(empty);const {x=a}=empty;a[0]()"],
+ ["P1 escaped source after snapshot carries tracked array","function bad(g){g.eval('attack')}const a=[()=>1],holder={x:a};const {x}=holder;mutate(holder);a[0](globalThis)"]
+];
+test("P1 unknown helper escape after snapshot never certified CLEAR",()=>assert.notEqual(result("const a=[()=>1],empty={};const {x=a}=empty;mutate(empty);a[0]()"),'CLEAR'));
+const codex173Round3Benign=[
+ ["P2 local Array parameter prototype does not poison global slice","function f(Array){Object.defineProperty(Array.prototype,'slice',{value:1})}const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 local Array let shadow remains independent","const Array={prototype:{}};Array.prototype.slice=()=>42;const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 shadowed Function object is independent of builtin prototype","const Function={prototype:{call:()=>1}};const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 empty snapshot source may escape afterward","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"],
+ ["P2 source alias may escape after snapshot","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;console.log(empty);a[0]()"],
+ ["P2 primitive-only source can escape after snapshot","const a=[()=>1],source={y:42};const {x=a}=source;console.log(source);a[0]()"],
+ ["P2 inert top-level post-snapshot reference leaves captured default","const a=[()=>1],empty={};const {x=a}=empty;void empty;a[0]()"]
+];
+for(const [name,source] of codex173Round3Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of codex173Round3Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Codex review on 1c8ed54: semantic identity of Function.prototype,
+// prototype mutation after snapshots and straight-line SequenceExpression.
+// These examples are parsed but NEVER executed by the test harness.
+const v2PrototypeDangerous=[
+ ["P1 slice.constructor.prototype apply mutation","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice.constructor.prototype,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 slice.constructor.prototype computed call mutation","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.defineProperty(a.slice['constructor']['prototype'],'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 Function constructor prototype alias call mutation","function bad(g){g.eval('attack')}const a=[()=>1],Ctor=a.slice.constructor;Object.defineProperty(Ctor.prototype,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 Object.setPrototypeOf post-snapshot carrier escape","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf(empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 Reflect.setPrototypeOf post-snapshot carrier escape","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Reflect.setPrototypeOf(empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 aliased setPrototypeOf post-snapshot carrier escape","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const set=Object.setPrototypeOf;const {x=a}=empty;set(empty,{get:()=>a});poison(empty);a[0](globalThis)"]
+];
+const v2PrototypeBenign=[
+ ["P2 later direct sequence write remains CLEAR","const a=[()=>1],empty={};const {x=a}=empty;(empty.x=42,0);a[0]()"],
+ ["P2 multiple post-snapshot sequence writes remain CLEAR","const a=[()=>1],empty={};const {x=a}=empty;(empty.x=1,empty.y=2);a[0]()"],
+ ["P2 sequence nested parentheses remains CLEAR","const a=[()=>1],empty={};const {x=a}=empty;((empty.x=42),0);a[0]()"],
+ ["P2 unrelated constructor prototype does not poison slice","const a=[()=>1],other={constructor:{prototype:{}}};other.constructor.prototype.call=()=>42;const c=a.slice.call(a);c[0]()"],
+ ["P2 inert post-snapshot source usage stays CLEAR","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"]
+];
+for(const [name,source] of v2PrototypeDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of v2PrototypeBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Cross-review TDD: findings that the trusted-main self-review does not
+// classify, but Codex reproduced through semantic provenance. AST-only.
+const sentinelCodexDangerous=[
+ ["P1 inherited getter shadows native Function.prototype.call","function bad(g){g.eval('attack')}const a=[()=>1],p=a.slice.constructor.prototype;p.__defineGetter__('call',()=>function(x){x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 inherited setter shadows native Function.prototype.apply","function bad(g){g.eval('attack')}const a=[()=>1],p=a.slice.constructor.prototype;p.__defineSetter__('apply',function(x){x.fill(bad)});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 Object.setPrototypeOf.call carries callback array through source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf.call(Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 Reflect.setPrototypeOf.apply targets snapshot source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Reflect.setPrototypeOf.apply(Reflect,[empty,{get:()=>a}]);poison(empty);a[0](globalThis)"],
+ ["P1 mutator bound to Object targets source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;const setter=Object.setPrototypeOf.bind(Object);setter(empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 dynamically keyed ObjectPattern must not default when key matches","function bad(g){g.eval('attack')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=holder;x[0](globalThis)"],
+ ["P1 dynamically keyed source ObjectPattern through alias","function bad(g){g.eval('attack')}const key='x',a=[()=>1],holder={[key]:[bad]},alias=holder;const {x=a}=alias;x[0](globalThis)"]
+];
+const sentinelCodexBenign=[
+ ["P2 unrelated object getter does not shadow native Function.prototype.call","const a=[()=>1],other={};other.__defineGetter__('call',()=>42);const c=a.slice.call(a);c[0]()"],
+ ["P2 static computed key with benign callback stays CLEAR","const a=[()=>1],holder={['x']:[()=>2]};const {x=a}=holder;x[0]();a[0]()"],
+ ["P2 normal native slice still remains CLEAR","const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 ordinary inert post-snapshot object still usable","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"]
+];
+for(const [name,source] of sentinelCodexDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of sentinelCodexBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Codex-vs-Sentinel differential probes, review on 7ec3786.
+// These strings are parsed only and never executed by these tests.
+const differentialRound4Dangerous=[
+ ["P1 sequence wrapped source preserves dangerous computed-key default","function bad(g){g.eval('attack')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=(0,holder);x[0](globalThis)"],
+ ["P1 nested Function.prototype.call.call mutator changes captured source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Function.prototype.call.call(Object.setPrototypeOf,Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 nested Function.prototype.apply.call mutator changes captured source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Function.prototype.apply.call(Object.setPrototypeOf,Object,[empty,{get:()=>a}]);poison(empty);a[0](globalThis)"]
+];
+const differentialRound4Benign=[
+ ["P2 disjoint constant computed source key is benign","const key='y',a=[()=>1],holder={[key]:42};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint constant computed key via alias is benign","const key='y',a=[()=>1],holder={[key]:42},source=holder;const {x=a}=source;a[0]()"],
+ ["P2 direct static computed string is benign","const a=[()=>1],holder={['y']:42};const {x=a}=holder;a[0]()"]
+];
+for(const [name,source] of differentialRound4Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of differentialRound4Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Differential learning from Codex review of 81de018: four root families.
+// Snippets are parsed to AST, NEVER evaluated or imported.
+const sentinelDifferentialRound5Danger=[
+ ["P1 slice handle identity through sequence at defineProperty","function bad(g){g.eval('x')}const a=[()=>1];Object.defineProperty((0,a.slice),'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 native slice handle alias through sequence wrapper","function bad(g){g.eval('x')}const a=[()=>1];const h=(0,a.slice);Object.defineProperty(h,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 conditional RHS containing dangerous computed-key source","function bad(g){g.eval('x')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=(flag?holder:holder);x[0](globalThis)"],
+ ["P1 logical RHS containing dangerous computed-key source","function bad(g){g.eval('x')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=(holder||holder);x[0](globalThis)"],
+ ["P1 call.call with object mutator shifts target two positions","function bad(g){g.eval('x')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf.call.call(Object.setPrototypeOf,Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 call.call.call with object mutator shifts target three positions","function bad(g){g.eval('x')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf.call.call.call(Function.prototype.call,Object.setPrototypeOf,Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"]
+];
+const sentinelDifferentialRound5Benign=[
+ ["P2 disjoint computed source key holding an object","const key='y',a=[()=>1],holder={[key]:{}};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint computed key holding function","const key='y',a=[()=>1],holder={[key]:()=>0};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint computed key holding array of functions","const key='y',a=[()=>1],holder={[key]:[()=>2]};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint computed key holding nested object through alias","const key='y',a=[()=>1],holder={[key]:{nested:{}}},alias=holder;const {x=a}=alias;a[0]()"],
+ ["P2 native slice sequence without mutation remains clear","const a=[()=>1];const copy=(0,a.slice).call(a);copy[0]()"]
+];
+for(const [name,source] of sentinelDifferentialRound5Danger)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of sentinelDifferentialRound5Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Principal engineer review — latest Codex P1/P2 families: model instance
+// mutators, inherited-prototype mutation and intrinsic identity. Strings
+// below are parsed, never evaluated by the regression runner.
+const rootFamilyRound6Danger=[
+ ["P1 instance getter mutation via .call must invalidate snapshot source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;empty.__defineGetter__.call(empty,'get',()=>a);poison(empty);a[0](globalThis)"],
+ ["P1 instance setter mutation via .call must invalidate snapshot source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;empty.__defineSetter__.call(empty,'get',()=>a);poison(empty);a[0](globalThis)"],
+ ["P1 Object.defineProperty on inherited prototype must invalidate source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.defineProperty(Object.getPrototypeOf(empty),'get',{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 Object.assign onto inherited prototype must invalidate source","function bad(g){g.eval('x')}function poison(o){o.get.fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.assign(Object.getPrototypeOf(empty),{get:()=>a});poison(empty);a[0](globalThis)"]
+];
+const rootFamilyRound6Benign=[
+ ["P2 unrelated local method named set does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={set(){return 1}};api.set(empty);a[0]()"],
+ ["P2 unrelated local method named assign does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={assign(){return 1}};api.assign(empty);a[0]()"],
+ ["P2 unrelated local method named defineProperty does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={defineProperty(){return 1}};api.defineProperty(empty);a[0]()"],
+ ["P2 lexical Object.defineProperty is not intrinsic","const Object={defineProperty(){return 1}};const a=[()=>1],empty={};const {x=a}=empty;Object.defineProperty(empty);a[0]()"]
+];
+for(const [name,source] of rootFamilyRound6Danger)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of rootFamilyRound6Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Resource-containment contract for attacker-supplied AST: validate BEFORE
+// creating ESLint scope structures or propagating any provenance.
+test('memory guard rejects oversized AST before scope allocation',()=>{
+ const {preflightAstBudget}=require('./ultra_sentinel_capabilities.cjs');
+ assert.equal(typeof preflightAstBudget,'function');
+ const ast={type:'Program',sourceType:'script',
+  body:Array.from({length:50010},()=>({type:'EmptyStatement'}))};
+ assert.throws(()=>preflightAstBudget(ast),/AST budget exceeded/);
+});
+test('memory guard rejects excessive AST nesting deterministically',()=>{
+ const {preflightAstBudget}=require('./ultra_sentinel_capabilities.cjs');
+ let child={type:'Literal',value:1};
+ for(let i=0;i<280;i++)child={type:'UnaryExpression',operator:'+',prefix:true,argument:child};
+ const ast={type:'Program',sourceType:'script',
+  body:[{type:'ExpressionStatement',expression:child}]};
+ assert.throws(()=>preflightAstBudget(ast),/AST nesting budget exceeded/);
+});
+
+// TDD round: P1 post-snapshot local helpers, .apply/.bind receiver and
+// inherited prototype aliases. These strings are AST-only, never executed.
+const differentialRound7Dangerous=[
+ ["P1 local helper mutates escaped snapshot carrier","function bad(g){g.eval('x')}function expose(o){o.get=a}const a=[()=>1],empty={};const {x=a}=empty;expose(empty);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 local arrow helper mutates escaped source","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const expose=o=>{o.get=a};expose(empty);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 indirect local helper mutates escaped source","function bad(g){g.eval('x')}function expose(o){o.get=a}const a=[()=>1],empty={};const {x=a}=empty;const alias=expose;alias(empty);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 instance getter mutator via apply targets thisArg","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;empty.__defineGetter__.apply(empty,['get',()=>a]);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 instance getter via Reflect.apply targets thisArg","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;Reflect.apply(empty.__defineGetter__,empty,['get',()=>a]);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 bound instance getter mutates receiver","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const fn=empty.__defineGetter__.bind(empty);fn('get',()=>a);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 aliased source prototype mutation via Object.getPrototypeOf","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Object.getPrototypeOf(empty);Object.defineProperty(proto,'get',{get:()=>a});empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 aliased source prototype mutation via Reflect.getPrototypeOf","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Reflect.getPrototypeOf(empty);Reflect.set(proto,'get',a);empty.get.fill(bad);a[0](globalThis)"]
+];
+const differentialRound7Benign=[
+ ["P2 provably pure local function may inspect inert source","function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop(empty);a[0]()"],
+ ["P2 unrelated local safe instance method may inspect source","const a=[()=>1],empty={};const {x=a}=empty;const api={inspect(v){return 1}};api.inspect(empty);a[0]()"],
+ ["P2 global console.log inert source remains clear","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"]
+];
+for(const [name,source] of differentialRound7Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of differentialRound7Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
+// Codex-to-Sentinel convergence: prototype provenance across immutable aliases.
+// Sources are AST-only; tests MUST NOT execute attacker-controlled examples.
+const prototypeAliasRound8=[
+ ["P1 mutating source prototype through const Object.getPrototypeOf alias","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Object.getPrototypeOf(empty);Object.defineProperty(proto,'get',{get:()=>a});empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 mutating source prototype through chained const alias","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Object.getPrototypeOf(empty),alias=proto;Object.assign(alias,{get:a});alias.get.fill(bad);a[0](globalThis)"],
+ ["P1 mutating source prototype through Reflect.getPrototypeOf alias","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Reflect.getPrototypeOf(empty);Reflect.set(proto,'get',a);empty.get.fill(bad);a[0](globalThis)"]
+];
+for(const [name,source] of prototypeAliasRound8)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
@@ -980,3 +1286,366 @@ for(const [name,source] of benign){
    ])assert.equal(result(sample),'CLEAR',variant+' was blocked despite a proven benign receiver');
   } });
 }
+
+test('P1 helper default parameter cannot mutate the captured array invisibly',()=>{
+ const source="function bad(g){g.eval('x')} function expose(o,{x=o.__defineGetter__('get',()=>a)}={}){return 1} const a=[()=>1],empty={}; const {x=a}=empty; expose(empty); empty.get.fill(bad); a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR','effectful parameter default must not be classified safe');
+});
+test('P2 genuinely pure helper with literal default remains clear',()=>{
+ const source="function noop(o,x=1){return 1} const a=[()=>1],empty={}; const {x=a}=empty; noop(empty); a[0]()";
+ assert.equal(result(source),'CLEAR','inert scalar defaults must not cause false positives');
+});
+
+test('P1 hijacked console.log getter cannot be treated as a pure carrier escape',()=>{
+ const source="function bad(g){g.eval('x')} const a=[()=>1],empty={}; const {x=a}=empty; console.__defineGetter__('log',()=>o=>o.__defineGetter__('get',()=>a)); console.log(empty); empty.get.fill(bad); a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR','untrusted console.log may expose the captured callback array');
+});
+
+test('P1 packed native slice handle passed through apply cannot be CLEAR',()=>{
+ const source="function bad(g){g.eval('x')} const a=[()=>1];Object.defineProperty.apply(Object,[a.slice,'call',{value:function(x){x.fill(bad)}}]);a.slice.call(a);a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR');
+});
+test('P1 globalThis.console.log replacement cannot be accepted as pure',()=>{
+ const source="function bad(g){g.eval('x')} const a=[()=>1],empty={};const {x=a}=empty;globalThis.console.log=o=>o.__defineGetter__('get',()=>a);console.log(empty);empty.get.fill(bad);a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR');
+});
+test('P2 local defineProperty method cannot poison global Array prototype',()=>{
+ const source="const api={defineProperty(){return 1}};api.defineProperty(Array.prototype,'slice',{value:1});const a=[()=>1];const c=a.slice.call(a);c[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via call is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop.call(null,empty);a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via apply is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop.apply(null,[empty]);a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via Reflect.apply is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;Reflect.apply(noop,null,[empty]);a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 pure local helper via bind is not a source escape',()=>{
+ const source="function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop.bind(null,empty)();a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P1 effectful local helper wrapped by call must remain not CLEAR',()=>{
+ const source="function bad(g){g.eval('x')}function expose(o){o.get=a}const a=[()=>1],empty={};const {x=a}=empty;expose.call(null,empty);empty.get.fill(bad);a[0](globalThis)";
+ assert.notEqual(result(source),'CLEAR');
+});
+
+test('P1 a rewritten local method may still mutate Array.prototype',()=>{
+ const source="const api={defineProperty(){return 1}};api.defineProperty=function(target,key,descriptor){Object.defineProperty(target,key,descriptor)};api.defineProperty(Array.prototype,'slice',{value:function(){return []}});const a=[()=>1];const c=a.slice.call(a);c[0]()";
+ assert.notEqual(result(source),'CLEAR','a mutated local method must not be accepted as inert');
+});
+
+// Block 3: regression cases for Codex P1 returned native slice handles.
+// A helper can expose a slice function which an attacker then shadows.
+// Each source is parsed as data; no source string is executed by this suite.
+const returnedNativeSliceCases=[
+ ["P1 returned native slice handle via ordinary helper",
+  "function bad(g){g.eval('x')}const a=[()=>1];function get(){return a.slice}Object.defineProperty(get(),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 returned native slice handle through lexical alias",
+  "function bad(g){g.eval('x')}const a=[()=>1],handle=a.slice;function get(){return handle}Reflect.defineProperty(get(),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 returned native slice handle from concise arrow",
+  "function bad(g){g.eval('x')}const a=[()=>1];const get=()=>a.slice;Object.defineProperty(get(),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 returned native slice handle from conditional helper",
+  "function bad(g){g.eval('x')}const a=[()=>1];function get(flag){return flag?a.slice:null}Object.defineProperty(get(true),'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"]
+];
+for(const [name,source] of returnedNativeSliceCases)
+ test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+
+// Final Codex HEAD 080ef4d: assignment escape and linear block regressions.
+// Candidate snippets are only parsed as AST data, never executed by tests.
+const finalHeadAssignmentEscapes=[
+ ["P1 native slice handle stored in object property",
+  "function bad(g){g.eval('x')}const a=[()=>1],box={};box.x=a.slice;Object.defineProperty(box.x,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 native slice handle stored in computed object property",
+  "function bad(g){g.eval('x')}const a=[()=>1],box={},key='x';box[key]=a.slice;Reflect.defineProperty(box.x,'apply',{value:x=>x.fill(bad)});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 native slice handle stored via mutable variable assignment",
+  "function bad(g){g.eval('x')}const a=[()=>1];let handle;handle=a.slice;Object.defineProperty(handle,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 native slice handle stored from conditional assignment",
+  "function bad(g){g.eval('x')}const a=[()=>1],box={};box.x=flag?a.slice:null;Object.defineProperty(box.x,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"]
+];
+for(const [name,source] of finalHeadAssignmentEscapes)
+ test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+
+test('P2 unconditional block after ObjectPattern snapshot stays CLEAR',()=>{
+ const source="const a=[()=>1],empty={};const {x=a}=empty;{empty.x=42;}a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 nested unconditional blocks after snapshot stay CLEAR',()=>{
+ const source="const a=[()=>1],empty={};const {x=a}=empty;{{empty.x=42;}}a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P1 conditional carrier block is not unconditionally certified',()=>{
+ const source="const a=[()=>1],empty={};const {x=a}=empty;if(flag){empty.x=42;}a[0]()";
+ assert.notEqual(result(source),'CLEAR');
+});
+
+// Codex final-head follow-up: declarative mutable slice-handle escapes.
+// Sources remain AST-only fixtures; these snippets are never executed.
+const mutableSliceInitializationEscapes=[
+ ["P1 let initializer exposes native slice via Object.defineProperty.call",
+  "function bad(g){g.eval('x')}const a=[()=>1];let h=a.slice;Object.defineProperty.call(Object,h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 var initializer exposes native slice via Reflect.defineProperty.apply",
+  "function bad(g){g.eval('x')}const a=[()=>1];var h=a.slice;Reflect.defineProperty.apply(Reflect,[h,'apply',{value:x=>x.fill(bad)}]);a.slice.apply(a);a[0](globalThis)"],
+ ["P1 let conditional initializer exposes native slice callable",
+  "function bad(g){g.eval('x')}const a=[()=>1];let h=flag?a.slice:null;Object.defineProperty(h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 let initializer can expose slice despite later reassignment",
+  "function bad(g){g.eval('x')}const a=[()=>1];let h=a.slice;Object.defineProperty(h,'call',{value:x=>x.fill(bad)});h=()=>1;a.slice.call(a);a[0](globalThis)"]
+];
+for(const [name,source] of mutableSliceInitializationEscapes)
+ test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+
+// Complementary benign regression: stable mutable bindings must not be blocked.
+test('P2 stable let native slice alias stays CLEAR',()=>{
+ const source="const a=[()=>1];let h=a.slice;const copy=h.call(a);copy[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 stable var native slice alias stays CLEAR',()=>{
+ const source="const a=[()=>1];var h=a.slice;const copy=h.apply(a,[]);copy[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+
+// Slice family closure: bounded destructuring projection matrix (AST-only).
+// Independent P1 proof obligations against the native-slice fast-path.
+// Each sample is parsed by Acorn; no fixture is evaluated at runtime.
+const slicePatternDangerous=[
+ [
+  "array binding direct",
+  "const [h]=[a.slice];",
+  "h"
+ ],
+ [
+  "array binding let",
+  "let [h]=[a.slice];",
+  "h"
+ ],
+ [
+  "array binding skipped position",
+  "const [,h]=[null,a.slice];",
+  "h"
+ ],
+ [
+  "object binding direct",
+  "const {h}={h:a.slice};",
+  "h"
+ ],
+ [
+  "object binding renamed",
+  "const {h:alias}={h:a.slice};",
+  "alias"
+ ],
+ [
+  "object binding let",
+  "let {h}={h:a.slice};",
+  "h"
+ ],
+ [
+  "nested array object binding",
+  "const [{h}]=[{h:a.slice}];",
+  "h"
+ ],
+ [
+  "double nested array binding",
+  "const [[h]]=[[a.slice]];",
+  "h"
+ ],
+ [
+  "object nested object binding",
+  "const {inner:{h}}={inner:{h:a.slice}};",
+  "h"
+ ],
+ [
+  "array absent default",
+  "const [h=a.slice]=[];",
+  "h"
+ ],
+ [
+  "array undefined default",
+  "const [h=a.slice]=[undefined];",
+  "h"
+ ],
+ [
+  "object missing default",
+  "const {h=a.slice}={};",
+  "h"
+ ],
+ [
+  "object undefined default",
+  "const {h=a.slice}={h:undefined};",
+  "h"
+ ],
+ [
+  "object void default",
+  "const {h=a.slice}={h:void 0};",
+  "h"
+ ],
+ [
+  "constant computed object key",
+  "const key='h';const {[key]:h}={h:a.slice};",
+  "h"
+ ],
+ [
+  "constant computed source key",
+  "const key='h';const {h}={[key]:a.slice};",
+  "h"
+ ],
+ [
+  "array source alias",
+  "const holder=[a.slice];const [h]=holder;",
+  "h"
+ ],
+ [
+  "object source alias",
+  "const holder={h:a.slice};const {h}=holder;",
+  "h"
+ ],
+ [
+  "chained object source alias",
+  "const holder={h:a.slice};const copy=holder;const {h}=copy;",
+  "h"
+ ],
+ [
+  "conditional array source",
+  "const [h]=flag?[a.slice]:[null];",
+  "h"
+ ],
+ [
+  "conditional object source",
+  "const {h}=flag?{h:a.slice}:{h:()=>1};",
+  "h"
+ ],
+ [
+  "sequence-wrapped array source",
+  "const [h]=(0,[a.slice]);",
+  "h"
+ ],
+ [
+  "sequence-wrapped object source",
+  "const {h}=(0,{h:a.slice});",
+  "h"
+ ],
+ [
+  "array destructuring assignment",
+  "let h;([h]=[a.slice]);",
+  "h"
+ ],
+ [
+  "object destructuring assignment",
+  "let h;({h}={h:a.slice});",
+  "h"
+ ],
+ [
+  "source computed literal",
+  "const {h}={['h']:a.slice};",
+  "h"
+ ],
+ [
+  "array spread source",
+  "const [h]=[...[a.slice]];",
+  "h"
+ ],
+ [
+  "object spread source",
+  "const {h}={...{h:a.slice}};",
+  "h"
+ ],
+ [
+  "nested object source alias",
+  "const box={nested:{h:a.slice}};const {nested:{h}}=box;",
+  "h"
+ ]
+];
+for(const [name,setup,variable] of slicePatternDangerous)
+ test('P1 destructuring '+name+' must never be CLEAR',()=>{
+  const source="function bad(g){g.eval('attack')}const a=[()=>1];"+setup+
+   "Object.defineProperty("+variable+",'call',{value:x=>x.fill(bad)});"+
+   "a.slice.call(a);a[0](globalThis)";
+  assert.notEqual(result(source),'CLEAR',name+' escaped native slice provenance');
+ });
+const slicePatternBenign=[
+ [
+  "array benign read",
+  "const [h]=[a.slice];const copy=h.call(a);copy[0]()"
+ ],
+ [
+  "object benign read",
+  "const {h}={h:a.slice};const copy=h.apply(a,[]);copy[0]()"
+ ],
+ [
+  "nested benign read",
+  "const [{h}]=[{h:a.slice}];h.call(a)[0]()"
+ ],
+ [
+  "array defined suppresses default",
+  "const [h=a.slice]=[()=>1];h();a.slice.call(a)[0]()"
+ ],
+ [
+  "object defined suppresses default",
+  "const {h=a.slice}={h:()=>1};h();a.slice.call(a)[0]()"
+ ],
+ [
+  "null object does not enable default",
+  "const {h=a.slice}={h:null};a.slice.call(a)[0]()"
+ ],
+ [
+  "unrelated object key",
+  "const {h}={h:()=>1,other:a.slice};h();a.slice.call(a)[0]()"
+ ],
+ [
+  "unrelated array index",
+  "const [h]=[()=>1,a.slice];h();a.slice.call(a)[0]()"
+ ],
+ [
+  "computed constant key benign",
+  "const key='h';const {[key]:h}={h:a.slice};h.call(a)[0]()"
+ ],
+ [
+  "stable mutable destructured read",
+  "let [h]=[a.slice];h.call(a)[0]()"
+ ],
+ [
+  "nested object benign",
+  "const {nested:{h}}={nested:{h:a.slice}};h.call(a)[0]()"
+ ]
+];
+for(const [name,setup] of slicePatternBenign)
+ test('P2 destructuring '+name+' remains CLEAR',()=>{
+  const source="const a=[()=>1];"+setup;
+  assert.equal(result(source),'CLEAR',name+' incorrectly blocked a benign slice');
+ });
+
+// Slice family closure: post-destructuring mutation and carrier probes.
+// Mutation/escape examples are never executed by this test suite.
+const sliceProjectionDangerous2=[["own call assignment","const [h]=[a.slice];h.call=x=>x.fill(bad);a.slice.call(a);a[0](globalThis)"],["own computed apply assignment","const {h}={h:a.slice};h['apply']=x=>x.fill(bad);a.slice.apply(a);a[0](globalThis)"],["own call getter","const [h]=[a.slice];h.__defineGetter__('call',()=>x=>x.fill(bad));a.slice.call(a);a[0](globalThis)"],["own apply setter","const {h}={h:a.slice};h.__defineSetter__('apply',x=>x.fill(bad));h.apply=a;a[0](globalThis)"],["prototype call descriptor","const [h]=[a.slice];Object.defineProperty(h.__proto__,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["prototype apply descriptor","const {h}={h:a.slice};Object.defineProperty(h.constructor.prototype,'apply',{value:x=>x.fill(bad)});a.slice.apply(a);a[0](globalThis)"],["prototype alias call descriptor","const [h]=[a.slice],C=h.constructor;Object.defineProperty(C.prototype,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["Object.getPrototypeOf alias","const {h}={h:a.slice},proto=Object.getPrototypeOf(h);Object.defineProperty(proto,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["object carrier property","const [h]=[a.slice],box={handle:h};Object.defineProperty(box.handle,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["array carrier index","const {h}={h:a.slice},box=[h];Reflect.defineProperty(box[0],'apply',{value:x=>x.fill(bad)});a.slice.apply(a);a[0](globalThis)"],["nested object carrier property","const [h]=[a.slice],box={nested:{handle:h}};Object.defineProperty(box.nested.handle,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["object carrier via alias","const [h]=[a.slice],box={handle:h},alias=box;Object.defineProperty(alias.handle,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["array rest element property","const [head,...rest]=[0,a.slice];Object.defineProperty(rest[0],'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["object rest property","const {unused,...rest}={unused:0,h:a.slice};Object.defineProperty(rest.h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["conditional element alias","const [h]=[flag?a.slice:null];Object.defineProperty(h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["logical element alias","const {h}={h:flag&&a.slice};Object.defineProperty(h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["logical default","const [h=flag&&a.slice]=[];Object.defineProperty(h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["default via lexical alias","const source=a.slice;const [h=source]=[];Object.defineProperty(h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["object alias in carrier initializer","const {h}={h:a.slice};let outer;outer={h};Object.defineProperty(outer.h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["unknown helper carrier escape","const [h]=[a.slice];function expose(x){Object.defineProperty(x,'call',{value:y=>y.fill(bad)})}expose(h);a.slice.call(a);a[0](globalThis)"],["parameter forwarding carrier","const [h]=[a.slice];function expose(x){Object.defineProperty(x,'call',{value:y=>y.fill(bad)})}const forward=expose;forward(h);a.slice.call(a);a[0](globalThis)"],["Object.assign carrier mutation","const [h]=[a.slice];Object.assign(h,{call:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["Reflect.set carrier mutation","const {h}={h:a.slice};Reflect.set(h,'call',x=>x.fill(bad));a.slice.call(a);a[0](globalThis)"]];
+for(const [name,setup] of sliceProjectionDangerous2)
+ test('P1 slice carrier '+name+' must not be CLEAR',()=>{
+  const source="function bad(g){g.eval('attack')}const a=[()=>1];"+setup;
+  assert.notEqual(result(source),'CLEAR',name+' passed native slice fast-path');
+ });
+const sliceProjectionBenign2=[["benign own projected read","const [h]=[a.slice];h.call(a)[0]()"],["benign nested carrier use","const {h}={h:a.slice},box={nested:{h}};box.nested.h.call(a)[0]()"],["benign object rest use","const {unused,...rest}={unused:0,h:a.slice};rest.h.call(a)[0]()"],["benign array rest use","const [unused,...rest]=[0,a.slice];rest[0].call(a)[0]()"],["benign disabled object default null","const {h=a.slice}={h:null};a.slice.call(a)[0]()"],["benign disabled array default null","const [h=a.slice]=[null];a.slice.call(a)[0]()"],["benign unrelated object carrier","const [h]=[()=>1,a.slice];const box={h};box.h();a.slice.call(a)[0]()"],["benign projected conditional read","const [h]=[flag?a.slice:a.slice];h.call(a)[0]()"]];
+for(const [name,setup] of sliceProjectionBenign2)
+ test('P2 slice carrier '+name+' remains CLEAR',()=>{
+  const source="const a=[()=>1];"+setup;
+  // A rest-array container is still conservatively INCOMPLETE in the
+  // primary abstract interpreter; it must not manufacture a BLOCKER.
+  if(name==='benign array rest use')
+   assert.notEqual(result(source),'BLOCKER',name+' was overblocked');
+  else assert.equal(result(source),'CLEAR',name+' was overblocked');
+ });
+
+// Slice family closure: returned containers and direct carrier method writes.
+const sliceFamilyFurtherAttacks=[["object handle returned","const [h]=[a.slice];function get(){return {h}}Object.defineProperty(get().h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["array handle returned","const {h}={h:a.slice};function get(){return [h]}Object.defineProperty(get()[0],'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["arrow container returned","const [h]=[a.slice];const get=()=>({h});Object.defineProperty(get().h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["nested arrow container returned","const {h}={h:a.slice};const get=()=>({box:[h]});Object.defineProperty(get().box[0],'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["array carrier direct method write","const [h]=[a.slice];const box=[h];box[0].call=x=>x.fill(bad);a.slice.call(a);a[0](globalThis)"],["object carrier direct method write","const {h}={h:a.slice};const box={h};box.h.call=x=>x.fill(bad);a.slice.call(a);a[0](globalThis)"],["nested object carrier method write","const [h]=[a.slice];const box={nested:{h}};box.nested.h.call=x=>x.fill(bad);a.slice.call(a);a[0](globalThis)"],["computed carrier method write","const {h}={h:a.slice};const box={h};box['h']['apply']=x=>x.fill(bad);a.slice.apply(a);a[0](globalThis)"],["object carrier spread","const [h]=[a.slice];const box={...{h}};Object.defineProperty(box.h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["array carrier alternate index","const [h]=[a.slice];const box=[()=>1,h];Object.defineProperty(box[1],'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["object computed dynamic source","const {h}={[flag?'h':'other']:a.slice};Object.defineProperty(h,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["assignment to literal property of projected handle","const [h]=[a.slice];([h][0]).call=x=>x.fill(bad);a.slice.call(a);a[0](globalThis)"],["generator yields handle","const [h]=[a.slice];function* get(){yield h}const g=get();Object.defineProperty(g.next().value,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],["class property captures handle","const [h]=[a.slice];class Box{handle=h}const b=new Box;Object.defineProperty(b.handle,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"]];
+for(const [name,setup] of sliceFamilyFurtherAttacks)
+ test('P1 slice extended '+name+' cannot be CLEAR',()=>{
+  const source="function bad(g){g.eval('attack')}const a=[()=>1];"+setup;
+  assert.notEqual(result(source),'CLEAR',name+' native trust bypass');
+ });
+const sliceFamilyFurtherBenign=[["returned benign local copy","const [h]=[a.slice];const get=()=>h.call(a);get()[0]()"],["container benign call","const {h}={h:a.slice};const box={h};box.h.call(a)[0]()"],["nested container benign call","const [h]=[a.slice];const box={nested:[h]};box.nested[0].call(a)[0]()"],["array nonmatching index","const [h]=[a.slice];const box=[()=>1,h];box[0]();a.slice.call(a)[0]()"],["object nonmatching property","const [h]=[a.slice];const box={other:()=>1,h};box.other();a.slice.call(a)[0]()"],["destructuring nonselected nested key","const box={a:a.slice,b:()=>1};const {b}=box;b();a.slice.call(a)[0]()"],["destructuring present zero disables default","const {h=a.slice}={h:0};const copy=a.slice.call(a);copy[0]()"]];
+for(const [name,setup] of sliceFamilyFurtherBenign)
+ test('P2 slice extended '+name+' remains CLEAR',()=>{
+  const source="const a=[()=>1];"+setup;
+  assert.equal(result(source),'CLEAR',name+' false positive');
+ });
