@@ -55,7 +55,7 @@ jobs:
           script: |
             const fs = require("node:fs");
             const path = require("node:path");
-            const {analyze,markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
+            const {analyze,markdown,recoverAddedPatch,missingAddedPatch} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const deployed=fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"))&&
               fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"))&&
@@ -97,6 +97,28 @@ jobs:
                 }catch(error){
                   core.warning("Kotlin source context unavailable ("+
                     (error.status||"API error")+"); unknown hunks remain INCOMPLETE.");
+                }
+              }));
+            }
+
+            // GitHub omits patches for sufficiently large added files.
+            // Recover ONLY added production blobs with their exact Git SHA;
+            // never silently mark incomplete modified/deleted diffs as reviewed.
+            const addedTargets=evidenceFiles.filter(item=>
+              item.status==='added'&&missingAddedPatch(item)&&
+              /^(?:app\/src\/main\/|\.github\/(?:scripts|workflows)\/|control-center\/|supabase\/functions\/)/.test(item.filename||'')&&
+              !String(item.filename||'').includes('..')).slice(0,24);
+            for(let i=0;i<addedTargets.length;i+=4){
+              await Promise.all(addedTargets.slice(i,i+4).map(async item=>{
+                try{
+                  const {data:body}=await github.rest.repos.getContent({
+                    owner,repo,path:item.filename,ref:pr.head.sha
+                  });
+                  const recovered=recoverAddedPatch(item,body);
+                  if(recovered)item.patch=recovered;
+                  else core.warning('Added source proof missing/invalid; review remains INCOMPLETE: '+item.filename);
+                }catch(error){
+                  core.warning('Added source fetch unavailable ('+(error.status||'API error')+'); review remains INCOMPLETE.');
                 }
               }));
             }
