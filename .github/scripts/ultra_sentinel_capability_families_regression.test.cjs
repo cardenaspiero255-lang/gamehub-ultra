@@ -632,7 +632,66 @@ const codexUndefinedAndAccessorBenign=[
   "const [x=eval(userPatch)]=[0];x===0"
  ]
 ];
+// Codex computed-bind and pre-bound default evidence; fixture text is never executed.
+const codexBindFamilyDangerous=[
+ [
+  "P1 computed constant bind escape",
+  "function f(x=eval(userPatch)){};f(1);const key='bind';const wrapped=f[key](null);wrapped()"
+ ],
+ [
+  "P1 computed string-concat bind escape",
+  "function f(x=eval(userPatch)){};f(1);const key='bi'+'nd';f[key](null)()"
+ ],
+ [
+  "P1 computed variable bind escape",
+  "function f(x=eval(userPatch)){};f(1);let key='bind';f[key](null)()"
+ ],
+ [
+  "P1 computed dynamic bind escape",
+  "function f(x=eval(userPatch)){};f(1);f[key](null)()"
+ ],
+ [
+  "P1 alias computed bind escape",
+  "function f(x=eval(userPatch)){};f(1);const alias=f;const key='bind';alias[key](null)()"
+ ],
+ [
+  "P1 bound undefined invokes default",
+  "function f(x=eval(userPatch)){};f(1);f.bind(null,undefined)()"
+ ],
+ [
+  "P1 bound unknown invokes default",
+  "function f(x=eval(userPatch)){};f(1);f.bind(null,maybe)()"
+ ],
+ [
+  "P1 second default absent from bind",
+  "function f(x=eval(userPatch),y=eval(userPatch)){};f(1,2);f.bind(null,42)()"
+ ]
+];
+const codexBindFamilyBenign=[
+ [
+  "P2 bound value suppresses default",
+  "function f(x=eval(userPatch)){};f(1);f.bind(null,42)()"
+ ],
+ [
+  "P2 bound value with constant key",
+  "function f(x=eval(userPatch)){};f(1);const key='bind';f[key](null,42)()"
+ ],
+ [
+  "P2 bound alias with concrete value",
+  "function f(x=eval(userPatch)){};f(1);const wrapped=f.bind(null,42);wrapped()"
+ ],
+ [
+  "P2 reading bind does not invoke callback",
+  "function f(x=eval(userPatch)){};f(1);void f.bind"
+ ],
+ [
+  "P2 two parameters both prebound",
+  "function f(x=eval(userPatch),y=eval(userPatch)){};f(1,2);f.bind(null,42,43)()"
+ ]
+];
 dangerous.push(...codexNewDangerous);
+dangerous.push(...codexBindFamilyDangerous);
+benign.push(...codexBindFamilyBenign);
 dangerous.push(...codexUndefinedAndAccessorDangerous);
 benign.push(...codexUndefinedAndAccessorBenign);
 dangerous.push(...codexCarrierFamilyDangerous);
