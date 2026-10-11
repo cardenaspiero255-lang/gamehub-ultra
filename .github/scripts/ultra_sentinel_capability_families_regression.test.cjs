@@ -1649,3 +1649,25 @@ for(const [name,setup] of sliceFamilyFurtherBenign)
   const source="const a=[()=>1];"+setup;
   assert.equal(result(source),'CLEAR',name+' false positive');
  });
+
+
+// P1 unresolved historical family / Reflect.apply destructuring: independent reproductions from the 11-Oct review.
+// Inputs are parsed as AST only; never evaluated or executed.
+const historicalUnresolvedP1=[
+ ["Reflect.apply extracted by ObjectPattern","function bad(g){g.eval('attack')}const {apply:ra}=Reflect;ra(bad,null,[globalThis])"],
+ ["Reflect.apply extracted by ArrayPattern","function bad(g){g.eval('attack')}const [ra]=[Reflect.apply];ra(bad,null,[globalThis])"],
+ ["inherited native slice extracted by ObjectPattern","function bad(g){g.eval('attack')}const a=[bad];const {slice:s}=a;const copy=s.call(a);copy[0](globalThis)"]
+];
+for(const [name,source] of historicalUnresolvedP1)
+ test('P1 historical unresolved '+name+' cannot be CLEAR',()=>{
+  assert.notEqual(result(source),'CLEAR',name+' bypassed the capability provenance gate');
+ });
+const historicalUnresolvedP2=[
+ ["Reflect.apply replaced by Object.defineProperty","function bad(g){g.eval('attack')}Object.defineProperty(Reflect,'apply',{value:function(){}});Reflect.apply(bad,null,[globalThis])"],
+ ["benign destructured Reflect.apply","const safe=x=>x+1;const {apply:ra}=Reflect;ra(safe,null,[41])"],
+ ["benign destructured inherited slice","const a=[()=>1];const {slice:s}=a;const copy=s.call(a);copy[0]()"]
+];
+for(const [name,source] of historicalUnresolvedP2)
+ test('P2 historical unresolved '+name+' must not be BLOCKER',()=>{
+  assert.notEqual(result(source),'BLOCKER',name+' invented a definite sink');
+ });
