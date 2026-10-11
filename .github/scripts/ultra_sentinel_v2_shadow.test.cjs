@@ -85,3 +85,16 @@ test('shadow refuses shared AST node identity in a small tree',()=>{
  const root={type:'Program',sourceType:'script',body:[leaf,leaf]};
  assert.throws(()=>directSinkEvidence(root),/Shadow AST cycle or sharing rejected/);
 });
+
+test('shadow rejects contradictory or malformed evidence envelopes',()=>{
+ const {SCHEMA}=require('./ultra_sentinel_v2_shadow.cjs');
+ const bad=[
+  {schema:SCHEMA,decision:'DEFINITE_SINK',rules:[]},
+  {schema:SCHEMA,decision:'NOT_PROVEN',rules:['global-eval']},
+  {schema:SCHEMA,decision:'DEFINITE_SINK',rules:'global-eval'},
+  {schema:SCHEMA,decision:'DEFINITE_SINK',rules:['unknown-rule']},
+  {schema:SCHEMA,decision:'DEFINITE_SINK',rules:['global-eval','global-eval']},
+  {schema:SCHEMA,decision:'DEFINITE_SINK',rules:['global-member-exec','global-eval']}
+ ];
+ for(const evidence of bad)assert.throws(()=>reconcile('CLEAR',evidence),/invalid shadow evidence/);
+});
