@@ -34,3 +34,31 @@ test('US-032: no negative-case or latency evidence is never represented as zero'
  assert.equal(b.negativeCaseFalsePositiveRate,0);
  assert.equal(b.latencyP95Ms,null);
 });
+
+// Differential benchmark improvement: compare actual Codex review evidence,
+// never presume Codex outputs or rank unreviewed cases as successes.
+test('US-032 supports independently supplied Codex review reports without inferred outcomes',()=>{
+ const pos={provider:'codex',caseId:'case-positive-a',sha:SHA,findings:[positive],durationMs:10};
+ const neg={provider:'codex',caseId:'case-negative-a',sha:SHA,findings:[],durationMs:12};
+ const out=evaluate([items[0],items[2]],[pos,neg],{expectedSha:SHA});
+ assert.equal(out.results.codex.tp,1);
+ assert.equal(out.results.codex.fn,0);
+ assert.equal(out.results.codex.fp,0);
+ assert.equal(out.results.codex.complete,true);
+ assert.equal(out.comparisonsJustified,false);
+});
+test('US-032 full head-to-head requires Codex and Sentinel reports for every same case',()=>{
+ const selected=[items[0],items[2]];
+ const reports=[
+  {...record('case-positive-a',[positive],10)},
+  {...record('case-negative-a',[],12)},
+  {provider:'codex',caseId:'case-positive-a',sha:SHA,findings:[],durationMs:10},
+  {provider:'codex',caseId:'case-negative-a',sha:SHA,findings:[],durationMs:12}
+ ];
+ const out=evaluate(selected,reports,{expectedSha:SHA});
+ assert.equal(out.comparisonsJustified,true);
+ assert.equal(out.results.codex.fn,1);
+ assert.equal(out.results['ultra-sentinel'].tp,1);
+ const partial=evaluate(selected,reports.slice(0,3),{expectedSha:SHA});
+ assert.equal(partial.comparisonsJustified,false);
+});
