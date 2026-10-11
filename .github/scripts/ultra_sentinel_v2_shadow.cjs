@@ -69,9 +69,18 @@ function directSinkEvidence(ast){
   for(const reference of scope.references)
    if(reference.resolved)bindings.set(reference.identifier,reference.resolved);
  }
- const globalAliases=new Set();
+ const globalAliases=new Set(),builtinOwners=new Map(),builtinMutators=new Map();
  const globalObject=id=>isGlobal(id,['globalThis','global'])||
   id?.type==='Identifier'&&globalAliases.has(bindings.get(id));
+ const owner=id=>isGlobal(id,['Object','Reflect'])?id.name:
+  id?.type==='Identifier'?builtinOwners.get(bindings.get(id)):null;
+ const allowedMutators=new Set(['defineProperty','set','setPrototypeOf','assign','defineProperties']);
+ const mutator=expr=>{
+  if(expr?.type==='Identifier')return builtinMutators.get(bindings.get(expr))||null;
+  if(expr?.type!=='MemberExpression')return null;
+  const name=methodName(expr);
+  return owner(expr.object)&&allowedMutators.has(name)?name:null;
+ };
  // Compute a bounded fixed point so aliases declared before or after their
  // consumers cannot silently retain a false DEFINITE_SINK verdict.
  let aliasConverged=false;
@@ -79,11 +88,20 @@ function directSinkEvidence(ast){
   let changed=false;
   function visit(node){
    if(!node||typeof node!=='object'||typeof node.type!=='string')return;
-   if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
-      globalObject(node.init)){
+   if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'){
     const binding=bindings.get(node.id);
-    if(binding&&!globalAliases.has(binding)){
-     globalAliases.add(binding);changed=true;
+    if(binding){
+     if(globalObject(node.init)&&!globalAliases.has(binding)){
+      globalAliases.add(binding);changed=true;
+     }
+     const origin=owner(node.init);
+     if(origin&&!builtinOwners.has(binding)){
+      builtinOwners.set(binding,origin);changed=true;
+     }
+     const action=mutator(node.init);
+     if(action&&!builtinMutators.has(binding)){
+      builtinMutators.set(binding,action);changed=true;
+     }
     }
    }
    for(const [key,value] of Object.entries(node)){
@@ -137,11 +155,9 @@ function directSinkEvidence(ast){
      node.left?.type!=='VariableDeclaration')recordWrite(node.left);
   if(node.type==='UpdateExpression'||node.type==='UnaryExpression'&&
      node.operator==='delete')recordWrite(node.argument);
-  if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
-     isGlobal(node.callee.object,['Object','Reflect'])){
-   const action=methodName(node.callee);
-   if(['defineProperty','set','setPrototypeOf','assign','defineProperties'].includes(action)&&
-      globalObject(node.arguments?.[0])){
+  if(node.type==='CallExpression'){
+   const action=mutator(node.callee);
+   if(action&&globalObject(node.arguments?.[0])){
     const key=node.arguments?.[1];
     if(key?.type==='Literal'&&['eval','Function'].includes(key.value))revoke(key.value);
     else revoke('globalThis');
