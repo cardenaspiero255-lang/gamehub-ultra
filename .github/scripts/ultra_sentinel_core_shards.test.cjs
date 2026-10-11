@@ -61,7 +61,8 @@ test('aggregator demands all 15 reports, exact filenames and minimum 150k',t=>{
  t.after(()=>fs.rmSync(out,{recursive:true,force:true}));
  const sha='f'.repeat(40),ids=makeReports(root,out,sha);
  const result=m.aggregate(out,sha,root);
- assert.equal(result.executed,521719);
+ assert.equal(result.executed,
+  m.MATRIX_CASES+m.BASELINE_TEST_COUNTS.b0+m.BASELINE_TEST_COUNTS.b1);
  assert.equal(result.jobs,15);
  assert.equal(result.passed,true);
  fs.unlinkSync(path.join(out,ids[2]+'.json'));
