@@ -421,6 +421,64 @@ function findCapabilities(ast){
      }
      return false;
     }
+    // A defaulted array is already captured at the destructuring snapshot.
+    // A later escape of an originally primitive-only source cannot mutate
+    // that array, PROVIDED no lexical alias ever adds mutable properties.
+    function inertLiteralSource(value,depth=0,seen=new Set()){
+     if(!value||depth>MAX_DEPTH)return null;
+     if(value.type==='ObjectExpression'){
+      return value.properties.every(p=>p.type==='Property'&&p.kind==='init'&&
+        !p.computed&&stablePatternKey(p)!=='__proto__'&&
+        p.value?.type==='Literal')?value:null;
+     }
+     if(value.type!=='Identifier')return null;
+     const id=symbol(value);
+     if(!id||typeof id!=='object'||seen.has(id))return null;
+     const defs=id.defs||[];
+     if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
+        defs[0].node?.id?.type!=='Identifier'||
+        id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+     seen.add(id);
+     return inertLiteralSource(defs[0].node.init,depth+1,seen);
+    }
+    function safePostSnapshotEscape(node,value,snapshot){
+     if(!Number.isSafeInteger(snapshot)||!Number.isSafeInteger(node?.start)||
+        node.start<=snapshot)return false;
+     let cursor=node,inTopLevelStatement=false;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent)return false;
+      if(parent.type==='Program'){inTopLevelStatement=true;break;}
+      if(!['MemberExpression','CallExpression','ExpressionStatement',
+            'UpdateExpression','UnaryExpression','SequenceExpression'].includes(
+            parent.type))return false;
+      cursor=parent;
+     }
+     if(!inTopLevelStatement)return false;
+     const original=inertLiteralSource(value);
+     if(!original)return false;
+     // Conservatively retain INCOMPLETE for writes to the source at ANY
+     // position: a later write could put the captured array into a carrier.
+     let modified=false;
+     traverse(ast,(candidate,parent)=>{
+      if(modified)return;
+      if(candidate.type==='MemberExpression'&&
+         inertLiteralSource(candidate.object)===original&&
+         (parent?.type==='AssignmentExpression'&&parent.left===candidate||
+          parent?.type==='UpdateExpression'&&parent.argument===candidate||
+          parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+            parent.argument===candidate||
+          parent?.type==='CallExpression'&&parent.callee===candidate))
+       modified=true;
+      if(candidate.type==='CallExpression'&&
+         candidate.callee?.type==='MemberExpression'&&
+         ['set','defineProperty','defineProperties','assign'].includes(
+          stableMethodName(candidate.callee))&&
+         inertLiteralSource(candidate.arguments?.[0])===original)
+       modified=true;
+     });
+     return !modified;
+    }
     function immutableObjectSource(value,depth=0,seen=new Set(),snapshot=null){
      if(!value||depth>MAX_DEPTH)return null;
      if(value.type==='ObjectExpression')return value;
@@ -463,6 +521,7 @@ function findCapabilities(ast){
           throw Error('Object source property mutation unknown');
         continue;
        }
+       if(safePostSnapshotEscape(id,value,snapshot))continue;
        throw Error('Object source escape or mutation unknown');
       }
      }
