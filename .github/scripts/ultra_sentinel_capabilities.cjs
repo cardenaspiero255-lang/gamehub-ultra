@@ -512,8 +512,7 @@ function findCapabilities(ast){
       if(!parent)return false;
       if(parent.type==='Program')return true;
       if(!['MemberExpression','AssignmentExpression','ExpressionStatement',
-            'UpdateExpression','UnaryExpression','SequenceExpression',
-            'ArrayExpression'].includes(parent.type))return false;
+            'UpdateExpression','UnaryExpression','SequenceExpression'].includes(parent.type))return false;
       cursor=parent;
      }
      return false;
