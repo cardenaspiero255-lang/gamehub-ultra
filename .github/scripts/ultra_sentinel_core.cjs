@@ -131,19 +131,21 @@ function analyze(files,config={}){
    // The optional fullSource must be provided from the same immutable HEAD;
    // cross-check every added/context line against it before trusting its lexer.
    const kotlin=android&&path.endsWith('.kt');
+   const java=android&&path.endsWith('.java');
+   const languageSource=kotlin||java;
    const sourceProvided=f.fullSource!==undefined;
-   const fullLines=kotlin&&typeof f.fullSource==='string'&&
+   const fullLines=languageSource&&typeof f.fullSource==='string'&&
      Buffer.byteLength(f.fullSource,'utf8')<=160000?
      f.fullSource.split(/\r?\n/):null;
    const sourceMatches=!!(fullLines&&patch.scan.every(x=>
      x.line>0&&x.line<=fullLines.length&&fullLines[x.line-1]===x.text));
-   if(kotlin&&sourceProvided&&!sourceMatches){
+   if(languageSource&&sourceProvided&&!sourceMatches){
      partial=true;
-     warnings.push('Archivo Kotlin completo no coincide con el parche o supera el límite: '+sanitize(path));
+     warnings.push('Archivo Kotlin/Java completo no coincide con el parche o supera el límite: '+sanitize(path));
    }
    const executableByLine=new Map(),uncertainAdded=new Set();
-   if(kotlin&&sourceMatches){
-     const wanted=new Set(rows.map(x=>x.line)),lexState={kotlin:true};
+   if(languageSource&&sourceMatches){
+     const wanted=new Set(rows.map(x=>x.line)),lexState={kotlin};
      for(let i=0;i<fullLines.length;i++){
        const code=executableText(fullLines[i],lexState);
        if(wanted.has(i+1))executableByLine.set(i+1,code);
@@ -154,7 +156,7 @@ function analyze(files,config={}){
        if(previousLine===null||entry.line!==previousLine+1){
          lexState={};
          // Java may also start mid-comment or mid-text-block.
-          hunkUnknown=(kotlin||(android&&path.endsWith('.java')))&&
+          hunkUnknown=languageSource&&
             (entry.line!==1||sourceProvided);
          if(hunkUnknown){
            partial=true;

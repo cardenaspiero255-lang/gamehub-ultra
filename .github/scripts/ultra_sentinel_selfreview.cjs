@@ -61,12 +61,18 @@ const GLOBAL_NAMES=new Set(['globalThis','global']);
 const EXEC_NAMES=new Set(['eval','Function','AsyncFunction','GeneratorFunction']);
 const VM_SINKS=new Set(['runInThisContext','runInNewContext','runInContext',
  'compileFunction','Script']);
-function isVmLoader(node){
- if(node?.type==='AwaitExpression')return isVmLoader(node.argument);
+// These sets model capabilities, not merely variable names. Incomplete
+// provenance is denied conservatively. No candidate expression is evaluated.
+const GLOBAL_NAMES=new Set(['globalThis','global']);
+const EXEC_NAMES=new Set(['eval','Function','AsyncFunction','GeneratorFunction']);
+const VM_SINKS=new Set(['runInThisContext','runInNewContext','runInContext',
+ 'compileFunction','Script','SourceTextModule']);
+function isVmLoader(node,aliases){
+ if(node?.type==='AwaitExpression')return isVmLoader(node.argument,aliases);
  if(node?.type==='ImportExpression')
   return ['vm','node:vm'].includes(staticJsString(node.source));
- return node?.type==='CallExpression'&&node.callee?.type==='Identifier'&&
-  node.callee.name==='require'&&
+ if(node?.type!=='CallExpression')return false;
+ return capabilityKind(node.callee,aliases)==='loader'&&
   ['vm','node:vm'].includes(staticJsString(node.arguments?.[0]));
 }
 function capabilityKind(node,aliases){
@@ -74,30 +80,57 @@ function capabilityKind(node,aliases){
  if(node.type==='ChainExpression'||node.type==='AwaitExpression')
   return capabilityKind(node.expression||node.argument,aliases);
  if(node.type==='Identifier'){
-  if(aliases.execs.has(node.name))return 'exec';
-  if(aliases.globals.has(node.name))return 'global';
-  if(aliases.vms.has(node.name))return 'vm';
+  for(const [kind,set] of [['exec',aliases.execs],['global',aliases.globals],
+   ['vm',aliases.vms],['loader',aliases.loaders],['module',aliases.modules],
+   ['reflect',aliases.reflects],['getter',aliases.getters]]){
+   if(set.has(node.name))return kind;
+  }
   return null;
  }
- if(isVmLoader(node))return 'vm';
+ if(node.type==='ImportExpression')
+  return isVmLoader(node,aliases)?'vm':null;
  if(node.type==='MemberExpression'){
   const root=capabilityKind(node.object,aliases),name=memberKey(node);
   if(root==='global'&&(EXEC_NAMES.has(name)||(node.computed&&name===null)))return 'exec';
   if(root==='vm'&&(VM_SINKS.has(name)||(node.computed&&name===null)))return 'exec';
+  if(root==='module'&&name==='require')return 'loader';
+  if(root==='reflect'&&name==='get')return 'getter';
+  if(root==='loader'&&name==='bind')return 'loader';
+  return null;
  }
  if(node.type==='CallExpression'){
-  const callee=node.callee;
-  if(callee?.type==='MemberExpression'&&callee.object?.name==='Reflect'&&
-    memberKey(callee)==='get'){
-   const kind=capabilityKind(node.arguments?.[0],aliases),key=staticJsString(node.arguments?.[1]);
-   if(kind==='global'&&(EXEC_NAMES.has(key)||key===null))return 'exec';
-   if(kind==='vm'&&(VM_SINKS.has(key)||key===null))return 'exec';
+  if(isVmLoader(node,aliases))return 'vm';
+  if(capabilityKind(node.callee,aliases)==='getter'){
+   const root=capabilityKind(node.arguments?.[0],aliases);
+   const key=staticJsString(node.arguments?.[1]);
+   if(root==='global'&&(EXEC_NAMES.has(key)||key===null))return 'exec';
+   if(root==='vm'&&(VM_SINKS.has(key)||key===null))return 'exec';
   }
+  // Bound loader aliases still produce a loader; never execute the bound code.
+  if(node.callee?.type==='MemberExpression'&&memberKey(node.callee)==='bind'&&
+     capabilityKind(node.callee.object,aliases)==='loader')return 'loader';
+  return null;
  }
+ if(node.type==='ArrayExpression'&&node.elements?.length){
+  const kinds=node.elements.map(n=>capabilityKind(n,aliases));
+  return kinds[0]&&kinds.every(x=>x===kinds[0])?kinds[0]:null;
+ }
+ if(node.type==='ConditionalExpression'){
+  const a=capabilityKind(node.consequent,aliases),b=capabilityKind(node.alternate,aliases);
+  return a&&a===b?a:null;
+ }
+ if(node.type==='AssignmentExpression'&&node.operator==='=')
+  return capabilityKind(node.right,aliases);
+ if(node.type==='SequenceExpression')
+  return capabilityKind(node.expressions?.at(-1),aliases);
+ if(node.type==='ObjectExpression'&&!node.properties.some(x=>x.type==='SpreadElement'))
+  return 'local-literal';
  return null;
 }
 function collectExecutionAliases(ast){
- const aliases={globals:new Set(GLOBAL_NAMES),execs:new Set(EXEC_NAMES),vms:new Set(['vm'])};
+ const aliases={globals:new Set(GLOBAL_NAMES),execs:new Set(EXEC_NAMES),
+  vms:new Set(['vm']),loaders:new Set(['require']),modules:new Set(['module']),
+  reflects:new Set(['Reflect']),getters:new Set()};
  const bindings=[];let visited=0;
  function gather(node){
   if(!node||typeof node!=='object'||typeof node.type!=='string')return;
@@ -106,6 +139,19 @@ function collectExecutionAliases(ast){
    bindings.push([node.id,node.init]);
   else if(node.type==='AssignmentExpression'&&node.operator==='=')
    bindings.push([node.left,node.right]);
+  else if(['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression'].includes(node.type)){
+   for(const param of node.params||[]){
+    const p=param.type==='AssignmentPattern'?param.left:param;
+    if(p.type==='ObjectPattern')bindings.push([p,null]);
+   }
+  }else if(node.type==='ForOfStatement'||node.type==='ForInStatement'){
+   const left=node.left;
+   if(left?.type==='VariableDeclaration'){
+    for(const d of left.declarations)if(d.id?.type==='ObjectPattern')
+      bindings.push([d.id,node.right]);
+   }else if(left?.type==='ObjectPattern')bindings.push([left,node.right]);
+  }else if(node.type==='CatchClause'&&node.param?.type==='ObjectPattern')
+   bindings.push([node.param,null]);
   for(const [k,v] of Object.entries(node)){
    if(k==='start'||k==='end'||k==='loc'||k==='range')continue;
    if(Array.isArray(v))for(const child of v)gather(child);
@@ -115,22 +161,37 @@ function collectExecutionAliases(ast){
  gather(ast);
  function add(set,name){if(typeof name!=='string'||set.has(name))return false;set.add(name);return true;}
  function destructure(id,kind){
+  if(id?.type!=='ObjectPattern')return false;
   let changed=false;
-  if(id.type!=='ObjectPattern'||(kind!=='global'&&kind!=='vm'))return false;
   for(const property of id.properties){
    if(property.type==='RestElement'){
-    if(property.argument?.type==='Identifier')
-     changed=add(kind==='global'?aliases.globals:aliases.vms,property.argument.name)||changed;
+    if(property.argument?.type==='Identifier'){
+     if(kind==='global')changed=add(aliases.globals,property.argument.name)||changed;
+     if(kind==='vm')changed=add(aliases.vms,property.argument.name)||changed;
+     if(kind==='reflect')changed=add(aliases.reflects,property.argument.name)||changed;
+     if(kind==='module')changed=add(aliases.modules,property.argument.name)||changed;
+    }
     continue;
    }
    const name=property.computed?staticJsString(property.key):
      property.key?.type==='Identifier'?property.key.name:staticJsString(property.key);
-   const binding=property.value?.type==='AssignmentPattern'?property.value.left:property.value;
-   if(binding?.type!=='Identifier')continue;
-   if(kind==='global'&&(EXEC_NAMES.has(name)||name===null))
-    changed=add(aliases.execs,binding.name)||changed;
-   if(kind==='vm'&&(VM_SINKS.has(name)||name===null))
-    changed=add(aliases.execs,binding.name)||changed;
+   const value=property.value?.type==='AssignmentPattern'?property.value.left:property.value;
+   if(value?.type==='ObjectPattern'){
+    changed=destructure(value,null)||changed;continue;
+   }
+   if(value?.type!=='Identifier')continue;
+   // Unknown source can be a dynamic global/vm capability. Fail closed on
+   // extraction of a dangerous method unless the source is a local literal.
+   const riskyUnknown=kind!=='local-literal'&&kind!=='global'&&kind!=='vm'&&
+    kind!=='module'&&kind!=='reflect';
+   if((kind==='global'&& (EXEC_NAMES.has(name)||name===null))||
+      (kind==='vm'&&(VM_SINKS.has(name)||name===null))||
+      (riskyUnknown&&(EXEC_NAMES.has(name)||VM_SINKS.has(name))))
+    changed=add(aliases.execs,value.name)||changed;
+   if(kind==='module'&&name==='require')
+    changed=add(aliases.loaders,value.name)||changed;
+   if(kind==='reflect'&&name==='get')
+    changed=add(aliases.getters,value.name)||changed;
   }
   return changed;
  }
@@ -138,19 +199,19 @@ function collectExecutionAliases(ast){
   let changed=false;
   for(const [left,right] of bindings){
    const kind=capabilityKind(right,aliases);
-   if(left.type==='Identifier'){
-    if(kind==='global')changed=add(aliases.globals,left.name)||changed;
-    if(kind==='vm')changed=add(aliases.vms,left.name)||changed;
-    if(kind==='exec')changed=add(aliases.execs,left.name)||changed;
+   if(left?.type==='Identifier'){
+    const dict={global:aliases.globals,vm:aliases.vms,exec:aliases.execs,
+     loader:aliases.loaders,module:aliases.modules,reflect:aliases.reflects,
+     getter:aliases.getters};
+    if(dict[kind])changed=add(dict[kind],left.name)||changed;
    }else changed=destructure(left,kind)||changed;
   }
   if(!changed)return aliases;
  }
- throw Error('Alias chain exceeds conservative limit');
+ throw Error('Alias provenance did not converge');
 }
 function dynamicJsNode(node,parent,key,aliases){
  if(node.type==='Identifier'&&aliases.execs.has(node.name)){
-  // Identifier keys and ordinary object methods are not executable references.
   if(parent?.type==='MemberExpression'&&key==='property'&&!parent.computed)return false;
   if(parent?.type==='Property'&&key==='key'&&!parent.computed)return false;
   if(parent?.type==='MethodDefinition'&&key==='key'&&!parent.computed)return false;
@@ -162,12 +223,7 @@ function dynamicJsNode(node,parent,key,aliases){
  let callee=node.callee;
  while(callee?.type==='ChainExpression')callee=callee.expression;
  if(capabilityKind(callee,aliases)==='exec')return true;
- if(callee?.type==='MemberExpression'){
-  const method=memberKey(callee);
-  if(VM_SINKS.has(method)&&method!=='Script'&&
-    capabilityKind(callee.object,aliases)==='vm')return true;
-  if(method==='constructor')return true;
- }
+ if(callee?.type==='MemberExpression'&&memberKey(callee)==='constructor')return true;
  return false;
 }
 function jsDiffSource(patch){
