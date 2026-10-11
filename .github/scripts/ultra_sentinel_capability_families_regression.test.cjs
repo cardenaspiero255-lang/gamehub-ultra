@@ -1034,12 +1034,12 @@ const codex173Round3Dangerous=[
  ["P1 mutation of source object before snapshot remains uncertain","const a=[()=>1],empty={};mutate(empty);const {x=a}=empty;a[0]()"],
  ["P1 escaped source after snapshot carries tracked array","function bad(g){g.eval('attack')}const a=[()=>1],holder={x:a};const {x}=holder;mutate(holder);a[0](globalThis)"]
 ];
+test("P1 unknown helper escape after snapshot never certified CLEAR",()=>assert.notEqual(result("const a=[()=>1],empty={};const {x=a}=empty;mutate(empty);a[0]()"),'CLEAR'));
 const codex173Round3Benign=[
  ["P2 local Array parameter prototype does not poison global slice","function f(Array){Object.defineProperty(Array.prototype,'slice',{value:1})}const a=[()=>1];const c=a.slice.call(a);c[0]()"],
  ["P2 local Array let shadow remains independent","const Array={prototype:{}};Array.prototype.slice=()=>42;const a=[()=>1];const c=a.slice.call(a);c[0]()"],
  ["P2 shadowed Function object is independent of builtin prototype","const Function={prototype:{call:()=>1}};const a=[()=>1];const c=a.slice.call(a);c[0]()"],
  ["P2 empty snapshot source may escape afterward","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"],
- ["P2 empty snapshot source may be passed to unknown function later","const a=[()=>1],empty={};const {x=a}=empty;mutate(empty);a[0]()"],
  ["P2 source alias may escape after snapshot","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;console.log(empty);a[0]()"],
  ["P2 primitive-only source can escape after snapshot","const a=[()=>1],source={y:42};const {x=a}=source;console.log(source);a[0]()"],
  ["P2 inert top-level post-snapshot reference leaves captured default","const a=[()=>1],empty={};const {x=a}=empty;void empty;a[0]()"]
@@ -1170,6 +1170,28 @@ test('memory guard rejects excessive AST nesting deterministically',()=>{
   body:[{type:'ExpressionStatement',expression:child}]};
  assert.throws(()=>preflightAstBudget(ast),/AST nesting budget exceeded/);
 });
+
+// TDD round: P1 post-snapshot local helpers, .apply/.bind receiver and
+// inherited prototype aliases. These strings are AST-only, never executed.
+const differentialRound7Dangerous=[
+ ["P1 local helper mutates escaped snapshot carrier","function bad(g){g.eval('x')}function expose(o){o.get=a}const a=[()=>1],empty={};const {x=a}=empty;expose(empty);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 local arrow helper mutates escaped source","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const expose=o=>{o.get=a};expose(empty);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 indirect local helper mutates escaped source","function bad(g){g.eval('x')}function expose(o){o.get=a}const a=[()=>1],empty={};const {x=a}=empty;const alias=expose;alias(empty);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 instance getter mutator via apply targets thisArg","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;empty.__defineGetter__.apply(empty,['get',()=>a]);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 instance getter via Reflect.apply targets thisArg","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;Reflect.apply(empty.__defineGetter__,empty,['get',()=>a]);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 bound instance getter mutates receiver","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const fn=empty.__defineGetter__.bind(empty);fn('get',()=>a);empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 aliased source prototype mutation via Object.getPrototypeOf","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Object.getPrototypeOf(empty);Object.defineProperty(proto,'get',{get:()=>a});empty.get.fill(bad);a[0](globalThis)"],
+ ["P1 aliased source prototype mutation via Reflect.getPrototypeOf","function bad(g){g.eval('x')}const a=[()=>1],empty={};const {x=a}=empty;const proto=Reflect.getPrototypeOf(empty);Reflect.set(proto,'get',a);empty.get.fill(bad);a[0](globalThis)"]
+];
+const differentialRound7Benign=[
+ ["P2 provably pure local function may inspect inert source","function noop(o){return 1}const a=[()=>1],empty={};const {x=a}=empty;noop(empty);a[0]()"],
+ ["P2 unrelated local safe instance method may inspect source","const a=[()=>1],empty={};const {x=a}=empty;const api={inspect(v){return 1}};api.inspect(empty);a[0]()"],
+ ["P2 global console.log inert source remains clear","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"]
+];
+for(const [name,source] of differentialRound7Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of differentialRound7Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
 
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
