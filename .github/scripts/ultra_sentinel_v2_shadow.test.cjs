@@ -62,3 +62,26 @@ test('shadow refuses cyclic AST input instead of traversing forever',()=>{
  root.body.push(root);
  assert.throws(()=>directSinkEvidence(root),/Shadow AST cycle or sharing rejected/);
 });
+
+test('shadow does not claim a reassigned globalThis eval is definitely builtin',()=>{
+ const source="globalThis={eval(){return 1}};globalThis.eval('safe')";
+ assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN');
+});
+test('shadow does not claim a reassigned free eval is definitely builtin',()=>{
+ const source="eval=function(){return 1};eval('safe')";
+ assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN');
+});
+test('shadow does not claim a replaced globalThis.Function is definitely builtin',()=>{
+ const source="globalThis.Function=function(){return 1};globalThis.Function('safe')";
+ assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN');
+});
+test('shadow refuses wide arrays with shared AST identity without enqueuing every entry',()=>{
+ const leaf={type:'EmptyStatement'};
+ const root={type:'Program',sourceType:'script',body:Array(100001).fill(leaf)};
+ assert.throws(()=>directSinkEvidence(root),/Shadow AST (node budget exceeded|cycle or sharing rejected)/);
+});
+test('shadow refuses shared AST node identity in a small tree',()=>{
+ const leaf={type:'EmptyStatement'};
+ const root={type:'Program',sourceType:'script',body:[leaf,leaf]};
+ assert.throws(()=>directSinkEvidence(root),/Shadow AST cycle or sharing rejected/);
+});
