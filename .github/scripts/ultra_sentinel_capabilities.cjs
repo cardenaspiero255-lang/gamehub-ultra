@@ -181,6 +181,68 @@ function findCapabilities(ast){
   returnCache.set(fn,out);
   return out;
  }
+
+ // A bounded, lexical representation of locally constructed array slots.
+ // A callback read from a known array is a real callable, not an unrelated
+ // dynamic member call. Unknown indices/spreads are never certified safe.
+ function knownArraySlots(node,depth=0,seen=new Set()){
+  if(!node)return null;
+  if(depth>MAX_DEPTH)throw Error('Array callback provenance depth exceeded');
+  if(node.type==='ArrayExpression')return node.elements;
+  if(node.type==='Identifier'){
+   const variable=symbol(node);
+   if(!variable||typeof variable!=='object'||seen.has(variable))return null;
+   seen.add(variable);
+   const defs=variable.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const')return null;
+   return knownArraySlots(defs[0].node?.init,depth+1,seen);
+  }
+  if(node.type==='SequenceExpression')
+   return knownArraySlots(node.expressions?.at(-1),depth+1,seen);
+  if(node.type==='CallExpression'){
+   const {fn}=invocation(node,depth+1);
+   if(!fn)return null;
+   const returns=returnExpressions(fn);
+   if(returns.length!==1)return null;
+   return knownArraySlots(returns[0],depth+1,seen);
+  }
+  return null;
+ }
+ function staticArrayIndex(node){
+  if(node?.type!=='Literal')return null;
+  const value=node.value;
+  const index=typeof value==='number'?value:
+   typeof value==='string'&&/^(0|[1-9][0-9]*)$/.test(value)?Number(value):NaN;
+  return Number.isSafeInteger(index)&&index>=0?index:null;
+ }
+ // Bound callables retain the original function and the leading arguments.
+ // Resolve direct .bind()(), nested binds and lexical const aliases uniformly.
+ // This is an invocation value, not an eagerly executed call.
+ function boundCallable(node,depth=0,seen=new Set()){
+  if(!node)return null;
+  if(depth>MAX_DEPTH)throw Error('Bound function provenance depth exceeded');
+  if(node.type==='Identifier'){
+   const variable=symbol(node);
+   if(!variable||typeof variable!=='object'||seen.has(variable))return null;
+   seen.add(variable);
+   const defs=variable.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const')return null;
+   return boundCallable(defs[0].node?.init,depth+1,seen);
+  }
+  if(node.type==='SequenceExpression')
+   return boundCallable(node.expressions?.at(-1),depth+1,seen);
+  if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
+     stableMethodName(node.callee)==='bind'){
+   const earlier=boundCallable(node.callee.object,depth+1,seen);
+   const fn=earlier?.fn||resolveFunction(node.callee.object,depth+1);
+   if(!fn)return null;
+   if((node.arguments||[]).some(arg=>arg?.type==='SpreadElement'))
+    throw Error('Unknown prebound spread argument provenance');
+   return {fn,args:[...(earlier?.args||[]),...(node.arguments||[]).slice(1)],
+    receiver:earlier?.receiver||node.arguments?.[0]||null};
+  }
+  return null;
+ }
  function resolveFunction(node,depth=0){
   if(!node)return null;
   if(depth>MAX_DEPTH)throw Error('Function provenance depth exceeded');
@@ -208,6 +270,15 @@ function findCapabilities(ast){
    return null;
   }
   if(node.type==='MemberExpression'){
+   const slots=knownArraySlots(node.object,depth+1);
+   if(slots){
+    const index=node.computed?staticArrayIndex(node.property):null;
+    if(index===null)throw Error('Unresolved array callback index provenance');
+    if(index>=slots.length||!slots[index])return null;
+    if(slots[index].type==='SpreadElement')
+     throw Error('Unknown array-spread callback target');
+    return resolveFunction(slots[index],depth+1);
+   }
    const map=propertyKinds(node.object,depth+1),key=propName(node);
    const descriptor=key===null?null:map?.get(key);
    if(descriptor?.optional)throw Error('Optional method identity unresolved');
@@ -232,7 +303,10 @@ function findCapabilities(ast){
   return null;
  }
  function invocation(node,depth=0){
-  let fn=resolveFunction(node.callee,depth+1),args=node.arguments||[],receiver=null;
+  const bound=boundCallable(node.callee,depth+1);
+  let fn=bound?.fn||resolveFunction(node.callee,depth+1);
+  let args=bound?[...bound.args,...(node.arguments||[])]:node.arguments||[];
+  let receiver=bound?.receiver||null;
   if(node.callee?.type==='MemberExpression'){
    // call/apply can be reached through immutable computed string aliases.
    // Use the same lexical method resolver as the bind escape guard.
