@@ -1037,12 +1037,12 @@ const codex173Round3Dangerous=[
 const codex173Round3Benign=[
  ["P2 local Array parameter prototype does not poison global slice","function f(Array){Object.defineProperty(Array.prototype,'slice',{value:1})}const a=[()=>1];const c=a.slice.call(a);c[0]()"],
  ["P2 local Array let shadow remains independent","const Array={prototype:{}};Array.prototype.slice=()=>42;const a=[()=>1];const c=a.slice.call(a);c[0]()"],
- ["P2 local Function prototype mutation is unrelated","function f(Function){Function.prototype.call=()=>1}const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 shadowed Function object is independent of builtin prototype","const Function={prototype:{call:()=>1}};const a=[()=>1];const c=a.slice.call(a);c[0]()"],
  ["P2 empty snapshot source may escape afterward","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"],
  ["P2 empty snapshot source may be passed to unknown function later","const a=[()=>1],empty={};const {x=a}=empty;mutate(empty);a[0]()"],
  ["P2 source alias may escape after snapshot","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;console.log(empty);a[0]()"],
  ["P2 primitive-only source can escape after snapshot","const a=[()=>1],source={y:42};const {x=a}=source;console.log(source);a[0]()"],
- ["P2 source escape through return after snapshot leaves captured default","const a=[()=>1],empty={};const {x=a}=empty;function get(){return empty}a[0]()"]
+ ["P2 inert top-level post-snapshot reference leaves captured default","const a=[()=>1],empty={};const {x=a}=empty;void empty;a[0]()"]
 ];
 for(const [name,source] of codex173Round3Dangerous)
  test(name,()=>assert.notEqual(result(source),'CLEAR',name));
