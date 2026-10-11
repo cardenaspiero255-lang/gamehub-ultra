@@ -1146,7 +1146,7 @@ const rootFamilyRound6Benign=[
  ["P2 unrelated local method named set does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={set(){return 1}};api.set(empty);a[0]()"],
  ["P2 unrelated local method named assign does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={assign(){return 1}};api.assign(empty);a[0]()"],
  ["P2 unrelated local method named defineProperty does not mutate source","const a=[()=>1],empty={};const {x=a}=empty;const api={defineProperty(){return 1}};api.defineProperty(empty);a[0]()"],
- ["P2 user-shadowed Object.defineProperty is not intrinsic","function run(Object){const a=[()=>1],empty={};const {x=a}=empty;Object.defineProperty(empty);a[0]()}run({defineProperty(){return 1}})"]
+ ["P2 lexical Object.defineProperty is not intrinsic","const Object={defineProperty(){return 1}};const a=[()=>1],empty={};const {x=a}=empty;Object.defineProperty(empty);a[0]()"]
 ];
 for(const [name,source] of rootFamilyRound6Danger)
  test(name,()=>assert.notEqual(result(source),'CLEAR',name));
