@@ -217,25 +217,41 @@ function findCapabilities(ast){
     }
     // A destructured local holds the same array reference, not a copy:
     // const [alias]=[arr] and const [[alias]]=[[arr]].
-    function project(pattern,value,depth=0){
-     if(!pattern||!value||depth>MAX_DEPTH)return;
-     if(pattern.type==='Identifier'&&value.type==='Identifier'&&
-        aliases.has(symbol(value))&&!aliases.has(symbol(pattern))){
-      aliases.add(symbol(pattern));changed=true;return;
+    function projectedValueDefined(value,depth=0,seen=new Set()){
+     if(!value||depth>MAX_DEPTH)return false;
+     if(['ArrayExpression','ObjectExpression','Literal','FunctionExpression',
+         'ArrowFunctionExpression','ClassExpression','TemplateLiteral',
+         'NewExpression'].includes(value.type))return true;
+     if(value.type==='Identifier'){
+      const variable=symbol(value);
+      if(!variable||typeof variable!=='object'||seen.has(variable))return false;
+      const defs=variable.defs||[];
+      if(defs.length!==1||defs[0].parent?.kind!=='const'||
+         defs[0].node?.id?.type!=='Identifier')return false;
+      seen.add(variable);
+      return projectedValueDefined(defs[0].node?.init,depth+1,seen);
      }
+     if(value.type==='AssignmentExpression'&&value.operator==='=')
+      return projectedValueDefined(value.right,depth+1,seen);
+     return false;
+    }
+    function project(pattern,value,depth=0){
+     if(!pattern||depth>MAX_DEPTH)return;
+     // Do not skip an AssignmentPattern merely because its slot is missing:
+     // omission is exactly when the default may alias a mutable array.
      if(pattern.type==='AssignmentPattern'){
-      // Defaults run when the projected slot is absent or evaluates to undefined.
-      // Such defaults may alias an existing mutable array. Include both
-      // reachable branches whenever the projected value is uncertain.
       const omitted=!value||
        (value.type==='Identifier'&&value.name==='undefined')||
        (value.type==='UnaryExpression'&&value.operator==='void');
       if(omitted)return project(pattern.left,pattern.right,depth+1);
       project(pattern.left,value,depth+1);
-      const certainlyPresent=['ArrayExpression','ObjectExpression','Literal',
-       'FunctionExpression','ArrowFunctionExpression','ClassExpression'].includes(value.type);
-      if(!certainlyPresent)project(pattern.left,pattern.right,depth+1);
+      if(!projectedValueDefined(value))project(pattern.left,pattern.right,depth+1);
       return;
+     }
+     if(!value)return;
+     if(pattern.type==='Identifier'&&value.type==='Identifier'&&
+        aliases.has(symbol(value))&&!aliases.has(symbol(pattern))){
+      aliases.add(symbol(pattern));changed=true;return;
      }
      if(pattern.type==='ArrayPattern'&&value.type==='ArrayExpression')
       for(let i=0;i<pattern.elements.length;i++)
