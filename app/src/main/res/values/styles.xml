@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.GameHubUltra" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#090B12</item>
+        <item name="android:navigationBarColor">#090B12</item>
+        <item name="android:windowBackground">#090B12</item>
+        <item name="colorPrimary">#7C4DFF</item>
+        <item name="colorSecondary">#00E5FF</item>
+    </style>
+
+</resources>
