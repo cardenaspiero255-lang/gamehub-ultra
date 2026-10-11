@@ -1153,6 +1153,24 @@ for(const [name,source] of rootFamilyRound6Danger)
 for(const [name,source] of rootFamilyRound6Benign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Resource-containment contract for attacker-supplied AST: validate BEFORE
+// creating ESLint scope structures or propagating any provenance.
+test('memory guard rejects oversized AST before scope allocation',()=>{
+ const {preflightAstBudget}=require('./ultra_sentinel_capabilities.cjs');
+ assert.equal(typeof preflightAstBudget,'function');
+ const ast={type:'Program',sourceType:'script',
+  body:Array.from({length:50010},()=>({type:'EmptyStatement'}))};
+ assert.throws(()=>preflightAstBudget(ast),/AST budget exceeded/);
+});
+test('memory guard rejects excessive AST nesting deterministically',()=>{
+ const {preflightAstBudget}=require('./ultra_sentinel_capabilities.cjs');
+ let child={type:'Literal',value:1};
+ for(let i=0;i<280;i++)child={type:'UnaryExpression',operator:'+',prefix:true,argument:child};
+ const ast={type:'Program',sourceType:'script',
+  body:[{type:'ExpressionStatement',expression:child}]};
+ assert.throws(()=>preflightAstBudget(ast),/AST nesting budget exceeded/);
+});
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
