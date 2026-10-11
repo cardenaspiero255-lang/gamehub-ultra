@@ -523,8 +523,29 @@ function findCapabilities(ast){
    return false;
   };
   let uncertain=false;
+  function initialObjectPatternAssignment(alias,ref){
+   // A single assignment to a previously uninitialized lexical let
+   // destructuring target is its first known value, not a later mutation.
+   // Its array provenance is already projected from the source expression.
+   const defs=alias?.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='let'||
+      defs[0].node?.id?.type!=='Identifier'||defs[0].node?.init)
+    return false;
+   const writes=(alias.references||[]).filter(r=>r.isWrite()&&!r.init);
+   if(writes.length!==1||writes[0]!==ref)return false;
+   const id=ref.identifier,defaultPattern=parentOf.get(id);
+   if(defaultPattern?.type!=='AssignmentPattern'||defaultPattern.left!==id)
+    return false;
+   const prop=parentOf.get(defaultPattern),objectPattern=parentOf.get(prop);
+   const assignment=parentOf.get(objectPattern);
+   return prop?.type==='Property'&&prop.value===defaultPattern&&
+    objectPattern?.type==='ObjectPattern'&&
+    assignment?.type==='AssignmentExpression'&&
+    assignment.operator==='='&&assignment.left===objectPattern;
+  }
   for(const alias of aliases)
-   if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init))uncertain=true;
+   if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init&&
+      !initialObjectPatternAssignment(alias,ref)))uncertain=true;
   const readonly=new Set(['at','slice','concat','includes','indexOf',
    'lastIndexOf','join','keys','values','entries','findIndex','toString']);
   traverse(ast,(node,parent,key)=>{
