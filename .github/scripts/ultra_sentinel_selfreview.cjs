@@ -59,10 +59,7 @@ function jsAstByLine(patch,fullSource){
    locations:true,ranges:true});
  }catch(_){return fail('JS_PARSE_ERROR');}
  let sinks;
- try{sinks=findCapabilities(ast);}catch(error){
-  console.warn('Self-review AST analysis failed (not approved):',error?.name,String(error?.message||'').slice(0,120));
-  return fail('SCOPE_OR_CAPABILITY_INCOMPLETE');
- }
+ try{sinks=findCapabilities(ast);}catch(_){return fail('SCOPE_OR_CAPABILITY_INCOMPLETE');}
  if(sinks.length){
   // With exact source, also catch added syntax that exposes an old sink.
   // Reviewers are security-critical: a pre-existing sink still blocks edits.

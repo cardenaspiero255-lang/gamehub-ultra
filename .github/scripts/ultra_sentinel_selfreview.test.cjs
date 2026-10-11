@@ -311,3 +311,64 @@ test('accepts SHA-pinned remote action subpaths and local/docker uses',()=>{
   assert.equal(scan([file(wf,'- uses: "'+action+'" # safe')],SHA).status,'ADVISORY',action);
  }
 });
+
+test('metamorphic AST gate detects equivalent dynamic execution forms',()=>{
+ const variants=[
+  "const g=globalThis; g.eval(userPatch)",
+  "const g=globalThis; g['eval'](userPatch)",
+  "const {eval:e}=globalThis; e(userPatch)",
+  "const {x:g}={x:globalThis}; g['ev'+'al'](userPatch)",
+  "const box={x:globalThis}; const {x:g}=box; g.eval(userPatch)",
+  "vm.createScript(userPatch).runInThisContext()",
+  "const {createScript:c}=require('vm'); c(userPatch)",
+  "const v=require('node:vm'); v['createScript'](userPatch)",
+  "const {runInThisContext:r}=require('node:vm'); r(userPatch)",
+  "const {x:v}={x:require('node:vm')}; v.compileFunction(userPatch)()",
+  "const {x:r}={x:Reflect}; r.get(globalThis,'eval')(userPatch)"
+ ];
+ for(const body of variants)for(const [before,after] of [
+  ['',''],['; ',' /* end */'],['/* pre */ ',' /* post */']
+ ]){
+  const script=before+body+after;
+  const out=scan([file(src,script)],SHA);
+  assert.equal(out.status,'BLOCKED',script);
+  assert.ok(out.findings.some(f=>f.rule==='DYNAMIC_EVAL'),script);
+ }
+});
+test('lexical shadowing does not invent executable built-in capabilities',()=>{
+ const benign=[
+  "function f(require){return require('vm').compileFunction(userPatch)} f(()=>({compileFunction:x=>x}))",
+  "function f(globalThis){return globalThis.eval(userPatch)} f({eval:x=>x})",
+  "function f(vm){return vm.createScript(userPatch)} f({createScript:x=>x})",
+  "const vm={createScript:x=>x}; vm.createScript(userPatch)",
+  "const box={x:globalThis}; const {x:local}=({x:{eval:x=>x}});local.eval(userPatch)",
+  "const safe={x:(n)=>n};const {x:f}=safe;f(userPatch)"
+ ];
+ for(const script of benign){
+  const result=scan([file(src,script)],SHA);
+  assert.equal(result.status,'ADVISORY',script);
+  assert.ok(!result.findings.some(f=>f.rule==='DYNAMIC_EVAL'),script);
+ }
+});
+test('ambiguous JavaScript context and malformed source fail closed without fake certainty',()=>{
+ const cases=[
+  {filename:src,status:'modified',changes:1,patch:'@@ -92,0 +92,1 @@\n+const ok = 1;'},
+  file(src,'const missing = ('),
+  file(src,"const unclosed = 'bad"),
+  {...file(src,'const ok = 1;'),fullSource:'q'.repeat(160001)}
+ ];
+ for(const item of cases){
+  const result=scan([item],SHA);
+  assert.equal(result.status,'BLOCKED');
+  assert.ok(result.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'));
+  assert.ok(!result.findings.some(f=>f.rule==='DYNAMIC_EVAL'));
+ }
+});
+test('scope analysis never turns unknown or invalid exact-SHA evidence into an approval',()=>{
+ const bad=scan([{filename:src,status:'modified',changes:1,
+  patch:'@@ -60,0 +60,1 @@\n+const ok = 1;',fullSource:undefined}],SHA);
+ assert.equal(bad.status,'BLOCKED');
+ assert.equal(bad.requiresHuman,true);
+ assert.equal(bad.autoMergeAllowed,false);
+ assert.ok(bad.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'));
+});
