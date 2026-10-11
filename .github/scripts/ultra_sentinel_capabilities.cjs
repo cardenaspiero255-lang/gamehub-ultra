@@ -210,6 +210,18 @@ function findCapabilities(ast){
  // Slice-copy provenance holds only if Array.prototype.slice has not been
  // modified. Reads of that intrinsic remain benign; writes and escapes of
  // the shared prototype are uncertain, including through const aliases.
+ function intrinsicOwner(value,depth=0,seen=new Set()){
+  if(!value||depth>MAX_DEPTH||value.type!=='Identifier')return null;
+  const id=symbol(value);
+  if(id==='free:Object')return 'Object';
+  if(id==='free:Reflect')return 'Reflect';
+  const defs=id?.defs||[];
+  if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+     defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+     id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+  seen.add(id);
+  return intrinsicOwner(defs[0].node.init,depth+1,seen);
+ }
  let nativeSliceIntegrity=null;
  function nativeArraySliceTrusted(){
   if(nativeSliceIntegrity!==null)return nativeSliceIntegrity;
@@ -307,18 +319,6 @@ function findCapabilities(ast){
     return packedSliceHandle(defs[0].node.init,depth+1,seen);
    }
    return false;
-  }
-  function intrinsicOwner(value,depth=0,seen=new Set()){
-   if(!value||depth>MAX_DEPTH||value.type!=='Identifier')return null;
-   const id=symbol(value);
-   if(id==='free:Object')return 'Object';
-   if(id==='free:Reflect')return 'Reflect';
-   const defs=id?.defs||[];
-   if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
-      defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
-      id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
-   seen.add(id);
-   return intrinsicOwner(defs[0].node.init,depth+1,seen);
   }
   // A fully local, immutable literal-returning method cannot mutate a native
   // prototype, even when handed that prototype as a normal argument.
