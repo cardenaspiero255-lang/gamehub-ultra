@@ -95,13 +95,19 @@ function findCapabilities(ast){
  // A missing marker is NOT equivalent to a benign descriptor when defaults exist.
  const PRESENT=Object.freeze({present:true});
  const UNKNOWN=Object.freeze({unknown:true});
+ // Optional means a property is known in one branch but absent in another.
+ // Presence MUST NOT be inferred merely from Map.has().
+ const optional=(value)=>({optional:true,value});
  const ignoredDefaultNodes=new WeakSet();
+ const receiverKinds=new WeakMap(),thisExpressionCache=new WeakMap();
  function markInactiveDefault(node){
   if(node)traverse(node,n=>ignoredDefaultNodes.add(n));
  }
  function mergeDescriptor(a,b,depth=0){
   if(a===b)return a;
   if(depth>MAX_DEPTH)throw Error('Ambiguous descriptor nesting');
+  if(a?.optional||b?.optional)
+   return optional(mergeDescriptor(a?.optional?a.value:a,b?.optional?b.value:b,depth+1));
   if((a===PRESENT||a?.functionNode)&&(b===PRESENT||b?.functionNode))return PRESENT;
   if(a?.properties&&b?.properties){
    const merged=new Map(a.properties);
@@ -112,6 +118,44 @@ function findCapabilities(ast){
    return {properties:merged};
   }
   throw Error('Conflicting property capability provenance');
+ }
+ function joinObjectBranches(left,right,depth=0){
+  if(depth>MAX_DEPTH)throw Error('Object branch provenance depth exceeded');
+  const out=new Map();
+  for(const name of new Set([...left.keys(),...right.keys()])){
+   if(left.has(name)&&right.has(name))
+    out.set(name,mergeDescriptor(left.get(name),right.get(name),depth+1));
+   else out.set(name,optional(left.has(name)?left.get(name):right.get(name)));
+  }
+  return out;
+ }
+ function thisExpressions(fn){
+  if(thisExpressionCache.has(fn))return thisExpressionCache.get(fn);
+  const hits=[];let seen=0;
+  function walk(node){
+   if(!node||typeof node!=='object'||typeof node.type!=='string')return;
+   if(++seen>NODE_BUDGET)throw Error('Receiver provenance AST budget exceeded');
+   if(node!==fn&&['FunctionDeclaration','FunctionExpression'].includes(node.type))return;
+   if(node.type==='ThisExpression'){hits.push(node);return;}
+   for(const [key,value]of Object.entries(node)){
+    if(['range','loc','start','end'].includes(key))continue;
+    if(Array.isArray(value))for(const part of value)walk(part);
+    else walk(value);
+   }
+  }
+  walk(fn.body);thisExpressionCache.set(fn,hits);return hits;
+ }
+ function bindReceiver(fn,receiver){
+  if(!receiver||fn?.type==='ArrowFunctionExpression')return false;
+  const cap=kind(receiver),nodes=thisExpressions(fn);
+  if(!cap||cap==='local-object')return false;
+  let changed=false;
+  for(const node of nodes){
+   const existing=receiverKinds.get(node);
+   if(existing&&existing!==cap)throw Error('Ambiguous this receiver capability');
+   if(!existing){receiverKinds.set(node,cap);changed=true;}
+  }
+  return changed;
  }
  const returnCache=new WeakMap();
  function returnExpressions(fn){
@@ -150,24 +194,36 @@ function findCapabilities(ast){
   return null;
  }
  function invocation(node){
-  let fn=resolveFunction(node.callee),args=node.arguments||[];
+  let fn=resolveFunction(node.callee),args=node.arguments||[],receiver=null;
   if(node.callee?.type==='MemberExpression'){
    const name=propName(node.callee);
    if(name==='call'||name==='apply'){
     const target=resolveFunction(node.callee.object);
     if(target){
-     fn=target;
+     fn=target;receiver=args[0]||null;
      if(name==='call')args=args.slice(1);
      else if(args[1]?.type==='ArrayExpression')args=args[1].elements;
      else throw Error('Unresolved Function.apply argument provenance');
     }
-   }
+   }else if(fn)receiver=node.callee.object;
   }
-  return {fn,args};
+  if(fn){
+   const expanded=[];
+   for(const argument of args){
+    if(argument?.type!=='SpreadElement'){expanded.push(argument);continue;}
+    const arr=argument.argument;
+    if(arr?.type!=='ArrayExpression'||arr.elements.some(v=>!v||v.type==='SpreadElement'))
+     throw Error('Unresolved spread call-site parameter provenance');
+    expanded.push(...arr.elements);
+   }
+   args=expanded;
+  }
+  return {fn,args,receiver};
  }
  function riskyDescriptor(v,depth=0){
   if(depth>MAX_DEPTH)throw Error('Property risk depth exceeded');
   if(v===PRESENT||v?.functionNode)return false;
+  if(v?.optional)return true;
   if(v===UNKNOWN)return true;
   if(typeof v==='string')return true;
   if(v?.properties)return [...v.properties.values()].some(x=>riskyDescriptor(x,depth+1));
@@ -205,6 +261,7 @@ function findCapabilities(ast){
   if(node.type==='MemberExpression'){
    const parent=propertyKinds(node.object,depth+1),name=propName(node);
    const entry=parent?.get(name);
+   if(entry?.optional)throw Error('Optional member object provenance cannot be certified');
    return entry&&typeof entry==='object'&&entry.properties?entry.properties:null;
   }
   if(node.type==='AssignmentExpression'&&node.operator==='=')
@@ -216,12 +273,8 @@ function findCapabilities(ast){
     const available=returned.filter(Boolean);
     if(available.length){
      if(available.length!==returned.length)throw Error('Incomplete returned object provenance');
-     const merged=new Map(available[0]);
-     for(const item of available.slice(1))for(const [key,value] of item){
-      if(merged.has(key)&&merged.get(key)!==value)
-       throw Error('Conflicting returned object provenance');
-      merged.set(key,value);
-     }
+     let merged=new Map(available[0]);
+     for(const item of available.slice(1))merged=joinObjectBranches(merged,item,depth+1);
      return merged;
     }
    }
@@ -230,21 +283,13 @@ function findCapabilities(ast){
    const left=propertyKinds(node.left,depth+1),right=propertyKinds(node.right,depth+1);
    if(!left&&!right)return null;
    if(!left||!right)throw Error('Logical object provenance incomplete');
-   const joined=new Map(left);
-   for(const [key,capability] of right){
-    joined.set(key,joined.has(key)?mergeDescriptor(joined.get(key),capability):capability);
-   }
-   return joined;
+   return joinObjectBranches(left,right,depth+1);
   }
   if(node.type==='ConditionalExpression'){
    const a=propertyKinds(node.consequent,depth+1),b=propertyKinds(node.alternate,depth+1);
    if(!a&&!b)return null;
    if(!a||!b)throw Error('Conditional object provenance incomplete');
-   const merged=new Map(a);
-   for(const [k,v]of b){
-    merged.set(k,merged.has(k)?mergeDescriptor(merged.get(k),v):v);
-   }
-   return merged;
+   return joinObjectBranches(a,b,depth+1);
   }
   return null;
  }
@@ -254,14 +299,22 @@ function findCapabilities(ast){
   if(node.type==='ChainExpression'||node.type==='AwaitExpression')
    return kind(node.expression||node.argument,depth+1);
   if(node.type==='Identifier')return directKind(node);
+  if(node.type==='ThisExpression')return receiverKinds.get(node)||null;
   if(node.type==='ImportExpression')
    return ['vm','node:vm'].includes(stringValue(node.source))?'vm':null;
   if(node.type==='MemberExpression'){
    const root=kind(node.object,depth+1),name=propName(node);
    const obj=propertyKinds(node.object,depth+1);
    if(obj){
-    if(name!==null){const v=obj.get(name);return typeof v==='string'?v:
-      v&&typeof v==='object'&&v.properties?'local-object':null;}
+    if(name!==null){
+     const v=obj.get(name);
+     if(v?.optional){
+      if(typeof v.value==='string')return v.value;
+      throw Error('Optional property presence cannot be certified');
+     }
+     return typeof v==='string'?v:
+      v&&typeof v==='object'&&v.properties?'local-object':null;
+    }
     if([...obj.values()].some(v=>v==='exec'))return 'exec';
     if([...obj.values()].some(v=>riskyDescriptor(v)))
      throw Error('Unknown computed property may expose a capability');
@@ -388,11 +441,12 @@ function findCapabilities(ast){
    }
    const hasOwn=!!properties&&name!==null&&properties.has(name);
    const found=hasOwn?properties.get(name):null;
-   let scalar=typeof found==='string'?found:null;
-   let nested=found&&typeof found==='object'?found.properties:null;
-   if(target?.type==='AssignmentPattern'&&hasOwn&&found!==UNKNOWN)
-    markInactiveDefault(target.right);
-   if(target?.type==='AssignmentPattern'&&(!hasOwn||found===UNKNOWN)){
+   if(found?.optional&&target?.type!=='AssignmentPattern')
+    throw Error('Maybe-absent destructuring property without default');
+   const present=found?.optional?found.value:found;
+   let scalar=typeof present==='string'?present:null;
+   let nested=present&&typeof present==='object'?present.properties:null;
+   if(target?.type==='AssignmentPattern'&&(!hasOwn||found===UNKNOWN||found?.optional)){
     const defaultCap=kind(target.right),defaultNested=propertyKinds(target.right);
     if(defaultNested)nested=defaultNested;
     else if(defaultCap&&defaultCap!=='local-object')scalar=defaultCap;
@@ -422,7 +476,6 @@ function findCapabilities(ast){
   if(pattern.type==='AssignmentPattern'){
    const missing=!value||(value.type==='Identifier'&&value.name==='undefined')||
     (value.type==='UnaryExpression'&&value.operator==='void');
-   if(!missing)markInactiveDefault(pattern.right);
    return bind(pattern.left,missing?pattern.right:value);
   }
   if(pattern.type==='MemberExpression'){
@@ -459,7 +512,7 @@ function findCapabilities(ast){
   }
   throw Error('Unsupported binding pattern');
  }
- const functions=new Map(),functionAliases=[];
+ const functions=new Map(),functionAliases=[],memberFunctionAliases=[];
  traverse(ast,(node)=>{
   if(node.type==='FunctionDeclaration'&&node.id)functions.set(symbol(node.id),node);
   if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
@@ -468,9 +521,15 @@ function findCapabilities(ast){
   if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
      node.init?.type==='Identifier')
    functionAliases.push([symbol(node.id),symbol(node.init)]);
+  if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
+     node.init?.type==='MemberExpression')
+   memberFunctionAliases.push([symbol(node.id),node.init]);
   if(node.type==='AssignmentExpression'&&node.operator==='='&&
      node.left?.type==='Identifier'&&node.right?.type==='Identifier')
    functionAliases.push([symbol(node.left),symbol(node.right)]);
+  if(node.type==='AssignmentExpression'&&node.operator==='='&&
+     node.left?.type==='Identifier'&&node.right?.type==='MemberExpression')
+   memberFunctionAliases.push([symbol(node.left),node.right]);
   if(node.type==='VariableDeclarator'&&node.init)
    bindings.push([node.id,node.init]);
   if(node.type==='AssignmentExpression'&&node.operator==='=')
@@ -511,10 +570,25 @@ function findCapabilities(ast){
  for(let round=0;round<MAX_ROUNDS;round++){
   let changed=false;
   for(const [pattern,value]of bindings)changed=bind(pattern,value)||changed;
+  for(const [destination,source] of memberFunctionAliases){
+   const fn=resolveFunction(source);
+   if(!fn)continue;
+   const previous=functions.get(destination);
+   if(previous&&previous!==fn)throw Error('Conflicting member function alias');
+   if(!previous){functions.set(destination,fn);changed=true;}
+  }
+  for(const [destination,source] of functionAliases){
+   const fn=functions.get(source);
+   if(!fn)continue;
+   const previous=functions.get(destination);
+   if(previous&&previous!==fn)throw Error('Conflicting propagated function alias');
+   if(!previous){functions.set(destination,fn);changed=true;}
+  }
   // Object-method targets are resolved only after object descriptors propagate.
   // Re-evaluate calls in the same bounded fixed point, not just once at startup.
   for(const call of calls){
-   const {fn,args}=invocation(call);
+   const {fn,args,receiver}=invocation(call);
+   if(fn)changed=bindReceiver(fn,receiver)||changed;
    if(fn)for(let i=0;i<(fn.params||[]).length;i++){
     const param=fn.params[i],argument=args?.[i]||null;
     if(argument||param?.type==='AssignmentPattern')
@@ -524,6 +598,36 @@ function findCapabilities(ast){
   if(!changed){converged=true;break;}
  }
  if(!converged)throw Error('Unbounded alias propagation');
+ // A default is dead only if all KNOWN local call-sites prove its argument
+ // present. No single invocation may globally suppress an executable RHS.
+ function definitelyProvided(node){
+  return !!node&&node.type!=='SpreadElement'&&
+   !(node.type==='Identifier'&&node.name==='undefined')&&
+   !(node.type==='UnaryExpression'&&node.operator==='void');
+ }
+ traverse(ast,node=>{
+  if(node.type==='VariableDeclarator'&&node.id?.type==='ObjectPattern'&&node.init){
+   const props=propertyKinds(node.init);
+   if(!props)return;
+   for(const p of node.id.properties){
+    if(p.type!=='Property'||p.value?.type!=='AssignmentPattern')continue;
+    const key=keyName(p),entry=key===null?null:props.get(key);
+    if(key!==null&&props.has(key)&&entry!==UNKNOWN&&!entry?.optional)
+     markInactiveDefault(p.value.right);
+   }
+  }
+ });
+ const localFunctions=new Set(functions.values());
+ for(const fn of localFunctions){
+  const relevant=calls.map(invocation).filter(x=>x.fn===fn);
+  if(!relevant.length)continue;
+  for(let i=0;i<(fn.params||[]).length;i++){
+   const param=fn.params[i];
+   if(param.type!=='AssignmentPattern')continue;
+   if(relevant.every(x=>definitelyProvided(x.args[i])))
+    markInactiveDefault(param.right);
+  }
+ }
  const sinks=[];
  traverse(ast,(node,parent,key)=>{
   if(ignoredDefaultNodes.has(node))return;
