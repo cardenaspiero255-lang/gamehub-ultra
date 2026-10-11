@@ -1,28 +1,26 @@
-# Qodo Free for Open Source — activated by repo owner on 2026-10-11.
-# Run reviews only: never auto-approve, merge, apply fixes or rewrite PR descriptions.
-# Codex and CodeRabbit remain disabled under docs/REVIEWERS_NO_CREDITS.md.
+# Qodo GitHub reviews suspended indefinitely by repository owner (2026-10-11).
+# Prevent all automatic Qodo feedback and do not invite manual Qodo commands.
+# This file does NOT revoke the installed GitHub App's permissions: revoke those
+# separately at https://github.com/settings/installations for full deactivation.
+# Codex and CodeRabbit remain subject to docs/REVIEWERS_NO_CREDITS.md.
+[config]
+disable_auto_feedback = true
+ignore_repositories = ["cardenaspiero255-lang/gamehub-ultra"]
+enable_auto_approval = false
 
 [github_app]
-pr_commands = ["/agentic_review"]
-handle_push_trigger = true
-push_commands = ["/agentic_review"]
+pr_commands = []
+push_commands = []
+handle_push_trigger = false
 feedback_on_draft_pr = false
+review_commands = []
 
 [review_agent]
-enabled = true
-publish_output = true
-comments_location_policy = "both"
-inline_comments_severity_threshold = 2
+enabled = false
+publish_output = false
 approve_pr_on_self_review = false
 
 [pr_reviewer]
-require_security_review = true
-require_tests_review = true
-enable_auto_approval = false
-
-[config]
-ignore_repositories = []
-disable_auto_feedback = false
 enable_auto_approval = false
 
 [chat_agent]
