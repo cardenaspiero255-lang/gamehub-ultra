@@ -69,7 +69,11 @@ test('shadow does not claim a reassigned globalThis eval is definitely builtin',
   "const g=globalThis;g.eval=()=>1;globalThis.eval('safe')",
   "const g=globalThis;const alias=g;alias['eval']=()=>1;globalThis.eval('safe')",
   "const g=globalThis;Object.assign(g,{eval:()=>1});globalThis.eval('safe')",
-  "const g=globalThis;Reflect.set(g,'Function',()=>1);globalThis.Function('safe')"
+  "const g=globalThis;Reflect.set(g,'Function',()=>1);globalThis.Function('safe')",
+  "const O=Object;O.defineProperty(globalThis,'eval',{value:()=>1});globalThis.eval('safe')",
+  "const R=Reflect;R.set(globalThis,'Function',()=>1);globalThis.Function('safe')",
+  "const write=Object.defineProperty;write(globalThis,'eval',{value:()=>1});globalThis.eval('safe')",
+  "const set=Reflect.set;set(globalThis,'Function',()=>1);globalThis.Function('safe')"
  ];
  for(const source of cases)
   assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN',source);
