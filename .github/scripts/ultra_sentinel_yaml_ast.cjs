@@ -33,7 +33,7 @@ function boundedGraph(root){
 }
 function parseWorkflow(source){
  if(typeof source!=='string'||!source.trim()||Buffer.byteLength(source,'utf8')>MAX_SOURCE)
-  return {ok:false,reason:'INVALID_SOURCE_SIZE'};
+  return {ok:false,reason:'INVALID_SOURCE_SIZE',workflow:undefined};
  try{
   const input=source.charCodeAt(0)===0xfeff?source.slice(1):source;
   // Guard inexpensive lexical budgets BEFORE the parser. js-yaml 4.3.2
@@ -43,30 +43,30 @@ function parseWorkflow(source){
   const largeMergeList=[...input.matchAll(/<<\s*:\s*\[([^\n]{0,8192}?)\]/g)]
     .some(x=>(x[1].match(/\*[A-Za-z0-9_-]+/g)||[]).length>16);
   if(aliasCount>256||merges>128||largeMergeList)
-   return {ok:false,reason:'YAML_PREPARSE_LIMIT'};
+   return {ok:false,reason:'YAML_PREPARSE_LIMIT',workflow:undefined};
   // DEFAULT_SCHEMA is YAML 1.2-compatible for GitHub's 'on' key; unlike
   // PyYAML's unmodified YAML 1.1 loader, 'on' stays a string.
   // Resource budgets apply DURING parsing; boundedGraph runs only afterward.
   const doc=yaml.load(input,{schema:yaml.DEFAULT_SCHEMA,json:false,
    maxDepth:MAX_DEPTH,maxMergeSeqLength:16,maxTotalMergeKeys:2048,
    onWarning:()=>{throw Error('yaml-warning');}});
-  if(!isMap(doc))return {ok:false,reason:'INVALID_ROOT'};
+  if(!isMap(doc))return {ok:false,reason:'INVALID_ROOT',workflow:undefined};
   boundedGraph(doc);
   if(!Object.prototype.hasOwnProperty.call(doc,'on'))
-   return {ok:false,reason:'MISSING_TRIGGER'};
+   return {ok:false,reason:'MISSING_TRIGGER',workflow:undefined};
   if(!isMap(doc.jobs)||!Object.keys(doc.jobs).length)
-   return {ok:false,reason:'INVALID_JOBS'};
+   return {ok:false,reason:'INVALID_JOBS',workflow:undefined};
   const trigger=doc.on;
   if(typeof trigger!=='string'&&!Array.isArray(trigger)&&!isMap(trigger))
-   return {ok:false,reason:'INVALID_TRIGGER'};
+   return {ok:false,reason:'INVALID_TRIGGER',workflow:undefined};
   if(Array.isArray(trigger)&&!trigger.every(v=>typeof v==='string'))
-   return {ok:false,reason:'INVALID_TRIGGER_LIST'};
+   return {ok:false,reason:'INVALID_TRIGGER_LIST',workflow:undefined};
   if(isMap(trigger)&&Object.keys(trigger).some(k=>typeof k!=='string'))
-   return {ok:false,reason:'INVALID_TRIGGER_MAP'};
+   return {ok:false,reason:'INVALID_TRIGGER_MAP',workflow:undefined};
   if((Array.isArray(trigger)&&!trigger.length)||
      (isMap(trigger)&&!Object.keys(trigger).length)||
      (typeof trigger==='string'&&!trigger.trim()))
-   return {ok:false,reason:'EMPTY_TRIGGER'};
+   return {ok:false,reason:'EMPTY_TRIGGER',workflow:undefined};
   if(isMap(trigger)){
    const filters=new Set(['types','branches','branches-ignore','paths',
     'paths-ignore','tags','tags-ignore','workflows']);
@@ -75,29 +75,29 @@ function parseWorkflow(source){
     // An empty event type/branch/path filter can silently disable the only
     // security gate. Treat malformed GitHub Actions trigger shapes as unknown.
     if(typeof event!=='string'||!event.trim())
-     return {ok:false,reason:'INVALID_TRIGGER_EVENT'};
+     return {ok:false,reason:'INVALID_TRIGGER_EVENT',workflow:undefined};
     if(event==='schedule'){
      if(!Array.isArray(configuration)||!configuration.length||
        configuration.some(item=>!isMap(item)||typeof item.cron!=='string'||
          !item.cron.trim()))
-      return {ok:false,reason:'INVALID_CRON_TRIGGER'};
+      return {ok:false,reason:'INVALID_CRON_TRIGGER',workflow:undefined};
      continue;
     }
     if(configuration===null)continue;
-    if(!isMap(configuration))return {ok:false,reason:'INVALID_TRIGGER_CONFIGURATION'};
+    if(!isMap(configuration))return {ok:false,reason:'INVALID_TRIGGER_CONFIGURATION',workflow:undefined};
     for(const __workflowEntry1 of Object.entries(configuration)){
    const name=__workflowEntry1[0],value=__workflowEntry1[1];
      if(!filters.has(name))continue;
      if(!Array.isArray(value)||!value.length||
        value.some(item=>typeof item!=='string'||!item.trim()))
-      return {ok:false,reason:'INVALID_TRIGGER_FILTER'};
+      return {ok:false,reason:'INVALID_TRIGGER_FILTER',workflow:undefined};
     }
    }
   }
-  return {ok:true,workflow:doc};
+  return {ok:true,workflow:doc,reason:null};
  }catch(e){
   // Do not emit raw attacker-controlled snippets or throw from CI gating.
-  return {ok:false,reason:'YAML_PARSE_OR_LIMIT_ERROR'};
+  return {ok:false,reason:'YAML_PARSE_OR_LIMIT_ERROR',workflow:undefined};
  }
 }
 function privilegedTrigger(value){

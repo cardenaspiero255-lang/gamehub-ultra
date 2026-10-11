@@ -464,20 +464,6 @@ test('P1 trusted self-review attests exact YAML parser computed-input provenance
  const ast=acorn.parse(fullSource,{ecmaVersion:'latest',sourceType:'script',
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
- // Temporary scoped diagnostics: identify the optional descriptor name
- // reached by the trusted analyzer without executing candidate JS source.
- const observed=[];const oldGet=Map.prototype.get;
- Map.prototype.get=function(key){
-  const value=oldGet.call(this,key);
-  if(value?.optional===true&&observed.length<40)
-   observed.push(String(key));
-  return value;
- };
- try{
-  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
-   'trusted analyzer must resolve the complete immutable YAML inspector program');
- }catch(error){
-  console.error('OPTIONAL_METHOD_PROVENANCE_KEYS',JSON.stringify(observed.slice(-20)));
-  throw error;
- }finally{Map.prototype.get=oldGet;}
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
+  'trusted analyzer must resolve the complete immutable YAML inspector program');
 });
