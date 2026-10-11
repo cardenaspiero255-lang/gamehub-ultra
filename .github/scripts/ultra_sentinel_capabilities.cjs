@@ -2298,8 +2298,14 @@ function findCapabilities(ast){
       const def=variable&&typeof variable==='object'&&
        variable.defs?.length===1?variable.defs[0]:null;
       const init=def?.type==='Variable'?def.node?.init:null;
-      if(init?.type!=='Literal'||typeof init.value!=='number'||
-         !Number.isFinite(init.value))
+      // The initializer of a let/var alias is not its effective value:
+      // reassignment after that initializer could inject unknown capabilities.
+      // Even a syntactically invalid write to const must never be certified.
+      const postInitWrite=variable&&typeof variable==='object'&&
+       variable.references?.some(ref=>ref.isWrite()&&ref.writeExpr!==init);
+      if(def?.parent?.kind!=='const'||init?.type!=='Literal'||
+         typeof init.value!=='number'||!Number.isFinite(init.value)||
+         postInitWrite)
        throw Error('Unresolved CommonJS exported value');
      }else if(riskyDescriptor(descriptor))
       throw Error('Dangerous CommonJS exported capability');
