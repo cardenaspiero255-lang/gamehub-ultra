@@ -189,16 +189,33 @@ function findCapabilities(ast){
   if(node.type==='MemberExpression'){
    const map=propertyKinds(node.object,depth+1),key=propName(node);
    const descriptor=key===null?null:map?.get(key);
+   if(descriptor?.optional)throw Error('Optional method identity unresolved');
    return descriptor?.functionNode||null;
   }
+  if(node.type==='CallExpression'){
+   const {fn}=invocation(node,depth+1);
+   if(!fn)return null;
+   const returned=returnExpressions(fn);
+   if(!returned.length)return null;
+   const result=returned.map(n=>resolveFunction(n,depth+1));
+   const present=result.filter(Boolean);
+   if(present.length!==result.length){
+    if(present.length)throw Error('Partially known returned function');
+    return null;
+   }
+   if(present.some(n=>n!==present[0]))throw Error('Ambiguous returned function identity');
+   return present[0];
+  }
+  if(node.type==='AssignmentExpression'&&node.operator==='=')
+   return resolveFunction(node.right,depth+1);
   return null;
  }
- function invocation(node){
-  let fn=resolveFunction(node.callee),args=node.arguments||[],receiver=null;
+ function invocation(node,depth=0){
+  let fn=resolveFunction(node.callee,depth+1),args=node.arguments||[],receiver=null;
   if(node.callee?.type==='MemberExpression'){
    const name=propName(node.callee);
    if(name==='call'||name==='apply'){
-    const target=resolveFunction(node.callee.object);
+    const target=resolveFunction(node.callee.object,depth+1);
     if(target){
      fn=target;receiver=args[0]||null;
      if(name==='call')args=args.slice(1);
@@ -250,8 +267,8 @@ function findCapabilities(ast){
     const cap=kind(p.value,depth+1);
     if(nested)result.set(name,{properties:nested});
     else if(cap&&cap!=='local-object')result.set(name,cap);
-    else if(['FunctionExpression','ArrowFunctionExpression'].includes(p.value?.type))
-     result.set(name,{functionNode:p.value});
+    else if(resolveFunction(p.value,depth+1))
+     result.set(name,{functionNode:resolveFunction(p.value,depth+1)});
     else if(['Literal','TemplateLiteral'].includes(p.value?.type))result.set(name,PRESENT);
     else result.set(name,UNKNOWN);
    }
@@ -395,6 +412,13 @@ function findCapabilities(ast){
   return null;
  }
  const knownParameterInputs=new Set(),uncertainParameters=new Set();
+ function bindFunctionAlias(destination,fn){
+  if(!destination||!fn)return false;
+  const prev=functions.get(destination);
+  if(prev&&prev!==fn)throw Error('Conflicting function identity');
+  if(!prev){functions.set(destination,fn);return true;}
+  return false;
+ }
  function assignIdentifier(id,cap,props,known=true){
   if(id?.type!=='Identifier')return false;
   const key=symbol(id);
@@ -460,6 +484,8 @@ function findCapabilities(ast){
    if(dest?.type==='Identifier'){
     if(!properties&&!root&&name!==null&&(EXEC.has(name)||VM.has(name)))
      uncertainParameters.add(symbol(dest));
+    if(present?.functionNode)
+     changed=bindFunctionAlias(symbol(dest),present.functionNode)||changed;
     changed=assignIdentifier(dest,scalar,nested,!!properties||!!root)||changed;
    }else if(dest?.type==='ObjectPattern'){
     if(!nested&&!scalar)throw Error('Nested destructuring source unknown');
@@ -481,7 +507,13 @@ function findCapabilities(ast){
   if(pattern.type==='MemberExpression'){
    const parent=propertyKinds(pattern.object),name=propName(pattern);
    if(!parent||name===null)throw Error('Unresolved property write provenance');
-   const cap=kind(value),nested=propertyKinds(value);
+   const cap=kind(value),nested=propertyKinds(value),fn=resolveFunction(value);
+   if(fn){
+    const old=parent.get(name);
+    if(old&&old.functionNode===fn)return false;
+    if(old)throw Error('Conflicting function property write');
+    parent.set(name,{functionNode:fn});return true;
+   }
    if(nested){const old=parent.get(name);
     if(!old){parent.set(name,{properties:nested});return true;}
     if(old.properties!==nested)throw Error('Ambiguous property write');
@@ -494,8 +526,10 @@ function findCapabilities(ast){
    }
    return false;
   }
-  if(pattern.type==='Identifier')
-   return assignIdentifier(pattern,kind(value),propertyKinds(value),value!==null);
+  if(pattern.type==='Identifier'){
+   const functionChanged=bindFunctionAlias(symbol(pattern),resolveFunction(value));
+   return assignIdentifier(pattern,kind(value),propertyKinds(value),value!==null)||functionChanged;
+  }
   if(pattern.type==='ObjectPattern')
    return bindWithDescriptors(pattern,propertyKinds(value),kind(value));
   if(pattern.type==='ArrayPattern'){
@@ -605,7 +639,25 @@ function findCapabilities(ast){
    !(node.type==='Identifier'&&node.name==='undefined')&&
    !(node.type==='UnaryExpression'&&node.operator==='void');
  }
+ function markArrayInactiveDefaults(pattern,source,depth=0){
+  if(pattern?.type!=='ArrayPattern'||source?.type!=='ArrayExpression')return;
+  if(depth>MAX_DEPTH)throw Error('Array default analysis depth exceeded');
+  // Spreads and holes may change or omit positions: never certify defaults
+  // when index provenance is ambiguous.
+  if(source.elements.some(e=>e?.type==='SpreadElement'))return;
+  for(let i=0;i<pattern.elements.length;i++){
+   const item=pattern.elements[i],input=source.elements[i];
+   if(item?.type==='AssignmentPattern'&&definitelyProvided(input))
+    markInactiveDefault(item.right);
+   else if(item?.type==='ArrayPattern')
+    markArrayInactiveDefaults(item,input,depth+1);
+  }
+ }
  traverse(ast,node=>{
+  if(node.type==='VariableDeclarator'&&node.id?.type==='ArrayPattern'&&node.init)
+   markArrayInactiveDefaults(node.id,node.init);
+  if(node.type==='AssignmentExpression'&&node.operator==='='&&node.left?.type==='ArrayPattern')
+   markArrayInactiveDefaults(node.left,node.right);
   if(node.type==='VariableDeclarator'&&node.id?.type==='ObjectPattern'&&node.init){
    const props=propertyKinds(node.init);
    if(!props)return;
