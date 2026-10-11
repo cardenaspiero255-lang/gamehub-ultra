@@ -79,7 +79,9 @@ function findCapabilities(ast){
  const kinds=new Map(), objects=new Map(),bindings=[];
  // Preserve Function.bind closures across object/array destructuring and aliases.
  const boundValues=new Map();
+ const intrinsicValues=new Map();
  const stableArrayCache=new WeakMap();
+ const intrinsicShadowCache=new Map();
  const unknownIds=new Map();
  function symbol(node){
   if(node?.type!=='Identifier')return null;
@@ -328,6 +330,75 @@ function findCapabilities(ast){
  // Bound callables retain the original function and the leading arguments.
  // Resolve direct .bind()(), nested binds and lexical const aliases uniformly.
  // This is an invocation value, not an eagerly executed call.
+ // A native Function.prototype intrinsic has a distinct provenance kind.
+ // When extracted, its name is not enough: check shadowing on its source.
+ function hasIntrinsicOverride(receiver,method){
+  if(receiver?.type!=='Identifier')return false;
+  const id=symbol(receiver);
+  if(!id)return false;
+  let overrides=intrinsicShadowCache.get(id);
+  if(!overrides){
+   overrides=new Set();
+   traverse(ast,node=>{
+    if(node.type==='AssignmentExpression'&&node.left?.type==='MemberExpression'&&
+       node.left.object?.type==='Identifier'&&symbol(node.left.object)===id){
+     overrides.add(stableMethodName(node.left)||'*');
+    }
+    if(node.type==='UpdateExpression'&&node.argument?.type==='MemberExpression'&&
+       node.argument.object?.type==='Identifier'&&symbol(node.argument.object)===id)
+     overrides.add(stableMethodName(node.argument)||'*');
+    if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
+       node.callee.object?.type==='Identifier'&&
+       symbol(node.callee.object)==='free:Object'&&
+       ['defineProperty','defineProperties','assign'].includes(stableMethodName(node.callee))&&
+       node.arguments?.[0]?.type==='Identifier'&&
+       symbol(node.arguments[0])===id){
+     const op=stableMethodName(node.callee);
+     overrides.add(op==='defineProperty'?stableKeyValue(node.arguments[1])||'*':'*');
+    }
+   });
+   intrinsicShadowCache.set(id,overrides);
+  }
+  return overrides.has('*')||overrides.has(method);
+ }
+ function intrinsicName(node,depth=0,seen=new Set()){
+  if(!node)return null;
+  if(depth>MAX_DEPTH)throw Error('Intrinsic provenance depth exceeded');
+  if(node.type==='Identifier'){
+   const id=symbol(node);
+   if(intrinsicValues.has(id))return intrinsicValues.get(id);
+   if(!id||typeof id!=='object'||seen.has(id))return null;
+   seen.add(id);
+   const defs=id.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return null;
+   return intrinsicName(defs[0].node?.init,depth+1,seen);
+  }
+  if(node.type==='SequenceExpression')
+   return intrinsicName(node.expressions?.at(-1),depth+1,seen);
+  if(node.type==='MemberExpression'){
+   const method=stableMethodName(node);
+   if(['call','apply','bind'].includes(method)&&
+      resolveFunction(node.object,depth+1)){
+    if(hasIntrinsicOverride(node.object,method))
+     throw Error('Function.prototype intrinsic may be shadowed');
+    return method;
+   }
+   const map=propertyKinds(node.object,depth+1);
+   const descriptor=method===null?null:map?.get(method);
+   if(descriptor?.optional)throw Error('Optional intrinsic identity unresolved');
+   return descriptor?.intrinsic||null;
+  }
+  return null;
+ }
+ function rememberIntrinsic(destination,intrinsic){
+  if(!destination||!intrinsic)return false;
+  const current=intrinsicValues.get(destination);
+  if(current&&current!==intrinsic)throw Error('Conflicting intrinsic alias');
+  if(current)return false;
+  intrinsicValues.set(destination,intrinsic);
+  return true;
+ }
  function boundCallable(node,depth=0,seen=new Set()){
   if(!node)return null;
   if(depth>MAX_DEPTH)throw Error('Bound function provenance depth exceeded');
@@ -353,9 +424,7 @@ function findCapabilities(ast){
   // The first argument is the target function; it is not invoked at bind time.
   if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
      stableMethodName(node.callee)==='call'&&
-     node.callee.object?.type==='MemberExpression'&&
-     stableMethodName(node.callee.object)==='bind'&&
-     resolveFunction(node.callee.object.object,depth+1)){
+     intrinsicName(node.callee.object,depth+1)==='bind'){
    const target=boundCallable(node.arguments?.[0],depth+1,seen);
    const fn=target?.fn||resolveFunction(node.arguments?.[0],depth+1);
    if(!fn)throw Error('Unknown indirect Function.bind target');
@@ -456,10 +525,8 @@ function findCapabilities(ast){
  function invocation(node,depth=0){
   // Function.prototype.call.call(fn, thisArg, arg) and apply.call are
   // interprocedural function invocations, not ordinary member calls.
-  if(node.callee?.type==='MemberExpression'&&stableMethodName(node.callee)==='call'&&
-     node.callee.object?.type==='MemberExpression'&&
-     resolveFunction(node.callee.object.object,depth+1)){
-   const intrinsic=stableMethodName(node.callee.object);
+  if(node.callee?.type==='MemberExpression'&&stableMethodName(node.callee)==='call'){
+   const intrinsic=intrinsicName(node.callee.object,depth+1);
    if(['call','apply','bind'].includes(intrinsic)){
     const innerArgs=node.arguments||[];
     const linked=boundCallable(innerArgs[0],depth+1);
@@ -542,7 +609,9 @@ function findCapabilities(ast){
     const nested=propertyKinds(p.value,depth+1);
     const cap=kind(p.value,depth+1);
     const bound=boundCallable(p.value,depth+1);
-    if(bound)result.set(name,{bound});
+    const intrinsic=intrinsicName(p.value,depth+1);
+    if(intrinsic)result.set(name,{intrinsic});
+    else if(bound)result.set(name,{bound});
     else if(nested)result.set(name,{properties:nested});
     else if(cap&&cap!=='local-object')result.set(name,cap);
     else if(resolveFunction(p.value,depth+1))
@@ -783,6 +852,8 @@ function findCapabilities(ast){
      changed=bindFunctionAlias(symbol(dest),present.functionNode)||changed;
     if(present?.bound)
      changed=rememberBound(symbol(dest),present.bound)||changed;
+    if(present?.intrinsic)
+     changed=rememberIntrinsic(symbol(dest),present.intrinsic)||changed;
     changed=assignIdentifier(dest,scalar,nested,!!properties||!!root)||changed;
    }else if(dest?.type==='ObjectPattern'){
     if(!nested&&!scalar)throw Error('Nested destructuring source unknown');
@@ -826,8 +897,9 @@ function findCapabilities(ast){
   if(pattern.type==='Identifier'){
    const functionChanged=bindFunctionAlias(symbol(pattern),resolveFunction(value));
    const boundChanged=rememberBound(symbol(pattern),boundCallable(value));
+   const intrinsicChanged=rememberIntrinsic(symbol(pattern),intrinsicName(value));
    return assignIdentifier(pattern,kind(value),propertyKinds(value),value!==null)||
-    functionChanged||boundChanged;
+    functionChanged||boundChanged||intrinsicChanged;
   }
   if(pattern.type==='ObjectPattern'){
    const slots=knownArraySlots(value);
