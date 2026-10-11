@@ -22,6 +22,59 @@ function parseAdded(patch){
  }
  return added;
 }
+
+// Real JavaScript grammar, not an ad-hoc regex/division/comment lexer.
+// Acorn is installed from a SHA512-locked npm artifact, with no lifecycle scripts.
+// The fetched candidate source is parsed as DATA and is never imported or run.
+const acorn=require('acorn');
+const AST_NODE_LIMIT=50000;
+const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+function jsDiffSource(patch){
+ let started=false,last=0,first=true,lines=[];
+ for(const row of patch.split('\n')){
+  const m=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  if(m){
+   const start=Number(m[1]);
+   if(first&&start!==1)return null;
+   if(!first&&start!==last+1)return null;
+   first=false;started=true;last=start-1;continue;
+  }
+  if(!started||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
+  if(row[0]==='+'||row[0]===' '){lines.push(row.slice(1));last++;}
+ }
+ return first?null:lines.join('\n');
+}
+function jsAstByLine(patch,fullSource){
+ const additions=parseAdded(patch),map=new Map();
+ if(!additions?.length)return map;
+ const fail=(rule)=>{map.set(additions[0].line,{unknown:true,reason:rule});return map;};
+ const exact=typeof fullSource==='string';
+ if(exact&&Buffer.byteLength(fullSource,'utf8')>160000)return fail('SOURCE_TOO_LARGE');
+ const text=exact?fullSource:jsDiffSource(patch);
+ if(text===null||Buffer.byteLength(text,'utf8')>160000)return fail('JS_CONTEXT_UNAVAILABLE');
+ let ast;
+ try{
+  ast=acorn.parse(text,{ecmaVersion:'latest',sourceType:'script',
+   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+   locations:true,ranges:true});
+ }catch(_){return fail('JS_PARSE_ERROR');}
+ let sinks;
+ try{sinks=findCapabilities(ast);}catch(_){return fail('SCOPE_OR_CAPABILITY_INCOMPLETE');}
+ if(sinks.length){
+  // With exact source, also catch added syntax that exposes an old sink.
+  // Reviewers are security-critical: a pre-existing sink still blocks edits.
+  const first=additions[0].line;
+  for(const sink of sinks){
+   const line=sink.loc?.start?.line||first;
+   const added=additions.find(a=>a.line===line)||additions.find(a=>
+    a.line>=(sink.loc?.start?.line||first)&&a.line<=(sink.loc?.end?.line||first));
+   const slot=added?.line||first;
+   map.set(slot,{sink:true});
+  }
+ }
+ return map;
+}
+
 function scan(files,sha){
  const findings=[],changed=[];
  function flag(rule,severity,file,line,reason){findings.push({rule,severity,file,line,reason})}
@@ -48,6 +101,8 @@ function scan(files,sha){
   if(!additions||((Number(f.changes)||0)>0&&!additions.length)){
    flag('INCOMPLETE_DIFF','BLOCKER',file,0,'Diff truncated or missing');continue;
   }
+  const inspectJs=file.endsWith('.cjs')&&!file.endsWith('.test.cjs');
+  const executableByLine=inspectJs?jsAstByLine(f.patch,f.fullSource):null;
   for(const a of additions){
    // Normalize YAML list prefixes, quotes and trailing comments before rules.
    const line=a.text.trim().replace(/\s+#.*$/,'').trim()
@@ -66,8 +121,11 @@ function scan(files,sha){
       !/^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/i.test(action))
       flag('MUTABLE_ACTION','BLOCKER',file,a.line,'New action is not pinned to a commit');
    }
-   if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&/(?:\beval\s*\(|\bnew\s+Function\s*\(|\bvm\.runIn(?:This|New)Context\s*\()/.test(line))
-    flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Dynamic execution added to reviewer');
+   const js=executableByLine?.get(a.line);
+   if(inspectJs&&js?.unknown)
+    flag('JS_CONTEXT_INCOMPLETE','BLOCKER',file,a.line,'Cannot attest JavaScript grammar or complete context');
+   else if(inspectJs&&js?.sink)
+    flag('DYNAMIC_EVAL','BLOCKER',file,a.line,'Executable dynamic code in reviewer');
    if(file.endsWith('.cjs')&&!file.endsWith('.test.cjs')&&!file.endsWith('ultra_sentinel_mutation.cjs')&&/\bauto(?:Merge|Commit)Allowed:\s*true\b/.test(line))
     flag('UNREVIEWED_AUTOMATION','BLOCKER',file,a.line,'Automated commit or merge enabled');
   }
@@ -102,6 +160,26 @@ async function reviewRemote(env=process.env){
   files.push(...group);if(group.length<100)break;
  }
  if(files.length!==metadata.changed_files)throw Error('Truncated pull request');
+ // Exact-SHA read-only source context is needed for hunks beginning inside
+ // existing JS comments. Never execute, import, or evaluate PR source.
+ const javascriptFiles=files.filter(f=>f.status!=='removed'&&
+  SCOPE.test(f.filename)&&f.filename.endsWith('.cjs')&&
+  !f.filename.endsWith('.test.cjs')&&typeof f.patch==='string');
+ for(let i=0;i<javascriptFiles.length;i+=8){
+  await Promise.all(javascriptFiles.slice(i,i+8).map(async f=>{
+   try{
+    const safePath=f.filename.split('/').map(encodeURIComponent).join('/');
+    const payload=await get('https://api.github.com/repos/'+repo+'/contents/'+
+     safePath+'?ref='+sha,token);
+    if(payload.type==='file'&&payload.encoding==='base64'&&
+       Number.isSafeInteger(payload.size)&&payload.size<=160000&&
+       typeof payload.content==='string'){
+     const data=Buffer.from(payload.content,'base64');
+     if(data.length===payload.size)f.fullSource=data.toString('utf8');
+    }
+   }catch(error){ /* Missing exact-SHA source fails closed in scan(). */ }
+  }));
+ }
  const result=scan(files,sha);
  const after=await get(base,token);
  if(after.state!=='open'||after.head?.sha!==sha)throw Error('Stale PR analysis');

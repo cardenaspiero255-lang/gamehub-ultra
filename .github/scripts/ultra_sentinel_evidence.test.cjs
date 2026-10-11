@@ -4,19 +4,22 @@ const E=require('./ultra_sentinel_evidence.cjs');
 const SHA='a'.repeat(40),OTHER='b'.repeat(40),RUN=123456789;
 const run=(overrides={})=>({
  id:RUN,head_sha:SHA,status:'completed',conclusion:'success',
- name:'Android build',event:'push',head_branch:'main',run_attempt:1,
+ name:'Android build',event:'push',head_branch:'main',run_number:7,run_attempt:1,
+ workflow_id:131,path:'.github/workflows/android.yml',
  repository:{full_name:'cardenaspiero255-lang/gamehub-ultra'},
  html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+RUN,
  ...overrides
 });
+const TRUST={'Android build':{id:131,path:'.github/workflows/android.yml',blobSha:E.TRUSTED_BLOBS['Android build']},
+ 'Unit Test Coverage':{id:132,path:'.github/workflows/coverage.yml',blobSha:E.TRUSTED_BLOBS['Unit Test Coverage']}};
 const issue=(id,release)=>({
  id:String(id),project:{slug:'gamehub-ultra'},level:'error',count:'1',
  firstSeen:'2026-10-09T01:00:00Z',lastSeen:'2026-10-09T02:00:00Z',
  firstRelease:{version:release},title:'Sensitive Bearer secret user@private.test'
 });
 test('reject every incorrect workflow attestation and stale SHA',()=>{
- assert.equal(E.validateRun(run(),SHA)?.sha,SHA);
- assert.equal(E.validateRun(run({event:'workflow_dispatch'}),SHA)?.sha,SHA);
+ assert.equal(E.validateRun(run(),SHA,TRUST)?.sha,SHA);
+ assert.equal(E.validateRun(run({event:'workflow_dispatch'}),SHA,TRUST)?.sha,SHA);
  for(const override of [
   {head_sha:OTHER},{conclusion:'failure'},{status:'in_progress'},{name:'Other workflow'},
   {repository:{full_name:'attacker/fork'}},{id:0},
@@ -24,7 +27,7 @@ test('reject every incorrect workflow attestation and stale SHA',()=>{
   {event:'workflow_dispatch',head_branch:'feature/unsafe'},
   {event:'schedule',head_branch:'main'},
   {html_url:'https://evil.example/actions/runs/'+RUN}
- ])assert.equal(E.validateRun(run(override),SHA),null);
+ ])assert.equal(E.validateRun(run(override),SHA,TRUST),null);
 });
 test('fixed-domain GitHub query never accepts path injection or partial SHA',()=>{
  assert.match(E.apiPath(SHA),/^\/repos\/cardenaspiero255-lang\/gamehub-ultra\/actions\/runs\?/);
@@ -43,7 +46,7 @@ test('release association demands exact 40-char commit, never substring',()=>{
 });
 test('correlation requires a independently attested CI match and redacts user data',()=>{
  const raw=[issue(12,'gamehub-ultra@'+SHA),issue(13,OTHER),issue(14,'not-a-release')];
- const trusted=E.attachVerifiedReleases(raw,[E.validateRun(run(),SHA)]);
+ const trusted=E.attachVerifiedReleases(raw,[E.validateRun(run(),SHA,TRUST)]);
  assert.equal(trusted.length,1);
  assert.equal(trusted[0].sha,SHA);
  assert.equal(trusted[0].verification,'verified-github-api-run');
@@ -52,8 +55,8 @@ test('correlation requires a independently attested CI match and redacts user da
  assert.ok(!JSON.stringify(trusted).includes('"issueId"'));
 });
 test('requires a green Coverage run for strong release assessment',()=>{
- const android=E.validateRun(run(),SHA);
- const coverage=E.validateRun(run({name:'Unit Test Coverage',id:RUN+1,html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+(RUN+1)}),SHA);
+ const android=E.validateRun(run(),SHA,TRUST);
+ const coverage=E.validateRun(run({name:'Unit Test Coverage',workflow_id:132,path:'.github/workflows/coverage.yml',id:RUN+1,html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+(RUN+1)}),SHA,TRUST);
  assert.equal(E.assessRelease(SHA,[android],true).status,'INCOMPLETE');
  assert.equal(E.assessRelease(SHA,[android,coverage],true).status,'CI_VERIFIED');
  assert.equal(E.assessRelease(SHA,[android,coverage],false).status,'CONSENT_REQUIRED');
@@ -68,7 +71,16 @@ test('network client is read-only, bounded, fixed-host and fails closed on redir
    const res=new EventEmitter();res.statusCode=200;res.resume=()=>{};
    callback(res);
    process.nextTick(()=>{
-    res.emit('data',Buffer.from(JSON.stringify({workflow_runs:[run()]})));
+    const blobPath='/contents/.github/workflows/';
+    const isBlob=opts.path.includes(blobPath);
+    const isAndroid=opts.path.includes('android.yml');
+    const name=isAndroid?'Android build':'Unit Test Coverage';
+    const filePath=isAndroid?'.github/workflows/android.yml':'.github/workflows/coverage.yml';
+    const body=isBlob?{type:'file',path:filePath,sha:E.TRUSTED_BLOBS[name]}:
+    opts.path.endsWith('/android.yml')?{id:131,path:filePath}:
+    opts.path.endsWith('/coverage.yml')?{id:132,path:filePath}:
+    {total_count:1,workflow_runs:[run()]};
+   res.emit('data',Buffer.from(JSON.stringify(body)));
     res.emit('end');
    });
   };
@@ -81,4 +93,49 @@ test('network client is read-only, bounded, fixed-host and fails closed on redir
  assert.equal(seen[0].hostname,'api.github.com');
  assert.equal(seen[0].method,'GET');
  assert.ok(!seen[0].path.includes('xxxxxxxxx'));
+});
+
+test('Codex P2: newest failed, pending or rerun attempt cannot inherit older green CI',async()=>{
+ const {EventEmitter}=require('node:events');
+ const getRun=(name,id,number,attempt,status,conclusion)=>run({
+  id,name,run_number:number,run_attempt:attempt,status,conclusion,
+  workflow_id:name==='Android build'?131:132,
+  path:name==='Android build'?'.github/workflows/android.yml':'.github/workflows/coverage.yml',
+  html_url:'https://github.com/cardenaspiero255-lang/gamehub-ultra/actions/runs/'+id
+ });
+ async function evaluate(runs){
+  const request=(opts,callback)=>{
+   const req=new EventEmitter();
+   req.end=()=>{
+    const res=new EventEmitter();res.statusCode=200;res.resume=()=>{};
+    callback(res);
+    process.nextTick(()=>{
+     const android=opts.path.includes('android.yml');
+     const name=android?'Android build':'Unit Test Coverage';
+     const filePath=android?'.github/workflows/android.yml':'.github/workflows/coverage.yml';
+     const body=opts.path.includes('/contents/')?{type:'file',path:filePath,sha:E.TRUSTED_BLOBS[name]}:
+      opts.path.endsWith('/android.yml')?{id:131,path:filePath}:
+      opts.path.endsWith('/coverage.yml')?{id:132,path:filePath}:
+      {total_count:runs.length,workflow_runs:runs};
+     res.emit('data',Buffer.from(JSON.stringify(body)));res.emit('end');
+    });
+   };
+   req.destroy=e=>req.emit('error',e);
+   return req;
+  };
+  const verified=await E.fetchVerifiedRuns({sha:SHA,token:'x'.repeat(30),request});
+  return {verified,release:E.assessRelease(SHA,verified,true)};
+ }
+ const coverage=getRun('Unit Test Coverage',220,8,1,'completed','success');
+ const older=getRun('Android build',201,8,1,'completed','success');
+ for(const state of [{status:'completed',conclusion:'failure'},
+  {status:'in_progress',conclusion:null}]){
+  const newest=getRun('Android build',202,9,1,state.status,state.conclusion);
+  const output=await evaluate([older,coverage,newest]);
+  assert.equal(output.release.status,'INCOMPLETE',JSON.stringify(output));
+  assert.ok(!output.verified.some(x=>x.workflow==='Android build'),JSON.stringify(output.verified));
+ }
+ const failedAttempt=getRun('Android build',201,8,2,'completed','failure');
+ const tied=await evaluate([older,coverage,failedAttempt]);
+ assert.equal(tied.release.status,'INCOMPLETE',JSON.stringify(tied));
 });

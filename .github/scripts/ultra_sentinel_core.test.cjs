@@ -120,3 +120,211 @@ test('empty changed-file list must mark audit incomplete',()=>{
  assert.equal(result.coverage.partial,true);
  assert.equal(result.verdict,'INCOMPLETE');
 });
+
+test('P2: an ambiguous raw-string closer before a diff addition cannot hide executable Kotlin',()=>{
+ // The opening triple quote may be before this hunk. Its first visible
+ // delimiter can be a closer; accepting a clean verdict is unsafe.
+ const patch=['@@ -40,3 +40,4 @@','     """','     old text','+    runBlocking { work() }','     after()'].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+ assert.equal(result.coverage.partial,true);
+ assert.equal(result.verdict,'INCOMPLETE');
+});
+test('a raw Kotlin string opened and closed within trustworthy file-origin context does not hide later code',()=>{
+ const patch=['@@ -1,4 +1,5 @@',' val help = """','   sample',' """','+runBlocking { work() }',' val end = 42'].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+ assert.ok(rules(result).includes('BLOCKING_ANDROID_CALL'));
+ assert.equal(result.coverage.partial,false);
+});
+
+test('Codex P1: added triple-quote delimiter with unknown hunk state fails closed',()=>{
+ const patch=[
+  '@@ -40,3 +40,4 @@',
+  '-    """.trimIndent()',
+  '+    """',
+  '+    runBlocking { work() }',
+  '     after()'
+ ].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:3}]);
+ assert.equal(result.coverage.partial,true);
+ assert.equal(result.verdict,'INCOMPLETE');
+});
+test('added raw opening with known beginning of Kotlin file remains safely distinguishable',()=>{
+ const patch=[
+  '@@ -1,4 +1,6 @@',
+  ' fun sample() {',
+  '+val description = """',
+  '+runBlocking { textOnly() }',
+  '+"""',
+  '+runBlocking { executable() }',
+  ' }' 
+ ].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:4}]);
+ assert.equal(result.coverage.partial,false);
+ assert.equal(result.findings.filter(f=>f.rule==='BLOCKING_ANDROID_CALL').length,1);
+});
+
+test('Codex P2: nested Kotlin block comment does not trigger a blocking-call finding',()=>{
+ const result=analyze([file(app+'Nested.kt',[
+ '/* outer documentation',
+ '/* nested inner */',
+ 'runBlocking { example() }',
+ '*/',
+ 'val safe = 1'
+ ])]);
+ assert.ok(!rules(result).includes('BLOCKING_ANDROID_CALL'));
+});
+test('nested Kotlin comments close only at outer end and then executable calls are visible',()=>{
+ const result=analyze([file(app+'Nested.kt',[
+ '/* outer */',
+ '/* second outer',
+ '/* nested */',
+ 'runBlocking { commentOnly() }',
+ '*/',
+ 'runBlocking { actualCall() }'
+ ])]);
+ const blocking=result.findings.filter(x=>x.rule==='BLOCKING_ANDROID_CALL');
+ assert.equal(blocking.length,1);
+ assert.equal(blocking[0].line,6);
+});
+test('single-line nested Kotlin block comments are not executable',()=>{
+ const result=analyze([file(app+'Nested.kt',[
+ '/* outer /* nested */ runBlocking { hidden() } */',
+ 'val safe = 1'
+ ])]);
+ assert.ok(!rules(result).includes('BLOCKING_ANDROID_CALL'));
+});
+
+test('Java block comments do not nest: executable call after first closer stays visible',()=>{
+ const java=analyze([file(app+'Legacy.java',[
+  '/* outer /* inner */',
+  'Thread.sleep(1000);'
+ ])]);
+ assert.ok(rules(java).includes('BLOCKING_ANDROID_CALL'));
+ // Exact SHA source must disambiguate a Java hunk starting well after line 1.
+ const javaLines=['class Legacy {',
+  ...Array.from({length:58},(_,i)=>'// header '+i),
+  '  void f(){ System.gc(); }','}'];
+ const javaPatch='@@ -60,0 +60,1 @@\n+  void f(){ System.gc(); }';
+ const uncertain=analyze([{filename:app+'Legacy.java',patch:javaPatch,changes:1}]);
+ assert.equal(uncertain.coverage.partial,true);
+ assert.ok(!rules(uncertain).includes('FORCED_GC'));
+ const trusted=analyze([{filename:app+'Legacy.java',patch:javaPatch,
+   fullSource:javaLines.join('\n'),changes:1}]);
+ assert.equal(trusted.coverage.partial,false,'known Java source should remove uncertainty');
+ assert.ok(rules(trusted).includes('FORCED_GC'),'Java active System.gc needs a finding');
+ const javaComment=['class Legacy {','/*',
+  ...Array.from({length:57},(_,i)=>' inert '+i),
+  'System.gc();','*/','}'].join('\n');
+ const inComment=analyze([{filename:app+'Legacy.java',patch:'@@ -60,0 +60,1 @@\n+System.gc();',
+   fullSource:javaComment,changes:1}]);
+ assert.equal(inComment.coverage.partial,false);
+ assert.ok(!rules(inComment).includes('FORCED_GC'),'text inside Java comment stays inert');
+ const kotlin=analyze([file(app+'Modern.kt',[
+  '/* outer /* inner */',
+  'Thread.sleep(1000);',
+  '*/'
+ ])]);
+ assert.ok(!rules(kotlin).includes('BLOCKING_ANDROID_CALL'));
+});
+
+test('ADVERSARIAL P2: Java ordinary strings containing Kotlin-looking template expressions are inert',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  'String example = "${runBlocking { work() }}";',
+  'String another = "${Thread.sleep(99)}";',
+  'String tertiary = "${System.gc()}";'
+ ])]);
+ assert.ok(!rules(out).includes('BLOCKING_ANDROID_CALL'),JSON.stringify(out.findings));
+ assert.ok(!rules(out).includes('FORCED_GC'));
+});
+test('ADVERSARIAL P2: Java multiline text blocks are not Kotlin interpolation',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  'String example = """',
+  '  ${runBlocking { work() }}',
+  '  ${Thread.sleep(1000)}',
+  '""";',
+  'int answer = 42;'
+ ])]);
+ assert.ok(!rules(out).includes('BLOCKING_ANDROID_CALL'),JSON.stringify(out.findings));
+ assert.equal(out.coverage.partial,false);
+});
+test('ADVERSARIAL: Kotlin regular string interpolation retains dangerous call detection',()=>{
+ const out=analyze([file(app+'Literal.kt',[
+  'val result = "${runBlocking { work() }}"'
+ ])]);
+ assert.ok(rules(out).includes('BLOCKING_ANDROID_CALL'));
+});
+test('ADVERSARIAL: Kotlin raw interpolation retains executable call detection',()=>{
+ const out=analyze([file(app+'Literal.kt',[
+  'val result = """${runBlocking { work() }}"""'
+ ])]);
+ assert.ok(rules(out).includes('BLOCKING_ANDROID_CALL'));
+});
+test('ADVERSARIAL: Java executable call outside a closing multiline text block is still flagged',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  'String example = """',
+  '  ${runBlocking { notCode() }}',
+  '""";',
+  'Thread.sleep(1500);'
+ ])]);
+ const f=out.findings.filter(x=>x.rule==='BLOCKING_ANDROID_CALL');
+ assert.equal(f.length,1,JSON.stringify(f));
+ assert.equal(f[0].line,4);
+});
+test('ADVERSARIAL: Java comment and text-block context cannot manufacture Kotlin templates',()=>{
+ const out=analyze([file(app+'Literal.java',[
+  '/* hidden ${Thread.sleep(200)} */',
+  'String example = "${runBlocking { notCode() }}";',
+  'int value = 2;'
+ ])]);
+ assert.ok(!rules(out).includes('BLOCKING_ANDROID_CALL'));
+});
+
+// Codex P2: no lexical certainty when a changed hunk begins in the middle
+// of an existing file. An unchanged comment/raw-string opener may be missing.
+test('Codex P2: a mid-file hunk inside a Kotlin comment cannot create an actionable finding',()=>{
+ for(const statement of ['runBlocking { example() }','System.gc()','Log.i("private", transcript)']){
+  const patch=['@@ -60,3 +60,4 @@',' * explanation',
+   '+ '+statement,' * more explanation'].join('\n');
+  const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+  assert.equal(result.verdict,'INCOMPLETE',JSON.stringify(result));
+  assert.equal(result.coverage.partial,true);
+  assert.ok(!result.findings.some(f=>['BLOCKING_ANDROID_CALL','FORCED_GC','POTENTIAL_PRIVATE_LOG'].includes(f.rule)),
+   JSON.stringify({statement,findings:result.findings}));
+  assert.ok(!result.remediations?.suggestions?.some(x=>x.rule==='FORCED_GC'),JSON.stringify(result.remediations));
+ }
+});
+test('Codex P2: disconnected Kotlin hunk cannot inherit falsely trusted lexer context',()=>{
+ const patch=['@@ -1,1 +1,1 @@',' val count = 1',
+  '@@ -80,1 +80,2 @@',' val explanation = 1',
+  '+runBlocking { example() }'].join('\n');
+ const result=analyze([{filename:app+'MainActivity.kt',patch,changes:1}]);
+ assert.equal(result.verdict,'INCOMPLETE',JSON.stringify(result));
+ assert.ok(!result.findings.some(f=>f.rule==='BLOCKING_ANDROID_CALL'),JSON.stringify(result.findings));
+});
+
+test('P2 full source: aligned immutable Kotlin source restores exact executable detection',()=>{
+ const patch=['@@ -5,2 +5,3 @@',' val message = "hello"',
+  '+runBlocking { realWork() }',' val end = true'].join('\n');
+ const fullSource=['val a = 1','val b = 2','val c = 3','val d = 4',
+  'val message = "hello"','runBlocking { realWork() }','val end = true'].join('\n');
+ const result=analyze([{filename:app+'Service.kt',patch,changes:1,fullSource}]);
+ assert.equal(result.coverage.partial,false,JSON.stringify(result.warnings));
+ assert.ok(rules(result).includes('BLOCKING_ANDROID_CALL'),JSON.stringify(result.findings));
+});
+test('P2 full source: matching patch inside multiline comment stays inert and complete',()=>{
+ const patch=['@@ -5,2 +5,3 @@','  * docs',
+  '+System.gc()','  * docs'].join('\n');
+ const fullSource=['/*',' * heading',' * background',' * guidance',' * docs',
+  'System.gc()',' * docs',' */'].join('\n');
+ const result=analyze([{filename:app+'Service.kt',patch,changes:1,fullSource}]);
+ assert.equal(result.coverage.partial,false,JSON.stringify(result.warnings));
+ assert.ok(!rules(result).includes('FORCED_GC'),JSON.stringify(result.findings));
+});
+test('P2 full source: mismatch to immutable patch must be INCOMPLETE and never propose fixes',()=>{
+ const patch=['@@ -1,1 +1,2 @@',' val x = 1','+System.gc()'].join('\n');
+ const result=analyze([{filename:app+'Service.kt',patch,changes:1,
+  fullSource:'val x = 1\nfun safe() {}'}]);
+ assert.equal(result.verdict,'INCOMPLETE');
+ assert.ok(!rules(result).includes('FORCED_GC'),JSON.stringify(result.findings));
+ assert.ok(!result.remediations?.suggestions?.some(s=>s.rule==='FORCED_GC'));
+});

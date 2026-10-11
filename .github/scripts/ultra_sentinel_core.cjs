@@ -14,15 +14,17 @@ function sanitize(s){
 }
 function parsePatch(text){
  if(typeof text!=='string')return {added:[],partial:true};
- let n=0,active=false;const added=[];
- for(const row of text.slice(0,MAX_PATCH).split('\n')){
+ let n=0,active=false;const added=[],scan=[];
+ for(const rawRow of text.slice(0,MAX_PATCH).split('\n')){
+  // Normalize GitHub's LF and CRLF patch representations identically.
+  const row=rawRow.endsWith('\r')?rawRow.slice(0,-1):rawRow;
    const h=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
    if(h){n=+h[1];active=true;continue;}
    if(!active||row.startsWith('+++')||row.startsWith('---')||row.startsWith('\\'))continue;
-   if(row.startsWith('+')){added.push({line:n,text:row.slice(1)});n++;}
-   else if(row.startsWith(' '))n++;
+   if(row.startsWith('+')){const item={line:n,text:row.slice(1)};added.push(item);scan.push({...item,added:true});n++;}
+   else if(row.startsWith(' ')){scan.push({line:n,text:row.slice(1),added:false});n++;}
  }
- return {added,partial:text.length>MAX_PATCH};
+ return {added,scan,partial:text.length>MAX_PATCH};
 }
 function production(path){
  return /^(app\/src\/main\/|supabase\/functions\/|\.github\/(?:workflows|scripts)\/|control-center\/)/.test(path)
@@ -44,6 +46,62 @@ const DOMAIN_VALIDATION=Object.freeze({
 function validationPlan(files){
  const domains=[...new Set((files||[]).flatMap(f=>tags(String(f?.filename||''))))].sort();
  return {domains,checks:domains.flatMap(domain=>(DOMAIN_VALIDATION[domain]||[]).map(check=>({domain,check}))).slice(0,24)};
+}
+function executableText(source,state={}){
+ // Kotlin/Java lexer: only Kotlin has executable template interpolation.
+ // Java literals and text blocks remain inert.
+ // The stack survives contiguous diff lines, including multiline templates.
+ const s=String(source||'');
+ if(!Array.isArray(state.frames))state.frames=[{kind:'code'}];
+ let out='',i=0;
+ while(i<s.length){
+  const f=state.frames[state.frames.length-1],ch=s[i];
+  if(f.kind==='comment'){
+   // Kotlin permits nested block comments; preserve depth across lines.
+   if(f.kotlinNested&&s.startsWith('/*',i)){f.depth++;i+=2;continue;}
+   if(s.startsWith('*/',i)){
+    f.depth--;i+=2;
+    if(f.depth===0)state.frames.pop();
+    continue;
+   }
+   i++;continue;
+  }
+  if(f.kind==='raw'){
+   if(s.startsWith('"""',i)){state.frames.pop();i+=3;continue;}
+   if(state.kotlin&&s.startsWith('$'+'{',i)){state.frames.push({kind:'expr',depth:1});i+=2;out+=' ';continue;}
+   if(state.kotlin&&ch==='$'&&/^[A-Za-z_]/.test(s[i+1]||'')){
+    const id=/^[A-Za-z_]\w*/.exec(s.slice(i+1))[0];
+    out+=' '+id+' ';i+=1+id.length;continue;
+   }
+   i++;continue;
+  }
+  if(f.kind==='string'){
+   if(ch==='\\'){i=Math.min(s.length,i+2);continue;}
+   if(state.kotlin&&f.quote==='"'&&s.startsWith('$'+'{',i)){
+    state.frames.push({kind:'expr',depth:1});i+=2;out+=' ';continue;
+   }
+   if(state.kotlin&&f.quote==='"'&&ch==='$'&&/^[A-Za-z_]/.test(s[i+1]||'')){
+    const id=/^[A-Za-z_]\w*/.exec(s.slice(i+1))[0];
+    out+=' '+id+' ';i+=1+id.length;continue;
+   }
+   if(ch===f.quote)state.frames.pop();
+   i++;continue;
+  }
+  // Executable context, including interpolation expressions.
+  if(s.startsWith('//',i))break;
+  if(s.startsWith('/*',i)){state.frames.push({kind:'comment',depth:1,kotlinNested:state.kotlin});i+=2;continue;}
+  if(s.startsWith('"""',i)){state.frames.push({kind:'raw'});i+=3;continue;}
+  if(ch==='"'||ch==="'"){state.frames.push({kind:'string',quote:ch});i++;continue;}
+  if(f.kind==='expr'){
+   if(ch==='{')f.depth++;
+   else if(ch==='}'){
+    f.depth--;
+    if(f.depth===0){state.frames.pop();out+=' ';i++;continue;}
+   }
+  }
+  out+=ch;i++;
+ }
+ return out;
 }
 function analyze(files,config={}){
  const list=Array.isArray(files)?files:[],names=list.map(f=>String(f?.filename||''));
@@ -68,26 +126,76 @@ function analyze(files,config={}){
    const all=rows.map(x=>x.text).join('\n');
    const android=path.startsWith('app/src/main/');
    const workflow=/^\.github\/workflows\/.*\.ya?ml$/i.test(path);
+   // A diff beginning in the middle of a Kotlin file can start inside a
+   // block comment or raw string. Never guess lexical mode from a hunk.
+   // The optional fullSource must be provided from the same immutable HEAD;
+   // cross-check every added/context line against it before trusting its lexer.
+   const kotlin=android&&path.endsWith('.kt');
+   const java=android&&path.endsWith('.java');
+   const languageSource=kotlin||java;
+   const sourceProvided=f.fullSource!==undefined;
+   const fullLines=languageSource&&typeof f.fullSource==='string'&&
+     Buffer.byteLength(f.fullSource,'utf8')<=160000?
+     f.fullSource.split(/\r?\n/):null;
+   const sourceMatches=!!(fullLines&&patch.scan.every(x=>
+     x.line>0&&x.line<=fullLines.length&&fullLines[x.line-1]===x.text));
+   if(languageSource&&sourceProvided&&!sourceMatches){
+     partial=true;
+     warnings.push('Archivo Kotlin/Java completo no coincide con el parche o supera el límite: '+sanitize(path));
+   }
+   const executableByLine=new Map(),uncertainAdded=new Set();
+   if(languageSource&&sourceMatches){
+     const wanted=new Set(rows.map(x=>x.line)),lexState={kotlin};
+     for(let i=0;i<fullLines.length;i++){
+       const code=executableText(fullLines[i],lexState);
+       if(wanted.has(i+1))executableByLine.set(i+1,code);
+     }
+   }else{
+     let lexState={},previousLine=null,hunkUnknown=false;
+     for(const entry of patch.scan){
+       if(previousLine===null||entry.line!==previousLine+1){
+         lexState={};
+         // Java may also start mid-comment or mid-text-block.
+          hunkUnknown=languageSource&&
+            (entry.line!==1||sourceProvided);
+         if(hunkUnknown){
+           partial=true;
+           warnings.push('Estado léxico Kotlin/Java previo al hunk desconocido; revisar archivo completo: '+sanitize(path));
+         }
+       }
+       lexState.kotlin=path.endsWith('.kt');
+       const code=executableText(entry.text,lexState);
+       if(entry.added){
+         if(hunkUnknown)uncertainAdded.add(entry.line);
+         else executableByLine.set(entry.line,code);
+       }
+       previousLine=entry.line;
+     }
+   }
    for(let i=0;i<rows.length;i++){
      const x=rows[i],t=x.text.trim();
+     // Unknown Kotlin context may be comment or string text. Do not offer
+     // an actionable finding or a repair from an ambiguous hunk.
+     if(uncertainAdded.has(x.line))continue;
+     const code=executableByLine.get(x.line)||'';
      if(!t||/^(\/\/|\/\*|\*|#)/.test(t))continue;
-     if(android&&/\bGlobalScope\s*\.\s*(launch|async)\b/.test(t))
+     if(android&&/\bGlobalScope\s*\.\s*(launch|async)\b/.test(code))
        put('UNSCOPED_COROUTINE','HIGH','high',path,x.line,t,'Una tarea puede superar el ciclo de vida Android.','Probar cancelación de Activity y Service.');
-     if(android&&/\b(?:runBlocking|Thread\.sleep)\s*\(/.test(t))
+     if(android&&/(?:\brunBlocking\s*(?:\(|\{)|\bThread\.sleep\s*\()/.test(code))
        put('BLOCKING_ANDROID_CALL','HIGH','medium',path,x.line,t,'Posible bloqueo de UI/callback; falta verificar el hilo.','Reproducir ANR y medir el main looper.');
-     if(android&&/\b(?:System\.gc|Runtime\.getRuntime\(\)\.gc)\s*\(/.test(t))
+     if(android&&/\b(?:System\.gc|Runtime\.getRuntime\(\)\.gc)\s*\(/.test(code))
        put('FORCED_GC','MEDIUM','high',path,x.line,t,'GC forzado puede causar pausas de frames.','Comparar jank con Macrobenchmark.');
-     if(android&&/\bwhile\s*\(\s*true\s*\)/.test(t)){
+     if(android&&/\bwhile\s*\(\s*true\s*\)/.test(code)){
        const near=rows.slice(i,i+16).map(v=>v.text).join(' ');
        if(!/\b(isActive|ensureActive|break|return|delay|yield)\b/.test(near))
          put('NON_CANCELLABLE_LOOP','HIGH','medium',path,x.line,t,'Bucle sin salida visible en el diff.','Probar cancelación con timeout.');
      }
-     if(android&&/\bstartListening\s*\(/.test(t)){
+     if(android&&/\bstartListening\s*\(/.test(code)){
        const near=rows.slice(Math.max(0,i-12),i+1).map(v=>v.text).join(' ');
        if(/\bonError\s*\(/.test(near)&&!/\b(post|postDelayed|schedule|retryGate|Handler)\b/.test(near))
          put('SPEECH_REENTRANT_RETRY','HIGH','medium',path,x.line,t,'Posible reinicio recursivo de SpeechRecognizer.','Simular onError síncrono repetido sin desbordar pila.');
      }
-     if(android&&/\b(Log|Timber)\.(d|i|e|v|w)\s*\(.*(transcript|password|authToken|accessToken)/i.test(t))
+     if(android&&/\b(Log|Timber)\.(d|i|e|v|w)\s*\(.*(transcript|password|authToken|accessToken)/i.test(code))
        put('POTENTIAL_PRIVATE_LOG','HIGH','medium',path,x.line,'[REDACTED LOG STATEMENT]','Posible fuga de datos privados en Logcat.','Probar que logs no registran información sensible.');
      if(workflow&&/pull_request_target\s*:/.test(all)&&/^\s*ref:\s*\$\{\{\s*github\.event\.pull_request\.head\./.test(t))
        put('PRIVILEGED_UNTRUSTED_CHECKOUT','BLOCKER','high',path,x.line,t,'Código de PR no confiable junto a workflow privilegiado.','Auditar scopes y fork PR sin secretos.');
@@ -97,11 +205,13 @@ function analyze(files,config={}){
    if(android){
      for(let i=0;i<rows.length;i++){
        const decl=rows[i].text.match(/\bfun\s+([A-Za-z_]\w*)\s*\(/);
-       if(!decl||['toString','equals','hashCode'].includes(decl[1]))continue;
+       if(!decl||uncertainAdded.has(rows[i].line)||
+         ['toString','equals','hashCode'].includes(decl[1]))continue;
        // A disconnected diff hunk is not evidence of self-recursion.
        const candidates=[];let expected=rows[i].line+1;
        for(const next of rows.slice(i+1,i+20)){
          if(next.line!==expected)break;
+         if(uncertainAdded.has(next.line))break;
          candidates.push(next);expected++;
        }
        // A separate Kotlin function is a scope boundary, not a self-call.

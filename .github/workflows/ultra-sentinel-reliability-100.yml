@@ -1,0 +1,62 @@
+name: Ultra Sentinel Reliability - 100 executions
+# 100 separate Node process executions in one unprivileged runner, each
+# covering trusted, attacker and tamper profiles. No external repos implied.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_yaml_ast.cjs'
+      - '.github/scripts/ultra_sentinel_reliability.cjs'
+      - '.github/scripts/ultra_sentinel_policy.cjs'
+      - '.github/scripts/ultra_sentinel_reliability.test.cjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ultra-sentinel-reliability-100.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    name: Sentinel Reliability / 100 scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout isolated PR without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install integrity-locked YAML parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run and attest 100 independent profile triplets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sentinel-reliability"
+          report="$RUNNER_TEMP/sentinel-reliability/executions.jsonl"
+          : > "$report"
+          for i in $(seq 0 99); do
+            node .github/scripts/ultra_sentinel_reliability.cjs \
+              --count 1 --offset "$i" >> "$report"
+          done
+          node - "$report" <<'NODE'
+          const fs=require('node:fs');
+          const values=fs.readFileSync(process.argv[2],'utf8').trim().split('\n').map(JSON.parse);
+          const valid=values.length===100&&
+            values.every(r=>r.executions===1&&r.checked===3&&
+              r.falsePositive===0&&r.falseNegative===0&&r.controlMisses===0&&r.passed);
+          const summary={schema:'sentinel-reliability/v1',
+            executions:values.length,checks:values.reduce((n,r)=>n+r.checked,0),
+            falsePositives:values.reduce((n,r)=>n+r.falsePositive,0),
+            falseNegatives:values.reduce((n,r)=>n+r.falseNegative,0),
+            missedTamper:values.reduce((n,r)=>n+r.controlMisses,0),passed:valid};
+          console.log(JSON.stringify(summary));
+          if(!valid)process.exitCode=1;
+          NODE
+      - name: Upload immutable replay evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sentinel-reliability-${{ github.sha }}
+          path: ${{ runner.temp }}/sentinel-reliability/executions.jsonl
+          retention-days: 14
+          if-no-files-found: error

@@ -16,6 +16,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 concurrency:
   group: ultra-sentinel-${{ github.event.pull_request.number || inputs.pr_number }}
@@ -35,14 +36,22 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: |
-            .github/scripts
+            .github/scripts/
+            package.json
+            package-lock.json
+          sparse-checkout-cone-mode: false
           persist-credentials: false
+      - name: Install trusted integrity-locked parser
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Run Core self-tests without provider API keys
         run: |
           node --check .github/scripts/ultra_sentinel_core.cjs
           node --check .github/scripts/ultra_sentinel_remediation.cjs
           node --check .github/scripts/ultra_sentinel_report.cjs
-          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs
+          node --check .github/scripts/ultra_sentinel_frontier_integrity.cjs
+          node --check .github/scripts/ultra_sentinel_supply_chain.cjs
+          node --check .github/scripts/ultra_sentinel_yaml_ast.cjs
+          node --test .github/scripts/ultra_sentinel_core.test.cjs .github/scripts/ultra_sentinel_remediation.test.cjs .github/scripts/ultra_sentinel_report.test.cjs .github/scripts/ultra_sentinel_frontier_integrity.test.cjs .github/scripts/ultra_sentinel_supply_chain.test.cjs .github/scripts/ultra_sentinel_yaml_ast.test.cjs
           node .github/scripts/ultra_sentinel_benchmark.cjs
       - name: Analyze PR evidence and publish read-only reports
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
@@ -54,6 +63,11 @@ jobs:
             const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const {buildGraph} = require(path.resolve(".github/scripts/ultra_sentinel_causal.cjs"));
             const {annotate} = require(path.resolve(".github/scripts/ultra_sentinel_feedback.cjs"));
+            const {attestCi,summarizeDrafts} = require(path.resolve(".github/scripts/ultra_sentinel_frontier_integrity.cjs"));
+            const {reviewWorkflows} = require(path.resolve(".github/scripts/ultra_sentinel_supply_chain.cjs"));
+            const {reviewWorkflowSources} = require(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"));
+            const {evaluateProtectedChanges,hasIndependentHumanApproval} = require(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"));
+            const {selectRepairTargets} = require(path.resolve(".github/scripts/ultra_sentinel_orchestrator.cjs"));
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -64,12 +78,129 @@ jobs:
               core.setFailed("Only open same-repository PRs can be reviewed"); return;
             }
             const files = await github.paginate(github.rest.pulls.listFiles,{owner,repo,pull_number:n,per_page:100});
-            const evidence = analyze(files,{sha:pr.head.sha});
+            // This trusted base workflow still executes if a PR deletes its
+            // own .yml. Never treat removal of Sentinel controls as safe.
+            const protectedChanges=evaluateProtectedChanges(files,{expectedCount:pr.changed_files});
+            if(protectedChanges.status==='BLOCKED'||protectedChanges.status==='INCOMPLETE')
+              core.setFailed('Invalid or removed protected security controls: '+protectedChanges.status);
+            if(protectedChanges.status==='REVIEW_REQUIRED'){
+              let independentlyApproved=false;
+              try{
+                const reviews=await github.paginate(github.rest.pulls.listReviews,
+                  {owner,repo,pull_number:n,per_page:100});
+                independentlyApproved=hasIndependentHumanApproval(reviews,
+                  {sha:pr.head.sha,author:pr.user.login});
+              }catch(error){core.warning('Independent human review unavailable: fail closed.');}
+              if(!independentlyApproved)
+                core.setFailed('Critical controls changed: independent human approval for current SHA required.');
+            }
+            // Resolve Kotlin lexical state from immutable PR HEAD instead of
+            // guessing from disconnected diff hunks. Bounded, read-only and
+            // never executed or published to the Actions summary.
+            const evidenceFiles=files.map(item=>({...item}));
+            const kotlinTargets=evidenceFiles.filter(item=>
+              item.status!=="removed" &&
+              /^app\/src\/main\/[A-Za-z0-9_./-]+\.kt$/.test(item.filename||"") &&
+              !String(item.filename||"").includes("..")).slice(0,24);
+            for(let i=0;i<kotlinTargets.length;i+=4){
+              await Promise.all(kotlinTargets.slice(i,i+4).map(async item=>{
+                try{
+                  const {data: body}=await github.rest.repos.getContent({
+                    owner,repo,path:item.filename,ref:pr.head.sha
+                  });
+                  if(body.type!=="file"||body.encoding!=="base64"||
+                     !Number.isSafeInteger(body.size)||body.size>160000||
+                     typeof body.content!=="string")return;
+                  const bytes=Buffer.from(body.content,"base64");
+                  if(bytes.length===body.size&&bytes.length<=160000)
+                    item.fullSource=bytes.toString("utf8");
+                }catch(error){
+                  core.warning("Kotlin full-file source unavailable ("+
+                    (error.status||"API error")+"); context stays INCOMPLETE.");
+                }
+              }));
+            }
+            const evidence = analyze(evidenceFiles,{sha:pr.head.sha});
             if (pr.changed_files > files.length) {
               evidence.coverage.partial = true;
               evidence.verdict = "INCOMPLETE";
               evidence.warnings.push("GitHub omitted " + (pr.changed_files - files.length) + " files.");
             }
+            // Read-only CI attestation. Pending/unknown never becomes a fake approval.
+            // Do not fail an advisory reviewer merely because concurrent CI is not finished.
+            let ciRuns=[],apiComplete=false;
+            try{
+              const args={owner,repo,head_sha:pr.head.sha,per_page:100};
+              const {data: first}=await github.rest.actions.listWorkflowRunsForRepo(args);
+              const total=first.total_count;
+              if(Number.isSafeInteger(total)&&total>=0&&total<=1000&&Array.isArray(first.workflow_runs)){
+                ciRuns=first.workflow_runs.slice();
+                apiComplete=true;
+                for(let page=2;page<=Math.ceil(total/100);page++){
+                  const {data: next}=await github.rest.actions.listWorkflowRunsForRepo({...args,page});
+                  if(next.total_count!==total||!Array.isArray(next.workflow_runs)){
+                    apiComplete=false;break;
+                  }
+                  ciRuns.push(...next.workflow_runs);
+                }
+                // Duplicate IDs or API pagination shifts make the snapshot incomplete.
+                apiComplete=apiComplete&&ciRuns.length===total&&
+                  new Set(ciRuns.map(x=>x?.id)).size===total;
+              }
+            }catch(error){
+              core.warning("CI evidence unavailable ("+(error.status||"API error")+"); never assuming success.");
+            }
+            // Authenticate workflow IDs against definitions on trusted main, not PR content.
+            // Fail closed if the PR edits an Android/Coverage workflow.
+            let trustedWorkflows=null,changedFilesComplete=false,changedFiles=[];
+            try{
+              const [android,coverage]=await Promise.all([
+                github.rest.actions.getWorkflow({owner,repo,workflow_id:'android.yml'}),
+                github.rest.actions.getWorkflow({owner,repo,workflow_id:'coverage.yml'})
+              ]);
+              trustedWorkflows={
+                'Android build':{id:android.data.id,path:android.data.path},
+                'Unit Test Coverage':{id:coverage.data.id,path:coverage.data.path}
+              };
+              changedFiles=files.map(f=>({filename:f.filename,status:f.status,previous_filename:f.previous_filename}));
+              changedFilesComplete=files.length===pr.changed_files;
+            }catch(error){
+              core.warning("Trusted CI identity unavailable ("+(error.status||"API error")+"); no approval inferred.");
+            }
+            const ci=attestCi({sha:pr.head.sha,repo:owner+"/"+repo,runs:ciRuns,apiComplete,
+              trustedWorkflows,changedFiles,changedFilesComplete});
+            if(ci.status==='UNTRUSTED')core.setFailed('Untrusted Android/Coverage workflow definition changed in PR. No CI approval possible.');
+
+            // Hunter -> Fixer -> Judge: proposals only, no execution or PR writes.
+            // Fetch at most 3 exact Kotlin files as untrusted DATA, never checkout PR head.
+            const sources={};
+            for(const filename of selectRepairTargets(evidence.findings,3)){
+              try{
+                const {data: source}=await github.rest.repos.getContent({
+                  owner,repo,path:filename,ref:pr.head.sha
+                });
+                if(source.type==="file"&&source.encoding==="base64"&&source.size<=240000)
+                  sources[filename]=Buffer.from(source.content,"base64").toString("utf8");
+              }catch(error){core.warning("Safe repair source unavailable ("+(error.status||"API error")+").");}
+            }
+            const repairs=summarizeDrafts({analysis:evidence,sources,sha:pr.head.sha});
+            // Audit complete changed workflow files, not only diff hunks; never execute them.
+            const expected=files.filter(f=>f.status!=="removed"&&
+              /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(f.filename||""))
+              .map(f=>f.filename);
+            const workflowSources={};
+            for(const name of expected.slice(0,25)){
+              try{
+                const {data: source}=await github.rest.repos.getContent({
+                  owner,repo,path:name,ref:pr.head.sha
+                });
+                if(source.type==="file"&&source.encoding==="base64"&&source.size<=160000)
+                  workflowSources[name]=Buffer.from(source.content,"base64").toString("utf8");
+              }catch(error){core.warning("Workflow source unavailable ("+(error.status||"API error")+").");}
+            }
+            const supplyChain=reviewWorkflows({sha:pr.head.sha,expected,sources:workflowSources});
+            const structuralYaml=reviewWorkflowSources({expected,sources:workflowSources,
+              trustedRepository:owner+'/'+repo});
             // Human summary plus compact machine report can be fetched directly by connected GitHub tools.
             // Limit both portions: GitHub comments have a finite size.
             // Slow-path only: look up bounded git history if a high-risk finding exists.
@@ -94,7 +225,14 @@ jobs:
             const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
             annotate(evidence,old,{pr:n,sha:pr.head.sha});
             const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
-            const body = markdown(evidence).slice(0,33000) + "\n\n" + serialize(report);
+            report.frontier={ci,repairs,supplyChain,structuralYaml,protectedChanges};
+            const summary="## Ultra Sentinel SSS · Verified CI & Safe Repair"+
+              "\n- Android Build + Coverage: "+ci.status+" ("+ci.counts.success+"/2 verified green)"+
+              "\n- Unknown/pending: "+ci.counts.pending+", failed: "+ci.counts.failed+
+              "\n- Repair proposals: "+repairs.generated+"; NEVER applied; human approval required."+
+              "\n- Workflow supply-chain: "+supplyChain.status+" ("+supplyChain.findings.length+" alerts)."+
+              "\n- Structural YAML parser: "+structuralYaml.status+" ("+structuralYaml.findings.length+" alerts).\n";
+            const body = markdown(evidence).slice(0,33000) + "\n\n" + summary + "\n" + serialize(report);
             if (body.length > 64000) {
               core.setFailed("Machine report exceeds safe comment size."); return;
             }
@@ -113,8 +251,15 @@ jobs:
             core.notice("No external provider approval is required; Ultra Sentinel Core independently analyzes the PR.");
             await core.summary.addHeading("Ultra Sentinel Core").addRaw(body).write();
             if (evidence.coverage.partial) core.setFailed("Incomplete patch coverage; review manually before merging.");
-            if (evidence.findings.some(f => f.severity === "BLOCKER"))
-              core.setFailed("Potential BLOCKER detected; verify the finding before merging.");
+            if (structuralYaml.coverage.partial)
+              core.setFailed("Structural YAML parser found incomplete/invalid workflow evidence.");
+            if (structuralYaml.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
+              core.setFailed("Structural YAML HIGH/BLOCKER must be investigated before merge.");
+            if (supplyChain.coverage.partial) core.setFailed("Incomplete workflow supply-chain evidence; review manually.");
+            if (supplyChain.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
+              core.setFailed("Supply-chain HIGH/BLOCKER must be investigated before merge.");
+            if (evidence.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
+              core.setFailed("Engine HIGH/BLOCKER must be reproduced and resolved before merge.");
             if (evidence.verdict === "REVIEW_REQUIRED")
               core.warning("HIGH risk signals are hypotheses requiring reproduction and tests.");
       - name: Upload SHA-pinned read-only Sentinel report

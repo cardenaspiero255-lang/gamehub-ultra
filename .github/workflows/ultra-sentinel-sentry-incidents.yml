@@ -1,6 +1,10 @@
 name: Ultra Sentinel - Sentry Incident Intake
 # Opt-in read-only telemetry. Never executes PR source with credentials.
 on:
+  # Automatic intake requires BOTH repo variables enabled by an authorized maintainer.
+  # Default: no monitoring; no event payloads or personal data leave Sentry.
+  schedule:
+    - cron: '13 */6 * * *'
   workflow_dispatch:
     inputs:
       consent:
@@ -19,7 +23,12 @@ concurrency:
 
 jobs:
   sanitize-sentry-issues:
-    if: github.ref == 'refs/heads/main' && inputs.consent == true
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_dispatch' && inputs.consent == true) ||
+       (github.event_name == 'schedule' &&
+        vars.ULTRA_SENTINEL_SENTRY_MONITORING_ENABLED == 'true' &&
+        vars.ULTRA_SENTINEL_SENTRY_CONSENT == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
