@@ -484,8 +484,15 @@ function findCapabilities(ast){
     // may write references to the captured callback array into the carrier.
     function provenReadOnlyCall(callee,depth=0,seen=new Set()){
      if(!callee||depth>MAX_DEPTH)return false;
+     // Parameter initializers execute even when the function body is inert.
+     // Destructuring or executable defaults must invalidate purity proof.
+     const inertParameter=param=>param?.type==='Identifier'||
+      param?.type==='RestElement'&&param.argument?.type==='Identifier'||
+      param?.type==='AssignmentPattern'&&param.left?.type==='Identifier'&&
+       param.right?.type==='Literal';
      const inertFunction=fn=>Boolean(fn&&
       ['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression'].includes(fn.type)&&
+      fn.params?.every(inertParameter)&&
       (fn.body?.type==='Literal'||
        fn.body?.type==='BlockStatement'&&
         (fn.body.body.length===0||
