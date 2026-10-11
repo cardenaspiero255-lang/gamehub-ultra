@@ -754,6 +754,34 @@ for(const [name,src] of codexRound2Uncertain)
 for(const [name,src] of codexRound2Benign)
  test(name+' remains CLEAR',()=>assert.equal(result(src),'CLEAR',name));
 
+// P1 review of HEAD 78e12bb: container-escape aliases and indirect intrinsics.
+// All fixtures are parsed only; no evaluated payloads.
+const codexThirdDangerous=[
+ ["P1 computed function constructor from literal array", "(()=>{})[['constructor'][0]]('attack')()"],
+ ["P1 computed function constructor from const array", "const keys=['constructor'];(()=>{})[keys[0]]('attack')()"],
+ ["P1 nested function call.call propagates global", "function bad(g){g.eval('attack')}(()=>{}).call.call(bad,null,globalThis)"],
+ ["P1 Function.apply.call propagates global", "function bad(g){g.eval('attack')}(()=>{}).apply.call(bad,null,[globalThis])"],
+ ["P1 bound Function.bind.call propagates global", "function bad(g){g.eval('attack')}(()=>{}).bind.call(bad,null,globalThis)()"]
+];
+const codexThirdUncertain=[
+ ["P1 aliased array mutated by destructuring", "function bad(g){g.eval('attack')}function safe(){}const a=[safe];const [b]=[a];b.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 nested destructured alias mutates callback", "function bad(g){g.eval('attack')}function safe(){}const a=[safe];const [[b]]=[[a]];b.fill(bad);a[0](globalThis)"],
+ ["P1 array alias mutator through object", "function bad(g){g.eval('attack')}function safe(){}const a=[safe];const o={arr:a};o.arr.splice(0,1,bad);a[0](globalThis)"],
+ ["P1 computed unknown function property", "const key=dynamic;(()=>{})[key]('attack')()"]
+];
+const codexThirdBenign=[
+ ["P2 literal array computed local method", "const k=['run'];const obj={run:()=>42};obj[k[0]]()"],
+ ["P2 ordinary nested array destructuring", "const a=[1];const [b]=[a];b[0]===1"],
+ ["P2 function call.call with harmless callback", "const f=(g)=>g+1;(()=>{}).call.call(f,null,41)"],
+ ["P2 function apply.call with harmless callback", "const f=(g)=>g+1;(()=>{}).apply.call(f,null,[41])"]
+];
+for(const [name,src] of codexThirdDangerous)
+ test(name+' detects proven execution sink',()=>assert.equal(result(src),'BLOCKER',name));
+for(const [name,src] of codexThirdUncertain)
+ test(name+' never silently certifies a possible capability',()=>assert.notEqual(result(src),'CLEAR',name));
+for(const [name,src] of codexThirdBenign)
+ test(name+' remains benign',()=>assert.equal(result(src),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
