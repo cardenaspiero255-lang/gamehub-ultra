@@ -321,7 +321,7 @@ function findCapabilities(ast){
        }
        const id=ref.identifier,parent=parentOf.get(id);
        if(parent?.type==='VariableDeclarator'&&parent.init===id){
-        if(parent.id?.type==='Identifier'&&parentOf.get(parent)?.kind==='const'){
+        if(parent.id?.type==='Identifier'&&['const','let'].includes(parentOf.get(parent)?.kind)){
          const alias=symbol(parent.id);
          if(!alias||typeof alias!=='object')throw Error('Unknown object source alias');
          queue.push(alias);
@@ -342,7 +342,7 @@ function findCapabilities(ast){
       }
      }
      const defs=root.defs||[];
-     if(defs.length!==1||defs[0].parent?.kind!=='const'||
+     if(defs.length!==1||!['const','let'].includes(defs[0].parent?.kind)||
         defs[0].node?.id?.type!=='Identifier')return null;
      seen.add(root);
      const init=defs[0].node.init;
@@ -360,7 +360,8 @@ function findCapabilities(ast){
      // omission is exactly when the default may alias a mutable array.
      if(pattern.type==='AssignmentPattern'){
       const omitted=!value||
-       (value.type==='Identifier'&&value.name==='undefined')||
+       (value.type==='Identifier'&&value.name==='undefined'&&
+        symbol(value)==='free:undefined')||
        (value.type==='UnaryExpression'&&value.operator==='void');
       if(omitted)return project(pattern.left,pattern.right,depth+1);
       project(pattern.left,value,depth+1);
@@ -380,7 +381,7 @@ function findCapabilities(ast){
       if(sourceObject)for(const entry of pattern.properties){
        if(entry.type!=='Property')continue;
        const key=stablePatternKey(entry);
-       const source=sourceObject.properties.find(prop=>prop.type==='Property'&&
+       const source=sourceObject.properties.findLast(prop=>prop.type==='Property'&&
          stablePatternKey(prop)===key);
        if(source)project(entry.value,source.value,depth+1);
        else project(entry.value,null,depth+1);
