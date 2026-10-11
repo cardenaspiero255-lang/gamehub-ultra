@@ -393,6 +393,18 @@ function findCapabilities(ast){
   if(node.type==='SequenceExpression')
    return knownArraySlots(node.expressions?.at(-1),depth+1,seen);
   if(node.type==='CallExpression'){
+   // Array.slice makes a shallow copy, preserving each callback identity.
+   if(node.callee?.type==='MemberExpression'&&
+      stableMethodName(node.callee)==='slice'){
+    const slots=knownArraySlots(node.callee.object,depth+1,new Set(seen));
+    if(slots){
+     const args=node.arguments||[];
+     const start=args.length?staticArrayIndex(args[0]):0;
+     const end=args.length>1?staticArrayIndex(args[1]):slots.length;
+     if(start===null||end===null)throw Error('Unknown array slice boundaries');
+     return slots.slice(start,end);
+    }
+   }
    const {fn}=invocation(node,depth+1);
    if(!fn)return null;
    const returns=returnExpressions(fn);
@@ -439,7 +451,7 @@ function findCapabilities(ast){
    const root=definerRoot(node.object,depth+1),method=stableMethodName(node);
    if(root==='Object'&&
       ['defineProperty','defineProperties','assign'].includes(method))return method;
-   if(root==='Reflect'&&method==='defineProperty')return method;
+   if(root==='Reflect'&&['defineProperty','set'].includes(method))return method;
    return null;
   }
   if(node.type==='Identifier'){
@@ -496,8 +508,11 @@ function findCapabilities(ast){
      overrides.add(stableMethodName(node.argument)||'*');
     if(node.type==='CallExpression'){
      const call=definerInvocation(node);
-     if(call?.args?.[0]?.type==='Identifier'&&aliases.has(symbol(call.args[0])))
-      overrides.add(call.op==='defineProperty'?
+     const written=call?.args?.[0];
+     if(written&&(
+        written.type==='Identifier'&&aliases.has(symbol(written))||
+        target&&resolveFunction(written)===target))
+      overrides.add(['defineProperty','set'].includes(call.op)?
        stableKeyValue(call.args[1])||'*':'*');
     }
    });
@@ -701,6 +716,20 @@ function findCapabilities(ast){
   return null;
  }
  function invocation(node,depth=0){
+  // Reflect.apply executes a target with an explicit argument-array value.
+  if(node.callee?.type==='MemberExpression'&&
+     stableMethodName(node.callee)==='apply'&&
+     definerRoot(node.callee.object)==='Reflect'){
+   const linked=boundCallable(node.arguments?.[0],depth+1);
+   const fn=linked?.fn||resolveFunction(node.arguments?.[0],depth+1);
+   if(!fn)throw Error('Unresolved Reflect.apply target');
+   const values=node.arguments?.[2];
+   if(values?.type!=='ArrayExpression'||
+      values.elements.some(e=>!e||e.type==='SpreadElement'))
+    throw Error('Unresolved Reflect.apply argument array');
+   return {fn,args:[...(linked?.args||[]),...values.elements],
+    receiver:linked?.receiver||node.arguments?.[1]||null};
+  }
   // Native call/apply wrappers around extracted call/apply/bind are
   // interprocedural invocations, not opaque member calls.
   if(node.callee?.type==='MemberExpression'){
@@ -1196,6 +1225,8 @@ function findCapabilities(ast){
  let converged=false;
  for(let round=0;round<MAX_ROUNDS;round++){
   let changed=false;
+  // Property provenance grows during binding; recompute shadowing each pass.
+  intrinsicShadowCache.clear();
   for(const [pattern,value]of bindings)changed=bind(pattern,value)||changed;
   for(const [destination,source] of memberFunctionAliases){
    const fn=resolveFunction(source);
