@@ -91,6 +91,70 @@ function findCapabilities(ast){
   return kinds.get(key)||null;
  }
  const objectLiterals=new WeakMap();
+ // Distinguish a known present benign property from an absent property.
+ // A missing marker is NOT equivalent to a benign descriptor when defaults exist.
+ const PRESENT=Object.freeze({present:true});
+ const UNKNOWN=Object.freeze({unknown:true});
+ const returnCache=new WeakMap();
+ function returnExpressions(fn){
+  if(returnCache.has(fn))return returnCache.get(fn);
+  const out=[],body=fn?.body;
+  if(!body)return out;
+  if(body.type!=='BlockStatement'){out.push(body);returnCache.set(fn,out);return out;}
+  let visited=0;
+  function walk(node){
+   if(!node||typeof node!=='object'||typeof node.type!=='string')return;
+   if(++visited>NODE_BUDGET)throw Error('Function return provenance budget exceeded');
+   if(node.type==='ReturnStatement'){out.push(node.argument);return;}
+   if(node!==body&&['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression'].includes(node.type))return;
+   for(const [key,value] of Object.entries(node)){
+    if(['range','loc','start','end'].includes(key))continue;
+    if(Array.isArray(value))for(const item of value)walk(item);
+    else walk(value);
+   }
+  }
+  walk(body);
+  returnCache.set(fn,out);
+  return out;
+ }
+ function resolveFunction(node,depth=0){
+  if(!node)return null;
+  if(depth>MAX_DEPTH)throw Error('Function provenance depth exceeded');
+  if(['FunctionExpression','ArrowFunctionExpression'].includes(node.type))return node;
+  if(node.type==='Identifier')return functions.get(symbol(node))||null;
+  if(node.type==='ChainExpression')return resolveFunction(node.expression,depth+1);
+  if(node.type==='SequenceExpression')return resolveFunction(node.expressions?.at(-1),depth+1);
+  if(node.type==='MemberExpression'){
+   const map=propertyKinds(node.object,depth+1),key=propName(node);
+   const descriptor=key===null?null:map?.get(key);
+   return descriptor?.functionNode||null;
+  }
+  return null;
+ }
+ function invocation(node){
+  let fn=resolveFunction(node.callee),args=node.arguments||[];
+  if(node.callee?.type==='MemberExpression'){
+   const name=propName(node.callee);
+   if(name==='call'||name==='apply'){
+    const target=resolveFunction(node.callee.object);
+    if(target){
+     fn=target;
+     if(name==='call')args=args.slice(1);
+     else if(args[1]?.type==='ArrayExpression')args=args[1].elements;
+     else throw Error('Unresolved Function.apply argument provenance');
+    }
+   }
+  }
+  return {fn,args};
+ }
+ function riskyDescriptor(v,depth=0){
+  if(depth>MAX_DEPTH)throw Error('Property risk depth exceeded');
+  if(v===PRESENT||v?.functionNode)return false;
+  if(v===UNKNOWN)return true;
+  if(typeof v==='string')return true;
+  if(v?.properties)return [...v.properties.values()].some(x=>riskyDescriptor(x,depth+1));
+  return false;
+ }
  function propertyKinds(node,depth=0){
   if(!node)return null;
   if(depth>MAX_DEPTH)throw Error('Object provenance depth exceeded');
@@ -112,6 +176,10 @@ function findCapabilities(ast){
     const cap=kind(p.value,depth+1);
     if(nested)result.set(name,{properties:nested});
     else if(cap&&cap!=='local-object')result.set(name,cap);
+    else if(['FunctionExpression','ArrowFunctionExpression'].includes(p.value?.type))
+     result.set(name,{functionNode:p.value});
+    else if(['Literal','TemplateLiteral'].includes(p.value?.type))result.set(name,PRESENT);
+    else result.set(name,UNKNOWN);
    }
    return result;
   }
@@ -123,6 +191,23 @@ function findCapabilities(ast){
   }
   if(node.type==='AssignmentExpression'&&node.operator==='=')
    return propertyKinds(node.right,depth+1);
+  if(node.type==='CallExpression'){
+   const {fn}=invocation(node);
+   if(fn){
+    const returned=returnExpressions(fn).map(n=>propertyKinds(n,depth+1));
+    const available=returned.filter(Boolean);
+    if(available.length){
+     if(available.length!==returned.length)throw Error('Incomplete returned object provenance');
+     const merged=new Map(available[0]);
+     for(const item of available.slice(1))for(const [key,value] of item){
+      if(merged.has(key)&&merged.get(key)!==value)
+       throw Error('Conflicting returned object provenance');
+      merged.set(key,value);
+     }
+     return merged;
+    }
+   }
+  }
   if(node.type==='LogicalExpression'){
    const left=propertyKinds(node.left,depth+1),right=propertyKinds(node.right,depth+1);
    if(!left&&!right)return null;
@@ -163,7 +248,8 @@ function findCapabilities(ast){
     if(name!==null){const v=obj.get(name);return typeof v==='string'?v:
       v&&typeof v==='object'&&v.properties?'local-object':null;}
     if([...obj.values()].some(v=>v==='exec'))return 'exec';
-    if(obj.size>0)throw Error('Unknown computed property may expose a capability');
+    if([...obj.values()].some(v=>riskyDescriptor(v)))
+     throw Error('Unknown computed property may expose a capability');
     return null;
    }
    if(root==='global'&&(EXEC.has(name)||(node.computed&&name===null)))return 'exec';
@@ -173,8 +259,16 @@ function findCapabilities(ast){
    if(root==='reflect'&&name==='get')return 'getter';
    if(root==='loader'&&name==='bind')return 'loader';
    if(name==='constructor'&&(
-    ['FunctionExpression','ArrowFunctionExpression'].includes(node.object?.type)||
-    (node.object?.type==='Identifier'&&functions.has(symbol(node.object)))))return 'exec';
+    resolveFunction(node.object,depth+1)||
+    (node.object?.type==='MemberExpression'&&
+     node.object.object?.type==='ArrayExpression'&&
+     new Set(['filter','map','reduce','some','every','find','forEach','flatMap','sort','slice']).has(propName(node.object)))))
+    return 'exec';
+   // A constructor pulled from a value we cannot prove non-executable is uncertain.
+   // The extraction itself is not blocked, but its invocation must fail closed.
+   if(name==='constructor'&&!obj)return 'uncertain-constructor';
+   if(root==='unknown'&&name!==null&&(EXEC.has(name)||VM.has(name)))
+    throw Error('Unknown object may expose dynamic execution');
    return null;
   }
   if(node.type==='CallExpression'||node.type==='NewExpression'){
@@ -186,6 +280,16 @@ function findCapabilities(ast){
     const name=stringValue(node.arguments?.[1]);
     if(root==='global'&&(EXEC.has(name)||name===null))return 'exec';
     if(root==='vm'&&(VM.has(name)||name===null))return 'exec';
+   }
+   if(callee==='uncertain-constructor')throw Error('Unknown extracted constructor invocation');
+   const {fn}=invocation(node);
+   if(fn){
+    const returned=returnExpressions(fn);
+    const values=returned.map(n=>kind(n,depth+1)).filter(Boolean);
+    if(values.length){
+     if(values.some(v=>v!==values[0]))throw Error('Ambiguous function return capability');
+     return values[0];
+    }
    }
    if(node.callee?.type==='MemberExpression'){
     const name=propName(node.callee);
@@ -251,16 +355,30 @@ function findCapabilities(ast){
    const target=p.type==='RestElement'?p.argument:p.value;
    const dest=target?.type==='AssignmentPattern'?target.left:target;
    const name=p.type==='RestElement'?null:keyName(p);
-   const found=properties&&name!==null?properties.get(name):null;
+   if(p.type==='RestElement'){
+    if(!properties)throw Error('Unknown object rest provenance');
+    const excluded=new Set();
+    for(const previous of pattern.properties){
+     if(previous===p)break;
+     if(previous.type==='RestElement')throw Error('Multiple object rest bindings');
+     const previousName=keyName(previous);
+     if(previousName===null)throw Error('Computed rest exclusion unknown');
+     excluded.add(previousName);
+    }
+    const residual=new Map([...properties].filter(([key])=>!excluded.has(key)));
+    if(dest?.type==='Identifier')changed=assignIdentifier(dest,null,residual,true)||changed;
+    else if(dest?.type==='ObjectPattern')changed=bindWithDescriptors(dest,residual)||changed;
+    else throw Error('Unsupported rest binding target');
+    continue;
+   }
+   const hasOwn=!!properties&&name!==null&&properties.has(name);
+   const found=hasOwn?properties.get(name):null;
    let scalar=typeof found==='string'?found:null;
    let nested=found&&typeof found==='object'?found.properties:null;
-   if(target?.type==='AssignmentPattern'){
+   if(target?.type==='AssignmentPattern'&&!hasOwn){
     const defaultCap=kind(target.right),defaultNested=propertyKinds(target.right);
-    if(!scalar&&!nested){
-     if(defaultNested)nested=defaultNested;
-     else if(defaultCap&&defaultCap!=='local-object')scalar=defaultCap;
-    }else if(defaultCap&&defaultCap!=='local-object'&&defaultCap!==scalar)
-     throw Error('Ambiguous destructuring default capability');
+    if(defaultNested)nested=defaultNested;
+    else if(defaultCap&&defaultCap!=='local-object')scalar=defaultCap;
    }
    if(!scalar&&!nested&&!properties){
     if(root==='global'&&(EXEC.has(name)||name===null))scalar='exec';
@@ -371,11 +489,9 @@ function findCapabilities(ast){
  if(!aliasesConverged)throw Error('Function alias budget exceeded');
  traverse(ast,(node)=>{
   if(node.type!=='CallExpression')return;
-  const callee=node.callee;
-  const fn=callee?.type==='Identifier'?functions.get(symbol(callee)):
-   ['FunctionExpression','ArrowFunctionExpression'].includes(callee?.type)?callee:null;
+  const {fn,args}=invocation(node);
   if(fn)for(let i=0;i<(fn.params||[]).length;i++){
-   const param=fn.params[i],argument=node.arguments?.[i]||null;
+   const param=fn.params[i],argument=args?.[i]||null;
    if(argument||param?.type==='AssignmentPattern')bindings.push([param,argument]);
   }
  });
@@ -398,7 +514,9 @@ function findCapabilities(ast){
   }else if(node.type==='MemberExpression'){
    if(kind(node)==='exec')sinks.push(node);
   }else if(node.type==='CallExpression'||node.type==='NewExpression'){
-   if(kind(node.callee)==='exec')sinks.push(node);
+   const calleeKind=kind(node.callee);
+   if(calleeKind==='uncertain-constructor')throw Error('Unknown constructor call capability');
+   if(calleeKind==='exec')sinks.push(node);
    if(node.callee?.type==='MemberExpression'&&propName(node.callee)==='constructor'&&
       kind(node.callee)!=='exec'&&
       !propertyKinds(node.callee.object)&&!kind(node.callee.object))
