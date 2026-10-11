@@ -1,21 +1,21 @@
 # Política de revisores externos — GameHub Ultra
 
-Actualización: 9 de octubre de 2026. El propietario ha autorizado explícitamente **volver a usar Codex para revisiones de código**. Esta autorización sustituye la prohibición anterior de Codex. La prohibición continúa vigente para Qodo y CodeRabbit.
+**Actualización: 11 de octubre de 2026.** Por decisión explícita del propietario, las revisiones de Codex quedan **suspendidas indefinidamente** debido al agotamiento de créditos. Esta decisión sustituye la autorización del 9 de octubre. No existe fecha de reactivación; solo una nueva instrucción explícita del propietario podrá levantarla.
 
-## Codex — permitido
+## Codex — prohibido hasta nueva autorización
 
-- Se pueden solicitar revisiones de pull requests de Codex, incluidas las realizadas mediante `@codex review`.
-- También pueden habilitarse revisiones automáticas de Codex para este repositorio mediante la configuración oficial de Codex si el propietario decide utilizarlas.
-- El uso puede consumir cuota o créditos del servicio. La autorización comprende las revisiones de Codex, no habilita modelos o proveedores adicionales.
-- Los hallazgos de Codex son hipótesis técnicas: reproducir los errores y comprobar las correcciones con pruebas. No considerar una revisión limpia garantía de ausencia de vulnerabilidades.
-- Codex no sustituye Android Build, Unit Test Coverage, Core Tests, Mutation Lab, el revisor independiente de Ultra Sentinel, las protecciones de `main` ni las aprobaciones humanas exigidas por la política de seguridad. No conceder aprobación humana falsa ni habilitar auto-merge por el resultado del bot.
+- No solicitar revisiones mediante `@codex review`, asignar el bot, utilizar otras invocaciones de Codex ni desencadenar tareas de Codex en este repositorio.
+- No habilitar revisiones automáticas de Codex para PR nuevos, actualizaciones, ramas apiladas ni ningún otro evento.
+- No reactivar Codex porque se repongan créditos automáticamente: esperar autorización expresa.
+- Conservar el historial de hallazgos antiguos como evidencia; no cerrarlos como resueltos sin reproducir sus casos y validar las correcciones.
+- No vincular la aprobación de PR a una nueva revisión de Codex mientras esta suspensión siga vigente: usar CI, pruebas adversariales, Ultra Sentinel y una revisión alternativa independiente cuando sea necesaria. Ningún CI verde ni revisor automatizado implica garantía de ausencia de vulnerabilidades.
 
 ## Qodo y CodeRabbit — siguen desactivados
 
-No solicitar ni invocar sus revisiones, comentarios o ejecuciones y no habilitar sus revisiones automáticas. Las configuraciones `.coderabbit.yaml` y `.pr_agent.toml` deben conservar la desactivación de sus disparadores gestionables por archivo. Su desactivación en el repositorio no desinstala necesariamente las GitHub Apps: revocar su acceso se gestiona por separado desde GitHub → Settings → Applications.
+No solicitar ni invocar sus revisiones, comentarios o ejecuciones, ni habilitar sus revisiones automáticas hasta nueva autorización explícita. Conservar las configuraciones de desactivación `.coderabbit.yaml` y `.pr_agent.toml` si están presentes. La evaluación de alternativas gratuitas no autoriza su instalación ni reactivación.
 
-## Configuración externa
+## Configuración de GitHub y Codex
 
-Cambiar esta política **no activa por sí solo** la GitHub App de Codex ni sus revisiones automáticas si fueron deshabilitadas desde la cuenta. Para reactivar el procesamiento real, conservar o restablecer el acceso de Codex al repositorio y habilitar Code Review en la configuración oficial de Codex. Una solicitud manual `@codex review` permite comprobar el funcionamiento si la integración está disponible.
+**Esta política es una prohibición operativa, no un control técnico de la GitHub App.** Para impedir nuevos consumos automáticos, el propietario también debe retirar a Codex el acceso a `cardenaspiero255-lang/gamehub-ultra` desde GitHub → Settings → Applications → Installed GitHub Apps → Codex → Configure → Repository access (o desinstalar esa GitHub App), y comprobar el estado de Auto review en la configuración oficial de Codex. Si no hay permiso o herramienta para modificar esa instalación, no afirmar que está desconectada.
 
-Las referencias históricas en PR anteriores que prohíben Codex quedan reemplazadas por esta actualización; la exclusión de Qodo y CodeRabbit permanece vigente.
+Este cambio no modifica Android Build, Coverage, las pruebas Core ni Ultra Sentinel. No conceder aprobaciones humanas ficticias, no forzar ni automatizar merges por el resultado de otro bot.
