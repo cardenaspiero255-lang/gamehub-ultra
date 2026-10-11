@@ -19,6 +19,8 @@ const BASE_A=new Set([
 const SHARD_COUNT=15;
 const MATRIX_SHARDS=13;
 const MATRIX_CASES=500500;
+// Additional real shard-0 fingerprint/uniqueness tests beyond generated matrix cases.
+const MATRIX_EXTRA_AUDITS=2;
 const CASES_PER_SHARD=10000;
 const EXTRA_CASES_PER_SHARD=28500;
 const MINIMUM=500000;
@@ -67,7 +69,7 @@ function validateReport(report,expected,sha){
   throw Error('Failed or incomplete cases in '+expected.id);
  if(expected.kind==='baseline'&&c.tests!==BASELINE_TEST_COUNTS[expected.id])
   throw Error('Baseline shard count mismatch '+expected.id);
- if(expected.kind==='matrix'&&c.tests!==CASES_PER_SHARD+EXTRA_CASES_PER_SHARD+(expected.index===0?2:0))
+ if(expected.kind==='matrix'&&c.tests!==CASES_PER_SHARD+EXTRA_CASES_PER_SHARD+(expected.index===0?MATRIX_EXTRA_AUDITS:0))
   throw Error('Missing or duplicated matrix cases in '+expected.id);
  if(!/^[a-f0-9]{64}$/.test(report.tapSha256||''))
   throw Error('Missing execution trace checksum '+expected.id);
@@ -154,5 +156,5 @@ if(require.main===module){
  }catch(error){console.error(error.message);process.exitCode=1;}
 }
 module.exports={plan,testFiles,parseTap,validateReport,aggregate,
- SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,
+ SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,MATRIX_EXTRA_AUDITS,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,
  BASELINE_TEST_COUNTS,MINIMUM};
