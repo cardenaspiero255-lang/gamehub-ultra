@@ -70,7 +70,8 @@ function parseWorkflow(source){
   if(isMap(trigger)){
    const filters=new Set(['types','branches','branches-ignore','paths',
     'paths-ignore','tags','tags-ignore','workflows']);
-   for(const [event,configuration] of Object.entries(trigger)){
+   for(const __workflowEntry0 of Object.entries(trigger)){
+   const event=__workflowEntry0[0],configuration=__workflowEntry0[1];
     // An empty event type/branch/path filter can silently disable the only
     // security gate. Treat malformed GitHub Actions trigger shapes as unknown.
     if(typeof event!=='string'||!event.trim())
@@ -84,7 +85,8 @@ function parseWorkflow(source){
     }
     if(configuration===null)continue;
     if(!isMap(configuration))return {ok:false,reason:'INVALID_TRIGGER_CONFIGURATION'};
-    for(const [name,value] of Object.entries(configuration)){
+    for(const __workflowEntry1 of Object.entries(configuration)){
+   const name=__workflowEntry1[0],value=__workflowEntry1[1];
      if(!filters.has(name))continue;
      if(!Array.isArray(value)||!value.length||
        value.some(item=>typeof item!=='string'||!item.trim()))
@@ -226,7 +228,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(value==='write-all'){emit('PRIVILEGED_WRITE_TOKEN','HIGH',where);return;}
   if(value==='read-all')return;
   if(!isMap(value)){coverage.partial=true;return;}
-  for(const [capability,level] of Object.entries(value)){
+  for(const __workflowEntry2 of Object.entries(value)){
+   const capability=__workflowEntry2[0],level=__workflowEntry2[1];
    if(!WRITE_CAPABILITIES.has(capability)){coverage.partial=true;continue;}
    if(level==='write')emit('PRIVILEGED_WRITE_TOKEN','HIGH',where);
    else if(level!=='read'&&level!=='none')coverage.partial=true;
@@ -333,7 +336,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(!isMap(value)){coverage.partial=true;return tainted;}
   const dependents=new Map();
   const available=new Set([...knownNames,...Object.keys(value)]);
-  for(const [name,item] of Object.entries(value)){
+  for(const __workflowEntry3 of Object.entries(value)){
+   const name=__workflowEntry3[0],item=__workflowEntry3[1];
    if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)){coverage.partial=true;continue;}
    if(typeof item!=='string'){
     if(item!==null&&typeof item!=='number'&&typeof item!=='boolean')coverage.partial=true;
@@ -464,7 +468,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   }
   if(step.with===undefined)return;
   if(!isMap(step.with)){coverage.partial=true;return;}
-  for(const [input,value] of Object.entries(step.with)){
+  for(const __workflowEntry4 of Object.entries(step.with)){
+   const input=__workflowEntry4[0],value=__workflowEntry4[1];
    if(!sensitiveExpression(value))continue;
    const firstParty=/^actions\/(?:github-script|checkout)@[a-f0-9]{40}$/i.test(step.uses||'');
    const standardToken=/^(?:github-token|token)$/i.test(input)&&
@@ -483,7 +488,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  const workflowTaint=collectEnvSources(document.env);
   const workflowEnvNames=new Set(isMap(document.env)?Object.keys(document.env):[]);
  checkPermissions(document.permissions,path);
- for(const [name,job] of Object.entries(document.jobs)){
+ for(const __workflowEntry5 of Object.entries(document.jobs)){
+   const name=__workflowEntry5[0],job=__workflowEntry5[1];
   const where=path; // Deliberately no attempt to fabricate AST line locations.
   if(!isMap(job)){coverage.partial=true;continue;}
   checkGateControl(job);
@@ -546,22 +552,23 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     if(/^actions\/github-script@/i.test(step.uses)){
      // github-script compiles its script input as JavaScript after Github
      // expressions are substituted. Use runner-equivalent input names.
-     const inputs=Object.create(null);
+     const inputs=new Map();
      let ambiguous=step.with===undefined||!isMap(step.with);
      if(!ambiguous){
-      for(const [key,value] of Object.entries(step.with)){
+      for(const __workflowEntry6 of Object.entries(step.with)){
+   const key=__workflowEntry6[0],value=__workflowEntry6[1];
        const folded=key.toLowerCase();
        if(!/^[A-Za-z0-9_-]+$/.test(key)||
-          Object.prototype.hasOwnProperty.call(inputs,folded)){
+          inputs.has(folded)){
         ambiguous=true;break;
        }
-       inputs[folded]=value;
+       inputs.set(folded,value);
       }
      }
-     if(ambiguous||typeof inputs.script!=='string'||!inputs.script.trim())
+     if(ambiguous||typeof inputs.get('script')!=='string'||!inputs.get('script').trim())
       coverage.partial=true;
      else{
-      const inspection=auditExecutableExpressions(inputs.script);
+      const inspection=auditExecutableExpressions(inputs.get('script'));
       if(inspection.incomplete)coverage.partial=true;
       if(inspection.unsafe)
        emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
@@ -570,19 +577,19 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
       // Destructuring, aliases and computed process.env reads can carry
       // tainted values to executable JavaScript without spelling CMD twice.
       // Unless the entire script is a plain direct log, do not certify it.
-      const directLog=/^\s*core\.info\(\s*process\.env\.([A-Za-z_][A-Za-z0-9_]*)\s*\);?\s*$/.exec(inputs.script);
+      const directLog=/^\s*core\.info\(\s*process\.env\.([A-Za-z_][A-Za-z0-9_]*)\s*\);?\s*$/.exec(inputs.get('script'));
       const accessEnv=/\bprocess\s*(?:\.\s*env|\[\s*['"]env['"]\s*\])/;
-      if(stepTaint.size>0&&accessEnv.test(inputs.script)&&
+      if(stepTaint.size>0&&accessEnv.test(inputs.get('script'))&&
          !(directLog&&stepTaint.has(directLog[1])))
        coverage.partial=true;
       for(const name of stepTaint){
-       const used=inputs.script.includes('process.env.'+name)||
-        inputs.script.includes("process.env['"+name+"']")||
-        inputs.script.includes('process.env["'+name+'"]');
+       const used=inputs.get('script').includes('process.env.'+name)||
+        inputs.get('script').includes("process.env['"+name+"']")||
+        inputs.get('script').includes('process.env["'+name+'"]');
        if(!used)continue;
-       if(/\b(?:eval|Function|exec|execSync|spawn|spawnSync)\s*\(/.test(inputs.script))
+       if(/\b(?:eval|Function|exec|execSync|spawn|spawnSync)\s*\(/.test(inputs.get('script')))
         emit('PRIVILEGED_EVENT_SCRIPT_INJECTION','BLOCKER',where);
-       else if(!/^\s*core\.info\(\s*process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*\);?\s*$/.test(inputs.script))
+       else if(!/^\s*core\.info\(\s*process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*\);?\s*$/.test(inputs.get('script')))
         coverage.partial=true;
       }
      }
@@ -591,16 +598,17 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      // Actions runner exposes every input as INPUT_<UPPERCASE_NAME>.
      // YAML preserves case, so Ref/ref and Repository/repository must share
      // the same effective slot; reject ambiguity or non-ASCII key tricks.
-     const inputs=Object.create(null);
+     const inputs=new Map();
      let invalidInputs=step.with!==undefined&&!isMap(step.with);
      if(!invalidInputs&&isMap(step.with)){
-      for(const [key,value] of Object.entries(step.with)){
+      for(const __workflowEntry7 of Object.entries(step.with)){
+   const key=__workflowEntry7[0],value=__workflowEntry7[1];
        const k=key.toLowerCase();
        if(!/^[A-Za-z0-9_-]+$/.test(key)||
-          Object.prototype.hasOwnProperty.call(inputs,k)){
+          inputs.has(k)){
         invalidInputs=true;break;
        }
-       inputs[k]=value;
+       inputs.set(k,value);
       }
      }
      if(invalidInputs)coverage.partial=true;
@@ -608,12 +616,12 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
       // Even a static branch or tag can point to attacker-controlled code.
       // Only the repository's reviewed main branch, an immutable SHA, or
       // exactly base-scoped GitHub expressions can be certified here.
-      const ref=typeof inputs.ref==='string'?inputs.ref.trim():null;
+      const ref=typeof inputs.get('ref')==='string'?inputs.get('ref').trim():null;
       const trustedBaseRef=ref==='main'||ref==='refs/heads/main'||
         /^\$\{\{\s*(?:github\.(?:sha|ref)|github\.event\.pull_request\.base\.sha|github\.event\.repository\.default_branch)\s*\}\}$/.test(ref||'');
       if(ref!==null&&!trustedBaseRef&&!PINNED.test(ref)&&!unsafePrRef(ref))
        coverage.partial=true;
-      const server=inputs['github-server-url'];
+      const server=inputs.get('github-server-url');
       if(server!==undefined){
        if(typeof server!=='string')coverage.partial=true;
        else if(/^\$\{\{\s*github\.server_url\s*\}\}$/.test(server.trim())||
@@ -622,16 +630,16 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
        }else if(server.includes('$'+'{{'))coverage.partial=true;
        else emit('PRIVILEGED_ALTERNATE_GITHUB_SERVER','BLOCKER',where);
       }
-      if((inputs.ref!==undefined&&typeof inputs.ref!=='string')||
-         (inputs.repository!==undefined&&typeof inputs.repository!=='string')){
+      if((inputs.get('ref')!==undefined&&typeof inputs.get('ref')!=='string')||
+         (inputs.get('repository')!==undefined&&typeof inputs.get('repository')!=='string')){
        coverage.partial=true;
-      }else if(unsafePrRef(inputs.ref)||unsafePrRef(inputs.repository)){
+      }else if(unsafePrRef(inputs.get('ref'))||unsafePrRef(inputs.get('repository'))){
        emit('PRIVILEGED_PR_CODE_CHECKOUT','BLOCKER',where);
-      }else if(unknownCheckoutExpression(inputs.ref,'ref')||
-                unknownCheckoutExpression(inputs.repository,'repository')){
+      }else if(unknownCheckoutExpression(inputs.get('ref'),'ref')||
+                unknownCheckoutExpression(inputs.get('repository'),'repository')){
        coverage.partial=true;
-      }else if(typeof inputs.repository==='string'){
-       const repository=inputs.repository.trim();
+      }else if(typeof inputs.get('repository')==='string'){
+       const repository=inputs.get('repository').trim();
        const trusted=typeof trustedRepository==='string'&&
          /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trustedRepository);
        if(/^\$\{\{\s*github\.repository\s*\}\}$/.test(repository)){
@@ -639,7 +647,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
        }else if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)||!trusted){
         coverage.partial=true;
        }else if(repository.toLowerCase()!==trustedRepository.toLowerCase()&&
-                !PINNED.test(inputs.ref||'')){
+                !PINNED.test(inputs.get('ref')||'')){
         emit('PRIVILEGED_EXTERNAL_MUTABLE_CHECKOUT','BLOCKER',where);
        }
       }
