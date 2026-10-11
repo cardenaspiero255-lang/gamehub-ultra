@@ -960,6 +960,22 @@ for(const [i,projection] of objectDefaultPatterns.entries()){
   ()=>assert.equal(result(benign),'CLEAR'));
 }
 
+// Global Array.prototype.slice can be changed without touching a local array
+// identifier. Native method optimization must account for that shared state.
+const prototypeSliceDangerous=[
+ ["P1 Array.prototype.slice directly overwritten before slice.call","function bad(g){g.eval('attack')}const a=[()=>1];Array.prototype.slice=function(){return [bad]};const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 Array.prototype.slice overwritten via Reflect.set","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.set(Array.prototype,'slice',function(){return [bad]});const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 Array.prototype.slice overwritten through const prototype alias","function bad(g){g.eval('attack')}const a=[()=>1],proto=Array.prototype;proto.slice=function(){return [bad]};const c=a.slice.call(a);c[0](globalThis)"]
+];
+const prototypeSliceBenign=[
+ ["P2 reading native slice without changing it stays CLEAR","const a=[()=>1],s=Array.prototype.slice;const c=a.slice.call(a);c[0]()"],
+ ["P2 overwriting an unrelated slice property stays CLEAR","const a=[()=>1],other={};other.slice=function(){};const c=a.slice.call(a);c[0]()"]
+];
+for(const [name,source] of prototypeSliceDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of prototypeSliceBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
