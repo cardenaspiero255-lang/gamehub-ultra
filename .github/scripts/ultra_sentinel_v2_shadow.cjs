@@ -69,4 +69,37 @@ function reconcile(primary,evidence){
  return Object.freeze({schema:SCHEMA,primary,shadow:evidence.decision,
   disposition,ruleCount:evidence.rules.length});
 }
-module.exports={directSinkEvidence,reconcile,SCHEMA,NODE_BUDGET};
+// Research phase: aggregate bounded differential evidence without promoting
+// the shadow analyzer to an authoritative security gate. Unknown or malformed
+// input never contributes a CLEAR verdict, and no user source is logged.
+const BATCH_LIMIT=32,SOURCE_CHAR_LIMIT=4096,BATCH_SCHEMA='ultra-sentinel-shadow-batch/v1';
+function auditShadowBatch(sources){
+ if(!Array.isArray(sources)||sources.length>BATCH_LIMIT||
+    sources.some(source=>typeof source!=='string'||source.length>SOURCE_CHAR_LIMIT))
+  throw Error('Shadow audit input exceeds hard budget');
+ const acorn=require('acorn');
+ const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+ let escalations=0,incomplete=0,provenSinks=0;
+ for(const source of sources){
+  try{
+   const ast=acorn.parse(source,{ecmaVersion:2022,sourceType:'script',ranges:true});
+   const shadow=directSinkEvidence(ast);
+   if(shadow.decision==='DEFINITE_SINK')provenSinks++;
+   let primary='INCOMPLETE';
+   try{primary=findCapabilities(ast).length?'BLOCKER':'CLEAR';}
+   catch{incomplete++;}
+   const decision=reconcile(primary,shadow);
+   if(decision.disposition==='ESCALATE')escalations++;
+  }catch{
+   // Parsing, scope analysis and budget errors require human inspection.
+   // This batch never blesses such input as safe.
+   incomplete++;
+  }
+ }
+ return Object.freeze({schema:BATCH_SCHEMA,mode:'DIAGNOSTIC_ONLY',
+  inspected:sources.length,provenSinks,escalations,incomplete,
+  requiresReview:escalations>0||incomplete>0});
+}
+module.exports={directSinkEvidence,reconcile,auditShadowBatch,SCHEMA,NODE_BUDGET,
+ BATCH_LIMIT,SOURCE_CHAR_LIMIT};
+
