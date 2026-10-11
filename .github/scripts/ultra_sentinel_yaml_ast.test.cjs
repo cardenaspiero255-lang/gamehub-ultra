@@ -324,3 +324,39 @@ test('ROOT security: trusted independent review cannot pass green without AST de
  const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-independent-review.yml'),'utf8');
  assert.match(workflow,/core\.setFailed\(['"]Trusted main structural parser not deployed/);
 });
+
+// TDD RED: incomplete reasons must be attributable to a bounded error family.
+test('structural AST explains inherited Bash-function and symbolic-arithmetic uncertainty',()=>{
+ const src=['on: push','jobs:','  build:','    runs-on: ubuntu-latest','    steps:',
+  '      - run: |','          helper() { echo safe; }',
+  '          retries=2','          echo $((retries + 1))'].join('\n');
+ const result=inspectWorkflow(src);
+ assert.equal(result.status,'INCOMPLETE');
+ assert.ok(result.coverage.reasons.includes('SHELL_FUNCTION'),JSON.stringify(result));
+ assert.ok(result.coverage.reasons.includes('OPAQUE_ARITHMETIC'),JSON.stringify(result));
+});
+test('structural AST explains sensitive job env without leaking source values',()=>{
+ const src=['on: push','jobs:','  build:','    runs-on: ubuntu-latest',
+  '    env:','      DEPLOY_AUTH: '+ '$'+'{{ secrets.PRIVATE_TOKEN }}','    steps:',
+  '      - uses: actions/checkout@'+SHA].join('\n');
+ const result=inspectWorkflow(src);
+ assert.equal(result.status,'INCOMPLETE');
+ assert.ok(result.coverage.reasons.includes('SENSITIVE_ACTION_ENV'),JSON.stringify(result));
+ assert.ok(!JSON.stringify(result).includes('PRIVATE_TOKEN'),JSON.stringify(result));
+});
+test('structural AST keeps per-workflow reasons in trusted aggregate',()=>{
+ const {reviewWorkflowSources}=require('./ultra_sentinel_yaml_ast.cjs');
+ const path='.github/workflows/test.yml';
+ const source=['on: push','jobs:','  test:','    steps:',
+  '      - run: echo $((counter + 1))'].join('\n');
+ const r=reviewWorkflowSources({expected:[path],sources:{[path]:source}});
+ assert.equal(r.status,'INCOMPLETE');
+ assert.deepEqual(r.results[0].reasons,['OPAQUE_ARITHMETIC']);
+});
+test('structural AST does not invent uncertainty for supported safe workflow',()=>{
+ const source=['on: push','jobs:','  build:','    runs-on: ubuntu-latest','    steps:',
+  '      - run: echo safe'].join('\n');
+ const result=inspectWorkflow(source);
+ assert.equal(result.status,'NO_RISK_PATTERN',JSON.stringify(result));
+ assert.deepEqual(result.coverage.reasons,[]);
+});
