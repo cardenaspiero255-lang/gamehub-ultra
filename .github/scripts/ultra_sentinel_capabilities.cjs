@@ -839,7 +839,9 @@ function findCapabilities(ast){
  const observed=calls.map(call=>({call,...invocation(call)}));
  for(const {call,fn} of observed){
   if(fn)continue;
-  if(call.callee?.type==='MemberExpression'&&propName(call.callee)===null)
+  // A provably constant computed key is not an unresolved dynamic call.
+  // This must share the same lexical-key resolver as the bind guard above.
+  if(call.callee?.type==='MemberExpression'&&stableMethodName(call.callee)===null)
    addCarrierFunctions(call.callee.object);
   for(const arg of call.arguments||[])
    addCarrierFunctions(arg);
