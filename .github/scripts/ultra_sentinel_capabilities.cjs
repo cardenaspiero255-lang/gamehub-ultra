@@ -497,9 +497,17 @@ function findCapabilities(ast){
        const name=stableMethodName(expr);
        if(['call','apply','bind'].includes(name))
         return mutatorName(expr.object,depth+1,new Set(seen));
-       return ['set','defineProperty','defineProperties','assign',
-        'setPrototypeOf','__defineGetter__','__defineSetter__'].includes(name)?
-        name:null;
+       // Never grant global-intrinsic privileges solely because a local
+       // method has the same spelling. Bindings are scope-resolved.
+       const owner=expr.object?.type==='Identifier'?symbol(expr.object):null;
+       if(owner==='free:Object'&&
+          ['defineProperty','defineProperties','assign','setPrototypeOf'].includes(name))
+        return name;
+       if(owner==='free:Reflect'&&['set','defineProperty','setPrototypeOf'].includes(name))
+        return name;
+       if(['__defineGetter__','__defineSetter__'].includes(name))
+        return name;
+       return null;
       }
       // A bound intrinsic remains a mutator even when its use is delayed.
       if(expr.type==='CallExpression'&&expr.callee?.type==='MemberExpression'&&
@@ -514,6 +522,18 @@ function findCapabilities(ast){
          id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
       seen.add(id);
       return mutatorName(defs[0].node.init,depth+1,seen);
+     }
+     // Receiver provenance: writes to an object's current prototype also
+     // alter which properties the source can observe via inheritance.
+     function affectsCarrier(target){
+      if(inertLiteralSource(target)===original)return true;
+      if(target?.type==='CallExpression'&&target.arguments?.length===1&&
+         target.callee?.type==='MemberExpression'&&
+         stableMethodName(target.callee)==='getPrototypeOf'&&
+         target.callee.object?.type==='Identifier'&&
+         symbol(target.callee.object)==='free:Object'&&
+         inertLiteralSource(target.arguments[0])===original)return true;
+      return false;
      }
      let modified=false;
      traverse(ast,(candidate,parent)=>{
@@ -559,8 +579,21 @@ function findCapabilities(ast){
         target=candidate.arguments[2]?.type==='ArrayExpression'?
          candidate.arguments[2].elements?.[0]:null;
        }
-       if(action&&(target===null||
-          inertLiteralSource(target)===original))modified=true;
+       if(['__defineGetter__','__defineSetter__'].includes(action)){
+        // Instance mutators change the receiver (this), not their key
+        // argument. A direct method uses callee.object, .call receiver
+        // is arguments[0], and .call.call receiver is arguments[1].
+        if(candidate.callee?.type==='MemberExpression'){
+         let layers=0,cursor=candidate.callee;
+         while(cursor?.type==='MemberExpression'&&
+               stableMethodName(cursor)==='call'&&layers<MAX_DEPTH){
+          layers++;cursor=cursor.object;
+         }
+         target=layers>0?candidate.arguments?.[layers-1]||null:
+          candidate.callee.object;
+        }
+       }
+       if(action&&(target===null||affectsCarrier(target)))modified=true;
       }
      });
      return !modified;
