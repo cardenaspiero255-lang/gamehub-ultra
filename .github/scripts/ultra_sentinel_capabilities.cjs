@@ -138,16 +138,14 @@ function findCapabilities(ast){
    }
    return {properties:merged};
   }
-  throw Error('Conflicting property capability provenance: '+[a,b].map(v=>v===PRESENT?'PRESENT':v===UNKNOWN?'UNKNOWN':v?.functionNode?'FUNCTION':v?.properties?'PROPERTIES':v?.optional?'OPTIONAL':typeof v).join('/'));
+  throw Error('Conflicting property capability provenance');
  }
  function joinObjectBranches(left,right,depth=0){
   if(depth>MAX_DEPTH)throw Error('Object branch provenance depth exceeded');
   const out=new Map();
   for(const name of new Set([...left.keys(),...right.keys()])){
-   if(left.has(name)&&right.has(name)){
-    try{out.set(name,mergeDescriptor(left.get(name),right.get(name),depth+1));}
-    catch(error){throw Error(String(error.message)+' at property '+String(name));}
-   }
+   if(left.has(name)&&right.has(name))
+    out.set(name,mergeDescriptor(left.get(name),right.get(name),depth+1));
    else out.set(name,optional(left.has(name)?left.get(name):right.get(name)));
   }
   return out;
@@ -760,7 +758,7 @@ function findCapabilities(ast){
  }
  function ensureStableArray(variable){
   if(stableArrayCache.has(variable)){
-   if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated at lexical line '+String(variable?.identifiers?.[0]?.loc?.start?.line??'unknown'));
+   if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated');
    return;
   }
   const aliases=new Set([variable]);
@@ -1407,7 +1405,7 @@ function findCapabilities(ast){
    }
   });
   stableArrayCache.set(variable,uncertain);
-  if(uncertain)throw Error('Array callback slots may be mutated at lexical line '+String(variable?.identifiers?.[0]?.loc?.start?.line??'unknown')+
+  if(uncertain)throw Error('Array callback slots may be mutated'+
    (unknownAliasWrite?' (unknown lexical write)':' (carrier or receiver)'));
  }
  function knownArraySlots(node,depth=0,seen=new Set()){
@@ -2035,7 +2033,7 @@ function findCapabilities(ast){
     const returned=returnExpressions(fn).map(n=>propertyKinds(n,depth+1));
     const available=returned.filter(Boolean);
     if(available.length){
-     if(available.length!==returned.length)throw Error('Incomplete returned object provenance at function line '+String(fn.loc?.start?.line??'unknown'));
+     if(available.length!==returned.length)throw Error('Incomplete returned object provenance');
      let merged=new Map(available[0]);
      for(const item of available.slice(1))merged=joinObjectBranches(merged,item,depth+1);
      return merged;
