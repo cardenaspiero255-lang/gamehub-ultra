@@ -1049,6 +1049,29 @@ for(const [name,source] of codex173Round3Dangerous)
 for(const [name,source] of codex173Round3Benign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Codex review on 1c8ed54: semantic identity of Function.prototype,
+// prototype mutation after snapshots and straight-line SequenceExpression.
+// These examples are parsed but NEVER executed by the test harness.
+const v2PrototypeDangerous=[
+ ["P1 slice.constructor.prototype apply mutation","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice.constructor.prototype,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 slice.constructor.prototype computed call mutation","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.defineProperty(a.slice['constructor']['prototype'],'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 Function constructor prototype alias call mutation","function bad(g){g.eval('attack')}const a=[()=>1],Ctor=a.slice.constructor;Object.defineProperty(Ctor.prototype,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 Object.setPrototypeOf post-snapshot carrier escape","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf(empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 Reflect.setPrototypeOf post-snapshot carrier escape","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Reflect.setPrototypeOf(empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 aliased setPrototypeOf post-snapshot carrier escape","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const set=Object.setPrototypeOf;const {x=a}=empty;set(empty,{get:()=>a});poison(empty);a[0](globalThis)"]
+];
+const v2PrototypeBenign=[
+ ["P2 later direct sequence write remains CLEAR","const a=[()=>1],empty={};const {x=a}=empty;(empty.x=42,0);a[0]()"],
+ ["P2 multiple post-snapshot sequence writes remain CLEAR","const a=[()=>1],empty={};const {x=a}=empty;(empty.x=1,empty.y=2);a[0]()"],
+ ["P2 sequence nested parentheses remains CLEAR","const a=[()=>1],empty={};const {x=a}=empty;((empty.x=42),0);a[0]()"],
+ ["P2 unrelated constructor prototype does not poison slice","const a=[()=>1],other={constructor:{prototype:{}}};other.constructor.prototype.call=()=>42;const c=a.slice.call(a);c[0]()"],
+ ["P2 inert post-snapshot source usage stays CLEAR","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"]
+];
+for(const [name,source] of v2PrototypeDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of v2PrototypeBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
