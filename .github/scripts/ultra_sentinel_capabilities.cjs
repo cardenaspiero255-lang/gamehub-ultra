@@ -111,7 +111,8 @@ function findCapabilities(ast){
   return null;
  }
  function kind(node,depth=0){
-  if(!node||depth>MAX_DEPTH)throw Error('Capability graph depth exceeded');
+  if(!node)return null;
+  if(depth>MAX_DEPTH)throw Error('Capability graph depth exceeded');
   if(node.type==='ChainExpression'||node.type==='AwaitExpression')
    return kind(node.expression||node.argument,depth+1);
   if(node.type==='Identifier')return directKind(node);
