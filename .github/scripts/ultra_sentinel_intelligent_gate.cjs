@@ -43,7 +43,10 @@ function renameNormalizer(entries){
    map.has(r.previous_filename)||targets.has(r.filename))throw Error('INVALID_RENAMES');
   map.set(r.previous_filename,r.filename);targets.add(r.filename);
  }
- for(const [a,b] of map)if(map.has(b)||a===b)throw Error('AMBIGUOUS_RENAME_CHAIN');
+ for(const entry of map){
+  const a=entry[0],b=entry[1];
+  if(map.has(b)||a===b)throw Error('AMBIGUOUS_RENAME_CHAIN');
+ }
  return path=>map.get(path)||path;
 }
 function checkedPaths(paths,name){
