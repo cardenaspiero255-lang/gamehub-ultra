@@ -720,9 +720,17 @@ function findCapabilities(ast){
    bindings.push([node.left,node.right]);
   if(node.type==='ForOfStatement'||node.type==='ForInStatement'){
    const left=node.left;
-   if(left?.type==='VariableDeclaration')for(const decl of left.declarations)
-    bindings.push([decl.id,node.right]);
-   else bindings.push([left,node.right]);
+   const patterns=left?.type==='VariableDeclaration'?
+    left.declarations.map(decl=>decl.id):[left];
+   // for..of binds each *element*, not the iterable array object. Treating
+   // the iterable as the destructured value obscures global capability sinks.
+   if(node.type==='ForOfStatement'&&node.right?.type==='ArrayExpression'){
+    for(const element of node.right.elements){
+     if(!element||element.type==='SpreadElement')
+      throw Error('For-of iterable element provenance unresolved');
+     for(const pattern of patterns)bindings.push([pattern,element]);
+    }
+   }else for(const pattern of patterns)bindings.push([pattern,node.right]);
   }
   if(['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression'].includes(node.type))
    for(const param of node.params){
