@@ -68,8 +68,16 @@ test('shadow does not claim a reassigned globalThis eval is definitely builtin',
  assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN');
 });
 test('shadow does not claim a reassigned free eval is definitely builtin',()=>{
- const source="eval=function(){return 1};eval('safe')";
- assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN');
+ const cases=[
+  "eval=function(){return 1};eval('safe')",
+  "({eval}={eval:()=>1});eval('safe')",
+  "[eval]=[()=>1];eval('safe')",
+  "({nested:{eval}}={nested:{eval:()=>1}});eval('safe')",
+  "for (eval of [()=>1]) {} eval('safe')",
+  "for (Function of [()=>1]) {} Function('safe')"
+ ];
+ for(const source of cases)
+  assert.equal(directSinkEvidence(ast(source)).decision,'NOT_PROVEN',source);
 });
 test('shadow does not claim a replaced globalThis.Function is definitely builtin',()=>{
  const source="globalThis.Function=function(){return 1};globalThis.Function('safe')";
