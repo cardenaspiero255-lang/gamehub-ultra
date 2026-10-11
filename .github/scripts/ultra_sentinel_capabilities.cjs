@@ -533,15 +533,21 @@ function findCapabilities(ast){
     return false;
    const writes=(alias.references||[]).filter(r=>r.isWrite()&&!r.init);
    if(writes.length!==1||writes[0]!==ref)return false;
-   const id=ref.identifier,defaultPattern=parentOf.get(id);
-   if(defaultPattern?.type!=='AssignmentPattern'||defaultPattern.left!==id)
-    return false;
-   const prop=parentOf.get(defaultPattern),objectPattern=parentOf.get(prop);
-   const assignment=parentOf.get(objectPattern);
-   return prop?.type==='Property'&&prop.value===defaultPattern&&
-    objectPattern?.type==='ObjectPattern'&&
-    assignment?.type==='AssignmentExpression'&&
-    assignment.operator==='='&&assignment.left===objectPattern;
+   // ESLint-scope may expose a write identifier at the outer destructuring
+   // assignment instead of directly below the property's default. Verify
+   // that the write stays inside the LHS ObjectPattern, not a later write.
+   let child=ref.identifier;
+   for(let depth=0;depth<MAX_DEPTH;depth++){
+    const parent=parentOf.get(child);
+    if(!parent)return false;
+    if(parent.type==='AssignmentExpression')
+     return parent.operator==='='&&parent.left?.type==='ObjectPattern'&&
+      child===parent.left;
+    if(parent.type==='FunctionExpression'||parent.type==='ArrowFunctionExpression'||
+       parent.type==='Program'||parent.type==='VariableDeclarator')return false;
+    child=parent;
+   }
+   return false;
   }
   for(const alias of aliases)
    if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init&&
