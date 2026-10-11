@@ -16,13 +16,14 @@ function exactText(value){
  if(typeof value!=='string'||value.length>MAX_TEXT||value.includes('\0'))throw Error('INVALID_CONTEXT');
  return value.replace(/\s+/g,' ').trim();
 }
-function classifySeverity(value){return SEVERITY[value]?.[0]||'UNKNOWN';}
-function severityRank(value){return SEVERITY[value]?.[1]||0;}
+function severityEntry(value){return typeof value==='string'&&Object.prototype.hasOwnProperty.call(SEVERITY,value)?SEVERITY[value]:null;}
+function classifySeverity(value){return severityEntry(value)?.[0]||'UNKNOWN';}
+function severityRank(value){return severityEntry(value)?.[1]||0;}
 function strictFinding(f){
  if(!f||typeof f!=='object'||Array.isArray(f)||!validPath(f.path)||
    typeof f.rule!=='string'||!(/^[A-Za-z0-9_.:-]{1,100}$/.test(f.rule))||
    !Number.isSafeInteger(f.line)||f.line<1||f.line>10000000||
-   !SEVERITY[f.severity])throw Error('INVALID_FINDING');
+   !severityEntry(f.severity))throw Error('INVALID_FINDING');
  for(const key of ['astKind','symbol','context','cause']){
   if(f[key]!==undefined)exactText(f[key]);
  }
