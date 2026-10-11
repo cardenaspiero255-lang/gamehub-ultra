@@ -107,7 +107,8 @@ function normalizeInvocation(command,flag){
    const nested=literalCommandName(args[i]||'');
    if(nested==='command'||nested==='builtin')continue;
    if(nested==='source'||nested==='.'||nested==='exec'){
-    return {...command,name:nested,words:args.slice(i),raw:args.slice(i).join(' ')};
+    return {name:nested,words:args.slice(i),raw:args.slice(i).join(' '),
+     start:command.start,end:command.end};
    }
    let unverifiedBuiltin=false;
    for(const w of args.slice(i)){
@@ -153,7 +154,8 @@ function normalizeInvocation(command,flag){
    // A dynamic/compound word has already been reported by the bounded IR
    // when relevant. Do not produce standalone false positives for inert code.
    if(!name)return null;
-   return {...command,name,words:args.slice(i),raw:args.slice(i).join(' ')};
+   return {name,words:args.slice(i),raw:args.slice(i).join(' '),
+    start:command.start,end:command.end};
   }
   if(i>=args.length)return null;
  }
@@ -522,9 +524,8 @@ function findingsForScript(source,{shell=''}={}){
      if(opaque)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
      // exec replaces this shell with a nested program and its script operand.
      const target=opaque?[]:inv.words.slice(j);
-     const nested=target.length?normalizeInvocation({...inv,
-      name:literalCommandName(target[0])||target[0],
-      words:target,raw:target.join(' ')},flag):null;
+     const nested=target.length?normalizeInvocation({name:literalCommandName(target[0])||target[0],
+      words:target,raw:target.join(' '),start:inv.start,end:inv.end},flag):null;
      if(!nested){word=null;}
      else{
       const basename=posix.basename(nested.name);
@@ -534,7 +535,8 @@ function findingsForScript(source,{shell=''}={}){
       if(knownInterpreter&&!trustedInterpreterPath)
        flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
       word=knownInterpreter&&trustedInterpreterPath?
-       interpreterFileOperand({...nested,name:basename},flag):nested.words[0];
+       interpreterFileOperand({name:basename,words:nested.words,raw:nested.raw,
+        start:nested.start,end:nested.end},flag):nested.words[0];
      }
     }
     if(!word)continue;
