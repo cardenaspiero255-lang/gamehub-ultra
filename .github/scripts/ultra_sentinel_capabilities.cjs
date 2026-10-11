@@ -1805,22 +1805,75 @@ function findCapabilities(ast){
    return resolveFunction(node.right,depth+1);
   return null;
  }
- // Identity of Reflect.apply is preserved across const aliases and wrappers.
- // Treat mutable aliases as unknown provenance rather than certifying CLEAR.
+ // Certainty about the Reflect.apply builtin is invalid after any
+ // recognizable mutation, including an aliased Object/Reflect definer.
+ // Unknown identity must never become a definite execution verdict.
+ let reflectApplyIntegrity=null;
+ function assertReflectApplyIntegrity(){
+  if(reflectApplyIntegrity===null){
+   let altered=false;
+   traverse(ast,node=>{
+    if(altered)return;
+    const direct=node.type==='AssignmentExpression'?node.left:
+     node.type==='UpdateExpression'||node.type==='UnaryExpression'&&
+      node.operator==='delete'?node.argument:null;
+    if(direct?.type==='Identifier'&&symbol(direct)==='free:Reflect')
+     altered=true;
+    if(direct?.type==='MemberExpression'&&
+       definerRoot(direct.object)==='Reflect'&&
+       [null,'apply'].includes(stableMethodName(direct)))
+     altered=true;
+    if(node.type==='CallExpression'){
+     const write=definerInvocation(node);
+     if(write&&definerRoot(write.args?.[0])==='Reflect'){
+      const key=stableKeyValue(write.args?.[1]);
+      if(!['defineProperty','set'].includes(write.op)||key===null||
+         key==='apply')altered=true;
+     }
+    }
+   });
+   reflectApplyIntegrity=!altered;
+  }
+  if(!reflectApplyIntegrity)throw Error('Reflect.apply builtin identity may be overwritten');
+ }
+ // Model immutable aliases and exact destructuring projections as native
+ // Reflect.apply. This preserves the interprocedural argument proof rather
+ // than silently treating a dangerous indirect call as CLEAR.
  function reflectsApply(node,depth=0,seen=new Set()){
   if(!node||depth>MAX_DEPTH)return false;
-  if(node.type==='MemberExpression')
-   return stableMethodName(node)==='apply'&&definerRoot(node.object)==='Reflect';
+  if(node.type==='MemberExpression'){
+   if(stableMethodName(node)!=='apply'||definerRoot(node.object)!=='Reflect')
+    return false;
+   assertReflectApplyIntegrity();
+   return true;
+  }
   if(node.type==='Identifier'){
    const id=symbol(node);
    if(!id||typeof id!=='object'||seen.has(id))return false;
    const defs=id.defs||[];
-   if(defs.length!==1||defs[0].parent?.kind!=='const'||
-      defs[0].node?.id?.type!=='Identifier')return false;
+   if(defs.length!==1||defs[0].parent?.kind!=='const')return false;
    if(id.references?.some(ref=>ref.isWrite()&&!ref.init))
     throw Error('Mutable Reflect.apply alias');
    seen.add(id);
-   return reflectsApply(defs[0].node?.init,depth+1,seen);
+   const declaration=defs[0].node;
+   if(declaration?.id?.type==='Identifier')
+    return reflectsApply(declaration.init,depth+1,seen);
+   if(declaration?.id?.type==='ObjectPattern'&&
+      definerRoot(declaration.init)==='Reflect'){
+    const member=declaration.id.properties?.find(p=>
+     p.type==='Property'&&
+     (p.key?.type==='Identifier'&&!p.computed?p.key.name:
+      p.key?.type==='Literal'?String(p.key.value):null)==='apply'&&
+     p.value===defs[0].name);
+    if(member){assertReflectApplyIntegrity();return true;}
+   }
+   if(declaration?.id?.type==='ArrayPattern'&&
+      declaration.init?.type==='ArrayExpression'){
+    const index=declaration.id.elements?.indexOf(defs[0].name);
+    if(index>=0)
+     return reflectsApply(declaration.init.elements?.[index],depth+1,seen);
+   }
+   return false;
   }
   if(node.type==='SequenceExpression')
    return reflectsApply(node.expressions?.at(-1),depth+1,seen);
