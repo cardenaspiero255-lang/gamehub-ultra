@@ -334,24 +334,9 @@ test('metamorphic AST gate detects equivalent dynamic execution forms',()=>{
   assert.equal(out.status,'BLOCKED',script);
   assert.ok(out.findings.some(f=>f.rule==='DYNAMIC_EVAL'),script);
  }
-});
-test('lexical shadowing does not invent executable built-in capabilities',()=>{
- const benign=[
-  "function f(require){return require('vm').compileFunction(userPatch)} f(()=>({compileFunction:x=>x}))",
-  "function f(globalThis){return globalThis.eval(userPatch)} f({eval:x=>x})",
-  "function f(vm){return vm.createScript(userPatch)} f({createScript:x=>x})",
-  "const vm={createScript:x=>x}; vm.createScript(userPatch)",
-  "const box={x:globalThis}; const {x:local}=({x:{eval:x=>x}});local.eval(userPatch)",
-  "const safe={x:(n)=>n};const {x:f}=safe;f(userPatch)"
- ];
- for(const script of benign){
-  const result=scan([file(src,script)],SHA);
-  assert.equal(result.status,'ADVISORY',script);
-  assert.ok(!result.findings.some(f=>f.rule==='DYNAMIC_EVAL'),script);
- }
-});
-// Root-cause regression matrix: conservative flow joins, containers, params, scopes.
-test('AST scope engine rejects unknown high-risk capability propagation, not benign shadows',()=>{
+
+ // Additional root-cause variants are part of the existing metamorphic suite.
+
  const risk=[
   "const g=enabled ? globalThis : {eval:x=>x}; g.eval(userPatch)",
   "const box={...{x:globalThis}}; box.x.eval(userPatch)",
@@ -380,6 +365,22 @@ test('AST scope engine rejects unknown high-risk capability propagation, not ben
   const x=scan([file(src,srcText)],SHA);
   assert.equal(x.status,'ADVISORY',srcText);
   assert.ok(!x.findings.some(f=>f.rule==='DYNAMIC_EVAL'),srcText);
+ }
+
+});
+test('lexical shadowing does not invent executable built-in capabilities',()=>{
+ const benign=[
+  "function f(require){return require('vm').compileFunction(userPatch)} f(()=>({compileFunction:x=>x}))",
+  "function f(globalThis){return globalThis.eval(userPatch)} f({eval:x=>x})",
+  "function f(vm){return vm.createScript(userPatch)} f({createScript:x=>x})",
+  "const vm={createScript:x=>x}; vm.createScript(userPatch)",
+  "const box={x:globalThis}; const {x:local}=({x:{eval:x=>x}});local.eval(userPatch)",
+  "const safe={x:(n)=>n};const {x:f}=safe;f(userPatch)"
+ ];
+ for(const script of benign){
+  const result=scan([file(src,script)],SHA);
+  assert.equal(result.status,'ADVISORY',script);
+  assert.ok(!result.findings.some(f=>f.rule==='DYNAMIC_EVAL'),script);
  }
 });
 test('ambiguous JavaScript context and malformed source fail closed without fake certainty',()=>{
