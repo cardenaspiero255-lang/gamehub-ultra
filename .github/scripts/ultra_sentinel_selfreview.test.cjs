@@ -405,3 +405,30 @@ test('scope analysis never turns unknown or invalid exact-SHA evidence into an a
  assert.equal(bad.autoMergeAllowed,false);
  assert.ok(bad.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'));
 });
+
+test('Self-review handles an SHA-verified omitted large added patch without weakening blockers',()=>{
+ const {recoverAddedPatch}=require('./ultra_sentinel_core.cjs');
+ const {createHash}=require('node:crypto');
+ const source=('// '+ 'a'.repeat(126)+'\n').repeat(970)+'const safe = 1;\n';
+ const bytes=Buffer.from(source,'utf8'),count=source.split('\n').length-1;
+ const sha=createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+ const item={filename:'.github/scripts/ultra_sentinel_added_large.cjs',
+  status:'added',patch:null,sha,changes:count,additions:count,deletions:0};
+ const raw={sha,type:'file',size:bytes.length,encoding:'base64',content:bytes.toString('base64')};
+ const generated=recoverAddedPatch(item,raw);
+ assert.ok(generated.length>100000&&generated.length<150000);
+ assert.equal(scan([{...item,patch:generated}],SHA).status,'ADVISORY');
+ assert.equal(scan([item],SHA).status,'BLOCKED');
+ assert.equal(scan([{...item,status:'modified',patch:null}],SHA).status,'BLOCKED');
+});
+test('Remote trusted self-review verifies added Git blobs before its protected scan',()=>{
+ const fs=require('node:fs'),source=fs.readFileSync(__filename.replace(/\.test\.cjs$/,'.cjs'),'utf8');
+ const start=source.indexOf("const missingAdded=files.filter");
+ const verify=source.indexOf("recoverAddedPatch(item,body)",start);
+ const scanPosition=source.indexOf("const result=scan(files,sha)",verify);
+ assert.ok(start>0&&verify>start&&scanPosition>verify);
+ const segment=source.slice(start,scanPosition);
+ assert.match(segment,/status==='added'/);
+ assert.match(segment,/\?ref='\+sha/);
+ assert.doesNotMatch(source,/execSync|eval\s*\(/);
+});
