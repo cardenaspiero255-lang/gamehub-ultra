@@ -417,16 +417,51 @@ function findCapabilities(ast){
   if(node.type==='SequenceExpression')
    return knownArraySlots(node.expressions?.at(-1),depth+1,seen);
   if(node.type==='CallExpression'){
-   // Array.slice makes a shallow copy, preserving each callback identity.
+   // Slice preserves element identity, even via call/apply or a const
+   // alias to the native method. Unknown boundaries remain INCOMPLETE.
+   function sliceMethod(expr,level=0,seenMethods=new Set()){
+    if(!expr||level>MAX_DEPTH)return false;
+    if(expr.type==='MemberExpression')
+     return stableMethodName(expr)==='slice';
+    if(expr.type==='Identifier'){
+     const id=symbol(expr);
+     if(!id||typeof id!=='object'||seenMethods.has(id))return false;
+     const defs=id.defs||[];
+     if(defs.length!==1||defs[0].parent?.kind!=='const'||
+        defs[0].node?.id?.type!=='Identifier')return false;
+     if(id.references?.some(ref=>ref.isWrite()&&!ref.init))
+      throw Error('Mutable array slice alias');
+     seenMethods.add(id);
+     return sliceMethod(defs[0].node?.init,level+1,seenMethods);
+    }
+    return false;
+   }
+   let sliceSource=null,sliceArgs=[];
    if(node.callee?.type==='MemberExpression'&&
       stableMethodName(node.callee)==='slice'){
-    const slots=knownArraySlots(node.callee.object,depth+1,new Set(seen));
+    sliceSource=node.callee.object;sliceArgs=node.arguments||[];
+   }else if(node.callee?.type==='MemberExpression'&&
+      sliceMethod(node.callee.object,depth+1)){
+    const method=stableMethodName(node.callee);
+    if(method==='call'){
+     sliceSource=node.arguments?.[0];
+     sliceArgs=(node.arguments||[]).slice(1);
+    }else if(method==='apply'){
+     sliceSource=node.arguments?.[0];
+     const inputs=node.arguments?.[1];
+     if(inputs?.type!=='ArrayExpression'||
+        inputs.elements.some(e=>!e||e.type==='SpreadElement'))
+      throw Error('Unknown slice.apply arguments');
+     sliceArgs=inputs.elements;
+    }
+   }
+   if(sliceSource){
+    const slots=knownArraySlots(sliceSource,depth+1,new Set(seen));
     if(slots){
-     const args=node.arguments||[];
-     const start=args.length?staticArrayIndex(args[0]):0;
-     const end=args.length>1?staticArrayIndex(args[1]):slots.length;
-     if(start===null||end===null)throw Error('Unknown array slice boundaries');
-     return slots.slice(start,end);
+     const begin=sliceArgs.length?staticArrayIndex(sliceArgs[0]):0;
+     const end=sliceArgs.length>1?staticArrayIndex(sliceArgs[1]):slots.length;
+     if(begin===null||end===null)throw Error('Unknown slice bounds');
+     return slots.slice(begin,end);
     }
    }
    const {fn}=invocation(node,depth+1);
