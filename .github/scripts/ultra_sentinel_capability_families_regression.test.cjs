@@ -1407,3 +1407,212 @@ test('P2 stable var native slice alias stays CLEAR',()=>{
  const source="const a=[()=>1];var h=a.slice;const copy=h.apply(a,[]);copy[0]()";
  assert.equal(result(source),'CLEAR');
 });
+
+// Slice family closure: bounded destructuring projection matrix (AST-only).
+// Independent P1 proof obligations against the native-slice fast-path.
+// Each sample is parsed by Acorn; no fixture is evaluated at runtime.
+const slicePatternDangerous=[
+ [
+  "array binding direct",
+  "const [h]=[a.slice];",
+  "h"
+ ],
+ [
+  "array binding let",
+  "let [h]=[a.slice];",
+  "h"
+ ],
+ [
+  "array binding skipped position",
+  "const [,h]=[null,a.slice];",
+  "h"
+ ],
+ [
+  "object binding direct",
+  "const {h}={h:a.slice};",
+  "h"
+ ],
+ [
+  "object binding renamed",
+  "const {h:alias}={h:a.slice};",
+  "alias"
+ ],
+ [
+  "object binding let",
+  "let {h}={h:a.slice};",
+  "h"
+ ],
+ [
+  "nested array object binding",
+  "const [{h}]=[{h:a.slice}];",
+  "h"
+ ],
+ [
+  "double nested array binding",
+  "const [[h]]=[[a.slice]];",
+  "h"
+ ],
+ [
+  "object nested object binding",
+  "const {inner:{h}}={inner:{h:a.slice}};",
+  "h"
+ ],
+ [
+  "array absent default",
+  "const [h=a.slice]=[];",
+  "h"
+ ],
+ [
+  "array undefined default",
+  "const [h=a.slice]=[undefined];",
+  "h"
+ ],
+ [
+  "object missing default",
+  "const {h=a.slice}={};",
+  "h"
+ ],
+ [
+  "object undefined default",
+  "const {h=a.slice}={h:undefined};",
+  "h"
+ ],
+ [
+  "object void default",
+  "const {h=a.slice}={h:void 0};",
+  "h"
+ ],
+ [
+  "constant computed object key",
+  "const key='h';const {[key]:h}={h:a.slice};",
+  "h"
+ ],
+ [
+  "constant computed source key",
+  "const key='h';const {h}={[key]:a.slice};",
+  "h"
+ ],
+ [
+  "array source alias",
+  "const holder=[a.slice];const [h]=holder;",
+  "h"
+ ],
+ [
+  "object source alias",
+  "const holder={h:a.slice};const {h}=holder;",
+  "h"
+ ],
+ [
+  "chained object source alias",
+  "const holder={h:a.slice};const copy=holder;const {h}=copy;",
+  "h"
+ ],
+ [
+  "conditional array source",
+  "const [h]=flag?[a.slice]:[null];",
+  "h"
+ ],
+ [
+  "conditional object source",
+  "const {h}=flag?{h:a.slice}:{h:()=>1};",
+  "h"
+ ],
+ [
+  "sequence-wrapped array source",
+  "const [h]=(0,[a.slice]);",
+  "h"
+ ],
+ [
+  "sequence-wrapped object source",
+  "const {h}=(0,{h:a.slice});",
+  "h"
+ ],
+ [
+  "array destructuring assignment",
+  "let h;([h]=[a.slice]);",
+  "h"
+ ],
+ [
+  "object destructuring assignment",
+  "let h;({h}={h:a.slice});",
+  "h"
+ ],
+ [
+  "source computed literal",
+  "const {h}={['h']:a.slice};",
+  "h"
+ ],
+ [
+  "array spread source",
+  "const [h]=[...[a.slice]];",
+  "h"
+ ],
+ [
+  "object spread source",
+  "const {h}={...{h:a.slice}};",
+  "h"
+ ],
+ [
+  "nested object source alias",
+  "const box={nested:{h:a.slice}};const {nested:{h}}=box;",
+  "h"
+ ]
+];
+for(const [name,setup,variable] of slicePatternDangerous)
+ test('P1 destructuring '+name+' must never be CLEAR',()=>{
+  const source="function bad(g){g.eval('attack')}const a=[()=>1];"+setup+
+   "Object.defineProperty("+variable+",'call',{value:x=>x.fill(bad)});"+
+   "a.slice.call(a);a[0](globalThis)";
+  assert.notEqual(result(source),'CLEAR',name+' escaped native slice provenance');
+ });
+const slicePatternBenign=[
+ [
+  "array benign read",
+  "const [h]=[a.slice];const copy=h.call(a);copy[0]()"
+ ],
+ [
+  "object benign read",
+  "const {h}={h:a.slice};const copy=h.apply(a,[]);copy[0]()"
+ ],
+ [
+  "nested benign read",
+  "const [{h}]=[{h:a.slice}];h.call(a)[0]()"
+ ],
+ [
+  "array defined suppresses default",
+  "const [h=a.slice]=[()=>1];h();a.slice.call(a)[0]()"
+ ],
+ [
+  "object defined suppresses default",
+  "const {h=a.slice}={h:()=>1};h();a.slice.call(a)[0]()"
+ ],
+ [
+  "null object does not enable default",
+  "const {h=a.slice}={h:null};a.slice.call(a)[0]()"
+ ],
+ [
+  "unrelated object key",
+  "const {h}={h:()=>1,other:a.slice};h();a.slice.call(a)[0]()"
+ ],
+ [
+  "unrelated array index",
+  "const [h]=[()=>1,a.slice];h();a.slice.call(a)[0]()"
+ ],
+ [
+  "computed constant key benign",
+  "const key='h';const {[key]:h}={h:a.slice};h.call(a)[0]()"
+ ],
+ [
+  "stable mutable destructured read",
+  "let [h]=[a.slice];h.call(a)[0]()"
+ ],
+ [
+  "nested object benign",
+  "const {nested:{h}}={nested:{h:a.slice}};h.call(a)[0]()"
+ ]
+];
+for(const [name,setup] of slicePatternBenign)
+ test('P2 destructuring '+name+' remains CLEAR',()=>{
+  const source="const a=[()=>1];"+setup;
+  assert.equal(result(source),'CLEAR',name+' incorrectly blocked a benign slice');
+ });
