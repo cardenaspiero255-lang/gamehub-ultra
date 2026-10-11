@@ -26,7 +26,9 @@ const EXTRA_CASES_PER_SHARD=28500;
 const MINIMUM=500000;
 // Reviewed expected registration totals; any new baseline test requires an intentional update.
 // A PR must never attest fewer real baseline tests just because 500k matrix cases pass.
-const BASELINE_TEST_COUNTS=Object.freeze({b0:10242,b1:11208});
+// The 12 RED/GREEN Codex round-six regressions in the baseline b1 suite
+// are intentionally counted; never lower the threshold to mask failures.
+const BASELINE_TEST_COUNTS=Object.freeze({b0:10242,b1:11220});
 
 function testFiles(root=ROOT){
  return fs.readdirSync(root).filter(f=>/^ultra_sentinel_.*\.test\.cjs$/.test(f)).sort();
