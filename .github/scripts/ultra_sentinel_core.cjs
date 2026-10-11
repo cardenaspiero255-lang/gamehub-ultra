@@ -4,7 +4,7 @@
 const VERSION='2.0.0';
 const {buildRemediations,markdown:repairMarkdown}=require('./ultra_sentinel_remediation.cjs');
 const {search:searchMemory}=require('./ultra_sentinel_memory.cjs');
-const MAX_FILES=300,MAX_PATCH=100000;
+const MAX_FILES=300,MAX_PATCH=320000;
 const SEVERITY={BLOCKER:4,HIGH:3,MEDIUM:2,LOW:1};
 function sanitize(s){
  return String(s??'').replace(/[\r\n<>|]/g,' ')
@@ -26,6 +26,45 @@ function parsePatch(text){
  }
  return {added,scan,partial:text.length>MAX_PATCH};
 }
+
+const MAX_ADDED_SOURCE_BYTES=160000,MAX_ADDED_SOURCE_LINES=10000;
+const {createHash}=require('node:crypto');
+// Missing/truncated GitHub diffs are only recoverable when the entire ADDED
+// blob can be independently attested at the exact immutable PR HEAD.
+// Modified/deleted files always fail closed without a complete diff.
+function missingAddedPatch(item){
+ if(item?.status!=='added')return false;
+ if(typeof item.patch!=='string')return true;
+ const parsed=parsePatch(item.patch);
+ return parsed.partial||parsed.added.length!==item.additions;
+}
+function recoverAddedPatch(item,entry){
+ const path=String(item?.filename||'');
+ if(!missingAddedPatch(item)||!production(path)||path.includes('..')||
+    !/^[A-Za-z0-9_./-]+$/.test(path)||!entry||entry.type!=='file'||
+    entry.encoding!=='base64'||typeof entry.content!=='string'||
+    !Number.isSafeInteger(entry.size)||entry.size>MAX_ADDED_SOURCE_BYTES||
+    entry.size<0||typeof item.sha!=='string'||
+    !/^[0-9a-f]{40}$/.test(item.sha)||entry.sha!==item.sha)return null;
+ if(!Number.isSafeInteger(item.additions)||item.additions<0||
+    !Number.isSafeInteger(item.changes)||item.deletions!==0||
+    item.changes!==item.additions)return null;
+ const bytes=Buffer.from(entry.content,'base64');
+ if(bytes.length!==entry.size)return null;
+ const actual=createHash('sha1').update('blob '+bytes.length+'\0')
+  .update(bytes).digest('hex');
+ if(actual!==item.sha)return null;
+ const content=bytes.toString('utf8');
+ if(!Buffer.from(content,'utf8').equals(bytes)||content.includes('\0'))return null;
+ const rows=content.split('\n');
+ if(rows.at(-1)==='')rows.pop();
+ if(rows.length!==item.additions||rows.length>MAX_ADDED_SOURCE_LINES)return null;
+ const patch='@@ -0,0 +1,'+rows.length+' @@\n'+rows.map(x=>
+  '+'+(x.endsWith('\r')?x.slice(0,-1):x)).join('\n')+'\n';
+ if(Buffer.byteLength(patch,'utf8')>MAX_PATCH)return null;
+ return patch;
+}
+
 function production(path){
  return /^(app\/src\/main\/|supabase\/functions\/|\.github\/(?:workflows|scripts)\/|control-center\/)/.test(path)
  && !/(\.md$|\/test\/|\/tests\/|Test\.(kt|java)$|\.(?:test|spec|benchmark)\.(?:cjs|mjs|js|ts|jsx|tsx)$|(?:^|\/)ultra_sentinel_benchmark\.cjs$)/i.test(path);
@@ -269,4 +308,4 @@ function markdown(result){
  lines.push('','Sin auto-merge ni auto-aprobación. Exigir pruebas y revisiones completas.');
  return lines.join('\n').slice(0,58000);
 }
-module.exports={analyze,parsePatch,markdown,VERSION};
+module.exports={recoverAddedPatch,missingAddedPatch,analyze,parsePatch,markdown,VERSION};
