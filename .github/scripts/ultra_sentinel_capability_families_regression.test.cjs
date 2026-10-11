@@ -539,7 +539,102 @@ const codexCarrierFamilyBenign=[
   "function f(x=eval(userPatch)){}f(1);const array=[42,{safe:()=>1}];array[0]"
  ]
 ];
+// Codex: maybe-undefined defaults, conditional aliases, getters and nested arrays.
+const codexUndefinedAndAccessorDangerous=[
+ [
+  "P1 conditionally undefined array default",
+  "const [x=eval(userPatch)]=[flag?(()=>1):undefined];x()"
+ ],
+ [
+  "P1 opposite conditional undefined default",
+  "const [x=eval(userPatch)]=[flag?undefined:(()=>1)];x()"
+ ],
+ [
+  "P1 untrusted result array default",
+  "const [x=eval(userPatch)]=[getValue()];x()"
+ ],
+ [
+  "P1 unknown identifier array default",
+  "const [x=eval(userPatch)]=[maybe];x()"
+ ],
+ [
+  "P1 conditional function parameter default",
+  "function f(x=eval(userPatch)){};f(flag?(()=>1):undefined)"
+ ],
+ [
+  "P1 unknown argument parameter default",
+  "function f(x=eval(userPatch)){};f(maybe)"
+ ],
+ [
+  "P1 function conditional aliases",
+  "function bad(g){g.eval(userPatch)}function safe(){}const f=flag?bad:safe;f(globalThis)"
+ ],
+ [
+  "P1 reversed conditional aliases",
+  "function bad(g){g.eval(userPatch)}function safe(){}const f=flag?safe:bad;f(globalThis)"
+ ],
+ [
+  "P1 logical function alias",
+  "function bad(g){g.eval(userPatch)}const f=flag||bad;f(globalThis)"
+ ],
+ [
+  "P1 factory returning conditional aliases",
+  "function bad(g){g.eval(userPatch)}function safe(){}function make(){return flag?bad:safe}make()(globalThis)"
+ ],
+ [
+  "P1 getter undefined default",
+  "const {x=eval(userPatch)}={get x(){return undefined}};x()"
+ ],
+ [
+  "P1 getter conditional default",
+  "const {x=eval(userPatch)}={get x(){return flag?(()=>1):undefined}};x()"
+ ],
+ [
+  "P1 getter global capability result",
+  "const obj={get x(){return globalThis}};obj.x.eval(userPatch)"
+ ],
+ [
+  "P1 setter-only missing value default",
+  "const obj={set x(v){}};const {x=eval(userPatch)}=obj;x()"
+ ],
+ [
+  "P1 escaped default array callback",
+  "function f(x=eval(userPatch)){};f(1);[f].forEach(cb=>cb())"
+ ]
+];
+const codexUndefinedAndAccessorBenign=[
+ [
+  "P2 inner default in nested array assignment",
+  "const [[x=eval(userPatch)]=[]]=[[()=>1]];x()"
+ ],
+ [
+  "P2 inner default in nested function array",
+  "const [[x=eval(userPatch)]=[]]=[[function(){return 1}]];x()"
+ ],
+ [
+  "P2 array default conditional safe branches",
+  "const [x=eval(userPatch)]=[flag?(()=>1):(()=>2)];x()"
+ ],
+ [
+  "P2 parameter default conditional safe branches",
+  "function f(x=eval(userPatch)){};f(flag?(()=>1):(()=>2))"
+ ],
+ [
+  "P2 array default with null literal",
+  "const [x=eval(userPatch)]=[null];x===null"
+ ],
+ [
+  "P2 array default with false literal",
+  "const [x=eval(userPatch)]=[false];x===false"
+ ],
+ [
+  "P2 array default with zero literal",
+  "const [x=eval(userPatch)]=[0];x===0"
+ ]
+];
 dangerous.push(...codexNewDangerous);
+dangerous.push(...codexUndefinedAndAccessorDangerous);
+benign.push(...codexUndefinedAndAccessorBenign);
 dangerous.push(...codexCarrierFamilyDangerous);
 benign.push(...codexCarrierFamilyBenign);
 dangerous.push(...codexEscapeFamilyDangerous);
