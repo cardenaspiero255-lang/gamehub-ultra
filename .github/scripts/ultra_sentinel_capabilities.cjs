@@ -522,7 +522,7 @@ function findCapabilities(ast){
    if(node?.type==='MemberExpression')return descendsFromArray(node.object);
    return false;
   };
-  let uncertain=false;
+  let uncertain=false,unknownAliasWrite=false;
   function initialObjectPatternAssignment(alias,ref){
    // A single assignment to a previously uninitialized lexical let
    // destructuring target is its first known value, not a later mutation.
@@ -551,7 +551,9 @@ function findCapabilities(ast){
   }
   for(const alias of aliases)
    if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init&&
-      !initialObjectPatternAssignment(alias,ref)))uncertain=true;
+      !initialObjectPatternAssignment(alias,ref))){
+    unknownAliasWrite=true;uncertain=true;
+   }
   const readonly=new Set(['at','slice','concat','includes','indexOf',
    'lastIndexOf','join','keys','values','entries','findIndex','toString']);
   traverse(ast,(node,parent,key)=>{
@@ -619,7 +621,8 @@ function findCapabilities(ast){
    }
   });
   stableArrayCache.set(variable,uncertain);
-  if(uncertain)throw Error('Array callback slots may be mutated');
+  if(uncertain)throw Error('Array callback slots may be mutated'+
+   (unknownAliasWrite?' (unknown lexical write)':' (carrier or receiver)'));
  }
  function knownArraySlots(node,depth=0,seen=new Set()){
   if(!node)return null;
