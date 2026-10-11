@@ -1,0 +1,134 @@
+name: Ultra Sentinel SSS - Verified Post-CI Evidence
+# A fresh read-only attestation is emitted after Android Build or Coverage ends.
+# It never checks out PR source, posts comments, deploys code or auto-merges.
+on:
+  workflow_run:
+    workflows: ['Android build', 'Unit Test Coverage']
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: ultra-sentinel-post-ci-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  post-ci-evidence:
+    name: Recheck trusted PR CI provenance
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout verified engine from trusted main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+          persist-credentials: false
+      - name: Test integrity verifier
+        run: |
+          set -euo pipefail
+          node --check .github/scripts/ultra_sentinel_frontier_integrity.cjs
+          node --test .github/scripts/ultra_sentinel_frontier_integrity.test.cjs
+      - name: Cross-check CI and write immutable report
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8 Node 24
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const fs=require('node:fs'),path=require('node:path');
+            const {attestCi}=require(path.resolve('.github/scripts/ultra_sentinel_frontier_integrity.cjs'));
+            const {owner,repo}=context.repo;
+            const run=context.payload.workflow_run;
+            if(run?.event!=='pull_request'||run?.head_repository?.full_name!==owner+'/'+repo||
+               !/^[a-f0-9]{40}$/i.test(run?.head_sha||'')){
+              core.setFailed('Untrusted or invalid workflow_run provenance');return;
+            }
+            const report={schema:'ultra-sentinel-post-ci/v1',sha:run.head_sha,sourceRunId:run.id,prs:[]};
+            // PR association is obtained from GitHub itself, never from an untrusted body.
+            const {data: links}=await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,repo,commit_sha:run.head_sha,per_page:20
+            });
+            for(const linked of (Array.isArray(links)?links:[]).slice(0,20)){
+              const n=Number(linked.number);
+              if(!Number.isSafeInteger(n)||n<1)continue;
+              const {data: pr}=await github.rest.pulls.get({owner,repo,pull_number:n});
+              if(pr.state!=='open'||pr.base?.ref!==context.payload.repository?.default_branch||
+                 pr.head?.repo?.full_name!==owner+'/'+repo||
+                 pr.head.sha !== run.head_sha)continue;
+              let trustedWorkflows=null,changedFiles=[],changedFilesComplete=false;
+              try{
+                const [android,coverage,prFiles]=await Promise.all([
+                  github.rest.actions.getWorkflow({owner,repo,workflow_id:'android.yml'}),
+                  github.rest.actions.getWorkflow({owner,repo,workflow_id:'coverage.yml'}),
+                  github.paginate(github.rest.pulls.listFiles,{owner,repo,pull_number:n,per_page:100})
+                ]);
+                trustedWorkflows={
+                  'Android build':{id:android.data.id,path:android.data.path},
+                  'Unit Test Coverage':{id:coverage.data.id,path:coverage.data.path}
+                };
+                changedFiles=prFiles.map(f=>({filename:f.filename,status:f.status,previous_filename:f.previous_filename}));
+                changedFilesComplete=prFiles.length===pr.changed_files;
+              }catch(error){
+                core.warning('Trusted CI workflow identity unavailable ('+(error.status||'API error')+'); no approval inferred.');
+              }
+              let ciRuns=[],apiComplete=false;
+              try{
+                const args={owner,repo,head_sha:pr.head.sha,per_page:100};
+                const {data: first}=await github.rest.actions.listWorkflowRunsForRepo(args);
+                const total=first.total_count;
+                if(Number.isSafeInteger(total)&&total>=0&&total<=1000&&Array.isArray(first.workflow_runs)){
+                  ciRuns=first.workflow_runs.slice();
+                  apiComplete=true;
+                  for(let page=2;page<=Math.ceil(total/100);page++){
+                    const {data: next}=await github.rest.actions.listWorkflowRunsForRepo({...args,page});
+                    if(next.total_count!==total||!Array.isArray(next.workflow_runs)){
+                      apiComplete=false;break;
+                    }
+                    ciRuns.push(...next.workflow_runs);
+                  }
+                  apiComplete=apiComplete&&ciRuns.length===total&&
+                    new Set(ciRuns.map(x=>x?.id)).size===total;
+                }
+              }catch(error){
+                core.warning('CI evidence unavailable ('+(error.status||'API error')+'); no approval inferred.');
+              }
+              const ci=attestCi({sha:pr.head.sha,repo:owner+'/'+repo,runs:ciRuns,apiComplete,
+                trustedWorkflows,changedFiles,changedFilesComplete});
+              // A changing PR must not be certified using an older SHA.
+              const {data: latest}=await github.rest.pulls.get({owner,repo,pull_number:n});
+              if(latest.state!=='open'||latest.head.sha!==run.head_sha){
+                core.warning('PR changed during CI attestation; dropping stale evidence');continue;
+              }
+              report.prs.push({number:n,ci});
+              // A successful workflow check must represent a real attestation,
+              // not merely successful execution of advisory reporting code.
+              // The first of two CI completions can be WAITING; the next
+              // workflow_run is responsible for issuing a fresh PASS check.
+              if(ci.status!=='PASS')core.setFailed(
+                'CI attestation for PR #'+n+' is '+ci.status+
+                '; Android Build and Coverage must both be verified for the same SHA.'
+              );
+            }
+            const folder=path.join(process.env.RUNNER_TEMP,'ultra-sentinel-post-ci');
+            fs.mkdirSync(folder,{recursive:true});
+            fs.writeFileSync(path.join(folder,'verified-ci.json'),JSON.stringify(report,null,2)+'\n',
+              {encoding:'utf8',mode:0o600});
+            await core.summary.addHeading('Ultra Sentinel SSS — Post-CI provenance')
+              .addRaw('Source run ID: '+run.id+'; immutable SHA: '+run.head_sha+'; linked PRs: '+
+                report.prs.length+'. CI status is advisory until both workflows finish. '+
+                'No automated merge or approval.').write();
+            if(!report.prs.length)core.setFailed('No open same-SHA PR attested; do not report green CI evidence.');
+      - name: Upload read-only SHA-scoped evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 Node 24
+        with:
+          name: ultra-sentinel-post-ci-${{ github.event.workflow_run.id }}
+          path: ${{ runner.temp }}/ultra-sentinel-post-ci/verified-ci.json
+          if-no-files-found: error
+          retention-days: 7

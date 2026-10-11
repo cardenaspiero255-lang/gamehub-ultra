@@ -17,7 +17,7 @@ const CASES=Object.freeze([
  ['report','report-limit-disabled',"analysis.findings.slice(0,10)","analysis.findings.slice(0,1000)"],
  ['core','missing-sha-undetected',"const sha=/^[0-9a-f]{40}$/i.test(config.sha||'')?config.sha:'unknown';","const sha='unknown';"],
  ['core','coverage-no-files-disregarded',"if(!list.length){partial=true;","if(!list.length){partial=false;"],
- ['core','all-patches-truncated',"const MAX_FILES=300,MAX_PATCH=100000;","const MAX_FILES=300,MAX_PATCH=3;"],
+ ['core','all-patches-truncated',"const MAX_FILES=300,MAX_PATCH=320000;","const MAX_FILES=300,MAX_PATCH=3;"],
  ['core','test-gap-rule-disabled',"if(androidTouched.length&&!testTouched.length)","if(false)"],
  ['orchestrator','unsafe-path-gate-disabled',"if(!isPath(filename))return","if(false)return"],
  ['orchestrator','wrong-sha-judge-disabled',"if(options.sha&&proposal.sha!==options.sha)","if(false&&proposal.sha!==options.sha)"],

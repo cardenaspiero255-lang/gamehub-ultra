@@ -81,6 +81,31 @@ function buildSanitizedReport(raw,options={}){
    'CI provenance for a release must be independently verified before association']
  };
 }
+function renderActionsSummary(report){
+ const allowed=new Set(['INSUFFICIENT_EVIDENCE','WATCH','INVESTIGATE_ROLLBACK']);
+ const status=report?.assessment?.decision;
+ const count=report?.snapshotCount;
+ const counts=report?.summary?.counts;
+ if(!allowed.has(status)||!Number.isSafeInteger(count)||count<0||count>100||
+    !counts||typeof counts!=='object')
+  throw Error('Invalid sanitized Sentry report');
+ for(const k of ['fatal','error','warning','info','unknown'])
+  if(!Number.isSafeInteger(counts[k])||counts[k]<0||counts[k]>1e9)
+   throw Error('Invalid Sentry aggregate counts');
+ return [
+  '## Ultra Sentinel · Sentry (sanitized aggregates)',
+  '',
+  '- Window: 24h',
+  '- Valid deduplicated issues: '+count,
+  '- Aggregate observations: '+['fatal','error','warning','info','unknown'].map(k=>k+': '+counts[k]).join(', '),
+  '- Decision: '+status,
+  '- GitHub run attestation: '+(['VERIFIED','PARTIAL','INCOMPLETE','NOT_APPLICABLE'].includes(report?.attestation?.status)?
+     report.attestation.status:'UNKNOWN'),
+  '',
+  'Incident metadata only; not a confirmed crash root cause.',
+  'No automatic rollback. No raw titles, audio, stack traces, personal data or secrets are exported.'
+ ].join('\n')+'\n';
+}
 async function main(env=process.env,clients={}){
  const org=env.SENTRY_ORG_SLUG,project=env.SENTRY_PROJECT_SLUG,token=env.SENTRY_AUTH_TOKEN;
  if(env.ULTRA_SENTINEL_INCIDENTS_CONSENT!=='true')throw Error('Incident monitoring requires explicit consent');
@@ -88,7 +113,9 @@ async function main(env=process.env,clients={}){
  const raw=await (clients.fetchIssues||fetchIssues)({org,project,token});
  // Only GitHub's own API can attest the latest CI results; no client-supplied
  // status can authorize a release correlation or automated rollback.
- const releaseShas=[...new Set(acceptedReleaseIssues(raw).map(releaseSha).filter(Boolean))].slice(0,4);
+ const releaseCandidates=[...new Set(acceptedReleaseIssues(raw).map(releaseSha).filter(Boolean))];
+ const releaseShas=releaseCandidates.slice(0,4);
+ const omittedLookups=releaseCandidates.length-releaseShas.length;
  const attestedRuns=[];
  let failedLookups=0;
  for(const sha of releaseShas){
@@ -102,15 +129,29 @@ async function main(env=process.env,clients={}){
   }
  }
  const report=buildSanitizedReport(raw,{consent:true,attestedRuns});
+ // A completed API lookup is not proof of verified release CI. In particular,
+ // zero releases or an empty authenticated result must never print COMPLETE.
+ const fullyVerified=releaseShas.filter(sha=>report.releaseHealth[sha]?.status==='CI_VERIFIED');
+ const status=failedLookups||omittedLookups?'PARTIAL':
+  releaseShas.length===0?'NOT_APPLICABLE':
+  fullyVerified.length===releaseShas.length?'VERIFIED':'INCOMPLETE';
  report.attestation={
-  status:failedLookups?'PARTIAL':'COMPLETE',
-  verifiedLookups:releaseShas.length-failedLookups,failedLookups
+  status,verifiedLookups:releaseShas.length-failedLookups,failedLookups,
+  omittedLookups,verifiedReleaseCount:fullyVerified.length
  };
  if(failedLookups)report.cautions.push(
   'GitHub CI attestation unavailable for some releases; no verification inferred for those releases'
  );
+ if(omittedLookups)report.cautions.push(
+  'Release lookup budget exceeded; some release SHAs were not assessed'
+ );
+ if(status==='INCOMPLETE')report.cautions.push(
+  'GitHub CI lookups completed but did not establish trusted Android Build and Coverage for every release'
+ );
  const destination=path.join(env.RUNNER_TEMP,'ultra-sentinel-incident-summary.json');
  fs.writeFileSync(destination,JSON.stringify(report,null,2)+'\n',{encoding:'utf8',mode:0o600,flag:'wx'});
+ if(env.GITHUB_STEP_SUMMARY&&path.isAbsolute(env.GITHUB_STEP_SUMMARY))
+  fs.appendFileSync(env.GITHUB_STEP_SUMMARY,renderActionsSummary(report),{encoding:'utf8'});
  console.log('Ultra Sentinel: '+report.snapshotCount+' sanitized issues assessed; decision='+report.assessment.decision);
  console.log('CI verification: '+report.attestation.status+'; unavailable lookups='+failedLookups);
  console.log('Privacy: raw Sentry issue content was not persisted.');
@@ -122,4 +163,4 @@ if(require.main===module){
   process.exitCode=1;
  });
 }
-module.exports={HOST,MAX_BODY,apiPath,fetchIssues,buildSanitizedReport,main};
+module.exports={HOST,MAX_BODY,apiPath,fetchIssues,buildSanitizedReport,renderActionsSummary,main};

@@ -14,15 +14,29 @@ function apiPath(sha){
  if(typeof sha!=='string'||!SHA.test(sha))throw Error('Full immutable SHA required');
  return '/repos/'+REPO+'/actions/runs?head_sha='+sha.toLowerCase()+'&per_page=100';
 }
-function validateRun(run,sha){
+const TRUSTED_PATHS=Object.freeze({'Android build':'.github/workflows/android.yml',
+ 'Unit Test Coverage':'.github/workflows/coverage.yml'});
+const TRUSTED_BLOBS=Object.freeze({
+ 'Android build':'418287ceb11221f1879ee81cbef40c4b008c4f04',
+ 'Unit Test Coverage':'5ccf1c5de322a29c6e5b1d884ea659d310efa83c'
+});
+function validateRun(run,sha,trustedWorkflows){
  if(!run||typeof run!=='object'||!SHA.test(sha||'')||
   run.head_sha?.toLowerCase()!==sha.toLowerCase()||
   run.status!=='completed'||run.conclusion!=='success'||
-  !NAMES.has(run.name)||!['push','workflow_dispatch'].includes(run.event)||
+  !NAMES.has(run.name)||!trustedWorkflows||
+  !Number.isSafeInteger(trustedWorkflows[run.name]?.id)||
+  trustedWorkflows[run.name].id<1||
+  trustedWorkflows[run.name].path!==TRUSTED_PATHS[run.name]||
+  trustedWorkflows[run.name].blobSha!==TRUSTED_BLOBS[run.name]||
+  run.workflow_id!==trustedWorkflows[run.name].id||
+  run.path!==trustedWorkflows[run.name].path||
+  !['push','workflow_dispatch'].includes(run.event)||
   run.head_branch!=='main'||
   run.repository?.full_name!==REPO||
   (run.head_repository?.full_name && run.head_repository.full_name!==REPO)||
   !Number.isSafeInteger(run.id)||run.id<=0||
+  !Number.isSafeInteger(run.run_number)||run.run_number<1||
   !Number.isSafeInteger(run.run_attempt)||run.run_attempt<1||
   run.html_url!=='https://github.com/'+REPO+'/actions/runs/'+run.id)return null;
  return Object.freeze({sha:sha.toLowerCase(),workflow:run.name,runId:run.id,
@@ -67,10 +81,8 @@ function assessRelease(sha,runs,consent){
  return {status:ready?'CI_VERIFIED':'INCOMPLETE',safeToRollback:false,
   verifiedWorkflows:[...names].sort()};
 }
-async function fetchVerifiedRuns({sha,token,request=https.request}){
- const uri=apiPath(sha);
- if(typeof token!=='string'||token.length<12||/[\r\n]/.test(token))
-  throw Error('Read-only GitHub token is required');
+
+function readGithubJSON({uri,token,request=https.request}){
  return new Promise((resolve,reject)=>{
   let settled=false;
   const fail=reason=>{if(!settled){settled=true;reject(Error(reason))}};
@@ -91,9 +103,7 @@ async function fetchVerifiedRuns({sha,token,request=https.request}){
     if(settled)return;
     try{
      const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));
-     if(!Array.isArray(body?.workflow_runs))throw Error('unexpected response');
-     settled=true;
-     resolve(body.workflow_runs.slice(0,100).map(x=>validateRun(x,sha)).filter(Boolean));
+     settled=true;resolve(body);
     }catch{fail('GitHub CI response invalid')}
    });
    res.on('error',()=>fail('GitHub CI response failed'));
@@ -103,4 +113,51 @@ async function fetchVerifiedRuns({sha,token,request=https.request}){
   req.end();
  });
 }
-module.exports={apiPath,validateRun,releaseSha,attachVerifiedReleases,assessRelease,fetchVerifiedRuns,REPO};
+async function fetchVerifiedRuns({sha,token,request=https.request}){
+ const uri=apiPath(sha);
+ if(typeof token!=='string'||token.length<12||/[\r\n]/.test(token))
+  throw Error('Read-only GitHub token is required');
+ const trustedWorkflows={};
+ for(const [name,expected] of Object.entries(TRUSTED_PATHS)){
+  const short=expected.slice('.github/workflows/'.length);
+  const api='/repos/'+REPO+'/actions/workflows/'+short;
+  const response=await readGithubJSON({uri:api,token,request});
+  if(!Number.isSafeInteger(response?.id)||response.id<1||response.path!==expected)
+   throw Error('GitHub CI workflow identity unverified');
+  const blob=await readGithubJSON({
+   uri:'/repos/'+REPO+'/contents/'+expected+'?ref='+sha.toLowerCase(),
+   token,request
+  });
+  if(blob?.type!=='file'||blob.sha!==TRUSTED_BLOBS[name]||blob.path!==expected)
+   throw Error('GitHub workflow content differs from trusted reviewed baseline');
+  trustedWorkflows[name]={id:response.id,path:response.path,blobSha:blob.sha};
+ }
+ const body=await readGithubJSON({uri,token,request});
+ if(!Array.isArray(body?.workflow_runs)||!Number.isSafeInteger(body.total_count)||
+  body.total_count!==body.workflow_runs.length||body.workflow_runs.length>100)
+  throw Error('GitHub CI run pagination incomplete');
+ // Validate run recency BEFORE filtering success. Otherwise a prior green
+ // run could mask a newer red/in-progress execution of the exact same SHA.
+ // If any matching run lacks trustworthy ordering metadata, fail closed for
+ // that workflow rather than retaining a possibly stale green run.
+ const newest=new Map(),unorderable=new Set();
+ for(const candidate of body.workflow_runs){
+  if(!NAMES.has(candidate?.name)||typeof candidate.head_sha!=='string'||
+     candidate.head_sha.toLowerCase()!==sha.toLowerCase())continue;
+  const name=candidate.name;
+  if(!Number.isSafeInteger(candidate.run_number)||candidate.run_number<1||
+     !Number.isSafeInteger(candidate.run_attempt)||candidate.run_attempt<1||
+     !Number.isSafeInteger(candidate.id)||candidate.id<1){
+   unorderable.add(name);continue;
+  }
+  const old=newest.get(name);
+  if(!old||candidate.run_number>old.run_number||
+     (candidate.run_number===old.run_number&&candidate.run_attempt>old.run_attempt)||
+     (candidate.run_number===old.run_number&&candidate.run_attempt===old.run_attempt&&
+      candidate.id>old.id))newest.set(name,candidate);
+ }
+ return [...NAMES].filter(name=>!unorderable.has(name))
+  .map(name=>validateRun(newest.get(name),sha,trustedWorkflows)).filter(Boolean);
+}
+
+module.exports={apiPath,validateRun,releaseSha,attachVerifiedReleases,assessRelease,fetchVerifiedRuns,REPO,TRUSTED_BLOBS};
