@@ -689,6 +689,38 @@ const codexBindFamilyBenign=[
   "function f(x=eval(userPatch),y=eval(userPatch)){};f(1,2);f.bind(null,42,43)()"
  ]
 ];
+// Codex HEAD 5f54e72d42: five reproduced P1 families.
+// Security assertions demand a PROVEN sink, not merely an INCOMPLETE parse.
+const codexFiveNewDangerous=[
+ ["P1 bound call retains prebound capability","function f(g){g.eval('attack')}f.bind(null,globalThis).call(null)"],
+ ["P1 bound apply retains prebound capability","function f(g){g.eval('attack')}f.bind(null,globalThis).apply(null,[])"],
+ ["P1 bound call through lexical alias","function f(g){g.eval('attack')}const b=f.bind(null,globalThis);b.call(null)"],
+ ["P1 bound apply through lexical alias","function f(g){g.eval('attack')}const b=f.bind(null,globalThis);b.apply(null,[])"],
+ ["P1 nested bound call retains arguments","function f(a,g){g.eval('attack')}f.bind(null,1).bind(null,globalThis).call(null)"],
+ ["P1 constant computed constructor extraction","const key='constructor';const C=(()=>{})[key];C('attack')()"],
+ ["P1 concatenated computed constructor key","const key='con'+'structor';const C=function(){};C[key]('attack')()"],
+ ["P1 array projected into object destructuring","function f(g){g.eval('attack')}const a=[f];const {0:b}=a;b(globalThis)"],
+ ["P1 inline array projected into object destructuring","function f(g){g.eval('attack')}const {0:b}=[f];b(globalThis)"],
+ ["P1 array numeric string projected callback","function f(g){g.eval('attack')}const a=[f];const {'0':b}=a;b(globalThis)"],
+ ["P1 mutable array callback","function f(g){g.eval('attack')}let a=[f];a[0](globalThis)"],
+ ["P1 mutable array callback alias","function f(g){g.eval('attack')}let a=[f];const b=a;b[0](globalThis)"],
+ ["P1 destructured bound array callback","function f(g){g.eval('attack')}const [b]=[f.bind(null,globalThis)];b()"],
+ ["P1 destructured bound array call","function f(g){g.eval('attack')}const [b]=[f.bind(null,globalThis)];b.call(null)"],
+ ["P1 destructured bound array apply","function f(g){g.eval('attack')}const [b]=[f.bind(null,globalThis)];b.apply(null,[])"]
+];
+const codexFiveNewBenign=[
+ ["P2 bound call benign value","function f(g){g.eval(42)}f.bind(null,{eval:x=>x}).call(null)"],
+ ["P2 bound apply benign value","function f(g){g.eval(42)}f.bind(null,{eval:x=>x}).apply(null,[])"],
+ ["P2 projected array benign callback","function f(g){g.eval(42)}const a=[f];const {0:b}=a;b({eval:x=>x})"],
+ ["P2 mutable array benign callback","function f(g){g.eval(42)}let a=[f];a[0]({eval:x=>x})"],
+ ["P2 destructured bound benign callback","function f(g){g.eval(42)}const [b]=[f.bind(null,{eval:x=>x})];b()"],
+ ["P2 computed local constructor property","const key='constructor';const o={constructor:()=>42};o[key]()"]
+];
+for(const [name,source] of codexFiveNewDangerous)
+ test(name+' proven sink is BLOCKER',()=>assert.equal(result(source),'BLOCKER',name));
+for(const [name,source] of codexFiveNewBenign)
+ test(name+' does not block local harmless value',()=>assert.equal(result(source),'CLEAR',name));
+
 dangerous.push(...codexNewDangerous);
 dangerous.push(...codexBindFamilyDangerous);
 benign.push(...codexBindFamilyBenign);
