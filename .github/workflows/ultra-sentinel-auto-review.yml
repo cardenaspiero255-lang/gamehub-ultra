@@ -59,7 +59,7 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             const path = require("node:path");
-            const {analyze, markdown} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
+            const {analyze, markdown, recoverAddedPatch, missingAddedPatch} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const {buildGraph} = require(path.resolve(".github/scripts/ultra_sentinel_causal.cjs"));
             const {annotate} = require(path.resolve(".github/scripts/ultra_sentinel_feedback.cjs"));
@@ -117,6 +117,28 @@ jobs:
                 }catch(error){
                   core.warning("Kotlin/Java full-file source unavailable ("+
                     (error.status||"API error")+"); context stays INCOMPLETE.");
+                }
+              }));
+            }
+
+            // Recover large GitHub-omitted ADDED patches only when the exact
+            // immutable blob SHA, byte count and addition count all match.
+            // Modified/unavailable evidence remains incomplete, never green.
+            const addedTargets=evidenceFiles.filter(item=>
+              item.status==='added'&&missingAddedPatch(item)&&
+              /^(?:app\/src\/main\/|\.github\/(?:scripts|workflows)\/|control-center\/|supabase\/functions\/)/.test(item.filename||'')&&
+              !String(item.filename||'').includes('..')).slice(0,24);
+            for(let i=0;i<addedTargets.length;i+=4){
+              await Promise.all(addedTargets.slice(i,i+4).map(async item=>{
+                try{
+                  const {data:body}=await github.rest.repos.getContent({
+                    owner,repo,path:item.filename,ref:pr.head.sha
+                  });
+                  const patch=recoverAddedPatch(item,body);
+                  if(patch)item.patch=patch;
+                  else core.warning('Added file proof missing; diff remains INCOMPLETE: '+item.filename);
+                }catch(error){
+                  core.warning('Added source fetch unavailable ('+(error.status||'API error')+'); fail closed.');
                 }
               }));
             }
