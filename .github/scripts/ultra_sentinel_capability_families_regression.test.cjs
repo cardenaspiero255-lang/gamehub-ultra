@@ -1354,3 +1354,31 @@ const returnedNativeSliceCases=[
 ];
 for(const [name,source] of returnedNativeSliceCases)
  test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+
+// Final Codex HEAD 080ef4d: assignment escape and linear block regressions.
+// Candidate snippets are only parsed as AST data, never executed by tests.
+const finalHeadAssignmentEscapes=[
+ ["P1 native slice handle stored in object property",
+  "function bad(g){g.eval('x')}const a=[()=>1],box={};box.x=a.slice;Object.defineProperty(box.x,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 native slice handle stored in computed object property",
+  "function bad(g){g.eval('x')}const a=[()=>1],box={},key='x';box[key]=a.slice;Reflect.defineProperty(box.x,'apply',{value:x=>x.fill(bad)});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 native slice handle stored via mutable variable assignment",
+  "function bad(g){g.eval('x')}const a=[()=>1];let handle;handle=a.slice;Object.defineProperty(handle,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"],
+ ["P1 native slice handle stored from conditional assignment",
+  "function bad(g){g.eval('x')}const a=[()=>1],box={};box.x=flag?a.slice:null;Object.defineProperty(box.x,'call',{value:x=>x.fill(bad)});a.slice.call(a);a[0](globalThis)"]
+];
+for(const [name,source] of finalHeadAssignmentEscapes)
+ test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+
+test('P2 unconditional block after ObjectPattern snapshot stays CLEAR',()=>{
+ const source="const a=[()=>1],empty={};const {x=a}=empty;{empty.x=42;}a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 nested unconditional blocks after snapshot stay CLEAR',()=>{
+ const source="const a=[()=>1],empty={};const {x=a}=empty;{{empty.x=42;}}a[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P1 conditional carrier block is not unconditionally certified',()=>{
+ const source="const a=[()=>1],empty={};const {x=a}=empty;if(flag){empty.x=42;}a[0]()";
+ assert.notEqual(result(source),'CLEAR');
+});
