@@ -77,3 +77,22 @@ test('CI evidence collects bounded pages instead of silently ignoring 101st reco
  assert.match(wf,/total<=1000/);
  assert.match(wf,/total_count!==total/);
 });
+
+test('trusted automatic reviewer fetches bounded immutable Kotlin and Java sources before analysis',()=>{
+ const wf=workflow();
+ const start=wf.indexOf('const evidenceFiles=files.map(');
+ const target=wf.indexOf('const languageTargets=evidenceFiles.filter(',start);
+ const read=wf.indexOf('github.rest.repos.getContent(',target);
+ const analyze=wf.indexOf('const evidence = analyze(evidenceFiles',read);
+ assert.ok(start>=0&&target>start&&read>target&&analyze>read,
+  'full source must be fetched before the analyzer inspects PR diff hunks');
+ const excerpt=wf.slice(target,analyze);
+ assert.match(excerpt,/\\\.\\\(\\\?:kt\\\|java\\\)/,
+  'Kotlin and Java production files must both be included');
+ assert.match(excerpt,/ref:pr\\.head\\.sha/,
+  'only fetch source at the immutable PR HEAD');
+ assert.match(excerpt,/size>160000/,
+  'preserve the source-size bound');
+ assert.match(excerpt,/item\\.fullSource=bytes\\.toString\\("utf8"\\)/);
+ assert.match(excerpt,/item\\.status!=="removed"/);
+});
