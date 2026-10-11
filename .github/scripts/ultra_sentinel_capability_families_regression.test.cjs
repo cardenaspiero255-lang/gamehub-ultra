@@ -60,6 +60,46 @@ const dangerous=[
  [
   "P1: function assigned after declaration",
   "function invoke(g){g.eval(userPatch)} let f;f=invoke;f(globalThis)"
+ ],
+ [
+  "P1: logical AND capability",
+  "const enabled=true;const g=enabled && globalThis;g.eval(userPatch)"
+ ],
+ [
+  "P1: logical OR capability",
+  "const g=flag || globalThis;g.eval(userPatch)"
+ ],
+ [
+  "P1: nullish-coalescing capability",
+  "const g=flag ?? globalThis;g.eval(userPatch)"
+ ],
+ [
+  "P1: unknown computed key with global capability",
+  "const key='x';const box={x:globalThis};box[key].eval(userPatch)"
+ ],
+ [
+  "P1: immediate function expression invocation",
+  "(function(g){g.eval(userPatch)})(globalThis)"
+ ],
+ [
+  "P1: immediate arrow invocation",
+  "((g)=>g.eval(userPatch))(globalThis)"
+ ],
+ [
+  "P1: default object destructuring",
+  "const {x=globalThis}={};x.eval(userPatch)"
+ ],
+ [
+  "P1: default array destructuring",
+  "const [g=globalThis]=[];g.eval(userPatch)"
+ ],
+ [
+  "P1: default function parameter",
+  "function invoke(g=globalThis){g.eval(userPatch)}invoke()"
+ ],
+ [
+  "P1: declared function constructor",
+  "function f(){};const F=f.constructor;F(userPatch)()"
  ]
 ];
 const benign=[

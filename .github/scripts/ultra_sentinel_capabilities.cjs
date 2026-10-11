@@ -123,6 +123,18 @@ function findCapabilities(ast){
   }
   if(node.type==='AssignmentExpression'&&node.operator==='=')
    return propertyKinds(node.right,depth+1);
+  if(node.type==='LogicalExpression'){
+   const left=propertyKinds(node.left,depth+1),right=propertyKinds(node.right,depth+1);
+   if(!left&&!right)return null;
+   if(!left||!right)throw Error('Logical object provenance incomplete');
+   const joined=new Map(left);
+   for(const [key,capability] of right){
+    if(joined.has(key)&&joined.get(key)!==capability)
+     throw Error('Ambiguous logical object provenance');
+    joined.set(key,capability);
+   }
+   return joined;
+  }
   if(node.type==='ConditionalExpression'){
    const a=propertyKinds(node.consequent,depth+1),b=propertyKinds(node.alternate,depth+1);
    if(!a&&!b)return null;
@@ -151,6 +163,7 @@ function findCapabilities(ast){
     if(name!==null){const v=obj.get(name);return typeof v==='string'?v:
       v&&typeof v==='object'&&v.properties?'local-object':null;}
     if([...obj.values()].some(v=>v==='exec'))return 'exec';
+    if(obj.size>0)throw Error('Unknown computed property may expose a capability');
     return null;
    }
    if(root==='global'&&(EXEC.has(name)||(node.computed&&name===null)))return 'exec';
@@ -159,7 +172,9 @@ function findCapabilities(ast){
    if(root==='module'&&name==='require')return 'loader';
    if(root==='reflect'&&name==='get')return 'getter';
    if(root==='loader'&&name==='bind')return 'loader';
-   if(name==='constructor'&&['FunctionExpression','ArrowFunctionExpression'].includes(node.object?.type))return 'exec';
+   if(name==='constructor'&&(
+    ['FunctionExpression','ArrowFunctionExpression'].includes(node.object?.type)||
+    (node.object?.type==='Identifier'&&functions.has(symbol(node.object)))))return 'exec';
    return null;
   }
   if(node.type==='CallExpression'||node.type==='NewExpression'){
@@ -183,6 +198,14 @@ function findCapabilities(ast){
   if(node.type==='ArrayExpression'&&node.elements?.length){
    const entries=node.elements.map(n=>kind(n,depth+1));
    return entries[0]&&entries.every(v=>v===entries[0])?entries[0]:null;
+  }
+  if(node.type==='LogicalExpression'){
+   const left=kind(node.left,depth+1),right=kind(node.right,depth+1);
+   if(left===right)return left;
+   if(!left)return right;
+   if(!right)return left;
+   if(left==='local-object'&&right==='local-object')return left;
+   throw Error('Ambiguous logical capability provenance');
   }
   if(node.type==='ConditionalExpression'){
    const a=kind(node.consequent,depth+1),b=kind(node.alternate,depth+1);
@@ -230,7 +253,15 @@ function findCapabilities(ast){
    const name=p.type==='RestElement'?null:keyName(p);
    const found=properties&&name!==null?properties.get(name):null;
    let scalar=typeof found==='string'?found:null;
-   const nested=found&&typeof found==='object'?found.properties:null;
+   let nested=found&&typeof found==='object'?found.properties:null;
+   if(target?.type==='AssignmentPattern'){
+    const defaultCap=kind(target.right),defaultNested=propertyKinds(target.right);
+    if(!scalar&&!nested){
+     if(defaultNested)nested=defaultNested;
+     else if(defaultCap&&defaultCap!=='local-object')scalar=defaultCap;
+    }else if(defaultCap&&defaultCap!=='local-object'&&defaultCap!==scalar)
+     throw Error('Ambiguous destructuring default capability');
+   }
    if(!scalar&&!nested&&!properties){
     if(root==='global'&&(EXEC.has(name)||name===null))scalar='exec';
     else if(root==='vm'&&(VM.has(name)||name===null))scalar='exec';
@@ -253,7 +284,11 @@ function findCapabilities(ast){
  }
  function bind(pattern,value){
   if(!pattern)return false;
-  if(pattern.type==='AssignmentPattern')return bind(pattern.left,value);
+  if(pattern.type==='AssignmentPattern'){
+   const missing=!value||(value.type==='Identifier'&&value.name==='undefined')||
+    (value.type==='UnaryExpression'&&value.operator==='void');
+   return bind(pattern.left,missing?pattern.right:value);
+  }
   if(pattern.type==='MemberExpression'){
    const parent=propertyKinds(pattern.object),name=propName(pattern);
    if(!parent||name===null)throw Error('Unresolved property write provenance');
@@ -335,10 +370,14 @@ function findCapabilities(ast){
  }
  if(!aliasesConverged)throw Error('Function alias budget exceeded');
  traverse(ast,(node)=>{
-  if(node.type!=='CallExpression'||node.callee?.type!=='Identifier')return;
-  const fn=functions.get(symbol(node.callee));
-  if(fn){for(let i=0;i<(fn.params||[]).length;i++)
-   if(node.arguments?.[i])bindings.push([fn.params[i],node.arguments[i]]);}
+  if(node.type!=='CallExpression')return;
+  const callee=node.callee;
+  const fn=callee?.type==='Identifier'?functions.get(symbol(callee)):
+   ['FunctionExpression','ArrowFunctionExpression'].includes(callee?.type)?callee:null;
+  if(fn)for(let i=0;i<(fn.params||[]).length;i++){
+   const param=fn.params[i],argument=node.arguments?.[i]||null;
+   if(argument||param?.type==='AssignmentPattern')bindings.push([param,argument]);
+  }
  });
  let converged=false;
  for(let round=0;round<MAX_ROUNDS;round++){
