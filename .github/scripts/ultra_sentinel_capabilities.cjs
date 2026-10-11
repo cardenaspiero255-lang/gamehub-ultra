@@ -234,7 +234,9 @@ function findCapabilities(ast){
  function invocation(node,depth=0){
   let fn=resolveFunction(node.callee,depth+1),args=node.arguments||[],receiver=null;
   if(node.callee?.type==='MemberExpression'){
-   const name=propName(node.callee);
+   // call/apply can be reached through immutable computed string aliases.
+   // Use the same lexical method resolver as the bind escape guard.
+   const name=stableMethodName(node.callee);
    if(name==='call'||name==='apply'){
     const target=resolveFunction(node.callee.object,depth+1);
     if(target){
