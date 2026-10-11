@@ -468,7 +468,27 @@ test('trusted self-review understands the exact benign AST diagnostic and shard-
       locations:true,ranges:true});
     findCapabilities(ast); contextReason='full-AST-calculated';
    } catch(e){ contextReason=String(e.message).slice(0,180); }
-   assert.fail(name+' unresolved source: '+contextReason+'; '+JSON.stringify(result.findings));
+   const attempts=[];
+   const transforms=name.includes('shards')?[
+    ['without environment mutation',x=>x.replace('childEnv.SENTINEL_MATRIX_SHARD=String(expected.index);','void 0;')],
+    ['without exit-code property writes',x=>x.replaceAll('process.exitCode=1;','void 0;')],
+    ['without both',x=>x.replace('childEnv.SENTINEL_MATRIX_SHARD=String(expected.index);','void 0;').replaceAll('process.exitCode=1;','void 0;')]
+   ]:[
+    ['without coverage partial property writes',x=>x.replaceAll('coverage.partial=true;','void 0;')],
+    ['without computed inputs property writes',x=>x.replaceAll('inputs[folded]=value;','void 0;').replaceAll('inputs[k]=value;','void 0;')],
+    ['without both write families',x=>x.replaceAll('coverage.partial=true;','void 0;').replaceAll('inputs[folded]=value;','void 0;').replaceAll('inputs[k]=value;','void 0;')]
+   ];
+   for(const [label,transform] of transforms){
+    const candidate=transform(fullSource);
+    try{
+     const ast=acorn.parse(candidate,{ecmaVersion:'latest',sourceType:'script',
+      allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+      locations:true,ranges:true});
+     findCapabilities(ast);
+     attempts.push(label+':CLEAR');
+    }catch(e){ attempts.push(label+':'+String(e.message).slice(0,100)); }
+   }
+   assert.fail(name+' unresolved source: '+contextReason+'; '+attempts.join(' | '));
   }
  }
 });
