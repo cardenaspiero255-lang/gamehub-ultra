@@ -35,6 +35,19 @@ test('analyzes PR with trusted main engine and verifies current immutable SHA', 
       String.raw`\.findings\.some\(f=>f\.severity==='HIGH'\|\|f\.severity==='BLOCKER'\)\)\s*core\.setFailed\(`);
     assert.match(wf,pattern,source+' must fail on HIGH and BLOCKER');
   }
+  // The trusted repair workflow must fetch exact-SHA Kotlin context BEFORE
+  // deciding which defects qualify for proposals; post-analysis is too late.
+  const repair=fs.readFileSync(path.resolve(__dirname,
+    '../workflows/ultra-sentinel-repair-proposals.yml'),'utf8');
+  const prepare=repair.indexOf('const evidenceFiles=files.map(');
+  const read=repair.indexOf('github.rest.repos.getContent(',prepare);
+  const analyze=repair.indexOf('const analysis=analyze(evidenceFiles',read);
+  const select=repair.indexOf('selectRepairTargets(analysis.findings',analyze);
+  assert.ok(prepare>=0&&read>prepare&&analyze>read&&select>analyze);
+  assert.match(repair,/ref:pr\.head\.sha/);
+  assert.match(repair,/entry\.size>160000/);
+  assert.match(repair,/item\.fullSource=bytes\.toString\('utf8'\)/);
+  assert.match(repair,/current\.head\.sha!==pr\.head\.sha/);
   assert.doesNotMatch(wf, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}|auto-merge\s*:\s*true/);
 });
 
