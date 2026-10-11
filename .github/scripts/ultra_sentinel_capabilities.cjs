@@ -242,6 +242,10 @@ function findCapabilities(ast){
   }
   function nativeSliceHandle(value,depth=0,seen=new Set()){
    if(!value||depth>MAX_DEPTH)return false;
+   // Comma expressions preserve the identity of their final operand;
+   // never bless a mutatable native slice handle hidden behind (0, fn).
+   if(value.type==='SequenceExpression')
+    return nativeSliceHandle(value.expressions?.at(-1),depth+1,seen);
    if(value.type==='MemberExpression')
     return stableMethodName(value)==='slice'&&
      (proto(value.object)||localArrayReceiver(value.object));
@@ -526,8 +530,17 @@ function findCapabilities(ast){
        let action=mutatorName(candidate.callee),target=candidate.arguments?.[0];
        if(candidate.callee?.type==='MemberExpression'){
         const wrapper=stableMethodName(candidate.callee);
-        if(wrapper==='call')target=candidate.arguments?.[1];
-        else if(wrapper==='apply'){
+        if(wrapper==='call'){
+         // Each .call layer adds one receiver argument ahead of the
+         // real mutator target. For f.call.call(f,thisArg,target), the
+         // mutation target is arguments[2], never arguments[1].
+         let layers=0,cursor=candidate.callee;
+         while(cursor?.type==='MemberExpression'&&
+               stableMethodName(cursor)==='call'&&layers<MAX_DEPTH){
+          layers++;cursor=cursor.object;
+         }
+         target=layers>=MAX_DEPTH?null:candidate.arguments?.[layers]||null;
+        }else if(wrapper==='apply'){
          const supplied=candidate.arguments?.[1];
          target=supplied?.type==='ArrayExpression'?
           supplied.elements?.[0]:null;
@@ -565,8 +578,10 @@ function findCapabilities(ast){
          // A computed lexical key can be trusted only when its constant
          // value is proven and the corresponding property holds an inert
          // scalar. Callback arrays still require full descriptor tracking.
-         prop.computed&&!['Literal','TemplateLiteral'].includes(prop.key?.type)&&
-          prop.value?.type!=='Literal'||
+         // A non-literal computed key with an authenticated constant
+         // string may be disjoint from the projected slot regardless of
+         // its value type. Matching keys are screened separately below.
+         prop.computed&&stablePatternKey(prop)===null||
          stablePatternKey(prop)===null||
          stablePatternKey(prop)==='__proto__')
        throw Error('Unresolved object property identity');
@@ -2083,8 +2098,15 @@ function findCapabilities(ast){
   seen.add(id);
   return sourceObjectForDefault(defs[0].node.init,depth+1,seen);
  }
- function unprovenComputedArrayDefault(pattern,value){
+ function unprovenComputedArrayDefault(pattern,value,depth=0){
   if(pattern?.type!=='ObjectPattern')return false;
+  if(depth>MAX_DEPTH)throw Error('Default projection provenance budget exceeded');
+  if(value?.type==='ConditionalExpression')
+   return unprovenComputedArrayDefault(pattern,value.consequent,depth+1)||
+    unprovenComputedArrayDefault(pattern,value.alternate,depth+1);
+  if(value?.type==='LogicalExpression')
+   return unprovenComputedArrayDefault(pattern,value.left,depth+1)||
+    unprovenComputedArrayDefault(pattern,value.right,depth+1);
   const source=sourceObjectForDefault(value);
   if(!source)return false;
   for(const entry of pattern.properties||[]){
@@ -2092,8 +2114,10 @@ function findCapabilities(ast){
    const desired=stablePatternKey(entry);
    for(const p of source.properties||[]){
     if(p.type!=='Property'||!p.computed||
-       ['Literal','TemplateLiteral'].includes(p.key?.type)||
-       !['ArrayExpression','Identifier'].includes(p.value?.type))continue;
+       ['Literal','TemplateLiteral'].includes(p.key?.type))continue;
+    // Never infer an absent default from a computed key that may match.
+    // Its value can be an array, a function, an object, or an expression
+    // producing one; proving the key disjoint is the only safe shortcut.
     const key=stablePatternKey(p);
     if(key===null||desired===null||key===desired)return true;
    }
