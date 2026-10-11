@@ -458,7 +458,8 @@ function findCapabilities(ast){
    if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
    if(node.type==='AssignmentExpression'&&sliceCallablePrototype(node.right))
     changed=true;
-   if(node.type==='ReturnStatement'&&sliceCallablePrototype(node.argument))
+   if(node.type==='ReturnStatement'&&
+      (sliceCallablePrototype(node.argument)||nativeSliceHandle(node.argument)))
     changed=true;
   });
   nativeSliceIntegrity=!changed;
