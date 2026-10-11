@@ -24,6 +24,7 @@ test('US-032: explicit negative-case false-positive rate and p95 latency are ind
  assert.equal(m.negativeCaseFalsePositiveRate,.5);
  assert.equal(m.latencyP95Ms,40);
  assert.equal(m.tp,1);assert.equal(m.fp,1);assert.equal(m.fn,1);
+ assert.equal(require('./ultra_sentinel_comparative.cjs').metric(0,1,1).f1,0);
 });
 test('US-032: no negative-case or latency evidence is never represented as zero',()=>{
  const a=evaluate([items[0]],[record('case-positive-a',[positive],5)],{expectedSha:SHA}).results['ultra-sentinel'];
