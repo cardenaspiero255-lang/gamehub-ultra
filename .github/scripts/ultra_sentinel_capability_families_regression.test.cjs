@@ -897,6 +897,27 @@ for(const [name,source] of round8Dangerous)
 for(const [name,source] of round8Benign)
  test(name+' remains CLEAR',()=>assert.equal(result(source),'CLEAR',name));
 
+// Ultra Sentinel V2 hardening: method identity must be established before
+// treating indirect Array.prototype.slice invocations as read-only.
+// These are static scanner inputs and are NEVER executed.
+const nativeSliceBenign=[
+ ["P2 native slice.call on a const array remains CLEAR","const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 native slice.call through const array alias remains CLEAR","const a=[()=>1];const b=a;const c=b.slice.call(b);c[0]()"],
+ ["P2 native slice.call with literal bounds remains CLEAR","const a=[()=>1,()=>2];const c=a.slice.call(a,0,1);c[0]()"],
+ ["P2 native slice.apply on a const array remains CLEAR","const a=[()=>1];const c=a.slice.apply(a,[]);c[0]()"]
+];
+const nativeSliceDangerous=[
+ ["P1 slice.call retains executable callback","function bad(g){g.eval('attack')}const a=[bad];const c=a.slice.call(a);c[0](globalThis)"],
+ ["P1 slice.apply retains executable callback","function bad(g){g.eval('attack')}const a=[bad];const c=a.slice.apply(a,[]);c[0](globalThis)"],
+ ["P1 overwritten own slice method is never assumed native","function bad(g){g.eval('attack')}const a=[()=>1];a.slice=bad;a.slice.call(null,globalThis)"],
+ ["P1 overwritten slice through alias is never assumed native","function bad(g){g.eval('attack')}const a=[()=>1];const b=a;b.slice=bad;a.slice.call(null,globalThis)"],
+ ["P1 dynamic own slice property cannot certify native","function bad(g){g.eval('attack')}const a=[bad];const k='slice';a[k]=function(){return [()=>1]};a.slice.call(a)[0](globalThis)"]
+];
+for(const [name,source] of nativeSliceBenign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+for(const [name,source] of nativeSliceDangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
