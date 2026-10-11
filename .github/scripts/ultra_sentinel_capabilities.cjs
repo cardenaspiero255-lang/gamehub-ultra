@@ -79,6 +79,7 @@ function findCapabilities(ast){
  const kinds=new Map(), objects=new Map(),bindings=[];
  // Preserve Function.bind closures across object/array destructuring and aliases.
  const boundValues=new Map();
+ const stableArrayCache=new WeakMap();
  const unknownIds=new Map();
  function symbol(node){
   if(node?.type!=='Identifier')return null;
@@ -190,6 +191,57 @@ function findCapabilities(ast){
  // A bounded, lexical representation of locally constructed array slots.
  // A callback read from a known array is a real callable, not an unrelated
  // dynamic member call. Unknown indices/spreads are never certified safe.
+ // Array bindings declared with const still permit writes to their elements.
+ // Closure over a known initial array is safe only while none of its lexical
+ // aliases can mutate the slots or send it into an unknown caller.
+ function ensureStableArray(variable){
+  if(stableArrayCache.has(variable)){
+   if(stableArrayCache.get(variable))throw Error('Array callback slots may be mutated');
+   return;
+  }
+  const aliases=new Set([variable]);
+  for(let round=0;round<MAX_ROUNDS;round++){
+   let changed=false;
+   traverse(ast,node=>{
+    if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
+       node.init?.type==='Identifier'&&aliases.has(symbol(node.init))&&
+       !aliases.has(symbol(node.id))){
+     aliases.add(symbol(node.id));changed=true;
+    }
+    if(node.type==='AssignmentExpression'&&node.operator==='='&&
+       node.left?.type==='Identifier'&&node.right?.type==='Identifier'&&
+       aliases.has(symbol(node.right))&&!aliases.has(symbol(node.left))){
+     aliases.add(symbol(node.left));changed=true;
+    }
+   });
+   if(!changed)break;
+   if(round===MAX_ROUNDS-1)throw Error('Array alias closure budget exceeded');
+  }
+  let uncertain=false;
+  for(const alias of aliases)
+   if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init))uncertain=true;
+  const readonly=new Set(['at','slice','concat','includes','indexOf',
+   'lastIndexOf','join','keys','values','entries','findIndex','toString']);
+  traverse(ast,(node,parent,key)=>{
+   if(node.type==='MemberExpression'&&node.object?.type==='Identifier'&&
+      aliases.has(symbol(node.object))){
+    if(parent?.type==='AssignmentExpression'&&parent.left===node||
+       parent?.type==='UpdateExpression'&&parent.argument===node||
+       parent?.type==='UnaryExpression'&&parent.operator==='delete'&&parent.argument===node)
+     uncertain=true;
+    if(parent?.type==='CallExpression'&&parent.callee===node){
+     const method=stableMethodName(node);
+     // a[0]() is a callback invocation, a.splice() mutates the container.
+     if(method===null||(!/^(0|[1-9][0-9]*)$/.test(method)&&!readonly.has(method)))
+      uncertain=true;
+    }
+   }
+   if(node.type==='Identifier'&&aliases.has(symbol(node))&&
+      parent?.type==='CallExpression'&&key==='arguments')uncertain=true;
+  });
+  stableArrayCache.set(variable,uncertain);
+  if(uncertain)throw Error('Array callback slots may be mutated');
+ }
  function knownArraySlots(node,depth=0,seen=new Set()){
   if(!node)return null;
   if(depth>MAX_DEPTH)throw Error('Array callback provenance depth exceeded');
@@ -203,9 +255,9 @@ function findCapabilities(ast){
       defs[0].node?.id?.type!=='Identifier')return null;
    // Lexical let is supported while its binding remains stable. Mutations
    // require a separate conservative invalidation, not silent ADVISORY.
-   if(variable.references?.some(ref=>ref.isWrite()&&!ref.init))
-    throw Error('Reassigned callback array provenance unresolved');
-   return knownArraySlots(defs[0].node?.init,depth+1,seen);
+   const slots=knownArraySlots(defs[0].node?.init,depth+1,seen);
+   if(slots)ensureStableArray(variable);
+   return slots;
   }
   if(node.type==='SequenceExpression')
    return knownArraySlots(node.expressions?.at(-1),depth+1,seen);
