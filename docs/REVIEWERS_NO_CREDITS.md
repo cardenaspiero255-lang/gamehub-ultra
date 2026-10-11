@@ -10,9 +10,15 @@
 - Conservar el historial de hallazgos antiguos como evidencia; no cerrarlos como resueltos sin reproducir sus casos y validar las correcciones.
 - No vincular la aprobación de PR a una nueva revisión de Codex mientras esta suspensión siga vigente: usar CI, pruebas adversariales, Ultra Sentinel y una revisión alternativa independiente cuando sea necesaria. Ningún CI verde ni revisor automatizado implica garantía de ausencia de vulnerabilidades.
 
-## Qodo Open Source — reactivado con autorización del propietario (11 de octubre de 2026)
+## Qodo Open Source — suspendido indefinidamente (11 de octubre de 2026)
 
-El propietario ha autorizado explícitamente Qodo Open Source como revisor alternativo de GitHub para los PR #173, #169 y las futuras actualizaciones del repositorio. Permitir únicamente `/agentic_review` y su disparo automático al abrir o actualizar PR a través de `.pr_agent.toml`. La aprobación, aplicación de sugerencias, modificación de código y fusión automáticas siguen **prohibidas**. Los hallazgos deben reproducirse y contrastarse con pruebas antes de corregirlos. La instalación de la GitHub App y sus permisos reales se administran fuera del archivo TOML.
+El propietario ha ordenado **desactivar Qodo indefinidamente**, revocando la autorización anterior. **No solicitar** `/agentic_review`, `/review`, `/improve`, ni otras invocaciones Qodo, **ni habilitar** revisiones automáticas, comentarios de checks, aprobaciones o correcciones. Solo una nueva instrucción explícita del propietario podrá reactivarlo.
+
+El archivo `.pr_agent.toml`, tanto en `main` como en la rama activa de PR #169, configura `[config] disable_auto_feedback=true` e `ignore_repositories=["cardenaspiero255-lang/gamehub-ultra"]`, vacía `github_app.pr_commands` y `push_commands`, y pone `handle_push_trigger=false`, `review_agent.enabled=false`, `publish_output=false` y la revisión y reparación automáticas desactivadas. Esto evita las invocaciones de Qodo **según la configuración del repositorio**, pero **no revoca permisos** de una GitHub App ya instalada.
+
+Para impedir de forma completa el acceso de la aplicación alojada, el propietario debe ir a [GitHub Installed GitHub Apps](https://github.com/settings/installations), seleccionar Qodo, y retirar el acceso a `cardenaspiero255-lang/gamehub-ultra` o desinstalar Qodo. Los conectores disponibles aquí no modifican instalaciones de apps ajenas; **no afirmar que Qodo está desinstalado** por editar TOML.
+
+La ausencia de revisiones Qodo no cuenta como aprobación independiente. Seguir utilizando pruebas, CI y revisiones alternativas autorizadas, sin fingir acreditación de terceros.
 
 ## CodeRabbit — sigue desactivado
 
