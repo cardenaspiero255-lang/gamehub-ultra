@@ -20,7 +20,7 @@ test('Core gate requires 150k executed checks across exactly 15 independent shar
  assert.equal(shards.SHARD_COUNT,15);
  assert.equal(shards.MATRIX_CASES,500500);
  assert.equal(shards.MINIMUM,500000);
- assert.deepEqual(shards.BASELINE_TEST_COUNTS,{b0:10242,b1:11084});
+ assert.deepEqual(shards.BASELINE_TEST_COUNTS,{b0:10242,b1:11094});
  assert.match(workflow,/\.github\/sentinel-fixtures\/\*\*/);
  const selfReview=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-self-review.yml'),'utf8');
  assert.equal(selfReview.split(".github/sentinel-fixtures/**").length-1,2);

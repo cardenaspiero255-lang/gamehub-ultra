@@ -449,7 +449,54 @@ const codexReturnAndEscapeBenign=[
   "function f(x=eval(userPatch)){};f(1);const o={f};o.f(2)"
  ]
 ];
+// Conservative defaults across indirect or escaping function uses.
+const codexEscapeFamilyDangerous=[
+ [
+  "P1 escaped default passed to unresolved callback",
+  "function f(x=eval(userPatch)){};f(1);external(f)"
+ ],
+ [
+  "P1 escaped default passed to Reflect.apply",
+  "function f(x=eval(userPatch)){};f(1);Reflect.apply(f,null,[])"
+ ],
+ [
+  "P1 escaped default stored in array",
+  "function f(x=eval(userPatch)){};f(1);const arr=[f];arr[0]()"
+ ],
+ [
+  "P1 escaped default computed method",
+  "function f(x=eval(userPatch)){};f(1);const o={f};o[key]()"
+ ],
+ [
+  "P1 escaped default object passed unknown",
+  "function f(x=eval(userPatch)){};f(1);const o={f};unknown(o)"
+ ],
+ [
+  "P1 escaped default conditional function",
+  "function f(x=eval(userPatch)){};f(1);const cb=flag?f:()=>1;cb()"
+ ],
+ [
+  "P1 escaped default literal object unknown call",
+  "function f(x=eval(userPatch)){};f(1);unknown({f})"
+ ]
+];
+const codexEscapeFamilyBenign=[
+ [
+  "P2 known function alias all args present",
+  "function f(x=eval(userPatch)){};f(1);const alias=f;alias(2)"
+ ],
+ [
+  "P2 direct method brackets all args present",
+  "function f(x=eval(userPatch)){};f(1);const o={f};o['f'](2)"
+ ],
+ [
+  "P2 callback local function passes explicit argument",
+  "function f(x=eval(userPatch)){};const execute=(fn)=>fn(2);execute(f)"
+ ]
+];
 dangerous.push(...codexNewDangerous);
+dangerous.push(...codexEscapeFamilyDangerous);
+benign.push(...codexEscapeFamilyBenign);
 dangerous.push(...codexReturnAndEscapeDangerous);
 benign.push(...codexReturnAndEscapeBenign);
 dangerous.push(...codexFivePhasesDangerous);
