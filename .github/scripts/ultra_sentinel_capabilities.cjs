@@ -76,6 +76,8 @@ function findCapabilities(ast){
   for(const variable of scope.variables)
    for(const id of variable.identifiers)declaration.set(id,variable);
  }
+ const parentOf=new WeakMap();
+ traverse(ast,(node,parent)=>{if(parent)parentOf.set(node,parent);});
  const kinds=new Map(), objects=new Map(),bindings=[];
  const arrayBindings=new Map();
  // Preserve Function.bind closures across object/array destructuring and aliases.
@@ -264,6 +266,7 @@ function findCapabilities(ast){
        const source=value.properties.find(prop=>prop.type==='Property'&&
          stablePatternKey(prop)===key);
        if(source)project(entry.value,source.value,depth+1);
+       else project(entry.value,null,depth+1);
       }
     }
     if(node.type==='VariableDeclarator'&&node.init)
@@ -343,7 +346,14 @@ function findCapabilities(ast){
     }
    }
    if(node.type==='Identifier'&&aliases.has(symbol(node))&&
-      parent?.type==='CallExpression'&&key==='arguments')uncertain=true;
+      parent?.type==='CallExpression'&&key==='arguments'){
+    const callee=parent.callee;
+    const safeSlice=callee?.type==='MemberExpression'&&
+     stableMethodName(callee)==='call'&&
+     callee.object?.type==='MemberExpression'&&
+     stableMethodName(callee.object)==='slice';
+    if(!safeSlice)uncertain=true;
+   }
    // A local callback array can escape into object or array carriers.
    // Conservatively invalidate its original element map until the carrier
    // and all writes to its reachable properties can be proved immutable.
@@ -355,8 +365,19 @@ function findCapabilities(ast){
        parent?.type==='ArrayExpression'&&key==='elements')){
     // Array-pattern projections are already tracked by the alias closure;
     // other container escapes can mutate nested arrays through properties.
-    const container=parent?.type==='Property'?parent:null;
-    if(container)uncertain=true;
+    if(parent?.type==='Property')uncertain=true;
+    if(parent?.type==='ArrayExpression'){
+     // Transient ArrayPattern RHS are projected, not captured permanently.
+     let outer=parent,next=parentOf.get(outer);
+     while(next?.type==='ArrayExpression'){
+      outer=next;next=parentOf.get(outer);
+     }
+     const temporary=(next?.type==='VariableDeclarator'&&
+       next.init===outer&&next.id?.type==='ArrayPattern')||
+      (next?.type==='AssignmentExpression'&&next.right===outer&&
+       next.left?.type==='ArrayPattern');
+     if(!temporary)uncertain=true;
+    }
    }
   });
   stableArrayCache.set(variable,uncertain);
