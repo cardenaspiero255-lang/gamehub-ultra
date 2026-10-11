@@ -86,7 +86,7 @@ function normalizeInvocation(command,flag){
   if(literalCommandName(rawWord)==='exec'){hasExec=true;break;}
  }
  const args=hasExec?stripExecRedirections(command.words,flag):command.words;
- if(!args)return null;
+ if(!args)return {name:'',words:[],raw:'',start:command.start,end:command.end};
  let i=0;
  for(let depth=0;depth<5;depth++){
   const name=literalCommandName(args[i]||'');
@@ -94,10 +94,10 @@ function normalizeInvocation(command,flag){
    i++;
    while(i<args.length&&/^-[A-Za-z-]+$/.test(literalCommandName(args[i]||'')||'')){
     const option=literalCommandName(args[i]);
-    if(option==='-v'||option==='-V')return null;
+    if(option==='-v'||option==='-V')return {name:'',words:[],raw:'',start:command.start,end:command.end};
     if(option==='-p'){i++;continue;}
     if(option==='--'){i++;break;}
-    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;
+    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:'',words:[],raw:'',start:command.start,end:command.end};
    }
   }else if(name==='builtin'){
    // Bash builtin accepts -- before the nested builtin, including repeated
@@ -117,7 +117,7 @@ function normalizeInvocation(command,flag){
     }
    }
    if(unverifiedBuiltin)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
-   return null;
+   return {name:'',words:[],raw:'',start:command.start,end:command.end};
   }else if(name==='env'||/^\/(?:usr\/(?:local\/)?)?bin\/env$/.test(name)){
    i++;
    while(i<args.length){
@@ -127,15 +127,15 @@ function normalizeInvocation(command,flag){
     if(/^[A-Za-z_][\w]*=/.test(raw)||/^(?:'[^']*'|"[^"]*")$/.test(raw)&&
        /^[A-Za-z_][\w]*=/.test(raw.slice(1,-1))){i++;continue;}
     const w=literalCommandName(raw);
-    if(w===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+    if(w===null){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:'',words:[],raw:'',start:command.start,end:command.end};}
     if(w==='--'){i++;break;}
     if(/^(?:-i|--ignore-environment|-0|--null)$/.test(w)){i++;continue;}
     if(/^(?:-u|--unset|-C|--chdir)$/.test(w)){
-     if(++i>=args.length){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+     if(++i>=args.length){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:'',words:[],raw:'',start:command.start,end:command.end};}
      i++;continue;
     }
     if(/^(?:--unset=|--chdir=)/.test(w)){i++;continue;}
-    if(w.startsWith('-')){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return null;}
+    if(w.startsWith('-')){flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');return {name:'',words:[],raw:'',start:command.start,end:command.end};}
     break;
    }
   }else if(/^(?:sudo|nohup|nice|timeout|stdbuf|setsid|time)$/.test(name||'')){
@@ -149,18 +149,18 @@ function normalizeInvocation(command,flag){
     }
    }
    if(unverifiedWrapper)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
-   return null;
+   return {name:'',words:[],raw:'',start:command.start,end:command.end};
   }else{
    // A dynamic/compound word has already been reported by the bounded IR
    // when relevant. Do not produce standalone false positives for inert code.
-   if(!name)return null;
+   if(!name)return {name:'',words:[],raw:'',start:command.start,end:command.end};
    return {name,words:args.slice(i),raw:args.slice(i).join(' '),
     start:command.start,end:command.end};
   }
-  if(i>=args.length)return null;
+  if(i>=args.length)return {name:'',words:[],raw:'',start:command.start,end:command.end};
  }
  flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
- return null;
+ return {name:'',words:[],raw:'',start:command.start,end:command.end};
 }
 /**
  * Infer only filenames that receive remote RESPONSE bytes, not logs and not
@@ -387,7 +387,7 @@ function findingsForScript(source,{shell=''}={}){
  const commands=[];
  for(const item of parsed.commands){
   const invoked=normalizeInvocation(item,flag);
-  if(invoked)commands.push(invoked);
+  if(invoked.name)commands.push(invoked);
  }
  // No source containing an uncertain path command is certified as clean.
  if(parsed.incomplete&&/\b(?:curl|wget|mkdir|cp|mv|ln)\b/i.test(active))
@@ -526,7 +526,7 @@ function findingsForScript(source,{shell=''}={}){
      const target=opaque?[]:inv.words.slice(j);
      const nested=target.length?normalizeInvocation({name:literalCommandName(target[0])||target[0],
       words:target,raw:target.join(' '),start:inv.start,end:inv.end},flag):null;
-     if(!nested){word=null;}
+     if(!nested||!nested.name){word=null;}
      else{
       const basename=posix.basename(nested.name);
       const knownInterpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(basename);
