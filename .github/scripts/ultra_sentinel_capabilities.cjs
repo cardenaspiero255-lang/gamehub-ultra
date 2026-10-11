@@ -194,7 +194,8 @@ function findCapabilities(ast){
    if(!variable||typeof variable!=='object'||seen.has(variable))return null;
    seen.add(variable);
    const defs=variable.defs||[];
-   if(defs.length!==1||defs[0].parent?.kind!=='const')return null;
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return null;
    return knownArraySlots(defs[0].node?.init,depth+1,seen);
   }
   if(node.type==='SequenceExpression')
@@ -226,7 +227,8 @@ function findCapabilities(ast){
    if(!variable||typeof variable!=='object'||seen.has(variable))return null;
    seen.add(variable);
    const defs=variable.defs||[];
-   if(defs.length!==1||defs[0].parent?.kind!=='const')return null;
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return null;
    return boundCallable(defs[0].node?.init,depth+1,seen);
   }
   if(node.type==='SequenceExpression')
@@ -270,7 +272,7 @@ function findCapabilities(ast){
    return null;
   }
   if(node.type==='MemberExpression'){
-   const slots=knownArraySlots(node.object,depth+1);
+   const slots=node.computed?knownArraySlots(node.object,depth+1):null;
    if(slots){
     const index=node.computed?staticArrayIndex(node.property):null;
     if(index===null)throw Error('Unresolved array callback index provenance');
