@@ -213,6 +213,31 @@ function findCapabilities(ast){
        aliases.has(symbol(node.right))&&!aliases.has(symbol(node.left))){
      aliases.add(symbol(node.left));changed=true;
     }
+    // A destructured local holds the same array reference, not a copy:
+    // const [alias]=[arr] and const [[alias]]=[[arr]].
+    function project(pattern,value,depth=0){
+     if(!pattern||!value||depth>MAX_DEPTH)return;
+     if(pattern.type==='Identifier'&&value.type==='Identifier'&&
+        aliases.has(symbol(value))&&!aliases.has(symbol(pattern))){
+      aliases.add(symbol(pattern));changed=true;return;
+     }
+     if(pattern.type==='AssignmentPattern')return project(pattern.left,value,depth+1);
+     if(pattern.type==='ArrayPattern'&&value.type==='ArrayExpression')
+      for(let i=0;i<pattern.elements.length;i++)
+       project(pattern.elements[i],value.elements[i],depth+1);
+     if(pattern.type==='ObjectPattern'&&value.type==='ObjectExpression')
+      for(const entry of pattern.properties){
+       if(entry.type!=='Property')continue;
+       const key=stablePatternKey(entry);
+       const source=value.properties.find(prop=>prop.type==='Property'&&
+         stablePatternKey(prop)===key);
+       if(source)project(entry.value,source.value,depth+1);
+      }
+    }
+    if(node.type==='VariableDeclarator'&&node.init)
+     project(node.id,node.init);
+    if(node.type==='AssignmentExpression'&&node.operator==='=')
+     project(node.left,node.right);
    });
    if(!changed)break;
    if(round===MAX_ROUNDS-1)throw Error('Array alias closure budget exceeded');
@@ -238,6 +263,17 @@ function findCapabilities(ast){
    }
    if(node.type==='Identifier'&&aliases.has(symbol(node))&&
       parent?.type==='CallExpression'&&key==='arguments')uncertain=true;
+   // A local callback array can escape into object or array carriers.
+   // Conservatively invalidate its original element map until the carrier
+   // and all writes to its reachable properties can be proved immutable.
+   if(node.type==='Identifier'&&aliases.has(symbol(node))&&
+      (parent?.type==='Property'&&key==='value'||
+       parent?.type==='ArrayExpression'&&key==='elements')){
+    // Array-pattern projections are already tracked by the alias closure;
+    // other container escapes can mutate nested arrays through properties.
+    const container=parent?.type==='Property'?parent:null;
+    if(container)uncertain=true;
+   }
   });
   stableArrayCache.set(variable,uncertain);
   if(uncertain)throw Error('Array callback slots may be mutated');
