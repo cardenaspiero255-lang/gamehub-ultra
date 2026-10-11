@@ -590,13 +590,29 @@ function findCapabilities(ast){
      }
      // Receiver provenance: writes to an object's current prototype also
      // alter which properties the source can observe via inheritance.
-     function affectsCarrier(target){
+     function affectsCarrier(target,depth=0,seen=new Set()){
+      if(!target||depth>MAX_DEPTH)return false;
       if(inertLiteralSource(target)===original)return true;
-      if(target?.type==='CallExpression'&&target.arguments?.length===1&&
+      // The prototype returned by Object.getPrototypeOf(source) or
+      // Reflect.getPrototypeOf(source) is still part of the source's
+      // observable state. Follow only proven immutable lexical aliases.
+      if(target.type==='Identifier'){
+       const variable=symbol(target);
+       if(!variable||typeof variable!=='object'||seen.has(variable))
+        return false;
+       const defs=variable.defs||[];
+       if(defs.length!==1||defs[0].parent?.kind!=='const'||
+          defs[0].node?.id?.type!=='Identifier'||
+          variable.references?.some(ref=>ref.isWrite()&&!ref.init))
+        return false;
+       seen.add(variable);
+       return affectsCarrier(defs[0].node.init,depth+1,seen);
+      }
+      if(target.type==='CallExpression'&&target.arguments?.length===1&&
          target.callee?.type==='MemberExpression'&&
          stableMethodName(target.callee)==='getPrototypeOf'&&
          target.callee.object?.type==='Identifier'&&
-         symbol(target.callee.object)==='free:Object'&&
+         ['free:Object','free:Reflect'].includes(symbol(target.callee.object))&&
          inertLiteralSource(target.arguments[0])===original)return true;
       return false;
      }
