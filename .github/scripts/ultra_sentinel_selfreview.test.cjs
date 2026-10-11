@@ -350,6 +350,38 @@ test('lexical shadowing does not invent executable built-in capabilities',()=>{
   assert.ok(!result.findings.some(f=>f.rule==='DYNAMIC_EVAL'),script);
  }
 });
+// Root-cause regression matrix: conservative flow joins, containers, params, scopes.
+test('AST scope engine rejects unknown high-risk capability propagation, not benign shadows',()=>{
+ const risk=[
+  "const g=enabled ? globalThis : {eval:x=>x}; g.eval(userPatch)",
+  "const box={...{x:globalThis}}; box.x.eval(userPatch)",
+  "const box={nested:{x:globalThis}}; const g=box.nested.x; g.eval(userPatch)",
+  "const box={}; box.x=globalThis; box.x.eval(userPatch)",
+  "const [g]=[globalThis]; g.eval(userPatch)",
+  "const {nested:{x:g}}={nested:{x:globalThis}}; g.eval(userPatch)",
+  "function invoke(g){g.eval(userPatch)} invoke(globalThis)",
+  "const F=(()=>{}).constructor; F(userPatch)()",
+  "function invoke(v){v.compileFunction(userPatch)} invoke(require('vm'))"
+ ];
+ for(const srcText of risk){
+  const x=scan([file(src,srcText)],SHA);
+  assert.equal(x.status,'BLOCKED',srcText);
+  assert.ok(x.findings.some(f=>f.rule==='DYNAMIC_EVAL'||f.rule==='JS_CONTEXT_INCOMPLETE'),srcText);
+ }
+ const benign=[
+  "function safe({eval:e}){return e(42)} safe({eval:x=>x})",
+  "function invoke(g){return g.eval(42)} invoke({eval:x=>x})",
+  "const g=enabled ? {eval:x=>x} : {eval:y=>y};g.eval(42)",
+  "const box={nested:{x:{eval:x=>x}}}; const g=box.nested.x;g.eval(42)",
+  "const [g]=[{eval:x=>x}];g.eval(42)",
+  "const F=(()=>{}).constructor; const name='safe';"
+ ];
+ for(const srcText of benign){
+  const x=scan([file(src,srcText)],SHA);
+  assert.equal(x.status,'ADVISORY',srcText);
+  assert.ok(!x.findings.some(f=>f.rule==='DYNAMIC_EVAL'),srcText);
+ }
+});
 test('ambiguous JavaScript context and malformed source fail closed without fake certainty',()=>{
  const cases=[
   {filename:src,status:'modified',changes:1,patch:'@@ -92,0 +92,1 @@\n+const ok = 1;'},
