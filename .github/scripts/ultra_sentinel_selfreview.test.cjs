@@ -20,7 +20,7 @@ test('read-only benign diff remains advisory, never an approval',()=>{
   'exact scanner AST must be fully analyzable');
  const probe=scan([{
   filename:'.github/scripts/ultra_sentinel_advanced_execution.cjs',
-  patch:'@@ -332,0 +333,1 @@\\n+// complete context probe',
+  patch:'@@ -332,0 +333,1 @@\n+// complete context probe',
   status:'modified',changes:1,fullSource:exact
  }],SHA);
  assert.ok(!probe.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),JSON.stringify(probe));
