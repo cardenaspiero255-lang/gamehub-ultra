@@ -120,6 +120,105 @@ const benign=[
   "const safe={constructor:x=>x}; safe.constructor(42)"
  ]
 ];
+// New Codex witness families; dangerous inputs are parsed only, never executed.
+const codexNewDangerous=[
+ [
+  "P1 sequence-wrapped IIFE",
+  "(0,function(g){g.eval(userPatch)})(globalThis)"
+ ],
+ [
+  "P1 sequence-wrapped arrow",
+  "(0,(g)=>g.eval(userPatch))(globalThis)"
+ ],
+ [
+  "P1 function.call capability",
+  "function run(g){g.eval(userPatch)} run.call(null,globalThis)"
+ ],
+ [
+  "P1 function.apply capability",
+  "function run(g){g.eval(userPatch)} run.apply(null,[globalThis])"
+ ],
+ [
+  "P1 object method invoked",
+  "const api={run(g){g.eval(userPatch)}}; api.run(globalThis)"
+ ],
+ [
+  "P1 object function-valued property",
+  "const api={run:function(g){g.eval(userPatch)}}; api.run(globalThis)"
+ ],
+ [
+  "P1 rest object capability",
+  "const source={safe:1,g:globalThis};const {safe,...rest}=source;rest.g.eval(userPatch)"
+ ],
+ [
+  "P1 rest object capability alias",
+  "const source={safe:1,g:globalThis};const {safe,...rest}=source;const alias=rest;alias.g.eval(userPatch)"
+ ],
+ [
+  "P1 nested rest capability",
+  "const source={safe:1,nested:{g:globalThis}};const {safe,...rest}=source;rest.nested.g.eval(userPatch)"
+ ],
+ [
+  "P1 standard filter Function.constructor",
+  "const F=[].filter.constructor;F(userPatch)()"
+ ],
+ [
+  "P1 standard map Function.constructor",
+  "const F=[].map.constructor;F(userPatch)()"
+ ],
+ [
+  "P1 object method Function.constructor",
+  "const api={run(){return 1}};const F=api.run.constructor;F(userPatch)()"
+ ],
+ [
+  "P1 function returns global",
+  "function expose(){return globalThis}expose().eval(userPatch)"
+ ],
+ [
+  "P1 arrow returns global",
+  "const expose=()=>globalThis;expose().eval(userPatch)"
+ ],
+ [
+  "P1 aliased local function return",
+  "function expose(){return globalThis}const alias=expose;alias().eval(userPatch)"
+ ],
+ [
+  "P1 function returns nested global object",
+  "function expose(){return {g:globalThis}}expose().g.eval(userPatch)"
+ ],
+ [
+  "P1 default still dangerous when absent",
+  "const {x=eval}={};x(userPatch)"
+ ]
+];
+const codexNewBenign=[
+ [
+  "P2 present benign property overrides eval default",
+  "const {x=eval}={x:v=>v};x(42)"
+ ],
+ [
+  "P2 present benign property overrides global default",
+  "const {x=globalThis}={x:{eval:v=>v}};x.eval(42)"
+ ],
+ [
+  "P2 safe method overrides Function default",
+  "const {x=Function}={x:v=>v};x(42)"
+ ],
+ [
+  "P2 present undefined-free literal benign",
+  "const source={x:()=>42};const {x=eval}=source;x(42)"
+ ],
+ [
+  "P2 property rest excludes removed dangerous key",
+  "const source={g:globalThis,safe:42};const {g,...rest}=source;rest.safe+1"
+ ],
+ [
+  "P2 rest only benign methods",
+  "const source={safe:(x)=>x,value:42};const {value,...rest}=source;rest.safe(42)"
+ ]
+];
+dangerous.push(...codexNewDangerous);
+benign.push(...codexNewBenign);
 for(const [name,source] of dangerous){
  test(name+' cannot be certified safe',()=>{
   assert.notEqual(result(source),'CLEAR',name+' unexpectedly passed the security gate');
