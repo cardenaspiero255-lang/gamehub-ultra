@@ -33,7 +33,10 @@ jobs:
           node --check .github/scripts/ultra_sentinel_capability_families_regression.test.cjs
           node --check .github/scripts/ultra_sentinel_core_shards.cjs
           node --check .github/scripts/ultra_sentinel_core_count_contract.test.cjs
+          node --check .github/scripts/ultra_sentinel_v2_shadow.cjs
+          node --check .github/scripts/ultra_sentinel_v2_shadow.test.cjs
       - name: Run focused adversarial and benign tests
         run: |
           node --test .github/scripts/ultra_sentinel_capability_families_regression.test.cjs
           node --test .github/scripts/ultra_sentinel_core_count_contract.test.cjs
+          node --test .github/scripts/ultra_sentinel_v2_shadow.test.cjs
