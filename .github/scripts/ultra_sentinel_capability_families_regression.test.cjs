@@ -1014,6 +1014,15 @@ for(const [name,source] of codex173Round2Dangerous)
 for(const [name,source] of codex173Round2Benign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Prove that admitting a single initialization never exempts later
+// mutations or escapes of the originally aliased callback array.
+const assignmentFollowupUnsafe=[
+ ["P1 assignment-destructured alias mutates original callback array","function bad(g){g.eval('attack')}const a=[()=>1],empty={};let x;({x=a}=empty);x.fill(bad);a[0](globalThis)"],
+ ["P1 assigned alias to original callback later mutates through splice","function bad(g){g.eval('attack')}const a=[()=>1],empty={},source=empty;let x;({x=a}=source);x.splice(0,1,bad);a[0](globalThis)"]
+];
+for(const [name,source] of assignmentFollowupUnsafe)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
