@@ -81,7 +81,10 @@ function stripExecRedirections(words,flag){
 
 function normalizeInvocation(command,flag){
  // A redirect may appear before, between or after executable words in Bash.
- const hasExec=command.words.some(w=>literalCommandName(w)==='exec');
+ let hasExec=false;
+ for(const rawWord of command.words){
+  if(literalCommandName(rawWord)==='exec'){hasExec=true;break;}
+ }
  const args=hasExec?stripExecRedirections(command.words,flag):command.words;
  if(!args)return null;
  let i=0;
@@ -106,8 +109,13 @@ function normalizeInvocation(command,flag){
    if(nested==='source'||nested==='.'||nested==='exec'){
     return {...command,name:nested,words:args.slice(i),raw:args.slice(i).join(' ')};
    }
-   if(args.slice(i).some(w=>/^(?:curl|wget|bash|sh|install|eval)$/.test(w)))
-    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   let unverifiedBuiltin=false;
+   for(const w of args.slice(i)){
+    if(/^(?:curl|wget|bash|sh|install|eval)$/.test(w)){
+     unverifiedBuiltin=true;break;
+    }
+   }
+   if(unverifiedBuiltin)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
    return null;
   }else if(name==='env'||/^\/(?:usr\/(?:local\/)?)?bin\/env$/.test(name)){
    i++;
@@ -133,8 +141,13 @@ function normalizeInvocation(command,flag){
    // These wrappers have their own semantics. Fail closed only where a
    // remote-source or execution command could be hidden behind the wrapper;
    // ordinary privileged administrative commands are not findings.
-   if(args.slice(i+1).some(w=>/^(?:curl|wget|bash|sh|dash|zsh|python(?:[0-9.]+)?|node|install)$/.test(w)))
-    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+   let unverifiedWrapper=false;
+   for(const w of args.slice(i+1)){
+    if(/^(?:curl|wget|bash|sh|dash|zsh|python(?:[0-9.]+)?|node|install)$/.test(w)){
+     unverifiedWrapper=true;break;
+    }
+   }
+   if(unverifiedWrapper)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
    return null;
   }else{
    // A dynamic/compound word has already been reported by the bounded IR
@@ -207,7 +220,11 @@ function hasRemoteSource(command){
   // for an invalid option solely because it embeds a URL.
   if(w.startsWith('--url='))continue;
   if(valueFlags.has(w)){i++;continue;}
-  if([...valueFlags].some(name=>name.startsWith('--')&&w.startsWith(name+'=')))continue;
+  let embeddedFlag=false;
+  for(const name of valueFlags)if(name.startsWith('--')&&w.startsWith(name+'=')){
+   embeddedFlag=true;break;
+  }
+  if(embeddedFlag)continue;
   if(literalRemoteUrlToken(words[i]))return true;
  }
  return false;
@@ -230,8 +247,12 @@ function downloadedFiles(command,flag){
   }
   // Attached values of supported long switches belong to the switch, even
   // when the value looks like an option terminator or a filename argument.
-  if([...valueFlags].some(flagName=>flagName.startsWith('--')&&
-     literal.startsWith(flagName+'=')))continue;
+  let embeddedFlag=false;
+  for(const flagName of valueFlags)if(flagName.startsWith('--')&&
+     literal.startsWith(flagName+'=')){
+   embeddedFlag=true;break;
+  }
+  if(embeddedFlag)continue;
   let value=null,isOutput=false,knownDirectoryOption=false;
   if(wget){
    const adjacent=/^-[A-Za-z]*O(.*)$/.exec(literal);
@@ -315,7 +336,8 @@ function downloadedFiles(command,flag){
    fds.set(1,dest);fds.set(2,dest);
   }else fds.set(destFd,dest);
  }
- const urlCount=words.filter(literalRemoteUrlToken).length;
+ let urlCount=0;
+ for(const word of words)if(literalRemoteUrlToken(word))urlCount++;
  const wgetStdout=direct.length>0&&literalFileToken(direct.at(-1))==='-';
  const mayEmitRemoteStdout=wget?wgetStdout:urlCount>direct.length;
  const finalStdout=fds.get(1);
@@ -340,24 +362,39 @@ function findingsForScript(source,{shell=''}={}){
  };
  const lines=source.split(/\r?\n/);
  // Literal echo/printf of attack documentation is not executable code.
- const active=lines.filter(line=>!(/^\s*(?:echo|printf)\s+(['"])[^$\x60]*\1\s*$/.test(line)||
-  /^\s*#/.test(line))).join('\n');
+ const activeLines=[];
+ for(const line of lines){
+  if(!(/^\s*(?:echo|printf)\s+(['"])[^$\x60]*\1\s*$/.test(line)||
+   /^\s*#/.test(line)))activeLines.push(line);
+ }
+ const active=activeLines.join('\n');
  // Analyze filename aliases with command ordering: a link created *after*
  // an attempted execution must not turn an unrelated command into a finding.
  // Links created before a download are considered: curl can overwrite the
  // linked inode, so that alias can still execute the downloaded bytes.
  const parsed=parseShellCommands(active);
- remotelySourced=/\b(?:curl|wget)\b/i.test(active)||
-  parsed.commands.some(cmd=>cmd.words.some(word=>
-   /^(?:curl|wget)$/i.test(literalCommandName(word)||'')));
- const commands=parsed.commands.map(c=>normalizeInvocation(c,flag)).filter(Boolean);
+ remotelySourced=/\b(?:curl|wget)\b/i.test(active);
+ if(!remotelySourced)for(const cmd of parsed.commands){
+  for(const word of cmd.words){
+   if(/^(?:curl|wget)$/i.test(literalCommandName(word)||'')){
+    remotelySourced=true;break;
+   }
+  }
+  if(remotelySourced)break;
+ }
+ const commands=[];
+ for(const item of parsed.commands){
+  const invoked=normalizeInvocation(item,flag);
+  if(invoked)commands.push(invoked);
+ }
  // No source containing an uncertain path command is certified as clean.
  if(parsed.incomplete&&/\b(?:curl|wget|mkdir|cp|mv|ln)\b/i.test(active))
   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  // Data-flow facts use one command IR. The command boundary, argument words
  // and source offsets can no longer disagree across downloads and aliases.
  const createdDirs=[];
- for(const mkdir of commands.filter(c=>c.name==='mkdir')){
+ for(const mkdir of commands){
+  if(mkdir.name!=='mkdir')continue;
   const tokens=mkdir.words.slice(1);
   let options=true,unknown=false;
   for(const token of tokens){
@@ -372,7 +409,8 @@ function findingsForScript(source,{shell=''}={}){
   if(unknown)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  const aliases=[];
- for(const m of commands.filter(c=>/^(?:ln|cp|mv|install)$/.test(c.name))){
+ for(const m of commands){
+  if(!/^(?:ln|cp|mv|install)$/.test(m.name))continue;
   const kind=m.name,tokens=m.words.slice(1);
   const flags=[],operands=[],rawOperands=[];
   let afterDash=false,invalid=false,targetDir=null,directoryOnly=false;
@@ -458,11 +496,13 @@ function findingsForScript(source,{shell=''}={}){
    posix.join(posix.dirname(to),origin):origin);
   aliases.push({at:m.start,kind,from,to});
  }
- for(const d of commands.filter(c=>/^(?:curl|wget)$/i.test(c.name))){
+ for(const d of commands){
+  if(!/^(?:curl|wget)$/i.test(d.name))continue;
   if(!hasRemoteSource(d))continue;
   const output=downloadedFiles(d,flag);
   for(const file of output.files){
-   for(const inv of commands.filter(c=>c.start>=d.end)){
+   for(const inv of commands){
+    if(inv.start<d.end)continue;
     const interpreter=/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name);
     let word=interpreter?interpreterFileOperand(inv,flag):inv.words[0];
     if(inv.name==='exec'){
@@ -522,12 +562,17 @@ function findingsForScript(source,{shell=''}={}){
   // Unknown downloader flags matter when downstream execution could occur.
   // A confirmed HIGH remains HIGH (not downgraded to INCOMPLETE); download-only
   // workflows are not condemned solely for options outside our small grammar.
+  let laterInterpreter=false;
+  for(const inv of commands){
+   if(inv.start<d.end)continue;
+   if(/^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)||
+       (typeof inv.name==='string'&&inv.name.includes('/'))||
+       (inv.name==='exec'&&inv.words.length>1)){
+    laterInterpreter=true;break;
+   }
+  }
   if(output.unknownDownloaderOption&&!findings.has('REMOTE_DOWNLOADED_FILE_EXECUTION')&&
-     commands.some(inv=>inv.start>=d.end&&(
-      /^(?:bash|sh|dash|zsh|ksh|fish|python(?:[0-9.]+)?|node|ruby|perl|php|source|\.)$/i.test(inv.name)||
-      (typeof inv.name==='string'&&inv.name.includes('/'))||
-      (inv.name==='exec'&&inv.words.length>1))))
-   flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
+     laterInterpreter)flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');
  }
  // Scan whole interpreter HEREDOC bodies as a unit: URLs, fetches and eval
  // commonly appear on different lines. Use the declared delimiter rather
