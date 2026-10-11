@@ -285,6 +285,61 @@ function findCapabilities(ast){
    seen.add(id);
    return nativeSliceConstructor(defs[0].node.init,depth+1,seen);
   }
+  // Native handles hidden inside apply argument arrays or immutable aliases
+  // can escape and be overwritten, so they invalidate intrinsic trust.
+  function packedSliceHandle(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH)return false;
+   if(nativeSliceHandle(value)||sliceCallablePrototype(value))return true;
+   if(value.type==='SpreadElement')return packedSliceHandle(value.argument,depth+1,seen);
+   if(value.type==='SequenceExpression')
+    return value.expressions.some(x=>packedSliceHandle(x,depth+1,new Set(seen)));
+   if(value.type==='ArrayExpression')
+    return value.elements.some(x=>packedSliceHandle(x,depth+1,new Set(seen)));
+   if(value.type==='ObjectExpression')
+    return value.properties.some(p=>p.type!=='Property'||
+     packedSliceHandle(p.value,depth+1,new Set(seen)));
+   if(value.type==='Identifier'){
+    const id=symbol(value),defs=id?.defs||[];
+    if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+       defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+       id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+    seen.add(id);
+    return packedSliceHandle(defs[0].node.init,depth+1,seen);
+   }
+   return false;
+  }
+  function intrinsicOwner(value,depth=0,seen=new Set()){
+   if(!value||depth>MAX_DEPTH||value.type!=='Identifier')return null;
+   const id=symbol(value);
+   if(id==='free:Object')return 'Object';
+   if(id==='free:Reflect')return 'Reflect';
+   const defs=id?.defs||[];
+   if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+      defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+      id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+   seen.add(id);
+   return intrinsicOwner(defs[0].node.init,depth+1,seen);
+  }
+  // A fully local, immutable literal-returning method cannot mutate a native
+  // prototype, even when handed that prototype as a normal argument.
+  function inertLocalMethod(callee){
+   if(callee?.type!=='MemberExpression'||callee.object?.type!=='Identifier')return false;
+   const id=symbol(callee.object),defs=id?.defs||[];
+   if(!id||typeof id!=='object'||defs.length!==1||
+      defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+      id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+   const obj=defs[0].node.init;
+   if(obj?.type!=='ObjectExpression'||obj.properties.some(p=>
+      p.type!=='Property'||p.kind!=='init'||p.computed))return false;
+   const props=obj.properties.filter(p=>keyName(p)===stableMethodName(callee));
+   if(props.length!==1)return false;
+   const fn=props[0].value;
+   return ['FunctionExpression','ArrowFunctionExpression'].includes(fn?.type)&&
+    fn.params.every(p=>p.type==='Identifier')&&
+    fn.body?.type==='BlockStatement'&&fn.body.body.length===1&&
+    fn.body.body[0].type==='ReturnStatement'&&
+    fn.body.body[0].argument?.type==='Literal';
+  }
   // A native slice handle inherits call/apply from Function.prototype.
   // Writes to that shared prototype (or to a stable alias of it) invalidate
   // the entire native fast-path; unproven escapes fail closed.
@@ -358,18 +413,22 @@ function findCapabilities(ast){
     // escape: aliases of Object.defineProperty, setPrototypeOf, etc. can
     // overwrite .call/.apply without a direct, recognizable method name.
     // Native slice.call(array) hands off the ARRAY, not this callable.
-    if(node.arguments?.some(argument=>nativeSliceHandle(argument)||
-        sliceCallablePrototype(argument)))changed=true;
+    if(node.arguments?.some(argument=>packedSliceHandle(argument)))changed=true;
     // Also recognize the direct global spelling: scope resolvers may not
     // materialize a builtin Array binding in every scope configuration.
-    const intrinsicMutator=node.callee?.type==='MemberExpression'&&
-     ['set','defineProperty','defineProperties','assign'].includes(
-      stableMethodName(node.callee));
+    const owner=node.callee?.type==='MemberExpression'?
+     intrinsicOwner(node.callee.object):null;
+    const operation=node.callee?.type==='MemberExpression'?
+     stableMethodName(node.callee):null;
+    const intrinsicMutator=owner==='Object'&&
+     ['defineProperty','defineProperties','assign'].includes(operation)||
+     owner==='Reflect'&&['set','defineProperty'].includes(operation);
     const directArrayPrototype=arg=>arg?.type==='MemberExpression'&&
      stableMethodName(arg)==='prototype'&&arg.object?.type==='Identifier'&&
      arg.object.name==='Array'&&symbol(arg.object)==='free:Array';
-    if(node.arguments?.some(proto)||intrinsicMutator&&
-       node.arguments?.some(directArrayPrototype))changed=true;
+    if(!inertLocalMethod(node.callee)&&
+       (node.arguments?.some(proto)||intrinsicMutator&&
+        node.arguments?.some(directArrayPrototype)))changed=true;
     if(intrinsicMutator&&nativeSliceHandle(node.arguments?.[0])){
      const operation=stableMethodName(node.callee);
      const key=stringValue(node.arguments?.[1]);
