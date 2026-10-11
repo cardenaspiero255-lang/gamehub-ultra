@@ -512,7 +512,8 @@ function findCapabilities(ast){
       if(!parent)return false;
       if(parent.type==='Program')return true;
       if(!['MemberExpression','AssignmentExpression','ExpressionStatement',
-            'UpdateExpression','UnaryExpression','SequenceExpression'].includes(parent.type))return false;
+            'UpdateExpression','UnaryExpression','SequenceExpression',
+            'ArrayExpression'].includes(parent.type))return false;
       cursor=parent;
      }
      return false;
@@ -543,12 +544,27 @@ function findCapabilities(ast){
     // may write references to the captured callback array into the carrier.
     // Console calls cannot be certified pure once the global console or its
     // method identities have been exposed, rebound or modified.
+    function globalCarrier(value,depth=0,seen=new Set()){
+     if(!value||depth>MAX_DEPTH||value.type!=='Identifier')return false;
+     const id=symbol(value);
+     if(id==='free:globalThis'||id==='free:global')return true;
+     const defs=id?.defs||[];
+     if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+        defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+        id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+     seen.add(id);
+     return globalCarrier(defs[0].node.init,depth+1,seen);
+    }
     let consoleReadOnly=null;
     function pristineConsoleCalls(){
      if(consoleReadOnly!==null)return consoleReadOnly;
      let trusted=true;
      traverse(ast,(node,parent)=>{
-      if(!trusted||node.type!=='Identifier'||symbol(node)!=='free:console')return;
+      if(!trusted)return;
+      // A globalThis.console alias can mutate the same global console object.
+      if(node.type==='MemberExpression'&&stableMethodName(node)==='console'&&
+         globalCarrier(node.object)){trusted=false;return;}
+      if(node.type!=='Identifier'||symbol(node)!=='free:console')return;
       if(parent?.type==='MemberExpression'&&parent.object===node&&
          ['log','info','warn','error','debug','trace'].includes(stableMethodName(parent))){
        const usage=parentOf.get(parent);
@@ -559,8 +575,38 @@ function findCapabilities(ast){
      consoleReadOnly=trusted;
      return trusted;
     }
-    function provenReadOnlyCall(callee,depth=0,seen=new Set()){
+    let wrappersReadOnly=null;
+    function pristineWrappers(){
+     if(wrappersReadOnly!==null)return wrappersReadOnly;
+     let stable=true;
+     traverse(ast,(node,parent)=>{
+      if(!stable)return;
+      if(node.type==='MemberExpression'&&
+         ['call','apply','bind'].includes(stableMethodName(node))&&
+         (parent?.type==='AssignmentExpression'&&parent.left===node||
+          parent?.type==='UpdateExpression'&&parent.argument===node||
+          parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+           parent.argument===node))stable=false;
+      if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
+         ['defineProperty','defineProperties','setPrototypeOf','set','assign'].includes(
+          stableMethodName(node.callee)))stable=false;
+     });
+     wrappersReadOnly=stable;
+     return stable;
+    }
+    function provenReadOnlyCall(callee,depth=0,seen=new Set(),call=null){
      if(!callee||depth>MAX_DEPTH)return false;
+     if(callee.type==='CallExpression'&&callee.callee?.type==='MemberExpression'&&
+        stableMethodName(callee.callee)==='bind'&&pristineWrappers())
+      return provenReadOnlyCall(callee.callee.object,depth+1,new Set(seen));
+     if(callee.type==='MemberExpression'){
+      const wrapper=stableMethodName(callee);
+      if(['call','apply','bind'].includes(wrapper)&&pristineWrappers())
+       return provenReadOnlyCall(callee.object,depth+1,new Set(seen));
+      if(wrapper==='apply'&&callee.object?.type==='Identifier'&&
+         symbol(callee.object)==='free:Reflect'&&call?.callee===callee)
+       return provenReadOnlyCall(call.arguments?.[0],depth+1,new Set(seen));
+     }
      // Parameter initializers execute even when the function body is inert.
      // Destructuring or executable defaults must invalidate purity proof.
      const inertParameter=param=>param?.type==='Identifier'||
@@ -629,7 +675,7 @@ function findCapabilities(ast){
      for(let depth=0;depth<MAX_DEPTH;depth++){
       const parent=parentOf.get(cursor);
       if(!parent||parent.type==='Program')break;
-      if(parent.type==='CallExpression'&&!provenReadOnlyCall(parent.callee))
+      if(parent.type==='CallExpression'&&!provenReadOnlyCall(parent.callee,0,new Set(),parent))
        return false;
       cursor=parent;
      }
