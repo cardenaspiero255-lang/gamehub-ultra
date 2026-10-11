@@ -1397,3 +1397,13 @@ const mutableSliceInitializationEscapes=[
 ];
 for(const [name,source] of mutableSliceInitializationEscapes)
  test(name+' must not be CLEAR',()=>assert.notEqual(result(source),'CLEAR',name));
+
+// Complementary benign regression: stable mutable bindings must not be blocked.
+test('P2 stable let native slice alias stays CLEAR',()=>{
+ const source="const a=[()=>1];let h=a.slice;const copy=h.call(a);copy[0]()";
+ assert.equal(result(source),'CLEAR');
+});
+test('P2 stable var native slice alias stays CLEAR',()=>{
+ const source="const a=[()=>1];var h=a.slice;const copy=h.apply(a,[]);copy[0]()";
+ assert.equal(result(source),'CLEAR');
+});
