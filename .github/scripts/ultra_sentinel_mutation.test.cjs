@@ -6,6 +6,9 @@ test('mutants are deterministic, named and capped',()=>{
 });
 test('all mutation targets are distinct',()=>{
  assert.ok(plan().every(x=>x.from!==x.to));
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'ultra_sentinel_core.cjs'),'utf8');
+ const shrink=plan().find(x=>x.id==='all-patches-truncated');
+ assert.ok(shrink&&source.includes(shrink.from),'truncation mutant must follow current Core patch bound');
 });
 test('replacement changes exactly one expression',()=>{
  assert.equal(replaceExactlyOnce('prefix A suffix','A','B'),'prefix B suffix');
