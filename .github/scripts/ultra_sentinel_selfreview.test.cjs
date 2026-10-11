@@ -469,12 +469,11 @@ test('P1 trusted self-review attests exact YAML parser computed-input provenance
  const seen=[],oldGet=Map.prototype.get;
  Map.prototype.get=function(key){
   const value=oldGet.call(this,key);
-  if(typeof key==='string'&&
-      ['ok','reason','workflow','status','coverage','findings','results'].includes(key)){
+  if(typeof key==='string'&&new Error().stack.includes('joinObjectBranches')){
    const shape=value===undefined?'ABSENT':value?.unknown?'UNKNOWN':
     value?.present?'PRESENT':value?.properties?'NESTED':
     value?.optional?'OPTIONAL':typeof value;
-   seen.push([key,shape]);if(seen.length>24)seen.shift();
+   seen.push([key,shape]);if(seen.length>40)seen.shift();
   }
   return value;
  };
@@ -482,7 +481,7 @@ test('P1 trusted self-review attests exact YAML parser computed-input provenance
   assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
    'trusted analyzer must resolve the complete immutable YAML inspector program');
  }catch(error){
-  console.error('RETURN_DESCRIPTOR_CONFLICT_TRACE',JSON.stringify(seen));
+  console.error('RETURN_DESCRIPTOR_CONFLICT_TRACE',JSON.stringify(seen.slice(-30)));
   throw error;
  }finally{Map.prototype.get=oldGet;}
 });
