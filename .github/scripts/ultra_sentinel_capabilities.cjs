@@ -274,14 +274,57 @@ function findCapabilities(ast){
    if(!changed)break;
    if(round===MAX_ROUNDS-1)throw Error('Array alias closure budget exceeded');
   }
+  // Derive aliases to nested array rows by their slot identity. A scalar
+  // function extracted from an array must not be mistaken for a row alias.
+  const rowSlots=new Map();
+  const initial=variable?.defs?.[0]?.node?.init;
+  if(initial?.type==='ArrayExpression')rowSlots.set(variable,initial.elements);
+  for(let round=0;round<MAX_ROUNDS;round++){
+   let progressed=false;
+   traverse(ast,node=>{
+    if(node.type!=='VariableDeclarator'||!node.init)return;
+    const src=node.init;
+    if(node.id?.type==='Identifier'&&src.type==='Identifier'&&rowSlots.has(symbol(src))){
+     const id=symbol(node.id);
+     if(!rowSlots.has(id)){rowSlots.set(id,rowSlots.get(symbol(src)));progressed=true;}
+    }
+    if(node.id?.type==='Identifier'&&src.type==='MemberExpression'&&src.computed&&
+       src.object?.type==='Identifier'&&rowSlots.has(symbol(src.object))){
+     const source=rowSlots.get(symbol(src.object)),idx=staticArrayIndex(src.property);
+     const found=idx===null?null:source?.[idx],id=symbol(node.id);
+     if(found?.type==='ArrayExpression'&&!rowSlots.has(id)){
+      rowSlots.set(id,found.elements);progressed=true;
+     }
+    }
+    if(node.id?.type==='ObjectPattern'&&src.type==='Identifier'&&rowSlots.has(symbol(src))){
+     const source=rowSlots.get(symbol(src));
+     for(const prop of node.id.properties){
+      if(prop.type!=='Property'||prop.value?.type!=='Identifier')continue;
+      const key=stablePatternKey(prop),index=key===null?null:Number(key);
+      const found=Number.isSafeInteger(index)&&index>=0?source?.[index]:null;
+      const id=symbol(prop.value);
+      if(found?.type==='ArrayExpression'&&!rowSlots.has(id)){
+       rowSlots.set(id,found.elements);progressed=true;
+      }
+     }
+    }
+   });
+   if(!progressed)break;
+   if(round===MAX_ROUNDS-1)throw Error('Nested row alias budget exceeded');
+  }
+  for(const id of rowSlots.keys())aliases.add(id);
+  const descendsFromArray=node=>{
+   if(node?.type==='Identifier')return aliases.has(symbol(node));
+   if(node?.type==='MemberExpression')return descendsFromArray(node.object);
+   return false;
+  };
   let uncertain=false;
   for(const alias of aliases)
    if(alias?.references?.some(ref=>ref.isWrite()&&!ref.init))uncertain=true;
   const readonly=new Set(['at','slice','concat','includes','indexOf',
    'lastIndexOf','join','keys','values','entries','findIndex','toString']);
   traverse(ast,(node,parent,key)=>{
-   if(node.type==='MemberExpression'&&node.object?.type==='Identifier'&&
-      aliases.has(symbol(node.object))){
+   if(node.type==='MemberExpression'&&descendsFromArray(node.object)){
     if(parent?.type==='AssignmentExpression'&&parent.left===node||
        parent?.type==='UpdateExpression'&&parent.argument===node||
        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&parent.argument===node)
@@ -289,7 +332,13 @@ function findCapabilities(ast){
     if(parent?.type==='CallExpression'&&parent.callee===node){
      const method=stableMethodName(node);
      // a[0]() is a callback invocation, a.splice() mutates the container.
-     if(method===null||(!/^(0|[1-9][0-9]*)$/.test(method)&&!readonly.has(method)))
+     // A native call/apply/bind on a known callback slot does not mutate
+     // the enclosing array; a splice/fill on any nested row does.
+     const callbackIntrinsic=['call','apply','bind'].includes(method)&&
+      node.object?.type==='MemberExpression'&&
+      /^(0|[1-9][0-9]*)$/.test(stableMethodName(node.object)||'');
+     if(method===null||(!/^(0|[1-9][0-9]*)$/.test(method)&&
+        !readonly.has(method)&&!callbackIntrinsic))
       uncertain=true;
     }
    }
