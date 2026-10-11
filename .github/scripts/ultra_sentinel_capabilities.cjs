@@ -742,13 +742,15 @@ function findCapabilities(ast){
     if(!id||typeof id!=='object'||id.defs?.length!==1||
        id.references?.some(ref=>ref.isWrite()&&!ref.init))changed=true;
    }
+   // Native handles can escape through returned arrays/objects, generators
+   // and instance fields, not just direct return statements.
    if(node.type==='ReturnStatement'&&
-      (returnedSliceCapability(node.argument)||
-       node.argument?.type==='Identifier'&&slicePatternAliases.has(symbol(node.argument)))||
+      (returnedSliceCapability(node.argument)||packedSliceHandle(node.argument))||
       node.type==='ArrowFunctionExpression'&&
        node.body?.type!=='BlockStatement'&&
-       (returnedSliceCapability(node.body)||
-        node.body?.type==='Identifier'&&slicePatternAliases.has(symbol(node.body))))
+       (returnedSliceCapability(node.body)||packedSliceHandle(node.body))||
+      node.type==='YieldExpression'&&packedSliceHandle(node.argument)||
+      node.type==='PropertyDefinition'&&packedSliceHandle(node.value))
     changed=true;
   });
   nativeSliceIntegrity=!changed;
