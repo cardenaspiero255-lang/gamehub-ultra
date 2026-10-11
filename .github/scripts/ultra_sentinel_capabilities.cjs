@@ -138,7 +138,7 @@ function findCapabilities(ast){
    }
    return {properties:merged};
   }
-  throw Error('Conflicting property capability provenance');
+  throw Error('Conflicting property capability provenance: '+[a,b].map(v=>v===PRESENT?'PRESENT':v===UNKNOWN?'UNKNOWN':v?.functionNode?'FUNCTION':v?.properties?'PROPERTIES':v?.optional?'OPTIONAL':typeof v).join('/'));
  }
  function joinObjectBranches(left,right,depth=0){
   if(depth>MAX_DEPTH)throw Error('Object branch provenance depth exceeded');
