@@ -719,7 +719,17 @@ for(const [name,source] of dangerous){
     ['constant computed apply with undefined',"function f(x=eval(userPatch)){};f(1);const key='apply';f[key](null,[undefined])"]
    ])assert.notEqual(result(sample),'CLEAR',variant+' bypassed executable default gate');
   }
- });
+
+  if(name==='P1 escaped default passed to Reflect.apply'){
+   // Codex P1: these inputs must be attributed to the dangerous callable,
+   // not merely rejected for an unrelated parser/provenance exception.
+   for(const [variant,sample] of [
+    ['direct bound function arguments','function bad(g){g.eval(userPatch)};bad.bind(null,globalThis)()'],
+    ['aliased bound function arguments','function bad(g){g.eval(userPatch)};const wrapped=bad.bind(null,globalThis);wrapped()'],
+    ['array-indexed local callback','function bad(g){g.eval(userPatch)};const callbacks=[bad];callbacks[0](globalThis)'],
+    ['array-alias indexed callback','function bad(g){g.eval(userPatch)};const callbacks=[bad];const copy=callbacks;copy[0](globalThis)']
+   ])assert.equal(result(sample),'BLOCKER',variant+' lost a proven global eval sink');
+  } });
 }
 for(const [name,source] of benign){
  test(name+' stays clear to prevent false-positive review deadlocks',()=>{
@@ -732,5 +742,11 @@ for(const [name,source] of benign){
     ['constant computed apply with false',"function f(x=eval(userPatch)){};f(1);const key='apply';f[key](null,[false])"]
    ])assert.equal(result(sample),'CLEAR',variant+' incorrectly enabled an inactive default');
   }
- });
+
+  if(name==='P2 bound value suppresses default'){
+   for(const [variant,sample] of [
+    ['bound function with local safe object','function bad(g){g.eval(userPatch)};bad.bind(null,{eval(){}})()'],
+    ['array callback with local safe object','function bad(g){g.eval(userPatch)};const callbacks=[bad];callbacks[0]({eval(){}})']
+   ])assert.equal(result(sample),'CLEAR',variant+' was blocked despite a proven benign receiver');
+  } });
 }
