@@ -602,9 +602,12 @@ function findCapabilities(ast){
           parent?.type==='UpdateExpression'&&parent.argument===node||
           parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
            parent.argument===node))stable=false;
-      if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
-         ['defineProperty','defineProperties','setPrototypeOf','set','assign'].includes(
-          stableMethodName(node.callee)))stable=false;
+      if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'){
+       const owner=intrinsicOwner(node.callee.object);
+       const method=stableMethodName(node.callee);
+       if(owner==='Object'&&['defineProperty','defineProperties','setPrototypeOf','assign'].includes(method)||
+          owner==='Reflect'&&['defineProperty','setPrototypeOf','set'].includes(method))stable=false;
+      }
      });
      wrappersReadOnly=stable;
      return stable;
