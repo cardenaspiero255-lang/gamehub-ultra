@@ -1094,6 +1094,23 @@ for(const [name,source] of sentinelCodexDangerous)
 for(const [name,source] of sentinelCodexBenign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Codex-vs-Sentinel differential probes, review on 7ec3786.
+// These strings are parsed only and never executed by these tests.
+const differentialRound4Dangerous=[
+ ["P1 sequence wrapped source preserves dangerous computed-key default","function bad(g){g.eval('attack')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=(0,holder);x[0](globalThis)"],
+ ["P1 nested Function.prototype.call.call mutator changes captured source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Function.prototype.call.call(Object.setPrototypeOf,Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 nested Function.prototype.apply.call mutator changes captured source","function bad(g){g.eval('attack')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Function.prototype.apply.call(Object.setPrototypeOf,Object,[empty,{get:()=>a}]);poison(empty);a[0](globalThis)"]
+];
+const differentialRound4Benign=[
+ ["P2 disjoint constant computed source key is benign","const key='y',a=[()=>1],holder={[key]:42};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint constant computed key via alias is benign","const key='y',a=[()=>1],holder={[key]:42},source=holder;const {x=a}=source;a[0]()"],
+ ["P2 direct static computed string is benign","const a=[()=>1],holder={['y']:42};const {x=a}=holder;a[0]()"]
+];
+for(const [name,source] of differentialRound4Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of differentialRound4Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
