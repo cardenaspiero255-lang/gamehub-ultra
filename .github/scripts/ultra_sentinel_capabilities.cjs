@@ -531,7 +531,16 @@ function findCapabilities(ast){
    if(defs.length!==1||defs[0].parent?.kind!=='let'||
       defs[0].node?.id?.type!=='Identifier'||defs[0].node?.init)
     return false;
-   const writes=(alias.references||[]).filter(r=>r.isWrite()&&!r.init);
+   // eslint-scope also reports the uninitialized `let x;` declaration
+   // as a write. It has no assigned value and is not a mutation.
+   const emptyDeclaration=reference=>{
+    const node=reference.identifier,parent=parentOf.get(node);
+    return parent?.type==='VariableDeclarator'&&parent.id===node&&
+     !parent.init;
+   };
+   if(emptyDeclaration(ref))return true;
+   const writes=(alias.references||[]).filter(r=>
+    r.isWrite()&&!r.init&&!emptyDeclaration(r));
    if(writes.length!==1||writes[0]!==ref)return false;
    // ESLint-scope may expose a write identifier at the outer destructuring
    // assignment instead of directly below the property's default. Verify
