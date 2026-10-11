@@ -144,8 +144,10 @@ function findCapabilities(ast){
   if(depth>MAX_DEPTH)throw Error('Object branch provenance depth exceeded');
   const out=new Map();
   for(const name of new Set([...left.keys(),...right.keys()])){
-   if(left.has(name)&&right.has(name))
-    out.set(name,mergeDescriptor(left.get(name),right.get(name),depth+1));
+   if(left.has(name)&&right.has(name)){
+    try{out.set(name,mergeDescriptor(left.get(name),right.get(name),depth+1));}
+    catch(error){throw Error(String(error.message)+' at property '+String(name));}
+   }
    else out.set(name,optional(left.has(name)?left.get(name):right.get(name)));
   }
   return out;
