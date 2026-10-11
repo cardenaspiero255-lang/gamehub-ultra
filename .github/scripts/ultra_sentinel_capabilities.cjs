@@ -549,8 +549,14 @@ function findCapabilities(ast){
    // alias to the native method. Unknown boundaries remain INCOMPLETE.
    function sliceMethod(expr,level=0,seenMethods=new Set()){
     if(!expr||level>MAX_DEPTH)return false;
-    if(expr.type==='MemberExpression')
-     return stableMethodName(expr)==='slice'&&nativeArraySliceTrusted();
+    if(expr.type==='MemberExpression'){
+     if(stableMethodName(expr)!=='slice')return false;
+     // Returning false here silently loses the copied callback's identity.
+     // An unproven inherited method MUST be INCOMPLETE, not CLEAR.
+     if(!nativeArraySliceTrusted())
+      throw Error('Inherited array slice intrinsic may be overwritten');
+     return true;
+    }
     if(expr.type==='Identifier'){
      const id=symbol(expr);
      if(!id||typeof id!=='object'||seenMethods.has(id))return false;
