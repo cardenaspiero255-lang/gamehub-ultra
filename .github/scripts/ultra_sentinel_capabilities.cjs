@@ -669,9 +669,44 @@ function findCapabilities(ast){
    }
   }
  });
+ // Never suppress a function default using a partial list of calls. A function
+ // can escape via unknown callbacks, arrays, conditional aliases or a computed
+ // method reference. An unresolved invocation must invalidate default silence.
+ // We intentionally overapproximate possible calls, never certify missing edges.
+ const possiblyInvoked=new Set();
+ function addDescriptorFunctions(descriptor,depth=0){
+  if(!descriptor||depth>MAX_DEPTH)return;
+  if(descriptor.functionNode)possiblyInvoked.add(descriptor.functionNode);
+  if(descriptor.optional)addDescriptorFunctions(descriptor.value,depth+1);
+  if(descriptor.properties)
+   for(const value of descriptor.properties.values())
+    addDescriptorFunctions(value,depth+1);
+ }
+ function addObjectFunctions(properties){
+  if(properties)for(const value of properties.values())addDescriptorFunctions(value);
+ }
+ traverse(ast,(node,parent,key)=>{
+  if(node.type!=='Identifier'||!reference.has(node))return;
+  const fn=functions.get(symbol(node));
+  if(!fn||!parent)return;
+  if(['ArrayExpression','ConditionalExpression','LogicalExpression',
+       'ReturnStatement','SpreadElement'].includes(parent.type))
+   possiblyInvoked.add(fn);
+  if(parent.type==='CallExpression'&&key==='arguments'&&!invocation(parent).fn)
+   possiblyInvoked.add(fn);
+ });
+ const observed=calls.map(call=>({call,...invocation(call)}));
+ for(const {call,fn} of observed){
+  if(fn)continue;
+  if(call.callee?.type==='MemberExpression'&&propName(call.callee)===null)
+   addObjectFunctions(propertyKinds(call.callee.object));
+  for(const arg of call.arguments||[])
+   addObjectFunctions(propertyKinds(arg?.type==='SpreadElement'?arg.argument:arg));
+ }
  const localFunctions=new Set(functions.values());
  for(const fn of localFunctions){
-  const relevant=calls.map(invocation).filter(x=>x.fn===fn);
+  if(possiblyInvoked.has(fn))continue;
+  const relevant=observed.filter(x=>x.fn===fn);
   if(!relevant.length)continue;
   for(let i=0;i<(fn.params||[]).length;i++){
    const param=fn.params[i];
