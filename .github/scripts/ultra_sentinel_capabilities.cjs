@@ -288,7 +288,8 @@ function findCapabilities(ast){
    if(!value||depth>MAX_DEPTH)return false;
    if(value.type==='MemberExpression')
     return stableMethodName(value)==='constructor'&&
-     nativeSliceHandle(value.object,depth+1,new Set(seen));
+     (nativeSliceHandle(value.object,depth+1,new Set(seen))||
+      value.object?.type==='Identifier'&&slicePatternAliases.has(symbol(value.object)));
    if(value.type!=='Identifier')return false;
    const id=symbol(value);
    if(!id||typeof id!=='object'||seen.has(id))return false;
@@ -305,6 +306,9 @@ function findCapabilities(ast){
    if(!value||depth>MAX_DEPTH)return false;
    if(nativeSliceHandle(value)||sliceCallablePrototype(value))return true;
    if(value.type==='Identifier'&&slicePatternAliases.has(symbol(value)))return true;
+   if(value.type==='MemberExpression'&&
+      sliceMemberSources(value,depth+1,new Set(seen))
+       .some(part=>packedSliceHandle(part,depth+1,new Set(seen))))return true;
    // A rest binding or carrier alias can expose a nested slice handle.
    if(value.type==='MemberExpression'&&value.object?.type==='Identifier'&&
       slicePatternAliases.has(symbol(value.object)))return true;
@@ -380,7 +384,9 @@ function findCapabilities(ast){
       value.object?.type==='Identifier'&&
        symbol(value.object)==='free:Function'||
       nativeSliceConstructor(value.object,depth+1,new Set(seen)))||
-     method==='__proto__'&&nativeSliceHandle(value.object,depth+1,new Set(seen));
+     method==='__proto__'&&
+      (nativeSliceHandle(value.object,depth+1,new Set(seen))||
+       value.object?.type==='Identifier'&&slicePatternAliases.has(symbol(value.object)));
    }
    if(value.type==='Identifier'){
     const id=symbol(value);
@@ -481,6 +487,35 @@ function findCapabilities(ast){
    }
    return slots;
   }
+
+  // Resolve nested literal carriers without conflating their contained
+  // native-slice functions with the object/array carrying the function.
+  function sliceMemberSources(expr,depth=0,seen=new Set()){
+   slicePatternBudget(depth);
+   if(!expr)return [];
+   if(expr.type!=='MemberExpression')return sliceLiteralSources(expr,depth+1,seen);
+   const owners=sliceMemberSources(expr.object,depth+1,new Set(seen));
+   const key=slicePatternKey(expr.property,expr.computed);
+   const candidates=[];
+   for(const owner of owners){
+    const arr=sliceArraySlots(owner,depth+1);
+    if(arr){
+     if(key!==null&&/^(0|[1-9][0-9]*)$/.test(key)){
+      const index=Number(key);
+      if(index<arr.length)candidates.push(arr[index]);
+     }else if(key===null)candidates.push(...arr);
+     continue;
+    }
+    const obj=sliceObjectSlots(owner,depth+1);
+    if(obj){
+     const relevant=obj.filter(x=>key===null||x.key===null||x.key===key);
+     const last=key===null?-1:obj.findLastIndex(x=>x.key===key);
+     candidates.push(...(last<0?relevant:
+      relevant.filter(x=>x.key===null||obj.indexOf(x)>=last)).map(x=>x.value));
+    }
+   }
+   return candidates;
+  }
   function markSlicePattern(pattern){
    if(!pattern)return;
    if(pattern.type==='Identifier'){
@@ -508,7 +543,7 @@ function findCapabilities(ast){
    if(!pattern)return;
    slicePatternBudget(depth);
    if(pattern.type==='Identifier'){
-    if(nativeSliceHandle(expr)||sliceCallablePrototype(expr)||
+    if(returnedSliceCapability(expr)||
        expr?.type==='Identifier'&&slicePatternAliases.has(symbol(expr)))
      markSlicePattern(pattern);
     return;
@@ -627,13 +662,19 @@ function findCapabilities(ast){
      changed=true;
    }
    if(node.type==='MemberExpression'&&node.object?.type==='Identifier'&&
-      slicePatternAliases.has(symbol(node.object))&&
-      (stableMethodName(node)===null||
-       ['call','apply'].includes(stableMethodName(node)))){
-    if(parent?.type==='AssignmentExpression'&&parent.left===node||
-       parent?.type==='UpdateExpression'&&parent.argument===node||
-       parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
-        parent.argument===node)changed=true;
+      slicePatternAliases.has(symbol(node.object))){
+    const method=stableMethodName(node);
+    if(method===null||['call','apply'].includes(method)){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)changed=true;
+    }
+    // Legacy accessors operate on the function object itself, without
+    // passing the native handle as a formal call argument.
+    if(parent?.type==='CallExpression'&&parent.callee===node&&
+       (method===null||['__defineGetter__','__defineSetter__'].includes(method)))
+     changed=true;
    }
    if(node.type==='MemberExpression'&&nativeSliceHandle(node.object)&&
       ['call','apply'].includes(stableMethodName(node))){
@@ -687,7 +728,8 @@ function findCapabilities(ast){
    // Assigning a native slice handle to a carrier or mutable binding can
    // expose its call/apply properties; never retain the native fast-path.
    if(node.type==='AssignmentExpression'&&
-      (returnedSliceCapability(node.right)||
+      (returnedSliceCapability(node.right)||packedSliceHandle(node.right)&&
+       node.right?.type!=='Identifier'||
        node.right?.type==='Identifier'&&slicePatternAliases.has(symbol(node.right))))
     changed=true;
    // A mutable declarator may hold a previously native handle and later
