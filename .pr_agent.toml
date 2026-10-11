@@ -1,11 +1,29 @@
-# Qodo GitHub App: disable all automatic PR and push commands.
-# This is a cost-control preference; removal of GitHub App access is the final safeguard.
-# Do not restore reviews without the owner's explicit permission.
+# Qodo Free for Open Source — activated by repo owner on 2026-10-11.
+# Run reviews only: never auto-approve, merge, apply fixes or rewrite PR descriptions.
+# Codex and CodeRabbit remain disabled under docs/REVIEWERS_NO_CREDITS.md.
+
 [github_app]
-pr_commands = []
-push_commands = []
-handle_push_trigger = false
+pr_commands = ["/agentic_review"]
+handle_push_trigger = true
+push_commands = ["/agentic_review"]
 feedback_on_draft_pr = false
+
+[review_agent]
+enabled = true
+publish_output = true
+comments_location_policy = "both"
+inline_comments_severity_threshold = 2
+approve_pr_on_self_review = false
+
+[pr_reviewer]
+require_security_review = true
+require_tests_review = true
+enable_auto_approval = false
+
+[config]
+ignore_repositories = []
+disable_auto_feedback = false
+enable_auto_approval = false
 
 [chat_agent]
 enabled = false
@@ -16,7 +34,3 @@ enable_auto_checks_feedback = false
 [fixer_agent]
 enable = false
 enable_auto_fix = false
-
-[config]
-# Defense in depth: ignore every pull request from this repository.
-ignore_repositories = ["^cardenaspiero255-lang/gamehub-ultra$"]
