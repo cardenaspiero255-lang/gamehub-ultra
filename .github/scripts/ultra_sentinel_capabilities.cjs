@@ -478,6 +478,53 @@ function findCapabilities(ast){
      seen.add(id);
      return inertLiteralSource(defs[0].node.init,depth+1,seen);
     }
+    // Only prove a post-snapshot escape harmless if every intervening call
+    // is a known read-only builtin or a local function whose entire body
+    // consists of returning a literal (or doing nothing). Unknown helpers
+    // may write references to the captured callback array into the carrier.
+    function provenReadOnlyCall(callee,depth=0,seen=new Set()){
+     if(!callee||depth>MAX_DEPTH)return false;
+     const inertFunction=fn=>Boolean(fn&&
+      ['FunctionDeclaration','FunctionExpression','ArrowFunctionExpression'].includes(fn.type)&&
+      (fn.body?.type==='Literal'||
+       fn.body?.type==='BlockStatement'&&
+        (fn.body.body.length===0||
+         fn.body.body.length===1&&
+         fn.body.body[0]?.type==='ReturnStatement'&&
+         (!fn.body.body[0].argument||
+          fn.body.body[0].argument.type==='Literal'))));
+     if(callee.type==='MemberExpression'){
+      const name=stableMethodName(callee);
+      const owner=callee.object?.type==='Identifier'?symbol(callee.object):null;
+      if(name==='log'&&owner==='free:console')return true;
+      if(name==='getPrototypeOf'&&
+         (owner==='free:Object'||owner==='free:Reflect'))return true;
+      const expr=callee.object;
+      if(expr?.type!=='Identifier')return false;
+      const id=symbol(expr),defs=id?.defs||[];
+      if(!id||typeof id!=='object'||seen.has(id)||
+         defs.length!==1||defs[0].parent?.kind!=='const'||
+         id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+      const obj=defs[0].node?.init;
+      if(obj?.type!=='ObjectExpression')return false;
+      const matching=obj.properties.filter(p=>p.type==='Property'&&
+        !p.computed&&stablePatternKey(p)===name);
+      return matching.length===1&&inertFunction(matching[0].value);
+     }
+     if(callee.type!=='Identifier')return false;
+     const id=symbol(callee),defs=id?.defs||[];
+     if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+        id.references?.some(ref=>ref.isWrite()&&!ref.init))return false;
+     seen.add(id);
+     const decl=defs[0].node;
+     if(inertFunction(decl))return true;
+     if(decl?.type==='VariableDeclarator'&&
+        defs[0].parent?.kind==='const'){
+      if(inertFunction(decl.init))return true;
+      return provenReadOnlyCall(decl.init,depth+1,seen);
+     }
+     return false;
+    }
     function safePostSnapshotEscape(node,value,snapshot){
      if(!Number.isSafeInteger(snapshot)||!Number.isSafeInteger(node?.start)||
         node.start<=snapshot)return false;
@@ -492,6 +539,16 @@ function findCapabilities(ast){
       cursor=parent;
      }
      if(!inTopLevelStatement)return false;
+     // Calls are the escape boundary. Every unproved callee is potentially
+     // effectful even if it appears after the object default snapshot.
+     cursor=node;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent||parent.type==='Program')break;
+      if(parent.type==='CallExpression'&&!provenReadOnlyCall(parent.callee))
+       return false;
+      cursor=parent;
+     }
      const original=inertLiteralSource(value);
      if(!original)return false;
      // Conservatively retain INCOMPLETE for writes to the source at ANY
@@ -597,8 +654,11 @@ function findCapabilities(ast){
                stableMethodName(cursor)==='call'&&layers<MAX_DEPTH){
           layers++;cursor=cursor.object;
          }
+         // .apply supplies its mutated receiver directly in arguments[0],
+         // whereas .call wrappers shift the receiver by each call layer.
          target=layers>0?candidate.arguments?.[layers-1]||null:
-          candidate.callee.object;
+          stableMethodName(candidate.callee)==='apply'?
+           candidate.arguments?.[0]||null:candidate.callee.object;
         }
        }
        if(action&&(target===null||affectsCarrier(target)))modified=true;
