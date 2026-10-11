@@ -87,12 +87,12 @@ test('trusted automatic reviewer fetches bounded immutable Kotlin and Java sourc
  assert.ok(start>=0&&target>start&&read>target&&analyze>read,
   'full source must be fetched before the analyzer inspects PR diff hunks');
  const excerpt=wf.slice(target,analyze);
- assert.match(excerpt,/\\\.\\\(\\\?:kt\\\|java\\\)/,
+ assert.ok(excerpt.includes(String.raw`\\.(?:kt|java)$`),
   'Kotlin and Java production files must both be included');
- assert.match(excerpt,/ref:pr\\.head\\.sha/,
+ assert.ok(excerpt.includes('ref:pr.head.sha'),
   'only fetch source at the immutable PR HEAD');
- assert.match(excerpt,/size>160000/,
+ assert.ok(excerpt.includes('size>160000'),
   'preserve the source-size bound');
- assert.match(excerpt,/item\\.fullSource=bytes\\.toString\\("utf8"\\)/);
- assert.match(excerpt,/item\\.status!=="removed"/);
+ assert.ok(excerpt.includes('item.fullSource=bytes.toString("utf8")'));
+ assert.ok(excerpt.includes('item.status!=="removed"'));
 });
