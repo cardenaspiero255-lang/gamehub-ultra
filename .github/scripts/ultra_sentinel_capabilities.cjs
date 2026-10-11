@@ -8,6 +8,7 @@
  */
 const eslintScope=require('eslint-scope');
 const NODE_BUDGET=50000;
+const AST_DEPTH_BUDGET=256;
 const MAX_ROUNDS=32;
 const MAX_DEPTH=18;
 const GLOBAL=new Set(['globalThis','global']);
@@ -55,19 +56,28 @@ function keyName(prop){
 }
 function traverse(node,visitor){
  let count=0;
- function walk(current,parent=null,key=''){
+ function walk(current,parent=null,key='',depth=0){
   if(!current||typeof current!=='object'||typeof current.type!=='string')return;
+  if(depth>AST_DEPTH_BUDGET)throw Error('AST nesting budget exceeded');
   if(++count>NODE_BUDGET)throw Error('AST budget exceeded');
   visitor(current,parent,key);
   for(const [k,value] of Object.entries(current)){
    if(k==='range'||k==='loc'||k==='start'||k==='end')continue;
-   if(Array.isArray(value))for(const part of value)walk(part,current,k);
-   else walk(value,current,k);
+   if(Array.isArray(value))for(const part of value)walk(part,current,k,depth+1);
+   else walk(value,current,k,depth+1);
   }
  }
  walk(node);
 }
+function preflightAstBudget(ast){
+ const parentOf=new WeakMap();
+ traverse(ast,(node,parent)=>{if(parent)parentOf.set(node,parent);});
+ return parentOf;
+}
 function findCapabilities(ast){
+ // Reject oversized or pathological ASTs BEFORE the more expensive scope
+ // engine allocates resolution graphs. Unknown input is never CLEAR.
+ const parentOf=preflightAstBudget(ast);
  const manager=eslintScope.analyze(ast,{ecmaVersion:2022,sourceType:'script',
   optimistic:true,ignoreEval:true,impliedStrict:false});
  const reference=new WeakMap(),declaration=new WeakMap();
@@ -76,8 +86,6 @@ function findCapabilities(ast){
   for(const variable of scope.variables)
    for(const id of variable.identifiers)declaration.set(id,variable);
  }
- const parentOf=new WeakMap();
- traverse(ast,(node,parent)=>{if(parent)parentOf.set(node,parent);});
  const kinds=new Map(), objects=new Map(),bindings=[];
  const arrayBindings=new Map();
  // Preserve Function.bind closures across object/array destructuring and aliases.
@@ -2166,4 +2174,4 @@ function findCapabilities(ast){
  });
  return sinks;
 }
-module.exports={findCapabilities};
+module.exports={findCapabilities,preflightAstBudget};
