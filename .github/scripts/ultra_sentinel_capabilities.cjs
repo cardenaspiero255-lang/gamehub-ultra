@@ -302,7 +302,34 @@ function findCapabilities(ast){
     // Project ObjectPattern defaults through stable lexical object aliases.
     // Unknown writes/escapes invalidate certification rather than silently
     // dropping the array alias that is mutated by the destructured variable.
-    function immutableObjectSource(value,depth=0,seen=new Set()){
+    // Destructuring snapshots cannot be changed by later straight-line
+    // assignments. Branch/loop/closure writes still fail closed.
+    function objectPatternSnapshot(pattern){
+     let cursor=pattern;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent)return null;
+      if(parent.type==='VariableDeclarator'||parent.type==='AssignmentExpression')
+       return Number.isSafeInteger(parent.start)?parent.start:null;
+      cursor=parent;
+     }
+     return null;
+    }
+    function safePostSnapshotWrite(node,snapshot){
+     if(!Number.isSafeInteger(snapshot)||!Number.isSafeInteger(node?.start)||
+        node.start<=snapshot)return false;
+     let cursor=node;
+     for(let depth=0;depth<MAX_DEPTH;depth++){
+      const parent=parentOf.get(cursor);
+      if(!parent)return false;
+      if(parent.type==='Program')return true;
+      if(!['MemberExpression','AssignmentExpression','ExpressionStatement',
+            'UpdateExpression','UnaryExpression'].includes(parent.type))return false;
+      cursor=parent;
+     }
+     return false;
+    }
+    function immutableObjectSource(value,depth=0,seen=new Set(),snapshot=null){
      if(!value||depth>MAX_DEPTH)return null;
      if(value.type==='ObjectExpression')return value;
      if(value.type!=='Identifier')return null;
@@ -316,7 +343,7 @@ function findCapabilities(ast){
       visited.add(current);
       for(const ref of current.references||[]){
        if(ref.isWrite()){
-        if(ref.init)continue;
+        if(ref.init||safePostSnapshotWrite(ref.identifier,snapshot))continue;
         throw Error('Mutable object source alias');
        }
        const id=ref.identifier,parent=parentOf.get(id);
@@ -335,7 +362,8 @@ function findCapabilities(ast){
            outer?.type==='UpdateExpression'&&outer.argument===parent||
            outer?.type==='UnaryExpression'&&outer.operator==='delete'&&outer.argument===parent||
            outer?.type==='CallExpression'&&outer.callee===parent)
-         throw Error('Object source property mutation unknown');
+         if(!safePostSnapshotWrite(parent,snapshot))
+          throw Error('Object source property mutation unknown');
         continue;
        }
        throw Error('Object source escape or mutation unknown');
@@ -352,7 +380,7 @@ function findCapabilities(ast){
        throw Error('Object source accessor/spread/prototype unknown');
       return init;
      }
-     return immutableObjectSource(init,depth+1,seen);
+     return immutableObjectSource(init,depth+1,seen,snapshot);
     }
     function project(pattern,value,depth=0){
      if(!pattern||depth>MAX_DEPTH)return;
@@ -377,7 +405,8 @@ function findCapabilities(ast){
       for(let i=0;i<pattern.elements.length;i++)
        project(pattern.elements[i],value.elements[i],depth+1);
      if(pattern.type==='ObjectPattern'){
-      const sourceObject=immutableObjectSource(value,depth+1);
+      const sourceObject=immutableObjectSource(value,depth+1,new Set(),
+       objectPatternSnapshot(pattern));
       if(sourceObject)for(const entry of pattern.properties){
        if(entry.type!=='Property')continue;
        const key=stablePatternKey(entry);
