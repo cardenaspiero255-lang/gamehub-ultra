@@ -995,6 +995,25 @@ for(const [name,source] of codex173Dangerous)
 for(const [name,source] of codex173Benign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Codex 173 follow-up P1/P2: protect the native slice method's prototype
+// and propagate stable object source through assignment destructuring.
+// Snippets are analyzed as static AST only, NEVER evaluated.
+const codex173Round2Dangerous=[
+ ["P1 Object.setPrototypeOf changes inherited native slice.call","function bad(g){g.eval('attack')}const a=[()=>1];Object.setPrototypeOf(a.slice,{call(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 Reflect.setPrototypeOf changes inherited native slice.call","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.setPrototypeOf(a.slice,{call(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 extracted defineProperty replaces native slice.call","function bad(g){g.eval('attack')}const a=[()=>1];const dp=Object.defineProperty;dp(a.slice,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 object alias defineProperty replaces native slice.apply","function bad(g){g.eval('attack')}const a=[()=>1],O=Object;O.defineProperty(a.slice,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"]
+];
+const codex173Round2Benign=[
+ ["P2 assignment ObjectPattern with stable empty RHS stays CLEAR","const a=[()=>1],empty={};let x;({x=a}=empty);x[0]();a[0]()"],
+ ["P2 assignment ObjectPattern through const source alias stays CLEAR","const a=[()=>1],empty={},alias=empty;let x;({x=a}=alias);x[0]();a[0]()"],
+ ["P2 assignment ObjectPattern with present safe slot stays CLEAR","const a=[()=>1],holder={x:[()=>2]};let x;({x=a}=holder);x[0]();a[0]()"]
+];
+for(const [name,source] of codex173Round2Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of codex173Round2Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
