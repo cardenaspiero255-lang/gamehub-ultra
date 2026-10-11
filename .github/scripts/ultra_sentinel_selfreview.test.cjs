@@ -128,6 +128,33 @@ test('dynamic JS execution is blocked',()=>{
  const malformed=scan([file(src,'const x = (eval(userPatch)')],SHA);
  assert.equal(malformed.status,'BLOCKED','partial syntax must never be certified safe');
  assert.ok(malformed.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'));
+ // Codex family: aliases preserve dynamic execution capabilities.
+ for(const code of [
+  'const {eval:e}=globalThis; e(userPatch)',
+  'const g=globalThis; g.eval(userPatch)',
+  "const g=global; g['eval'](userPatch)",
+  "const {Function: F}=globalThis; new F(userPatch)",
+  "const {runInThisContext:r}=require('node:vm'); r(userPatch)",
+  "const {runInNewContext:r}=require('vm'); r(userPatch)",
+  "const {compileFunction:c}=require('node:vm'); c(userPatch)",
+  "require('node:vm').compileFunction(userPatch)()",
+  "vm.compileFunction(userPatch)()",
+  "vm['compileFunction'](userPatch)()",
+  "const v=require('node:vm'); const exec=v['compileFunction']; exec(userPatch)",
+  "const first=globalThis; const second=first; second['eval'](userPatch)",
+  "let take; take=globalThis['eval']; take(userPatch)",
+  "Reflect.get(globalThis,'eval')(userPatch)"
+ ]) {
+  const r=scan([file(src,...code.split('\n'))],SHA);
+  assert.equal(r.status,'BLOCKED',code);
+  assert.ok(r.findings.some(f=>f.rule==='DYNAMIC_EVAL'),code);
+ }
+ for(const code of [
+  'const g=globalThis; g.console.log(42)',
+  "const {eval: e}={eval:(x)=>x}; e(42)",
+  "const {compileFunction:c}={compileFunction:(x)=>x}; c(42)",
+  "const tool={compileFunction:x=>x}; tool.compileFunction(42)"
+ ]) assert.equal(scan([file(src,code)],SHA).status,'ADVISORY',code);
  // Hunk starts inside a previously existing comment: full-source context
  // must suppress false confirmed DYNAMIC_EVAL. Missing context fails closed.
  const earlier=['/*',...Array.from({length:98},()=>'* inert')];
