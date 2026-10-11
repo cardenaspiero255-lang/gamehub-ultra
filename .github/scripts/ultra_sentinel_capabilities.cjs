@@ -739,20 +739,54 @@ function findCapabilities(ast){
    return resolveFunction(node.right,depth+1);
   return null;
  }
+ // Identity of Reflect.apply is preserved across const aliases and wrappers.
+ // Treat mutable aliases as unknown provenance rather than certifying CLEAR.
+ function reflectsApply(node,depth=0,seen=new Set()){
+  if(!node||depth>MAX_DEPTH)return false;
+  if(node.type==='MemberExpression')
+   return stableMethodName(node)==='apply'&&definerRoot(node.object)==='Reflect';
+  if(node.type==='Identifier'){
+   const id=symbol(node);
+   if(!id||typeof id!=='object'||seen.has(id))return false;
+   const defs=id.defs||[];
+   if(defs.length!==1||defs[0].parent?.kind!=='const'||
+      defs[0].node?.id?.type!=='Identifier')return false;
+   if(id.references?.some(ref=>ref.isWrite()&&!ref.init))
+    throw Error('Mutable Reflect.apply alias');
+   seen.add(id);
+   return reflectsApply(defs[0].node?.init,depth+1,seen);
+  }
+  if(node.type==='SequenceExpression')
+   return reflectsApply(node.expressions?.at(-1),depth+1,seen);
+  return false;
+ }
  function invocation(node,depth=0){
-  // Reflect.apply executes a target with an explicit argument-array value.
-  if(node.callee?.type==='MemberExpression'&&
-     stableMethodName(node.callee)==='apply'&&
-     definerRoot(node.callee.object)==='Reflect'){
-   const linked=boundCallable(node.arguments?.[0],depth+1);
-   const fn=linked?.fn||resolveFunction(node.arguments?.[0],depth+1);
+  let reflectArgs=null;
+  if(reflectsApply(node.callee,depth+1))reflectArgs=node.arguments||[];
+  else if(node.callee?.type==='MemberExpression'){
+   const wrapper=stableMethodName(node.callee);
+   if(['call','apply'].includes(wrapper)&&
+      reflectsApply(node.callee.object,depth+1)){
+    if(wrapper==='call')reflectArgs=(node.arguments||[]).slice(1);
+    else{
+     const supplied=node.arguments?.[1];
+     if(supplied?.type!=='ArrayExpression'||
+        supplied.elements.some(e=>!e||e.type==='SpreadElement'))
+      throw Error('Unresolved Reflect.apply wrapper arguments');
+     reflectArgs=supplied.elements;
+    }
+   }
+  }
+  if(reflectArgs){
+   const linked=boundCallable(reflectArgs[0],depth+1);
+   const fn=linked?.fn||resolveFunction(reflectArgs[0],depth+1);
    if(!fn)throw Error('Unresolved Reflect.apply target');
-   const values=node.arguments?.[2];
+   const values=reflectArgs[2];
    if(values?.type!=='ArrayExpression'||
       values.elements.some(e=>!e||e.type==='SpreadElement'))
     throw Error('Unresolved Reflect.apply argument array');
    return {fn,args:[...(linked?.args||[]),...values.elements],
-    receiver:linked?.receiver||node.arguments?.[1]||null};
+    receiver:linked?.receiver||reflectArgs[1]||null};
   }
   // Native call/apply wrappers around extracted call/apply/bind are
   // interprocedural invocations, not opaque member calls.
