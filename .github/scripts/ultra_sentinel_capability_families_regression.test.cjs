@@ -1023,6 +1023,32 @@ const assignmentFollowupUnsafe=[
 for(const [name,source] of assignmentFollowupUnsafe)
  test(name,()=>assert.notEqual(result(source),'CLEAR',name));
 
+// Codex review #173 / 273f168: inherited prototype writes, shadowed
+// builtins, and post-snapshot benign source escapes. All payloads stay AST.
+const codex173Round3Dangerous=[
+ ["P1 own native slice inherited __proto__ call overwrite","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(a.slice.__proto__,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 computed __proto__ apply overwrite","function bad(g){g.eval('attack')}const a=[()=>1];Reflect.defineProperty(a.slice['__proto__'],'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 direct Function.prototype call overwrite","function bad(g){g.eval('attack')}const a=[()=>1];Function.prototype.call=function(x){x.fill(bad)};a.slice.call(a);a[0](globalThis)"],
+ ["P1 Object.getPrototypeOf native slice mutation","function bad(g){g.eval('attack')}const a=[()=>1];Object.defineProperty(Object.getPrototypeOf(a.slice),'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 prototype alias passed to mutator","function bad(g){g.eval('attack')}const a=[()=>1],proto=a.slice.__proto__;Object.defineProperty(proto,'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 mutation of source object before snapshot remains uncertain","const a=[()=>1],empty={};mutate(empty);const {x=a}=empty;a[0]()"],
+ ["P1 escaped source after snapshot carries tracked array","function bad(g){g.eval('attack')}const a=[()=>1],holder={x:a};const {x}=holder;mutate(holder);a[0](globalThis)"]
+];
+const codex173Round3Benign=[
+ ["P2 local Array parameter prototype does not poison global slice","function f(Array){Object.defineProperty(Array.prototype,'slice',{value:1})}const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 local Array let shadow remains independent","const Array={prototype:{}};Array.prototype.slice=()=>42;const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 local Function prototype mutation is unrelated","function f(Function){Function.prototype.call=()=>1}const a=[()=>1];const c=a.slice.call(a);c[0]()"],
+ ["P2 empty snapshot source may escape afterward","const a=[()=>1],empty={};const {x=a}=empty;console.log(empty);a[0]()"],
+ ["P2 empty snapshot source may be passed to unknown function later","const a=[()=>1],empty={};const {x=a}=empty;mutate(empty);a[0]()"],
+ ["P2 source alias may escape after snapshot","const a=[()=>1],empty={},alias=empty;const {x=a}=alias;console.log(empty);a[0]()"],
+ ["P2 primitive-only source can escape after snapshot","const a=[()=>1],source={y:42};const {x=a}=source;console.log(source);a[0]()"],
+ ["P2 source escape through return after snapshot leaves captured default","const a=[()=>1],empty={};const {x=a}=empty;function get(){return empty}a[0]()"]
+];
+for(const [name,source] of codex173Round3Dangerous)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of codex173Round3Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
