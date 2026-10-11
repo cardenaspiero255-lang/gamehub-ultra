@@ -304,6 +304,10 @@ function findCapabilities(ast){
   function packedSliceHandle(value,depth=0,seen=new Set()){
    if(!value||depth>MAX_DEPTH)return false;
    if(nativeSliceHandle(value)||sliceCallablePrototype(value))return true;
+   if(value.type==='Identifier'&&slicePatternAliases.has(symbol(value)))return true;
+   // A rest binding or carrier alias can expose a nested slice handle.
+   if(value.type==='MemberExpression'&&value.object?.type==='Identifier'&&
+      slicePatternAliases.has(symbol(value.object)))return true;
    if(value.type==='SpreadElement')return packedSliceHandle(value.argument,depth+1,seen);
    if(value.type==='SequenceExpression')
     return value.expressions.some(x=>packedSliceHandle(x,depth+1,new Set(seen)));
@@ -397,6 +401,194 @@ function findCapabilities(ast){
    }
    return false;
   }
+
+  // Monotone may-alias analysis of slice handles projected by destructuring.
+  // Keep harmless local reads CLEAR; revoke native trust on writes or escapes.
+  const slicePatternAliases=new Set();
+  let sliceProjectionSteps=0;
+  function slicePatternBudget(depth){
+   if(depth>MAX_DEPTH||++sliceProjectionSteps>150000)
+    throw Error('Slice pattern provenance budget exceeded');
+  }
+  function slicePatternKey(node,computed,depth=0,seen=new Set()){
+   if(!computed)return node?.type==='Identifier'?node.name:
+    node?.type==='Literal'?String(node.value):stringValue(node);
+   if(node?.type==='Literal'&&['string','number'].includes(typeof node.value))
+    return String(node.value);
+   const direct=stringValue(node);
+   if(direct!==null)return direct;
+   if(node?.type!=='Identifier'||depth>MAX_DEPTH)return null;
+   const id=symbol(node),defs=id?.defs||[];
+   if(!id||typeof id!=='object'||seen.has(id)||defs.length!==1||
+      defs[0].parent?.kind!=='const'||defs[0].node?.id?.type!=='Identifier'||
+      id.references?.some(ref=>ref.isWrite()&&!ref.init))return null;
+   seen.add(id);
+   return slicePatternKey(defs[0].node.init,true,depth+1,seen);
+  }
+  function sliceLiteralSources(expr,depth=0,seen=new Set()){
+   slicePatternBudget(depth);
+   if(!expr)return [null];
+   if(expr.type==='SequenceExpression')
+    return sliceLiteralSources(expr.expressions?.at(-1),depth+1,seen);
+   if(expr.type==='ConditionalExpression')
+    return [...sliceLiteralSources(expr.consequent,depth+1,new Set(seen)),
+     ...sliceLiteralSources(expr.alternate,depth+1,new Set(seen))];
+   if(expr.type==='LogicalExpression')
+    return [...sliceLiteralSources(expr.left,depth+1,new Set(seen)),
+     ...sliceLiteralSources(expr.right,depth+1,new Set(seen))];
+   if(expr.type==='AssignmentExpression'&&expr.operator==='=')
+    return sliceLiteralSources(expr.right,depth+1,seen);
+   if(expr.type==='Identifier'){
+    const id=symbol(expr),defs=id?.defs||[];
+    if(id&&typeof id==='object'&&!seen.has(id)&&defs.length===1&&
+       ['const','let','var'].includes(defs[0].parent?.kind)&&
+       defs[0].node?.id?.type==='Identifier'&&
+       !id.references?.some(ref=>ref.isWrite()&&!ref.init)){
+     seen.add(id);
+     return sliceLiteralSources(defs[0].node.init,depth+1,seen);
+    }
+   }
+   return [expr];
+  }
+  function sliceArraySlots(expr,depth=0){
+   slicePatternBudget(depth);
+   if(expr?.type!=='ArrayExpression')return null;
+   const slots=[];
+   for(const item of expr.elements||[]){
+    if(item?.type==='SpreadElement'){
+     const branches=sliceLiteralSources(item.argument,depth+1);
+     const expanded=branches.length===1?sliceArraySlots(branches[0],depth+1):null;
+     if(expanded)slots.push(...expanded);
+     else slots.push(item.argument); // unknown spread fails closed on escape
+    }else slots.push(item);
+   }
+   return slots;
+  }
+  function sliceObjectSlots(expr,depth=0){
+   slicePatternBudget(depth);
+   if(expr?.type!=='ObjectExpression')return null;
+   const slots=[];
+   for(const p of expr.properties||[]){
+    if(p.type==='SpreadElement'){
+     for(const v of sliceLiteralSources(p.argument,depth+1)){
+      const spread=sliceObjectSlots(v,depth+1);
+      if(spread)slots.push(...spread);
+      else slots.push({key:null,value:v});
+     }
+    }else if(p.type==='Property')
+     slots.push({key:slicePatternKey(p.key,p.computed),value:p.value});
+    else slots.push({key:null,value:p});
+   }
+   return slots;
+  }
+  function markSlicePattern(pattern){
+   if(!pattern)return;
+   if(pattern.type==='Identifier'){
+    const id=symbol(pattern);
+    if(id&&typeof id==='object')slicePatternAliases.add(id);
+   }else if(pattern.type==='AssignmentPattern')markSlicePattern(pattern.left);
+   else if(pattern.type==='RestElement')markSlicePattern(pattern.argument);
+   else if(pattern.type==='ArrayPattern')
+    for(const item of pattern.elements||[])markSlicePattern(item);
+   else if(pattern.type==='ObjectPattern')
+    for(const item of pattern.properties||[])
+     markSlicePattern(item.type==='Property'?item.value:item.argument);
+  }
+  function sliceIsUndefined(expr){
+   return !expr||expr.type==='Identifier'&&
+    expr.name==='undefined'&&symbol(expr)==='free:undefined'||
+    expr.type==='UnaryExpression'&&expr.operator==='void';
+  }
+  function sliceIsDefinitelyDefined(expr){
+   return Boolean(expr&&['Literal','ArrayExpression','ObjectExpression',
+    'FunctionExpression','ArrowFunctionExpression','ClassExpression',
+    'TemplateLiteral'].includes(expr.type));
+  }
+  function projectSlicePattern(pattern,expr,depth=0){
+   if(!pattern)return;
+   slicePatternBudget(depth);
+   if(pattern.type==='Identifier'){
+    if(nativeSliceHandle(expr)||sliceCallablePrototype(expr)||
+       expr?.type==='Identifier'&&slicePatternAliases.has(symbol(expr)))
+     markSlicePattern(pattern);
+    return;
+   }
+   if(pattern.type==='AssignmentPattern'){
+    if(!sliceIsUndefined(expr))projectSlicePattern(pattern.left,expr,depth+1);
+    if(sliceIsUndefined(expr)||!sliceIsDefinitelyDefined(expr))
+     projectSlicePattern(pattern.left,pattern.right,depth+1);
+    return;
+   }
+   if(pattern.type==='RestElement'){
+    if(packedSliceHandle(expr))markSlicePattern(pattern.argument);
+    return;
+   }
+   const branches=sliceLiteralSources(expr,depth+1);
+   for(const source of branches){
+    if(pattern.type==='ArrayPattern'){
+     const slots=sliceArraySlots(source,depth+1);
+     if(!slots){
+      if(packedSliceHandle(source))markSlicePattern(pattern);
+      continue;
+     }
+     for(let i=0;i<(pattern.elements||[]).length;i++){
+      const item=pattern.elements[i];
+      if(item?.type==='RestElement'){
+       if(slots.slice(i).some(x=>packedSliceHandle(x)))
+        markSlicePattern(item.argument);
+      }else projectSlicePattern(item,slots[i],depth+1);
+     }
+    }else if(pattern.type==='ObjectPattern'){
+     const slots=sliceObjectSlots(source,depth+1);
+     if(!slots){
+      if(packedSliceHandle(source))markSlicePattern(pattern);
+      continue;
+     }
+     const consumed=new Set();
+     for(const item of pattern.properties||[]){
+      if(item.type==='RestElement'){
+       if(slots.some(x=>!consumed.has(x.key)&&packedSliceHandle(x.value)))
+        markSlicePattern(item.argument);
+       continue;
+      }
+      if(item.type!=='Property')continue;
+      const key=slicePatternKey(item.key,item.computed);
+      if(key!==null)consumed.add(key);
+      const candidates=slots.filter(x=>key===null||x.key===null||x.key===key);
+      const last=key===null?-1:slots.findLastIndex(x=>x.key===key);
+      const selected=last<0?candidates:
+       candidates.filter(x=>x.key===null||slots.indexOf(x)>=last);
+      if(!selected.length)projectSlicePattern(item.value,null,depth+1);
+      else for(const entry of selected)
+       projectSlicePattern(item.value,entry.value,depth+1);
+     }
+    }
+   }
+  }
+  // Reach a fixed point across destructured and normal lexical aliases.
+  let slicePatternConverged=false;
+  for(let round=0;round<MAX_ROUNDS;round++){
+   const oldSize=slicePatternAliases.size;
+   traverse(ast,node=>{
+    if(node.type==='VariableDeclarator'){
+     if(['ArrayPattern','ObjectPattern'].includes(node.id?.type))
+      projectSlicePattern(node.id,node.init);
+     else if(node.id?.type==='Identifier'&&node.init?.type==='Identifier'&&
+             slicePatternAliases.has(symbol(node.init)))
+      markSlicePattern(node.id);
+    }
+    if(node.type==='AssignmentExpression'&&node.operator==='='){
+     if(['ArrayPattern','ObjectPattern'].includes(node.left?.type))
+      projectSlicePattern(node.left,node.right);
+     else if(node.left?.type==='Identifier'&&node.right?.type==='Identifier'&&
+             slicePatternAliases.has(symbol(node.right)))
+      markSlicePattern(node.left);
+    }
+   });
+   if(slicePatternAliases.size===oldSize){slicePatternConverged=true;break;}
+  }
+  if(!slicePatternConverged)
+   throw Error('Slice destructuring alias closure budget exceeded');
   // Returned native slice handles escape even through concise arrow bodies,
   // conditional expressions and immutable aliases. Revoke the fast path
   // rather than assuming Function.prototype.call/apply still applies.
@@ -433,6 +625,15 @@ function findCapabilities(ast){
     if(parent?.type==='CallExpression'&&parent.callee===node&&
        (method===null||['__defineGetter__','__defineSetter__'].includes(method)))
      changed=true;
+   }
+   if(node.type==='MemberExpression'&&node.object?.type==='Identifier'&&
+      slicePatternAliases.has(symbol(node.object))&&
+      (stableMethodName(node)===null||
+       ['call','apply'].includes(stableMethodName(node)))){
+    if(parent?.type==='AssignmentExpression'&&parent.left===node||
+       parent?.type==='UpdateExpression'&&parent.argument===node||
+       parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+        parent.argument===node)changed=true;
    }
    if(node.type==='MemberExpression'&&nativeSliceHandle(node.object)&&
       ['call','apply'].includes(stableMethodName(node))){
@@ -485,7 +686,9 @@ function findCapabilities(ast){
    if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
    // Assigning a native slice handle to a carrier or mutable binding can
    // expose its call/apply properties; never retain the native fast-path.
-   if(node.type==='AssignmentExpression'&&returnedSliceCapability(node.right))
+   if(node.type==='AssignmentExpression'&&
+      (returnedSliceCapability(node.right)||
+       node.right?.type==='Identifier'&&slicePatternAliases.has(symbol(node.right))))
     changed=true;
    // A mutable declarator may hold a previously native handle and later
    // overwrite its binding. Such flows cannot use the trusted native path.
@@ -497,9 +700,13 @@ function findCapabilities(ast){
     if(!id||typeof id!=='object'||id.defs?.length!==1||
        id.references?.some(ref=>ref.isWrite()&&!ref.init))changed=true;
    }
-   if(node.type==='ReturnStatement'&&returnedSliceCapability(node.argument)||
+   if(node.type==='ReturnStatement'&&
+      (returnedSliceCapability(node.argument)||
+       node.argument?.type==='Identifier'&&slicePatternAliases.has(symbol(node.argument)))||
       node.type==='ArrowFunctionExpression'&&
-       node.body?.type!=='BlockStatement'&&returnedSliceCapability(node.body))
+       node.body?.type!=='BlockStatement'&&
+       (returnedSliceCapability(node.body)||
+        node.body?.type==='Identifier'&&slicePatternAliases.has(symbol(node.body))))
     changed=true;
   });
   nativeSliceIntegrity=!changed;
