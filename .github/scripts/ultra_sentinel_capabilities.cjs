@@ -349,7 +349,8 @@ function findCapabilities(ast){
    // and all writes to its reachable properties can be proved immutable.
    // A declaration target in an ObjectPattern is not an escaping value.
    // Only identifier REFERENCES can escape through object/array carriers.
-   if(node.type==='Identifier'&&reference.has(node)&&aliases.has(symbol(node))&&
+   if(node.type==='Identifier'&&reference.has(node)&&!declaration.has(node)&&
+      aliases.has(symbol(node))&&
       (parent?.type==='Property'&&key==='value'||
        parent?.type==='ArrayExpression'&&key==='elements')){
     // Array-pattern projections are already tracked by the alias closure;
