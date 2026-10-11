@@ -65,9 +65,27 @@ function directSinkEvidence(ast){
   }
  };
  function recordWrite(target){
-  if(target?.type==='Identifier'&&
+  if(!target)return;
+  // Destructuring and iteration assign their nested targets, not just the
+  // outer pattern node. Missing a write must never certify a builtin sink.
+  if(target.type==='AssignmentPattern'){
+   recordWrite(target.left);return;
+  }
+  if(target.type==='RestElement'){
+   recordWrite(target.argument);return;
+  }
+  if(target.type==='ArrayPattern'){
+   for(const item of target.elements||[])recordWrite(item);
+   return;
+  }
+  if(target.type==='ObjectPattern'){
+   for(const property of target.properties||[])
+    recordWrite(property.type==='Property'?property.value:property.argument);
+   return;
+  }
+  if(target.type==='Identifier'&&
      isGlobal(target,['globalThis','global','eval','Function']))revoke(target.name);
-  if(target?.type==='MemberExpression'&&
+  if(target.type==='MemberExpression'&&
      isGlobal(target.object,['globalThis','global'])){
    const name=methodName(target);
    if(['eval','Function'].includes(name))revoke(name);
@@ -77,6 +95,8 @@ function directSinkEvidence(ast){
  function scanWrites(node){
   if(!node||typeof node!=='object'||typeof node.type!=='string')return;
   if(node.type==='AssignmentExpression')recordWrite(node.left);
+  if((node.type==='ForOfStatement'||node.type==='ForInStatement')&&
+     node.left?.type!=='VariableDeclaration')recordWrite(node.left);
   if(node.type==='UpdateExpression'||node.type==='UnaryExpression'&&
      node.operator==='delete')recordWrite(node.argument);
   if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
