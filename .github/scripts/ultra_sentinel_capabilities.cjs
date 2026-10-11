@@ -240,7 +240,18 @@ function findCapabilities(ast){
     }
     if(parent?.type==='CallExpression'&&parent.callee===node)changed=true;
    }
-   if(node.type==='CallExpression'&&node.arguments?.some(proto))changed=true;
+   if(node.type==='CallExpression'){
+    // Also recognize the direct global spelling: scope resolvers may not
+    // materialize a builtin Array binding in every scope configuration.
+    const intrinsicMutator=node.callee?.type==='MemberExpression'&&
+     ['set','defineProperty','defineProperties','assign'].includes(
+      stableMethodName(node.callee));
+    const directArrayPrototype=arg=>arg?.type==='MemberExpression'&&
+     stableMethodName(arg)==='prototype'&&arg.object?.type==='Identifier'&&
+     arg.object.name==='Array';
+    if(node.arguments?.some(proto)||intrinsicMutator&&
+       node.arguments?.some(directArrayPrototype))changed=true;
+   }
    if(node.type==='Property'&&proto(node.value)||node.type==='ArrayExpression'&&
       node.elements?.some(proto)||node.type==='ReturnStatement'&&proto(node.argument))
     changed=true;
