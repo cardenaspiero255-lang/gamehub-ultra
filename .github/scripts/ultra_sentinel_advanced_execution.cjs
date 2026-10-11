@@ -436,13 +436,24 @@ function findingsForScript(source,{shell=''}={}){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
   const origin=operands[0],destination=targetDir||operands[1];
+  // Conservative reviewer requires no mutable callback-slot carriers.
+  // Explicit iteration preserves directory and symlink decisions unchanged.
+  let preexistingDestinationDir=false;
+  for(const dir of createdDirs){
+   if(dir.name===normalizedFile(destination)&&dir.at<m.start){
+    preexistingDestinationDir=true;break;
+   }
+  }
   const targetIsDirectory=!!targetDir||
-   /\/['"]*$/.test(rawOperands[1]||'')||
-   createdDirs.some(d=>d.name===normalizedFile(destination)&&d.at<m.start);
+   /\/['"]*$/.test(rawOperands[1]||'')||preexistingDestinationDir;
   const to=normalizedFile(targetIsDirectory?
    posix.join(destination,posix.basename(origin)):destination);
-  const symbolic=kind==='ln'&&flags.some(x=>
-   x==='--symbolic'||/^-[A-Za-z]*s[A-Za-z]*$/.test(x));
+  let symbolic=false;
+  if(kind==='ln')for(const option of flags){
+   if(option==='--symbolic'||/^-[A-Za-z]*s[A-Za-z]*$/.test(option)){
+    symbolic=true;break;
+   }
+  }
   const from=normalizedFile(symbolic&&!origin.startsWith('/')?
    posix.join(posix.dirname(to),origin):origin);
   aliases.push({at:m.start,kind,from,to});
@@ -490,7 +501,11 @@ function findingsForScript(source,{shell=''}={}){
     const calledFile=literalFileToken(word);
     if(!calledFile)continue;
     const executedAt=inv.start;
-    const visible=aliases.filter(a=>a.at<executedAt&&(a.at>=d.start||a.kind==='ln'));
+    const visible=[];
+    for(const alias of aliases){
+     if(alias.at<executedAt&&(alias.at>=d.start||alias.kind==='ln'))
+      visible.push(alias);
+    }
     const tainted=new Set([file]);
     for(let i=0;i<visible.length;i++){
      let changed=false;
@@ -573,8 +588,11 @@ function findingsForScript(source,{shell=''}={}){
    word+=ch;
   }
   push();
-  const out=switches.some(w=>/^-OutFile(?::.*)?$/i.test(w));
-  const pass=switches.some(w=>/^-PassT(?:h(?:r(?:u)?)?)?(?::\$true)?$/i.test(w));
+  let out=false,pass=false;
+  for(const option of switches){
+   if(/^-OutFile(?::.*)?$/i.test(option))out=true;
+   if(/^-PassT(?:h(?:r(?:u)?)?)?(?::\$true)?$/i.test(option))pass=true;
+  }
   return out&&!pass;
  };
  const powershellPipelines=/(?:^|[;\n])\s*(?:(?:pwsh|powershell)(?:\.exe)?\b[^\r\n;|]{0,300}?\s+-(?:Command|c)\s+["']?\s*)?((?:iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\r\n;|]{0,4096})\|\s*&?\s*(?:iex|Invoke-Expression)\b/gi;
