@@ -52,3 +52,17 @@ test('self tests remain mandatory and potential critical defects still fail the 
   assert.match(wf, /Potential BLOCKER detected/);
   assert.match(wf, /No external provider approval is required/);
 });
+
+test('trusted auto-review attests omitted added blobs before Core without relaxing failures',()=>{
+ const wf=workflow();
+ const start=wf.indexOf('const evidenceFiles=files.map(');
+ const recover=wf.indexOf('recoverAddedPatch(item,body)',start);
+ const analyze=wf.indexOf('const evidence = analyze(evidenceFiles',start);
+ assert.ok(start>=0&&recover>start&&analyze>recover,
+  'evidence must be reconstructed before Core');
+ const section=wf.slice(start,analyze);
+ assert.match(section,/item.status==='added'/);
+ assert.match(section,/ref:pr\.head\.sha/);
+ assert.match(section,/missingAddedPatch\(item\)/);
+ assert.match(wf,/if \(evidence\.coverage\.partial\) core\.setFailed/);
+});
