@@ -184,9 +184,10 @@ function expressionTerminator(script,start){
  return -1;
 }
 function auditExecutableExpressions(script){
- if(typeof script!=='string')return {unsafe:false,incomplete:true};
- let unsafe=false,incomplete=false,cursor=0;
- while(true){
+ // One fail-closed return descriptor for valid and invalid sources. Non-string
+ // inputs are always incomplete, and are never inspected or evaluated.
+ let unsafe=false,incomplete=typeof script!=='string',cursor=0;
+ if(typeof script==='string')while(true){
   const start=script.indexOf('$'+'{{',cursor);
   if(start<0)break;
   const end=expressionTerminator(script,start);
