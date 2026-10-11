@@ -355,20 +355,26 @@ function findCapabilities(ast){
   let overrides=intrinsicShadowCache.get(id);
   if(!overrides){
    overrides=new Set();
+   // Every lexical alias of the same function object shares writable
+   // properties. A mutation through any alias invalidates the intrinsic.
+   const aliases=new Set([id]);
+   const target=resolveFunction(receiver);
+   if(target)for(const [candidate,fn] of functions)
+    if(fn===target)aliases.add(candidate);
    traverse(ast,node=>{
     if(node.type==='AssignmentExpression'&&node.left?.type==='MemberExpression'&&
-       node.left.object?.type==='Identifier'&&symbol(node.left.object)===id){
+       node.left.object?.type==='Identifier'&&aliases.has(symbol(node.left.object))){
      overrides.add(stableMethodName(node.left)||'*');
     }
     if(node.type==='UpdateExpression'&&node.argument?.type==='MemberExpression'&&
-       node.argument.object?.type==='Identifier'&&symbol(node.argument.object)===id)
+       node.argument.object?.type==='Identifier'&&aliases.has(symbol(node.argument.object)))
      overrides.add(stableMethodName(node.argument)||'*');
     if(node.type==='CallExpression'&&node.callee?.type==='MemberExpression'&&
        node.callee.object?.type==='Identifier'&&
        symbol(node.callee.object)==='free:Object'&&
        ['defineProperty','defineProperties','assign'].includes(stableMethodName(node.callee))&&
        node.arguments?.[0]?.type==='Identifier'&&
-       symbol(node.arguments[0])===id){
+       aliases.has(symbol(node.arguments[0]))){
      const op=stableMethodName(node.callee);
      overrides.add(op==='defineProperty'?stableKeyValue(node.arguments[1])||'*':'*');
     }
@@ -393,6 +399,15 @@ function findCapabilities(ast){
   if(node.type==='SequenceExpression')
    return intrinsicName(node.expressions?.at(-1),depth+1,seen);
   if(node.type==='MemberExpression'){
+   // Array slots preserve extracted native intrinsics just like functions.
+   const slots=node.computed?knownArraySlots(node.object,depth+1):null;
+   if(slots){
+    const index=staticArrayIndex(node.property);
+    if(index===null||index>=slots.length||!slots[index]||
+       slots[index].type==='SpreadElement')
+     throw Error('Unknown extracted intrinsic array slot provenance');
+    return intrinsicName(slots[index],depth+1,new Set(seen));
+   }
    const method=stableMethodName(node);
    if(['call','apply','bind'].includes(method)&&
       resolveFunction(node.object,depth+1)){
@@ -568,6 +583,8 @@ function findCapabilities(ast){
    // Use the same lexical method resolver as the bind escape guard.
    const name=stableMethodName(node.callee);
    if(name==='call'||name==='apply'){
+    if(hasIntrinsicOverride(node.callee.object,name))
+     throw Error('Function intrinsic overwritten through alias');
     const linked=boundCallable(node.callee.object,depth+1);
     const target=linked?.fn||resolveFunction(node.callee.object,depth+1);
     if(target){
