@@ -1111,6 +1111,28 @@ for(const [name,source] of differentialRound4Dangerous)
 for(const [name,source] of differentialRound4Benign)
  test(name,()=>assert.equal(result(source),'CLEAR',name));
 
+// Differential learning from Codex review of 81de018: four root families.
+// Snippets are parsed to AST, NEVER evaluated or imported.
+const sentinelDifferentialRound5Danger=[
+ ["P1 slice handle identity through sequence at defineProperty","function bad(g){g.eval('x')}const a=[()=>1];Object.defineProperty((0,a.slice),'call',{value:function(x){x.fill(bad)}});a.slice.call(a);a[0](globalThis)"],
+ ["P1 native slice handle alias through sequence wrapper","function bad(g){g.eval('x')}const a=[()=>1];const h=(0,a.slice);Object.defineProperty(h,'apply',{value:function(x){x.fill(bad)}});a.slice.apply(a);a[0](globalThis)"],
+ ["P1 conditional RHS containing dangerous computed-key source","function bad(g){g.eval('x')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=(flag?holder:holder);x[0](globalThis)"],
+ ["P1 logical RHS containing dangerous computed-key source","function bad(g){g.eval('x')}const key='x',a=[()=>1],holder={[key]:[bad]};const {x=a}=(holder||holder);x[0](globalThis)"],
+ ["P1 call.call with object mutator shifts target two positions","function bad(g){g.eval('x')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf.call.call(Object.setPrototypeOf,Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"],
+ ["P1 call.call.call with object mutator shifts target three positions","function bad(g){g.eval('x')}function poison(o){o.get().fill(bad)}const a=[()=>1],empty={};const {x=a}=empty;Object.setPrototypeOf.call.call.call(Function.prototype.call,Object.setPrototypeOf,Object,empty,{get:()=>a});poison(empty);a[0](globalThis)"]
+];
+const sentinelDifferentialRound5Benign=[
+ ["P2 disjoint computed source key holding an object","const key='y',a=[()=>1],holder={[key]:{}};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint computed key holding function","const key='y',a=[()=>1],holder={[key]:()=>0};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint computed key holding array of functions","const key='y',a=[()=>1],holder={[key]:[()=>2]};const {x=a}=holder;a[0]()"],
+ ["P2 disjoint computed key holding nested object through alias","const key='y',a=[()=>1],holder={[key]:{nested:{}}},alias=holder;const {x=a}=alias;a[0]()"],
+ ["P2 native slice sequence without mutation remains clear","const a=[()=>1];const copy=(0,a.slice).call(a);copy[0]()"]
+];
+for(const [name,source] of sentinelDifferentialRound5Danger)
+ test(name,()=>assert.notEqual(result(source),'CLEAR',name));
+for(const [name,source] of sentinelDifferentialRound5Benign)
+ test(name,()=>assert.equal(result(source),'CLEAR',name));
+
 // Round nine: independent Codex review on 63c77ad, four remaining P1 families.
 const round9Dangerous=[
  ["P1 array stored inside a second array can escape","function bad(g){g.eval('attack')}function safe(){}const a=[safe];const h=[a];h[0].splice(0,1,bad);a[0](globalThis)"],
