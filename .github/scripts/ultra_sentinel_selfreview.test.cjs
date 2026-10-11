@@ -447,3 +447,23 @@ test('Remote trusted self-review verifies added Git blobs before its protected s
  assert.match(segment,/\?ref='\+sha/);
  assert.doesNotMatch(source,/execSync|eval\s*\(/);
 });
+
+
+test('P1 trusted self-review attests exact Core shard environment provenance',()=>{
+ const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
+ const fullSource=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_core_shards.cjs'),'utf8');
+ const ast=acorn.parse(fullSource,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
+  'trusted analyzer must resolve the complete immutable Core shard program');
+});
+test('P1 trusted self-review attests exact YAML parser computed-input provenance',()=>{
+ const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
+ const fullSource=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_yaml_ast.cjs'),'utf8');
+ const ast=acorn.parse(fullSource,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
+  'trusted analyzer must resolve the complete immutable YAML inspector program');
+});
