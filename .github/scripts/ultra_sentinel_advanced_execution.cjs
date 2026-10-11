@@ -414,7 +414,7 @@ function findingsForScript(source,{shell=''}={}){
  for(const m of commands){
   if(!/^(?:ln|cp|mv|install)$/.test(m.name))continue;
   const kind=m.name,tokens=m.words.slice(1);
-  const operands=[],rawOperands=[];
+  let operandCount=0,origin=null,destOperand=null,rawDestOperand=null;
   let symbolic=false;
   let afterDash=false,invalid=false,targetDir=null,directoryOnly=false;
   for(let i=0;i<tokens.length;i++){
@@ -470,14 +470,15 @@ function findingsForScript(source,{shell=''}={}){
    }
    const operand=literalFileToken(word);
    if(!operand){invalid=true;break;}
-   operands.push(operand);
-   rawOperands.push(word);
+   if(operandCount===0)origin=operand;
+   if(operandCount===1){destOperand=operand;rawDestOperand=word;}
+   operandCount++;
   }
   if(kind==='install'&&directoryOnly)continue;
-  if(invalid||(targetDir?operands.length!==1:operands.length!==2)){
+  if(invalid||(targetDir?operandCount!==1:operandCount!==2)){
    flag('REMOTE_EXECUTION_ANALYSIS_INCOMPLETE');continue;
   }
-  const origin=operands[0],destination=targetDir||operands[1];
+  const destination=targetDir||destOperand;
   // Conservative reviewer requires no mutable callback-slot carriers.
   // Explicit iteration preserves directory and symlink decisions unchanged.
   let preexistingDestinationDir=false;
@@ -487,7 +488,7 @@ function findingsForScript(source,{shell=''}={}){
    }
   }
   const targetIsDirectory=!!targetDir||
-   /\/['"]*$/.test(rawOperands[1]||'')||preexistingDestinationDir;
+   /\/['"]*$/.test(rawDestOperand||'')||preexistingDestinationDir;
   const to=normalizedFile(targetIsDirectory?
    posix.join(destination,posix.basename(origin)):destination);
   const from=normalizedFile(symbolic&&!origin.startsWith('/')?
