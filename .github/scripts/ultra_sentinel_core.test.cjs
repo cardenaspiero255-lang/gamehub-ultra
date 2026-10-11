@@ -328,3 +328,50 @@ test('P2 full source: mismatch to immutable patch must be INCOMPLETE and never p
  assert.ok(!rules(result).includes('FORCED_GC'),JSON.stringify(result.findings));
  assert.ok(!result.remediations?.suggestions?.some(s=>s.rule==='FORCED_GC'));
 });
+
+test('Large added PR file without GitHub patch is fully attested and analyzed',()=>{
+ const crypto=require('node:crypto');
+ const {recoverAddedPatch}=require('./ultra_sentinel_core.cjs');
+ const body=('// '+'a'.repeat(128)+'\n').repeat(970)+
+  'SENTRY_AUTH_TOKEN="abcdefghijklmnop"\n';
+ const bytes=Buffer.from(body,'utf8');
+ const lines=body.split('\n').length-1;
+ const sha=crypto.createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+ const item={filename:'.github/scripts/giant_added.cjs',status:'added',
+  additions:lines,deletions:0,changes:lines,sha,patch:null};
+ const entry={type:'file',sha,size:bytes.length,encoding:'base64',content:bytes.toString('base64')};
+ const patch=recoverAddedPatch(item,entry);
+ assert.ok(typeof patch==='string'&&patch.length>100000&&patch.length<=320000);
+ const result=analyze([{...item,patch}],{sha:'a'.repeat(40)});
+ assert.equal(result.coverage.partial,false,JSON.stringify(result.warnings));
+ assert.ok(rules(result).includes('POTENTIAL_HARDCODED_SECRET'),JSON.stringify(result.findings));
+ assert.equal(result.findings.find(f=>f.rule==='POTENTIAL_HARDCODED_SECRET').line,lines);
+});
+
+test('Missing or tampered sources retain fail-closed incomplete coverage',()=>{
+ const crypto=require('node:crypto');
+ const {recoverAddedPatch}=require('./ultra_sentinel_core.cjs');
+ const text='SENTRY_AUTH_TOKEN="abcdefghijklmnop"\n';
+ const bytes=Buffer.from(text,'utf8');
+ const sha=crypto.createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+ const item={filename:'.github/scripts/new_core.cjs',status:'added',sha,
+  changes:1,additions:1,deletions:0,patch:null};
+ const entry={type:'file',sha,size:bytes.length,encoding:'base64',content:bytes.toString('base64')};
+ const variations=[
+  [{...item,status:'modified'},entry],
+  [{...item,sha:'0'.repeat(40)},entry],
+  [{...item,additions:2,changes:2},entry],
+  [item,{...entry,sha:'0'.repeat(40)}],
+  [item,{...entry,content:Buffer.from('different\n').toString('base64')}],
+  [item,{...entry,size:bytes.length+1}],
+  [item,{...entry,encoding:'utf8'}],
+  [item,null]
+ ];
+ for(const [file,data] of variations){
+  assert.equal(recoverAddedPatch(file,data),null,
+   JSON.stringify({status:file.status,sha:file.sha,entrySha:data?.sha}));
+ }
+ const out=analyze([item],{sha:'a'.repeat(40)});
+ assert.equal(out.verdict,'INCOMPLETE');
+ assert.equal(out.coverage.partial,true);
+});
