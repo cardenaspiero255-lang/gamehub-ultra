@@ -447,3 +447,28 @@ test('Remote trusted self-review verifies added Git blobs before its protected s
  assert.match(segment,/\?ref='\+sha/);
  assert.doesNotMatch(source,/execSync|eval\s*\(/);
 });
+
+// RED diagnostic: exact candidate sources must not be rejected without a provable dynamic capability.
+test('trusted self-review understands the exact benign AST diagnostic and shard-count changes',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ for(const name of ['ultra_sentinel_core_shards.cjs','ultra_sentinel_yaml_ast.cjs']){
+  const fullSource=fs.readFileSync(path.join(__dirname,name),'utf8');
+  const line=name.includes('shards')?31:207;
+  const added=fullSource.split('\n')[line-1];
+  const patch='@@ -'+(line-1)+',0 +'+line+',1 @@\n+'+added;
+  const result=scan([{filename:'.github/scripts/'+name,status:'modified',
+    patch,changes:1,fullSource}],SHA);
+  if(result.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE')){
+   const acorn=require('acorn');
+   const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+   let contextReason='not-known';
+   try {
+    const ast=acorn.parse(fullSource,{ecmaVersion:'latest',sourceType:'script',
+      allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+      locations:true,ranges:true});
+    findCapabilities(ast); contextReason='full-AST-calculated';
+   } catch(e){ contextReason=String(e.message).slice(0,180); }
+   assert.fail(name+' unresolved source: '+contextReason+'; '+JSON.stringify(result.findings));
+  }
+ }
+});
