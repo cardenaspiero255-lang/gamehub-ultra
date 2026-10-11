@@ -27,6 +27,8 @@ jobs:
           set -euo pipefail
           node --check .github/scripts/ultra_sentinel_intelligent_gate.cjs
           node --check .github/scripts/ultra_sentinel_intelligent_gate.test.cjs
+      - name: Install locked parser for AST regression without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify intelligent gate contracts and adversarial scenarios
         run: |
           set -euo pipefail

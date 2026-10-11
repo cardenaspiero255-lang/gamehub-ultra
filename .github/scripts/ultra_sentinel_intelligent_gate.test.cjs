@@ -37,3 +37,13 @@ test('5: hostile enormous finding strings fail closed without leaks',()=>{const 
 test('5: reordering inputs does not change family IDs or overall verdict',()=>{const a=finding({cause:'one'}),b=finding({cause:'two'});const r1=gate.review(request({headFindings:[a,b]})),r2=gate.review(request({headFindings:[b,a]}));assert.deepEqual(r1.families.map(x=>x.id),r2.families.map(x=>x.id));assert.equal(r1.status,r2.status);});
 test('5: duplicate external checks cannot create false evidence',()=>{const c=checks();c.push({...c[0]});assert.equal(gate.review(request({checks:c,headFindings:[]})).status,'INCOMPLETE');});
 test('5: shadow comparison notes divergences without granting merge authority',()=>{const r=gate.review(request({headFindings:[],legacyVerdict:'BLOCKED'}));assert.equal(r.shadowComparison,'DIVERGENCE');assert.equal(r.autoMergeAllowed,false);});
+
+test('trusted AST self-review can attest whole intelligent gate module (not only synthetic unit cases)',()=>{
+ const fs=require('node:fs');
+ const path=require('node:path');
+ const acorn=require('acorn');
+ const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+ const source=fs.readFileSync(path.join(__dirname,'ultra_sentinel_intelligent_gate.cjs'),'utf8');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',locations:true,ranges:true});
+ assert.deepEqual(findCapabilities(ast),[]);
+});
