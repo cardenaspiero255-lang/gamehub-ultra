@@ -474,7 +474,9 @@ function findCapabilities(ast){
       node.elements?.some(proto)||node.type==='ReturnStatement'&&proto(node.argument))
     changed=true;
    if(node.type==='AssignmentExpression'&&proto(node.right))changed=true;
-   if(node.type==='AssignmentExpression'&&sliceCallablePrototype(node.right))
+   // Assigning a native slice handle to a carrier or mutable binding can
+   // expose its call/apply properties; never retain the native fast-path.
+   if(node.type==='AssignmentExpression'&&returnedSliceCapability(node.right))
     changed=true;
    if(node.type==='ReturnStatement'&&returnedSliceCapability(node.argument)||
       node.type==='ArrowFunctionExpression'&&
@@ -547,8 +549,12 @@ function findCapabilities(ast){
       const parent=parentOf.get(cursor);
       if(!parent)return false;
       if(parent.type==='Program')return true;
+      // Bare nested blocks are unconditional lexical sequences. A conditional,
+      // loop, function, try/catch or labelled block still fails closed since
+      // the ancestor chain cannot reach Program through this whitelist.
       if(!['MemberExpression','AssignmentExpression','ExpressionStatement',
-            'UpdateExpression','UnaryExpression','SequenceExpression'].includes(parent.type))return false;
+            'UpdateExpression','UnaryExpression','SequenceExpression',
+            'BlockStatement'].includes(parent.type))return false;
       cursor=parent;
      }
      return false;
