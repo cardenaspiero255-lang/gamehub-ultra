@@ -414,7 +414,8 @@ function findingsForScript(source,{shell=''}={}){
  for(const m of commands){
   if(!/^(?:ln|cp|mv|install)$/.test(m.name))continue;
   const kind=m.name,tokens=m.words.slice(1);
-  const flags=[],operands=[],rawOperands=[];
+  const operands=[],rawOperands=[];
+  let symbolic=false;
   let afterDash=false,invalid=false,targetDir=null,directoryOnly=false;
   for(let i=0;i<tokens.length;i++){
    const word=tokens[i];
@@ -430,7 +431,7 @@ function findingsForScript(source,{shell=''}={}){
     }
     if(/^(?:-[mgo].+|--(?:mode|group|owner)=.+)$/.test(word))continue;
     if(/^(?:-D|-T|-v|-C|-p|-s|--compare|--no-target-directory|--verbose|--preserve-timestamps|--strip)$/.test(word)){
-     flags.push(word);continue;
+     continue;
     }
     if(word.startsWith('--')&&!/^(?:--target-directory(?:=.+)?)$/.test(word)){
      invalid=true;break;
@@ -441,30 +442,31 @@ function findingsForScript(source,{shell=''}={}){
     const value=tokens[++i];
     targetDir=value?literalFileToken(value):null;
     if(!targetDir){invalid=true;break;}
-    flags.push('-t');continue;
+    continue;
    }
    if(!afterDash&&word.startsWith('--target-directory=')){
     targetDir=literalFileToken(word.slice('--target-directory='.length));
     if(!targetDir){invalid=true;break;}
-    flags.push('-t');continue;
+    continue;
    }
    // GNU short options may be clustered: -vt DIR, -svt DIR and
    // -vtdir all have the same -t operand semantics.
    if(!afterDash&&/^-[A-Za-z]+$/.test(word)){
     const t=word.indexOf('t',1);
     if(t>=0){
-     if(t>1)flags.push('-'+word.slice(1,t));
+     if(t>1&&kind==='ln'&&word.slice(1,t).includes('s'))symbolic=true;
      const attached=word.slice(t+1);
      const rawDest=attached||tokens[++i];
      targetDir=rawDest?literalFileToken(rawDest):null;
      if(!targetDir){invalid=true;break;}
-     flags.push('-t');
-    }else flags.push(word);
+     // -t sets target directory, not symbolic-link mode.
+    }else if(kind==='ln'&&/^-[A-Za-z]*s[A-Za-z]*$/.test(word))symbolic=true;
     continue;
    }
    if(!afterDash&&word.startsWith('-')){
     if(!/^--[a-z-]+$/.test(word)){invalid=true;break;}
-    flags.push(word);continue;
+    if(kind==='ln'&&word==='--symbolic')symbolic=true;
+    continue;
    }
    const operand=literalFileToken(word);
    if(!operand){invalid=true;break;}
@@ -488,12 +490,6 @@ function findingsForScript(source,{shell=''}={}){
    /\/['"]*$/.test(rawOperands[1]||'')||preexistingDestinationDir;
   const to=normalizedFile(targetIsDirectory?
    posix.join(destination,posix.basename(origin)):destination);
-  let symbolic=false;
-  if(kind==='ln')for(const option of flags){
-   if(option==='--symbolic'||/^-[A-Za-z]*s[A-Za-z]*$/.test(option)){
-    symbolic=true;break;
-   }
-  }
   const from=normalizedFile(symbolic&&!origin.startsWith('/')?
    posix.join(posix.dirname(to),origin):origin);
   aliases.push({at:m.start,kind,from,to});
