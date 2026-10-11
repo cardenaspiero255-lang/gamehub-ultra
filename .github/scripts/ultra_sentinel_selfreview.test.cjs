@@ -374,7 +374,7 @@ test('AST scope engine rejects unknown high-risk capability propagation, not ben
   "const g=enabled ? {eval:x=>x} : {eval:y=>y};g.eval(42)",
   "const box={nested:{x:{eval:x=>x}}}; const g=box.nested.x;g.eval(42)",
   "const [g]=[{eval:x=>x}];g.eval(42)",
-  "const F=(()=>{}).constructor; const name='safe';"
+  "const name='safe'; const ordinary={constructor:()=>42};ordinary.constructor()"
  ];
  for(const srcText of benign){
   const x=scan([file(src,srcText)],SHA);
