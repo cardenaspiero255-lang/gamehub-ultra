@@ -333,6 +333,22 @@ function findCapabilities(ast){
       p.type!=='Property'||p.kind!=='init'||p.computed))return false;
    const props=obj.properties.filter(p=>keyName(p)===stableMethodName(callee));
    if(props.length!==1)return false;
+   // No local object-method proof survives later reassignments, deletions,
+   // descriptor writes or escapes of its receiver to unknown callees.
+   let pristine=true;
+   traverse(ast,(node,parent)=>{
+    if(!pristine)return;
+    if(node.type==='MemberExpression'&&node.object?.type==='Identifier'&&
+       symbol(node.object)===id){
+     if(parent?.type==='AssignmentExpression'&&parent.left===node||
+        parent?.type==='UpdateExpression'&&parent.argument===node||
+        parent?.type==='UnaryExpression'&&parent.operator==='delete'&&
+         parent.argument===node)pristine=false;
+    }
+    if(node.type==='CallExpression'&&node.arguments?.some(arg=>
+       arg?.type==='Identifier'&&symbol(arg)===id))pristine=false;
+   });
+   if(!pristine)return false;
    const fn=props[0].value;
    return ['FunctionExpression','ArrowFunctionExpression'].includes(fn?.type)&&
     fn.params.every(p=>p.type==='Identifier')&&
@@ -601,7 +617,8 @@ function findCapabilities(ast){
      if(callee.type==='MemberExpression'){
       const wrapper=stableMethodName(callee);
       if(wrapper==='apply'&&callee.object?.type==='Identifier'&&
-         symbol(callee.object)==='free:Reflect'&&call?.callee===callee)
+         symbol(callee.object)==='free:Reflect'&&call?.callee===callee&&
+         pristineWrappers())
        return provenReadOnlyCall(call.arguments?.[0],depth+1,new Set(seen));
       if(['call','apply','bind'].includes(wrapper)&&pristineWrappers())
        return provenReadOnlyCall(callee.object,depth+1,new Set(seen));
