@@ -57,6 +57,45 @@ function directSinkEvidence(ast){
    if(!reference.resolved)free.add(reference.identifier);
  const isGlobal=(id,names)=>id?.type==='Identifier'&&
   names.includes(id.name)&&free.has(id);
+ // Resolve lexical bindings by identity, not by spelling: a local object
+ // named "g" is never confused with an alias in a different scope.
+ const bindings=new WeakMap();
+ for(const scope of scopes.scopes){
+  for(const variable of scope.variables)
+   for(const def of variable.defs||[]){
+    const id=def.name;
+    if(id?.type==='Identifier')bindings.set(id,variable);
+   }
+  for(const reference of scope.references)
+   if(reference.resolved)bindings.set(reference.identifier,reference.resolved);
+ }
+ const globalAliases=new Set();
+ const globalObject=id=>isGlobal(id,['globalThis','global'])||
+  id?.type==='Identifier'&&globalAliases.has(bindings.get(id));
+ // Compute a bounded fixed point so aliases declared before or after their
+ // consumers cannot silently retain a false DEFINITE_SINK verdict.
+ let aliasConverged=false;
+ for(let round=0;round<64;round++){
+  let changed=false;
+  function visit(node){
+   if(!node||typeof node!=='object'||typeof node.type!=='string')return;
+   if(node.type==='VariableDeclarator'&&node.id?.type==='Identifier'&&
+      globalObject(node.init)){
+    const binding=bindings.get(node.id);
+    if(binding&&!globalAliases.has(binding)){
+     globalAliases.add(binding);changed=true;
+    }
+   }
+   for(const [key,value] of Object.entries(node)){
+    if(['range','loc','start','end'].includes(key))continue;
+    if(Array.isArray(value))for(const element of value)visit(element);
+    else visit(value);
+   }
+  }
+  visit(ast);
+  if(!changed){aliasConverged=true;break;}
+ }
+ if(!aliasConverged)throw Error('Shadow global alias closure budget exceeded');
  const tainted=new Set();
  const revoke=name=>{
   tainted.add(name);
@@ -85,8 +124,7 @@ function directSinkEvidence(ast){
   }
   if(target.type==='Identifier'&&
      isGlobal(target,['globalThis','global','eval','Function']))revoke(target.name);
-  if(target.type==='MemberExpression'&&
-     isGlobal(target.object,['globalThis','global'])){
+  if(target.type==='MemberExpression'&&globalObject(target.object)){
    const name=methodName(target);
    if(['eval','Function'].includes(name))revoke(name);
    else if(name===null)revoke('globalThis');
@@ -103,7 +141,7 @@ function directSinkEvidence(ast){
      isGlobal(node.callee.object,['Object','Reflect'])){
    const action=methodName(node.callee);
    if(['defineProperty','set','setPrototypeOf','assign','defineProperties'].includes(action)&&
-      isGlobal(node.arguments?.[0],['globalThis','global'])){
+      globalObject(node.arguments?.[0])){
     const key=node.arguments?.[1];
     if(key?.type==='Literal'&&['eval','Function'].includes(key.value))revoke(key.value);
     else revoke('globalThis');
