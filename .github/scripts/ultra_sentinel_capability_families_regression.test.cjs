@@ -310,7 +310,148 @@ const codexFivePhasesBenign=[
   "const src=flag?{x:v=>v}:{x:z=>z};const {x=globalThis}=src;x(42)"
  ]
 ];
+
+// Codex review 2026-10-11: returned functions, destructured methods, escaped defaults,
+// and array presence. Input snippets are parsed, never executed.
+const codexReturnAndEscapeDangerous=[
+ [
+  "P1 factory returned function this.call",
+  "'use strict'; function make(){return function(){this.eval(userPatch)}}make().call(globalThis)"
+ ],
+ [
+  "P1 factory returned function this.apply",
+  "'use strict'; function make(){return function(){this.eval(userPatch)}}make().apply(globalThis,[])"
+ ],
+ [
+  "P1 factory returned arrow function args",
+  "function make(){return (g)=>g.eval(userPatch)}make()(globalThis)"
+ ],
+ [
+  "P1 factory aliased returned function",
+  "function make(){return function(g){g.eval(userPatch)}}const cb=make();cb(globalThis)"
+ ],
+ [
+  "P1 factory return function identifier",
+  "function make(){function invoke(g){g.eval(userPatch)}return invoke}make()(globalThis)"
+ ],
+ [
+  "P1 method returned function this",
+  "function make(){return function(){this.eval(userPatch)}}const cb=make();cb.call(globalThis)"
+ ],
+ [
+  "P1 destructured renamed object method",
+  "const o={m(g){g.eval(userPatch)}};const {m:a}=o;a(globalThis)"
+ ],
+ [
+  "P1 destructured shorthand object method",
+  "const o={m(g){g.eval(userPatch)}};const {m}=o;m(globalThis)"
+ ],
+ [
+  "P1 destructured alias chain",
+  "const o={m(g){g.eval(userPatch)}};const {m:a}=o;const b=a;b(globalThis)"
+ ],
+ [
+  "P1 destructured bracket-like computed constant",
+  "const o={m(g){g.eval(userPatch)}};const {['m']:a}=o;a(globalThis)"
+ ],
+ [
+  "P1 destructured assignment method",
+  "const o={m(g){g.eval(userPatch)}};let a;({m:a}=o);a(globalThis)"
+ ],
+ [
+  "P1 destructured nested object method",
+  "const o={inner:{m(g){g.eval(userPatch)}}};const {inner:{m:a}}=o;a(globalThis)"
+ ],
+ [
+  "P1 method through object rest",
+  "const o={value:1,m(g){g.eval(userPatch)}};const {value,...rest}=o;rest.m(globalThis)"
+ ],
+ [
+  "P1 escaped function via shorthand property",
+  "function f(x=eval(userPatch)){};f(1);const o={f};o.f()"
+ ],
+ [
+  "P1 escaped function via named property",
+  "function f(x=eval(userPatch)){};f(1);const o={alias:f};o.alias()"
+ ],
+ [
+  "P1 escaped function via returned object",
+  "function f(x=eval(userPatch)){};f(1);function get(){return {f}}get().f()"
+ ],
+ [
+  "P1 escaped function through parameter",
+  "function f(x=eval(userPatch)){};f(1);function invoke(fn){fn()}invoke(f)"
+ ],
+ [
+  "P1 escaped function through method assignment",
+  "function f(x=eval(userPatch)){};f(1);const o={};o.f=f;o.f()"
+ ],
+ [
+  "P1 array default undefined literal",
+  "const [x=eval(userPatch)]=[undefined];x()"
+ ],
+ [
+  "P1 array default void zero",
+  "const [x=eval(userPatch)]=[void 0];x()"
+ ],
+ [
+  "P1 array default missing",
+  "const [x=eval(userPatch)]=[];x()"
+ ],
+ [
+  "P1 array default hole",
+  "const [x=eval(userPatch)]=[,];x()"
+ ],
+ [
+  "P1 array default present other index",
+  "const [a,x=eval(userPatch)]=[1];x()"
+ ],
+ [
+  "P1 array default global absent",
+  "const [x=globalThis]=[];x.eval(userPatch)"
+ ]
+];
+const codexReturnAndEscapeBenign=[
+ [
+  "P2 array default present local function",
+  "const [x=eval(userPatch)]=[()=>1];x()"
+ ],
+ [
+  "P2 array default present normal function",
+  "const [x=eval(userPatch)]=[function(){return 1}];x()"
+ ],
+ [
+  "P2 array default present second element",
+  "const [a,x=eval(userPatch)]=[0,()=>1];x()"
+ ],
+ [
+  "P2 array default present local object",
+  "const [x=globalThis]=[{eval:v=>v}];x.eval(42)"
+ ],
+ [
+  "P2 array default present across literals",
+  "const [x=Function]=[()=>1];x(2)"
+ ],
+ [
+  "P2 nested array default present",
+  "const [[x=eval(userPatch)]]=[[()=>1]];x()"
+ ],
+ [
+  "P2 destructured method with benign input",
+  "const o={m(g){g.eval(42)}};const {m:a}=o;a({eval:v=>v})"
+ ],
+ [
+  "P2 factory returns harmless method",
+  "function make(){return function(){this.eval(42)}}make().call({eval:v=>v})"
+ ],
+ [
+  "P2 escaped function with safe default and all calls present",
+  "function f(x=eval(userPatch)){};f(1);const o={f};o.f(2)"
+ ]
+];
 dangerous.push(...codexNewDangerous);
+dangerous.push(...codexReturnAndEscapeDangerous);
+benign.push(...codexReturnAndEscapeBenign);
 dangerous.push(...codexFivePhasesDangerous);
 benign.push(...codexFivePhasesBenign);
 benign.push(...codexNewBenign);
