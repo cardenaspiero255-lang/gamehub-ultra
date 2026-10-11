@@ -494,7 +494,54 @@ const codexEscapeFamilyBenign=[
   "function f(x=eval(userPatch)){};const execute=(fn)=>fn(2);execute(f)"
  ]
 ];
+// Additional collection-carrier escape regressions. Static parse only.
+const codexCarrierFamilyDangerous=[
+ [
+  "P1 callback carrier escapes in an array variable",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};const packed=[carrier];unknown(packed)"
+ ],
+ [
+  "P1 callback carrier passed as inline array",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};unknown([carrier])"
+ ],
+ [
+  "P1 callback carrier escapes via array spread",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};const packed=[carrier];unknown(...packed)"
+ ],
+ [
+  "P1 callback carrier through nested array in object",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};const outer={items:[carrier]};unknown(outer)"
+ ],
+ [
+  "P1 dynamic callback carrier from array element",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};const packed=[carrier];packed[0][key]()"
+ ],
+ [
+  "P1 callback carrier from function-returned array",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};const packed=[carrier];function expose(){return packed}unknown(expose())"
+ ],
+ [
+  "P1 callback carrier conditional array",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};const packed=flag?[carrier]:[];unknown(packed)"
+ ],
+ [
+  "P1 callback carrier nested array",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};const packed=[[carrier]];unknown(packed)"
+ ]
+];
+const codexCarrierFamilyBenign=[
+ [
+  "P2 known method calls with concrete defaults still clear",
+  "function f(x=eval(userPatch)){}f(1);const carrier={f};carrier.f(2)"
+ ],
+ [
+  "P2 unrelated arrays do not activate function defaults",
+  "function f(x=eval(userPatch)){}f(1);const array=[42,{safe:()=>1}];array[0]"
+ ]
+];
 dangerous.push(...codexNewDangerous);
+dangerous.push(...codexCarrierFamilyDangerous);
+benign.push(...codexCarrierFamilyBenign);
 dangerous.push(...codexEscapeFamilyDangerous);
 benign.push(...codexEscapeFamilyBenign);
 dangerous.push(...codexReturnAndEscapeDangerous);
