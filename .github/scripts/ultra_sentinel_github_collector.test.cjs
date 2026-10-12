@@ -159,13 +159,13 @@ test('workflow: unprivileged contract tests never inject API tokens into PR code
  // sourced exclusively from the trusted default branch.
  const trusted=fs.readFileSync(path.resolve(__dirname,
   '../workflows/ultra-sentinel-github-trusted-evidence.yml'),'utf8');
- const sparse=trusted.match(/sparse-checkout:\\s*\\|([\\s\\S]*?)\\n\\s*persist-credentials:/);
+ const sparse=trusted.match(/sparse-checkout:\s*\|([\s\S]*?)\n\s*persist-credentials:/);
  assert.ok(sparse,'trusted workflow must declare checkout allowlist');
- assert.match(sparse[1],/^\\s*\\.github\\/scripts\\s*$/m);
- assert.match(sparse[1],/^\\s*\\.github\\/workflows\\s*$/m);
- assert.match(trusted,/ref:\\s*\\$\\{\\{ github\\.event\\.repository\\.default_branch \\}\\}/);
- assert.match(trusted,/persist-credentials:\\s*false/);
- assert.doesNotMatch(trusted,/contents:\\s*write|pull-requests:\\s*write|actions:\\s*write/);
+ assert.match(sparse[1],/^\s*\.github\/scripts\s*$/m);
+ assert.match(sparse[1],/^\s*\.github\/workflows\s*$/m);
+ assert.match(trusted,/ref:\s*\$\{\{ github\.event\.repository\.default_branch \}\}/);
+ assert.match(trusted,/persist-credentials:\s*false/);
+ assert.doesNotMatch(trusted,/contents:\s*write|pull-requests:\s*write|actions:\s*write/);
 });
 
 
