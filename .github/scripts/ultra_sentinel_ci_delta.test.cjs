@@ -169,7 +169,7 @@ test('GitHub line-wrapped Base64 content is accepted only as scoped evidence',as
  const oldGetContent=github.rest.repos.getContent;
  github.rest.repos.getContent=async args=>{
   const result=await oldGetContent(args),raw=result.data.content;
-  return {data:{...result.data,content:raw.match(/.{1,64}/g).join('\\n')+'\\n'}};
+  return {data:{...result.data,content:raw.match(/.{1,64}/g).join('\n')+'\n'}};
  };
  const result=await verifyCiDeltaFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172});
  assert.equal(result.status,'SCOPED_DELTA_REVIEW_REQUIRED');
