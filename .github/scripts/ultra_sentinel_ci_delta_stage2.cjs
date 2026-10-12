@@ -62,14 +62,26 @@ function validatePr(pr){
 }
 function latestRun(list){
  if(!Array.isArray(list)||list.length<1)return null;
- let selected=null;
+ let selected=null,selectedAt=null;
  for(const entry of list){
-  if(!entry||!Number.isSafeInteger(entry.id)||
-     !Number.isSafeInteger(entry.run_attempt)||entry.run_attempt<1)
+  // A re-run retains its original run ID: compare the START of its
+  // current attempt, not the creation-order ID. Missing/ambiguous
+  // evidence must fail closed rather than silently certify stale green.
+  if(!entry||!Number.isSafeInteger(entry.id)||entry.id<1||
+     !Number.isSafeInteger(entry.run_attempt)||entry.run_attempt<1||
+     typeof entry.run_started_at!=='string'||
+     !/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?Z$/.test(entry.run_started_at))
    throw Error('INVALID_RUN_ORDER');
-  if(!selected||entry.id>selected.id||
-    (entry.id===selected.id&&entry.run_attempt>selected.run_attempt))
+  const startedAt=Date.parse(entry.run_started_at);
+  if(!Number.isFinite(startedAt))throw Error('INVALID_RUN_START');
+  if(selectedAt!==null&&startedAt===selectedAt&&entry.id!==selected.id)
+   throw Error('AMBIGUOUS_RUN_START');
+  if(!selected||startedAt>selectedAt||
+     (startedAt===selectedAt&&entry.id===selected.id&&
+      entry.run_attempt>selected.run_attempt)){
    selected=entry;
+   selectedAt=startedAt;
+  }
  }
  return selected;
 }
