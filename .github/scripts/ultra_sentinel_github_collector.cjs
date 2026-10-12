@@ -11,6 +11,9 @@ const {review}=require('./ultra_sentinel_intelligent_gate.cjs');
 const SHA=/^[a-f0-9]{40}$/i;
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const REQUIRED=Object.freeze(['Android build','Unit Test Coverage','Ultra Sentinel Core Tests']);
+// Stable workflow IDs obtained from GitHub, not names supplied by a PR.
+const TRUSTED_WORKFLOW_IDS=Object.freeze({'Android build':363810233,
+ 'Unit Test Coverage':367848611,'Ultra Sentinel Core Tests':379109738});
 const MAX_FILES=250,MAX_WORKFLOWS=100,MAX_FINDINGS=5000;
 
 function requireInput(options){
@@ -51,7 +54,8 @@ function checkEvidence(runs,headSha,pr){
   throw Error('WORKFLOW_EVIDENCE_INCOMPLETE');
  const selected=new Map();
  for(const run of runs.workflow_runs){
-  if(!run||!REQUIRED.includes(run.name)||run.event!=='pull_request'||
+  if(!run||!REQUIRED.includes(run.name)||run.workflow_id!==TRUSTED_WORKFLOW_IDS[run.name]||
+     run.event!=='pull_request'||
      typeof run.head_sha!=='string'||run.head_sha.toLowerCase()!==headSha||
      !Array.isArray(run.pull_requests)||!run.pull_requests.some(p=>p?.number===pr)||
      !Number.isSafeInteger(run.id)||!Number.isSafeInteger(run.run_attempt))continue;
@@ -164,5 +168,5 @@ async function main(){
  }
 }
 if(require.main===module)main();
-module.exports={REQUIRED,requireInput,apiClient,validateMetadata,checkEvidence,
+module.exports={REQUIRED,TRUSTED_WORKFLOW_IDS,requireInput,apiClient,validateMetadata,checkEvidence,
  cleanFindings,collect};
