@@ -5,7 +5,8 @@
 Este PR activa recoleccion de evidencia de GitHub exclusivamente mediante el job
 de confianza del workflow Self-Review (evento pull_request_target).
 El checkout se hace desde la rama predeterminada, no desde el PR.
-Permisos estrictos: contents: read, pull-requests: read, actions: read.
+Los permisos actions: read y pull-requests: read solo se conceden al job
+protegido. El job candidato hereda exclusivamente contents: read.
 
 El colector creado en PR #181 recupera SHA inmutable, datos del PR, merge-base,
 archivos y comprobaciones CI, y utiliza el analizador confiable ya existente.
