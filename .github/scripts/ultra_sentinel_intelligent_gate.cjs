@@ -124,13 +124,22 @@ function review(input){
    const id=fingerprint(f),locations=headOccurrences.get(id)||new Set();
    locations.add(f.path+':'+f.line);headOccurrences.set(id,locations);
   }
+  // Prefer an exact inherited location for the unsuffixed fingerprint.
+  // Adding a new, earlier occurrence must not change an old finding's ID.
+  const primaryLocations=new Map();
+  for(const entry of headOccurrences){
+   const id=entry[0],locations=entry[1],baseline=baseMap.get(id);
+   const existing=[...locations].filter(loc=>baseline?.has(loc)).sort();
+   const primary=existing.length?existing[0]:[...locations].sort()[0];
+   primaryLocations.set(id,primary);
+  }
   const findings=[],seen=new Map();let duplicates=0,critical=false;
   const ordered=head.slice().sort((a,b)=>a.path.localeCompare(b.path)||a.line-b.line||a.rule.localeCompare(b.rule)||severityRank(b.severity)-severityRank(a.severity)||a.severity.localeCompare(b.severity));
   for(const f of ordered){
    const rawKey=fingerprint(f);
    const instances=seen.get(rawKey)||new Set();
    if(instances.has(f.path+':'+f.line)){duplicates++;continue;}
-   const key=instances.size?digest(rawKey+'|distinct-location|'+f.path+':'+f.line):rawKey;
+   const key=primaryLocations.get(rawKey)===f.path+':'+f.line?rawKey:digest(rawKey+'|distinct-location|'+f.path+':'+f.line);
    instances.add(f.path+':'+f.line);seen.set(rawKey,instances);
    const baseline=baseMap.get(rawKey),location=f.path+':'+f.line;
    const exact=baseline?.get(location);
