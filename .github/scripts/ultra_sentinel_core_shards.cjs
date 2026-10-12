@@ -179,5 +179,6 @@ module.exports={plan,testFiles,parseTap,validateReport,aggregate,
  SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,MATRIX_EXTRA_AUDITS,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,
  // Export a detached immutable schema snapshot: never publish mutable
  // references to the validator's internal baseline attestation policy.
- BASELINE_TEST_COUNTS:{...BASELINE_TEST_COUNTS},MINIMUM};
-Object.freeze(module.exports.BASELINE_TEST_COUNTS);
+ // Export the already-frozen attestation object directly. Avoid object-spread
+ // reconstruction: trusted provenance analysis must not lose identity here.
+ BASELINE_TEST_COUNTS,MINIMUM};
