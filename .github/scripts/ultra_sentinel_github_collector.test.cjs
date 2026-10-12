@@ -235,3 +235,25 @@ test('integration: invalid snapshot finding must not become a pass verdict',asyn
    {rule:'INVALID<>',path:'app/src/main/x.kt',line:1,severity:'HIGH'}]}});
  await assert.rejects(collector.collect(request(),deps),/SHADOW_EVIDENCE_INCOMPLETE/);
 });
+
+test('incomplete scans still preserve a confirmed critical finding review veto',async()=>{
+ const deps=fixture({audit:{...audit(),status:'ADVISORY',findings:[]}});
+ deps.snapshots=async()=>({autoMergeAllowed:false,
+  base:{sha:B,complete:false,reasons:['SCAN_FILE_TOO_LARGE'],findings:[]},
+  head:{sha:H,complete:false,reasons:['SCAN_FILE_TOO_LARGE'],
+   findings:[{path:'app/src/main/java/x/A.kt',line:5,
+    rule:'UNSCOPED_COROUTINE',severity:'HIGH'}]}});
+ const r=await collector.collect(request(),deps);
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.scopedEvaluator.status,'INCOMPLETE');
+ assert.equal(r.reviewRequired,true);
+ assert.equal(r.autoMergeAllowed,false);
+});
+test('confirmed CI failure cannot be masked by an incomplete snapshot',async()=>{
+ const attempted=runs();attempted[0]={...attempted[0],conclusion:'failure'};
+ const deps=fixture({runs:attempted,audit:{...audit(),status:'ADVISORY',findings:[]}});
+ const r=await collector.collect(request(),deps);
+ assert.equal(r.ciStatus,'BLOCKED');
+ assert.equal(r.reviewRequired,true);
+ assert.equal(r.status,'INCOMPLETE');
+});
