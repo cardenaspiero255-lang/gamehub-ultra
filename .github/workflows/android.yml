@@ -431,9 +431,6 @@ jobs:
 
   release-bundle:
     name: release-bundle
-    # Non-critical bundle build starts after Lint; reserves the 20-runner budget
-    # for all eight Coverage shards while emulator benchmarks run in parallel.
-    needs: quality-lint
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     env:
