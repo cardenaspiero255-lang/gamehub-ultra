@@ -24,7 +24,7 @@ function makeReports(root,out,sha='f'.repeat(40)){
  for(const id of ids){
   const planned=m.plan(id,root),count=planned.kind==='matrix'?
    m.CASES_PER_SHARD+m.EXTRA_CASES_PER_SHARD+
-   (planned.index===0?m.MATRIX_EXTRA_AUDITS:0):m.BASELINE_TEST_COUNTS[id];
+   (planned.index===0?m.MATRIX_EXTRA_AUDITS:0):id==='b0'?m.BASELINE_B0_TESTS:m.BASELINE_B1_TESTS;
   fs.writeFileSync(path.join(out,id+'.json'),JSON.stringify({
    schema:'sentinel-core-shard/v1',...planned,sha,exitCode:0,signal:null,
    counters:{tests:count,pass:count,fail:0,skipped:0,todo:0,cancelled:0},
@@ -64,7 +64,7 @@ test('aggregator demands all 15 reports, exact filenames and minimum 150k',t=>{
  const result=m.aggregate(out,sha,root);
  assert.equal(result.executed,
   m.MATRIX_CASES+m.MATRIX_EXTRA_AUDITS+
-  m.BASELINE_TEST_COUNTS.b0+m.BASELINE_TEST_COUNTS.b1);
+  m.BASELINE_B0_TESTS+m.BASELINE_B1_TESTS);
  assert.equal(result.jobs,15);
  assert.equal(result.passed,true);
  fs.unlinkSync(path.join(out,ids[2]+'.json'));
