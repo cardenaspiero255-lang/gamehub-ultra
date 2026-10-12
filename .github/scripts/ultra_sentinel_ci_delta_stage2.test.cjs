@@ -66,7 +66,8 @@ function fixture(){
   }
   if(relative==='actions/runs?head_sha='+HEAD+'&event=pull_request&per_page=100'){
    const items=state.missingJointAndroid?runs.slice(1):[...runs];
-   if(state.lateAndroidAfterCoverage)items.push({...runs[0],id:910,status:'in_progress',conclusion:null});
+   if(state.lateAndroidAfterCoverage||state.lateRunBadAfterFirstCheck)
+    items.push({...runs[0],id:910,status:'in_progress',conclusion:null});
    return {total_count:items.length,workflow_runs:items};
   }
   if(relative.startsWith('actions/runs/')&&relative.endsWith('/jobs?per_page=100&filter=latest')){
