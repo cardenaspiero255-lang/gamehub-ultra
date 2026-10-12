@@ -29,7 +29,7 @@ const MINIMUM=500000;
 // The 12 RED/GREEN Codex round-six regressions in the baseline b1 suite
 // are intentionally counted; never lower the threshold to mask failures.
 const BASELINE_B0_TESTS=10242;
-const BASELINE_B1_TESTS=11637;
+const BASELINE_B1_TESTS=11677;
 const BASELINE_TEST_COUNTS=Object.freeze({b0:BASELINE_B0_TESTS,b1:BASELINE_B1_TESTS});
 
 function testFiles(root=ROOT){
