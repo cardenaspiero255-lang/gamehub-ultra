@@ -15,10 +15,13 @@ const MAX_TREE=20000,MAX_FILES=400,MAX_FILE_BYTES=150000;
 const MAX_ALL_BYTES=16000000,MAX_FINDINGS=5000,MAX_LINES=10000;
 const SCOPE='WORKFLOWS_SENTINEL_CJS_ANDROID_KOTLIN_JAVA_V1';
 function eligible(path){
- return /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
-  /^\.github\/scripts\/ultra_sentinel_[A-Za-z0-9_.-]+\.cjs$/.test(path)&&
+ if(typeof path!=='string')return false;
+ // Identify source roles BEFORE path-character validation. Otherwise a file
+ // with Unicode/spaces/dot-segments can escape the supposedly full inventory.
+ return /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path)||
+  /^\.github\/scripts\/ultra_sentinel_[^/]+\.cjs$/.test(path)&&
    !path.endsWith('.test.cjs')||
-  /^app\/src\/main\/[A-Za-z0-9_.\/-]+\.(?:kt|java)$/.test(path);
+  /^app\/src\/main\/.+\.(?:kt|java)$/.test(path);
 }
 function safePath(value){
  return typeof value==='string'&&PATH.test(value)&&!value.startsWith('/')&&
