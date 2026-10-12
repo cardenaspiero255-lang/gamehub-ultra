@@ -114,7 +114,7 @@ function review(input){
    if(!old||severityRank(f.severity)>severityRank(old.severity))baseMap.set(id,f);
   }
   const findings=[],seen=new Map();let duplicates=0,critical=false;
-  const ordered=head.slice().sort((a,b)=>a.path.localeCompare(b.path)||a.line-b.line||a.rule.localeCompare(b.rule));
+  const ordered=head.slice().sort((a,b)=>a.path.localeCompare(b.path)||a.line-b.line||a.rule.localeCompare(b.rule)||severityRank(b.severity)-severityRank(a.severity));
   for(const f of ordered){
    const rawKey=fingerprint(f);
    const instances=seen.get(rawKey)||new Set();
