@@ -33,7 +33,19 @@ function createGitHubReader(repo,token,fetcher=globalThis.fetch,options={}){
    if(response.ok)return response.json();
    const status=response.status,header=key=>response.headers?.get?.(key)??null;
    const remaining=header('x-ratelimit-remaining'),retryAfter=header('retry-after');
-   const limit=status===429||(status===403&&(remaining==='0'||retryAfter!==null));
+   let secondary=false;
+   if(status===403&&remaining!=='0'&&retryAfter===null){
+    // Secondary limits sometimes return 403 without Retry-After while
+    // primary quota remains available. Never retry an ordinary forbidden.
+    try{
+     const payload=await response.json();
+     secondary=typeof payload?.message==='string'&&
+      /secondary rate limit|rate limit exceeded|abuse detection|too many requests/i.test(
+       payload.message.slice(0,512));
+    }catch(_){ /* Unknown 403 stays a real permission/error failure. */ }
+   }
+   const limit=status===429||(status===403&&
+    (remaining==='0'||retryAfter!==null||secondary));
    if(!limit)throw Error('GITHUB_API_UNAVAILABLE');
    let ms=60000;
    if(retryAfter!==null){
