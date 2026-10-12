@@ -1,0 +1,164 @@
+'use strict';
+/*
+ * GitHub evidence bridge for Ultra Sentinel (PR #181).
+ * Trusted-main runner only. Read-only shadow diagnostics; never approval/merge.
+ * PR content, API payloads and analyzer output are untrusted data, not code.
+ */
+const fs=require('node:fs');
+const {reviewRemote}=require('./ultra_sentinel_selfreview.cjs');
+const {review}=require('./ultra_sentinel_intelligent_gate.cjs');
+
+const SHA=/^[a-f0-9]{40}$/i;
+const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const REQUIRED=Object.freeze(['Android build','Unit Test Coverage','Ultra Sentinel Core Tests']);
+const MAX_FILES=250,MAX_WORKFLOWS=100,MAX_FINDINGS=5000;
+
+function requireInput(options){
+ const repo=options?.repo,pr=Number(options?.pr),headSha=options?.headSha,token=options?.token;
+ if(!REPO.test(repo||'')||!Number.isSafeInteger(pr)||pr<1||pr>100000000||
+    !SHA.test(headSha||'')||typeof token!=='string'||!token.length)
+  throw Error('INVALID_REQUEST');
+ return {repo,pr,headSha:headSha.toLowerCase(),token};
+}
+function apiClient(repo,token,fetcher=globalThis.fetch){
+ if(typeof fetcher!=='function')throw Error('FETCH_UNAVAILABLE');
+ return async function get(relative){
+  if(!/^[a-zA-Z0-9_.\/?=&%-]+$/.test(relative)||relative.includes('..'))
+   throw Error('INVALID_API_PATH');
+  const response=await fetcher('https://api.github.com/repos/'+repo+'/'+relative,{
+   method:'GET',redirect:'error',
+   headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
+    'X-GitHub-Api-Version':'2022-11-28'},
+   signal:AbortSignal.timeout(20000)
+  });
+  if(!response||!response.ok)throw Error('GITHUB_API_UNAVAILABLE');
+  return response.json();
+ };
+}
+function validateMetadata(info,repo,pr,headSha){
+ if(!info||info.number!==pr||info.state!=='open'||info.head?.sha?.toLowerCase()!==headSha||
+    info.base?.repo?.full_name!==repo||!SHA.test(info.base?.sha||'')||
+    !Number.isSafeInteger(info.changed_files)||info.changed_files<0||info.changed_files>MAX_FILES)
+  throw Error('PR_PROVENANCE_INCOMPLETE');
+ return info.base.sha.toLowerCase();
+}
+function checkEvidence(runs,headSha,pr){
+ if(!runs||!Array.isArray(runs.workflow_runs)||!Number.isSafeInteger(runs.total_count)||
+    runs.total_count>MAX_WORKFLOWS||runs.workflow_runs.length!==runs.total_count)
+  throw Error('WORKFLOW_EVIDENCE_INCOMPLETE');
+ const selected=new Map();
+ for(const run of runs.workflow_runs){
+  if(!run||!REQUIRED.includes(run.name)||run.event!=='pull_request'||
+     typeof run.head_sha!=='string'||run.head_sha.toLowerCase()!==headSha||
+     !Array.isArray(run.pull_requests)||!run.pull_requests.some(p=>p?.number===pr)||
+     !Number.isSafeInteger(run.id)||!Number.isSafeInteger(run.run_attempt))continue;
+  const old=selected.get(run.name);
+  if(!old||run.id>old.id||(run.id===old.id&&run.run_attempt>old.run_attempt))
+   selected.set(run.name,run);
+ }
+ const checks=REQUIRED.map(name=>{
+  const r=selected.get(name);
+  return {name,sha:headSha,source:'trusted',status:r?.status||'pending',
+   conclusion:r?.conclusion||null,runId:r?.id||null};
+ });
+ const failed=checks.some(c=>c.status==='completed'&&c.conclusion&&
+  !['success','neutral','skipped'].includes(c.conclusion));
+ const incomplete=checks.some(c=>c.status!=='completed'||!c.conclusion||
+  ['neutral','skipped'].includes(c.conclusion));
+ return {checks,status:incomplete?'INCOMPLETE':failed?'BLOCKED':'PASS'};
+}
+function cleanFindings(findings){
+ if(!Array.isArray(findings)||findings.length>MAX_FINDINGS)throw Error('ANALYZER_EVIDENCE_INCOMPLETE');
+ return findings.map(item=>{
+  if(!item||typeof item.rule!=='string'||!/^[a-zA-Z0-9_.:-]{1,100}$/.test(item.rule)||
+     !['BLOCKER','CRITICAL','HIGH','MAJOR','WARNING','MEDIUM','LOW','MINOR','INFO'].includes(item.severity)||
+     typeof item.file!=='string'||item.file.length>240||
+     !/^[A-Za-z0-9_.\/-]+$/.test(item.file)||
+     !Number.isSafeInteger(item.line)||item.line<0||item.line>10000000)
+   throw Error('ANALYZER_EVIDENCE_INCOMPLETE');
+  return {rule:item.rule,severity:item.severity,path:item.file,line:item.line};
+ });
+}
+async function collect(options,dependencies={}){
+ const {repo,pr,headSha,token}=requireInput(options);
+ const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);
+ const analyzer=dependencies.analyzer||reviewRemote;
+ const prefix='pulls/'+pr;
+ const initial=await get(prefix);
+ const baseSha=validateMetadata(initial,repo,pr,headSha);
+ const comparison=await get('compare/'+baseSha+'...'+headSha);
+ if(!SHA.test(comparison?.merge_base_commit?.sha||'')||
+    comparison.base_commit?.sha?.toLowerCase()!==baseSha)
+  throw Error('MERGE_BASE_UNVERIFIED');
+ const mergeBaseSha=comparison.merge_base_commit.sha.toLowerCase();
+ const files=[];
+ for(let page=1;page<=3;page++){
+  const entries=await get(prefix+'/files?per_page=100&page='+page);
+  if(!Array.isArray(entries)||entries.length>100)throw Error('FILES_INCOMPLETE');
+  files.push(...entries);
+  if(files.length>MAX_FILES)throw Error('FILES_INCOMPLETE');
+  if(entries.length<100)break;
+ }
+ if(files.length!==initial.changed_files)throw Error('FILES_INCOMPLETE');
+ const changedPaths=[],renames=[];
+ for(const item of files){
+  if(!item||typeof item.filename!=='string'||item.filename.length>240)
+   throw Error('FILES_INCOMPLETE');
+  if(item.status!=='removed')changedPaths.push(item.filename);
+  if(item.status==='renamed')
+   renames.push({status:'renamed',previous_filename:item.previous_filename,filename:item.filename});
+ }
+ const runEvidence=await get('actions/runs?event=pull_request&head_sha='+headSha+'&per_page=100');
+ const ci=checkEvidence(runEvidence,headSha,pr);
+ // Existing trusted-main scanner fetches exact-SHA source and analyzes diff as
+ // DATA, using the trusted parser; it does not run candidate source code.
+ const audit=await analyzer({GITHUB_REPOSITORY:repo,PR_NUMBER:String(pr),
+  PR_HEAD_SHA:headSha,GITHUB_TOKEN:token});
+ if(audit?.sha!==headSha||audit?.repo!==repo||audit?.pr!==pr||
+    audit.autoMergeAllowed!==false||audit.requiresHuman!==true||
+    !['ADVISORY','BLOCKED'].includes(audit.status))
+  throw Error('ANALYZER_EVIDENCE_INCOMPLETE');
+ const detected=cleanFindings(audit.findings);
+ const final=await get(prefix);
+ if(validateMetadata(final,repo,pr,headSha)!==baseSha)
+  throw Error('PR_CHANGED_DURING_COLLECTION');
+ // There are no authenticated full-repository base/HEAD scans yet.
+ // Feeding the diff scanner as a complete scan would incorrectly permit PASS.
+ const candidate=review({headSha,baseSha,mergeBaseSha,
+  headComplete:false,baseComplete:false,headFindings:[],baseFindings:[],
+  requiredChecks:REQUIRED,checks:ci.checks,renames,changedPaths,
+  affectedPaths:[]});
+ if(candidate.status!=='INCOMPLETE'||candidate.autoMergeAllowed!==false)
+  throw Error('SHADOW_INVARIANT_VIOLATION');
+ return {schema:'ultra-sentinel-github-evidence/v1',mode:'shadow',
+  status:'INCOMPLETE',reason:'BASE_AND_HEAD_FULL_SCANS_NOT_ATTESTED',
+  analysisScope:'TRUSTED_PR_DIFF_ONLY',repo,pr,headSha,baseSha,mergeBaseSha,
+  changedFiles:files.length,scannerStatus:audit.status,
+  scannerFindingsTotal:detected.length,scannerFindings:detected.slice(0,50),
+  scannerReportTruncated:detected.length>50,ciStatus:ci.status,
+  checks:ci.checks.map(c=>({name:c.name,status:c.status,conclusion:c.conclusion,sha:c.sha,runId:c.runId})),
+  reviewRequired:audit.status==='BLOCKED',autoMergeAllowed:false,
+  autoCommitAllowed:false,hasAuthenticatedBaseline:false};
+}
+async function main(){
+ try{
+  const report=await collect({repo:process.env.GITHUB_REPOSITORY,
+   pr:process.env.PR_NUMBER,headSha:process.env.PR_HEAD_SHA,token:process.env.GITHUB_TOKEN});
+  const serialized=JSON.stringify(report,null,2)+'\n';
+  fs.writeFileSync('sentinel-github-evidence-shadow.json',serialized,{mode:0o600});
+  console.log(serialized);
+  if(process.env.GITHUB_STEP_SUMMARY){
+   fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+    '## Ultra Sentinel GitHub evidence (shadow only)\n\n'+
+    'HEAD: '+report.headSha+'\n\n'+
+    'CI evidence: **'+report.ciStatus+'**; trusted diff scan: **'+report.scannerStatus+
+    '**; overall: **INCOMPLETE** pending full base/HEAD scans. Never merge authority.\n');
+  }
+ }catch(error){
+  console.error('Ultra Sentinel trusted evidence: '+String(error.message).slice(0,150));
+  process.exitCode=1;
+ }
+}
+if(require.main===module)main();
+module.exports={REQUIRED,requireInput,apiClient,validateMetadata,checkEvidence,
+ cleanFindings,collect};
