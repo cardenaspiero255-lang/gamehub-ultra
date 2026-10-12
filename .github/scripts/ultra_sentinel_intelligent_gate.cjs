@@ -106,12 +106,23 @@ function review(input){
   if(input.headComplete!==true||input.baseComplete!==true)throw Error('ANALYSIS_INCOMPLETE');
   const headSha=input.headSha.toLowerCase();
   const pathOf=renameNormalizer(input.renames||[]),affected=checkedPaths(input.affectedPaths||[],'AFFECTED_PATHS');
-  checkedPaths(input.changedPaths||[],'CHANGED_PATHS');
+  const changed=checkedPaths(input.changedPaths||[],'CHANGED_PATHS');
   const head=checkedFindings(input.headFindings),base=checkedFindings(input.baseFindings);
+  // An AST fingerprint can identify several distinct locations. Preserve each
+  // baseline occurrence rather than assigning the whole fingerprint one history.
   const baseMap=new Map();
   for(const f of base){
-   const id=fingerprint(f,pathOf),old=baseMap.get(id);
-   if(!old||severityRank(f.severity)>severityRank(old.severity))baseMap.set(id,f);
+   const id=fingerprint(f,pathOf),location=pathOf(f.path)+':'+f.line;
+   const records=baseMap.get(id)||new Map(),old=records.get(location);
+   if(!old||severityRank(f.severity)>severityRank(old.severity))records.set(location,f);
+   baseMap.set(id,records);
+  }
+  // Count distinct HEAD locations before attribution, so a newly added earlier
+  // occurrence cannot steal the baseline match of a later existing occurrence.
+  const headOccurrences=new Map();
+  for(const f of head){
+   const id=fingerprint(f),locations=headOccurrences.get(id)||new Set();
+   locations.add(f.path+':'+f.line);headOccurrences.set(id,locations);
   }
   const findings=[],seen=new Map();let duplicates=0,critical=false;
   const ordered=head.slice().sort((a,b)=>a.path.localeCompare(b.path)||a.line-b.line||a.rule.localeCompare(b.rule)||severityRank(b.severity)-severityRank(a.severity)||a.severity.localeCompare(b.severity));
@@ -121,11 +132,16 @@ function review(input){
    if(instances.has(f.path+':'+f.line)){duplicates++;continue;}
    const key=instances.size?digest(rawKey+'|distinct-location|'+f.path+':'+f.line):rawKey;
    instances.add(f.path+':'+f.line);seen.set(rawKey,instances);
-   const old=instances.size>1?null:baseMap.get(rawKey);
+   const baseline=baseMap.get(rawKey),location=f.path+':'+f.line;
+   const exact=baseline?.get(location);
+   // Permit semantic line movement only for unambiguous one-to-one identities.
+   // Ambiguous unmatched occurrences are NEW, never silently inherited.
+   const moved=baseline?.size===1&&headOccurrences.get(rawKey)?.size===1?baseline.values().next().value:null;
+   const old=exact||moved;
    let classification='NEW';
    if(old){
     if(severityRank(f.severity)>severityRank(old.severity))classification='EXACERBATED';
-    else if(affected.has(f.path))classification='REACTIVATED';
+    else if(affected.has(f.path)||(changed.has(f.path)&&old.path===f.path))classification='REACTIVATED';
     else if(old.path!==f.path)classification='MOVED';
     else classification='EXISTING';
    }
