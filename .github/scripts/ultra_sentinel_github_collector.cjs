@@ -172,8 +172,9 @@ async function collect(options,dependencies={}){
     rule:f.rule,severity:f.severity,classification:f.classification,
     familyId:f.familyId})),
    truncated:candidate.findings.length>50,shadowComparison:candidate.shadowComparison},
-  reviewRequired:audit.status==='BLOCKED'||candidate.status==='BLOCKED'||
-   candidate.status==='REVIEW_REQUIRED',
+  reviewRequired:audit.status==='BLOCKED'||ci.status==='BLOCKED'||
+   head.findings.some(f=>['BLOCKER','CRITICAL','HIGH'].includes(f.severity))||
+   candidate.status==='BLOCKED'||candidate.status==='REVIEW_REQUIRED',
   autoMergeAllowed:false,autoCommitAllowed:false,
   hasAuthenticatedBaseline:verified,hasAuthenticatedFullRepositoryScan:false};
 }
