@@ -2266,6 +2266,29 @@ function findCapabilities(ast){
   }
   return changed;
  }
+ // Only a direct, unshadowed Object.freeze of shallow primitive data is
+ // safe to export by reference. Functions, aliases, getters, spreads,
+ // computed keys and nested mutable objects retain an UNKNOWN verdict.
+ function inertFrozenExport(init){
+  if(init?.type!=='CallExpression'||init.optional||init.arguments?.length!==1)return false;
+  const callee=init.callee;
+  if(callee?.type!=='MemberExpression'||callee.computed||
+     callee.object?.type!=='Identifier'||symbol(callee.object)!=='free:Object'||
+     callee.property?.type!=='Identifier'||callee.property.name!=='freeze')
+   return false;
+  const primitive=node=>node?.type==='Literal'&&!node.regex&&
+   (node.value===null||typeof node.value==='string'||typeof node.value==='boolean'||
+    typeof node.value==='number'&&Number.isFinite(node.value));
+  const arg=init.arguments[0];
+  if(arg?.type==='ArrayExpression')
+   return arg.elements.length<=256&&arg.elements.every(primitive);
+  if(arg?.type==='ObjectExpression')
+   return arg.properties.length<=256&&arg.properties.every(p=>
+    p.type==='Property'&&p.kind==='init'&&!p.computed&&!p.method&&
+    p.key&&(p.key.type==='Identifier'||p.key.type==='Literal')&&
+    keyName(p)!=='__proto__'&&primitive(p.value));
+  return false;
+ }
  function bind(pattern,value){
   if(!pattern)return false;
   if(pattern.type==='AssignmentPattern'){
@@ -2303,8 +2326,9 @@ function findCapabilities(ast){
       // Even a syntactically invalid write to const must never be certified.
       const postInitWrite=variable&&typeof variable==='object'&&
        variable.references?.some(ref=>ref.isWrite()&&ref.writeExpr!==init);
-      if(def?.parent?.kind!=='const'||init?.type!=='Literal'||
-         typeof init.value!=='number'||!Number.isFinite(init.value)||
+      const inertNumber=init?.type==='Literal'&&typeof init.value==='number'&&
+       Number.isFinite(init.value);
+      if(def?.parent?.kind!=='const'||(!inertNumber&&!inertFrozenExport(init))||
          postInitWrite)
        throw Error('Unresolved CommonJS exported value');
      }else if(riskyDescriptor(descriptor))
@@ -2312,6 +2336,11 @@ function findCapabilities(ast){
     }
     return false;
    }
+   // A literal nonzero CLI error status is inert. Never accept an alias to
+   // process, a computed key, unknown value or any other global property write.
+   if(!parent&&name==='exitCode'&&pattern.computed===false&&
+      pattern.object?.type==='Identifier'&&symbol(pattern.object)==='free:process'&&
+      value?.type==='Literal'&&value.value===1)return false;
    if(!parent||name===null)throw Error('Unresolved property write provenance');
    const cap=kind(value),nested=propertyKinds(value),fn=resolveFunction(value);
    if(fn){
