@@ -175,3 +175,57 @@ test('EXT-187 P2: canonicalizer accepts exact serialized byte budget without wea
  assert.equal(Buffer.byteLength(stableJson(v)),1024*1024);
  assert.throws(()=>stableJson(v+'q'),/UNBOUNDED_INPUT/);
 });
+
+
+test('EXT-187 P1: forged Ed25519 identity and sign-bit alias cannot impersonate two signing roles',()=>{
+ // The two encodings are distinct SPKI bytes yet refer to the same identity point.
+ // S=1, R=basepoint verifies for every message under an identity public key.
+ const c=corpus(),r=reports(c);
+ const identity=Buffer.alloc(32);identity[0]=1;
+ const alias=Buffer.from(identity);alias[31]=0x80;
+ const spki=(point)=>Buffer.concat([Buffer.from('302a300506032b6570032100','hex'),point]).toString('base64');
+ const forged=Buffer.concat([Buffer.from('58'+'66'.repeat(31),'hex'),
+  Buffer.concat([Buffer.from([1]),Buffer.alloc(31)])]).toString('base64');
+ const signed=(role,payload)=>({keyId:role==='labeler'?'independent-labeler':'independent-runner',
+  sha256:createHash('sha256').update(stableJson(payload)).digest('hex'),signature:forged});
+ const bundle={schema:'ultra-sentinel-external-calibration/v1',headSha:H,corpus:c,reports:r,
+  signatures:{labeler:signed('labeler',c),runner:signed('runner',r)}};
+ const trusted={labeler:{keyId:'independent-labeler',publicKeySpki:spki(identity)},
+  runner:{keyId:'independent-runner',publicKeySpki:spki(alias)}};
+ const result=evaluateSignedCalibration(bundle,trusted,{expectedHeadSha:H});
+ assert.equal(result.status,'UNVERIFIED_EVIDENCE');
+ assert.equal(result.signaturesVerified,false);
+ assert.equal(result.calibration.metrics,null);
+});
+test('EXT-187 P1: order-two and noncanonical Ed25519 trusted points fail closed',()=>{
+ const f=fixture();
+ const identity=Buffer.alloc(32);identity[0]=1;
+ const orderTwo=Buffer.from('ec'+'ff'.repeat(30)+'7f','hex'); // y = p - 1
+ const noncanonical=Buffer.from('ed'+'ff'.repeat(30)+'7f','hex'); // y = p
+ for(const point of [identity,orderTwo,noncanonical]){
+  f.trusted.labeler.publicKeySpki=Buffer.concat([
+   Buffer.from('302a300506032b6570032100','hex'),point]).toString('base64');
+  assert.equal(run(f).status,'UNVERIFIED_EVIDENCE');
+ }
+});
+test('EXT-187 P2: object key cap applies before sorting untrusted keys',()=>{
+ const huge=Object.create(null);
+ for(let i=0;i<101;i++)huge['key'+i]='ok';
+ const sort=Array.prototype.sort;
+ let sortCalled=false;
+ try{
+  Array.prototype.sort=function(){sortCalled=true;throw Error('PREMATURE_SORT');};
+  assert.throws(()=>stableJson(huge),/UNBOUNDED_INPUT/);
+  assert.equal(sortCalled,false);
+ }finally{
+  Array.prototype.sort=sort;
+ }
+});
+test('EXT-187 P2: at-limit objects retain deterministic canonicalization',()=>{
+ const data=Object.create(null);
+ for(let i=99;i>=0;i--)data['k'+String(i).padStart(3,'0')]=i;
+ const json=stableJson(data),keys=Object.keys(JSON.parse(json));
+ assert.equal(keys.length,100);
+ assert.equal(keys[0],'k000');
+ assert.equal(keys[99],'k099');
+});
