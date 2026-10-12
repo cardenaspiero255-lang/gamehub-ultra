@@ -266,7 +266,7 @@ async function verifyCiDeltaFromGitHub({github,owner,repo,number}={}){
   const files=await githubPages(github,github.rest.pulls.listFiles,
     {...api,pull_number:number});
   if(files.length!==5)return FAIL('INCOMPLETE_CHANGED_FILES');
-  const candidate={},trusted={};
+  const candidateEntries=[],trustedEntries=[];
   for(const entry of Object.entries(CI_FILES)){
    const file=entry[0],key=entry[1];
    if(entries.get(file)!==EXPECTED_BLOBS[file])
@@ -276,12 +276,14 @@ async function verifyCiDeltaFromGitHub({github,owner,repo,number}={}){
     return FAIL('HEAD_DIFF_NOT_IN_TREE');
    const body=decodeGitContent(await github.rest.repos.getContent({...api,path:file,ref:KNOWN_HEAD}));
    if(body.sha!==entries.get(file))return FAIL('HEAD_FILE_NOT_IN_TREE');
-   candidate[key]=body.body;
+   candidateEntries.push([key,body.body]);
    if(key!=='documentation'){
     const base=decodeGitContent(await github.rest.repos.getContent({...api,path:file,ref:KNOWN_BASE}));
-    trusted[key]=base.body;
+    trustedEntries.push([key,base.body]);
    }
   }
+  const candidate=Object.fromEntries(candidateEntries);
+  const trusted=Object.fromEntries(trustedEntries);
   const scoped=classifyCiDelta({repo:REPO,baseSha:KNOWN_BASE,trustedBaseSha:KNOWN_BASE,
    headSha:KNOWN_HEAD,expectedHeadSha:KNOWN_HEAD,trusted,candidate,
    files,changedFileCount:files.length});
@@ -358,14 +360,14 @@ async function verifyCiJobsFromGitHub({github,owner,repo,number,delta}={}){
      !authenticatedDeltas.has(delta)||deltaSources.get(delta)!==github||
      delta.headSha!==KNOWN_HEAD||!github?.rest?.actions?.getWorkflow)
    return FAIL('UNAUTHENTICATED_DELTA_PROOF');
-  const api={owner,repo},runs=[],jobs={},trustedWorkflowIds={};
+  const api={owner,repo},runs=[],jobEntries=[],workflowIdEntries=[];
   const sources=[['Android build','android.yml'],['Unit Test Coverage','coverage.yml']];
   for(const source of sources){
    const name=source[0],filename=source[1];
    const workflow=(await github.rest.actions.getWorkflow({...api,workflow_id:filename})).data;
    if(!Number.isSafeInteger(workflow?.id)||workflow.id<1)
     return FAIL('INVALID_PROTECTED_WORKFLOW_ID');
-   trustedWorkflowIds[name]=workflow.id;
+   workflowIdEntries.push([name,workflow.id]);
    const list=await githubPages(github,github.rest.actions.listWorkflowRuns,
     {...api,workflow_id:workflow.id,head_sha:KNOWN_HEAD,event:'pull_request'});
    // All returned candidates must match the authenticated target.
@@ -380,11 +382,13 @@ async function verifyCiJobsFromGitHub({github,owner,repo,number,delta}={}){
     return FAIL('LATEST_RUN_NOT_SUCCESSFUL');
    const jobList=await githubPages(github,github.rest.actions.listJobsForWorkflowRun,
     {...api,run_id:latest.id,filter:'latest'});
-   runs.push(latest);jobs[latest.id]=jobList;
+   runs.push(latest);jobEntries.push([String(latest.id),jobList]);
   }
   const after=(await github.rest.pulls.get({...api,pull_number:number})).data;
   if(after?.head?.sha!==KNOWN_HEAD||after?.base?.sha!==KNOWN_BASE)
    return FAIL('PR_CHANGED_DURING_CI_ATTESTATION');
+  const jobs=Object.fromEntries(jobEntries);
+  const trustedWorkflowIds=Object.fromEntries(workflowIdEntries);
   const proof={repo:REPO,headSha:KNOWN_HEAD,delta,apiComplete:true,jobsComplete:true,
    trustedWorkflowIds,runs,jobs};
   authenticatedJobInputs.add(proof);
