@@ -25,7 +25,10 @@ function fixture(over={}){
   throw Error('BAD_TEST_ENDPOINT');
  };
  const analyzer=async()=>structuredClone(state.audit);
- return {get,analyzer,urls,state};
+ const snapshots=async()=>({autoMergeAllowed:false,scope:'TEST_SCOPED_SNAPSHOT',
+  base:{sha:B,complete:false,findings:[],reasons:['UNMODELED_SOURCE']},
+  head:{sha:H,complete:false,findings:[],reasons:['UNMODELED_SOURCE']}});
+ return {get,analyzer,snapshots,urls,state};
 }
 test('schema: authenticated real-PR metadata feeds shadow without ever approving merges',async()=>{
  const deps=fixture(),r=await collector.collect(request(),deps);
@@ -176,4 +179,59 @@ test('CI: a forged workflow name with the wrong GitHub workflow ID cannot claim 
  const r=await collector.collect(request(),fixture({runs:sample}));
  assert.equal(r.ciStatus,'INCOMPLETE');
  assert.equal(r.autoMergeAllowed,false);
+});
+
+test('integration: complete authenticated base and HEAD snapshots produce scoped comparison',async()=>{
+ const deps=fixture();
+ deps.snapshots=async()=>({autoMergeAllowed:false,scope:'TEST_SCOPED_SNAPSHOT',
+  base:{sha:B,complete:true,reasons:[],findings:[
+   {path:'app/src/main/java/x/A.kt',line:3,rule:'UNSCOPED_COROUTINE',severity:'HIGH'}]},
+  head:{sha:H,complete:true,reasons:[],findings:[
+   {path:'app/src/main/java/x/A.kt',line:3,rule:'UNSCOPED_COROUTINE',severity:'HIGH'},
+   {path:'app/src/main/java/x/B.kt',line:4,rule:'BLOCKING_ANDROID_CALL',severity:'HIGH'}]}});
+ const report=await collector.collect(request(),deps);
+ assert.equal(report.hasAuthenticatedBaseline,true);
+ assert.equal(report.hasAuthenticatedFullRepositoryScan,false);
+ assert.equal(report.scopedEvaluator.status,'REVIEW_REQUIRED');
+ assert.equal(report.scopedEvaluator.findingsTotal,2);
+ assert.equal(report.scopedEvaluator.findings.find(f=>f.rule==='BLOCKING_ANDROID_CALL').classification,'NEW');
+ assert.equal(report.status,'INCOMPLETE');assert.equal(report.autoMergeAllowed,false);
+});
+test('integration: snapshot commit identity mismatch is rejected, never scored',async()=>{
+ const deps=fixture();
+ deps.snapshots=async()=>({autoMergeAllowed:false,
+  base:{sha:H,complete:true,reasons:[],findings:[]},
+  head:{sha:H,complete:true,reasons:[],findings:[]}});
+ await assert.rejects(collector.collect(request(),deps),/SNAPSHOT_ATTESTATION_MISMATCH/);
+});
+test('integration: untrusted scanner with alleged auto-merge authority is rejected',async()=>{
+ const deps=fixture();
+ deps.snapshots=async()=>({autoMergeAllowed:true,
+  base:{sha:B,complete:false,reasons:[],findings:[]},
+  head:{sha:H,complete:false,reasons:[],findings:[]}});
+ await assert.rejects(collector.collect(request(),deps),/SNAPSHOT_ATTESTATION_MISMATCH/);
+});
+test('integration: partial source coverage stays INCOMPLETE without hiding counts',async()=>{
+ const report=await collector.collect(request(),fixture());
+ assert.equal(report.hasAuthenticatedBaseline,false);
+ assert.equal(report.scopedEvaluator.status,'INCOMPLETE');
+ assert.equal(report.baseSnapshot.complete,false);
+ assert.equal(report.headSnapshot.complete,false);
+ assert.equal(report.status,'INCOMPLETE');
+});
+test('integration: a PR changed after full snapshot collection is refused',async()=>{
+ const deps=fixture();let reads=0,original=deps.get;
+ deps.get=async url=>{
+  if(url==='pulls/'+PR&&++reads===2)return {...metadata(),head:{sha:B}};
+  return original(url);
+ };
+ await assert.rejects(collector.collect(request(),deps),/PR_PROVENANCE_INCOMPLETE/);
+});
+test('integration: invalid snapshot finding must not become a pass verdict',async()=>{
+ const deps=fixture();
+ deps.snapshots=async()=>({autoMergeAllowed:false,
+  base:{sha:B,complete:true,reasons:[],findings:[]},
+  head:{sha:H,complete:true,reasons:[],findings:[
+   {rule:'INVALID<>',path:'app/src/main/x.kt',line:1,severity:'HIGH'}]}});
+ await assert.rejects(collector.collect(request(),deps),/SHADOW_EVIDENCE_INCOMPLETE/);
 });
