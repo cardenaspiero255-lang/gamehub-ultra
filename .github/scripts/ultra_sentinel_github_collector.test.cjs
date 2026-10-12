@@ -197,23 +197,36 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
- const fallbackCases=[
-  ['simple-default','const get=apiClient(repo,token,dependencies.fetcher);'],
-  ['inline-wrapper','const get=async (...args)=>dependencies.get ? dependencies.get(...args) : apiClient(repo,token,dependencies.fetcher)(...args);'],
-  ['block-wrapper','const get=async (relative)=>{if(dependencies.get)return dependencies.get(relative);return apiClient(repo,token,dependencies.fetcher)(relative);};'],
-  ['block-wrapper-remote','const get=async (relative)=>{if(dependencies.get)return dependencies.get(relative);const remote=apiClient(repo,token,dependencies.fetcher);return remote(relative);};'],
-  ['default-wrapper','const get=(relative)=>{const remote=dependencies.get;return remote ? remote(relative) : apiClient(repo,token,dependencies.fetcher)(relative);};'],
-  ['no-default','const get=dependencies.get;']
- ];
  const engine=require('./ultra_sentinel_capabilities.cjs');
- for(const [label,replacement] of fallbackCases){
-  let variant=source.replace('const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);',replacement);
+ const make=(mode)=>{
+  let variant=source.replace('const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);',
+   'const get=apiClient(repo,token,dependencies.fetcher);');
+  if(mode.includes('no-report-props')){
+   const begin=variant.indexOf(' if(typeof options.repo===',variant.indexOf('function failureReport'));
+   const finish=variant.indexOf(' return report;',begin);
+   assert.ok(begin>0&&finish>begin,'find optional report properties');
+   variant=variant.slice(0,begin)+variant.slice(finish);
+  }
+  if(mode.includes('no-exports')){
+   const begin=variant.indexOf('module.exports={');
+   assert.ok(begin>0);
+   variant=variant.slice(0,begin);
+  }
+  if(mode.includes('no-failure')){
+   const begin=variant.indexOf('function failureReport(');
+   const finish=variant.indexOf('async function main()',begin);
+   variant=variant.slice(0,begin)+variant.slice(finish);
+  }
+  return variant;
+ };
+ for(const mode of ['base','no-report-props','no-exports','no-report-props no-exports',
+  'no-failure no-exports']){
   let result='PASS';
-  try{engine.findCapabilities(acorn.parse(variant,{ecmaVersion:'latest',
+  try{engine.findCapabilities(acorn.parse(make(mode),{ecmaVersion:'latest',
    sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,
    allowAwaitOutsideFunction:true,locations:true,ranges:true}));}
   catch(error){result=error.message;}
-  console.log('COLLECTOR_STATIC_PROVENANCE_DIAGNOSTIC',label,result);
+  console.log('COLLECTOR_STATIC_PROVENANCE_DIAGNOSTIC',mode,result);
  }
  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
   'complete collector source must be analyzable by trusted capability engine');
