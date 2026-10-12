@@ -22,7 +22,7 @@ review gates. It cannot create or merge a PR, write to production, or grant appr
    CI checks, requiring independently supplied same-SHA trustworthy evidence;
    missing/skipped/stale/untrusted/pending checks return INCOMPLETE; failing
    required checks return BLOCKED. No write permissions or auto-merge.
-5. **Adversarial validation / shadow mode:** 31 deterministic Node.js tests,
+5. **Adversarial validation / shadow mode:** deterministic Node.js regression tests,
    including malicious paths, oversized contexts, duplicate alerts,
    conflicting renames, check spoofing, dropped checks, historical escalation,
    stable fingerprints, regression-family grouping and a legacy divergence signal.
