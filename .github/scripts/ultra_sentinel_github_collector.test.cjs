@@ -158,6 +158,40 @@ test('workflow: unprivileged contract tests never inject API tokens into PR code
 });
 
 
+
+test('trusted-main evidence job includes the workflow directory required by contract tests',()=>{
+ const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-github-trusted-evidence.yml'),'utf8');
+ const sparse=workflow.match(/sparse-checkout:\s*\|\n([\s\S]*?)\n\s*persist-credentials:/)?.[1]||'';
+ assert.match(sparse,/^\s*\.github\/workflows\s*$/m);
+ assert.match(sparse,/^\s*\.github\/scripts\s*$/m);
+ assert.match(workflow,/github\.event\.repository\.default_branch/);
+ assert.match(workflow,/persist-credentials:\s*false/);
+});
+
+test('failed trusted collection produces a bounded sanitized fail-closed report',()=>{
+ const input={repo:REPO,pr:PR,headSha:H};
+ const report=collector.failureReport(new Error('GIT_TREE_INCOMPLETE'),input);
+ assert.equal(report.schema,'ultra-sentinel-github-evidence-failure/v1');
+ assert.equal(report.status,'INCOMPLETE');
+ assert.equal(report.reason,'GIT_TREE_INCOMPLETE');
+ assert.equal(report.mode,'shadow');
+ assert.equal(report.headSha,H);
+ assert.equal(report.reviewRequired,true);
+ assert.equal(report.autoMergeAllowed,false);
+ assert.equal(report.autoCommitAllowed,false);
+ assert.equal(report.hasAuthenticatedBaseline,false);
+ assert.ok(Buffer.byteLength(JSON.stringify(report))<2048);
+ const leaked=collector.failureReport(new Error('secret ghp_NEVER_EXPOSE_TOKEN or JWT'),input);
+ assert.equal(leaked.reason,'COLLECTION_FAILED');
+ assert.equal(JSON.stringify(leaked).includes('NEVER_EXPOSE_TOKEN'),false);
+ assert.equal(JSON.stringify(leaked).includes('JWT'),false);
+ const malformed=collector.failureReport(new Error('INVALID_REQUEST'),{
+   repo:'attacker\nfake',pr:-1,headSha:'bad'});
+ assert.equal(Object.hasOwn(malformed,'repo'),false);
+ assert.equal(Object.hasOwn(malformed,'headSha'),false);
+ assert.equal(Object.hasOwn(malformed,'pr'),false);
+});
+
 test('CI: a confirmed failed gate stays BLOCKED even while another required gate is pending',async()=>{
  const set=runs().slice(0,2);
  set[0]={...set[0],conclusion:'failure'};
