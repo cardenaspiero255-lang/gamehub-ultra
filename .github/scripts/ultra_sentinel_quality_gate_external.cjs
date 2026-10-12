@@ -202,8 +202,9 @@ function verifyPart(role,data,attestation,trusted,headSha,corpusDigest=null,pars
  return verify(null,Buffer.from(attestationMessage(role,headSha,digest,bytes,corpusDigest)),
   parsedKey.publicKey,Buffer.from(attestation.signature,'base64'));
 }
-function evaluateSignedCalibration(rawBundle,trustedKeys,{expectedHeadSha}={}){
+function evaluateSignedCalibration(rawBundle,trustedKeys,options={}){
  try{
+  const {expectedHeadSha}=options ?? {};
   const bundle=parseBoundedJson(rawBundle);
   if(!bundle||typeof bundle!=='object'||Array.isArray(bundle)||
      cappedOwnKeys(bundle,5).sort().join(',')!=='corpus,headSha,reports,schema,signatures'||
