@@ -34,8 +34,9 @@ function fixture(){
  const runs=[run('Android build',400,363810233),run('Unit Test Coverage',401,367848611)];
  const olderRerun=()=>state.olderIdRerunStatus?{
   ...runs[0],id:399,run_attempt:2,run_started_at:'2026-10-12T22:00:00Z',
-  status:state.olderIdRerunStatus,
-  conclusion:state.olderIdRerunStatus==='completed'?'failure':null
+  status:state.olderIdRerunStatus==='success'?'completed':state.olderIdRerunStatus,
+  conclusion:state.olderIdRerunStatus==='success'?'success':
+   state.olderIdRerunStatus==='completed'?'failure':null
  }:null;
  async function get(relative){
   relative=match(relative);
@@ -86,7 +87,7 @@ function fixture(){
   }
   if(relative.startsWith('actions/runs/')&&relative.endsWith('/jobs?per_page=100&filter=latest')){
    const id=Number(relative.split('/')[2]);
-   let names=id===400?androidNames:coverageNames;
+   let names=(id===400||id===399)?androidNames:coverageNames;
    if(state.jobMissing&&id===400)names=names.slice(1);
    const jobs=names.map((name,i)=>({id:id*100+i,name,run_id:id,status:'completed',conclusion:'success'}));
    return {total_count:jobs.length,jobs};
@@ -184,4 +185,12 @@ test('P2: rerun of a lower-ID Android workflow must invalidate a newer-ID green 
   assert.equal(result.status,'INCOMPLETE','stale green accepted despite '+status+' rerun');
   assert.equal(result.autoMergeAllowed,false);
  }
+});
+
+test('P2: successful newer rerun with lower ID becomes the verified witness',async()=>{
+ const f=fixture();
+ f.state.olderIdRerunStatus='success';
+ const out=await evaluateRemote(f.get);
+ assert.equal(out.status,'SCOPED_CI_REVIEW_REQUIRED');
+ assert.deepEqual(out.observedRunIds,[399,401]);
 });
