@@ -24,7 +24,7 @@ const androidNames=['quality-lint','quality-contract-shard','quality-contracts',
 const coverageNames=['coverage',...Array.from({length:8},(_,i)=>'coverage-shard-'+i)];
 function fixture(){
  const state={prHead:HEAD,mainSha:MAIN,mainScript:'',lastRunBad:false,
-  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0,badRunBase:false,lateAndroidAfterCoverage:false,missingJointAndroid:false};
+  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainMovesAfterJoint:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0,badRunBase:false,lateAndroidAfterCoverage:false,missingJointAndroid:false};
  const match=(relative)=>relative.replace(/^\/+/,''), repoPath='cardenaspiero255-lang/gamehub-ultra';
  const changeList=paths.map(path=>({filename:path,status:path.startsWith('docs/')?'added':'modified',sha:blob(candidate[path])}));
  const run=(name,id,workflowId)=>({id,name,workflow_id:workflowId,head_sha:HEAD,event:'pull_request',
@@ -36,7 +36,12 @@ function fixture(){
   if(relative==='pulls/172')return {number:172,state:'open',changed_files:5,
    head:{sha:state.prHead,repo:{full_name:repoPath}},
    base:{sha:BASE,ref:'main',repo:{full_name:repoPath}}};
-  if(relative==='git/ref/heads/main')return {object:{sha:state.mainMoves&&++state.mainReads>1?'e'.repeat(40):state.mainSha,type:'commit'}};
+  if(relative==='git/ref/heads/main'){
+   state.mainReads++;
+   const moved=(state.mainMoves&&state.mainReads>1)||
+    (state.mainMovesAfterJoint&&state.mainReads>2);
+   return {object:{sha:moved?'e'.repeat(40):state.mainSha,type:'commit'}};
+  }
   if(relative==='git/commits/'+HEAD)return {sha:HEAD,tree:{sha:'a'.repeat(40)}};
   if(relative==='git/trees/'+('a'.repeat(40))+'?recursive=1')return {sha:'a'.repeat(40),truncated:false,
    tree:changeList.map(x=>({path:x.filename,mode:'100644',type:'blob',
@@ -152,5 +157,10 @@ test('atomic repository-wide CI snapshot rejects late Android rerun after Covera
 });
 test('missing Android workflow in final repository-wide snapshot fails closed',async()=>{
  const f=fixture();f.state.missingJointAndroid=true;
+ assert.equal((await evaluateRemote(f.get)).status,'INCOMPLETE');
+});
+
+test('main moving after joint CI snapshot cannot authorize old base',async()=>{
+ const f=fixture();f.state.mainMovesAfterJoint=true;
  assert.equal((await evaluateRemote(f.get)).status,'INCOMPLETE');
 });
