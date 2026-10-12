@@ -128,3 +128,12 @@ test('Unverified CI contract scripts cannot be attested by filename alone',()=>{
   assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
  }
 });
+
+test('RED Codex P2: filenames and metadata are insufficient without full safety-contract source bytes',()=>{
+ const i=input();delete i.candidate.safetyContract;
+ assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+});
+test('RED Codex P2: documentation byte provenance must also be authenticated',()=>{
+ const i=input();delete i.candidate.documentation;
+ assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+});
