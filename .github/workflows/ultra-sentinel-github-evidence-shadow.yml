@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/ultra_sentinel_github_collector*.cjs'
+      - '.github/scripts/ultra_sentinel_quality_gate*.cjs'
       - '.github/workflows/ultra-sentinel-github-evidence-shadow.yml'
 permissions:
   contents: read
@@ -24,5 +25,7 @@ jobs:
         run: |
           node --check .github/scripts/ultra_sentinel_github_collector.cjs
           node --check .github/scripts/ultra_sentinel_github_collector.test.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate.test.cjs
       - name: Run malicious-provenance and fail-closed contracts
-        run: node --test .github/scripts/ultra_sentinel_github_collector.test.cjs
+        run: node --test .github/scripts/ultra_sentinel_github_collector.test.cjs .github/scripts/ultra_sentinel_quality_gate.test.cjs
