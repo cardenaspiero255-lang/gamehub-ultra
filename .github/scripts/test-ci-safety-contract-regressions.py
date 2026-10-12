@@ -557,8 +557,8 @@ def main() -> None:
     reject_mutation(
         "coverage physical concurrency raised",
         coverage_replace=(
-            "      max-parallel: 7\n",
             "      max-parallel: 8\n",
+            "      max-parallel: 9\n",
         ),
     )
     reject_mutation(
@@ -635,9 +635,16 @@ def main() -> None:
     )
 
     reject_mutation(
+        "early AAB job steals reserved Coverage runner",
+        android_replace=(
+            "    needs: quality-lint\n    runs-on: ubuntu-22.04",
+            "    needs: []\n    runs-on: ubuntu-22.04",
+        ),
+    )
+    reject_mutation(
         "coverage parallel regression to two waves",
         coverage_replace=(
-            "      max-parallel: 7\n",
+            "      max-parallel: 8\n",
             "      max-parallel: 4\n",
         ),
     )

@@ -25,9 +25,9 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # Seven physical workers keep the six-emulator critical path under 20 runners.
-      # All eight coverage workers and all 64 logical shards still execute.
-      max-parallel: 7
+      # Eight Coverage runners use one wave, all 64 logical shards preserved.
+      # AAB is delayed until Lint finishes: max 4 unit + 6 device + 8 Coverage + 2 support = 20.
+      max-parallel: 8
       matrix:
         runner: [0, 1, 2, 3, 4, 5, 6, 7]
     env:

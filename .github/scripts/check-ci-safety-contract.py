@@ -478,6 +478,10 @@ def main() -> None:
             fragment,
         )
 
+    # Bundle is non-critical: serialize after quality-lint so the eight
+    # Coverage runners have one guaranteed concurrency slot in the first wave.
+    if job(android, "release-bundle").get("needs") != "quality-lint":
+        fail("release bundle must defer until Lint to protect the 20-runner budget")
     bundle_build = require_step(
         android,
         "release-bundle",
@@ -916,12 +920,12 @@ def main() -> None:
         fail("coverage shard strategy is missing")
     if coverage_strategy.get("fail-fast") is not False:
         fail("coverage shards must keep fail-fast disabled")
-    if coverage_strategy.get("max-parallel") != 7:
-        fail("coverage must retain seven bounded concurrent workers and eight total runners")
-    # 4 Android unit runners + 6 emulator runners + 3 support jobs + 7 Coverage = 20.
-    # Account for all four simultaneous resource families; no overcommit by CI design.
-    if 4 + device_parallel + 3 + coverage_strategy.get("max-parallel") > 20:
-        fail("combined CI runner allocation exceeds the 20-runner budget")
+    if coverage_strategy.get("max-parallel") != 8:
+        fail("coverage must retain eight concurrent workers and 64 logical shards")
+    # 4 Android unit workers + 6 emulators + 8 Coverage + up to 2 support jobs = 20.
+    # Bundle waits for Lint by contract, so it cannot consume an early worker.
+    if 4 + device_parallel + 2 + coverage_strategy.get("max-parallel") > 20:
+        fail("combined first-wave CI allocation exceeds 20 runners")
     coverage_matrix = coverage_strategy.get("matrix")
     if (
         not isinstance(coverage_matrix, dict)
