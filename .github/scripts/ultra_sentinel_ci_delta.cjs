@@ -78,8 +78,9 @@ const EXPECTED_FILES=new Map([
 ]);
 function classifyCiDelta(args){
  try{
-  const {repo,baseSha,trustedBaseSha,headSha,expectedHeadSha,
-   trusted,candidate,files,changedFileCount}=args||{};
+  if(!args||typeof args!=='object'||Array.isArray(args))return FAIL('INVALID_INPUT');
+ const {repo,baseSha,trustedBaseSha,headSha,expectedHeadSha,
+   trusted,candidate,files,changedFileCount}=args;
   if(repo!==REPO||!HEX.test(baseSha||'')||!HEX.test(headSha||'')||
     baseSha!==trustedBaseSha||headSha!==expectedHeadSha)
    return FAIL('INVALID_IMMUTABLE_IDENTITY');
@@ -124,7 +125,8 @@ const REQUIRED_JOBS=Object.freeze({
 });
 function checkJobEvidence(args){
  try{
-  const {repo,headSha,delta,apiComplete,jobsComplete,runs,jobs,trustedWorkflowIds}=args||{};
+  if(!args||typeof args!=='object'||Array.isArray(args))return FAIL('INVALID_INPUT');
+  const {repo,headSha,delta,apiComplete,jobsComplete,runs,jobs,trustedWorkflowIds}=args;
   if(repo!==REPO||!HEX.test(headSha||'')||
     delta?.status!=='VERIFIED_DELTA_REVIEW_REQUIRED'||
     delta.headSha!==headSha||apiComplete!==true||jobsComplete!==true||
