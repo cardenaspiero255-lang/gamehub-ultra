@@ -231,4 +231,13 @@ test('QG-186: unprivileged workflow contract runs the gate but does not obtain t
  assert.match(workflow,/pull_request:/);
  assert.doesNotMatch(workflow,/pull_request_target:|secrets\.|github\.token|contents: write|pull-requests: write/);
  assert.match(workflow,/persist-credentials: false/);
+ // The independent trusted reviewer reads this immutable candidate as data.
+ // Regression must fail on any AST/context ambiguity, not silence the blocker.
+ const acorn=require('acorn');
+ const complete=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_quality_gate.cjs'),'utf8');
+ const ast=acorn.parse(complete,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
+  'complete Quality Gate AST must be independently analyzable');
 });
