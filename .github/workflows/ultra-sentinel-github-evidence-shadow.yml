@@ -27,5 +27,7 @@ jobs:
           node --check .github/scripts/ultra_sentinel_github_collector.test.cjs
           node --check .github/scripts/ultra_sentinel_quality_gate.cjs
           node --check .github/scripts/ultra_sentinel_quality_gate.test.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate_external.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate_external.test.cjs
       - name: Run malicious-provenance and fail-closed contracts
-        run: node --test .github/scripts/ultra_sentinel_github_collector.test.cjs .github/scripts/ultra_sentinel_quality_gate.test.cjs
+        run: node --test .github/scripts/ultra_sentinel_github_collector.test.cjs .github/scripts/ultra_sentinel_quality_gate.test.cjs .github/scripts/ultra_sentinel_quality_gate_external.test.cjs

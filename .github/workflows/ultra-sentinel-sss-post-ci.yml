@@ -30,6 +30,7 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: |
             .github/scripts
+            .github/workflows
           persist-credentials: false
       - name: Test integrity verifier
         run: |
