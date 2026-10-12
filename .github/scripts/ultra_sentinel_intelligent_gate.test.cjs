@@ -112,3 +112,49 @@ test('4: CI decisions never grant automatic merge, even for a passing HEAD',()=>
   assert.equal(r.autoMergeAllowed,false);
  }
 });
+
+test('5: deterministic adversarial permutations preserve status, families, and severity',()=>{
+ const variants=[finding({symbol:'critical',line:10,severity:'HIGH'}),finding({symbol:'warning',line:20,severity:'WARNING'}),finding({symbol:'info',line:30,severity:'INFO'})];
+ const orders=[[0,1,2],[0,2,1],[1,0,2],[1,2,0],[2,0,1],[2,1,0]];
+ const reference=gate.review(request({headFindings:variants}));
+ for(const order of orders){
+  const r=gate.review(request({headFindings:order.map(i=>variants[i])}));
+  assert.equal(r.status,'REVIEW_REQUIRED');
+  assert.deepEqual(r.families,reference.families);
+  assert.deepEqual(r.findings,reference.findings);
+  assert.deepEqual(r.sarif,reference.sarif);
+  assert.equal(r.autoMergeAllowed,false);
+ }
+});
+test('5: missing or stale CI never passes across advisory, critical, and empty findings',()=>{
+ for(const headFindings of [[],[finding({severity:'WARNING'})],[finding({severity:'HIGH'})]]){
+  for(const checksVariant of [[],checks().map((c,i)=>i===0?{...c,sha:B}:c)]){
+   const r=gate.review(request({headFindings,checks:checksVariant}));
+   assert.equal(r.status,'INCOMPLETE');
+   assert.equal(r.autoMergeAllowed,false);
+  }
+ }
+});
+test('5: shadow comparison reports agreement and divergence without changing verdict',()=>{
+ for(const headFindings of [[],[finding({severity:'WARNING'})],[finding({severity:'HIGH'})]]){
+  const original=gate.review(request({headFindings}));
+  const agreed=gate.review(request({headFindings,legacyVerdict:original.status}));
+  const divergent=gate.review(request({headFindings,legacyVerdict:'BLOCKED'}));
+  assert.equal(agreed.shadowComparison,'AGREES');
+  assert.equal(divergent.shadowComparison,'DIVERGENCE');
+  assert.equal(agreed.status,original.status);
+  assert.equal(divergent.status,original.status);
+  assert.equal(divergent.autoMergeAllowed,false);
+ }
+});
+test('5: adversarial report caps do not erase critical findings or merge protections',()=>{
+ const arr=Array.from({length:120},(_,i)=>finding({symbol:'variant'+i,line:i+1,severity:i===119?'HIGH':'INFO'}));
+ const r=gate.review(request({headFindings:arr}));
+ assert.equal(r.status,'REVIEW_REQUIRED');
+ assert.equal(r.findings.length,120);
+ assert.equal(r.annotations.length,50);
+ assert.equal(r.sarif.runs[0].results.length,50);
+ assert.equal(r.reportTruncated,true);
+ assert.equal(r.families[0].severityClass,'BLOCK');
+ assert.equal(r.autoMergeAllowed,false);
+});
