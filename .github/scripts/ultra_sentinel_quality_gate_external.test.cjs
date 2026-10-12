@@ -192,10 +192,18 @@ test('EXT-187 P1: forged Ed25519 identity and sign-bit alias cannot impersonate 
   signatures:{labeler:signed('labeler',c),runner:signed('runner',r)}};
  const trusted={labeler:{keyId:'independent-labeler',publicKeySpki:spki(identity)},
   runner:{keyId:'independent-runner',publicKeySpki:spki(alias)}};
- const result=evaluateSignedCalibration(bundle,trusted,{expectedHeadSha:H});
+ const result=evaluateSignedCalibration(JSON.stringify(bundle),trusted,{expectedHeadSha:H});
  assert.equal(result.status,'UNVERIFIED_EVIDENCE');
  assert.equal(result.signaturesVerified,false);
  assert.equal(result.calibration.metrics,null);
+});
+test('EXT-187 P2: null options fail closed without throwing outside the error boundary',()=>{
+ const f=fixture();
+ const result=evaluateSignedCalibration(JSON.stringify(f.bundle),f.trusted,null);
+ assert.equal(result.status,'UNVERIFIED_EVIDENCE');
+ assert.equal(result.signaturesVerified,false);
+ assert.equal(result.calibration.metrics,null);
+ assert.equal(result.autoMergeAllowed,false);
 });
 test('EXT-187 P1: order-two and noncanonical Ed25519 trusted points fail closed',()=>{
  const f=fixture();
