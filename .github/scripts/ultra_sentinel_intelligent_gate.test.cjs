@@ -158,3 +158,31 @@ test('5: adversarial report caps do not erase critical findings or merge protect
  assert.equal(r.families[0].severityClass,'BLOCK');
  assert.equal(r.autoMergeAllowed,false);
 });
+
+test('5: capped annotations and SARIF promote the worst finding regardless of fingerprint order',()=>{
+ const arr=Array.from({length:120},(_,i)=>finding({symbol:'reportVariant'+i,line:i+1,severity:'INFO'}));
+ const lastByFingerprint=[...arr].sort((a,b)=>gate.fingerprint(a).localeCompare(gate.fingerprint(b))).at(-1);
+ lastByFingerprint.severity='HIGH';
+ const severeId=gate.fingerprint(lastByFingerprint);
+ const r=gate.review(request({headFindings:arr}));
+ assert.equal(r.status,'REVIEW_REQUIRED');
+ assert.equal(r.findings.length,120);
+ assert.equal(r.annotations.length,50);
+ assert.equal(r.annotations[0].fingerprint,severeId);
+ assert.equal(r.annotations[0].level,'BLOCK');
+ assert.equal(r.sarif.runs[0].results[0].partialFingerprints['ultraSentinel/v1'],severeId);
+ assert.equal(r.sarif.runs[0].results[0].level,'error');
+ assert.equal(r.reportTruncated,true);
+ assert.equal(r.autoMergeAllowed,false);
+});
+test('5: same-location equal-rank critical duplicates produce input-order-independent verdict and inventory',()=>{
+ const a=finding({severity:'BLOCKER'}),b=finding({severity:'CRITICAL'});
+ const before=gate.review(request({headFindings:[a,b]}));
+ const after=gate.review(request({headFindings:[b,a]}));
+ assert.equal(before.status,'REVIEW_REQUIRED');
+ assert.equal(before.counts.duplicates,1);
+ assert.equal(before.findings.length,1);
+ assert.deepEqual(before.findings,after.findings);
+ assert.deepEqual(before.annotations,after.annotations);
+ assert.deepEqual(before.sarif,after.sarif);
+});
