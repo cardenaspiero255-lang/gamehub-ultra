@@ -30,11 +30,14 @@ function stableJson(value){
  }
  return encode(value,0);
 }
-function attestationMessage(role,headSha,digest,bytes){
+function attestationMessage(role,headSha,digest,bytes,corpusDigest=null){
  if(!ROLES.includes(role)||!SHA.test(headSha||'')||!HEX.test(digest||'')||
-    !Number.isSafeInteger(bytes)||bytes<1||bytes>MAX_BYTES)
+    !Number.isSafeInteger(bytes)||bytes<1||bytes>MAX_BYTES||
+    (role==='runner'&&!HEX.test(corpusDigest||'')))
   throw Error('INVALID_ATTESTATION');
- return [SCHEMA,role,headSha.toLowerCase(),digest.toLowerCase(),String(bytes)].join('\n');
+ return [SCHEMA,role,headSha.toLowerCase(),
+  ...(role==='runner'?[corpusDigest.toLowerCase()]:[]),
+  digest.toLowerCase(),String(bytes)].join('\n');
 }
 function safeReport(status,calibration=null){
  const empty={schema:'ultra-sentinel-calibration/v1',mode:'shadow',status:'NOT_MEASURED',
@@ -46,7 +49,7 @@ function safeReport(status,calibration=null){
   productionBlockingEnabled:false,autoMergeAllowed:false,autoCommitAllowed:false,
   manualReviewRequired:true};
 }
-function verifyPart(role,data,attestation,trusted,headSha){
+function verifyPart(role,data,attestation,trusted,headSha,corpusDigest=null){
  if(!attestation||typeof attestation!=='object'||!trusted||typeof trusted!=='object'||
     typeof attestation.keyId!=='string'||!/^[-A-Za-z0-9_]{4,80}$/.test(attestation.keyId)||
     attestation.keyId!==trusted.keyId||
@@ -61,7 +64,7 @@ function verifyPart(role,data,attestation,trusted,headSha){
  if(digest!==attestation.sha256.toLowerCase())return false;
  const pub=createPublicKey({key:Buffer.from(trusted.publicKeySpki,'base64'),format:'der',type:'spki'});
  if(pub.asymmetricKeyType!=='ed25519')return false;
- return verify(null,Buffer.from(attestationMessage(role,headSha,digest,bytes)),
+ return verify(null,Buffer.from(attestationMessage(role,headSha,digest,bytes,corpusDigest)),
   pub,Buffer.from(attestation.signature,'base64'));
 }
 function evaluateSignedCalibration(bundle,trustedKeys){
@@ -78,7 +81,8 @@ function evaluateSignedCalibration(bundle,trustedKeys){
      !labeler.publicKeySpki||labeler.publicKeySpki===runner.publicKeySpki)
    return safeReport('UNVERIFIED_EVIDENCE');
   if(!verifyPart('labeler',bundle.corpus,bundle.signatures.labeler,labeler,bundle.headSha)||
-     !verifyPart('runner',bundle.reports,bundle.signatures.runner,runner,bundle.headSha))
+     !verifyPart('runner',bundle.reports,bundle.signatures.runner,runner,bundle.headSha,
+      bundle.signatures.labeler.sha256))
    return safeReport('UNVERIFIED_EVIDENCE');
   const calibration=measureCalibration({headSha:bundle.headSha,
    corpus:bundle.corpus,reports:bundle.reports});
