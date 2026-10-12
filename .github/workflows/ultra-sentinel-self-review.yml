@@ -27,8 +27,6 @@ concurrency:
 jobs:
   candidate-tests:
     if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
     name: Candidate self-review tests (not independent)
     runs-on: ubuntu-latest
     timeout-minutes: 4
@@ -45,13 +43,9 @@ jobs:
           node --test .github/scripts/ultra_sentinel_selfreview.test.cjs
   trusted-review:
     if: github.event_name == 'pull_request_target'
-    permissions:
-      contents: read
-      pull-requests: read
-      actions: read
     name: Trusted main Sentinel inspects Sentinel changes
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 7
     steps:
       - name: Checkout independent main source, NEVER the PR head
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -75,20 +69,3 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node .github/scripts/ultra_sentinel_selfreview.cjs
-      - name: Collect authenticated GitHub evidence in shadow mode
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node .github/scripts/ultra_sentinel_github_collector.cjs
-      - name: Store sanitized, bounded shadow evidence
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: sentinel-trusted-evidence-${{ github.event.pull_request.number }}
-          path: sentinel-github-evidence-shadow.json
-          if-no-files-found: ignore
-          retention-days: 7
