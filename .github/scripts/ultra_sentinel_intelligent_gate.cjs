@@ -114,7 +114,7 @@ function review(input){
    if(!old||severityRank(f.severity)>severityRank(old.severity))baseMap.set(id,f);
   }
   const findings=[],seen=new Map();let duplicates=0,critical=false;
-  const ordered=head.slice().sort((a,b)=>a.path.localeCompare(b.path)||a.line-b.line||a.rule.localeCompare(b.rule)||severityRank(b.severity)-severityRank(a.severity));
+  const ordered=head.slice().sort((a,b)=>a.path.localeCompare(b.path)||a.line-b.line||a.rule.localeCompare(b.rule)||severityRank(b.severity)-severityRank(a.severity)||a.severity.localeCompare(b.severity));
   for(const f of ordered){
    const rawKey=fingerprint(f);
    const instances=seen.get(rawKey)||new Set();
@@ -147,11 +147,14 @@ function review(input){
   const families=[...map.values()].sort((a,b)=>a.id.localeCompare(b.id));
   const ciStatus=checkCI(input,headSha);
   const status=ciStatus==='BLOCKED'?'BLOCKED':critical?'REVIEW_REQUIRED':findings.some(x=>x.severityClass==='ADVISORY')?'ADVISORY':'PASS';
-  const annotations=findings.slice(0,MAX_ANNOTATIONS).map(f=>({path:f.path,line:f.line,level:f.severityClass,summary:f.rule+' '+f.classification,fingerprint:f.fingerprint}));
+  // Give security-critical findings first priority in bounded GitHub-facing reports.
+  // Preserve the complete, fingerprint-ordered finding inventory separately.
+  const reportFindings=[...findings].sort((a,b)=>severityRank(b.severity)-severityRank(a.severity)||a.fingerprint.localeCompare(b.fingerprint));
+  const annotations=reportFindings.slice(0,MAX_ANNOTATIONS).map(f=>({path:f.path,line:f.line,level:f.severityClass,summary:f.rule+' '+f.classification,fingerprint:f.fingerprint}));
   const legacy=input.legacyVerdict;
   const shadowComparison=typeof legacy==='string'&&['PASS','ADVISORY','REVIEW_REQUIRED','BLOCKED','INCOMPLETE'].includes(legacy)?(legacy===status?'AGREES':'DIVERGENCE'):'UNKNOWN';
   return {schema:'ultra-sentinel-intelligent-gate/v1',mode:'shadow',status,headSha,mergeBaseSha:input.mergeBaseSha.toLowerCase(),
-   autoMergeAllowed:false,findings,families,annotations,sarif:sarifReport(findings),reportTruncated:findings.length>MAX_ANNOTATIONS,
+   autoMergeAllowed:false,findings,families,annotations,sarif:sarifReport(reportFindings),reportTruncated:findings.length>MAX_ANNOTATIONS,
    counts:{new:findings.filter(f=>f.classification==='NEW').length,duplicates,returned:findings.length,reported:annotations.length},
    shadowComparison};
  }catch(error){
