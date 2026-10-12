@@ -70,7 +70,7 @@ function latestRun(list){
   if(!entry||!Number.isSafeInteger(entry.id)||entry.id<1||
      !Number.isSafeInteger(entry.run_attempt)||entry.run_attempt<1||
      typeof entry.run_started_at!=='string'||
-     !/^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d(?:\\.\\d+)?Z$/.test(entry.run_started_at))
+     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(entry.run_started_at))
    throw Error('INVALID_RUN_ORDER');
   const startedAt=Date.parse(entry.run_started_at);
   if(!Number.isFinite(startedAt))throw Error('INVALID_RUN_START');
