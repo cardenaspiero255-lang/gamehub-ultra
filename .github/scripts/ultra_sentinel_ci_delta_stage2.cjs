@@ -209,28 +209,36 @@ async function evaluateRemote(get){
   const mainAfter=(await get('git/ref/heads/main'))?.object?.sha;
   if(after.base.sha!==before.base.sha||mainAfter!==mainBefore)
    return incomplete('MAIN_MOVED_DURING_REVIEW');
-  // Final, near-simultaneous snapshots. Any later run invalidates earlier
-  // witnesses; no API reads are performed after these attestations.
+  // The API reader SERIALIZES requests, so independent Android/Coverage
+  // rechecks are not simultaneous. One repository-level GitHub snapshot
+  // attests the newest run of BOTH workflows in the same REST response.
+  // Fail closed if pagination or the complete head-scoped set is unavailable.
   const first=androidWitness,second=coverageWitness;
-  const firstRequest=get('actions/workflows/'+first.workflowId+
-   '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
-  const secondRequest=get('actions/workflows/'+second.workflowId+
-   '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
-  const firstHistory=await firstRequest;
-  const secondHistory=await secondRequest;
-  for(const pair of [[first,firstHistory],[second,secondHistory]]){
-   const witness=pair[0],history=pair[1];
-   if(!history||!Number.isSafeInteger(history.total_count)||
-      history.total_count<1||history.total_count>100||
-      !Array.isArray(history.workflow_runs)||
-      history.workflow_runs.length!==history.total_count)
-    return incomplete('FINAL_HISTORY_INCOMPLETE');
-   const newest=validateRunHistory(history,witness.name,witness.workflowId,mainBefore);
-   if(!newest||newest.id!==witness.runId||
-      newest.run_attempt!==witness.attempt||
-      newest.status!=='completed'||newest.conclusion!=='success')
-    return incomplete('LATEST_FINAL_RUN_NOT_GREEN');
+  const joint=await get('actions/runs?head_sha='+HEAD+
+   '&event=pull_request&per_page=100');
+  if(!joint||!Number.isSafeInteger(joint.total_count)||
+     joint.total_count<2||joint.total_count>100||
+     !Array.isArray(joint.workflow_runs)||
+     joint.workflow_runs.length!==joint.total_count)
+   return incomplete('FINAL_REPOSITORY_HISTORY_INCOMPLETE');
+  const androidRuns=[],coverageRuns=[];
+  for(const item of joint.workflow_runs){
+   if(item?.workflow_id===first.workflowId)androidRuns.push(item);
+   if(item?.workflow_id===second.workflowId)coverageRuns.push(item);
   }
+  if(!androidRuns.length||!coverageRuns.length)
+   return incomplete('FINAL_REPOSITORY_WORKFLOW_MISSING');
+  const newestAndroid=validateRunHistory({
+   total_count:androidRuns.length,workflow_runs:androidRuns
+  },first.name,first.workflowId,mainBefore);
+  const newestCoverage=validateRunHistory({
+   total_count:coverageRuns.length,workflow_runs:coverageRuns
+  },second.name,second.workflowId,mainBefore);
+  if(newestAndroid.id!==first.runId||
+     newestAndroid.run_attempt!==first.attempt||
+     newestCoverage.id!==second.runId||
+     newestCoverage.run_attempt!==second.attempt)
+   return incomplete('FINAL_REPOSITORY_NEWER_RUN');
   return Object.freeze({status:'SCOPED_CI_REVIEW_REQUIRED',
    schema:'ultra-sentinel-ci-delta-protected/v2',headSha:HEAD,mainSha:mainBefore,
    observedJobs:31,observedRunIds:[first.runId,second.runId],
