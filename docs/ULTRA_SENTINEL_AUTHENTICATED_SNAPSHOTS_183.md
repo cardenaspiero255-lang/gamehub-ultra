@@ -5,6 +5,8 @@
 - Recolecta **ambos arboles Git** de los commits base y HEAD via GitHub API.
 - Verifica commit SHA -> tree SHA -> blob SHA, incluyendo el hash Git SHA-1
   calculado sobre los bytes originales, tipo, tamaño, UTF-8 y ruta.
+- Identifica fuentes potencialmente analizables antes de validar su nombre:
+  rutas con caracteres no admitidos o traversal se rechazan, no se omiten.
 - Rechaza ejecutores dinamicos o configuraciones de runners no modeladas, incluso
   cuando el workflow sea no privilegiado.
 - Rechaza arboles truncados, entradas duplicadas, symlinks, submodulos,
@@ -52,8 +54,8 @@ este explicitamente autorizado. No hay auto-merge ni commits autonomos.
 - Si no obtiene evidencias validas, el job diagnostico falla en cerrado.
 - La ejecucion real del nuevo codigo solo se probara despues de fusionarlo
   a main, pues pull_request_target utiliza codigo confiable de main.
-- Las 30 pruebas del escaner y 6 pruebas de integracion del colector se
-  añaden al Core b1: 11.637 -> 11.673.
+- Las 32 pruebas del escaner y 6 pruebas de integracion del colector se
+  añaden al Core b1: 11.637 -> 11.675.
 - Las pruebas de Android Build, Coverage, Self-Review, Mutation Lab, Core,
   Adversarial Gauntlet y demas revisiones deben aprobar en HEAD antes de merge.
 
