@@ -38,6 +38,9 @@ snapshot, 150 KB por archivo, 16 MB por snapshot y 5.000 hallazgos. Si se
 superan limites, falla una llamada o el analizador no puede verificar una
 estructura, el resultado se considera INCOMPLETE; **nunca se inventa PASS**.
 
+Los errores HIGH/CRITICAL/BLOCKER encontrados y los fallos CI confirmados
+mantienen reviewRequired=true incluso cuando un snapshot es INCOMPLETE.
+
 Un resultado con fuente y hashes verificados tampoco constituye una prueba de
 ausencia de todos los defectos posibles: las reglas actuales son parciales.
 El campo hasAuthenticatedFullRepositoryScan permanece FALSE.
@@ -54,8 +57,8 @@ este explicitamente autorizado. No hay auto-merge ni commits autonomos.
 - Si no obtiene evidencias validas, el job diagnostico falla en cerrado.
 - La ejecucion real del nuevo codigo solo se probara despues de fusionarlo
   a main, pues pull_request_target utiliza codigo confiable de main.
-- Las 32 pruebas del escaner y 6 pruebas de integracion del colector se
-  añaden al Core b1: 11.637 -> 11.675.
+- Las 32 pruebas del escaner y 8 pruebas de integracion del colector se
+  añaden al Core b1: 11.637 -> 11.677.
 - Las pruebas de Android Build, Coverage, Self-Review, Mutation Lab, Core,
   Adversarial Gauntlet y demas revisiones deben aprobar en HEAD antes de merge.
 
