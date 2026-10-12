@@ -2,7 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {buildExpectedAndroid,buildExpectedCoverage,buildExpectedContract,buildExpectedRegressions,buildExpectedDocs,classifyCiDelta,checkJobEvidence}
+const {buildExpectedAndroid,buildExpectedCoverage,buildExpectedContract,buildExpectedRegressions,buildExpectedDocs,classifyCiDelta,checkJobEvidence,verifyCiDeltaFromGitHub,verifyCiJobsFromGitHub}
  =require('./ultra_sentinel_ci_delta.cjs');
 const REPO='cardenaspiero255-lang/gamehub-ultra',BASE='7aa5df3e3c704965862ea728fb4c390d2c15a7f0',HEAD='bb08782350201f97576a974a4684a611c21701c0';
 const root=path.resolve(__dirname,'../workflows');
@@ -25,11 +25,56 @@ const input=()=>({repo:REPO,baseSha:BASE,trustedBaseSha:BASE,headSha:HEAD,expect
  safetyContract:buildExpectedContract(trusted.safetyContract),regressions:buildExpectedRegressions(trusted.regressions),
  documentation:buildExpectedDocs()},files,changedFileCount:5});
 const gitBlobSha=text=>crypto.createHash('sha1').update('blob '+Buffer.byteLength(text)+'\0'+text).digest('hex');
+// Production uses an independently trusted Octokit; tests fake that boundary,
+// including commit/tree, complete content and paginated GitHub Actions evidence.
+function makeGithubFixture(){
+ const candidate=input().candidate;
+ const byPath={
+  '.github/workflows/android.yml':'android',
+  '.github/workflows/coverage.yml':'coverage',
+  '.github/scripts/check-ci-safety-contract.py':'safetyContract',
+  '.github/scripts/test-ci-safety-contract-regressions.py':'regressions',
+  'docs/CI_ACCELERATION_172_V2.md':'documentation'
+ };
+ const state={prHead:HEAD,treeSha:'6c11aad2b6081c40b087624af8dfef44986450f0',
+  treeFiles:files.map(f=>({path:f.filename,type:'blob',mode:'100644',sha:f.sha})),
+  candidates:candidate,extraRuns:[],apiIncomplete:false};
+ const rest={
+  pulls:{
+   get:async()=>({data:{number:172,state:'open',changed_files:5,
+    head:{sha:state.prHead,repo:{full_name:REPO}},
+    base:{sha:BASE,ref:'main',repo:{full_name:REPO}}}}),
+   listFiles:async()=>({data:files})
+  },
+  git:{
+   getCommit:async()=>({data:{sha:HEAD,tree:{sha:state.treeSha}}}),
+   getTree:async()=>({data:{sha:state.treeSha,truncated:state.apiIncomplete,tree:state.treeFiles}})
+  },
+  repos:{getContent:async({path:gitPath,ref})=>{
+   const key=byPath[gitPath],body=ref===BASE?trusted[key]:ref===HEAD?state.candidates[key]:undefined;
+   if(typeof body!=='string')throw Error('missing fixture content');
+   return {data:{type:'file',encoding:'base64',sha:gitBlobSha(body),
+    size:Buffer.byteLength(body),content:Buffer.from(body).toString('base64')}};
+  }},
+  actions:{
+   getWorkflow:async({workflow_id})=>({data:{id:workflow_id==='android.yml'?123:124}}),
+   listWorkflowRuns:async({workflow_id})=>({data:{
+    workflow_runs:[...evidence().runs.filter(x=>x.workflow_id===workflow_id),
+     ...state.extraRuns.filter(x=>x.workflow_id===workflow_id)]}}),
+   listJobsForWorkflowRun:async({run_id})=>({data:{jobs:evidence().jobs[run_id]||[]}})
+  }
+ };
+ const github={rest,paginate:async(fn,args)=>{
+  const result=(await fn(args)).data;
+  return Array.isArray(result)?result:result.workflow_runs||result.jobs||[];
+ }};
+ return {github,state};
+}
 test('V2 known Android/Coverage diff is exact against trusted main and stays non-approving',()=>{
  const i=input(),r=classifyCiDelta(i);
  assert.equal(gitBlobSha(i.candidate.android),'0f78d28d5e8974b988490bd9facdf63cb6be6485');
  assert.equal(gitBlobSha(i.candidate.coverage),'e1042881b00273aec31c2a64131ff0df7042e4ef');
- assert.equal(r.status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal(r.status,'SCOPED_DELTA_REVIEW_REQUIRED');
  assert.equal(r.autoApproveAllowed,false);assert.equal(r.autoMergeAllowed,false);
 });
 test('unrecognized shell execution and permission escalation never inherit attestation',()=>{
@@ -92,10 +137,45 @@ const evidence=()=>({
   501:coverageNames.map((name,i)=>({id:i+100,name,status:'completed',conclusion:'success'}))
  }
 });
-test('complete immutable job evidence is recognized but never approves or merges',()=>{
+test('synthetic job results cannot claim authenticated CI, even with a scoped delta',async()=>{
  const r=checkJobEvidence(evidence());
- assert.equal(r.status,'VERIFIED_CI_REVIEW_REQUIRED');assert.equal(r.autoApproveAllowed,false);
- assert.equal(r.autoMergeAllowed,false);
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.autoApproveAllowed,false);assert.equal(r.autoMergeAllowed,false);
+ const {github}=makeGithubFixture();
+ const delta=await verifyCiDeltaFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172});
+ assert.equal(delta.status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ const real=await verifyCiJobsFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172,delta});
+ assert.equal(real.status,'VERIFIED_CI_REVIEW_REQUIRED');
+ assert.equal(real.verifiedJobs,31);
+ assert.equal(real.autoApproveAllowed,false);assert.equal(real.autoMergeAllowed,false);
+ assert.equal(checkJobEvidence({...evidence(),delta}).status,'INCOMPLETE');
+});
+test('immutable Git tree and full content cannot be substituted with matching caller strings',async()=>{
+ const args=fix=>({github:fix.github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172});
+ const forgedTree=makeGithubFixture();
+ forgedTree.state.treeFiles[0].sha='f'.repeat(40);
+ assert.equal((await verifyCiDeltaFromGitHub(args(forgedTree))).status,'INCOMPLETE');
+ const fakeHead=makeGithubFixture();fakeHead.state.prHead='e'.repeat(40);
+ assert.equal((await verifyCiDeltaFromGitHub(args(fakeHead))).status,'INCOMPLETE');
+ const partialTree=makeGithubFixture();partialTree.state.apiIncomplete=true;
+ assert.equal((await verifyCiDeltaFromGitHub(args(partialTree))).status,'INCOMPLETE');
+ const fakeBody=makeGithubFixture();fakeBody.state.candidates.safetyContract+='\n# unauthorized\n';
+ assert.equal((await verifyCiDeltaFromGitHub(args(fakeBody))).status,'INCOMPLETE');
+ const missingPagination=makeGithubFixture();delete missingPagination.github.paginate;
+ assert.equal((await verifyCiDeltaFromGitHub(args(missingPagination))).status,'INCOMPLETE');
+});
+test('CI attestation rejects stale SHA, forged delta, and newer failing run',async()=>{
+ const {github,state}=makeGithubFixture(),args={github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172};
+ const delta=await verifyCiDeltaFromGitHub(args);
+ assert.equal(delta.status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ assert.equal((await verifyCiJobsFromGitHub({...args,delta:{...delta}})).status,'INCOMPLETE');
+ const another=makeGithubFixture();
+ assert.equal((await verifyCiJobsFromGitHub({...another.github,github:another.github,owner:args.owner,repo:args.repo,number:172,delta})).status,'INCOMPLETE');
+ state.extraRuns.push({...evidence().runs[0],id:999999,status:'completed',conclusion:'failure'});
+ assert.equal((await verifyCiJobsFromGitHub({...args,delta})).status,'INCOMPLETE');
+ state.extraRuns=[];
+ state.prHead='f'.repeat(40);
+ assert.equal((await verifyCiJobsFromGitHub({...args,delta})).status,'INCOMPLETE');
 });
 test('missing, skipped or forged job evidence is rejected across job families',()=>{
  for(const mutate of [
