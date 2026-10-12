@@ -81,3 +81,34 @@ test('3: identical-location severity deduplication retains HIGH across all input
   assert.equal(r.status,highest==='HIGH'?'REVIEW_REQUIRED':highest==='WARNING'?'ADVISORY':'PASS');
  }
 });
+
+test('4: all required checks must match immutable HEAD, including case differences',()=>{
+ const c=checks();c[2].sha=H.toUpperCase();
+ assert.equal(gate.review(request({checks:c,headFindings:[]})).status,'PASS');
+ c[2].sha=B;
+ assert.equal(gate.review(request({checks:c,headFindings:[]})).status,'INCOMPLETE');
+});
+test('4: CI cannot certify an unknown conclusion, missing source, or forged success',()=>{
+ for(const patch of [{conclusion:'unexpected'},{source:'untrusted'},{source:undefined},{sha:'not-a-sha'},{status:'pending',conclusion:'success'}]){
+  const c=checks();c[0]={...c[0],...patch};
+  assert.notEqual(gate.review(request({checks:c,headFindings:[]})).status,'PASS');
+ }
+});
+test('4: duplicate required gate names or duplicate external evidence fail closed',()=>{
+ const c=checks();
+ assert.equal(gate.review(request({requiredChecks:[c[0].name,c[0].name],headFindings:[]})).status,'INCOMPLETE');
+ assert.equal(gate.review(request({checks:[...c,{...c[0],source:'untrusted'}],headFindings:[]})).status,'INCOMPLETE');
+});
+test('4: a verified failed required check blocks even if no findings exist',()=>{
+ for(const conclusion of ['failure','timed_out','cancelled','action_required']){
+  const c=checks();c[3].conclusion=conclusion;
+  assert.equal(gate.review(request({checks:c,headFindings:[]})).status,'BLOCKED');
+ }
+});
+test('4: CI decisions never grant automatic merge, even for a passing HEAD',()=>{
+ for(const headFindings of [[],[finding({severity:'INFO'})],[finding({severity:'HIGH'})]]){
+  const r=gate.review(request({headFindings}));
+  assert.equal(r.mode,'shadow');
+  assert.equal(r.autoMergeAllowed,false);
+ }
+});
