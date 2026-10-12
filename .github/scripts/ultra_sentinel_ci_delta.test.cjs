@@ -164,6 +164,18 @@ test('synthetic job results cannot claim authenticated CI, even with a scoped de
  assert.equal(real.autoApproveAllowed,false);assert.equal(real.autoMergeAllowed,false);
  assert.equal(checkJobEvidence({...evidence(),delta}).status,'INCOMPLETE');
 });
+test('GitHub line-wrapped Base64 content is accepted only as scoped evidence',async()=>{
+ const {github}=makeGithubFixture();
+ const oldGetContent=github.rest.repos.getContent;
+ github.rest.repos.getContent=async args=>{
+  const result=await oldGetContent(args),raw=result.data.content;
+  return {data:{...result.data,content:raw.match(/.{1,64}/g).join('\\n')+'\\n'}};
+ };
+ const result=await verifyCiDeltaFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172});
+ assert.equal(result.status,'SCOPED_DELTA_REVIEW_REQUIRED');
+ assert.equal(result.provenanceAuthenticated,false);
+ assert.equal(result.autoMergeAllowed,false);
+});
 test('immutable Git tree and full content cannot be substituted with matching caller strings',async()=>{
  const args=fix=>({github:fix.github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172});
  const forgedTree=makeGithubFixture();
