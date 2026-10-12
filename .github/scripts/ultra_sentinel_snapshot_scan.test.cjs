@@ -178,3 +178,16 @@ test('opaque runner group objects cannot be certified from nonprivileged workflo
  const result=s.inspectContent({path:'.github/workflows/runner-group.yml'},source);
  assert.equal(result.complete,false);
 });
+
+test('source inventory refuses path names with spaces instead of silently ignoring sources',async()=>{
+ const d=fixture();
+ d.state.base.tree.tree[0].path='.github/workflows/unsafe name.yml';
+ await assert.rejects(s.scanSnapshot({get:d.get,sha:B}),/GIT_TREE_UNSAFE_ENTRY/);
+});
+test('source inventory refuses Unicode paths and directory traversal source variants',async()=>{
+ for(const path of ['app/src/main/java/évil.kt','app/src/main/../java/Evil.kt',
+  '.github/scripts/ultra_sentinel_añadido.cjs']){
+  const d=fixture();d.state.base.tree.tree[0].path=path;
+  await assert.rejects(s.scanSnapshot({get:d.get,sha:B}),/GIT_TREE_UNSAFE_ENTRY/,path);
+ }
+});
