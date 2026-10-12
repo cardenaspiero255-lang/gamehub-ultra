@@ -198,31 +198,26 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
  const engine=require('./ultra_sentinel_capabilities.cjs');
- const make=(mode)=>{
+ const variants=[
+  ['base',false,false,false],
+  ['drop-exit',true,false,false],
+  ['drop-report-props',false,true,false],
+  ['drop-exit-and-props',true,true,false],
+  ['drop-exit-props-exports',true,true,true],
+ ];
+ for(const [mode,noExit,noReportProps,noExports] of variants){
   let variant=source.replace('const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);',
-   'const get=apiClient(repo,token,dependencies.fetcher);');
-  if(mode.includes('no-report-props')){
+   'const get=async (relative)=>{if(dependencies.get)return dependencies.get(relative);const remote=apiClient(repo,token,dependencies.fetcher);return remote(relative);};');
+  if(noExit)variant=variant.replace('process.exitCode=1;', 'process.exit(1);');
+  if(noReportProps){
    const begin=variant.indexOf(' if(typeof options.repo===',variant.indexOf('function failureReport'));
    const finish=variant.indexOf(' return report;',begin);
-   assert.ok(begin>0&&finish>begin,'find optional report properties');
+   assert.ok(begin>0&&finish>begin);
    variant=variant.slice(0,begin)+variant.slice(finish);
   }
-  if(mode.includes('no-exports')){
-   const begin=variant.indexOf('module.exports={');
-   assert.ok(begin>0);
-   variant=variant.slice(0,begin);
-  }
-  if(mode.includes('no-failure')){
-   const begin=variant.indexOf('function failureReport(');
-   const finish=variant.indexOf('async function main()',begin);
-   variant=variant.slice(0,begin)+variant.slice(finish);
-  }
-  return variant;
- };
- for(const mode of ['base','no-report-props','no-exports','no-report-props no-exports',
-  'no-failure no-exports']){
+  if(noExports)variant=variant.slice(0,variant.indexOf('module.exports={'));
   let result='PASS';
-  try{engine.findCapabilities(acorn.parse(make(mode),{ecmaVersion:'latest',
+  try{engine.findCapabilities(acorn.parse(variant,{ecmaVersion:'latest',
    sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,
    allowAwaitOutsideFunction:true,locations:true,ranges:true}));}
   catch(error){result=error.message;}
