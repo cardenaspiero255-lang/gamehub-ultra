@@ -123,13 +123,16 @@ function fieldPow(base,exponent){
 }
 const CURVE_D=mod(-121665n*fieldPow(121666n,FIELD-2n));
 const SQRT_MINUS_ONE=fieldPow(2n,(FIELD-1n)/4n);
-function pointAdd([x1,y1,z1,t1],[x2,y2,z2,t2]){
+function pointAdd(p,q){
+ const x1=p[0],y1=p[1],z1=p[2],t1=p[3];
+ const x2=q[0],y2=q[1],z2=q[2],t2=q[3];
  const a=mod((y1-x1)*(y2-x2)),b=mod((y1+x1)*(y2+x2));
  const c=mod(2n*CURVE_D*t1*t2),d=mod(2n*z1*z2);
  const e=mod(b-a),f=mod(d-c),g=mod(d+c),h=mod(b+a);
  return [mod(e*f),mod(g*h),mod(f*g),mod(e*h)];
 }
-function pointDouble([x,y,z]){
+function pointDouble(p){
+ const x=p[0],y=p[1],z=p[2];
  const a=mod(x*x),b=mod(y*y),c=mod(2n*z*z),d=mod(-a);
  const e=mod((x+y)*(x+y)-a-b),g=mod(d+b),f=mod(g-c),h=mod(d-b);
  return [mod(e*f),mod(g*h),mod(f*g),mod(e*h)];
