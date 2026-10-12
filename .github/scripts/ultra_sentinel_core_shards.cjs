@@ -177,7 +177,7 @@ if(require.main===module){
 }
 module.exports={plan,testFiles,parseTap,validateReport,aggregate,
  SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,MATRIX_EXTRA_AUDITS,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,
- // Export a literal frozen public attestation snapshot. The validator keeps
- // its private frozen policy object, so consumers cannot mutate validation
- // policy and trusted provenance analysis sees no spread/alias ambiguity.
- BASELINE_TEST_COUNTS:Object.freeze({b0:10242,b1:11584}),MINIMUM};
+ // Baseline counts are validation policy, not public API. Keep them private:
+ // exporting a reconstructed/aliased policy object creates unnecessary
+ // CommonJS provenance ambiguity and exposes internals to mutation attempts.
+ MINIMUM};
