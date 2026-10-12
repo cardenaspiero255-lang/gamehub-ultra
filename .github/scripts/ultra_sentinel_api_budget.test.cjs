@@ -46,3 +46,21 @@ test('primary quota exhausted for an hour fails closed, without hammering or sle
  await assert.rejects(()=>get('pulls/172'),/GITHUB_RATE_LIMITED/);
  assert.equal(calls,1);
 });
+
+test('secondary limit without headers honors a full minute before one retry',async()=>{
+ let calls=0;const pauses=[];
+ const get=createGitHubReader(repo,'test-token-value',async()=>{
+  calls++;return calls===1?reply(429,{}):reply(200,{ok:true});
+ },{pause:async ms=>pauses.push(ms)});
+ assert.deepEqual(await get('pulls/172'),{ok:true});
+ assert.equal(calls,2);assert.deepEqual(pauses,[60000]);
+});
+test('trusted main AST can parse and certify API budget source context',()=>{
+ const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
+ const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+ const src=fs.readFileSync(path.join(__dirname,'ultra_sentinel_api_budget.cjs'),'utf8');
+ const ast=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.deepEqual(findCapabilities(ast),[]);
+});

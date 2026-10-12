@@ -6,7 +6,6 @@
  * Serialize calls per runner to avoid secondary burst limits.
  * Never log credentials, use external hosts, or retry exhausted limits early.
  */
-const SHA=/^[a-f0-9]{40}$/i;
 function immutablePath(path){
  if(/^git\/commits\/[a-f0-9]{40}$/i.test(path))return true;
  if(/^git\/trees\/[a-f0-9]{40}\?recursive=1$/i.test(path))return true;
@@ -15,7 +14,7 @@ function immutablePath(path){
 }
 function createGitHubReader(repo,token,fetcher=globalThis.fetch,options={}){
  if(typeof repo!=='string'||!/^[-\w.]+\/[-\w.]+$/.test(repo)||
-    repo.split('/').includes('..')||typeof token!=='string'||token.length<8||
+    repo.split('/').includes('..')||typeof token!=='string'||token.length<1||
     typeof fetcher!=='function')throw Error('INVALID_GITHUB_CLIENT');
  const pause=options.pause||((ms)=>new Promise(resolve=>setTimeout(resolve,ms)));
  const now=options.now||Date.now;

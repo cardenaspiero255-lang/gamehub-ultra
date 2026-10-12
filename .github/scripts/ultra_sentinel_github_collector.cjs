@@ -28,6 +28,8 @@ function requireInput(options){
  return {repo,pr,headSha:headSha.toLowerCase(),token};
 }
 function apiClient(repo,token,fetcher=globalThis.fetch){
+ if(!REPO.test(repo||'')||repo.split('/').some(x=>x==='.'||x==='..'))
+  throw Error('INVALID_REQUEST');
  return createGitHubReader(repo,token,fetcher);
 }
 function validateMetadata(info,repo,pr,headSha){
