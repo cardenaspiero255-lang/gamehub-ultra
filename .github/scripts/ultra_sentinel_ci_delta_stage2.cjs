@@ -64,11 +64,14 @@ function validateJobEvidence(runs,jobs,workflowName,workflowId){
   runs.total_count>100||!Array.isArray(runs.workflow_runs)||
   runs.workflow_runs.length!==runs.total_count)throw Error('INCOMPLETE_RUN_HISTORY');
  for(const r of runs.workflow_runs){
+  let linked=false;
+  if(Array.isArray(r?.pull_requests)){
+   for(const link of r.pull_requests)if(link?.number===172)linked=true;
+  }
   if(!r||r.workflow_id!==workflowId||r.name!==workflowName||
    r.head_sha!==HEAD||r.event!=='pull_request'||
    r.head_repository?.full_name!==REPO||!Number.isSafeInteger(r.id)||
-   !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||
-   !Array.isArray(r.pull_requests)||!r.pull_requests.some(x=>x?.number===172))
+   !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||!linked)
     throw Error('UNTRUSTED_RUN');
  }
  const latest=[...runs.workflow_runs].sort((a,b)=>b.id-a.id||b.run_attempt-a.run_attempt)[0];
@@ -115,7 +118,8 @@ async function evaluateRemote(get){
   const candidateEntries=[],baseEntries=[];
   for(const pair of Object.entries(FILES)){
    const file=pair[0],key=pair[1][0],expectedSha=pair[1][1];
-   const entry=changes.filter(f=>f?.filename===file);
+   const entry=[];
+   for(const item of changes)if(item?.filename===file)entry.push(item);
    if(entry.length!==1||entry[0].sha!==expectedSha||
       entry[0].status!==(key==='documentation'?'added':'modified'))
     return incomplete('CHANGED_FILE_TAMPERED');
