@@ -238,3 +238,28 @@ test('EXT-187: full external-calibration source is attestable by the trusted Jav
   allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true,ranges:true});
  assert.deepEqual(findCapabilities(ast),[]);
 });
+
+
+test('EXT-187 P2: array extras are rejected before unbounded Object.keys allocation',()=>{
+ const malicious=[];
+ for(let i=0;i<300;i++)malicious['injected_'+i]=i;
+ const original=Object.keys;
+ try{
+  Object.keys=function(value){
+   if(value===malicious)throw Error('PREMATURE_ARRAY_KEY_ALLOCATION');
+   return original(value);
+  };
+  assert.throws(()=>stableJson(malicious),/UNBOUNDED_INPUT/);
+ }finally{Object.keys=original;}
+});
+test('EXT-187 P2: a short array with a named own property fails the bounded shape check',()=>{
+ const malicious=['valid'];
+ Object.defineProperty(malicious,'metadata',{value:'untrusted',enumerable:true});
+ assert.throws(()=>stableJson(malicious),/UNBOUNDED_INPUT/);
+});
+test('EXT-187 P2: normal dense arrays at the 2500-element limit remain valid',()=>{
+ const safe=Array.from({length:2500},(_,index)=>index%17);
+ assert.deepEqual(JSON.parse(stableJson(safe)),safe);
+ const sparse=new Array(2);sparse[1]='value';
+ assert.throws(()=>stableJson(sparse),/INVALID_JSON_VALUE/);
+});
