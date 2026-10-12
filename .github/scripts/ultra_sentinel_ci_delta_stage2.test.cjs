@@ -100,3 +100,13 @@ test('new CI failure arriving during verification invalidates previous green',as
  const f=fixture();f.state.lateRunBad=true;
  assert.equal((await evaluateRemote(f.get)).status,'INCOMPLETE');
 });
+
+test('trusted main capability AST accepts stage2 protected reviewer without opaque semantics',()=>{
+ const acorn=require('acorn'),{findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+ const source=fs.readFileSync(path.join(__dirname,'ultra_sentinel_ci_delta_stage2.cjs'),'utf8');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ const sinks=findCapabilities(ast);
+ assert.deepEqual(sinks,[]);
+});
