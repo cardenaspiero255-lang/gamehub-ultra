@@ -58,7 +58,8 @@ function createGitHubReader(repo,token,fetcher=globalThis.fetch,options={}){
  async function get(relative){
   if(typeof relative!=='string'||!relative.length||
      !/^[A-Za-z0-9_.\/\?=&%-]+$/.test(relative)||relative.startsWith('/')||
-     relative.includes('..')||/%2e|%2f|%5c/i.test(relative))
+     (relative.includes('..')&&!/^compare\/[a-f0-9]{40}\.\.\.[a-f0-9]{40}$/i.test(relative))||
+     /%2e|%2f|%5c/i.test(relative))
    throw Error('INVALID_API_PATH');
   const task=tail.then(async()=>{
    const safe=immutablePath(relative);

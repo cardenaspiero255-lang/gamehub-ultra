@@ -64,3 +64,17 @@ test('trusted main AST can parse and certify API budget source context',()=>{
   locations:true,ranges:true});
  assert.deepEqual(findCapabilities(ast),[]);
 });
+
+test('GitHub compare accepts exact SHA...SHA while blocking traversal',async()=>{
+ let requests=0;
+ const get=createGitHubReader(repo,'test-token-value',async()=>{
+  requests++;
+  return reply(200,{merge_base_commit:{sha:'a'.repeat(40)}});
+ });
+ const safe='compare/'+ 'a'.repeat(40)+'...'+ 'b'.repeat(40);
+ const output=await get(safe);
+ assert.equal(output.merge_base_commit.sha,'a'.repeat(40));
+ assert.equal(requests,1);
+ await assert.rejects(get('../secrets'),/INVALID_API_PATH/);
+ await assert.rejects(get('compare/../../../secrets'),/INVALID_API_PATH/);
+});
