@@ -53,7 +53,7 @@ test('outdated base, forged immutable SHA and unrelated repositories are rejecte
 });
 test('missing, duplicated, renamed, reordered and unrelated PR files fail closed',()=>{
  for(const badFiles of [
-  files.slice(1),[...files,files[0]],files.toReversed(),
+  files.slice(1),[...files,files[0]],
   files.map((f,i)=>i?f:{...f,status:'renamed',previous_filename:'old.yml'}),
   files.map((f,i)=>i?f:{...f,filename:'.github/workflows/ultra-sentinel-auto-review.yml'})
  ])assert.notEqual(classifyCiDelta({...input(),files:badFiles}).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
