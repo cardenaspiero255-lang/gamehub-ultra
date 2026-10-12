@@ -97,10 +97,10 @@ function assess(input){
     !Array.isArray(input.findings)||input.findings.length>5000||
     input.findings.some(f=>!validFinding(f)))
    return invalid;
-  const calibration=input.calibration===undefined?
-   measureCalibration({headSha:input.headSha}):measureCalibration(input.calibration);
-  if(input.calibration!==undefined&&input.calibration?.headSha!==input.headSha)
-   return invalid;
+  // Decision and calibration must be independently attested. A caller-supplied
+  // benchmark is not evidence of provenance and cannot enter this decision.
+  if(input.calibration!==undefined)return invalid;
+  const calibration=emptyCalibration('NOT_MEASURED');
   const counts=emptyCounts(),seen=new Map();
   let advisory=false;
   for(const f of input.findings){
