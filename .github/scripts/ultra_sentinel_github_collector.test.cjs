@@ -354,3 +354,33 @@ test('confirmed CI failure cannot be masked by an incomplete snapshot',async()=>
  assert.equal(r.reviewRequired,true);
  assert.equal(r.status,'INCOMPLETE');
 });
+
+
+test('QG-186 integration: trusted collector reports missing calibration without granting rights',async()=>{
+ const deps=fixture({audit:{...audit(),status:'ADVISORY',findings:[]}});
+ const result=await collector.collect(request(),deps);
+ assert.equal(result.qualityGate.schema,'ultra-sentinel-quality-gate/v1');
+ assert.equal(result.qualityGate.status,'INCOMPLETE');
+ assert.equal(result.qualityGate.reason,'SCOPED_BASELINE_MISSING');
+ assert.equal(result.qualityGate.ciStatus,'PASS');
+ assert.equal(result.qualityGate.calibration.status,'NOT_MEASURED');
+ assert.equal(result.qualityGate.productionBlockingEnabled,false);
+ assert.equal(result.qualityGate.autoMergeAllowed,false);
+ assert.equal(result.qualityGate.autoCommitAllowed,false);
+});
+
+test('QG-186 integration: new critical authenticated snapshot requires human review',async()=>{
+ const deps=fixture({audit:{...audit(),status:'ADVISORY',findings:[]}});
+ deps.snapshots=async()=>({autoMergeAllowed:false,scope:'TEST_SCOPED_SNAPSHOT',
+  base:{sha:B,complete:true,reasons:[],findings:[]},
+  head:{sha:H,complete:true,reasons:[],findings:[
+   {path:'app/src/main/java/Sample.kt',line:1,rule:'UNSCOPED_COROUTINE',
+    severity:'HIGH',symbol:'launchWork',astKind:'CallExpression',cause:'unscoped'}
+  ]}});
+ const result=await collector.collect(request(),deps);
+ assert.equal(result.qualityGate.status,'REVIEW_REQUIRED');
+ assert.equal(result.qualityGate.criticalFindings.new,1);
+ assert.equal(result.qualityGate.productionBlockingEnabled,false);
+ assert.equal(result.qualityGate.calibration.status,'NOT_MEASURED');
+ assert.equal(result.status,'INCOMPLETE');
+});

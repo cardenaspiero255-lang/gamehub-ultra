@@ -7,6 +7,7 @@
 const fs=require('node:fs');
 const {reviewRemote}=require('./ultra_sentinel_selfreview.cjs');
 const {review}=require('./ultra_sentinel_intelligent_gate.cjs');
+const {assess}=require('./ultra_sentinel_quality_gate.cjs');
 const {scanSnapshots}=require('./ultra_sentinel_snapshot_scan.cjs');
 
 const SHA=/^[a-f0-9]{40}$/i;
@@ -159,6 +160,11 @@ async function collect(options,dependencies={}){
  // Scope-complete is NOT synonymous with complete repository semantic
  // understanding. The quality gate stays advisory regardless of its verdict.
  const verified=base.complete&&head.complete;
+ const quality=assess({headSha,ciStatus:ci.status,scannerStatus:audit.status,
+  hasAuthenticatedBaseline:verified,hasAuthenticatedFullRepositoryScan:false,
+  findings:candidate.findings});
+ if(quality.productionBlockingEnabled!==false||quality.autoMergeAllowed!==false||
+    quality.autoCommitAllowed!==false)throw Error('SHADOW_INVARIANT_VIOLATION');
  const summary=sample=>({sha:sample.sha,complete:sample.complete,
   targetFiles:sample.targetFiles||0,scannedFiles:sample.scannedFiles||0,
   treeEntries:sample.treeEntries||0,bytes:sample.bytes||0,
@@ -172,6 +178,7 @@ async function collect(options,dependencies={}){
   ciStatus:ci.status,checks:ci.checks.map(c=>({name:c.name,status:c.status,
    conclusion:c.conclusion,sha:c.sha,runId:c.runId})),
   baseSnapshot:summary(base),headSnapshot:summary(head),
+  qualityGate:quality,
   scopedEvaluator:{status:candidate.status,reason:candidate.reason||null,
    findingsTotal:candidate.findings.length,
    findings:candidate.findings.slice(0,50).map(f=>({path:f.path,line:f.line,
@@ -226,6 +233,7 @@ async function main(){
     'HEAD: '+report.headSha+'\n\n'+
     'CI evidence: **'+report.ciStatus+'**; verified scoped base/HEAD: **'+
     report.hasAuthenticatedBaseline+'**; evaluator: **'+report.scopedEvaluator.status+
+    '**; Quality Gate (shadow): **'+report.qualityGate.status+
     '**; production status: **INCOMPLETE**. Never merge authority.\n');
   }
  }catch(error){
