@@ -140,7 +140,7 @@ function review(input){
    const previous=map.get(f.familyId);
    map.set(f.familyId,{
     id:f.familyId,rule:f.rule,
-    severityClass:f.severityClass==='BLOCK'||(previous&&previous.severityClass==='BLOCK')?'BLOCK':f.severityClass,
+    severityClass:[previous?.severityClass,f.severityClass].includes('BLOCK')?'BLOCK':([previous?.severityClass,f.severityClass].includes('ADVISORY')?'ADVISORY':'INFO'),
     variants:previous?previous.variants+1:1
    });
   }
