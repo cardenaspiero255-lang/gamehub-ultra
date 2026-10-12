@@ -186,13 +186,116 @@ function classifyCiDelta(args){
   // A scoped transformation is evidence for human review, not a PASS.
   return Object.freeze({
    schema:'ultra-sentinel-scoped-ci-delta/v1',
-   status:'VERIFIED_DELTA_REVIEW_REQUIRED',
+   status:'SCOPED_DELTA_REVIEW_REQUIRED',
    workflowPaths:['.github/workflows/android.yml','.github/workflows/coverage.yml'],
    baseSha,headSha,contractScriptsPinned:true,scopedWorkflowDeltaOnly:true,
    inheritedUnknownsStillRequireReview:true,
    autoApproveAllowed:false,autoMergeAllowed:false
   });
  }catch(_){return FAIL('UNVERIFIED_TRANSFORMATION');}
+}
+// Private, per-process proof of the authenticated read-only API boundary.
+// Plain objects built by PR code, fixtures, or callers do not acquire authority.
+const authenticatedDeltas=new WeakSet();
+const deltaSources=new WeakMap();
+const authenticatedJobInputs=new WeakSet();
+const CI_FILES=Object.freeze({
+ '.github/workflows/android.yml':'android',
+ '.github/workflows/coverage.yml':'coverage',
+ '.github/scripts/check-ci-safety-contract.py':'safetyContract',
+ '.github/scripts/test-ci-safety-contract-regressions.py':'regressions',
+ 'docs/CI_ACCELERATION_172_V2.md':'documentation'
+});
+function decodeGitContent(response){
+ const item=response?.data;
+ if(!item||item.type!=='file'||item.encoding!=='base64'||
+    typeof item.content!=='string'||typeof item.sha!=='string'||
+    !Number.isSafeInteger(item.size)||item.size<0||item.size>160000)
+  throw Error('INVALID_GITHUB_CONTENT');
+ const encoded=item.content.replace(/\\s/g,'');
+ if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+  throw Error('INVALID_BASE64');
+ const bytes=Buffer.from(encoded,'base64');
+ if(bytes.toString('base64')!==encoded||bytes.length!==item.size)
+  throw Error('TRUNCATED_GITHUB_CONTENT');
+ const body=bytes.toString('utf8');
+ if(!Buffer.from(body,'utf8').equals(bytes)||gitBlobSha(body)!==item.sha)
+  throw Error('INVALID_GITHUB_BLOB');
+ return {body,sha:item.sha};
+}
+async function githubPages(github,fn,params){
+ if(typeof github?.paginate!=='function'||typeof fn!=='function')
+  throw Error('UNAUTHENTICATED_PAGINATION');
+ const list=await github.paginate(fn,{...params,per_page:100});
+ if(!Array.isArray(list)||list.length>2000)throw Error('INCOMPLETE_PAGINATION');
+ return list;
+}
+/**
+ * Authenticated boundary: ONLY execute with the independently trusted
+ * read-only GitHub Octokit on a protected runner, never PR supplied code.
+ * Anchors exact PR identity, immutable git commit/tree, all five blobs,
+ * and trusted base content before returning narrowly scoped evidence.
+ */
+async function verifyCiDeltaFromGitHub({github,owner,repo,number}={}){
+ try{
+  if(owner!=='cardenaspiero255-lang'||repo!=='gamehub-ultra'||number!==172||
+     !github?.rest?.pulls?.get||!github?.rest?.git?.getCommit||
+     !github?.rest?.git?.getTree||!github?.rest?.repos?.getContent)
+   return FAIL('UNTRUSTED_GITHUB_CLIENT');
+  const api={owner,repo};
+  const pr=(await github.rest.pulls.get({...api,pull_number:number})).data;
+  if(pr?.number!==number||pr?.state!=='open'||pr?.changed_files!==5||
+     pr.head?.sha!==KNOWN_HEAD||pr.base?.sha!==KNOWN_BASE||
+     pr.base?.ref!=='main'||pr.head?.repo?.full_name!==REPO||
+     pr.base?.repo?.full_name!==REPO)
+   return FAIL('PR_HEAD_OR_BASE_CHANGED');
+  const commit=(await github.rest.git.getCommit({...api,commit_sha:KNOWN_HEAD})).data;
+  if(commit?.sha!==KNOWN_HEAD||!HEX.test(commit.tree?.sha||''))
+   return FAIL('UNVERIFIED_GIT_COMMIT');
+  const tree=(await github.rest.git.getTree({...api,tree_sha:commit.tree.sha,recursive:'1'})).data;
+  if(tree?.sha!==commit.tree.sha||tree.truncated!==false||
+     !Array.isArray(tree.tree))return FAIL('INCOMPLETE_GIT_TREE');
+  const entries=new Map();
+  for(const e of tree.tree){
+   if(!e||!Object.hasOwn(CI_FILES,e.path))continue;
+   if(entries.has(e.path)||e.type!=='blob'||e.mode!=='100644'||
+      !HEX.test(e.sha||''))return FAIL('INVALID_TREE_ENTRY');
+   entries.set(e.path,e.sha);
+  }
+  if(entries.size!==5)return FAIL('MISSING_ATTESTED_TREE_BLOBS');
+  const files=await githubPages(github,github.rest.pulls.listFiles,
+    {...api,pull_number:number});
+  if(files.length!==5)return FAIL('INCOMPLETE_CHANGED_FILES');
+  const candidate={},trusted={};
+  for(const [file,key] of Object.entries(CI_FILES)){
+   if(entries.get(file)!==EXPECTED_BLOBS[file])
+    return FAIL('HEAD_TREE_CONTENT_MISMATCH');
+   const found=files.filter(f=>f?.filename===file);
+   if(found.length!==1||found[0].sha!==entries.get(file))
+    return FAIL('HEAD_DIFF_NOT_IN_TREE');
+   const body=decodeGitContent(await github.rest.repos.getContent({...api,path:file,ref:KNOWN_HEAD}));
+   if(body.sha!==entries.get(file))return FAIL('HEAD_FILE_NOT_IN_TREE');
+   candidate[key]=body.body;
+   if(key!=='documentation'){
+    const base=decodeGitContent(await github.rest.repos.getContent({...api,path:file,ref:KNOWN_BASE}));
+    trusted[key]=base.body;
+   }
+  }
+  const scoped=classifyCiDelta({repo:REPO,baseSha:KNOWN_BASE,trustedBaseSha:KNOWN_BASE,
+   headSha:KNOWN_HEAD,expectedHeadSha:KNOWN_HEAD,trusted,candidate,
+   files,changedFileCount:files.length});
+  if(scoped.status!=='SCOPED_DELTA_REVIEW_REQUIRED')
+   return FAIL('INVALID_SCOPED_DELTA');
+  // Reject a HEAD update that happened during the API reads (TOCTOU).
+  const after=(await github.rest.pulls.get({...api,pull_number:number})).data;
+  if(after?.head?.sha!==KNOWN_HEAD||after?.base?.sha!==KNOWN_BASE)
+   return FAIL('PR_CHANGED_DURING_ATTESTATION');
+  const verified=Object.freeze({...scoped,status:'VERIFIED_DELTA_REVIEW_REQUIRED',
+   source:'TRUSTED_GITHUB_API_IMMUTABLE_TREE',authenticatedTreeSha:commit.tree.sha,
+   autoApproveAllowed:false,autoMergeAllowed:false});
+  authenticatedDeltas.add(verified);deltaSources.set(verified,github);
+  return verified;
+ }catch(_){return FAIL('GITHUB_TREE_EVIDENCE_INCOMPLETE');}
 }
 const REQUIRED_JOBS=Object.freeze({
  'Android build':[
@@ -207,7 +310,8 @@ function checkJobEvidence(args){
  try{
   if(!args||typeof args!=='object'||Array.isArray(args))return FAIL('INVALID_INPUT');
   const {repo,headSha,delta,apiComplete,jobsComplete,runs,jobs,trustedWorkflowIds}=args;
-  if(repo!==REPO||!HEX.test(headSha||'')||
+  if(repo!==REPO||headSha!==KNOWN_HEAD||!authenticatedJobInputs.has(args)||
+    !authenticatedDeltas.has(delta)||
     delta?.status!=='VERIFIED_DELTA_REVIEW_REQUIRED'||
     delta.headSha!==headSha||apiComplete!==true||jobsComplete!==true||
     !Array.isArray(runs)||runs.length!==2||!jobs||typeof jobs!=='object'||
@@ -243,4 +347,48 @@ function checkJobEvidence(args){
    verifiedJobs:31,autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return FAIL('INCOMPLETE_CI_API_EVIDENCE');}
 }
-module.exports={buildExpectedAndroid,buildExpectedCoverage,buildExpectedContract:expectedContract,buildExpectedRegressions:expectedRegressions,buildExpectedDocs:()=>EXPECTED_DOC,classifyCiDelta,checkJobEvidence};
+
+/** Fetch only the latest exact-SHA runs and their complete current-attempt jobs.
+ * Earlier green runs cannot mask a newer failed or pending run.
+ */
+async function verifyCiJobsFromGitHub({github,owner,repo,number,delta}={}){
+ try{
+  if(owner!=='cardenaspiero255-lang'||repo!=='gamehub-ultra'||number!==172||
+     !authenticatedDeltas.has(delta)||deltaSources.get(delta)!==github||
+     delta.headSha!==KNOWN_HEAD||!github?.rest?.actions?.getWorkflow)
+   return FAIL('UNAUTHENTICATED_DELTA_PROOF');
+  const api={owner,repo},runs=[],jobs={},trustedWorkflowIds={};
+  const sources=[['Android build','android.yml'],['Unit Test Coverage','coverage.yml']];
+  for(const [name,filename] of sources){
+   const workflow=(await github.rest.actions.getWorkflow({...api,workflow_id:filename})).data;
+   if(!Number.isSafeInteger(workflow?.id)||workflow.id<1)
+    return FAIL('INVALID_PROTECTED_WORKFLOW_ID');
+   trustedWorkflowIds[name]=workflow.id;
+   const list=await githubPages(github,github.rest.actions.listWorkflowRuns,
+    {...api,workflow_id:workflow.id,head_sha:KNOWN_HEAD,event:'pull_request'});
+   // All returned candidates must match the authenticated target.
+   if(!list.length||list.some(r=>r?.workflow_id!==workflow.id||
+      r?.head_sha!==KNOWN_HEAD||r?.event!=='pull_request'||
+      r?.head_repository?.full_name!==REPO||!Number.isSafeInteger(r.id)))
+    return FAIL('UNVERIFIED_RUN_HISTORY');
+   // Monotonically increasing run ID selects newest run, never an older PASS.
+   const sorted=[...list].sort((a,b)=>b.id-a.id);
+   const latest=sorted[0];
+   if(latest.name!==name||latest.status!=='completed'||latest.conclusion!=='success')
+    return FAIL('LATEST_RUN_NOT_SUCCESSFUL');
+   const jobList=await githubPages(github,github.rest.actions.listJobsForWorkflowRun,
+    {...api,run_id:latest.id,filter:'latest'});
+   runs.push(latest);jobs[latest.id]=jobList;
+  }
+  const after=(await github.rest.pulls.get({...api,pull_number:number})).data;
+  if(after?.head?.sha!==KNOWN_HEAD||after?.base?.sha!==KNOWN_BASE)
+   return FAIL('PR_CHANGED_DURING_CI_ATTESTATION');
+  const proof={repo:REPO,headSha:KNOWN_HEAD,delta,apiComplete:true,jobsComplete:true,
+   trustedWorkflowIds,runs,jobs};
+  authenticatedJobInputs.add(proof);
+  return checkJobEvidence(proof);
+ }catch(_){return FAIL('TRUSTED_GITHUB_CI_EVIDENCE_INCOMPLETE');}
+}
+module.exports={buildExpectedAndroid,buildExpectedCoverage,buildExpectedContract:expectedContract,
+ buildExpectedRegressions:expectedRegressions,buildExpectedDocs:()=>EXPECTED_DOC,
+ classifyCiDelta,checkJobEvidence,verifyCiDeltaFromGitHub,verifyCiJobsFromGitHub};
