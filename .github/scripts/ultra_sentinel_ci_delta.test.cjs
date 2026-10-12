@@ -107,3 +107,10 @@ test('candidate event and run source cannot use fake green push or external orig
   const x=evidence();mutate(x);assert.notEqual(checkJobEvidence(x).status,'VERIFIED_CI_REVIEW_REQUIRED');
  }
 });
+
+test('Trusted main Acorn capability verifier can inspect the added module without incomplete context',()=>{
+ const acorn=require('acorn'),{findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+ const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_ci_delta.cjs'),'utf8');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true,ranges:true});
+ assert.deepEqual(findCapabilities(ast),[]);
+});
