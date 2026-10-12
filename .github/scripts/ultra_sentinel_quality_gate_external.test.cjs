@@ -229,3 +229,12 @@ test('EXT-187 P2: at-limit objects retain deterministic canonicalization',()=>{
  assert.equal(keys[0],'k000');
  assert.equal(keys[99],'k099');
 });
+
+test('EXT-187: full external-calibration source is attestable by the trusted JavaScript AST engine',()=>{
+ const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
+ const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+ const source=fs.readFileSync(path.join(__dirname,'ultra_sentinel_quality_gate_external.cjs'),'utf8');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',allowHashBang:true,
+  allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true,ranges:true});
+ assert.doesNotThrow(()=>findCapabilities(ast));
+});
