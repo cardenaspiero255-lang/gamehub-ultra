@@ -138,7 +138,7 @@ async function evaluateRemote(get){
   });
   if(delta.status!=='SCOPED_DELTA_REVIEW_REQUIRED')
    return incomplete('DELTA_POLICY_REJECTED');
-  const runIds=[];
+  const runIds=[],runWitnesses=[];
   for(const [name,info] of Object.entries(RUNS)){
    const workflow=await get('actions/workflows/'+info[0]);
    if(workflow?.id!==info[1]||workflow.name!==name)
@@ -154,6 +154,24 @@ async function evaluateRemote(get){
     return incomplete('LATEST_RUN_MISSING');
    const jobs=await get('actions/runs/'+latest.id+'/jobs?per_page=100&filter=latest');
    runIds.push(validateJobEvidence(hist,jobs,name,workflow.id));
+   runWitnesses.push({name,workflowId:workflow.id,runId:latest.id,
+    attempt:latest.run_attempt});
+  }
+  // TOCTOU: a later failing or pending run cannot hide behind old success.
+  for(const witness of runWitnesses){
+   const again=await get('actions/workflows/'+witness.workflowId+
+    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
+   if(!again||!Number.isSafeInteger(again.total_count)||
+      again.total_count<1||again.total_count>100||
+      !Array.isArray(again.workflow_runs)||
+      again.workflow_runs.length!==again.total_count)
+    return incomplete('RUN_HISTORY_CHANGED');
+   const recent=[...again.workflow_runs].sort((a,b)=>b.id-a.id||
+     b.run_attempt-a.run_attempt)[0];
+   if(!recent||recent.id!==witness.runId||
+      recent.run_attempt!==witness.attempt||
+      recent.status!=='completed'||recent.conclusion!=='success')
+    return incomplete('NEWER_OR_CHANGED_CI_RUN');
   }
   const after=await get('pulls/172');
   validatePr(after);
