@@ -2,13 +2,15 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {buildExpectedAndroid,buildExpectedCoverage,classifyCiDelta,checkJobEvidence}
+const {buildExpectedAndroid,buildExpectedCoverage,buildExpectedContract,buildExpectedRegressions,buildExpectedDocs,classifyCiDelta,checkJobEvidence}
  =require('./ultra_sentinel_ci_delta.cjs');
-const REPO='cardenaspiero255-lang/gamehub-ultra',BASE='a'.repeat(40),HEAD='b'.repeat(40);
+const REPO='cardenaspiero255-lang/gamehub-ultra',BASE='7aa5df3e3c704965862ea728fb4c390d2c15a7f0',HEAD='bb08782350201f97576a974a4684a611c21701c0';
 const root=path.resolve(__dirname,'../workflows');
 const trusted={
  android:fs.readFileSync(path.join(root,'android.yml'),'utf8'),
- coverage:fs.readFileSync(path.join(root,'coverage.yml'),'utf8')
+ coverage:fs.readFileSync(path.join(root,'coverage.yml'),'utf8'),
+ safetyContract:fs.readFileSync(path.resolve(__dirname,'check-ci-safety-contract.py'),'utf8'),
+ regressions:fs.readFileSync(path.resolve(__dirname,'test-ci-safety-contract-regressions.py'),'utf8')
 };
 const files=[
  {filename:'.github/workflows/android.yml',status:'modified',sha:'0f78d28d5e8974b988490bd9facdf63cb6be6485'},
@@ -19,7 +21,9 @@ const files=[
 ];
 const input=()=>({repo:REPO,baseSha:BASE,trustedBaseSha:BASE,headSha:HEAD,expectedHeadSha:HEAD,
  trusted,candidate:{android:buildExpectedAndroid(trusted.android),
- coverage:buildExpectedCoverage(trusted.coverage)},files,changedFileCount:5});
+ coverage:buildExpectedCoverage(trusted.coverage),
+ safetyContract:buildExpectedContract(),regressions:buildExpectedRegressions(),
+ documentation:buildExpectedDocs()},files,changedFileCount:5});
 const gitBlobSha=text=>crypto.createHash('sha1').update('blob '+Buffer.byteLength(text)+'\0'+text).digest('hex');
 test('V2 known Android/Coverage diff is exact against trusted main and stays non-approving',()=>{
  const i=input(),r=classifyCiDelta(i);
@@ -136,4 +140,19 @@ test('RED Codex P2: filenames and metadata are insufficient without full safety-
 test('RED Codex P2: documentation byte provenance must also be authenticated',()=>{
  const i=input();delete i.candidate.documentation;
  assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+});
+
+test('P2 Codex: forging metadata SHA cannot hide modified safety-contract bytes',()=>{
+ const i=input();i.candidate.safetyContract+='// arbitrary bypass';
+ assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ const j=input();j.candidate.regressions+='// arbitrary bypass';
+ assert.notEqual(classifyCiDelta(j).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ const k=input();k.candidate.documentation+='// fake review';
+ assert.notEqual(classifyCiDelta(k).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+});
+test('P2 Codex: falsified trusted base scripts cannot attest even if metadata is unchanged',()=>{
+ for(const key of ['android','coverage','safetyContract','regressions']){
+  const i=input();i.trusted={...trusted,[key]:trusted[key]+'# incorrect'};
+  assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ }
 });

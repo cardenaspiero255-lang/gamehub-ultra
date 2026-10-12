@@ -206,4 +206,4 @@ function checkJobEvidence(args){
    verifiedJobs:31,autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return FAIL('INCOMPLETE_CI_API_EVIDENCE');}
 }
-module.exports={buildExpectedAndroid,buildExpectedCoverage,classifyCiDelta,checkJobEvidence};
+module.exports={buildExpectedAndroid,buildExpectedCoverage,buildExpectedContract:()=>KNOWN_CANDIDATE_SCRIPTS.safetyContract,buildExpectedRegressions:()=>KNOWN_CANDIDATE_SCRIPTS.regressions,buildExpectedDocs:()=>KNOWN_CANDIDATE_SCRIPTS.documentation,classifyCiDelta,checkJobEvidence};
