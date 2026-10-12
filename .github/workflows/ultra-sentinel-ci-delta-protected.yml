@@ -14,7 +14,6 @@ on:
     paths:
       - '.github/scripts/ultra_sentinel_ci_delta_stage2*.cjs'
       - '.github/workflows/ultra-sentinel-ci-delta-protected.yml'
-  workflow_dispatch:
 permissions:
   contents: read
   pull-requests: read
@@ -42,7 +41,7 @@ jobs:
           node --check .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs
           node --test .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs
   stage2-trusted-main:
-    if: (github.event_name == 'pull_request_target' && github.event.pull_request.number == 172) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'pull_request_target' && github.event.pull_request.number == 172) || github.event_name == 'push'
     name: Trusted main PR172 SHA/tree/31 jobs (manual review required)
     runs-on: ubuntu-latest
     timeout-minutes: 10
