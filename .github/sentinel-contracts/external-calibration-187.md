@@ -40,3 +40,8 @@ Los estados `UNVERIFIED_EVIDENCE`, `INVALID_CASES` y `SIGNED_SHADOW_ONLY` nunca 
 ## Refuerzo adicional P2 — arrays con propiedades maliciosas
 - El adaptador ya no usa `Object.keys(v)` sin cota para validar arrays: reutiliza `cappedOwnKeys(v,v.length)` antes de crear una lista completa de claves. Los arrays densos de hasta 2.500 elementos siguen aceptándose y los arrays dispersos se rechazan.
 - Tres contratos nuevos reproducen el fallo con propiedades adicionales, comprueban el rechazo de arrays contaminados y mantienen arrays densos válidos. Baseline B1 actualizado de 11.732 a **11.735** sin reducir la matriz Core de 500.500 casos.
+
+## Frontera de entrada acotada para evidencia externa (refuerzo P2)
+- `evaluateSignedCalibration(rawBundleJson, trustedKeys, {expectedHeadSha})` recibe **JSON textual de tamaño UTF-8 máximo 1 MiB**. Rechaza directamente objetos JavaScript, buffers, entradas sobredimensionadas y JSON inválido antes de analizar propiedades o verificar firmas. Los sistemas de confianza deben transmitir los bytes recibidos y **no analizar primero el JSON para luego pasarlo como objeto**.
+- `stableJson(rawJson)` acepta únicamente JSON textual preacotado para canonicalización; la serialización interna de estructuras que proceden de ese límite es independiente y no exporta acceso de objetos arbitrarios. Esto impide que objetos programáticos de tamaño desconocido eludan el presupuesto a través de `for...in` o `Object.keys`.
+- El contrato de firmas, los dos roles, la separación de claves, el SHA fijado y el modo sombra no se modifican. Prueba RED de objeto externo y mensaje serializado confirma la necesidad de esta frontera; baseline B1: 11.736.

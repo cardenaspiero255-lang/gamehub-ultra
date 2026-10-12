@@ -18,7 +18,7 @@ const corpus=(np=100,nn=100)=>[
 const reports=(c)=>c.map(x=>({provider:'ultra-sentinel',caseId:x.id,sha:H,
  findings:x.expected.map(f=>({...f})),durationMs:3}));
 function envelope(role,payload,p,headSha=H,corpusDigest=null){
- const json=stableJson(payload);
+ const json=stableJson(JSON.stringify(payload));
  const digest=createHash('sha256').update(json).digest('hex');
  const privateKey=p[role].privateKey;
  return {keyId:role==='labeler'?'independent-labeler':'independent-runner',
@@ -31,7 +31,7 @@ function fixture(c=corpus(),r=reports(c)){
   corpus:c,reports:r,
   signatures:{labeler,runner:envelope('runner',r,p,H,labeler.sha256)}}};
 }
-const run=(f)=>evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha:H});
+const run=(f)=>evaluateSignedCalibration(JSON.stringify(f.bundle),f.trusted,{expectedHeadSha:H});
 test('EXT-187: absent evidence remains unmeasured and never enables enforcement',()=>{
  const r=evaluateSignedCalibration(null,null);
  assert.equal(r.status,'UNVERIFIED_EVIDENCE');
@@ -68,7 +68,7 @@ test('EXT-187: tampering with signed report findings is rejected without metrics
 });
 test('EXT-187: role-swapped authority and reused public keys cannot establish provenance',()=>{
  const f=fixture(),swapped={labeler:f.trusted.runner,runner:f.trusted.labeler};
- assert.equal(evaluateSignedCalibration(f.bundle,swapped,{expectedHeadSha:H}).status,'UNVERIFIED_EVIDENCE');
+ assert.equal(evaluateSignedCalibration(JSON.stringify(f.bundle),swapped,{expectedHeadSha:H}).status,'UNVERIFIED_EVIDENCE');
  f.trusted.runner={...f.trusted.runner,publicKeySpki:f.trusted.labeler.publicKeySpki};
  assert.equal(run(f).status,'UNVERIFIED_EVIDENCE');
 });
@@ -104,7 +104,7 @@ test('EXT-187: mixing separately authentic but unpaired corpus and reports fails
  const runnerA=envelope('runner',reports(a),p,H,labelerA.sha256);
  const malicious={schema:'ultra-sentinel-external-calibration/v1',headSha:H,
   corpus:b,reports:reports(a),signatures:{labeler:labelerB,runner:runnerA}};
- const result=evaluateSignedCalibration(malicious,keys(p),{expectedHeadSha:H});
+ const result=evaluateSignedCalibration(JSON.stringify(malicious),keys(p),{expectedHeadSha:H});
  assert.equal(result.status,'UNVERIFIED_EVIDENCE');
  assert.equal(result.calibration.metrics,null);
 });
@@ -123,7 +123,7 @@ test('EXT-187 P1: DER trailing bytes cannot impersonate a second independent rol
  const trusted=keys(p);
  trusted.runner.publicKeySpki=Buffer.concat([Buffer.from(trusted.runner.publicKeySpki,'base64'),
   Buffer.from('deadbeef','hex')]).toString('base64');
- const result=evaluateSignedCalibration(signed,trusted,{expectedHeadSha:H});
+ const result=evaluateSignedCalibration(JSON.stringify(signed),trusted,{expectedHeadSha:H});
  assert.equal(result.status,'UNVERIFIED_EVIDENCE');
  assert.equal(result.signaturesVerified,false);
 });
@@ -135,45 +135,45 @@ test('EXT-187 P1: noncanonical trusted SPKI with trailing DER bytes is rejected'
 });
 test('EXT-187 P1: a signed bundle without trusted caller-pinned HEAD is unverified',()=>{
  const f=fixture();
- assert.equal(evaluateSignedCalibration(f.bundle,f.trusted).status,'UNVERIFIED_EVIDENCE');
+ assert.equal(evaluateSignedCalibration(JSON.stringify(f.bundle),f.trusted).status,'UNVERIFIED_EVIDENCE');
 });
 test('EXT-187 P1: unchanged signed old bundle cannot be replayed at a new trusted HEAD',()=>{
  const f=fixture();
- const result=evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha:OTHER});
+ const result=evaluateSignedCalibration(JSON.stringify(f.bundle),f.trusted,{expectedHeadSha:OTHER});
  assert.equal(result.status,'UNVERIFIED_EVIDENCE');
  assert.equal(result.calibration.metrics,null);
 });
 test('EXT-187 P1: untrusted or invalid caller HEAD fails closed',()=>{
  const f=fixture();
  for(const expectedHeadSha of ['main','',null,'G'.repeat(40),23]){
-  assert.equal(evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha}).status,'UNVERIFIED_EVIDENCE');
+  assert.equal(evaluateSignedCalibration(JSON.stringify(f.bundle),f.trusted,{expectedHeadSha}).status,'UNVERIFIED_EVIDENCE');
  }
 });
 test('EXT-187 P2: oversized string is rejected before canonical JSON allocation',()=>{
- assert.throws(()=>stableJson({data:'X'.repeat(2*1024*1024)}),/UNBOUNDED_INPUT/);
+ assert.throws(()=>stableJson(JSON.stringify({data:'X'.repeat(2*1024*1024)})),/UNBOUNDED_INPUT/);
 });
 test('EXT-187 P2: escaped control characters are bounded by serialized UTF8 bytes',()=>{
- assert.throws(()=>stableJson({data:'\u0000'.repeat(300000)}),/UNBOUNDED_INPUT/);
+ assert.throws(()=>stableJson(JSON.stringify({data:'\u0000'.repeat(300000)})),/UNBOUNDED_INPUT/);
 });
 test('EXT-187 P2: huge property name is rejected before canonical JSON allocation',()=>{
  const name='k'.repeat(2*1024*1024);
  const obj=Object.create(null);obj[name]='v';
- assert.throws(()=>stableJson(obj),/UNBOUNDED_INPUT/);
+ assert.throws(()=>stableJson(JSON.stringify(obj)),/UNBOUNDED_INPUT/);
 });
 test('EXT-187 P2: untrusted accessor is never invoked while canonicalizing',()=>{
  let called=0;
  const obj={};Object.defineProperty(obj,'data',{enumerable:true,get(){called++;return 'injected';}});
- assert.throws(()=>stableJson(obj),/INVALID_JSON_VALUE/);
+ assert.throws(()=>stableJson(obj),/UNBOUNDED_INPUT/);
  assert.equal(called,0);
 });
 test('EXT-187 P2: sparse arrays cannot produce non-JSON canonical structures',()=>{
  const a=['a',,'c'];
- assert.throws(()=>stableJson(a),/INVALID_JSON_VALUE/);
+ assert.throws(()=>stableJson(a),/UNBOUNDED_INPUT/);
 });
 test('EXT-187 P2: canonicalizer accepts exact serialized byte budget without weakening bounds',()=>{
  const v='z'.repeat(1024*1024-2);
- assert.equal(Buffer.byteLength(stableJson(v)),1024*1024);
- assert.throws(()=>stableJson(v+'q'),/UNBOUNDED_INPUT/);
+ assert.equal(Buffer.byteLength(stableJson(JSON.stringify(v))),1024*1024);
+ assert.throws(()=>stableJson(JSON.stringify(v+'q')),/UNBOUNDED_INPUT/);
 });
 
 
@@ -187,7 +187,7 @@ test('EXT-187 P1: forged Ed25519 identity and sign-bit alias cannot impersonate 
  const forged=Buffer.concat([Buffer.from('58'+'66'.repeat(31),'hex'),
   Buffer.concat([Buffer.from([1]),Buffer.alloc(31)])]).toString('base64');
  const signed=(role,payload)=>({keyId:role==='labeler'?'independent-labeler':'independent-runner',
-  sha256:createHash('sha256').update(stableJson(payload)).digest('hex'),signature:forged});
+  sha256:createHash('sha256').update(stableJson(JSON.stringify(payload))).digest('hex'),signature:forged});
  const bundle={schema:'ultra-sentinel-external-calibration/v1',headSha:H,corpus:c,reports:r,
   signatures:{labeler:signed('labeler',c),runner:signed('runner',r)}};
  const trusted={labeler:{keyId:'independent-labeler',publicKeySpki:spki(identity)},
@@ -224,7 +224,7 @@ test('EXT-187 P2: object key cap applies before sorting untrusted keys',()=>{
 test('EXT-187 P2: at-limit objects retain deterministic canonicalization',()=>{
  const data=Object.create(null);
  for(let i=99;i>=0;i--)data['k'+String(i).padStart(3,'0')]=i;
- const json=stableJson(data),keys=Object.keys(JSON.parse(json));
+ const json=stableJson(JSON.stringify(data)),keys=Object.keys(JSON.parse(json));
  assert.equal(keys.length,100);
  assert.equal(keys[0],'k000');
  assert.equal(keys[99],'k099');
@@ -259,9 +259,9 @@ test('EXT-187 P2: a short array with a named own property fails the bounded shap
 });
 test('EXT-187 P2: normal dense arrays at the 2500-element limit remain valid',()=>{
  const safe=Array.from({length:2500},(_,index)=>index%17);
- assert.deepEqual(JSON.parse(stableJson(safe)),safe);
+ assert.deepEqual(JSON.parse(stableJson(JSON.stringify(safe))),safe);
  const sparse=new Array(2);sparse[1]='value';
- assert.throws(()=>stableJson(sparse),/INVALID_JSON_VALUE/);
+ assert.throws(()=>stableJson(sparse),/UNBOUNDED_INPUT/);
 });
 
 
@@ -270,6 +270,9 @@ test('EXT-187 P2: external calibration only accepts prebounded serialized JSON, 
  // Valid genuine evidence must work as a bounded raw JSON message.
  const valid=evaluateSignedCalibration(JSON.stringify(f.bundle),f.trusted,{expectedHeadSha:H});
  assert.equal(valid.status,'SIGNED_SHADOW_ONLY');
+ assert.equal(valid.signaturesVerified,true);
+ const tooLarge='{"filler":"'+'x'.repeat(1024*1024)+'"}';
+ assert.equal(evaluateSignedCalibration(tooLarge,f.trusted,{expectedHeadSha:H}).status,'UNVERIFIED_EVIDENCE');
  // A programmatic object has no bounded input size and must never reach key enumeration.
  const unbounded=evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha:H});
  assert.equal(unbounded.status,'UNVERIFIED_EVIDENCE');

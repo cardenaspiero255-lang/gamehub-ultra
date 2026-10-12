@@ -25,7 +25,7 @@ function cappedOwnKeys(value,maximum){
  return names;
 }
 
-function stableJson(value){
+function canonicalizeParsed(value){
  // Never allocate an encoded string before verifying its *serialized* size.
  // JSON escaping can expand control characters up to sixfold.
  let remaining=MAX_BYTES;
@@ -89,6 +89,16 @@ function stableJson(value){
   return '{'+parts.join(',')+'}';
  }
  return encode(value,0);
+}
+// External evidence MUST cross a bounded textual boundary before parsing.
+// Never inspect arbitrary caller-owned JS object property tables for limits.
+function parseBoundedJson(raw){
+ if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')>MAX_BYTES)
+  throw Error('UNBOUNDED_INPUT');
+ return JSON.parse(raw);
+}
+function stableJson(raw){
+ return canonicalizeParsed(parseBoundedJson(raw));
 }
 function attestationMessage(role,headSha,digest,bytes,corpusDigest=null){
  if(!ROLES.includes(role)||!SHA.test(headSha||'')||!HEX.test(digest||'')||
@@ -185,14 +195,15 @@ function verifyPart(role,data,attestation,trusted,headSha,corpusDigest=null,pars
     typeof attestation.signature!=='string'||!SIG.test(attestation.signature)||
     !parsedKey||parsedKey.publicKey?.asymmetricKeyType!=='ed25519')
   return false;
- const serialized=stableJson(data),bytes=Buffer.byteLength(serialized);
+ const serialized=canonicalizeParsed(data),bytes=Buffer.byteLength(serialized);
  const digest=createHash('sha256').update(serialized).digest('hex');
  if(digest!==attestation.sha256.toLowerCase())return false;
  return verify(null,Buffer.from(attestationMessage(role,headSha,digest,bytes,corpusDigest)),
   parsedKey.publicKey,Buffer.from(attestation.signature,'base64'));
 }
-function evaluateSignedCalibration(bundle,trustedKeys,{expectedHeadSha}={}){
+function evaluateSignedCalibration(rawBundle,trustedKeys,{expectedHeadSha}={}){
  try{
+  const bundle=parseBoundedJson(rawBundle);
   if(!bundle||typeof bundle!=='object'||Array.isArray(bundle)||
      cappedOwnKeys(bundle,5).sort().join(',')!=='corpus,headSha,reports,schema,signatures'||
      bundle.schema!==SCHEMA||!SHA.test(bundle.headSha||'')||
