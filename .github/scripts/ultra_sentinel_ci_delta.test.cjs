@@ -160,7 +160,7 @@ test('synthetic job results cannot claim authenticated CI, even with a scoped de
  assert.equal(delta.status,'INCOMPLETE');
  const real=await verifyCiJobsFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172,delta});
  assert.equal(real.status,'INCOMPLETE');
- assert.equal(real.verifiedJobs,31);
+ assert.equal(real.observedJobs,31);
  assert.equal(real.autoApproveAllowed,false);assert.equal(real.autoMergeAllowed,false);
  assert.equal(checkJobEvidence({...evidence(),delta}).status,'INCOMPLETE');
 });
