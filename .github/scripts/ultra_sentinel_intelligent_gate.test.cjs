@@ -49,3 +49,22 @@ test('trusted AST self-review can attest whole intelligent gate module (not only
  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',locations:true,ranges:true});
  assert.deepEqual(findCapabilities(ast),[]);
 });
+
+test('3: family severity retains strongest variant regardless of fingerprint order',()=>{
+ const variants=[finding({symbol:'weak',severity:'INFO'}),finding({symbol:'warn',line:20,severity:'WARNING'}),finding({symbol:'critical',line:30,severity:'HIGH'})];
+ for(const ordered of [variants,[...variants].reverse()]){
+  const r=gate.review(request({headFindings:ordered}));
+  assert.equal(r.status,'REVIEW_REQUIRED');
+  assert.equal(r.families.length,1);
+  assert.equal(r.families[0].variants,3);
+  assert.equal(r.families[0].severityClass,'BLOCK');
+ }
+});
+test('3: advisory family cannot be downgraded by informational variant',()=>{
+ const variants=[finding({symbol:'warn',severity:'WARNING'}),finding({symbol:'info',line:20,severity:'INFO'})];
+ for(const ordered of [variants,[...variants].reverse()]){
+  const r=gate.review(request({headFindings:ordered}));
+  assert.equal(r.families.length,1);
+  assert.equal(r.families[0].severityClass,'ADVISORY');
+ }
+});
