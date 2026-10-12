@@ -69,6 +69,13 @@ function buildExpectedCoverage(base){
   '        runner: [0, 1, 2, 3, 4, 5, 6, 7]'
  ].join('\n'));
 }
+const EXPECTED_BLOBS=Object.freeze({
+ '.github/scripts/check-ci-safety-contract.py':'58357888ddd96d2980061293100ebc0795fdb800',
+ '.github/scripts/test-ci-safety-contract-regressions.py':'04ab3e26f8eb108323827df2a2e99c72c3216af8',
+ '.github/workflows/android.yml':'0f78d28d5e8974b988490bd9facdf63cb6be6485',
+ '.github/workflows/coverage.yml':'e1042881b00273aec31c2a64131ff0df7042e4ef',
+ 'docs/CI_ACCELERATION_172_V2.md':'786e327cdecc2b8985df1b08e1bb081d17d8e3b4'
+});
 const EXPECTED_FILES=new Map([
  ['.github/workflows/android.yml','modified'],
  ['.github/workflows/coverage.yml','modified'],
@@ -89,7 +96,8 @@ function classifyCiDelta(args){
   const seen=new Set();
   for(const f of files){
    if(!f||typeof f.filename!=='string'||typeof f.status!=='string'||
-      seen.has(f.filename)||EXPECTED_FILES.get(f.filename)!==f.status)
+      seen.has(f.filename)||EXPECTED_FILES.get(f.filename)!==f.status||
+      EXPECTED_BLOBS[f.filename]!==f.sha)
     return FAIL('UNVERIFIED_PROTECTED_CHANGE');
    seen.add(f.filename);
   }
@@ -108,7 +116,7 @@ function classifyCiDelta(args){
    schema:'ultra-sentinel-scoped-ci-delta/v1',
    status:'VERIFIED_DELTA_REVIEW_REQUIRED',
    workflowPaths:['.github/workflows/android.yml','.github/workflows/coverage.yml'],
-   baseSha,headSha,unchangedSecurityScope:true,
+   baseSha,headSha,contractScriptsPinned:true,scopedWorkflowDeltaOnly:true,
    inheritedUnknownsStillRequireReview:true,
    autoApproveAllowed:false,autoMergeAllowed:false
   });

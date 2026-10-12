@@ -11,11 +11,11 @@ const trusted={
  coverage:fs.readFileSync(path.join(root,'coverage.yml'),'utf8')
 };
 const files=[
- {filename:'.github/workflows/android.yml',status:'modified'},
- {filename:'.github/workflows/coverage.yml',status:'modified'},
- {filename:'.github/scripts/check-ci-safety-contract.py',status:'modified'},
- {filename:'.github/scripts/test-ci-safety-contract-regressions.py',status:'modified'},
- {filename:'docs/CI_ACCELERATION_172_V2.md',status:'added'}
+ {filename:'.github/workflows/android.yml',status:'modified',sha:'0f78d28d5e8974b988490bd9facdf63cb6be6485'},
+ {filename:'.github/workflows/coverage.yml',status:'modified',sha:'e1042881b00273aec31c2a64131ff0df7042e4ef'},
+ {filename:'.github/scripts/check-ci-safety-contract.py',status:'modified',sha:'58357888ddd96d2980061293100ebc0795fdb800'},
+ {filename:'.github/scripts/test-ci-safety-contract-regressions.py',status:'modified',sha:'04ab3e26f8eb108323827df2a2e99c72c3216af8'},
+ {filename:'docs/CI_ACCELERATION_172_V2.md',status:'added',sha:'786e327cdecc2b8985df1b08e1bb081d17d8e3b4'}
 ];
 const input=()=>({repo:REPO,baseSha:BASE,trustedBaseSha:BASE,headSha:HEAD,expectedHeadSha:HEAD,
  trusted,candidate:{android:buildExpectedAndroid(trusted.android),
@@ -55,7 +55,10 @@ test('missing, duplicated, renamed, reordered and unrelated PR files fail closed
  for(const badFiles of [
   files.slice(1),[...files,files[0]],
   files.map((f,i)=>i?f:{...f,status:'renamed',previous_filename:'old.yml'}),
-  files.map((f,i)=>i?f:{...f,filename:'.github/workflows/ultra-sentinel-auto-review.yml'})
+  files.map((f,i)=>i?f:{...f,filename:'.github/workflows/ultra-sentinel-auto-review.yml'}),
+  files.map((f,i)=>i===2?{...f,sha:'f'.repeat(40)}:f),
+  files.map((f,i)=>i===3?{...f,sha:'f'.repeat(40)}:f),
+  files.map((f,i)=>i===4?{...f,sha:'f'.repeat(40)}:f)
  ])assert.notEqual(classifyCiDelta({...input(),files:badFiles}).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
 });
 test('coverage concurrency changes, skipped tests and changes in trusted baseline fail',()=>{
@@ -118,4 +121,10 @@ const selfReviewDiagnostic=(()=>{
 })();
 test('Trusted main capability AST attestation: '+selfReviewDiagnostic,()=>{
  assert.equal(selfReviewDiagnostic,'CLEAR');
+});
+test('Unverified CI contract scripts cannot be attested by filename alone',()=>{
+ for(const pos of [2,3,4]){
+  const i=input();i.files=files.map((f,j)=>j===pos?{...f,sha:'c'.repeat(40)}:f);
+  assert.notEqual(classifyCiDelta(i).status,'VERIFIED_DELTA_REVIEW_REQUIRED');
+ }
 });
