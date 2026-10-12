@@ -4,75 +4,75 @@ const test=require('node:test');
 const fs=require('node:fs');
 const path=require('node:path');
 const yaml=require('js-yaml');
-const target=path.resolve(__dirname,'../workflows/ultra-sentinel-self-review.yml');
-const source=fs.readFileSync(target,'utf8');
-const workflow=yaml.load(source);
-const trusted=workflow.jobs['trusted-review'];
-const candidate=workflow.jobs['candidate-tests'];
-const step=(name)=>trusted.steps.find(x=>x.name===name);
-test('workflow: both events are supported, but privileged logic only targets pull_request_target',()=>{
- assert.ok(workflow.on.pull_request);
- assert.ok(workflow.on.pull_request_target);
- assert.match(trusted.if,/github\.event_name == 'pull_request_target'/);
- assert.match(candidate.if,/github\.event_name == 'pull_request'/);
+const {inspectWorkflow}=require('./ultra_sentinel_yaml_ast.cjs');
+const workflowPath=path.resolve(__dirname,'../workflows/ultra-sentinel-github-trusted-evidence.yml');
+const source=fs.readFileSync(workflowPath,'utf8');
+const config=yaml.load(source);
+const job=config.jobs['trusted-main-evidence'];
+const step=(name)=>job.steps.find(x=>x.name===name);
+const original=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-self-review.yml'),'utf8');
+test('trusted evidence is triggered only from pull_request_target, never pull_request source',()=>{
+ assert.ok(config.on.pull_request_target);
+ assert.equal(config.on.pull_request,undefined);
+ assert.deepEqual(config.on.pull_request_target.branches,['main']);
 });
-test('least privilege: workflow has read-only contents, PR and Actions permissions',()=>{
- assert.deepEqual(workflow.permissions,{'contents':'read','pull-requests':'read'});
- assert.deepEqual(candidate.permissions,{'contents':'read'});
- assert.deepEqual(trusted.permissions,{'contents':'read','pull-requests':'read','actions':'read'});
+test('diagnostic workflow uses least-privilege read-only token',()=>{
+ assert.deepEqual(config.permissions,{'contents':'read','pull-requests':'read','actions':'read'});
  assert.doesNotMatch(source,/(?:contents|pull-requests|actions):\s*write|write-all/);
 });
-test('trusted code: target runner checks out default branch, never PR head',()=>{
- const checkout=step('Checkout independent main source, NEVER the PR head');
- assert.ok(checkout);
+test('trusted default branch checkout never selects attacker HEAD or retains credentials',()=>{
+ const checkout=step('Checkout trusted default branch only');
+ assert.match(checkout.uses,/^actions\/checkout@[a-f0-9]{40}$/);
  assert.match(checkout.with.ref,/github\.event\.repository\.default_branch/);
- assert.equal(checkout.with['persist-credentials'],false);
  assert.doesNotMatch(checkout.with.ref,/pull_request\.head|github\.head_ref/);
+ assert.equal(checkout.with['persist-credentials'],false);
 });
-test('candidate job receives no token and uses credential-free checkout',()=>{
- assert.equal(candidate.steps[0].with['persist-credentials'],false);
- assert.equal(candidate.steps.some(s=>JSON.stringify(s.env||{}).includes('GITHUB_TOKEN')),false);
+test('trusted collector dependencies come from main lockfile, with lifecycle scripts disabled',()=>{
+ assert.match(step('Install main-branch locked parser without scripts').run,/npm ci --ignore-scripts/);
+ assert.match(step('Test trusted collector contract with no API credentials').run,/node --test/);
 });
-test('trusted dependencies only installed from main and lifecycle scripts disabled',()=>{
- const install=step('Install trusted parser from main lockfile');
- assert.ok(install);assert.match(install.run,/npm ci --ignore-scripts/);
-});
-test('scanner: independent main-diff review still runs before evidence collection',()=>{
- const scan=trusted.steps.findIndex(s=>s.name==='Scan immutable PR diff as untrusted data only');
- const evidence=trusted.steps.findIndex(s=>s.name==='Collect authenticated GitHub evidence in shadow mode');
- assert.ok(scan>=0&&evidence>scan);
- assert.match(trusted.steps[scan].run,/ultra_sentinel_selfreview\.cjs/);
-});
-test('trusted evidence uses github-token only in protected target runner',()=>{
- const s=step('Collect authenticated GitHub evidence in shadow mode');
- assert.ok(s);assert.equal(s['continue-on-error'],true);
- assert.match(s.run,/node \.github\/scripts\/ultra_sentinel_github_collector\.cjs/);
+test('GitHub token is passed only to the trusted read-only collector step',()=>{
+ const s=step('Collect SHA-scoped GitHub evidence as data');
  assert.match(s.env.GITHUB_TOKEN,/github\.token/);
  assert.match(s.env.GITHUB_REPOSITORY,/github\.repository/);
  assert.match(s.env.PR_NUMBER,/github\.event\.pull_request\.number/);
  assert.match(s.env.PR_HEAD_SHA,/github\.event\.pull_request\.head\.sha/);
+ for(const candidate of job.steps)if(candidate!==s)
+  assert.equal(JSON.stringify(candidate.env||{}).includes('GITHUB_TOKEN'),false);
 });
-test('trusted runner does not execute, checkout or test candidate PR source',()=>{
- const txt=trusted.steps.map(s=>s.run||'').join('\n');
- assert.doesNotMatch(txt,/git\s+checkout|git\s+fetch|pull_request\.head|github\.head_ref|npm install/);
- assert.equal(trusted.steps.filter(s=>s.uses?.startsWith('actions/checkout@')).length,1);
+test('the untrusted candidate branch is never installed, built, executed or checked out',()=>{
+ assert.equal(job.steps.filter(s=>s.uses?.startsWith('actions/checkout@')).length,1);
+ const body=job.steps.map(s=>s.run||'').join('\n');
+ assert.doesNotMatch(body,/git checkout|git fetch|pull_request\.head|github\.head_ref|npm install/);
 });
-test('evidence remains advisory, never a required merge or repair authority',()=>{
- const evidence=step('Collect authenticated GitHub evidence in shadow mode');
- assert.equal(evidence['continue-on-error'],true);
- assert.doesNotMatch(trusted.steps.map(s=>s.run||'').join('\n'),/git push|gh pr merge|merge_pull_request|repair_commits\s*=\s*ON/);
+test('no repair, repository write or merge command exists in the trusted workflow',()=>{
+ const body=job.steps.map(s=>s.run||'').join('\n');
+ assert.doesNotMatch(body,/git push|gh pr merge|merge_pull_request|update_ref|repair_commits/);
 });
-test('sanitized artifact is optional, short lived, pinned and contains no credentials',()=>{
- const a=step('Store sanitized, bounded shadow evidence');
- assert.ok(a);assert.equal(a['continue-on-error'],true);
+test('original required Self-Review remains a separate untouched protection',()=>{
+ const old=yaml.load(original);
+ assert.ok(old.jobs['trusted-review']);assert.ok(old.jobs['candidate-tests']);
+ assert.ok(old.jobs['trusted-review'].steps.some(s=>s.run?.includes('ultra_sentinel_selfreview.cjs')));
+ assert.doesNotMatch(original,/ultra_sentinel_github_collector/);
+});
+test('shadow evidence cannot mask errors in mandatory review with continue-on-error',()=>{
+ assert.doesNotMatch(source,/continue-on-error:\s*true/);
+ assert.equal(job.steps.some(s=>s['continue-on-error']===true),false);
+});
+test('untrusted text never interpolates directly into a shell command',()=>{
+ for(const s of job.steps.filter(s=>s.run)){
+  assert.doesNotMatch(s.run,/\$\{\{/);
+ }
+});
+test('artifact is pinned and bounded; its absence is not an approval',()=>{
+ const a=step('Upload bounded sanitized shadow report');
  assert.match(a.uses,/^actions\/upload-artifact@[a-f0-9]{40}$/);
  assert.equal(a.with.path,'sentinel-github-evidence-shadow.json');
  assert.equal(a.with['retention-days'],7);
  assert.equal(a.with['if-no-files-found'],'ignore');
- assert.equal(a.env?.GITHUB_TOKEN,undefined);
 });
-test('unknown workflow or missing trusted scanner breaks the contract tests',()=>{
- assert.ok(trusted.steps.some(s=>s.name==='Validate trusted meta-review unit tests'));
- assert.equal(workflow.jobs['trusted-review']['timeout-minutes'],10);
- assert.equal(workflow.jobs['candidate-tests']['timeout-minutes'],4);
+test('trusted Workflow AST analysis is complete, not bypassed for convenience',()=>{
+ const report=inspectWorkflow(source,{path:'.github/workflows/ultra-sentinel-github-trusted-evidence.yml'});
+ assert.notEqual(report.status,'INCOMPLETE',JSON.stringify(report));
+ assert.equal(report.coverage.partial,false);
 });
