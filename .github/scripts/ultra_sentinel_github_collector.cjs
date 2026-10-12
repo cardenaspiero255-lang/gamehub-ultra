@@ -15,12 +15,15 @@ const MAX_FILES=250,MAX_WORKFLOWS=100,MAX_FINDINGS=5000;
 
 function requireInput(options){
  const repo=options?.repo,pr=Number(options?.pr),headSha=options?.headSha,token=options?.token;
- if(!REPO.test(repo||'')||!Number.isSafeInteger(pr)||pr<1||pr>100000000||
+ if(!REPO.test(repo||'')||repo.split('/').some(part=>part==='.'||part==='..')||
+    !Number.isSafeInteger(pr)||pr<1||pr>100000000||
     !SHA.test(headSha||'')||typeof token!=='string'||!token.length)
   throw Error('INVALID_REQUEST');
  return {repo,pr,headSha:headSha.toLowerCase(),token};
 }
 function apiClient(repo,token,fetcher=globalThis.fetch){
+ if(!REPO.test(repo||'')||repo.split('/').some(part=>part==='.'||part==='..'))
+  throw Error('INVALID_REQUEST');
  if(typeof fetcher!=='function')throw Error('FETCH_UNAVAILABLE');
  return async function get(relative){
   if(!/^[a-zA-Z0-9_.\/?=&%-]+$/.test(relative)||relative.split('/').some(p=>p==='..'))
@@ -65,7 +68,7 @@ function checkEvidence(runs,headSha,pr){
   !['success','neutral','skipped'].includes(c.conclusion));
  const incomplete=checks.some(c=>c.status!=='completed'||!c.conclusion||
   ['neutral','skipped'].includes(c.conclusion));
- return {checks,status:incomplete?'INCOMPLETE':failed?'BLOCKED':'PASS'};
+ return {checks,status:failed?'BLOCKED':incomplete?'INCOMPLETE':'PASS'};
 }
 function cleanFindings(findings){
  if(!Array.isArray(findings)||findings.length>MAX_FINDINGS)throw Error('ANALYZER_EVIDENCE_INCOMPLETE');
