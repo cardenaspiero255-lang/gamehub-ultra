@@ -10,7 +10,8 @@ autorreparación ni autorización para fusionar. No reemplaza los controles exis
 - Comprueba número del PR, propietario del repositorio base, HEAD/base SHA de 40 caracteres,
   estado abierto, merge-base obtenido de la API Compare y estabilidad del PR al finalizar.
 - Página y compara el listado de archivos sin admitir resultados truncados (límite: 250).
-- Lee el historial de ejecución de workflows asociado al SHA del HEAD y al PR. Aplica
+- Lee el historial de ejecución de workflows asociado al SHA del HEAD y al PR,
+  exigiendo además los IDs de los tres workflows confiables. Aplica
   selección de ejecución más reciente, incluyendo reintentos, y distingue PASS,
   BLOCKED e INCOMPLETE sin aceptar resultados omitidos, pendientes ni desactualizados.
 - Reutiliza el escáner confiable existente ultra_sentinel_selfreview para leer el diff
@@ -19,7 +20,7 @@ autorreparación ni autorización para fusionar. No reemplaza los controles exis
   pero jamás copia razones de texto libre, código fuente, tokens ni contenido de parches.
 - Exige los contratos del evaluador del PR #180; como todavía faltan escaneos completos
   de base y HEAD, el dictamen global permanece forzosamente INCOMPLETE.
-- Dieciocho pruebas nuevas de procedencia, TOCTOU, conclusiones duplicadas, reintentos,
+- Veintiuna pruebas nuevas de procedencia, TOCTOU, conclusiones duplicadas, reintentos,
   rutas peligrosas, evasión de SHA, filtración de secretos y límites de volumen.
 - El workflow incluido **solo ejecuta esas pruebas sin credenciales** al modificar
   el colector. No accede a datos reales durante las ejecuciones de candidatos.
