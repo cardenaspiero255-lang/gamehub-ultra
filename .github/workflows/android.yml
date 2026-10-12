@@ -100,9 +100,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
-      # 5 test jobs + 4 device jobs + 3 Android support + 8 coverage = 20.
-      # Keep 8 physical / 64 logical shards. No test or benchmark removed.
-      max-parallel: 5
+      max-parallel: 4
       matrix:
         runner: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
@@ -128,13 +126,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Probe preinstalled Android SDK
-        id: sdk_preflight
-        shell: bash
-        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
-
       - name: Set up Android SDK
-        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -321,13 +313,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Probe preinstalled Android SDK
-        id: sdk_preflight
-        shell: bash
-        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
-
       - name: Set up Android SDK
-        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -464,13 +450,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Probe preinstalled Android SDK
-        id: sdk_preflight
-        shell: bash
-        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
-
       - name: Set up Android SDK
-        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -556,11 +536,11 @@ jobs:
     name: device-validation-${{ matrix.shard }}
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 6
       matrix:
-        # Four logical performance checks are packed into two physical emulator
-        # runners so Android boot/setup is reused instead of repeated four times.
-        shard: [release-apk, ui, performance-a, performance-b]
+        # Four real performance checks run on independent API 35 emulators.
+        # Keeps baseline + cold-start + library + settings with no serial waves.
+        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]
     runs-on: ubuntu-22.04
     env:
       VALIDATION_SHARD: ${{ matrix.shard }}
@@ -581,13 +561,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Probe preinstalled Android SDK
-        id: sdk_preflight
-        shell: bash
-        run: bash .github/scripts/probe-preinstalled-android-sdk.sh
-
       - name: Set up Android SDK
-        if: steps.sdk_preflight.outputs.usable != 'true'
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
         with:
           cmdline-tools-version: 15859902
@@ -598,8 +572,7 @@ jobs:
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          # Hosted runners commonly provide only cmdline-tools/latest.
-          # Keep that working installation intact instead of deleting it.
+          # Never delete the runner's working cmdline-tools/latest installation.
           SDK_BIN="$SDK_ROOT/cmdline-tools/latest/bin"
           if [ ! -x "$SDK_BIN/sdkmanager" ]; then
             CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
@@ -738,7 +711,7 @@ jobs:
                   --configuration-cache --configuration-cache-problems=fail \
                   --stacktrace
                 ;;
-              performance-*)
+              baseline|macro-*)
                 gradle :app:assembleNonMinifiedRelease :baseline-profile:assembleNonMinifiedRelease \
                   --build-cache --parallel --max-workers=12 \
                   --configuration-cache --configuration-cache-problems=fail \
@@ -907,19 +880,9 @@ jobs:
                 --configuration-cache-problems=fail \
                 --stacktrace
               ;;
-            performance-*)
-              case "$VALIDATION_SHARD" in
-                performance-a)
-                  LOGICAL_SHARDS=(baseline macro-startup)
-                  ;;
-                performance-b)
-                  LOGICAL_SHARDS=(macro-library macro-settings)
-                  ;;
-                *)
-                  echo "Unknown packed performance shard: $VALIDATION_SHARD"
-                  exit 2
-                  ;;
-              esac
+            baseline|macro-*)
+              # Every matrix runner owns exactly one logical benchmark.
+              LOGICAL_SHARDS=("$VALIDATION_SHARD")
 
               AGGREGATE_LOG="$RUNNER_TEMP/performance-validation.log"
               : > "$AGGREGATE_LOG"
@@ -1145,7 +1108,7 @@ jobs:
           compression-level: 1
 
       - name: Upload benchmark reports
-        if: always() && startsWith(matrix.shard, 'performance-')
+        if: always() && (matrix.shard == 'baseline' || startsWith(matrix.shard, 'macro-'))
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-benchmark-reports-${{ matrix.shard }}

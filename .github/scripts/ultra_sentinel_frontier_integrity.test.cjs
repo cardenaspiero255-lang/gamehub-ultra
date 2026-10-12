@@ -84,6 +84,20 @@ test('workflow uses trusted main with read-only actions access and no PR code ex
  assert.doesNotMatch(yaml,/issues: write|pull-requests: write|ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
 });
 
+test('Post-CI trusted checkout includes workflow fixtures required by provenance tests',()=>{
+ const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-sss-post-ci.yml'),'utf8');
+ const tests=fs.readFileSync(__filename,'utf8');
+ // The test suite references workflows; the sparse checkout must include them.
+ assert.match(tests,/\.\.\/workflows\/ultra-sentinel-auto-review\.yml/);
+ assert.match(workflow,/sparse-checkout: \|\r?\n\s+\.github\/scripts\r?\n\s+\.github\/workflows(?:\r?\n|$)/);
+ assert.match(workflow,/ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
+ assert.match(workflow,/persist-credentials: false/);
+ assert.match(workflow,/contents: read/);
+ assert.match(workflow,/actions: read/);
+ assert.match(workflow,/pull-requests: read/);
+ assert.doesNotMatch(workflow,/\b(?:contents|actions|pull-requests|issues): write\b|ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+});
+
 test('Codex P2: missing ordering metadata cannot let stale green CI pass',()=>{
  const old=run('Android build',{id:90,run_number:7,run_attempt:1});
  const coverage=run('Unit Test Coverage');

@@ -28,7 +28,9 @@ const MINIMUM=500000;
 // A PR must never attest fewer real baseline tests just because 500k matrix cases pass.
 // The 12 RED/GREEN Codex round-six regressions in the baseline b1 suite
 // are intentionally counted; never lower the threshold to mask failures.
-const BASELINE_TEST_COUNTS=Object.freeze({b0:10242,b1:11541});
+const BASELINE_B0_TESTS=10242;
+const BASELINE_B1_TESTS=11739;
+const BASELINE_TEST_COUNTS=Object.freeze({b0:BASELINE_B0_TESTS,b1:BASELINE_B1_TESTS});
 
 function testFiles(root=ROOT){
  return fs.readdirSync(root).filter(f=>/^ultra_sentinel_.*\.test\.cjs$/.test(f)).sort();
@@ -52,7 +54,16 @@ function plan(id,root=ROOT){
 function parseTap(content){
  const fields={tests:null,pass:null,fail:null,skipped:null,todo:null,cancelled:null};
  for(const match of content.matchAll(/^# (tests|pass|fail|skipped|todo|cancelled) (\d+)\s*$/gm)){
-  fields[match[1]]=Number(match[2]);
+  // Exhaustively map known TAP counters; never use unverified computed writes.
+  const value=Number(match[2]);
+  switch(match[1]){
+   case 'tests':fields.tests=value;break;
+   case 'pass':fields.pass=value;break;
+   case 'fail':fields.fail=value;break;
+   case 'skipped':fields.skipped=value;break;
+   case 'todo':fields.todo=value;break;
+   case 'cancelled':fields.cancelled=value;break;
+  }
  }
  return fields;
 }
@@ -108,9 +119,14 @@ function aggregate(dir,sha,root=ROOT){
 function runShard(id,outDir){
  const expected=plan(id);
  const sha=process.env.GITHUB_SHA||'LOCAL';
- const childEnv={...process.env};
- if(expected.kind==='matrix')childEnv.SENTINEL_MATRIX_SHARD=String(expected.index);
- else delete childEnv.SENTINEL_MATRIX_SHARD;
+ // Create a fresh child environment without a mutable or unverified
+ // property-write receiver. Preserve every inherited key except the
+ // shard selector, which must be controlled solely by the execution plan.
+ const envEntries=Object.entries(process.env).filter(entry=>
+  entry[0]!=='SENTINEL_MATRIX_SHARD');
+ if(expected.kind==='matrix')
+  envEntries.push(['SENTINEL_MATRIX_SHARD',String(expected.index)]);
+ const childEnv=Object.fromEntries(envEntries);
  fs.mkdirSync(outDir,{recursive:true});
  const tapFile=path.join(outDir,id+'.tap');
  const fd=fs.openSync(tapFile,'w');
@@ -122,7 +138,10 @@ function runShard(id,outDir){
  }finally{fs.closeSync(fd);}
  const tap=fs.readFileSync(tapFile,'utf8');
  const counters=parseTap(tap);
- const report={schema:'sentinel-core-shard/v1',...expected,sha,
+ const report={schema:'sentinel-core-shard/v1',
+  id:expected.id,kind:expected.kind,index:expected.index,files:expected.files,
+  start:expected.start,end:expected.end,extraStart:expected.extraStart,
+  extraEnd:expected.extraEnd,sha,
   counters,exitCode:run.status,signal:run.signal,
   tapSha256:crypto.createHash('sha256').update(tap).digest('hex'),
   elapsedMs:Date.now()-start,passed:run.status===0&&run.signal===null&&
@@ -134,14 +153,15 @@ function runShard(id,outDir){
  catch(error){
   const failures=tap.split('\n').filter(x=>/^not ok\b/.test(x)).slice(0,20);
   console.error('Sentinel shard FAILED:',error.message,'Failed test IDs:',failures);
-  process.exitCode=1;return;
+  process.exit(1);return;
  }
  console.log('Sentinel shard '+id+': '+counters.tests+' executed; 0 fail, 0 skip, 0 todo, 0 cancelled');
  fs.unlinkSync(tapFile); // Keep only small evidence JSON; no TAP flood/artifact.
 }
 if(require.main===module){
  try{
-  const [mode,arg,dir]=process.argv.slice(2);
+  const argv=process.argv.slice(2);
+  const mode=argv[0],arg=argv[1],dir=argv[2];
   if(mode==='run')runShard(arg,dir||process.cwd());
   else if(mode==='run-env')runShard(process.env.SENTINEL_SHARD_ID,arg||process.cwd());
   else if(mode==='aggregate'){
@@ -155,8 +175,11 @@ if(require.main===module){
     result.executed+' executed, 0 failures/skips, '+result.jobs+
     ' disjoint shards, GitHub SHA '+result.sha+'\n');
   }else throw Error('Usage: node ultra_sentinel_core_shards.cjs run-env DIR | aggregate DIR');
- }catch(error){console.error(error.message);process.exitCode=1;}
+ }catch(error){console.error(error.message);process.exit(1);}
 }
 module.exports={plan,testFiles,parseTap,validateReport,aggregate,
  SHARD_COUNT,MATRIX_SHARDS,MATRIX_CASES,MATRIX_EXTRA_AUDITS,CASES_PER_SHARD,EXTRA_CASES_PER_SHARD,
- BASELINE_TEST_COUNTS,MINIMUM};
+ // Baseline counts are validation policy, not public API. Keep them private:
+ // exporting a reconstructed/aliased policy object creates unnecessary
+ // CommonJS provenance ambiguity and exposes internals to mutation attempts.
+ BASELINE_B0_TESTS,BASELINE_B1_TESTS,MINIMUM};

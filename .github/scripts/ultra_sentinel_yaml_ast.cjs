@@ -33,7 +33,7 @@ function boundedGraph(root){
 }
 function parseWorkflow(source){
  if(typeof source!=='string'||!source.trim()||Buffer.byteLength(source,'utf8')>MAX_SOURCE)
-  return {ok:false,reason:'INVALID_SOURCE_SIZE'};
+  return {ok:false,reason:'INVALID_SOURCE_SIZE',workflow:undefined};
  try{
   const input=source.charCodeAt(0)===0xfeff?source.slice(1):source;
   // Guard inexpensive lexical budgets BEFORE the parser. js-yaml 4.3.2
@@ -43,59 +43,61 @@ function parseWorkflow(source){
   const largeMergeList=[...input.matchAll(/<<\s*:\s*\[([^\n]{0,8192}?)\]/g)]
     .some(x=>(x[1].match(/\*[A-Za-z0-9_-]+/g)||[]).length>16);
   if(aliasCount>256||merges>128||largeMergeList)
-   return {ok:false,reason:'YAML_PREPARSE_LIMIT'};
+   return {ok:false,reason:'YAML_PREPARSE_LIMIT',workflow:undefined};
   // DEFAULT_SCHEMA is YAML 1.2-compatible for GitHub's 'on' key; unlike
   // PyYAML's unmodified YAML 1.1 loader, 'on' stays a string.
   // Resource budgets apply DURING parsing; boundedGraph runs only afterward.
   const doc=yaml.load(input,{schema:yaml.DEFAULT_SCHEMA,json:false,
    maxDepth:MAX_DEPTH,maxMergeSeqLength:16,maxTotalMergeKeys:2048,
    onWarning:()=>{throw Error('yaml-warning');}});
-  if(!isMap(doc))return {ok:false,reason:'INVALID_ROOT'};
+  if(!isMap(doc))return {ok:false,reason:'INVALID_ROOT',workflow:undefined};
   boundedGraph(doc);
   if(!Object.prototype.hasOwnProperty.call(doc,'on'))
-   return {ok:false,reason:'MISSING_TRIGGER'};
+   return {ok:false,reason:'MISSING_TRIGGER',workflow:undefined};
   if(!isMap(doc.jobs)||!Object.keys(doc.jobs).length)
-   return {ok:false,reason:'INVALID_JOBS'};
+   return {ok:false,reason:'INVALID_JOBS',workflow:undefined};
   const trigger=doc.on;
   if(typeof trigger!=='string'&&!Array.isArray(trigger)&&!isMap(trigger))
-   return {ok:false,reason:'INVALID_TRIGGER'};
+   return {ok:false,reason:'INVALID_TRIGGER',workflow:undefined};
   if(Array.isArray(trigger)&&!trigger.every(v=>typeof v==='string'))
-   return {ok:false,reason:'INVALID_TRIGGER_LIST'};
+   return {ok:false,reason:'INVALID_TRIGGER_LIST',workflow:undefined};
   if(isMap(trigger)&&Object.keys(trigger).some(k=>typeof k!=='string'))
-   return {ok:false,reason:'INVALID_TRIGGER_MAP'};
+   return {ok:false,reason:'INVALID_TRIGGER_MAP',workflow:undefined};
   if((Array.isArray(trigger)&&!trigger.length)||
      (isMap(trigger)&&!Object.keys(trigger).length)||
      (typeof trigger==='string'&&!trigger.trim()))
-   return {ok:false,reason:'EMPTY_TRIGGER'};
+   return {ok:false,reason:'EMPTY_TRIGGER',workflow:undefined};
   if(isMap(trigger)){
    const filters=new Set(['types','branches','branches-ignore','paths',
     'paths-ignore','tags','tags-ignore','workflows']);
-   for(const [event,configuration] of Object.entries(trigger)){
+   for(const __workflowEntry0 of Object.entries(trigger)){
+   const event=__workflowEntry0[0],configuration=__workflowEntry0[1];
     // An empty event type/branch/path filter can silently disable the only
     // security gate. Treat malformed GitHub Actions trigger shapes as unknown.
     if(typeof event!=='string'||!event.trim())
-     return {ok:false,reason:'INVALID_TRIGGER_EVENT'};
+     return {ok:false,reason:'INVALID_TRIGGER_EVENT',workflow:undefined};
     if(event==='schedule'){
      if(!Array.isArray(configuration)||!configuration.length||
        configuration.some(item=>!isMap(item)||typeof item.cron!=='string'||
          !item.cron.trim()))
-      return {ok:false,reason:'INVALID_CRON_TRIGGER'};
+      return {ok:false,reason:'INVALID_CRON_TRIGGER',workflow:undefined};
      continue;
     }
     if(configuration===null)continue;
-    if(!isMap(configuration))return {ok:false,reason:'INVALID_TRIGGER_CONFIGURATION'};
-    for(const [name,value] of Object.entries(configuration)){
+    if(!isMap(configuration))return {ok:false,reason:'INVALID_TRIGGER_CONFIGURATION',workflow:undefined};
+    for(const __workflowEntry1 of Object.entries(configuration)){
+   const name=__workflowEntry1[0],value=__workflowEntry1[1];
      if(!filters.has(name))continue;
      if(!Array.isArray(value)||!value.length||
        value.some(item=>typeof item!=='string'||!item.trim()))
-      return {ok:false,reason:'INVALID_TRIGGER_FILTER'};
+      return {ok:false,reason:'INVALID_TRIGGER_FILTER',workflow:undefined};
     }
    }
   }
-  return {ok:true,workflow:doc};
+  return {ok:true,workflow:doc,reason:null};
  }catch(e){
   // Do not emit raw attacker-controlled snippets or throw from CI gating.
-  return {ok:false,reason:'YAML_PARSE_OR_LIMIT_ERROR'};
+  return {ok:false,reason:'YAML_PARSE_OR_LIMIT_ERROR',workflow:undefined};
  }
 }
 function privilegedTrigger(value){
@@ -182,9 +184,10 @@ function expressionTerminator(script,start){
  return -1;
 }
 function auditExecutableExpressions(script){
- if(typeof script!=='string')return {unsafe:false,incomplete:true};
- let unsafe=false,incomplete=false,cursor=0;
- while(true){
+ // One fail-closed return descriptor for valid and invalid sources. Non-string
+ // inputs are always incomplete, and are never inspected or evaluated.
+ let unsafe=false,incomplete=typeof script!=='string',cursor=0;
+ if(typeof script==='string')while(true){
   const start=script.indexOf('$'+'{{',cursor);
   if(start<0)break;
   const end=expressionTerminator(script,start);
@@ -204,7 +207,12 @@ function auditExecutableExpressions(script){
  return {unsafe,incomplete};
 }
 function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRepository=null}={}){
- const findings=[],coverage={partial:false,parser:'js-yaml@4.3.2'};
+ const findings=[],coverage={partial:false,parser:'js-yaml@4.3.2',reasons:[]};
+ // Constant bounded family codes only: never reflect untrusted YAML or secret values.
+ const markIncomplete=code=>{
+  coverage.partial=true;
+  if(coverage.reasons.length<16&&!coverage.reasons.includes(code))coverage.reasons.push(code);
+ };
  const emit=(rule,severity,where)=>{
   if(findings.length>=MAX_FINDINGS){coverage.partial=true;return;}
   if(!findings.some(x=>x.rule===rule&&x.path===where))
@@ -212,8 +220,11 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      verification:'Verify the complete trusted GitHub Actions workflow.'});
  };
  const parsed=parseWorkflow(source);
- if(!parsed.ok)return {status:'INCOMPLETE',findings,coverage:{...coverage,partial:true},
-  reason:parsed.reason};
+ if(!parsed.ok){
+  const status='INCOMPLETE',reason=parsed.reason;
+  const incompleteCoverage={...coverage,partial:true};
+  return {status,findings,coverage:incompleteCoverage,reason};
+ }
  const document=parsed.workflow;
  const privileged=privilegedTrigger(document.on);
  const checkPermissions=(value,where)=>{
@@ -221,7 +232,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(value==='write-all'){emit('PRIVILEGED_WRITE_TOKEN','HIGH',where);return;}
   if(value==='read-all')return;
   if(!isMap(value)){coverage.partial=true;return;}
-  for(const [capability,level] of Object.entries(value)){
+  for(const __workflowEntry2 of Object.entries(value)){
+   const capability=__workflowEntry2[0],level=__workflowEntry2[1];
    if(!WRITE_CAPABILITIES.has(capability)){coverage.partial=true;continue;}
    if(level==='write')emit('PRIVILEGED_WRITE_TOKEN','HIGH',where);
    else if(level!=='read'&&level!=='none')coverage.partial=true;
@@ -328,7 +340,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   if(!isMap(value)){coverage.partial=true;return tainted;}
   const dependents=new Map();
   const available=new Set([...knownNames,...Object.keys(value)]);
-  for(const [name,item] of Object.entries(value)){
+  for(const __workflowEntry3 of Object.entries(value)){
+   const name=__workflowEntry3[0],item=__workflowEntry3[1];
    if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)){coverage.partial=true;continue;}
    if(typeof item!=='string'){
     if(item!==null&&typeof item!=='number'&&typeof item!=='boolean')coverage.partial=true;
@@ -374,7 +387,7 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  const auditShellEnvUse=(script,tainted,where)=>{
   // Dynamic Bash arithmetic is not safely modeled by literal token scans.
   // Fail closed even when the direct dependency cannot be reconstructed.
-  if(hasOpaqueArithmetic(script))coverage.partial=true;
+  if(hasOpaqueArithmetic(script))markIncomplete('OPAQUE_ARITHMETIC');
   for(const key of tainted){
    const bare='\\$(?:\\{'+key+'\\}|'+key+'\\b)';
    // Bash parameter operators retain the tainted source. Unknown valid
@@ -454,11 +467,13 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
   for(const env of [document.env,job.env,step.env]){
    if(env===undefined)continue;
    if(!isMap(env)){coverage.partial=true;continue;}
-   if(Object.values(env).some(sensitiveExpression))coverage.partial=true;
+   if(Object.values(env).some(sensitiveExpression))
+    markIncomplete('SENSITIVE_ACTION_ENV');
   }
   if(step.with===undefined)return;
   if(!isMap(step.with)){coverage.partial=true;return;}
-  for(const [input,value] of Object.entries(step.with)){
+  for(const __workflowEntry4 of Object.entries(step.with)){
+   const input=__workflowEntry4[0],value=__workflowEntry4[1];
    if(!sensitiveExpression(value))continue;
    const firstParty=/^actions\/(?:github-script|checkout)@[a-f0-9]{40}$/i.test(step.uses||'');
    const standardToken=/^(?:github-token|token)$/i.test(input)&&
@@ -477,7 +492,8 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
  const workflowTaint=collectEnvSources(document.env);
   const workflowEnvNames=new Set(isMap(document.env)?Object.keys(document.env):[]);
  checkPermissions(document.permissions,path);
- for(const [name,job] of Object.entries(document.jobs)){
+ for(const __workflowEntry5 of Object.entries(document.jobs)){
+   const name=__workflowEntry5[0],job=__workflowEntry5[1];
   const where=path; // Deliberately no attempt to fabricate AST line locations.
   if(!isMap(job)){coverage.partial=true;continue;}
   checkGateControl(job);
@@ -540,18 +556,20 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
     if(/^actions\/github-script@/i.test(step.uses)){
      // github-script compiles its script input as JavaScript after Github
      // expressions are substituted. Use runner-equivalent input names.
-     const inputs=Object.create(null);
+     const inputPairs=[];
      let ambiguous=step.with===undefined||!isMap(step.with);
      if(!ambiguous){
-      for(const [key,value] of Object.entries(step.with)){
+      for(const __workflowEntry6 of Object.entries(step.with)){
+   const key=__workflowEntry6[0],value=__workflowEntry6[1];
        const folded=key.toLowerCase();
        if(!/^[A-Za-z0-9_-]+$/.test(key)||
-          Object.prototype.hasOwnProperty.call(inputs,folded)){
+          inputPairs.some(pair=>pair[0]===folded)){
         ambiguous=true;break;
        }
-       inputs[folded]=value;
+       inputPairs.push([folded,value]);
       }
      }
+     const inputs=Object.fromEntries(inputPairs);
      if(ambiguous||typeof inputs.script!=='string'||!inputs.script.trim())
       coverage.partial=true;
      else{
@@ -585,18 +603,20 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      // Actions runner exposes every input as INPUT_<UPPERCASE_NAME>.
      // YAML preserves case, so Ref/ref and Repository/repository must share
      // the same effective slot; reject ambiguity or non-ASCII key tricks.
-     const inputs=Object.create(null);
+     const inputPairs=[];
      let invalidInputs=step.with!==undefined&&!isMap(step.with);
      if(!invalidInputs&&isMap(step.with)){
-      for(const [key,value] of Object.entries(step.with)){
+      for(const __workflowEntry7 of Object.entries(step.with)){
+   const key=__workflowEntry7[0],value=__workflowEntry7[1];
        const k=key.toLowerCase();
        if(!/^[A-Za-z0-9_-]+$/.test(key)||
-          Object.prototype.hasOwnProperty.call(inputs,k)){
+          inputPairs.some(pair=>pair[0]===k)){
         invalidInputs=true;break;
        }
-       inputs[k]=value;
+       inputPairs.push([k,value]);
       }
      }
+     const inputs=Object.fromEntries(inputPairs);
      if(invalidInputs)coverage.partial=true;
      else{
       // Even a static branch or tag can point to attacker-controlled code.
@@ -658,12 +678,12 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
      // Bash aliases change the meaning of later command words; unsupported
      // expansions must not be certified as safe when an alias is declared.
      if(/(?:^|[;\n])\s*alias\s+[A-Za-z_][A-Za-z0-9_]*\s*=/m.test(step.run))
-      coverage.partial=true;
+      markIncomplete('SHELL_ALIAS');
      // Shell functions redefine commands, and lexical cwd changes can alter
      // the identity of a downloaded file. Without a full shell interpreter,
      // both constructs must be inconclusive rather than silently clean.
      if(/(?:^|[;\n])\s*(?:(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{|function\s+[A-Za-z_]\w*\s*\{)/m.test(step.run))
-      coverage.partial=true;
+      markIncomplete('SHELL_FUNCTION');
      if(/(?:^|[;\n])\s*cd\s+/.test(step.run)&&
        /\b(?:curl|wget)\b/.test(step.run)&&
        /\b(?:bash|sh|source|python|node|ruby|perl|php)\s+[\w./-]+/.test(step.run))
@@ -682,24 +702,53 @@ function inspectWorkflow(source,{path='.github/workflows/workflow.yml',trustedRe
       (step.run!==undefined&&step.uses!==undefined))coverage.partial=true;
   }
  }
+ if(coverage.partial&&coverage.reasons.length===0)
+  markIncomplete('UNMODELED_WORKFLOW_FEATURE');
  const status=coverage.partial?'INCOMPLETE':
   findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN';
- return {status,findings,coverage,reason:null};
+ const reason=null;
+ return {status,findings,coverage,reason};
 }
 function reviewWorkflowSources({expected=[],sources={},trustedRepository=null}={}){
- const results=[],findings=[],coverage={partial:false,requested:expected.length,
-  scanned:0,parser:'js-yaml@4.3.2'};
- if(!Array.isArray(expected)||expected.length>25)return {status:'INCOMPLETE',findings,
-  coverage:{...coverage,partial:true},results};
+ // Only finite, source-independent reason codes cross the trust boundary.
+ const results=[],findings=[],coverage={partial:false,
+  requested:Array.isArray(expected)?expected.length:0,
+  scanned:0,parser:'js-yaml@4.3.2',reasons:[]};
+ const markIncomplete=code=>{
+  coverage.partial=true;
+  if(coverage.reasons.length<16&&!coverage.reasons.includes(code))
+   coverage.reasons.push(code);
+ };
+ if(!Array.isArray(expected)||expected.length>25){
+  markIncomplete('INVALID_EXPECTED_LIST');
+  const status='INCOMPLETE';
+  return {status,findings,coverage,results};
+ }
+ if(!sources||typeof sources!=='object'||Array.isArray(sources)){
+  markIncomplete('INVALID_WORKFLOW_SOURCES');
+  const status='INCOMPLETE';
+  return {status,findings,coverage,results};
+ }
  for(const path of expected){
-  if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)||
-   !Object.prototype.hasOwnProperty.call(sources,path)){coverage.partial=true;continue;}
-  const r=inspectWorkflow(sources[path],{path,trustedRepository});results.push({path,status:r.status,reason:r.reason});
+  if(typeof path!=='string'||!/^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/.test(path)){
+   markIncomplete('INVALID_WORKFLOW_PATH');continue;
+  }
+  if(!Object.prototype.hasOwnProperty.call(sources,path)){
+   markIncomplete('MISSING_WORKFLOW_SOURCE');continue;
+  }
+  const r=inspectWorkflow(sources[path],{path,trustedRepository});
+  results.push({path,status:r.status,reason:r.reason,reasons:r.coverage.reasons||[]});
   coverage.scanned++;
-  if(r.coverage.partial)coverage.partial=true;
+  if(r.coverage.partial){
+   markIncomplete(r.reason?'WORKFLOW_PARSE_FAILURE':'WORKFLOW_SEMANTIC_INCOMPLETE');
+   for(const reason of r.coverage.reasons||[]){
+    if(typeof reason==='string'&&/^[A-Z_]{1,40}$/.test(reason))markIncomplete(reason);
+   }
+  }
   findings.push(...r.findings);
  }
- return {status:coverage.partial?'INCOMPLETE':
-  findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN',findings,coverage,results};
+ const status=coverage.partial?'INCOMPLETE':
+  findings.length?'REVIEW_REQUIRED':'NO_RISK_PATTERN';
+ return {status,findings,coverage,results};
 }
 module.exports={parseWorkflow,inspectWorkflow,reviewWorkflowSources};

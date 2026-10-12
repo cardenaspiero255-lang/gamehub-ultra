@@ -1,0 +1,49 @@
+name: Ultra Sentinel Trusted GitHub Evidence - Shadow
+# Runs trusted main only, never checks out or executes untrusted PR code.
+# This check is diagnostic and must not be a required merge gate.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+concurrency:
+  group: sentinel-trusted-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  trusted-main-evidence:
+    name: Read-only authenticated PR evidence (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted default branch only
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+            .github/workflows
+            package.json
+            package-lock.json
+          persist-credentials: false
+      - name: Install main-branch locked parser without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Test trusted collector contract with no API credentials
+        run: node --test .github/scripts/ultra_sentinel_github_collector.test.cjs
+      - name: Collect SHA-scoped GitHub evidence as data
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node .github/scripts/ultra_sentinel_github_collector.cjs
+      - name: Upload bounded sanitized shadow report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sentinel-shadow-evidence-${{ github.event.pull_request.number }}
+          path: sentinel-github-evidence-shadow.json
+          if-no-files-found: ignore
+          retention-days: 7

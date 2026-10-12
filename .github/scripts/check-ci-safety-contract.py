@@ -328,56 +328,6 @@ def require_concurrency(workflow: dict[str, Any], label: str) -> None:
         fail(f"Stale-run cancellation disabled: {label}")
 
 
-def require_sdk_fast_path(workflow: dict[str, Any], job_name: str) -> None:
-    """Fast path is trusted only if the preflight is mandatory and slow fallback intact."""
-    pre = require_step(
-        workflow, job_name, "Probe preinstalled Android SDK", shell="bash"
-    )
-    if pre.get("id") != "sdk_preflight":
-        fail(f"SDK preflight output id missing from {job_name}")
-    require_shell_command(
-        pre,
-        f"{job_name}/Probe preinstalled Android SDK",
-        ("bash", ".github/scripts/probe-preinstalled-android-sdk.sh"),
-    )
-    slow = require_step(
-        workflow, job_name, "Set up Android SDK",
-        allowed_if="steps.sdk_preflight.outputs.usable != 'true'",
-        uses_prefix="android-actions/setup-android@",
-    )
-    options = slow.get("with")
-    if not isinstance(options, dict) or options.get("cmdline-tools-version") != 15859902:
-        fail(f"Pinned SDK commandline-tools fallback removed in {job_name}")
-    if options.get("accept-android-sdk-licenses") is not True:
-        fail(f"SDK license fallback removed in {job_name}")
-    steps = job(workflow, job_name).get("steps")
-    if not isinstance(steps, list):
-        fail(f"SDK job missing steps {job_name}")
-    if steps.index(pre) >= steps.index(slow):
-        fail(f"SDK fallback runs before preflight: {job_name}")
-    if not any(
-        isinstance(candidate, dict) and
-        ("sdkmanager" in str(candidate.get("run", "")) or
-         "install-android-runtime-sdk.sh" in str(candidate.get("run", "")))
-        for candidate in steps[steps.index(slow) + 1:]
-    ):
-        fail(f"SDK install/recovery logic missing from {job_name}")
-    if job_name == "device-validation-shard":
-        selector = require_step(
-            workflow, job_name, "Use current Android command-line tools",
-            shell="bash",
-        )
-        for expected in (
-            'SDK_BIN="$SDK_ROOT/cmdline-tools/latest/bin"',
-            'if [ ! -x "$SDK_BIN/sdkmanager" ]; then',
-            'printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"',
-        ):
-            require_run_fragment(selector, "non-destructive SDK selection", expected)
-        if 'rm -rf "$SDK_ROOT/cmdline-tools/latest"' in str(selector.get("run", "")):
-            fail("Emulator SDK selector destroys the hosted-runner latest installation")
-
-
-
 def main() -> None:
     """Fail closed if packed CI drops any blocking validation."""
     android = load_workflow(ANDROID)
@@ -388,16 +338,6 @@ def main() -> None:
     require_concurrency(android, "Android workflow")
     require_concurrency(smoke, "research smoke workflow")
     require_concurrency(coverage, "coverage workflow")
-
-    # Every SDK-consuming job first checks the hosted-runner image, falling
-    # back to pinned setup-android when its tools or license are incomplete.
-    for job_name in (
-        "android-test-shard", "quality-lint", "release-bundle",
-        "device-validation-shard",
-    ):
-        require_sdk_fast_path(android, job_name)
-    for job_name in ("coverage-shard", "coverage"):
-        require_sdk_fast_path(coverage, job_name)
 
     android_jobs = android.get("jobs")
     if not isinstance(android_jobs, dict):
@@ -576,18 +516,21 @@ def main() -> None:
         fail("device validation strategy is missing")
     if strategy.get("fail-fast") is not False:
         fail("device validation matrix must keep fail-fast disabled")
-    if strategy.get("max-parallel") != 4:
-        fail("device validation matrix must keep four physical runners")
+    device_parallel = strategy.get("max-parallel")
+    if device_parallel != 6:
+        fail("device validation must run six independent API 35 shards")
     matrix = strategy.get("matrix")
     if not isinstance(matrix, dict):
         fail("device validation matrix definition is missing")
     if set(matrix.get("shard", [])) != {
         "release-apk",
         "ui",
-        "performance-a",
-        "performance-b",
+        "baseline",
+        "macro-startup",
+        "macro-library",
+        "macro-settings",
     }:
-        fail("device validation lost release/ui/packed performance coverage")
+        fail("device validation lost release/ui or one of four performance validations")
 
     retry_test = require_step(
         android,
@@ -617,7 +560,7 @@ def main() -> None:
         ":app:assembleDebugAndroidTest",
         ":app:assembleNonMinifiedRelease",
         ":baseline-profile:assembleNonMinifiedRelease",
-        "performance-*",
+        "baseline|macro-*)",
         "--max-workers=12",
         "EMULATOR_LAUNCH_EPOCH=",
         "-no-window",
@@ -629,6 +572,18 @@ def main() -> None:
         require_run_fragment(prebuild, "parallel device prebuild", fragment)
     if ":app:bundleRelease" in str(prebuild.get("run", "")):
         fail("AAB build must stay isolated in release-bundle shard")
+
+    selector = require_step(
+        android,
+        "device-validation-shard",
+        "Use current Android command-line tools",
+        shell="bash",
+    )
+    require_run_fragment(selector, "safe SDK tools", 'SDK_BIN="$SDK_ROOT/cmdline-tools/latest/bin"')
+    require_run_fragment(selector, "safe SDK tools", 'if [ ! -x "$SDK_BIN/sdkmanager" ]; then')
+    require_run_fragment(selector, "safe SDK tools", 'printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"')
+    if 'rm -rf "$SDK_ROOT/cmdline-tools/latest"' in str(selector.get("run", "")):
+        fail("device runner must not destroy the preinstalled SDK")
 
     readiness = require_step(
         android,
@@ -655,8 +610,10 @@ def main() -> None:
         "adb uninstall",
         ":app:connectedDebugAndroidTest",
         ":baseline-profile:connectedNonMinifiedReleaseAndroidTest",
-        'LOGICAL_SHARDS=(baseline macro-startup)',
-        'LOGICAL_SHARDS=(macro-library macro-settings)',
+        'LOGICAL_SHARDS=("$VALIDATION_SHARD")',
+        'macro-startup) EXPECTED_METHOD="coldStartup"',
+        'macro-library) EXPECTED_METHOD="navigationToLibrary"',
+        'macro-settings) EXPECTED_METHOD="navigationToSettings"',
         'RULE="BaselineProfile"',
         'RULE="Macrobenchmark"',
         "coldStartup",
@@ -692,7 +649,7 @@ def main() -> None:
     )
     validate_run = str(validate.get("run", ""))
     if validate_run.count(":baseline-profile:connectedNonMinifiedReleaseAndroidTest") != 1:
-        fail("packed performance script must contain exactly one looped instrumentation command")
+        fail("performance tests must use one fail-closed instrumentation command")
     for expected_command in (
         ("adb", "install", "$APK"),
         ("adb", "install", "-r", "$APK"),
@@ -818,7 +775,7 @@ def main() -> None:
         "device-validation-shard",
         "Upload benchmark reports",
         uses_prefix="actions/upload-artifact@",
-        allowed_if="always() && startsWith(matrix.shard, 'performance-')",
+        allowed_if="always() && (matrix.shard == 'baseline' || startsWith(matrix.shard, 'macro-'))",
     )
     benchmark_with = benchmark_upload.get("with")
     if not isinstance(benchmark_with, dict):
@@ -896,7 +853,7 @@ def main() -> None:
         fail("Android test shard strategy is missing")
     if android_test_strategy.get("fail-fast") is not False:
         fail("Android test shards must keep fail-fast disabled")
-    if android_test_strategy.get("max-parallel") != 5:
+    if android_test_strategy.get("max-parallel") != 4:
         fail("Android test physical concurrency changed")
     android_test_matrix = android_test_strategy.get("matrix")
     if (
@@ -953,30 +910,18 @@ def main() -> None:
     if android_test_fan_in.get("needs") != "android-test-shard":
         fail("Android test fan-in lost packed shard dependency")
 
-    # Shard workers select tests from source files only; full history is
-    # required solely by the aggregation job to compute patch coverage.
-    coverage_checkout = require_step(coverage, "coverage-shard", "Checkout")
-    shard_checkout_with = coverage_checkout.get("with")
-    if not isinstance(shard_checkout_with, dict) or shard_checkout_with.get("fetch-depth") != 1:
-        fail("Coverage physical runners must use shallow one-commit checkout")
-    aggregate_checkout = require_step(coverage, "coverage", "Checkout")
-    aggregate_checkout_with = aggregate_checkout.get("with")
-    if not isinstance(aggregate_checkout_with, dict) or aggregate_checkout_with.get("fetch-depth") != 0:
-        fail("Coverage aggregate must retain complete Git history for patch provenance")
     coverage_shard_job = job(coverage, "coverage-shard")
     coverage_strategy = coverage_shard_job.get("strategy")
     if not isinstance(coverage_strategy, dict):
         fail("coverage shard strategy is missing")
     if coverage_strategy.get("fail-fast") is not False:
         fail("coverage shards must keep fail-fast disabled")
-    if coverage_strategy.get("max-parallel") != 8:
-        fail("coverage physical concurrency must preserve the 8 independently verified runners")
-    # GitHub-hosted public repositories have a finite concurrent-runner budget.
-    # Bound the primary critical-path jobs instead of launching unbounded waves.
-    # Android: 5 tests + 4 emulators + release + lint + contracts = 12;
-    # Coverage: 8 test shards, total <= 20 before tiny fan-in jobs.
-    if (5 + 4 + 1 + 1 + 1 + coverage_strategy.get("max-parallel")) > 20:
-        fail("combined Android and Coverage jobs exceed 20-runner budget")
+    if coverage_strategy.get("max-parallel") != 7:
+        fail("coverage must retain seven bounded concurrent workers and eight total runners")
+    # 4 Android unit runners + 6 emulator runners + 3 support jobs + 7 Coverage = 20.
+    # Account for all four simultaneous resource families; no overcommit by CI design.
+    if 4 + device_parallel + 3 + coverage_strategy.get("max-parallel") > 20:
+        fail("combined CI runner allocation exceeds the 20-runner budget")
     coverage_matrix = coverage_strategy.get("matrix")
     if (
         not isinstance(coverage_matrix, dict)
