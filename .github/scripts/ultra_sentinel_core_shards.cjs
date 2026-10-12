@@ -28,7 +28,9 @@ const MINIMUM=500000;
 // A PR must never attest fewer real baseline tests just because 500k matrix cases pass.
 // The 12 RED/GREEN Codex round-six regressions in the baseline b1 suite
 // are intentionally counted; never lower the threshold to mask failures.
-const BASELINE_TEST_COUNTS=Object.freeze({b0:10242,b1:11584});
+const BASELINE_B0_TESTS=10242;
+const BASELINE_B1_TESTS=11584;
+const BASELINE_TEST_COUNTS=Object.freeze({b0:BASELINE_B0_TESTS,b1:BASELINE_B1_TESTS});
 
 function testFiles(root=ROOT){
  return fs.readdirSync(root).filter(f=>/^ultra_sentinel_.*\.test\.cjs$/.test(f)).sort();
@@ -180,4 +182,4 @@ module.exports={plan,testFiles,parseTap,validateReport,aggregate,
  // Baseline counts are validation policy, not public API. Keep them private:
  // exporting a reconstructed/aliased policy object creates unnecessary
  // CommonJS provenance ambiguity and exposes internals to mutation attempts.
- MINIMUM};
+ BASELINE_B0_TESTS,BASELINE_B1_TESTS,MINIMUM};
