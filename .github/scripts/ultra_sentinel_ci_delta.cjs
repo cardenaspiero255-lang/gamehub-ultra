@@ -213,7 +213,7 @@ function decodeGitContent(response){
     typeof item.content!=='string'||typeof item.sha!=='string'||
     !Number.isSafeInteger(item.size)||item.size<0||item.size>160000)
   throw Error('INVALID_GITHUB_CONTENT');
- const encoded=item.content.replace(/\\s/g,'');
+ const encoded=item.content.replace(/\s/g,'');
  if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
   throw Error('INVALID_BASE64');
  const bytes=Buffer.from(encoded,'base64');
