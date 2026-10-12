@@ -16,13 +16,12 @@ function createGitHubReader(repo,token,fetcher=globalThis.fetch,options={}){
  if(typeof repo!=='string'||!/^[-\w.]+\/[-\w.]+$/.test(repo)||
     repo.split('/').includes('..')||typeof token!=='string'||token.length<1||
     typeof fetcher!=='function')throw Error('INVALID_GITHUB_CLIENT');
- const pause=options.pause||((ms)=>new Promise(resolve=>setTimeout(resolve,ms)));
- const now=options.now||Date.now;
+
  const MAX_COOLDOWN=90000;
  const cache=new Map();
  let tail=Promise.resolve(),blockedUntil=0;
  async function read(relative){
-  if(blockedUntil>now())throw Error('GITHUB_RATE_LIMITED');
+  if(blockedUntil>Date.now())throw Error('GITHUB_RATE_LIMITED');
   for(let attempt=0;attempt<2;attempt++){
    const response=await fetcher('https://api.github.com/repos/'+repo+'/'+relative,{
     method:'GET',redirect:'error',
@@ -46,11 +45,12 @@ function createGitHubReader(repo,token,fetcher=globalThis.fetch,options={}){
     const reset=Number(header('x-ratelimit-reset'));
     if(!Number.isFinite(reset)||reset<=0)throw Error('GITHUB_RATE_LIMITED');
     ms=Math.max(ms===60000&&retryAfter===null?0:ms,
-     Math.max(0,Math.ceil(reset*1000-now()+1000)));
+     Math.max(0,Math.ceil(reset*1000-Date.now()+1000)));
    }
-   blockedUntil=now()+ms;
+   blockedUntil=Date.now()+ms;
    if(attempt===1||ms>MAX_COOLDOWN)throw Error('GITHUB_RATE_LIMITED');
-   await pause(ms);
+   if(typeof options.pause==='function')await options.pause(ms);
+   else await new Promise(resolve=>setTimeout(resolve,ms));
    blockedUntil=0;
   }
   throw Error('GITHUB_RATE_LIMITED');
