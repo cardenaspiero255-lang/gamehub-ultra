@@ -23,14 +23,20 @@ const androidNames=['quality-lint','quality-contract-shard','quality-contracts',
  'android-test-shards',...Array.from({length:8},(_,i)=>'android-test-shard-'+i)];
 const coverageNames=['coverage',...Array.from({length:8},(_,i)=>'coverage-shard-'+i)];
 function fixture(){
- const state={prHead:HEAD,mainSha:MAIN,mainScript:'',lastRunBad:false,
+ const state={prHead:HEAD,mainSha:MAIN,mainScript:'',lastRunBad:false,olderIdRerunStatus:null,
   fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainMovesAfterJoint:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0,badRunBase:false,lateAndroidAfterCoverage:false,missingJointAndroid:false};
  const match=(relative)=>relative.replace(/^\/+/,''), repoPath='cardenaspiero255-lang/gamehub-ultra';
  const changeList=paths.map(path=>({filename:path,status:path.startsWith('docs/')?'added':'modified',sha:blob(candidate[path])}));
  const run=(name,id,workflowId)=>({id,name,workflow_id:workflowId,head_sha:HEAD,event:'pull_request',
   status:'completed',conclusion:'success',run_attempt:state.runAttempts,
+  run_started_at:'2026-10-12T21:00:00Z',
   head_repository:{full_name:repoPath},pull_requests:[{number:172,head:{sha:HEAD},base:{sha:BASE}}]});
  const runs=[run('Android build',400,363810233),run('Unit Test Coverage',401,367848611)];
+ const olderRerun=()=>state.olderIdRerunStatus?{
+  ...runs[0],id:399,run_attempt:2,run_started_at:'2026-10-12T22:00:00Z',
+  status:state.olderIdRerunStatus,
+  conclusion:state.olderIdRerunStatus==='completed'?'failure':null
+ }:null;
  async function get(relative){
   relative=match(relative);
   if(relative==='pulls/172')return {number:172,state:'open',changed_files:5,
@@ -61,6 +67,8 @@ function fixture(){
   if(relative==='actions/workflows/coverage.yml')return {id:367848611,name:'Unit Test Coverage'};
   if(relative.startsWith('actions/workflows/')&&relative.includes('/runs?')){
    const id=Number(relative.split('/')[2]),rr=runs.filter(x=>x.workflow_id===id);
+   const rerun=olderRerun();
+   if(rerun&&id===363810233)rr.push(rerun);
    state.runReads++;
    if(((state.lateRunBad&&state.runReads>=3)||
        (state.lateRunBadAfterFirstCheck&&state.runReads>=5))&&id===363810233)
@@ -71,6 +79,7 @@ function fixture(){
   }
   if(relative==='actions/runs?head_sha='+HEAD+'&event=pull_request&per_page=100'){
    const items=state.missingJointAndroid?runs.slice(1):[...runs];
+   const rerun=olderRerun();if(rerun)items.push(rerun);
    if(state.lateAndroidAfterCoverage||state.lateRunBadAfterFirstCheck)
     items.push({...runs[0],id:910,status:'in_progress',conclusion:null});
    return {total_count:items.length,workflow_runs:items};
@@ -163,4 +172,16 @@ test('missing Android workflow in final repository-wide snapshot fails closed',a
 test('main moving after joint CI snapshot cannot authorize old base',async()=>{
  const f=fixture();f.state.mainMovesAfterJoint=true;
  assert.equal((await evaluateRemote(f.get)).status,'INCOMPLETE');
+});
+
+test('P2: rerun of a lower-ID Android workflow must invalidate a newer-ID green run',async()=>{
+ for(const status of ['in_progress','completed']){
+  const f=fixture();
+  f.state.olderIdRerunStatus=status;
+  // GitHub keeps the original run ID on re-run, but starts attempt 2 later.
+  // Green run #400 cannot hide the later pending/failed attempt on run #399.
+  const result=await evaluateRemote(f.get);
+  assert.equal(result.status,'INCOMPLETE','stale green accepted despite '+status+' rerun');
+  assert.equal(result.autoMergeAllowed,false);
+ }
 });
