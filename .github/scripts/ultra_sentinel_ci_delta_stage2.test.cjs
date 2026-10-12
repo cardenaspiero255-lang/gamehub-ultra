@@ -131,3 +131,11 @@ test('PR #172 current base must equal main and the recorded run base',async()=>{
  const wrongRun=fixture();wrongRun.state.badRunBase=true;
  assert.equal((await evaluateRemote(wrongRun.get)).status,'INCOMPLETE');
 });
+
+test('stage2 trusted main runs after push touching only the shared API reader',()=>{
+ const yaml=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-ci-delta-protected.yml'),'utf8');
+ const push=yaml.split(/\n  push:\s*\n/)[1]?.split(/\npermissions:/)[0];
+ assert.ok(push,'missing push trigger');
+ assert.match(push,/ultra_sentinel_api_budget\*\.cjs/);
+ assert.match(push,/ultra_sentinel_ci_delta_stage2\*\.cjs/);
+});

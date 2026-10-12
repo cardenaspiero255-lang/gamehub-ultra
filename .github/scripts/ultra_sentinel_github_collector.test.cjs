@@ -384,3 +384,30 @@ test('QG-186 integration: new critical authenticated snapshot requires human rev
  assert.equal(result.qualityGate.calibration.status,'NOT_MEASURED');
  assert.equal(result.status,'INCOMPLETE');
 });
+
+test('collector reuses a single serialized reader and SHA cache across simultaneous snapshot fetches',async()=>{
+ const deps=fixture(),originalGet=deps.get,originalSnapshots=deps.snapshots;
+ const immutable='contents/.github/scripts/sentinel.cjs?ref='+H;
+ let immutableRequests=0;
+ deps.fetcher=async url=>{
+  const relative=url.split('/repos/'+REPO+'/')[1];
+  if(relative===immutable){
+   immutableRequests++;
+   await Promise.resolve();
+   return {ok:true,json:async()=>({blob:'protected'})};
+  }
+  return {ok:true,json:async()=>originalGet(relative)};
+ };
+ delete deps.get;
+ deps.snapshots=async context=>{
+  const [first,second]=await Promise.all([
+   context.get(immutable),context.get(immutable)
+  ]);
+  assert.deepEqual(first,{blob:'protected'});
+  assert.deepEqual(second,{blob:'protected'});
+  return originalSnapshots(context);
+ };
+ const result=await collector.collect(request(),deps);
+ assert.equal(result.status,'INCOMPLETE');
+ assert.equal(immutableRequests,1,'immutable blob fetched once per collection even under Promise.all');
+});
