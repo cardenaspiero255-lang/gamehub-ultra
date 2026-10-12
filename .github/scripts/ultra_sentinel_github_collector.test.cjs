@@ -231,6 +231,17 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
   changes:1,fullSource:source}],H);
  assert.ok(!reviewed.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),
   JSON.stringify(reviewed));
+ // The modified capability engine must also be self-reviewable, not merely
+ // capable of scanning another file. No candidate source is executed here.
+ const capabilitySource=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_capabilities.cjs'),'utf8');
+ const capabilityReview=scan([{
+  filename:'.github/scripts/ultra_sentinel_capabilities.cjs',
+  patch:'@@ -2268,0 +2269,1 @@\\n+// self-attestation probe',
+  changes:1,status:'modified',fullSource:capabilitySource
+ }],H);
+ assert.ok(!capabilityReview.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),
+  JSON.stringify(capabilityReview));
+
 });
 
 test('CI: a confirmed failed gate stays BLOCKED even while another required gate is pending',async()=>{
