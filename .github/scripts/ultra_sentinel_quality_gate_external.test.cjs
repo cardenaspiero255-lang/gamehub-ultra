@@ -263,3 +263,15 @@ test('EXT-187 P2: normal dense arrays at the 2500-element limit remain valid',()
  const sparse=new Array(2);sparse[1]='value';
  assert.throws(()=>stableJson(sparse),/INVALID_JSON_VALUE/);
 });
+
+
+test('EXT-187 P2: external calibration only accepts prebounded serialized JSON, never arbitrary JS objects',()=>{
+ const f=fixture();
+ // Valid genuine evidence must work as a bounded raw JSON message.
+ const valid=evaluateSignedCalibration(JSON.stringify(f.bundle),f.trusted,{expectedHeadSha:H});
+ assert.equal(valid.status,'SIGNED_SHADOW_ONLY');
+ // A programmatic object has no bounded input size and must never reach key enumeration.
+ const unbounded=evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha:H});
+ assert.equal(unbounded.status,'UNVERIFIED_EVIDENCE');
+ assert.equal(unbounded.calibration.metrics,null);
+});
