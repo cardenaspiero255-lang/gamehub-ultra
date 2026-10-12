@@ -224,4 +224,4 @@ if(require.main===module){
  main().catch(()=>{process.stdout.write(JSON.stringify(incomplete('PROTECTED_REVIEW_FAILED'))+'\n');
   process.exitCode=1;});
 }
-module.exports={evaluateRemote,HEAD,BASE};
+module.exports={evaluateRemote};
