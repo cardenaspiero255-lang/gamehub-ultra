@@ -155,6 +155,17 @@ test('workflow: unprivileged contract tests never inject API tokens into PR code
  assert.doesNotMatch(workflow,/GITHUB_TOKEN|github\.token|secrets\./);
  assert.match(workflow,/node --test .*ultra_sentinel_github_collector\.test\.cjs/);
  assert.doesNotMatch(workflow,/merge_pull_request|auto-merge|git push/i);
+ // The privileged collector tests need both scripts and workflow fixtures,
+ // sourced exclusively from the trusted default branch.
+ const trusted=fs.readFileSync(path.resolve(__dirname,
+  '../workflows/ultra-sentinel-github-trusted-evidence.yml'),'utf8');
+ const sparse=trusted.match(/sparse-checkout:\s*\|([\s\S]*?)\n\s*persist-credentials:/);
+ assert.ok(sparse,'trusted workflow must declare checkout allowlist');
+ assert.match(sparse[1],/^\s*\.github\/scripts\s*$/m);
+ assert.match(sparse[1],/^\s*\.github\/workflows\s*$/m);
+ assert.match(trusted,/ref:\s*\$\{\{ github\.event\.repository\.default_branch \}\}/);
+ assert.match(trusted,/persist-credentials:\s*false/);
+ assert.doesNotMatch(trusted,/contents:\s*write|pull-requests:\s*write|actions:\s*write/);
 });
 
 
