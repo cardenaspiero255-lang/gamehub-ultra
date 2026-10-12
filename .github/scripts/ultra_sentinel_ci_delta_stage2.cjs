@@ -59,6 +59,19 @@ function validatePr(pr){
   pr.base?.ref!=='main'||pr.base?.repo?.full_name!==REPO||
   !SHA.test(pr.base?.sha||''))throw Error('PR_IDENTITY_CHANGED');
 }
+function latestRun(list){
+ if(!Array.isArray(list)||list.length<1)return null;
+ let selected=null;
+ for(const entry of list){
+  if(!entry||!Number.isSafeInteger(entry.id)||
+     !Number.isSafeInteger(entry.run_attempt)||entry.run_attempt<1)
+   throw Error('INVALID_RUN_ORDER');
+  if(!selected||entry.id>selected.id||
+    (entry.id===selected.id&&entry.run_attempt>selected.run_attempt))
+   selected=entry;
+ }
+ return selected;
+}
 function validateJobEvidence(runs,jobs,workflowName,workflowId){
  if(!runs||!Number.isSafeInteger(runs.total_count)||runs.total_count<1||
   runs.total_count>100||!Array.isArray(runs.workflow_runs)||
@@ -74,7 +87,7 @@ function validateJobEvidence(runs,jobs,workflowName,workflowId){
    !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||!linked)
     throw Error('UNTRUSTED_RUN');
  }
- const latest=[...runs.workflow_runs].sort((a,b)=>b.id-a.id||b.run_attempt-a.run_attempt)[0];
+ const latest=latestRun(runs.workflow_runs);
  if(latest.status!=='completed'||latest.conclusion!=='success')
   throw Error('LATEST_RUN_NOT_GREEN');
  if(!jobs||!Number.isSafeInteger(jobs.total_count)||!Array.isArray(jobs.jobs)||
@@ -153,8 +166,7 @@ async function evaluateRemote(get){
    if(!hist||hist.total_count<1||hist.total_count>100||
       !Array.isArray(hist.workflow_runs)||hist.workflow_runs.length!==hist.total_count)
     return incomplete('RUN_HISTORY_INCOMPLETE');
-   const latest=[...hist.workflow_runs].sort((a,b)=>b.id-a.id||
-     b.run_attempt-a.run_attempt)[0];
+   const latest=latestRun(hist.workflow_runs);
    if(!latest||!Number.isSafeInteger(latest.id))
     return incomplete('LATEST_RUN_MISSING');
    const jobs=await get('actions/runs/'+latest.id+'/jobs?per_page=100&filter=latest');
@@ -171,8 +183,7 @@ async function evaluateRemote(get){
       !Array.isArray(again.workflow_runs)||
       again.workflow_runs.length!==again.total_count)
     return incomplete('RUN_HISTORY_CHANGED');
-   const recent=[...again.workflow_runs].sort((a,b)=>b.id-a.id||
-     b.run_attempt-a.run_attempt)[0];
+   const recent=latestRun(again.workflow_runs);
    if(!recent||recent.id!==witness.runId||
       recent.run_attempt!==witness.attempt||
       recent.status!=='completed'||recent.conclusion!=='success')
@@ -200,8 +211,7 @@ async function evaluateRemote(get){
       !Array.isArray(history.workflow_runs)||
       history.workflow_runs.length!==history.total_count)
     return incomplete('FINAL_HISTORY_INCOMPLETE');
-   const newest=[...history.workflow_runs].sort((a,b)=>b.id-a.id||
-    b.run_attempt-a.run_attempt)[0];
+   const newest=latestRun(history.workflow_runs);
    if(!newest||newest.id!==witness.runId||
       newest.run_attempt!==witness.attempt||
       newest.status!=='completed'||newest.conclusion!=='success')
