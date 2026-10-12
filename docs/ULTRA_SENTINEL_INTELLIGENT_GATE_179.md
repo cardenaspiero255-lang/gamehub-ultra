@@ -16,7 +16,7 @@ review gates. It cannot create or merge a PR, write to production, or grant appr
    produce INCOMPLETE, not PASS. Existing gates are never bypassed.
 3. **Family-based report:** grouping is based on a supplied causal mechanism,
    not only on a matching rule; distinct locations are never silently dropped.
-   Exports bounded 50 annotations and SARIF 2.1.0 partialFingerprints; sensitive
+   Exports up to 50 critical-first annotations and SARIF 2.1.0 partialFingerprints; full findings remain in the returned inventory and truncation is flagged. Sensitive
    source snippets and alleged secrets are not copied into messages.
 4. **SHA-scoped quality-gate evaluator:** compares an explicit list of required
    CI checks, requiring independently supplied same-SHA trustworthy evidence;
