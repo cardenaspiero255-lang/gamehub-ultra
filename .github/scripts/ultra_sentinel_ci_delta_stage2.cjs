@@ -179,6 +179,25 @@ async function evaluateRemote(get){
   const mainAfter=(await get('git/ref/heads/main'))?.object?.sha;
   if(after.base.sha!==before.base.sha||mainAfter!==mainBefore)
    return incomplete('MAIN_MOVED_DURING_REVIEW');
+  // Final, near-simultaneous snapshots. Any later run invalidates earlier
+  // witnesses; no API reads are performed after these attestations.
+  const histories=await Promise.all(runWitnesses.map(witness=>
+   get('actions/workflows/'+witness.workflowId+
+    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100')));
+  for(let i=0;i<runWitnesses.length;i++){
+   const witness=runWitnesses[i],history=histories[i];
+   if(!history||!Number.isSafeInteger(history.total_count)||
+      history.total_count<1||history.total_count>100||
+      !Array.isArray(history.workflow_runs)||
+      history.workflow_runs.length!==history.total_count)
+    return incomplete('FINAL_HISTORY_INCOMPLETE');
+   const newest=[...history.workflow_runs].sort((a,b)=>b.id-a.id||
+    b.run_attempt-a.run_attempt)[0];
+   if(!newest||newest.id!==witness.runId||
+      newest.run_attempt!==witness.attempt||
+      newest.status!=='completed'||newest.conclusion!=='success')
+    return incomplete('LATEST_FINAL_RUN_NOT_GREEN');
+  }
   return Object.freeze({status:'SCOPED_CI_REVIEW_REQUIRED',
    schema:'ultra-sentinel-ci-delta-protected/v2',headSha:HEAD,mainSha:mainBefore,
    observedJobs:31,observedRunIds:runIds,
@@ -202,7 +221,7 @@ function protectedGitHubClient(token){
  };
 }
 async function main(){
- const validEvent=['pull_request_target','push','workflow_dispatch'];
+ const validEvent=['pull_request_target','push'];
  if(process.env.GITHUB_ACTIONS!=='true'||
     !validEvent.includes(process.env.GITHUB_EVENT_NAME)||
     process.env.GITHUB_REPOSITORY!==REPO||process.env.PR_NUMBER!=='172'||
