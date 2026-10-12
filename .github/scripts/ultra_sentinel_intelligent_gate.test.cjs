@@ -186,3 +186,44 @@ test('5: same-location equal-rank critical duplicates produce input-order-indepe
  assert.deepEqual(before.annotations,after.annotations);
  assert.deepEqual(before.sarif,after.sarif);
 });
+
+
+test('1: direct changedPaths reactivates inherited issues even without dependency hints',()=>{
+ const old=finding();
+ const r=gate.review(request({baseFindings:[old],headFindings:[old],changedPaths:[old.path],affectedPaths:[]}));
+ assert.equal(r.findings[0].classification,'REACTIVATED');
+ assert.equal(r.counts.new,0);
+});
+test('1: distinct baseline occurrences sharing one semantic fingerprint stay inherited',()=>{
+ const items=[finding({line:10}),finding({line:20})];
+ const r=gate.review(request({baseFindings:items,headFindings:items,changedPaths:[],affectedPaths:[]}));
+ assert.equal(r.findings.length,2);
+ assert.equal(r.counts.new,0);
+ assert.deepEqual(r.findings.map(x=>x.classification),['EXISTING','EXISTING']);
+});
+test('1: an earlier new occurrence does not steal a later baseline match',()=>{
+ const old=finding({line:20}),fresh=finding({line:10});
+ const r=gate.review(request({baseFindings:[old],headFindings:[fresh,old],changedPaths:[],affectedPaths:[]}));
+ assert.equal(r.findings.find(x=>x.line===10).classification,'NEW');
+ assert.equal(r.findings.find(x=>x.line===20).classification,'EXISTING');
+ assert.equal(r.counts.new,1);
+});
+test('1: unique line movement matches semantically; ambiguous multiple movements remain NEW',()=>{
+ const one=gate.review(request({baseFindings:[finding({line:10})],headFindings:[finding({line:40})],changedPaths:[],affectedPaths:[]}));
+ assert.equal(one.findings[0].classification,'EXISTING');
+ const many=gate.review(request({baseFindings:[finding({line:10}),finding({line:20})],headFindings:[finding({line:30}),finding({line:40})],changedPaths:[],affectedPaths:[]}));
+ assert.equal(many.counts.new,2);
+ assert.ok(many.findings.every(x=>x.classification==='NEW'));
+});
+test('3: inherited fingerprint is stable even after a new earlier matching occurrence appears',()=>{
+ const old=finding({line:20}),fresh=finding({line:10});
+ const r=gate.review(request({baseFindings:[old],headFindings:[fresh,old],changedPaths:[],affectedPaths:[]}));
+ assert.equal(r.findings.find(x=>x.line===20).fingerprint,gate.fingerprint(old));
+ assert.notEqual(r.findings.find(x=>x.line===10).fingerprint,gate.fingerprint(old));
+});
+test('1: a pure rename remains MOVED rather than REACTIVATED on the changed path',()=>{
+ const old=finding({path:'app/old.kt',line:10}),fresh=finding({path:'app/new.kt',line:30});
+ const r=gate.review(request({baseFindings:[old],headFindings:[fresh],renames:[{status:'renamed',previous_filename:old.path,filename:fresh.path}],changedPaths:[fresh.path],affectedPaths:[]}));
+ assert.equal(r.findings[0].classification,'MOVED');
+ assert.equal(r.counts.new,0);
+});
