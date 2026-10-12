@@ -14,6 +14,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/ultra_sentinel_ci_delta_stage2*.cjs'
+      - '.github/scripts/ultra_sentinel_api_budget*.cjs'
       - '.github/workflows/ultra-sentinel-ci-delta-protected.yml'
 permissions:
   contents: read

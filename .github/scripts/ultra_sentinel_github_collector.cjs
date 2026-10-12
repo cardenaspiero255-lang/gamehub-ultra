@@ -82,9 +82,9 @@ async function collect(options,dependencies={}){
  const {repo,pr,headSha,token}=requireInput(options);
  // Keep the callable identity statically known for trusted AST provenance.
  // Dependency injection is resolved at call time, with no PR code executed.
+ const remote=apiClient(repo,token,dependencies.fetcher);
  const get=async relative=>{
   if(dependencies.get)return dependencies.get(relative);
-  const remote=apiClient(repo,token,dependencies.fetcher);
   return remote(relative);
  };
  const analyzer=dependencies.analyzer||reviewRemote;
