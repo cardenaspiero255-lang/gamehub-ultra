@@ -22,7 +22,7 @@ const files=[
 const input=()=>({repo:REPO,baseSha:BASE,trustedBaseSha:BASE,headSha:HEAD,expectedHeadSha:HEAD,
  trusted,candidate:{android:buildExpectedAndroid(trusted.android),
  coverage:buildExpectedCoverage(trusted.coverage),
- safetyContract:buildExpectedContract(),regressions:buildExpectedRegressions(),
+ safetyContract:buildExpectedContract(trusted.safetyContract),regressions:buildExpectedRegressions(trusted.regressions),
  documentation:buildExpectedDocs()},files,changedFileCount:5});
 const gitBlobSha=text=>crypto.createHash('sha1').update('blob '+Buffer.byteLength(text)+'\0'+text).digest('hex');
 test('V2 known Android/Coverage diff is exact against trusted main and stays non-approving',()=>{
