@@ -19,7 +19,7 @@ Aceptar un corpus **externamente aportado** y reportes ejecutados por un runner 
 
 - El sello del etiquetador firma UTF-8 de `ultra-sentinel-external-calibration/v1\nlabeler\n<headSha>\n<sha256-del-corpus>\n<bytes>`. El sello del runner firma `ultra-sentinel-external-calibration/v1\nrunner\n<headSha>\n<sha256-del-corpus>\n<sha256-del-reporte>\n<bytes>`; así no se pueden combinar dos conjuntos incompatibles pero firmados por separado. Los hashes usan SHA-256 sobre `stableJson(payload)` (claves del objeto ordenadas recursivamente). `bytes` corresponde a la longitud UTF-8 de ese JSON.
 - `evaluateSignedCalibration(bundle, trustedKeys, {expectedHeadSha})` exige que el SHA del bundle coincida con el SHA **fijado por el llamador confiable**. Sin esa identidad inmutable o con SHA viejo se devuelve `UNVERIFIED_EVIDENCE`. Requiere `trustedKeys.labeler` y `trustedKeys.runner` con `keyId` y `publicKeySpki` DER SPKI en base64. Las claves de confianza **deben suministrarse desde un ejecutor protegido y fuera del PR**; nunca desde archivos, comentarios o entradas del PR.
-- Roles, firmas, digests, SHA, casos duplicados/incompletos, rutas y proveedores se validan estrictamente. Dos roles no pueden reutilizar identidad ni clave criptográfica: se compara el SPKI Ed25519 canónico tras analizarlo y se rechazan alias DER y bytes sobrantes. La serialización JSON controla el presupuesto de bytes **antes** de materializar strings escapados, y rechaza accesores, arrays incompletos y entradas sobredimensionadas.
+- Roles, firmas, digests, SHA, casos duplicados/incompletos, rutas y proveedores se validan estrictamente. Dos roles no pueden reutilizar identidad ni clave criptográfica: se compara el SPKI Ed25519 canónico, se valida que cada punto sea canónico, distinto de la identidad y pertenezca al subgrupo de orden primo, y se rechazan alias DER, torsión y bytes sobrantes. La serialización JSON controla el presupuesto de bytes **antes** de materializar strings escapados, limita la cantidad de propiedades antes de ordenarlas y rechaza accesores, arrays incompletos y entradas sobredimensionadas.
 - No registrar el corpus bruto ni tokens; el resultado de la función contiene sólo estados y métricas acotadas.
 - No existe ejecución automática de esos bundles en un job con permisos, por diseño. La revisión independiente del origen real del corpus aún está pendiente.
 
@@ -31,3 +31,8 @@ Aceptar un corpus **externamente aportado** y reportes ejecutados por un runner 
 
 ## Control de autoridad
 Los estados `UNVERIFIED_EVIDENCE`, `INVALID_CASES` y `SIGNED_SHADOW_ONLY` nunca conceden `autoMergeAllowed`, `autoCommitAllowed` ni `productionBlockingEnabled`. Las dos firmas sólo establecen integridad frente a las claves del llamador: **no prueban por sí solas calidad empírica o independencia organizacional**. Todos los resultados quedan en modo sombra hasta una auditoría real.
+
+## Regresiones tras la revisión P1/P2
+- Cuatro contratos adicionales verifican rechazo de firmas forjadas con puntos identidad y alias del bit de signo, puntos de orden pequeño o no canónicos, limitación de claves antes de ordenar, y serialización determinista justo al límite de 100 propiedades.
+- Los 28 contratos del adaptador contribuyen al baseline B1 de 11.731 sin disminuir los 500.500 casos de la matriz Core.
+- Estas verificaciones técnicas no sustituyen el etiquetado independiente de datos reales ni cambian la autoridad del modo sombra.
