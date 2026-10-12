@@ -78,3 +78,23 @@ test('GitHub compare accepts exact SHA...SHA while blocking traversal',async()=>
  await assert.rejects(get('../secrets'),/INVALID_API_PATH/);
  await assert.rejects(get('compare/../../../secrets'),/INVALID_API_PATH/);
 });
+
+test('GitHub secondary 403 with no rate headers retries after 60 seconds, once only',async()=>{
+ const pauses=[];let calls=0;
+ const get=createGitHubReader(repo,'test-token-value',async()=>{
+  calls++;
+  if(calls===1)return reply(403,{message:'You have exceeded a secondary rate limit. Please wait a few minutes.'});
+  return reply(200,{ok:true});
+ },{pause:async ms=>pauses.push(ms)});
+ assert.deepEqual(await get('pulls/172'),{ok:true});
+ assert.equal(calls,2);
+ assert.deepEqual(pauses,[60000]);
+});
+test('plain GitHub forbidden 403 never retries or weakens permissions',async()=>{
+ let calls=0;
+ const get=createGitHubReader(repo,'test-token-value',async()=>{
+  calls++;return reply(403,{message:'Resource not accessible by integration'});
+ },{pause:async()=>assert.fail('unexpected backoff')});
+ await assert.rejects(get('pulls/172'),/GITHUB_API_UNAVAILABLE/);
+ assert.equal(calls,1);
+});
