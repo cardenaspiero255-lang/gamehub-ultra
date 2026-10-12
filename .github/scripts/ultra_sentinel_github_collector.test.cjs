@@ -142,13 +142,14 @@ test('GitHub client: no redirect, fail on non-2xx instead of treating errors as 
  const get=collector.apiClient(REPO,'secret',async()=>({ok:false,status:403}));
  await assert.rejects(get('pulls/181'),/GITHUB_API_UNAVAILABLE/);
 });
-test('workflow: read-only permissions, pinned checkout of main and no merge authority',()=>{
+test('workflow: unprivileged contract tests never inject API tokens into PR code',()=>{
  const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-github-evidence-shadow.yml'),'utf8');
- assert.match(workflow,/pull_request_target:/);
- assert.match(workflow,/ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
+ assert.match(workflow,/pull_request:/);
+ assert.doesNotMatch(workflow,/pull_request_target:/);
  assert.match(workflow,/persist-credentials: false/);
- assert.match(workflow,/contents: read/);assert.match(workflow,/pull-requests: read/);
- assert.match(workflow,/actions: read/);assert.doesNotMatch(workflow,/contents: write|write-all|pull-requests: write/);
+ assert.match(workflow,/contents: read/);
+ assert.doesNotMatch(workflow,/contents: write|write-all|pull-requests: write|actions: write/);
+ assert.doesNotMatch(workflow,/GITHUB_TOKEN|github\.token|secrets\./);
  assert.match(workflow,/node --test .*ultra_sentinel_github_collector\.test\.cjs/);
  assert.doesNotMatch(workflow,/merge_pull_request|auto-merge|git push/i);
 });
