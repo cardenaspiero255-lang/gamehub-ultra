@@ -72,8 +72,9 @@ function cleanFindings(findings){
  return findings.map(item=>{
   if(!item||typeof item.rule!=='string'||!/^[a-zA-Z0-9_.:-]{1,100}$/.test(item.rule)||
      !['BLOCKER','CRITICAL','HIGH','MAJOR','WARNING','MEDIUM','LOW','MINOR','INFO'].includes(item.severity)||
-     typeof item.file!=='string'||item.file.length>240||
+     typeof item.file!=='string'||item.file.length>240||item.file.startsWith('/')||
      !/^[A-Za-z0-9_.\/-]+$/.test(item.file)||
+     item.file.split('/').some(segment=>!segment||segment==='.'||segment==='..')||
      !Number.isSafeInteger(item.line)||item.line<0||item.line>10000000)
    throw Error('ANALYZER_EVIDENCE_INCOMPLETE');
   return {rule:item.rule,severity:item.severity,path:item.file,line:item.line};
