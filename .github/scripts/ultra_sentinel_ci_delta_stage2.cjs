@@ -131,10 +131,10 @@ async function evaluateRemote(get){
   const candidateEntries=[],baseEntries=[];
   for(const pair of Object.entries(FILES)){
    const file=pair[0],key=pair[1][0],expectedSha=pair[1][1];
-   const entry=[];
-   for(const item of changes)if(item?.filename===file)entry.push(item);
-   if(entry.length!==1||entry[0].sha!==expectedSha||
-      entry[0].status!==(key==='documentation'?'added':'modified'))
+   let entry=null,count=0;
+   for(const item of changes)if(item?.filename===file){entry=item;count++;}
+   if(count!==1||entry.sha!==expectedSha||
+      entry.status!==(key==='documentation'?'added':'modified'))
     return incomplete('CHANGED_FILE_TAMPERED');
    const actual=decode(await get('contents/'+file+'?ref='+HEAD));
    if(actual.sha!==expectedSha||actual.sha!==treeMap.get(file))
@@ -155,7 +155,7 @@ async function evaluateRemote(get){
   });
   if(delta.status!=='SCOPED_DELTA_REVIEW_REQUIRED')
    return incomplete('DELTA_POLICY_REJECTED');
-  const runIds=[],runWitnesses=[];
+  let androidWitness=null,coverageWitness=null;
   for(const row of Object.entries(RUNS)){
    const name=row[0],info=row[1];
    const workflow=await get('actions/workflows/'+info[0]);
@@ -170,12 +170,15 @@ async function evaluateRemote(get){
    if(!latest||!Number.isSafeInteger(latest.id))
     return incomplete('LATEST_RUN_MISSING');
    const jobs=await get('actions/runs/'+latest.id+'/jobs?per_page=100&filter=latest');
-   runIds.push(validateJobEvidence(hist,jobs,name,workflow.id));
-   runWitnesses.push({name,workflowId:workflow.id,runId:latest.id,
-    attempt:latest.run_attempt});
+   validateJobEvidence(hist,jobs,name,workflow.id);
+   const witnessed={name,workflowId:workflow.id,runId:latest.id,
+    attempt:latest.run_attempt};
+   if(name==='Android build')androidWitness=witnessed;
+   else coverageWitness=witnessed;
   }
   // TOCTOU: a later failing or pending run cannot hide behind old success.
-  for(const witness of runWitnesses){
+  if(!androidWitness||!coverageWitness)return incomplete('MISSING_CI_WITNESSES');
+  for(const witness of [androidWitness,coverageWitness]){
    const again=await get('actions/workflows/'+witness.workflowId+
     '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
    if(!again||!Number.isSafeInteger(again.total_count)||
@@ -196,16 +199,15 @@ async function evaluateRemote(get){
    return incomplete('MAIN_MOVED_DURING_REVIEW');
   // Final, near-simultaneous snapshots. Any later run invalidates earlier
   // witnesses; no API reads are performed after these attestations.
-  if(runWitnesses.length!==2)return incomplete('CI_WITNESS_COUNT_CHANGED');
-  const first=runWitnesses[0],second=runWitnesses[1];
+  const first=androidWitness,second=coverageWitness;
   const firstRequest=get('actions/workflows/'+first.workflowId+
    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
   const secondRequest=get('actions/workflows/'+second.workflowId+
    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
   const firstHistory=await firstRequest;
   const secondHistory=await secondRequest;
-  for(let i=0;i<runWitnesses.length;i++){
-   const witness=runWitnesses[i],history=i===0?firstHistory:secondHistory;
+  for(const pair of [[first,firstHistory],[second,secondHistory]]){
+   const witness=pair[0],history=pair[1];
    if(!history||!Number.isSafeInteger(history.total_count)||
       history.total_count<1||history.total_count>100||
       !Array.isArray(history.workflow_runs)||
@@ -219,7 +221,7 @@ async function evaluateRemote(get){
   }
   return Object.freeze({status:'SCOPED_CI_REVIEW_REQUIRED',
    schema:'ultra-sentinel-ci-delta-protected/v2',headSha:HEAD,mainSha:mainBefore,
-   observedJobs:31,observedRunIds:runIds,
+   observedJobs:31,observedRunIds:[first.runId,second.runId],
    provenanceAuthenticated:false,manualReviewRequired:true,
    autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return incomplete('UNVERIFIED_EXTERNAL_EVIDENCE');}
