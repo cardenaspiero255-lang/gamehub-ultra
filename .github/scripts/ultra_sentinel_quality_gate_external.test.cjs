@@ -236,5 +236,5 @@ test('EXT-187: full external-calibration source is attestable by the trusted Jav
  const source=fs.readFileSync(path.join(__dirname,'ultra_sentinel_quality_gate_external.cjs'),'utf8');
  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',allowHashBang:true,
   allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true,ranges:true});
- assert.doesNotThrow(()=>findCapabilities(ast));
+ assert.deepEqual(findCapabilities(ast),[]);
 });
