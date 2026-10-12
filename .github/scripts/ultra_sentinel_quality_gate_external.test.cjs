@@ -31,7 +31,7 @@ function fixture(c=corpus(),r=reports(c)){
   corpus:c,reports:r,
   signatures:{labeler,runner:envelope('runner',r,p,H,labeler.sha256)}}};
 }
-const run=(f)=>evaluateSignedCalibration(f.bundle,f.trusted);
+const run=(f)=>evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha:H});
 test('EXT-187: absent evidence remains unmeasured and never enables enforcement',()=>{
  const r=evaluateSignedCalibration(null,null);
  assert.equal(r.status,'UNVERIFIED_EVIDENCE');
@@ -68,7 +68,7 @@ test('EXT-187: tampering with signed report findings is rejected without metrics
 });
 test('EXT-187: role-swapped authority and reused public keys cannot establish provenance',()=>{
  const f=fixture(),swapped={labeler:f.trusted.runner,runner:f.trusted.labeler};
- assert.equal(evaluateSignedCalibration(f.bundle,swapped).status,'UNVERIFIED_EVIDENCE');
+ assert.equal(evaluateSignedCalibration(f.bundle,swapped,{expectedHeadSha:H}).status,'UNVERIFIED_EVIDENCE');
  f.trusted.runner={...f.trusted.runner,publicKeySpki:f.trusted.labeler.publicKeySpki};
  assert.equal(run(f).status,'UNVERIFIED_EVIDENCE');
 });
@@ -104,7 +104,7 @@ test('EXT-187: mixing separately authentic but unpaired corpus and reports fails
  const runnerA=envelope('runner',reports(a),p,H,labelerA.sha256);
  const malicious={schema:'ultra-sentinel-external-calibration/v1',headSha:H,
   corpus:b,reports:reports(a),signatures:{labeler:labelerB,runner:runnerA}};
- const result=evaluateSignedCalibration(malicious,keys(p));
+ const result=evaluateSignedCalibration(malicious,keys(p),{expectedHeadSha:H});
  assert.equal(result.status,'UNVERIFIED_EVIDENCE');
  assert.equal(result.calibration.metrics,null);
 });
@@ -113,4 +113,65 @@ test('EXT-187: secrets in malformed inputs never get copied to sanitized output'
  const r=run(f);
  assert.equal(r.status,'UNVERIFIED_EVIDENCE');
  assert.doesNotMatch(JSON.stringify(r),/PRIVATE_TOKEN|private/);
+});
+
+test('EXT-187 P1: DER trailing bytes cannot impersonate a second independent role',()=>{
+ const p=pair();p.runner=p.labeler;
+ const c=corpus(),r=reports(c),labeler=envelope('labeler',c,p);
+ const signed={schema:'ultra-sentinel-external-calibration/v1',headSha:H,
+  corpus:c,reports:r,signatures:{labeler,runner:envelope('runner',r,p,H,labeler.sha256)}};
+ const trusted=keys(p);
+ trusted.runner.publicKeySpki=Buffer.concat([Buffer.from(trusted.runner.publicKeySpki,'base64'),
+  Buffer.from('deadbeef','hex')]).toString('base64');
+ const result=evaluateSignedCalibration(signed,trusted,{expectedHeadSha:H});
+ assert.equal(result.status,'UNVERIFIED_EVIDENCE');
+ assert.equal(result.signaturesVerified,false);
+});
+test('EXT-187 P1: noncanonical trusted SPKI with trailing DER bytes is rejected',()=>{
+ const f=fixture();
+ f.trusted.labeler.publicKeySpki=Buffer.concat([Buffer.from(f.trusted.labeler.publicKeySpki,'base64'),
+  Buffer.from('01020304','hex')]).toString('base64');
+ assert.equal(run(f).status,'UNVERIFIED_EVIDENCE');
+});
+test('EXT-187 P1: a signed bundle without trusted caller-pinned HEAD is unverified',()=>{
+ const f=fixture();
+ assert.equal(evaluateSignedCalibration(f.bundle,f.trusted).status,'UNVERIFIED_EVIDENCE');
+});
+test('EXT-187 P1: unchanged signed old bundle cannot be replayed at a new trusted HEAD',()=>{
+ const f=fixture();
+ const result=evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha:OTHER});
+ assert.equal(result.status,'UNVERIFIED_EVIDENCE');
+ assert.equal(result.calibration.metrics,null);
+});
+test('EXT-187 P1: untrusted or invalid caller HEAD fails closed',()=>{
+ const f=fixture();
+ for(const expectedHeadSha of ['main','',null,'G'.repeat(40),23]){
+  assert.equal(evaluateSignedCalibration(f.bundle,f.trusted,{expectedHeadSha}).status,'UNVERIFIED_EVIDENCE');
+ }
+});
+test('EXT-187 P2: oversized string is rejected before canonical JSON allocation',()=>{
+ assert.throws(()=>stableJson({data:'X'.repeat(2*1024*1024)}),/UNBOUNDED_INPUT/);
+});
+test('EXT-187 P2: escaped control characters are bounded by serialized UTF8 bytes',()=>{
+ assert.throws(()=>stableJson({data:'\u0000'.repeat(300000)}),/UNBOUNDED_INPUT/);
+});
+test('EXT-187 P2: huge property name is rejected before canonical JSON allocation',()=>{
+ const name='k'.repeat(2*1024*1024);
+ const obj=Object.create(null);obj[name]='v';
+ assert.throws(()=>stableJson(obj),/UNBOUNDED_INPUT/);
+});
+test('EXT-187 P2: untrusted accessor is never invoked while canonicalizing',()=>{
+ let called=0;
+ const obj={};Object.defineProperty(obj,'data',{enumerable:true,get(){called++;return 'injected';}});
+ assert.throws(()=>stableJson(obj),/INVALID_JSON_VALUE/);
+ assert.equal(called,0);
+});
+test('EXT-187 P2: sparse arrays cannot produce non-JSON canonical structures',()=>{
+ const a=['a',,'c'];
+ assert.throws(()=>stableJson(a),/INVALID_JSON_VALUE/);
+});
+test('EXT-187 P2: canonicalizer accepts exact serialized byte budget without weakening bounds',()=>{
+ const v='z'.repeat(1024*1024-2);
+ assert.equal(Buffer.byteLength(stableJson(v)),1024*1024);
+ assert.throws(()=>stableJson(v+'q'),/UNBOUNDED_INPUT/);
 });
