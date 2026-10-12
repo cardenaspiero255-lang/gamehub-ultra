@@ -13,6 +13,18 @@ const SIG=/^[A-Za-z0-9+/]{86}==$/;
 const ROLES=Object.freeze(['labeler','runner']);
 const MAX_BYTES=1024*1024,MAX_DEPTH=24;
 
+// Stop enumeration at the configured cap; never sort/materialize all keys first.
+function cappedOwnKeys(value,maximum){
+ const names=[];
+ for(const name in value){
+  if(Object.hasOwn(value,name)){
+   if(names.length===maximum)throw Error('UNBOUNDED_INPUT');
+   names.push(name);
+  }
+ }
+ return names;
+}
+
 function stableJson(value){
  // Never allocate an encoded string before verifying its *serialized* size.
  // JSON escaping can expand control characters up to sixfold.
@@ -63,8 +75,7 @@ function stableJson(value){
   }
   if(typeof v!=='object'||![Object.prototype,null].includes(Object.getPrototypeOf(v)))
    throw Error('INVALID_JSON_VALUE');
-  const names=Object.keys(v).sort();
-  if(names.length>100)throw Error('UNBOUNDED_INPUT');
+  const names=cappedOwnKeys(v,100).sort();
   spend(2+Math.max(0,names.length-1)+names.length);
   const parts=[];
   for(const name of names){
@@ -96,6 +107,55 @@ function safeReport(status,calibration=null){
   productionBlockingEnabled:false,autoMergeAllowed:false,autoCommitAllowed:false,
   manualReviewRequired:true};
 }
+// Require a canonical, non-identity point in the prime-order Ed25519 subgroup.
+// Node/OpenSSL's SPKI parser and signature verifier alone admit low-order keys:
+// an identity point makes S=1, R=B verify for arbitrary attestation messages.
+// Inputs are public keys only; BigInt arithmetic is not used with secrets.
+const FIELD=(1n<<255n)-19n;
+const GROUP_ORDER=(1n<<252n)+27742317777372353535851937790883648493n;
+const mod=n=>{const r=n%FIELD;return r<0n?r+FIELD:r;};
+function fieldPow(base,exponent){
+ let result=1n;
+ for(base=mod(base);exponent>0n;exponent>>=1n,base=mod(base*base)){
+  if(exponent&1n)result=mod(result*base);
+ }
+ return result;
+}
+const CURVE_D=mod(-121665n*fieldPow(121666n,FIELD-2n));
+const SQRT_MINUS_ONE=fieldPow(2n,(FIELD-1n)/4n);
+function pointAdd([x1,y1,z1,t1],[x2,y2,z2,t2]){
+ const a=mod((y1-x1)*(y2-x2)),b=mod((y1+x1)*(y2+x2));
+ const c=mod(2n*CURVE_D*t1*t2),d=mod(2n*z1*z2);
+ const e=mod(b-a),f=mod(d-c),g=mod(d+c),h=mod(b+a);
+ return [mod(e*f),mod(g*h),mod(f*g),mod(e*h)];
+}
+function pointDouble([x,y,z]){
+ const a=mod(x*x),b=mod(y*y),c=mod(2n*z*z),d=mod(-a);
+ const e=mod((x+y)*(x+y)-a-b),g=mod(d+b),f=mod(g-c),h=mod(d-b);
+ return [mod(e*f),mod(g*h),mod(f*g),mod(e*h)];
+}
+function isPrimeOrderEd25519(encoded){
+ if(!Buffer.isBuffer(encoded)||encoded.length!==32)return false;
+ let packed=0n;
+ for(let i=31;i>=0;i--)packed=(packed<<8n)|BigInt(encoded[i]);
+ const sign=packed>>255n,y=packed&((1n<<255n)-1n);
+ if(y>=FIELD)return false;
+ const ySquared=mod(y*y),denominator=mod(CURVE_D*ySquared+1n);
+ if(denominator===0n)return false;
+ const xSquared=mod(mod(ySquared-1n)*fieldPow(denominator,FIELD-2n));
+ let x=fieldPow(xSquared,(FIELD+3n)/8n);
+ if(mod(x*x)!==xSquared)x=mod(x*SQRT_MINUS_ONE);
+ if(mod(x*x)!==xSquared||(x===0n&&sign===1n))return false;
+ if((x&1n)!==sign)x=FIELD-x;
+ if(x===0n&&y===1n)return false;
+ let result=[0n,1n,1n,0n],point=[x,y,1n,mod(x*y)];
+ for(let scalar=GROUP_ORDER;scalar>0n;scalar>>=1n){
+  if(scalar&1n)result=pointAdd(result,point);
+  point=pointDouble(point);
+ }
+ return result[0]===0n&&result[3]===0n&&result[1]===result[2];
+}
+
 function parsedTrustedKey(record){
  if(!record||typeof record!=='object'||
     typeof record.publicKeySpki!=='string'||record.publicKeySpki.length>160||
@@ -107,7 +167,8 @@ function parsedTrustedKey(record){
  if(publicKey.asymmetricKeyType!=='ed25519')throw Error('INVALID_TRUST_ROOT');
  const canonical=publicKey.export({format:'der',type:'spki'});
  // Reject parser-ignored DER suffixes, BER aliases and noncanonical encodings.
- if(!raw.equals(canonical))throw Error('INVALID_TRUST_ROOT');
+ if(!raw.equals(canonical)||canonical.length!==44||
+    !isPrimeOrderEd25519(canonical.subarray(-32)))throw Error('INVALID_TRUST_ROOT');
  return {publicKey,fingerprint:createHash('sha256').update(canonical).digest('hex')};
 }
 
@@ -128,7 +189,7 @@ function verifyPart(role,data,attestation,trusted,headSha,corpusDigest=null,pars
 function evaluateSignedCalibration(bundle,trustedKeys,{expectedHeadSha}={}){
  try{
   if(!bundle||typeof bundle!=='object'||Array.isArray(bundle)||
-     Object.keys(bundle).sort().join(',')!=='corpus,headSha,reports,schema,signatures'||
+     cappedOwnKeys(bundle,5).sort().join(',')!=='corpus,headSha,reports,schema,signatures'||
      bundle.schema!==SCHEMA||!SHA.test(bundle.headSha||'')||
      !SHA.test(expectedHeadSha||'')||
      bundle.headSha.toLowerCase()!==expectedHeadSha.toLowerCase()||
