@@ -238,6 +238,36 @@ test('QG-186: unprivileged workflow contract runs the gate but does not obtain t
  const ast=acorn.parse(complete,{ecmaVersion:'latest',sourceType:'script',
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
+ const engine=require('./ultra_sentinel_capabilities.cjs');
+ const variants=[
+  ['full',complete],
+  ['without-calibration',complete.replace(
+   complete.slice(complete.indexOf('function measureCalibration('),
+    complete.indexOf('function classification(')),
+   "function measureCalibration(){return {status:'INCOMPLETE'};}\n")],
+  ['without-assess',complete.replace(
+   complete.slice(complete.indexOf('function assess('),
+    complete.indexOf('module.exports=')),
+   "function assess(){return {status:'INCOMPLETE'};}\n")],
+  ['without-both',complete.replace(
+   complete.slice(complete.indexOf('function measureCalibration('),
+    complete.indexOf('function classification(')),
+   "function measureCalibration(){return {status:'INCOMPLETE'};}\n").replace(
+   complete.slice(complete.indexOf('function assess('),
+    complete.indexOf('module.exports=')),
+   "function assess(){return {status:'INCOMPLETE'};}\n")],
+  ['no-calibration-ternary',complete.replace(
+   "const calibration=input.calibration===undefined?\n   measureCalibration({headSha:input.headSha}):measureCalibration(input.calibration);",
+   "const calibration=measureCalibration({headSha:input.headSha});")]
+ ];
+ for(const [label,variant] of variants){
+  let result='PASS';
+  try{engine.findCapabilities(acorn.parse(variant,{ecmaVersion:'latest',
+   sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,
+   allowAwaitOutsideFunction:true,locations:true,ranges:true}));}
+  catch(error){result=error.message;}
+  console.log('QG_186_CONTEXT_DIAGNOSTIC',label,result);
+ }
  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
   'complete Quality Gate AST must be independently analyzable');
 });
