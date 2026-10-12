@@ -163,3 +163,18 @@ test('results do not leak source strings, credentials or arbitrary code',async()
  assert.equal(r.base.complete,true);
  assert.equal(JSON.stringify(r).includes('FAKE_SECRET_MARKER_NEVER_LEAK'),false);
 });
+
+test('opaque runner array expressions in nonprivileged workflows are incomplete',()=>{
+ const expr='$'+'{{ github.event.inputs.runner }}';
+ const source=['on: pull_request','jobs:','  q:','    runs-on:',
+ '      - ubuntu-latest','      - '+expr,'    steps:','      - run: echo ok'].join('\n');
+ const result=s.inspectContent({path:'.github/workflows/runner-array.yml'},source);
+ assert.equal(result.complete,false);
+});
+test('opaque runner group objects cannot be certified from nonprivileged workflows',()=>{
+ const expr='$'+'{{ github.event.inputs.pool }}';
+ const source=['on: pull_request','jobs:','  q:','    runs-on:',
+ '      group: '+expr,'      labels: ubuntu-latest','    steps:','      - run: echo ok'].join('\n');
+ const result=s.inspectContent({path:'.github/workflows/runner-group.yml'},source);
+ assert.equal(result.complete,false);
+});
