@@ -198,14 +198,14 @@ async function evaluateRemote(get){
   // witnesses; no API reads are performed after these attestations.
   if(runWitnesses.length!==2)return incomplete('CI_WITNESS_COUNT_CHANGED');
   const first=runWitnesses[0],second=runWitnesses[1];
-  const histories=await Promise.all([
-   get('actions/workflows/'+first.workflowId+
-    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100'),
-   get('actions/workflows/'+second.workflowId+
-    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100')
-  ]);
+  const firstRequest=get('actions/workflows/'+first.workflowId+
+   '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
+  const secondRequest=get('actions/workflows/'+second.workflowId+
+   '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100');
+  const firstHistory=await firstRequest;
+  const secondHistory=await secondRequest;
   for(let i=0;i<runWitnesses.length;i++){
-   const witness=runWitnesses[i],history=histories[i];
+   const witness=runWitnesses[i],history=i===0?firstHistory:secondHistory;
    if(!history||!Number.isSafeInteger(history.total_count)||
       history.total_count<1||history.total_count>100||
       !Array.isArray(history.workflow_runs)||
