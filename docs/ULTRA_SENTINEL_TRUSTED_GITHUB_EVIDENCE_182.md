@@ -1,40 +1,45 @@
-# Ultra Sentinel PR #182 - Recoleccion confiable en modo sombra
+# Ultra Sentinel PR #182 - Recopilacion confiable, aislada y de solo lectura
 
-## Alcance
+## Activacion del colector del PR #181
 
-Este PR activa recoleccion de evidencia de GitHub exclusivamente mediante el job
-de confianza del workflow Self-Review (evento pull_request_target).
-El checkout se hace desde la rama predeterminada, no desde el PR.
-Los permisos actions: read y pull-requests: read solo se conceden al job
-protegido. El job candidato hereda exclusivamente contents: read.
+Crea un workflow INDEPENDIENTE llamado Ultra Sentinel Trusted GitHub Evidence -
+Shadow, disparado solo mediante pull_request_target para PR hacia main.
+El job descarga exclusivamente el codigo de la rama predeterminada, nunca
+codigo del PR, con persist-credentials desactivado.
 
-El colector creado en PR #181 recupera SHA inmutable, datos del PR, merge-base,
-archivos y comprobaciones CI, y utiliza el analizador confiable ya existente.
-No instala dependencias del PR, no ejecuta archivos del candidato en el job
-protegido, no modifica el repositorio y no habilita autoridad de fusion.
+Los permisos de contents, pull-requests y actions son todos read.
+El token temporal se entrega al colector que se ejecuta desde main; no se
+ejecutan scripts ni se instalan dependencias controladas por el PR analizado.
+Los datos del PR se leen como contenido no confiable, sujetos a SHA y pruebas
+de procedencia del colector del PR #181.
 
-## Ejecucion
+## Separacion de responsabilidades
 
-- El analizador protegido de main sigue siendo el control principal.
-- Un paso posterior recopila y guarda un informe JSON sanitizado como artefacto
-  con retencion limitada a siete dias.
-- El paso nuevo es diagnostico (continue-on-error: true). Sus fallas no vuelven
-  verde un gate anterior ni anulan errores del analizador protegido.
-- Los datos de GitHub se validan por identidad, workflow ID y SHA al inicio
-  y final de la recopilacion. La perdida de evidencia no se trata como PASS.
-- Hasta implementar escaneos completos autenticados base/HEAD, el estado global
-  sigue siendo INCOMPLETE y autoMergeAllowed permanece en false.
-- La activacion real ocurre una vez fusionado el codigo del workflow a main.
-  El CI del PR candidato solo confirma su estructura, no una ejecucion real.
+- El workflow obligatorio Self-Review queda SIN MODIFICACIONES.
+- Este nuevo workflow es diagnostico, NO una aprobacion automatica.
+- Un fallo del colector se informa como fallo del workflow nuevo, SIN alterar
+  los resultados del Self-Review anterior ni deshabilitarlo.
+- No usar continue-on-error para ocultar fallos en pasos protegidos.
+- El informe JSON se sanea, se limita y se guarda siete dias como artefacto.
+- Mantener este workflow fuera de los requisitos de fusion hasta completar
+  evaluacion independiente y autorizacion expresa.
+- El resultado global del evaluador es INCOMPLETE y autoMergeAllowed=false
+  hasta contar con escaneos completos de base y HEAD.
 
-## Pruebas y limites
+## Contratos y aceptacion
 
-Once pruebas nuevas exigen permisos de lectura, checkout de main, separacion
-de eventos, parser confiable, ausencia de escrituras, aislamiento de credenciales
-y publicacion limitada. El resto de controles Core, Android y Coverage no cambia.
+12 pruebas adversariales nuevas verifican permisos de solo lectura,
+identidad del evento, checkout de main, dependencias de main, ausencia de
+ejecucion de codigo del PR, separacion del Self-Review original, tokens
+confinados a un paso protegido, acciones de GitHub fijadas por SHA y
+analisis completo del YAML por el propio AST de Ultra Sentinel.
 
-Faltan los escaneos completos base/HEAD, Family Hunter y sus modos SSS,
-y la decision independiente del Quality Gate. Una prueba de humo sobre un PR
-posterior confirmara que el colector corre realmente en GitHub.
+El CI del propio PR #182 SOLO verifica contratos. La primera ejecucion
+real contra otro PR se producira DESPUES de la fusion a main, cuando
+GitHub aplique la nueva definicion del workflow. No se declarara que
+la integracion funciona en produccion antes de inspeccionar ese resultado.
 
-No hay auto-merge, auto-commit ni aprobacion automatica.
+Proximas etapas: escaneos autenticados base/HEAD, Family Hunter,
+modos 1/2/3, memoria de regresiones y Quality Gate avanzado.
+
+Prohibidos en este PR: auto-merge, auto-commit y permisos de escritura.
