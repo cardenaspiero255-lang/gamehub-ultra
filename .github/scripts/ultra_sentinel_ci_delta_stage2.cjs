@@ -181,9 +181,14 @@ async function evaluateRemote(get){
    return incomplete('MAIN_MOVED_DURING_REVIEW');
   // Final, near-simultaneous snapshots. Any later run invalidates earlier
   // witnesses; no API reads are performed after these attestations.
-  const histories=await Promise.all(runWitnesses.map(witness=>
-   get('actions/workflows/'+witness.workflowId+
-    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100')));
+  if(runWitnesses.length!==2)return incomplete('CI_WITNESS_COUNT_CHANGED');
+  const first=runWitnesses[0],second=runWitnesses[1];
+  const histories=await Promise.all([
+   get('actions/workflows/'+first.workflowId+
+    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100'),
+   get('actions/workflows/'+second.workflowId+
+    '/runs?head_sha='+HEAD+'&event=pull_request&per_page=100')
+  ]);
   for(let i=0;i<runWitnesses.length;i++){
    const witness=runWitnesses[i],history=histories[i];
    if(!history||!Number.isSafeInteger(history.total_count)||
