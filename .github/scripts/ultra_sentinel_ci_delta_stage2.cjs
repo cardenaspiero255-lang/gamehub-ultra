@@ -26,8 +26,8 @@ const JOBS=Object.freeze({
   'release-bundle','quality','device-validation','build','device-validation-release-apk',
   'device-validation-ui','device-validation-baseline','device-validation-macro-startup',
   'device-validation-macro-library','device-validation-macro-settings','android-test-shards',
-  ...Array.from({length:8},(_,i)=>'android-test-shard-'+i)],
- 'Unit Test Coverage':['coverage',...Array.from({length:8},(_,i)=>'coverage-shard-'+i)]
+  'android-test-shard-0','android-test-shard-1','android-test-shard-2','android-test-shard-3','android-test-shard-4','android-test-shard-5','android-test-shard-6','android-test-shard-7'],
+ 'Unit Test Coverage':['coverage','coverage-shard-0','coverage-shard-1','coverage-shard-2','coverage-shard-3','coverage-shard-4','coverage-shard-5','coverage-shard-6','coverage-shard-7']
 });
 const RUNS=Object.freeze({
  'Android build':['android.yml',363810233],
