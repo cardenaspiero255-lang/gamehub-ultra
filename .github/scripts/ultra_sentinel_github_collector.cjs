@@ -90,7 +90,13 @@ function cleanFindings(findings){
 }
 async function collect(options,dependencies={}){
  const {repo,pr,headSha,token}=requireInput(options);
- const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);
+ // Keep the callable identity statically known for trusted AST provenance.
+ // Dependency injection is resolved at call time, with no PR code executed.
+ const get=async relative=>{
+  if(dependencies.get)return dependencies.get(relative);
+  const remote=apiClient(repo,token,dependencies.fetcher);
+  return remote(relative);
+ };
  const analyzer=dependencies.analyzer||reviewRemote;
  const snapshotScanner=dependencies.snapshots||scanSnapshots;
  const prefix='pulls/'+pr;
@@ -178,6 +184,35 @@ async function collect(options,dependencies={}){
   autoMergeAllowed:false,autoCommitAllowed:false,
   hasAuthenticatedBaseline:verified,hasAuthenticatedFullRepositoryScan:false};
 }
+
+const FAILURE_CODES=new Set([
+ 'INVALID_REQUEST','INVALID_API_PATH','GITHUB_API_UNAVAILABLE',
+ 'PR_PROVENANCE_INCOMPLETE','PR_CHANGED_DURING_COLLECTION',
+ 'MERGE_BASE_UNVERIFIED','FILES_INCOMPLETE','WORKFLOW_EVIDENCE_INCOMPLETE',
+ 'ANALYZER_EVIDENCE_INCOMPLETE','SNAPSHOT_ATTESTATION_MISMATCH',
+ 'SHADOW_EVIDENCE_INCOMPLETE','SHADOW_INVARIANT_VIOLATION',
+ 'INVALID_SNAPSHOT_REQUEST','GIT_COMMIT_PROVENANCE_INCOMPLETE',
+ 'GIT_TREE_INCOMPLETE','GIT_TREE_UNSAFE_ENTRY','GIT_BLOB_UNVERIFIED',
+ 'GIT_BLOB_SIZE_MISMATCH','SCANNER_FINDINGS_OVERFLOW'
+]);
+function failureReport(error,options={}){
+ // Error messages and exception objects are untrusted. Only preapproved
+ // machine codes are emitted, never raw API responses, paths or credentials.
+ const reason=FAILURE_CODES.has(error?.message)?error.message:'COLLECTION_FAILED';
+ const report={schema:'ultra-sentinel-github-evidence-failure/v1',
+  mode:'shadow',status:'INCOMPLETE',reason,reviewRequired:true,
+  autoMergeAllowed:false,autoCommitAllowed:false,
+  hasAuthenticatedBaseline:false,hasAuthenticatedFullRepositoryScan:false};
+ if(typeof options.repo==='string'&&REPO.test(options.repo)&&
+  options.repo.split('/').every(p=>p!=='.'&&p!=='..'))
+  report.repo=options.repo;
+ if(Number.isSafeInteger(options.pr)&&options.pr>0&&options.pr<=100000000)
+  report.pr=options.pr;
+ if(typeof options.headSha==='string'&&SHA.test(options.headSha))
+  report.headSha=options.headSha.toLowerCase();
+ return report;
+}
+
 async function main(){
  try{
   const report=await collect({repo:process.env.GITHUB_REPOSITORY,
@@ -194,10 +229,25 @@ async function main(){
     '**; production status: **INCOMPLETE**. Never merge authority.\n');
   }
  }catch(error){
-  console.error('Ultra Sentinel trusted evidence: '+String(error.message).slice(0,150));
+  const failed=failureReport(error,{
+   repo:process.env.GITHUB_REPOSITORY,
+   pr:Number(process.env.PR_NUMBER),
+   headSha:process.env.PR_HEAD_SHA});
+  try{
+   fs.writeFileSync('sentinel-github-evidence-shadow.json',
+    JSON.stringify(failed,null,2)+'\n',{mode:0o600});
+   if(process.env.GITHUB_STEP_SUMMARY)
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+     '## Ultra Sentinel GitHub evidence (shadow only)\n\n'+
+     'Collection incomplete: **'+failed.reason+
+     '**. Manual review required; no merge authority.\n');
+  }catch(_writeError){
+   console.error('Ultra Sentinel trusted evidence: REPORT_WRITE_FAILED');
+  }
+  console.error('Ultra Sentinel trusted evidence: '+failed.reason);
   process.exitCode=1;
  }
 }
 if(require.main===module)main();
 module.exports={REQUIRED,TRUSTED_WORKFLOW_IDS,requireInput,apiClient,validateMetadata,checkEvidence,
- cleanFindings,collect};
+ cleanFindings,collect,failureReport};

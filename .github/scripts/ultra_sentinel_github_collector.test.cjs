@@ -169,6 +169,92 @@ test('workflow: unprivileged contract tests never inject API tokens into PR code
 });
 
 
+
+test('trusted-main evidence job includes the workflow directory required by contract tests',()=>{
+ const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-github-trusted-evidence.yml'),'utf8');
+ const sparse=workflow.match(/sparse-checkout:\s*\|\n([\s\S]*?)\n\s*persist-credentials:/)?.[1]||'';
+ assert.match(sparse,/^\s*\.github\/workflows\s*$/m);
+ assert.match(sparse,/^\s*\.github\/scripts\s*$/m);
+ assert.match(workflow,/github\.event\.repository\.default_branch/);
+ assert.match(workflow,/persist-credentials:\s*false/);
+});
+
+test('failed trusted collection produces a bounded sanitized fail-closed report',()=>{
+ const input={repo:REPO,pr:PR,headSha:H};
+ const report=collector.failureReport(new Error('GIT_TREE_INCOMPLETE'),input);
+ assert.equal(report.schema,'ultra-sentinel-github-evidence-failure/v1');
+ assert.equal(report.status,'INCOMPLETE');
+ assert.equal(report.reason,'GIT_TREE_INCOMPLETE');
+ assert.equal(report.mode,'shadow');
+ assert.equal(report.headSha,H);
+ assert.equal(report.reviewRequired,true);
+ assert.equal(report.autoMergeAllowed,false);
+ assert.equal(report.autoCommitAllowed,false);
+ assert.equal(report.hasAuthenticatedBaseline,false);
+ assert.ok(Buffer.byteLength(JSON.stringify(report))<2048);
+ const leaked=collector.failureReport(new Error('secret ghp_NEVER_EXPOSE_TOKEN or JWT'),input);
+ assert.equal(leaked.reason,'COLLECTION_FAILED');
+ assert.equal(JSON.stringify(leaked).includes('NEVER_EXPOSE_TOKEN'),false);
+ assert.equal(JSON.stringify(leaked).includes('JWT'),false);
+ const malformed=collector.failureReport(new Error('INVALID_REQUEST'),{
+   repo:'attacker\nfake',pr:-1,headSha:'bad'});
+ assert.equal(Object.hasOwn(malformed,'repo'),false);
+ assert.equal(Object.hasOwn(malformed,'headSha'),false);
+ assert.equal(Object.hasOwn(malformed,'pr'),false);
+ // Regression: the trusted reviewer must fully attest this exact candidate
+ // as immutable source DATA. Candidate JS is never executed by the probe.
+ const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_github_collector.cjs'),'utf8');
+ const acorn=require('acorn');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ const engine=require('./ultra_sentinel_capabilities.cjs');
+ const parse=text=>acorn.parse(text,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ // Safe, immutable JSON-like exported data and a literal CLI error status
+ // are not dynamic execution capabilities.
+ for(const inert of [
+  "const SAFE=Object.freeze(['Android build',1]); module.exports={SAFE};",
+  "const SAFE=Object.freeze({id:3,name:'safe',ok:true}); module.exports={SAFE};",
+  "process.exitCode=1;"
+ ])assert.doesNotThrow(()=>engine.findCapabilities(parse(inert)),inert);
+ // Unknown data, mutated aliases and active dynamic evaluation still fail closed.
+ for(const unsafe of [
+  "const BAD=Object.freeze({x:untrusted}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:globalThis.eval}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:()=>eval(untrusted)}); module.exports={BAD};",
+  "const BAD=Object.freeze({[untrusted]:42}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:1}); BAD={x:untrusted}; module.exports={BAD};",
+  "const x=unknown; x.exitCode=1;",
+  "process.exitCode=eval(untrusted);"
+ ]){
+  let blocked=false;
+  try{blocked=engine.findCapabilities(parse(unsafe)).length>0;}
+  catch(_){blocked=true;}
+  assert.ok(blocked,'Unsafe export or write was not rejected: '+unsafe);
+ }
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
+  'complete collector source must be analyzable by trusted capability engine');
+ const {scan}=require('./ultra_sentinel_selfreview.cjs');
+ const reviewed=scan([{filename:'.github/scripts/ultra_sentinel_github_collector.cjs',
+  patch:'@@ -181,0 +182,1 @@\\n+// exact source review probe',status:'modified',
+  changes:1,fullSource:source}],H);
+ assert.ok(!reviewed.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),
+  JSON.stringify(reviewed));
+ // The modified capability engine must also be self-reviewable, not merely
+ // capable of scanning another file. No candidate source is executed here.
+ const capabilitySource=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_capabilities.cjs'),'utf8');
+ const capabilityReview=scan([{
+  filename:'.github/scripts/ultra_sentinel_capabilities.cjs',
+  patch:'@@ -2268,0 +2269,1 @@\\n+// self-attestation probe',
+  changes:1,status:'modified',fullSource:capabilitySource
+ }],H);
+ assert.ok(!capabilityReview.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),
+  JSON.stringify(capabilityReview));
+
+});
+
 test('CI: a confirmed failed gate stays BLOCKED even while another required gate is pending',async()=>{
  const set=runs().slice(0,2);
  set[0]={...set[0],conclusion:'failure'};
