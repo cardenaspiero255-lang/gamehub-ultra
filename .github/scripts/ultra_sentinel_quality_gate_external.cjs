@@ -50,7 +50,8 @@ function stableJson(value){
    const serialized=JSON.stringify(v);spend(serialized.length);return serialized;
   }
   if(Array.isArray(v)){
-   if(v.length>2500||Object.keys(v).length!==v.length)throw Error('UNBOUNDED_INPUT');
+   if(v.length>2500)throw Error('UNBOUNDED_INPUT');
+   if(Object.keys(v).length!==v.length)throw Error('INVALID_JSON_VALUE');
    spend(2+Math.max(0,v.length-1));
    const parts=[];
    for(let i=0;i<v.length;i++){
