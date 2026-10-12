@@ -278,3 +278,20 @@ test('EXT-187 P2: external calibration only accepts prebounded serialized JSON, 
  assert.equal(unbounded.status,'UNVERIFIED_EVIDENCE');
  assert.equal(unbounded.calibration.metrics,null);
 });
+
+
+test('EXT-187 P2: reject overlong raw strings without traversing UTF-8 bytes',()=>{
+ // Four-byte scalar, but already over the code-unit limit; byteLength must not run.
+ const overlong='\u{1F9EA}'.repeat(524289);
+ const byteLength=Buffer.byteLength;
+ let excessiveScan=false;
+ try{
+  Buffer.byteLength=function(value,...args){
+   if(value===overlong){excessiveScan=true;throw Error('PREMATURE_UTF8_SCAN');}
+   return byteLength(value,...args);
+  };
+  assert.equal(evaluateSignedCalibration(overlong,null,{expectedHeadSha:H}).status,'UNVERIFIED_EVIDENCE');
+  assert.equal(excessiveScan,false);
+  assert.throws(()=>stableJson(overlong),/UNBOUNDED_INPUT/);
+ }finally{Buffer.byteLength=byteLength;}
+});
