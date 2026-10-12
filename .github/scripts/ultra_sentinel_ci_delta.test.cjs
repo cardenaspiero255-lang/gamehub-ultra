@@ -108,9 +108,14 @@ test('candidate event and run source cannot use fake green push or external orig
  }
 });
 
-test('Trusted main Acorn capability verifier can inspect the added module without incomplete context',()=>{
- const acorn=require('acorn'),{findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
- const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_ci_delta.cjs'),'utf8');
- const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true,ranges:true});
- assert.deepEqual(findCapabilities(ast),[]);
+const selfReviewDiagnostic=(()=>{
+ try{
+  const acorn=require('acorn'),{findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+  const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_ci_delta.cjs'),'utf8');
+  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,locations:true,ranges:true});
+  return findCapabilities(ast).length===0?'CLEAR':'DYNAMIC_CAPABILITY_SINK';
+ }catch(e){return 'ERROR_'+String(e?.message||e).replace(/[^A-Za-z0-9_-]/g,'_').slice(0,160);}
+})();
+test('Trusted main capability AST attestation: '+selfReviewDiagnostic,()=>{
+ assert.equal(selfReviewDiagnostic,'CLEAR');
 });
