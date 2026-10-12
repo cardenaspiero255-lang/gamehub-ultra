@@ -167,17 +167,21 @@ function classifyCiDelta(args){
    '.github/scripts/test-ci-safety-contract-regressions.py':candidate.regressions,
    'docs/CI_ACCELERATION_172_V2.md':candidate.documentation
   };
-  for(const [path,body] of Object.entries(contentBlobs))
+  for(const entry of Object.entries(contentBlobs)){
+   const path=entry[0],body=entry[1];
    if(gitBlobSha(body)!==EXPECTED_BLOBS[path])
     return FAIL('UNVERIFIED_HEAD_BLOB_CONTENT');
-  for(const [key,sourceSha] of Object.entries({
+  }
+  for(const item of Object.entries({
    android:'418287ceb11221f1879ee81cbef40c4b008c4f04',
    coverage:'5ccf1c5de322a29c6e5b1d884ea659d310efa83c',
    safetyContract:'e297ca93aface84cda6a7769cd21da6e47e0e7af',
    regressions:'f3c8fa8c0f0c2a9361a33a12fe7386729404e5df'
-  }))
+  })){
+   const key=item[0],sourceSha=item[1];
    if(gitBlobSha(trusted[key])!==sourceSha)
     return FAIL('UNTRUSTED_BASE_BLOB_CONTENT');
+  }
   // Opaque constructions inherited from main remain incomplete.
   // A scoped transformation is evidence for human review, not a PASS.
   return Object.freeze({
