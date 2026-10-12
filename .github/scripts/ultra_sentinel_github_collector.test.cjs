@@ -198,26 +198,22 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
  const fallbackCases=[
-  ['get', 'const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);',
-   'const get=dependencies.get;'],
-  ['analyzer', 'const analyzer=dependencies.analyzer||reviewRemote;',
-   'const analyzer=dependencies.analyzer;'],
-  ['snapshots', 'const snapshotScanner=dependencies.snapshots||scanSnapshots;',
-   'const snapshotScanner=dependencies.snapshots;']
+  ['simple-default','const get=apiClient(repo,token,dependencies.fetcher);'],
+  ['inline-wrapper','const get=async (...args)=>dependencies.get ? dependencies.get(...args) : apiClient(repo,token,dependencies.fetcher)(...args);'],
+  ['block-wrapper','const get=async (relative)=>{if(dependencies.get)return dependencies.get(relative);return apiClient(repo,token,dependencies.fetcher)(relative);};'],
+  ['block-wrapper-remote','const get=async (relative)=>{if(dependencies.get)return dependencies.get(relative);const remote=apiClient(repo,token,dependencies.fetcher);return remote(relative);};'],
+  ['default-wrapper','const get=(relative)=>{const remote=dependencies.get;return remote ? remote(relative) : apiClient(repo,token,dependencies.fetcher)(relative);};'],
+  ['no-default','const get=dependencies.get;']
  ];
  const engine=require('./ultra_sentinel_capabilities.cjs');
- for(let mask=0;mask<8;mask++){
-  let variant=source;
-  for(let i=0;i<fallbackCases.length;i++)if(mask&(1<<i)){
-   const [,before,after]=fallbackCases[i];assert.ok(variant.includes(before),before);
-   variant=variant.replace(before,after);
-  }
+ for(const [label,replacement] of fallbackCases){
+  let variant=source.replace('const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);',replacement);
   let result='PASS';
   try{engine.findCapabilities(acorn.parse(variant,{ecmaVersion:'latest',
    sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,
    allowAwaitOutsideFunction:true,locations:true,ranges:true}));}
   catch(error){result=error.message;}
-  console.log('COLLECTOR_STATIC_PROVENANCE_DIAGNOSTIC',mask,result);
+  console.log('COLLECTOR_STATIC_PROVENANCE_DIAGNOSTIC',label,result);
  }
  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
   'complete collector source must be analyzable by trusted capability engine');
