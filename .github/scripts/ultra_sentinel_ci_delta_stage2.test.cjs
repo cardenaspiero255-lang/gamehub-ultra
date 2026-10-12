@@ -2,7 +2,9 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const stage1=require('./ultra_sentinel_ci_delta.cjs');
-const {evaluateRemote,HEAD,BASE}=require('./ultra_sentinel_ci_delta_stage2.cjs');
+const {evaluateRemote}=require('./ultra_sentinel_ci_delta_stage2.cjs');
+const HEAD='bb08782350201f97576a974a4684a611c21701c0';
+const BASE='7aa5df3e3c704965862ea728fb4c390d2c15a7f0';
 const REPO='cardenaspiero255-lang/gamehub-ultra',MAIN='5a363b3643d210df71b8235c949dd6f8063c4f8a';
 const mapping={
  '.github/workflows/android.yml':['android',stage1.buildExpectedAndroid],
