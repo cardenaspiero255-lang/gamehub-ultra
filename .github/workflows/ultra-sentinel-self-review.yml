@@ -21,13 +21,14 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  actions: read
 concurrency:
   group: sentinel-self-review-${{ github.event_name }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
   candidate-tests:
     if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
     name: Candidate self-review tests (not independent)
     runs-on: ubuntu-latest
     timeout-minutes: 4
@@ -44,6 +45,10 @@ jobs:
           node --test .github/scripts/ultra_sentinel_selfreview.test.cjs
   trusted-review:
     if: github.event_name == 'pull_request_target'
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     name: Trusted main Sentinel inspects Sentinel changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
