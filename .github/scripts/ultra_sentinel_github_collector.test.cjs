@@ -6,7 +6,7 @@ const path=require('node:path');
 const collector=require('./ultra_sentinel_github_collector.cjs');
 const H='b'.repeat(40),B='a'.repeat(40),M='c'.repeat(40),REPO='cardenaspiero255-lang/gamehub-ultra',PR=181;
 const metadata=()=>({number:PR,state:'open',head:{sha:H},base:{sha:B,repo:{full_name:REPO}},changed_files:1});
-const runs=()=>collector.REQUIRED.map((name,i)=>({name,event:'pull_request',head_sha:H,
+const runs=()=>collector.REQUIRED.map((name,i)=>({name,workflow_id:collector.TRUSTED_WORKFLOW_IDS[name],event:'pull_request',head_sha:H,
  pull_requests:[{number:PR}],id:100+i,run_attempt:1,status:'completed',conclusion:'success'}));
 const audit=()=>({sha:H,repo:REPO,pr:PR,status:'BLOCKED',requiresHuman:true,autoMergeAllowed:false,
  findings:[{rule:'UNTRUSTED_CHECKOUT',severity:'BLOCKER',file:'.github/workflows/unsafe.yml',line:5,
@@ -168,4 +168,12 @@ test('repository identity: dot-segment owner or repo and API-client ambiguity ar
   await assert.rejects(collector.collect({...request(),repo},fixture()),/INVALID_REQUEST/);
   assert.throws(()=>collector.apiClient(repo,'token',async()=>({ok:true})),/INVALID_REQUEST/);
  }
+});
+
+
+test('CI: a forged workflow name with the wrong GitHub workflow ID cannot claim success',async()=>{
+ const sample=runs();sample[0].workflow_id=123456;
+ const r=await collector.collect(request(),fixture({runs:sample}));
+ assert.equal(r.ciStatus,'INCOMPLETE');
+ assert.equal(r.autoMergeAllowed,false);
 });
