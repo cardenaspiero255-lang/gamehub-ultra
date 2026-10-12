@@ -153,3 +153,19 @@ test('workflow: unprivileged contract tests never inject API tokens into PR code
  assert.match(workflow,/node --test .*ultra_sentinel_github_collector\.test\.cjs/);
  assert.doesNotMatch(workflow,/merge_pull_request|auto-merge|git push/i);
 });
+
+
+test('CI: a confirmed failed gate stays BLOCKED even while another required gate is pending',async()=>{
+ const set=runs().slice(0,2);
+ set[0]={...set[0],conclusion:'failure'};
+ const r=await collector.collect(request(),fixture({runs:set}));
+ assert.equal(r.ciStatus,'BLOCKED');
+ assert.equal(r.status,'INCOMPLETE');
+ assert.equal(r.autoMergeAllowed,false);
+});
+test('repository identity: dot-segment owner or repo and API-client ambiguity are rejected',async()=>{
+ for(const repo of ['../gamehub-ultra','owner/..','./gamehub-ultra']){
+  await assert.rejects(collector.collect({...request(),repo},fixture()),/INVALID_REQUEST/);
+  assert.throws(()=>collector.apiClient(repo,'token',async()=>({ok:true})),/INVALID_REQUEST/);
+ }
+});
