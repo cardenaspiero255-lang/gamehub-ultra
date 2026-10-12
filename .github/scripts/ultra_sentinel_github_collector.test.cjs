@@ -190,6 +190,21 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
  assert.equal(Object.hasOwn(malformed,'repo'),false);
  assert.equal(Object.hasOwn(malformed,'headSha'),false);
  assert.equal(Object.hasOwn(malformed,'pr'),false);
+ // Regression: the trusted reviewer must fully attest this exact candidate
+ // as immutable source DATA. Candidate JS is never executed by the probe.
+ const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_github_collector.cjs'),'utf8');
+ const acorn=require('acorn');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
+  'complete collector source must be analyzable by trusted capability engine');
+ const {scan}=require('./ultra_sentinel_selfreview.cjs');
+ const reviewed=scan([{filename:'.github/scripts/ultra_sentinel_github_collector.cjs',
+  patch:'@@ -181,0 +182,1 @@\\n+// exact source review probe',status:'modified',
+  changes:1,fullSource:source}],H);
+ assert.ok(!reviewed.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),
+  JSON.stringify(reviewed));
 });
 
 test('CI: a confirmed failed gate stays BLOCKED even while another required gate is pending',async()=>{
