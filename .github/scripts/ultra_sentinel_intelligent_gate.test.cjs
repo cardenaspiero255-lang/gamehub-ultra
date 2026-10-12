@@ -68,3 +68,16 @@ test('3: advisory family cannot be downgraded by informational variant',()=>{
   assert.equal(r.families[0].severityClass,'ADVISORY');
  }
 });
+
+test('3: identical-location severity deduplication retains HIGH across all input permutations',()=>{
+ const levels=['INFO','WARNING','HIGH'];
+ for(const a of levels)for(const b of levels)for(const c of levels){
+  const r=gate.review(request({headFindings:[finding({severity:a}),finding({severity:b}),finding({severity:c})]}));
+  const highest=levels.filter(x=>[a,b,c].includes(x)).reverse()[0];
+  assert.equal(r.findings.length,1);
+  assert.equal(r.counts.duplicates,2);
+  assert.equal(r.findings[0].severity,highest);
+  assert.equal(r.families[0].severityClass,gate.classifySeverity(highest));
+  assert.equal(r.status,highest==='HIGH'?'REVIEW_REQUIRED':highest==='WARNING'?'ADVISORY':'PASS');
+ }
+});
