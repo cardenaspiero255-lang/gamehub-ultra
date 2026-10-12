@@ -24,7 +24,7 @@ const androidNames=['quality-lint','quality-contract-shard','quality-contracts',
 const coverageNames=['coverage',...Array.from({length:8},(_,i)=>'coverage-shard-'+i)];
 function fixture(){
  const state={prHead:HEAD,mainSha:MAIN,mainScript:'',lastRunBad:false,
-  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainReads:0,lateRunBad:false,runReads:0};
+  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0};
  const match=(relative)=>relative.replace(/^\/+/,''), repoPath='cardenaspiero255-lang/gamehub-ultra';
  const changeList=paths.map(path=>({filename:path,status:path.startsWith('docs/')?'added':'modified',sha:blob(candidate[path])}));
  const run=(name,id,workflowId)=>({id,name,workflow_id:workflowId,head_sha:HEAD,event:'pull_request',
@@ -57,7 +57,8 @@ function fixture(){
   if(relative.startsWith('actions/workflows/')&&relative.includes('/runs?')){
    const id=Number(relative.split('/')[2]),rr=runs.filter(x=>x.workflow_id===id);
    state.runReads++;
-   if(state.lateRunBad&&state.runReads>=3&&id===363810233)
+   if(((state.lateRunBad&&state.runReads>=3)||
+       (state.lateRunBadAfterFirstCheck&&state.runReads>=5))&&id===363810233)
     rr.push({...runs[0],id:901,conclusion:'failure'});
    if(state.lastRunBad&&id===363810233)rr.push({...runs[0],id:900,conclusion:'failure'});
    return {total_count:rr.length,workflow_runs:rr};
@@ -111,4 +112,14 @@ test('trusted main capability AST accepts stage2 protected reviewer without opaq
   locations:true,ranges:true});
  const sinks=findCapabilities(ast);
  assert.deepEqual(sinks,[]);
+});
+
+test('late Android failure after the first recheck still prevents certification',async()=>{
+ const f=fixture();f.state.lateRunBadAfterFirstCheck=true;
+ assert.equal((await evaluateRemote(f.get)).status,'INCOMPLETE');
+});
+test('protected CI workflow has no dispatch entrypoint selectable from PR branches',()=>{
+ const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-ci-delta-protected.yml'),'utf8');
+ assert.equal(workflow.includes('workflow_dispatch'),false);
+ assert.match(workflow,/ref:.*github\.event\.repository\.default_branch/);
 });
