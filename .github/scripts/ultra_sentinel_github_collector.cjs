@@ -23,7 +23,7 @@ function requireInput(options){
 function apiClient(repo,token,fetcher=globalThis.fetch){
  if(typeof fetcher!=='function')throw Error('FETCH_UNAVAILABLE');
  return async function get(relative){
-  if(!/^[a-zA-Z0-9_.\/?=&%-]+$/.test(relative)||relative.includes('..'))
+  if(!/^[a-zA-Z0-9_.\/?=&%-]+$/.test(relative)||relative.split('/').some(p=>p==='..'))
    throw Error('INVALID_API_PATH');
   const response=await fetcher('https://api.github.com/repos/'+repo+'/'+relative,{
    method:'GET',redirect:'error',
