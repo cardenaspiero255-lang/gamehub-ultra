@@ -36,3 +36,7 @@ Los estados `UNVERIFIED_EVIDENCE`, `INVALID_CASES` y `SIGNED_SHADOW_ONLY` nunca 
 - Cuatro contratos adicionales verifican rechazo de firmas forjadas con puntos identidad y alias del bit de signo, puntos de orden pequeño o no canónicos, limitación de claves antes de ordenar, y serialización determinista justo al límite de 100 propiedades.
 - Los 28 contratos del adaptador contribuyen al baseline B1 de 11.731 sin disminuir los 500.500 casos de la matriz Core.
 - Estas verificaciones técnicas no sustituyen el etiquetado independiente de datos reales ni cambian la autoridad del modo sombra.
+
+## Refuerzo adicional P2 — arrays con propiedades maliciosas
+- El adaptador ya no usa `Object.keys(v)` sin cota para validar arrays: reutiliza `cappedOwnKeys(v,v.length)` antes de crear una lista completa de claves. Los arrays densos de hasta 2.500 elementos siguen aceptándose y los arrays dispersos se rechazan.
+- Tres contratos nuevos reproducen el fallo con propiedades adicionales, comprueban el rechazo de arrays contaminados y mantienen arrays densos válidos. Baseline B1 actualizado de 11.732 a **11.735** sin reducir la matriz Core de 500.500 casos.

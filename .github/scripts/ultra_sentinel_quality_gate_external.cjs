@@ -63,7 +63,9 @@ function stableJson(value){
   }
   if(Array.isArray(v)){
    if(v.length>2500)throw Error('UNBOUNDED_INPUT');
-   if(Object.keys(v).length!==v.length)throw Error('INVALID_JSON_VALUE');
+   // Enumerate only up to the actual array length, before any full key allocation.
+   // A named own property pushes the key count over the bound and fails closed.
+   if(cappedOwnKeys(v,v.length).length!==v.length)throw Error('INVALID_JSON_VALUE');
    spend(2+Math.max(0,v.length-1));
    const parts=[];
    for(let i=0;i<v.length;i++){
