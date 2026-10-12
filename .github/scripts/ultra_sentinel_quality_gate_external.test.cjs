@@ -17,18 +17,19 @@ const corpus=(np=100,nn=100)=>[
 ];
 const reports=(c)=>c.map(x=>({provider:'ultra-sentinel',caseId:x.id,sha:H,
  findings:x.expected.map(f=>({...f})),durationMs:3}));
-function envelope(role,payload,p,headSha=H){
+function envelope(role,payload,p,headSha=H,corpusDigest=null){
  const json=stableJson(payload);
  const digest=createHash('sha256').update(json).digest('hex');
  const privateKey=p[role].privateKey;
  return {keyId:role==='labeler'?'independent-labeler':'independent-runner',
-  sha256:digest,signature:sign(null,Buffer.from(attestationMessage(role,headSha,digest,Buffer.byteLength(json))),privateKey).toString('base64')};
+  sha256:digest,signature:sign(null,Buffer.from(attestationMessage(role,headSha,digest,Buffer.byteLength(json),corpusDigest)),privateKey).toString('base64')};
 }
 function fixture(c=corpus(),r=reports(c)){
  const p=pair();
+ const labeler=envelope('labeler',c,p);
  return {trusted:keys(p),bundle:{schema:'ultra-sentinel-external-calibration/v1',headSha:H,
   corpus:c,reports:r,
-  signatures:{labeler:envelope('labeler',c,p),runner:envelope('runner',r,p)}}};
+  signatures:{labeler,runner:envelope('runner',r,p,H,labeler.sha256)}}};
 }
 const run=(f)=>evaluateSignedCalibration(f.bundle,f.trusted);
 test('EXT-187: absent evidence remains unmeasured and never enables enforcement',()=>{
@@ -95,6 +96,17 @@ test('EXT-187: below-minimum externally signed samples remain shadow insufficien
  assert.equal(r.status,'SIGNED_SHADOW_ONLY');
  assert.equal(r.calibration.status,'INSUFFICIENT_SAMPLE');
  assert.equal(r.calibration.productionReady,false);
+});
+test('EXT-187: mixing separately authentic but unpaired corpus and reports fails closed',()=>{
+ const p=pair(),a=corpus(),b=corpus();
+ b[0].expected=[{rule:'DIFFERENT',path:'app/src/main/java/Other.kt'}];
+ const labelerA=envelope('labeler',a,p),labelerB=envelope('labeler',b,p);
+ const runnerA=envelope('runner',reports(a),p,H,labelerA.sha256);
+ const malicious={schema:'ultra-sentinel-external-calibration/v1',headSha:H,
+  corpus:b,reports:reports(a),signatures:{labeler:labelerB,runner:runnerA}};
+ const result=evaluateSignedCalibration(malicious,keys(p));
+ assert.equal(result.status,'UNVERIFIED_EVIDENCE');
+ assert.equal(result.calibration.metrics,null);
 });
 test('EXT-187: secrets in malformed inputs never get copied to sanitized output',()=>{
  const f=fixture();f.bundle.reports[0].findings=[{rule:'ghp_PRIVATE_TOKEN',path:'../private'}];
