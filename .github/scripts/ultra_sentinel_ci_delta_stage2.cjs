@@ -139,7 +139,8 @@ async function evaluateRemote(get){
   if(delta.status!=='SCOPED_DELTA_REVIEW_REQUIRED')
    return incomplete('DELTA_POLICY_REJECTED');
   const runIds=[],runWitnesses=[];
-  for(const [name,info] of Object.entries(RUNS)){
+  for(const row of Object.entries(RUNS)){
+   const name=row[0],info=row[1];
    const workflow=await get('actions/workflows/'+info[0]);
    if(workflow?.id!==info[1]||workflow.name!==name)
     return incomplete('WORKFLOW_ID_CHANGED');
