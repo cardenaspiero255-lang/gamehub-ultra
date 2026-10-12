@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/ultra_sentinel_ci_delta_stage2*.cjs'
+      - '.github/scripts/ultra_sentinel_api_budget*.cjs'
       - '.github/workflows/ultra-sentinel-ci-delta-protected.yml'
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
@@ -39,7 +40,8 @@ jobs:
       - name: Run stage 2 tests
         run: |
           node --check .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs
-          node --test .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs
+          node --check .github/scripts/ultra_sentinel_api_budget.cjs
+          node --test .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs .github/scripts/ultra_sentinel_api_budget.test.cjs
   stage2-trusted-main:
     if: (github.event_name == 'pull_request_target' && github.event.pull_request.number == 172) || github.event_name == 'push'
     name: Trusted main PR172 SHA/tree/31 jobs (manual review required)
@@ -61,7 +63,8 @@ jobs:
       - name: Run trusted source regression tests
         run: |
           node --check .github/scripts/ultra_sentinel_ci_delta_stage2.cjs
-          node --test .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs
+          node --check .github/scripts/ultra_sentinel_api_budget.cjs
+          node --test .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs .github/scripts/ultra_sentinel_api_budget.test.cjs
       - name: Collect exact-SHA authenticated evidence for PR172
         env:
           GITHUB_TOKEN: ${{ github.token }}

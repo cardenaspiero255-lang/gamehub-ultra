@@ -9,6 +9,7 @@
  */
 const {classifyCiDelta}=require('./ultra_sentinel_ci_delta.cjs');
 const crypto=require('node:crypto');
+const {createGitHubReader}=require('./ultra_sentinel_api_budget.cjs');
 const OWNER='cardenaspiero255-lang',REPO_NAME='gamehub-ultra';
 const REPO=OWNER+'/'+REPO_NAME;
 const HEAD='bb08782350201f97576a974a4684a611c21701c0';
@@ -237,21 +238,6 @@ async function evaluateRemote(get){
    autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return incomplete('UNVERIFIED_EXTERNAL_EVIDENCE');}
 }
-// Private transport boundary: never export a credential-bearing client.
-function protectedGitHubClient(token){
- if(typeof token!=='string'||token.length<10)throw Error('TOKEN_MISSING');
- return async function get(relative){
-  if(typeof relative!=='string'||!/^([A-Za-z0-9_.\/\?=&%-]+)$/.test(relative)||
-    relative.includes('..')||relative.startsWith('/'))throw Error('INVALID_API_PATH');
-  const response=await fetch('https://api.github.com/repos/'+REPO+'/'+relative,{
-   method:'GET',redirect:'error',headers:{Authorization:'Bearer '+token,
-    Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},
-   signal:AbortSignal.timeout(20000)
-  });
-  if(!response.ok)throw Error('GITHUB_API_ERROR');
-  return response.json();
- };
-}
 async function main(){
  const validEvent=['pull_request_target','push'];
  if(process.env.GITHUB_ACTIONS!=='true'||
@@ -259,7 +245,7 @@ async function main(){
     process.env.GITHUB_REPOSITORY!==REPO||process.env.PR_NUMBER!=='172'||
     (process.env.GITHUB_EVENT_NAME==='push'&&process.env.GITHUB_REF!=='refs/heads/main'))
   throw Error('PROTECTED_RUNNER_REQUIRED');
- const result=await evaluateRemote(protectedGitHubClient(process.env.GITHUB_TOKEN));
+ const result=await evaluateRemote(createGitHubReader(REPO,process.env.GITHUB_TOKEN));
  if(result.status!=='SCOPED_CI_REVIEW_REQUIRED'){
   process.stdout.write(JSON.stringify(result)+'\n');
   process.exitCode=1;

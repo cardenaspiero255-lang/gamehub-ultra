@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/ultra_sentinel_github_collector*.cjs'
+      - '.github/scripts/ultra_sentinel_api_budget*.cjs'
       - '.github/scripts/ultra_sentinel_quality_gate*.cjs'
       - '.github/workflows/ultra-sentinel-github-evidence-shadow.yml'
 permissions:
@@ -23,6 +24,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate JavaScript syntax
         run: |
+          node --check .github/scripts/ultra_sentinel_api_budget.cjs
+          node --check .github/scripts/ultra_sentinel_api_budget.test.cjs
           node --check .github/scripts/ultra_sentinel_github_collector.cjs
           node --check .github/scripts/ultra_sentinel_github_collector.test.cjs
           node --check .github/scripts/ultra_sentinel_quality_gate.cjs
@@ -30,4 +33,4 @@ jobs:
           node --check .github/scripts/ultra_sentinel_quality_gate_external.cjs
           node --check .github/scripts/ultra_sentinel_quality_gate_external.test.cjs
       - name: Run malicious-provenance and fail-closed contracts
-        run: node --test .github/scripts/ultra_sentinel_github_collector.test.cjs .github/scripts/ultra_sentinel_quality_gate.test.cjs .github/scripts/ultra_sentinel_quality_gate_external.test.cjs
+        run: node --test .github/scripts/ultra_sentinel_api_budget.test.cjs .github/scripts/ultra_sentinel_github_collector.test.cjs .github/scripts/ultra_sentinel_quality_gate.test.cjs .github/scripts/ultra_sentinel_quality_gate_external.test.cjs

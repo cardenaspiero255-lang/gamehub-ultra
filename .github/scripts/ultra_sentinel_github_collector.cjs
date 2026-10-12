@@ -5,6 +5,7 @@
  * PR content, API payloads and analyzer output are untrusted data, not code.
  */
 const fs=require('node:fs');
+const {createGitHubReader}=require('./ultra_sentinel_api_budget.cjs');
 const {reviewRemote}=require('./ultra_sentinel_selfreview.cjs');
 const {review}=require('./ultra_sentinel_intelligent_gate.cjs');
 const {assess}=require('./ultra_sentinel_quality_gate.cjs');
@@ -27,21 +28,7 @@ function requireInput(options){
  return {repo,pr,headSha:headSha.toLowerCase(),token};
 }
 function apiClient(repo,token,fetcher=globalThis.fetch){
- if(!REPO.test(repo||'')||repo.split('/').some(part=>part==='.'||part==='..'))
-  throw Error('INVALID_REQUEST');
- if(typeof fetcher!=='function')throw Error('FETCH_UNAVAILABLE');
- return async function get(relative){
-  if(!/^[a-zA-Z0-9_.\/?=&%-]+$/.test(relative)||relative.split('/').some(p=>p==='..'))
-   throw Error('INVALID_API_PATH');
-  const response=await fetcher('https://api.github.com/repos/'+repo+'/'+relative,{
-   method:'GET',redirect:'error',
-   headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
-    'X-GitHub-Api-Version':'2022-11-28'},
-   signal:AbortSignal.timeout(20000)
-  });
-  if(!response||!response.ok)throw Error('GITHUB_API_UNAVAILABLE');
-  return response.json();
- };
+ return createGitHubReader(repo,token,fetcher);
 }
 function validateMetadata(info,repo,pr,headSha){
  if(!info||info.number!==pr||info.state!=='open'||info.head?.sha?.toLowerCase()!==headSha||
