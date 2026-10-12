@@ -198,34 +198,31 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
  const engine=require('./ultra_sentinel_capabilities.cjs');
- let variant=source.replace('const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);',
-  'const get=async (relative)=>{if(dependencies.get)return dependencies.get(relative);const remote=apiClient(repo,token,dependencies.fetcher);return remote(relative);};');
- variant=variant.replace('process.exitCode=1;', 'process.exit(1);');
- const options={ecmaVersion:'latest',sourceType:'script',
-  allowHashBang:true,allowReturnOutsideFunction:true,
-  allowAwaitOutsideFunction:true,locations:true,ranges:true};
- const check=(label,program)=>{
-  let result='PASS';
-  try{engine.findCapabilities(program);}
-  catch(error){result=error.message;}
-  console.log('COLLECTOR_STATIC_PROVENANCE_DIAGNOSTIC',label,result);
- };
- const all=acorn.parse(variant,options);
- const last=all.body.at(-1);
- assert.equal(last.type,'ExpressionStatement');
- assert.equal(last.expression.left.property.name,'exports');
- for(const property of last.expression.right.properties){
-  const copy=structuredClone(all);
-  copy.body.at(-1).expression.right.properties=[structuredClone(property)];
-  check('single-export:'+property.key.name,copy);
+ const parse=text=>acorn.parse(text,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ // Safe, immutable JSON-like exported data and a literal CLI error status
+ // are not dynamic execution capabilities.
+ for(const inert of [
+  "const SAFE=Object.freeze(['Android build',1]); module.exports={SAFE};",
+  "const SAFE=Object.freeze({id:3,name:'safe',nested:{ok:true}}); module.exports={SAFE};",
+  "process.exitCode=1;"
+ ])assert.doesNotThrow(()=>engine.findCapabilities(parse(inert)),inert);
+ // Unknown data, mutated aliases and active dynamic evaluation still fail closed.
+ for(const unsafe of [
+  "const BAD=Object.freeze({x:untrusted}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:globalThis.eval}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:()=>eval(untrusted)}); module.exports={BAD};",
+  "const BAD=Object.freeze({[untrusted]:42}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:1}); BAD={x:untrusted}; module.exports={BAD};",
+  "const x=unknown; x.exitCode=1;",
+  "process.exitCode=eval(untrusted);"
+ ]){
+  let blocked=false;
+  try{blocked=engine.findCapabilities(parse(unsafe)).length>0;}
+  catch(_){blocked=true;}
+  assert.ok(blocked,'Unsafe export or write was not rejected: '+unsafe);
  }
- const noFreeze=variant
-  .replace('const REQUIRED=Object.freeze([','const REQUIRED=[')
-  .replace(",'Ultra Sentinel Core Tests']);",",'Ultra Sentinel Core Tests'];\nObject.freeze(REQUIRED);")
-  .replace('const TRUSTED_WORKFLOW_IDS=Object.freeze({','const TRUSTED_WORKFLOW_IDS={')
-  .replace("'Unit Test Coverage':367848611,'Ultra Sentinel Core Tests':379109738});",
-   "'Unit Test Coverage':367848611,'Ultra Sentinel Core Tests':379109738};\nObject.freeze(TRUSTED_WORKFLOW_IDS);");
- check('both-literals-with-post-freeze',acorn.parse(noFreeze,options));
  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
   'complete collector source must be analyzable by trusted capability engine');
  const {scan}=require('./ultra_sentinel_selfreview.cjs');
