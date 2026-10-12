@@ -204,7 +204,10 @@ function verifyPart(role,data,attestation,trusted,headSha,corpusDigest=null,pars
 }
 function evaluateSignedCalibration(rawBundle,trustedKeys,options={}){
  try{
-  const {expectedHeadSha}=options ?? {};
+  // Explicit null guard keeps the fail-closed return within the try boundary.
+  // Avoid nullish object provenance branches in the trusted AST analyzer.
+  if(options===null)return safeReport('UNVERIFIED_EVIDENCE');
+  const {expectedHeadSha}=options;
   const bundle=parseBoundedJson(rawBundle);
   if(!bundle||typeof bundle!=='object'||Array.isArray(bundle)||
      cappedOwnKeys(bundle,5).sort().join(',')!=='corpus,headSha,reports,schema,signatures'||
