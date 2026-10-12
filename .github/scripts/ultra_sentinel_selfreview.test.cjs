@@ -24,6 +24,36 @@ test('read-only benign diff remains advisory, never an approval',()=>{
   status:'modified',changes:1,fullSource:exact
  }],SHA);
  assert.ok(!probe.findings.some(f=>f.rule==='JS_CONTEXT_INCOMPLETE'),JSON.stringify(probe));
+ // Bootstrap regressions: only simple frozen, immutable export metadata
+ // and literal failure exit codes may be treated as inert data.
+ const capabilityEngine=require('./ultra_sentinel_capabilities.cjs');
+ const options={ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true};
+ const parse=text=>acorn.parse(text,options);
+ for(const sourceText of [
+  "const SAFE=Object.freeze(['Android build',1]); module.exports={SAFE};",
+  "const SAFE=Object.freeze({id:3,name:'safe',ok:true}); module.exports={SAFE};",
+  "process.exitCode=1;"
+ ]){
+  assert.doesNotThrow(()=>capabilityEngine.findCapabilities(parse(sourceText)),
+   'static frozen data and literal fail-closed exit code must be analyzable: '+sourceText);
+ }
+ for(const sourceText of [
+  "const BAD=Object.freeze({x:untrusted}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:globalThis.eval}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:()=>eval(untrusted)}); module.exports={BAD};",
+  "const BAD=Object.freeze({[untrusted]:42}); module.exports={BAD};",
+  "const BAD=Object.freeze({x:1}); BAD={x:untrusted}; module.exports={BAD};",
+  "function f(Object){const BAD=Object.freeze({x:1});module.exports={BAD}}",
+  "const x=unknown; x.exitCode=1;",
+  "process.exitCode=eval(untrusted);"
+ ]){
+  let blocked=false;
+  try{blocked=capabilityEngine.findCapabilities(parse(sourceText)).length>0}
+  catch(_){blocked=true}
+  assert.ok(blocked,'unknown/dangerous provenance must fail closed: '+sourceText);
+ }
 });
 test('privileged checkout of attacker PR head is blocked',()=>{
  for(const line of ['ref: $'+'{{ github.event.pull_request.head.sha }}','ref: $'+'{{ github.head_ref }}','ref: $'+'{{ github.event.workflow_run.head_sha }}'])
