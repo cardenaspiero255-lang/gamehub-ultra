@@ -93,7 +93,8 @@ function canonicalizeParsed(value){
 // External evidence MUST cross a bounded textual boundary before parsing.
 // Never inspect arbitrary caller-owned JS object property tables for limits.
 function parseBoundedJson(raw){
- if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')>MAX_BYTES)
+ if(typeof raw!=='string'||raw.length>MAX_BYTES||
+    Buffer.byteLength(raw,'utf8')>MAX_BYTES)
   throw Error('UNBOUNDED_INPUT');
  return JSON.parse(raw);
 }
