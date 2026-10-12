@@ -239,6 +239,14 @@ async function evaluateRemote(get){
      newestCoverage.id!==second.runId||
      newestCoverage.run_attempt!==second.attempt)
    return incomplete('FINAL_REPOSITORY_NEWER_RUN');
+  // The branch can move while the single CI snapshot is fetched. Verify
+  // the PR and trusted main ref again after it, never certify an old base.
+  const terminalPr=await get('pulls/172');
+  validatePr(terminalPr);
+  const terminalMain=(await get('git/ref/heads/main'))?.object?.sha;
+  if(terminalPr.base.sha!==mainBefore||terminalPr.head.sha!==HEAD||
+     terminalMain!==mainBefore)
+   return incomplete('BASE_CHANGED_DURING_FINAL_SNAPSHOT');
   return Object.freeze({status:'SCOPED_CI_REVIEW_REQUIRED',
    schema:'ultra-sentinel-ci-delta-protected/v2',headSha:HEAD,mainSha:mainBefore,
    observedJobs:31,observedRunIds:[first.runId,second.runId],
