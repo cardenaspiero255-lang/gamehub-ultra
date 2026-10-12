@@ -72,14 +72,20 @@ function latestRun(list){
  }
  return selected;
 }
-function validateJobEvidence(runs,jobs,workflowName,workflowId){
+function validateRunHistory(runs,workflowName,workflowId,expectedBase){
  if(!runs||!Number.isSafeInteger(runs.total_count)||runs.total_count<1||
   runs.total_count>100||!Array.isArray(runs.workflow_runs)||
   runs.workflow_runs.length!==runs.total_count)throw Error('INCOMPLETE_RUN_HISTORY');
  for(const r of runs.workflow_runs){
   let linked=false;
   if(Array.isArray(r?.pull_requests)){
-   for(const link of r.pull_requests)if(link?.number===172)linked=true;
+   for(const link of r.pull_requests){
+    if(link?.number===172){
+     if(link?.base?.sha!==expectedBase||link?.head?.sha!==HEAD)
+      throw Error('RUN_TARGET_BASE_MISMATCH');
+     linked=true;
+    }
+   }
   }
   if(!r||r.workflow_id!==workflowId||r.name!==workflowName||
    r.head_sha!==HEAD||r.event!=='pull_request'||
@@ -90,6 +96,10 @@ function validateJobEvidence(runs,jobs,workflowName,workflowId){
  const latest=latestRun(runs.workflow_runs);
  if(latest.status!=='completed'||latest.conclusion!=='success')
   throw Error('LATEST_RUN_NOT_GREEN');
+ return latest;
+}
+function validateJobEvidence(runs,jobs,workflowName,workflowId,expectedBase){
+ const latest=validateRunHistory(runs,workflowName,workflowId,expectedBase);
  if(!jobs||!Number.isSafeInteger(jobs.total_count)||!Array.isArray(jobs.jobs)||
     jobs.total_count!==JOBS[workflowName].length||
     jobs.jobs.length!==jobs.total_count)throw Error('INCOMPLETE_CI_JOBS');
@@ -112,6 +122,7 @@ async function evaluateRemote(get){
   validatePr(before);
   const mainBefore=(await get('git/ref/heads/main'))?.object?.sha;
   if(!SHA.test(mainBefore||''))return incomplete('MAIN_REF_MISSING');
+  if(before.base.sha!==mainBefore)return incomplete('PR_BASE_NOT_CURRENT_MAIN');
   const commit=await get('git/commits/'+HEAD);
   if(commit?.sha!==HEAD||!SHA.test(commit.tree?.sha||''))return incomplete('HEAD_COMMIT_MISSING');
   const tree=await get('git/trees/'+commit.tree.sha+'?recursive=1');
@@ -170,7 +181,7 @@ async function evaluateRemote(get){
    if(!latest||!Number.isSafeInteger(latest.id))
     return incomplete('LATEST_RUN_MISSING');
    const jobs=await get('actions/runs/'+latest.id+'/jobs?per_page=100&filter=latest');
-   validateJobEvidence(hist,jobs,name,workflow.id);
+   validateJobEvidence(hist,jobs,name,workflow.id,mainBefore);
    const witnessed={name,workflowId:workflow.id,runId:latest.id,
     attempt:latest.run_attempt};
    if(name==='Android build')androidWitness=witnessed;
@@ -186,7 +197,7 @@ async function evaluateRemote(get){
       !Array.isArray(again.workflow_runs)||
       again.workflow_runs.length!==again.total_count)
     return incomplete('RUN_HISTORY_CHANGED');
-   const recent=latestRun(again.workflow_runs);
+   const recent=validateRunHistory(again,witness.name,witness.workflowId,mainBefore);
    if(!recent||recent.id!==witness.runId||
       recent.run_attempt!==witness.attempt||
       recent.status!=='completed'||recent.conclusion!=='success')
@@ -213,7 +224,7 @@ async function evaluateRemote(get){
       !Array.isArray(history.workflow_runs)||
       history.workflow_runs.length!==history.total_count)
     return incomplete('FINAL_HISTORY_INCOMPLETE');
-   const newest=latestRun(history.workflow_runs);
+   const newest=validateRunHistory(history,witness.name,witness.workflowId,mainBefore);
    if(!newest||newest.id!==witness.runId||
       newest.run_attempt!==witness.attempt||
       newest.status!=='completed'||newest.conclusion!=='success')
