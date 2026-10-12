@@ -267,7 +267,8 @@ async function verifyCiDeltaFromGitHub({github,owner,repo,number}={}){
     {...api,pull_number:number});
   if(files.length!==5)return FAIL('INCOMPLETE_CHANGED_FILES');
   const candidate={},trusted={};
-  for(const [file,key] of Object.entries(CI_FILES)){
+  for(const entry of Object.entries(CI_FILES)){
+   const file=entry[0],key=entry[1];
    if(entries.get(file)!==EXPECTED_BLOBS[file])
     return FAIL('HEAD_TREE_CONTENT_MISMATCH');
    const found=files.filter(f=>f?.filename===file);
@@ -359,7 +360,8 @@ async function verifyCiJobsFromGitHub({github,owner,repo,number,delta}={}){
    return FAIL('UNAUTHENTICATED_DELTA_PROOF');
   const api={owner,repo},runs=[],jobs={},trustedWorkflowIds={};
   const sources=[['Android build','android.yml'],['Unit Test Coverage','coverage.yml']];
-  for(const [name,filename] of sources){
+  for(const source of sources){
+   const name=source[0],filename=source[1];
    const workflow=(await github.rest.actions.getWorkflow({...api,workflow_id:filename})).data;
    if(!Number.isSafeInteger(workflow?.id)||workflow.id<1)
     return FAIL('INVALID_PROTECTED_WORKFLOW_ID');
