@@ -3,8 +3,9 @@
  * Read-only differential attestation. NEVER converts changed workflows into
  * generic trusted CI, nor authorizes GitHub approval/merge. Verify complete
  * source against narrow, trusted-main anchored transformations.
- * Caller MUST fetch trusted source from an immutable reviewed main checkout;
- * arbitrary parameters are not themselves an authenticated GitHub API.
+ * This module accepts caller-supplied API clients for scoped diagnostics ONLY.
+ * It MUST NOT issue trusted CI certificates until a separate protected runner
+ * establishes an unforgeable client boundary outside PR-controlled code.
  */
 const HEX=/^[a-f0-9]{40}$/i;
 const REPO='cardenaspiero255-lang/gamehub-ultra';
@@ -194,11 +195,11 @@ function classifyCiDelta(args){
   });
  }catch(_){return FAIL('UNVERIFIED_TRANSFORMATION');}
 }
-// Private, per-process proof of the authenticated read-only API boundary.
-// Plain objects built by PR code, fixtures, or callers do not acquire authority.
-const authenticatedDeltas=new WeakSet();
-const deltaSources=new WeakMap();
-const authenticatedJobInputs=new WeakSet();
+// Per-process correlation of SCOPED, caller-supplied data only.
+// WeakSet identity DOES NOT prove a real GitHub transport or establish trust.
+const scopedDeltas=new WeakSet();
+const scopedDeltaSources=new WeakMap();
+const scopedJobInputs=new WeakSet();
 const CI_FILES=Object.freeze({
  '.github/workflows/android.yml':'android',
  '.github/workflows/coverage.yml':'coverage',
@@ -225,16 +226,16 @@ function decodeGitContent(response){
 }
 async function githubPages(github,fn,params){
  if(typeof github?.paginate!=='function'||typeof fn!=='function')
-  throw Error('UNAUTHENTICATED_PAGINATION');
+  throw Error('INCOMPLETE_CALLER_PAGINATION');
  const list=await github.paginate(fn,{...params,per_page:100});
  if(!Array.isArray(list)||list.length>2000)throw Error('INCOMPLETE_PAGINATION');
  return list;
 }
 /**
- * Authenticated boundary: ONLY execute with the independently trusted
- * read-only GitHub Octokit on a protected runner, never PR supplied code.
- * Anchors exact PR identity, immutable git commit/tree, all five blobs,
- * and trusted base content before returning narrowly scoped evidence.
+ * Read-only diagnostic over a caller-provided GitHub-compatible interface.
+ * Even when all paths, hashes and SHA assertions match, that interface can
+ * be forged. Its responses NEVER confer authenticated provenance. Protected
+ * runner integration is required separately before any VERIFIED status.
  */
 async function verifyCiDeltaFromGitHub({github,owner,repo,number}={}){
  try{
@@ -293,11 +294,12 @@ async function verifyCiDeltaFromGitHub({github,owner,repo,number}={}){
   const after=(await github.rest.pulls.get({...api,pull_number:number})).data;
   if(after?.head?.sha!==KNOWN_HEAD||after?.base?.sha!==KNOWN_BASE)
    return FAIL('PR_CHANGED_DURING_ATTESTATION');
-  const verified=Object.freeze({...scoped,status:'VERIFIED_DELTA_REVIEW_REQUIRED',
-   source:'TRUSTED_GITHUB_API_IMMUTABLE_TREE',authenticatedTreeSha:commit.tree.sha,
+  const observed=Object.freeze({...scoped,
+   source:'CALLER_SUPPLIED_GITHUB_CLIENT',observedTreeSha:commit.tree.sha,
+   provenanceAuthenticated:false,
    autoApproveAllowed:false,autoMergeAllowed:false});
-  authenticatedDeltas.add(verified);deltaSources.set(verified,github);
-  return verified;
+  scopedDeltas.add(observed);scopedDeltaSources.set(observed,github);
+  return observed;
  }catch(_){return FAIL('GITHUB_TREE_EVIDENCE_INCOMPLETE');}
 }
 const REQUIRED_JOBS=Object.freeze({
@@ -313,9 +315,9 @@ function checkJobEvidence(args){
  try{
   if(!args||typeof args!=='object'||Array.isArray(args))return FAIL('INVALID_INPUT');
   const {repo,headSha,delta,apiComplete,jobsComplete,runs,jobs,trustedWorkflowIds}=args;
-  if(repo!==REPO||headSha!==KNOWN_HEAD||!authenticatedJobInputs.has(args)||
-    !authenticatedDeltas.has(delta)||
-    delta?.status!=='VERIFIED_DELTA_REVIEW_REQUIRED'||
+  if(repo!==REPO||headSha!==KNOWN_HEAD||!scopedJobInputs.has(args)||
+    !scopedDeltas.has(delta)||
+    delta?.status!=='SCOPED_DELTA_REVIEW_REQUIRED'||
     delta.headSha!==headSha||apiComplete!==true||jobsComplete!==true||
     !Array.isArray(runs)||runs.length!==2||!jobs||typeof jobs!=='object'||
     !trustedWorkflowIds||typeof trustedWorkflowIds!=='object')
@@ -346,18 +348,20 @@ function checkJobEvidence(args){
   }
   if(names.size!==2)return FAIL('MISSING_WORKFLOW');
   return Object.freeze({schema:'ultra-sentinel-scoped-ci-evidence/v1',
-   status:'VERIFIED_CI_REVIEW_REQUIRED',headSha,
-   verifiedJobs:31,autoApproveAllowed:false,autoMergeAllowed:false});
+   status:'SCOPED_CI_REVIEW_REQUIRED',headSha,
+   observedJobs:31,provenanceAuthenticated:false,
+   autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return FAIL('INCOMPLETE_CI_API_EVIDENCE');}
 }
 
 /** Fetch only the latest exact-SHA runs and their complete current-attempt jobs.
  * Earlier green runs cannot mask a newer failed or pending run.
+ * The result stays SCOPED because the client itself is caller-controlled.
  */
 async function verifyCiJobsFromGitHub({github,owner,repo,number,delta}={}){
  try{
   if(owner!=='cardenaspiero255-lang'||repo!=='gamehub-ultra'||number!==172||
-     !authenticatedDeltas.has(delta)||deltaSources.get(delta)!==github||
+     !scopedDeltas.has(delta)||scopedDeltaSources.get(delta)!==github||
      delta.headSha!==KNOWN_HEAD||!github?.rest?.actions?.getWorkflow)
    return FAIL('UNAUTHENTICATED_DELTA_PROOF');
   const api={owner,repo},runs=[],jobEntries=[],workflowIdEntries=[];
@@ -391,7 +395,7 @@ async function verifyCiJobsFromGitHub({github,owner,repo,number,delta}={}){
   const trustedWorkflowIds=Object.fromEntries(workflowIdEntries);
   const proof={repo:REPO,headSha:KNOWN_HEAD,delta,apiComplete:true,jobsComplete:true,
    trustedWorkflowIds,runs,jobs};
-  authenticatedJobInputs.add(proof);
+  scopedJobInputs.add(proof);
   return checkJobEvidence(proof);
  }catch(_){return FAIL('TRUSTED_GITHUB_CI_EVIDENCE_INCOMPLETE');}
 }
