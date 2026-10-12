@@ -7,6 +7,7 @@
 const fs=require('node:fs');
 const {reviewRemote}=require('./ultra_sentinel_selfreview.cjs');
 const {review}=require('./ultra_sentinel_intelligent_gate.cjs');
+const {scanSnapshots}=require('./ultra_sentinel_snapshot_scan.cjs');
 
 const SHA=/^[a-f0-9]{40}$/i;
 const REPO=/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -91,6 +92,7 @@ async function collect(options,dependencies={}){
  const {repo,pr,headSha,token}=requireInput(options);
  const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);
  const analyzer=dependencies.analyzer||reviewRemote;
+ const snapshotScanner=dependencies.snapshots||scanSnapshots;
  const prefix='pulls/'+pr;
  const initial=await get(prefix);
  const baseSha=validateMetadata(initial,repo,pr,headSha);
@@ -127,26 +129,53 @@ async function collect(options,dependencies={}){
     !['ADVISORY','BLOCKED'].includes(audit.status))
   throw Error('ANALYZER_EVIDENCE_INCOMPLETE');
  const detected=cleanFindings(audit.findings);
+ // Independently enumerate and attest both immutable commit trees. Every
+ // analyzed Git blob is rehashed; no candidate file is imported or executed.
+ const snapshots=await snapshotScanner({get,baseSha,headSha});
+ const base=snapshots?.base,head=snapshots?.head;
+ if(snapshots?.autoMergeAllowed!==false||base?.sha!==baseSha||head?.sha!==headSha||
+    !Array.isArray(base?.findings)||!Array.isArray(head?.findings)||
+    !Array.isArray(base?.reasons)||!Array.isArray(head?.reasons)||
+    typeof base?.complete!=='boolean'||typeof head?.complete!=='boolean')
+  throw Error('SNAPSHOT_ATTESTATION_MISMATCH');
  const final=await get(prefix);
  if(validateMetadata(final,repo,pr,headSha)!==baseSha)
   throw Error('PR_CHANGED_DURING_COLLECTION');
- // There are no authenticated full-repository base/HEAD scans yet.
- // Feeding the diff scanner as a complete scan would incorrectly permit PASS.
  const candidate=review({headSha,baseSha,mergeBaseSha,
-  headComplete:false,baseComplete:false,headFindings:[],baseFindings:[],
+  headComplete:head.complete,baseComplete:base.complete,
+  headFindings:head.findings,baseFindings:base.findings,
   requiredChecks:REQUIRED,checks:ci.checks,renames,changedPaths,
-  affectedPaths:[]});
- if(candidate.status!=='INCOMPLETE'||candidate.autoMergeAllowed!==false)
-  throw Error('SHADOW_INVARIANT_VIOLATION');
+  affectedPaths:changedPaths});
+ if(candidate.autoMergeAllowed!==false)throw Error('SHADOW_INVARIANT_VIOLATION');
+ if(base.complete&&head.complete&&candidate.status==='INCOMPLETE'&&
+    candidate.reason!=='CI_EVIDENCE_INCOMPLETE')
+  throw Error('SHADOW_EVIDENCE_INCOMPLETE');
+ // Scope-complete is NOT synonymous with complete repository semantic
+ // understanding. The quality gate stays advisory regardless of its verdict.
+ const verified=base.complete&&head.complete;
+ const summary=sample=>({sha:sample.sha,complete:sample.complete,
+  targetFiles:sample.targetFiles||0,scannedFiles:sample.scannedFiles||0,
+  treeEntries:sample.treeEntries||0,bytes:sample.bytes||0,
+  findingsTotal:sample.findings.length,reasons:sample.reasons.slice(0,20)});
  return {schema:'ultra-sentinel-github-evidence/v1',mode:'shadow',
-  status:'INCOMPLETE',reason:'BASE_AND_HEAD_FULL_SCANS_NOT_ATTESTED',
-  analysisScope:'TRUSTED_PR_DIFF_ONLY',repo,pr,headSha,baseSha,mergeBaseSha,
-  changedFiles:files.length,scannerStatus:audit.status,
-  scannerFindingsTotal:detected.length,scannerFindings:detected.slice(0,50),
-  scannerReportTruncated:detected.length>50,ciStatus:ci.status,
-  checks:ci.checks.map(c=>({name:c.name,status:c.status,conclusion:c.conclusion,sha:c.sha,runId:c.runId})),
-  reviewRequired:audit.status==='BLOCKED',autoMergeAllowed:false,
-  autoCommitAllowed:false,hasAuthenticatedBaseline:false};
+  status:'INCOMPLETE',reason:'PRODUCTION_QUALITY_GATE_NOT_AUTHORIZED',
+  analysisScope:snapshots.scope||'SCOPED_AUTHENTICATED_SOURCE_SCAN_V1',
+  repo,pr,headSha,baseSha,mergeBaseSha,changedFiles:files.length,
+  scannerStatus:audit.status,scannerFindingsTotal:detected.length,
+  scannerFindings:detected.slice(0,50),scannerReportTruncated:detected.length>50,
+  ciStatus:ci.status,checks:ci.checks.map(c=>({name:c.name,status:c.status,
+   conclusion:c.conclusion,sha:c.sha,runId:c.runId})),
+  baseSnapshot:summary(base),headSnapshot:summary(head),
+  scopedEvaluator:{status:candidate.status,reason:candidate.reason||null,
+   findingsTotal:candidate.findings.length,
+   findings:candidate.findings.slice(0,50).map(f=>({path:f.path,line:f.line,
+    rule:f.rule,severity:f.severity,classification:f.classification,
+    familyId:f.familyId})),
+   truncated:candidate.findings.length>50,shadowComparison:candidate.shadowComparison},
+  reviewRequired:audit.status==='BLOCKED'||candidate.status==='BLOCKED'||
+   candidate.status==='REVIEW_REQUIRED',
+  autoMergeAllowed:false,autoCommitAllowed:false,
+  hasAuthenticatedBaseline:verified,hasAuthenticatedFullRepositoryScan:false};
 }
 async function main(){
  try{
@@ -159,8 +188,9 @@ async function main(){
    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
     '## Ultra Sentinel GitHub evidence (shadow only)\n\n'+
     'HEAD: '+report.headSha+'\n\n'+
-    'CI evidence: **'+report.ciStatus+'**; trusted diff scan: **'+report.scannerStatus+
-    '**; overall: **INCOMPLETE** pending full base/HEAD scans. Never merge authority.\n');
+    'CI evidence: **'+report.ciStatus+'**; verified scoped base/HEAD: **'+
+    report.hasAuthenticatedBaseline+'**; evaluator: **'+report.scopedEvaluator.status+
+    '**; production status: **INCOMPLETE**. Never merge authority.\n');
   }
  }catch(error){
   console.error('Ultra Sentinel trusted evidence: '+String(error.message).slice(0,150));
