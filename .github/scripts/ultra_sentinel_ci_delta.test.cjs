@@ -157,9 +157,9 @@ test('synthetic job results cannot claim authenticated CI, even with a scoped de
  assert.equal(r.autoApproveAllowed,false);assert.equal(r.autoMergeAllowed,false);
  const {github}=makeGithubFixture();
  const delta=await verifyCiDeltaFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172});
- assert.equal(delta.status,'INCOMPLETE');
+ assert.equal(delta.status,'SCOPED_DELTA_REVIEW_REQUIRED');
  const real=await verifyCiJobsFromGitHub({github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172,delta});
- assert.equal(real.status,'INCOMPLETE');
+ assert.equal(real.status,'SCOPED_CI_REVIEW_REQUIRED');
  assert.equal(real.observedJobs,31);
  assert.equal(real.autoApproveAllowed,false);assert.equal(real.autoMergeAllowed,false);
  assert.equal(checkJobEvidence({...evidence(),delta}).status,'INCOMPLETE');
@@ -181,7 +181,7 @@ test('immutable Git tree and full content cannot be substituted with matching ca
 test('CI attestation rejects stale SHA, forged delta, and newer failing run',async()=>{
  const {github,state}=makeGithubFixture(),args={github,owner:'cardenaspiero255-lang',repo:'gamehub-ultra',number:172};
  const delta=await verifyCiDeltaFromGitHub(args);
- assert.equal(delta.status,'INCOMPLETE');
+ assert.equal(delta.status,'SCOPED_DELTA_REVIEW_REQUIRED');
  assert.equal((await verifyCiJobsFromGitHub({...args,delta:{...delta}})).status,'INCOMPLETE');
  const another=makeGithubFixture();
  assert.equal((await verifyCiJobsFromGitHub({...another.github,github:another.github,owner:args.owner,repo:args.repo,number:172,delta})).status,'INCOMPLETE');
