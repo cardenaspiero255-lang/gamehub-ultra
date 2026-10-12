@@ -5,7 +5,7 @@ const stage1=require('./ultra_sentinel_ci_delta.cjs');
 const {evaluateRemote}=require('./ultra_sentinel_ci_delta_stage2.cjs');
 const HEAD='bb08782350201f97576a974a4684a611c21701c0';
 const BASE='7aa5df3e3c704965862ea728fb4c390d2c15a7f0';
-const REPO='cardenaspiero255-lang/gamehub-ultra',MAIN='5a363b3643d210df71b8235c949dd6f8063c4f8a';
+const REPO='cardenaspiero255-lang/gamehub-ultra',MAIN=BASE;
 const mapping={
  '.github/workflows/android.yml':['android',stage1.buildExpectedAndroid],
  '.github/workflows/coverage.yml':['coverage',stage1.buildExpectedCoverage],
@@ -24,12 +24,12 @@ const androidNames=['quality-lint','quality-contract-shard','quality-contracts',
 const coverageNames=['coverage',...Array.from({length:8},(_,i)=>'coverage-shard-'+i)];
 function fixture(){
  const state={prHead:HEAD,mainSha:MAIN,mainScript:'',lastRunBad:false,
-  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0};
+  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0,badRunBase:false};
  const match=(relative)=>relative.replace(/^\/+/,''), repoPath='cardenaspiero255-lang/gamehub-ultra';
  const changeList=paths.map(path=>({filename:path,status:path.startsWith('docs/')?'added':'modified',sha:blob(candidate[path])}));
  const run=(name,id,workflowId)=>({id,name,workflow_id:workflowId,head_sha:HEAD,event:'pull_request',
   status:'completed',conclusion:'success',run_attempt:state.runAttempts,
-  head_repository:{full_name:repoPath},pull_requests:[{number:172}]});
+  head_repository:{full_name:repoPath},pull_requests:[{number:172,head:{sha:HEAD},base:{sha:BASE}}]});
  const runs=[run('Android build',400,363810233),run('Unit Test Coverage',401,367848611)];
  async function get(relative){
   relative=match(relative);
@@ -61,6 +61,7 @@ function fixture(){
        (state.lateRunBadAfterFirstCheck&&state.runReads>=5))&&id===363810233)
     rr.push({...runs[0],id:901,conclusion:'failure'});
    if(state.lastRunBad&&id===363810233)rr.push({...runs[0],id:900,conclusion:'failure'});
+   if(state.badRunBase)for(const item of rr)item.pull_requests[0].base.sha='f'.repeat(40);
    return {total_count:rr.length,workflow_runs:rr};
   }
   if(relative.startsWith('actions/runs/')&&relative.endsWith('/jobs?per_page=100&filter=latest')){
@@ -122,4 +123,11 @@ test('protected CI workflow has no dispatch entrypoint selectable from PR branch
  const workflow=fs.readFileSync(path.resolve(__dirname,'../workflows/ultra-sentinel-ci-delta-protected.yml'),'utf8');
  assert.equal(workflow.includes('workflow_dispatch'),false);
  assert.match(workflow,/ref:.*github\.event\.repository\.default_branch/);
+});
+
+test('PR #172 current base must equal main and the recorded run base',async()=>{
+ const older=fixture();older.state.mainSha='5a363b3643d210df71b8235c949dd6f8063c4f8a';
+ assert.equal((await evaluateRemote(older.get)).status,'INCOMPLETE');
+ const wrongRun=fixture();wrongRun.state.badRunBase=true;
+ assert.equal((await evaluateRemote(wrongRun.get)).status,'INCOMPLETE');
 });
