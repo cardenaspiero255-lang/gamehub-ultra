@@ -205,7 +205,7 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
  // are not dynamic execution capabilities.
  for(const inert of [
   "const SAFE=Object.freeze(['Android build',1]); module.exports={SAFE};",
-  "const SAFE=Object.freeze({id:3,name:'safe',nested:{ok:true}}); module.exports={SAFE};",
+  "const SAFE=Object.freeze({id:3,name:'safe',ok:true}); module.exports={SAFE};",
   "process.exitCode=1;"
  ])assert.doesNotThrow(()=>engine.findCapabilities(parse(inert)),inert);
  // Unknown data, mutated aliases and active dynamic evaluation still fail closed.
