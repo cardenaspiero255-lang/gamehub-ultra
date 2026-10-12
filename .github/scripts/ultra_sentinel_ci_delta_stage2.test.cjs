@@ -24,7 +24,7 @@ const androidNames=['quality-lint','quality-contract-shard','quality-contracts',
 const coverageNames=['coverage',...Array.from({length:8},(_,i)=>'coverage-shard-'+i)];
 function fixture(){
  const state={prHead:HEAD,mainSha:MAIN,mainScript:'',lastRunBad:false,
-  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0,badRunBase:false};
+  fakeTree:false,dropFile:false,runAttempts:1,jobMissing:false,modifiedMain:false,mainMoves:false,mainReads:0,lateRunBad:false,lateRunBadAfterFirstCheck:false,runReads:0,badRunBase:false,lateAndroidAfterCoverage:false,missingJointAndroid:false};
  const match=(relative)=>relative.replace(/^\/+/,''), repoPath='cardenaspiero255-lang/gamehub-ultra';
  const changeList=paths.map(path=>({filename:path,status:path.startsWith('docs/')?'added':'modified',sha:blob(candidate[path])}));
  const run=(name,id,workflowId)=>({id,name,workflow_id:workflowId,head_sha:HEAD,event:'pull_request',
@@ -63,6 +63,11 @@ function fixture(){
    if(state.lastRunBad&&id===363810233)rr.push({...runs[0],id:900,conclusion:'failure'});
    if(state.badRunBase)for(const item of rr)item.pull_requests[0].base.sha='f'.repeat(40);
    return {total_count:rr.length,workflow_runs:rr};
+  }
+  if(relative==='actions/runs?head_sha='+HEAD+'&event=pull_request&per_page=100'){
+   const items=state.missingJointAndroid?runs.slice(1):[...runs];
+   if(state.lateAndroidAfterCoverage)items.push({...runs[0],id:910,status:'in_progress',conclusion:null});
+   return {total_count:items.length,workflow_runs:items};
   }
   if(relative.startsWith('actions/runs/')&&relative.endsWith('/jobs?per_page=100&filter=latest')){
    const id=Number(relative.split('/')[2]);
@@ -138,4 +143,13 @@ test('stage2 trusted main runs after push touching only the shared API reader',(
  assert.ok(push,'missing push trigger');
  assert.match(push,/ultra_sentinel_api_budget\*\.cjs/);
  assert.match(push,/ultra_sentinel_ci_delta_stage2\*\.cjs/);
+});
+
+test('atomic repository-wide CI snapshot rejects late Android rerun after Coverage read',async()=>{
+ const f=fixture();f.state.lateAndroidAfterCoverage=true;
+ assert.equal((await evaluateRemote(f.get)).status,'INCOMPLETE');
+});
+test('missing Android workflow in final repository-wide snapshot fails closed',async()=>{
+ const f=fixture();f.state.missingJointAndroid=true;
+ assert.equal((await evaluateRemote(f.get)).status,'INCOMPLETE');
 });
