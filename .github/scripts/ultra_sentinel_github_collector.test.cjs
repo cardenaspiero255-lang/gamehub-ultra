@@ -197,6 +197,28 @@ test('failed trusted collection produces a bounded sanitized fail-closed report'
  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
+ const fallbackCases=[
+  ['get', 'const get=dependencies.get||apiClient(repo,token,dependencies.fetcher);',
+   'const get=dependencies.get;'],
+  ['analyzer', 'const analyzer=dependencies.analyzer||reviewRemote;',
+   'const analyzer=dependencies.analyzer;'],
+  ['snapshots', 'const snapshotScanner=dependencies.snapshots||scanSnapshots;',
+   'const snapshotScanner=dependencies.snapshots;']
+ ];
+ const engine=require('./ultra_sentinel_capabilities.cjs');
+ for(let mask=0;mask<8;mask++){
+  let variant=source;
+  for(let i=0;i<fallbackCases.length;i++)if(mask&(1<<i)){
+   const [,before,after]=fallbackCases[i];assert.ok(variant.includes(before),before);
+   variant=variant.replace(before,after);
+  }
+  let result='PASS';
+  try{engine.findCapabilities(acorn.parse(variant,{ecmaVersion:'latest',
+   sourceType:'script',allowHashBang:true,allowReturnOutsideFunction:true,
+   allowAwaitOutsideFunction:true,locations:true,ranges:true}));}
+  catch(error){result=error.message;}
+  console.log('COLLECTOR_STATIC_PROVENANCE_DIAGNOSTIC',mask,result);
+ }
  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast),
   'complete collector source must be analyzable by trusted capability engine');
  const {scan}=require('./ultra_sentinel_selfreview.cjs');
