@@ -17,7 +17,9 @@ test('workflow: both events are supported, but privileged logic only targets pul
  assert.match(candidate.if,/github\.event_name == 'pull_request'/);
 });
 test('least privilege: workflow has read-only contents, PR and Actions permissions',()=>{
- assert.deepEqual(workflow.permissions,{'contents':'read','pull-requests':'read','actions':'read'});
+ assert.deepEqual(workflow.permissions,{'contents':'read','pull-requests':'read'});
+ assert.deepEqual(candidate.permissions,{'contents':'read'});
+ assert.deepEqual(trusted.permissions,{'contents':'read','pull-requests':'read','actions':'read'});
  assert.doesNotMatch(source,/(?:contents|pull-requests|actions):\s*write|write-all/);
 });
 test('trusted code: target runner checks out default branch, never PR head',()=>{
