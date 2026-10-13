@@ -15,7 +15,7 @@ function fixture(overrides = {}) {
       owner: { id: 322222186, login: "cardenaspiero255-lang" },
     },
     pull_request: {
-      title: "CAR-75 — test", merged: true, merged_at: "2026-10-13T17:00:00Z",
+      title: "CAR-75 — test", body: "Fixes #254", merged: true, merged_at: "2026-10-13T17:00:00Z",
       user: { login: "copilot-swe-agent[bot]" }, base: { ref: "main" },
       head: { repo: { id: 1375408706 } },
     },
@@ -121,4 +121,35 @@ test("fail closed on changed issue or GitHub API error", async () => {
   assert.equal((await handleCarWebhook(await request(), config, f1.transport, stamp)).status, 409);
   const f2 = fakeGithub({ broken: true });
   assert.equal((await handleCarWebhook(await request(), config, f2.transport, stamp)).status, 502);
+});
+
+
+test("an authenticated completed CAR issue closes after PR merge and starts the next CAR", async () => {
+  const e = fixture({
+    action: "closed",
+    issue: {
+      number: 254, title: "CAR-75 — old", state: "closed",
+      state_reason: "completed", closed_at: "2026-10-13T17:00:00Z",
+      labels: [{ name: "car:active" }], user: { login: "cardenaspiero255-lang" },
+    },
+  });
+  const api = fakeGithub({ ready: [next], latest: next });
+  const req = await request(e, { "x-github-event": "issues" });
+  const result = await handleCarWebhook(req, config, api.transport, stamp);
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { status: "car_assigned", issue: 256 });
+});
+
+test("issue closure lacking active CAR or completed state must not hand off", async () => {
+  for (const state_reason of ["not_planned", null]) {
+    const e = fixture({
+      issue: { title: "CAR-75 — old", state: "closed", state_reason,
+        closed_at: "2026-10-13T17:00:00Z", labels: [{ name: "car:active" }],
+        user: { login: "cardenaspiero255-lang" } },
+    });
+    const api = fakeGithub({ ready: [next] });
+    const result = await handleCarWebhook(await request(e, { "x-github-event": "issues" }), config, api.transport, stamp);
+    assert.equal(result.status, 202);
+    assert.equal(api.calls.length, 0);
+  }
 });
