@@ -1,0 +1,7 @@
+# GameHub Ultra — fail-closed PR policy.
+# Automatic merges are intentionally disabled pending:
+# (1) cryptographically or API-verifiable CAR assignment/session provenance tied to HEAD SHA;
+# (2) every applicable required and pending GitHub check reaching success;
+# (3) mandatory human Copilot draft/workflow approval handoff.
+# GitHub branch protection remains authoritative. PRs require explicit verified manual merge.
+pull_request_rules: []
