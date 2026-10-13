@@ -139,6 +139,7 @@ async function attestScopedPr172({github,owner,repo,pr,files}={}){
   if((await getMain())!==main)throw Error('MAIN_MOVED_DURING_VERIFICATION');
   return Object.freeze({status:'SCOPED_AUTHENTICATED_MANUAL_REVIEW',
    headSha:head,mainSha:main,protectedRunId:latest.id,
+   protectedRunAttempt:latest.run_attempt,
    provenanceAuthenticated:true,manualReviewRequired:true,
    autoApproveAllowed:false,autoMergeAllowed:false});
  }catch(_){return incomplete('UNVERIFIED_PROTECTED_EVIDENCE');}
