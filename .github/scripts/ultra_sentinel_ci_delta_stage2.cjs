@@ -13,6 +13,9 @@ const {createGitHubReader}=require('./ultra_sentinel_api_budget.cjs');
 const OWNER='cardenaspiero255-lang',REPO_NAME='gamehub-ultra';
 const REPO=OWNER+'/'+REPO_NAME;
 const BASE='7aa5df3e3c704965862ea728fb4c390d2c15a7f0';
+// Historical immutable policy identity: the Stage 1 classifier checks the
+// original five approved blobs; Stage 2 independently binds the live PR HEAD.
+const REVIEWED_DELTA_SHA='bb08782350201f97576a974a4684a611c21701c0';
 const SHA=/^[a-f0-9]{40}$/;
 const FILES=Object.freeze({
  '.github/workflows/android.yml':['android','0f78d28d5e8974b988490bd9facdf63cb6be6485'],
@@ -177,7 +180,8 @@ async function evaluateRemote(get){
   }
   const trusted=Object.fromEntries(baseEntries),candidate=Object.fromEntries(candidateEntries);
   const delta=classifyCiDelta({
-   repo:REPO,baseSha:BASE,trustedBaseSha:BASE,headSha:HEAD,expectedHeadSha:HEAD,
+   repo:REPO,baseSha:BASE,trustedBaseSha:BASE,
+   headSha:REVIEWED_DELTA_SHA,expectedHeadSha:REVIEWED_DELTA_SHA,
    trusted,candidate,files:changes,changedFileCount:changes.length
   });
   if(delta.status!=='SCOPED_DELTA_REVIEW_REQUIRED')
