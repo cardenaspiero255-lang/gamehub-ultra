@@ -204,3 +204,25 @@ test("RED: two concurrent signed webhook deliveries must not both assign an issu
   const successful=[a,b].filter(x=>x.status===200);
   assert.ok(successful.length<=1,"concurrent deliveries must not both assign the next CAR");
 });
+
+
+test("absence of durable ledger prevents all dispatch, even when the PR was merged", async () => {
+  const gh = fakeGithub({ready:[next],latest:next});
+  const insecure={secret,token:config.token};
+  const result=await handleCarWebhook(await request(completedFixture()),insecure,gh.transport,stamp);
+  assert.equal(result.status,503);
+  assert.equal(gh.calls.length,0);
+});
+
+test("PR number and CAR number must match completed issue to prevent skipping tasks", async () => {
+  const mismatched={
+    number:700,title:"CAR-77 — not CAR-75",body:"Fixes #254",
+    merged_at:"2026-10-13T17:00:00Z",
+    base:{ref:"main"},head:{repo:{id:1375408706}},
+    user:{login:"copilot-swe-agent[bot]"}
+  };
+  const gh=fakeGithub({ready:[next],latest:next,closed:[mismatched]});
+  const result=await handleCarWebhook(await request(completedFixture()),config,gh.transport,stamp);
+  assert.equal((await result.json()).status,"unverified_car_completion");
+  assert.ok(!gh.calls.some(x=>x.options.method==="POST"));
+});
