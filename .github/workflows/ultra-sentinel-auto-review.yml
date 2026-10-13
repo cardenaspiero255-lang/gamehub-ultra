@@ -60,6 +60,7 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             const path = require("node:path");
+            const fs = require("node:fs");
             const {analyze, markdown, recoverAddedPatch, missingAddedPatch} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport, serialize} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
             const {buildGraph} = require(path.resolve(".github/scripts/ultra_sentinel_causal.cjs"));
@@ -69,7 +70,15 @@ jobs:
             const {reviewWorkflowSources} = require(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"));
             const {evaluateProtectedChanges,hasIndependentHumanApproval,isAuthorizedSoloMaintainerPR} = require(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"));
             const {selectRepairTargets} = require(path.resolve(".github/scripts/ultra_sentinel_orchestrator.cjs"));
-            const {attestScopedPr172,permitScopedOpaqueYaml} = require(path.resolve(".github/scripts/ultra_sentinel_pr172_scope.cjs"));
+            // Only execute reviewer code from the trusted main checkout.
+            // Before this PR merges, the new module may not exist there.
+            const scopePath=path.resolve(".github/scripts/ultra_sentinel_pr172_scope.cjs");
+            const scopedModule=fs.existsSync(scopePath)?require(scopePath):{
+              attestScopedPr172:async()=>({status:'INCOMPLETE',provenanceAuthenticated:false,
+                manualReviewRequired:true,autoApproveAllowed:false,autoMergeAllowed:false}),
+              permitScopedOpaqueYaml:()=>false
+            };
+            const {attestScopedPr172,permitScopedOpaqueYaml}=scopedModule;
             const owner = context.repo.owner, repo = context.repo.repo;
             const n = Number(context.payload.pull_request?.number || context.payload.inputs?.pr_number);
             if (!Number.isSafeInteger(n) || n < 1) {
@@ -277,7 +286,6 @@ jobs:
               core.setFailed("Head SHA changed; refusing to publish stale report"); return;
             }
             // Preserve an inspectable SHA-pinned report without issue comment writes.
-            const fs = require("node:fs");
             const folder = path.join(process.env.RUNNER_TEMP,"ultra-sentinel-core-report");
             fs.mkdirSync(folder,{recursive:true});
             fs.writeFileSync(path.join(folder,"report.json"),JSON.stringify(report,null,2)+"\n",{encoding:"utf8",mode:0o600});
