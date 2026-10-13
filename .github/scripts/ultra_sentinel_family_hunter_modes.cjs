@@ -40,8 +40,8 @@ function completeShape(analysis){
     typeof f.rule!=='string'||!f.rule||
     !['BLOCKER','HIGH','MEDIUM','LOW'].includes(f.severity)||
     typeof f.path!=='string'||!Number.isSafeInteger(f.line)||f.line<0||
-    typeof f.confidence!=='string'||!f.confidence.trim()||
-    typeof f.evidence!=='string'||
+    !['high','medium','low'].includes(f.confidence)||
+    typeof f.evidence!=='string'||!f.evidence.trim()||
     typeof f.reason!=='string'||!f.reason.trim()||
     typeof f.verification!=='string'||!f.verification.trim()||
     !Array.isArray(f.domains)||
