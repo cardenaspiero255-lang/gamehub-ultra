@@ -266,3 +266,32 @@ test("P1 control: legitimate CAR titles with explicit separators remain eligible
     assert.equal(res.status,200,label+" should still dispatch after a real linked merge");
   }
 });
+
+
+test("P1 family regression: malformed closing issue references cannot dispatch", async () => {
+  for (const suffix of ["abc", "_extra", "/extra", ".6", "#extra", "🚀", "0", "x"]) {
+    const gh = fakeGithub({ready:[next],latest:next,closed:[{
+      number:700,title:"CAR-75 — finished",body:"Fixes #254"+suffix,
+      merged_at:"2026-10-13T17:00:00Z",
+      base:{ref:"main"},head:{repo:{id:1375408706}},
+      user:{login:"copilot-swe-agent[bot]"}
+    }]});
+    const result = await handleCarWebhook(await request(completedFixture()), config, gh.transport, stamp);
+    assert.equal((await result.json()).status, "unverified_car_completion",
+      "Issue link with trailing "+suffix+" must never trigger a CAR handoff");
+    assert.equal(gh.calls.some(x => x.options.method === "POST"), false);
+  }
+});
+
+test("P1 control: GitHub issue closing keywords with exact ID remain recognized", async () => {
+  for (const body of ["Fixes #254", "Closes #254.", "Resolves #254, closes #255", "Fixes #254; additional work"]) {
+    const gh = fakeGithub({ready:[next],latest:next,closed:[{
+      number:700,title:"CAR-75 — finished",body,
+      merged_at:"2026-10-13T17:00:00Z",
+      base:{ref:"main"},head:{repo:{id:1375408706}},
+      user:{login:"copilot-swe-agent[bot]"}
+    }]});
+    const result = await handleCarWebhook(await request(completedFixture()), config, gh.transport, stamp);
+    assert.equal(result.status, 200, body+" should be accepted with exact issue ID");
+  }
+});
