@@ -76,6 +76,7 @@ test('exact GitHub-origin scoped stage2 evidence stays manual and non-approving'
  assert.equal(x.manualReviewRequired,true);
  assert.equal(x.autoApproveAllowed,false);
  assert.equal(x.autoMergeAllowed,false);
+ assert.equal(x.protectedRunAttempt,1);
 });
 test('unrelated PR and foreign author never inherit PR172 attestation',async()=>{
  const a=fixture();a.pr.number=173;assert.notEqual((await run(a)).status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
@@ -141,6 +142,17 @@ test('reviewer workflows consume trusted scoped evidence without weakening high 
   assert.match(text,/ultra_sentinel_pr172_scope\.cjs/);
   assert.match(text,/SCOPED_AUTHENTICATED_MANUAL_REVIEW/);
   assert.match(text,/HIGH.*BLOCKER/);
+ }
+});
+test('both reviewers reattest the same run immediately before making an exception',()=>{
+ for(const file of ['ultra-sentinel-auto-review.yml','ultra-sentinel-independent-review.yml']){
+  const text=fs.readFileSync(path.resolve(__dirname,'../workflows',file),'utf8');
+  const terminal=text.lastIndexOf('await attestScopedPr172({github,owner,repo,pr,files})');
+  const summary=text.lastIndexOf('await core.summary.addHeading');
+  const decision=text.lastIndexOf('core.setFailed(');
+  assert.ok(terminal>summary,'must reattest after async summary work: '+file);
+  assert.ok(decision>terminal,'decision must follow terminal attestation: '+file);
+  assert.match(text,/protectedRunAttempt/);
  }
 });
 test('scoped authenticator never uses GitHub writes or dynamically executes PR code',()=>{
