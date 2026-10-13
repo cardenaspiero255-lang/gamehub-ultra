@@ -17,7 +17,7 @@ Por eso **NO ES CORRECTO** decir que un token `Issues:write` basta ni que una cr
 
 ## Instalación manual única (pendiente)
 
-1. Validar y fusionar el PR #195 con revisión de seguridad y todas sus comprobaciones verdes en el HEAD; confirma que el agente `gamehub-car-engineer` esté en `main`.
+1. **PR #195 fusionado** por squash a `main` (`887cc487d7b8e82b133dc4e4701ac4fff185b5df`). Su agente `gamehub-car-engineer` está en `main`. Mantener la autofusión Mergify desactivada y las protecciones de rama.
 2. Verificar protección `main` en GitHub. El 13/10/2026 GitHub reportó `protected=true` y cuatro checks obligatorios.
 3. Revisar la migración SQL, su RLS, privilegios y transacción. Aplicarla **solo después de la revisión** al proyecto Supabase autorizado. No habilitar Data API de escritura a usuarios anónimos o autenticados; la función RPC y tabla conceden acceso solo a `service_role`.
 4. Configurar en los secrets de Supabase Edge Functions: `CAR_GITHUB_WEBHOOK_SECRET` (secreto aleatorio fuerte propio) y `CAR_GITHUB_COPILOT_USER_TOKEN` (token de usuario con los permisos documentados, restringido a este repositorio). El servicio recibe `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` en backend; nunca los envíes al cliente ni a GitHub. Validar su presencia tras el despliegue.
@@ -28,6 +28,6 @@ Por eso **NO ES CORRECTO** decir que un token `Issues:write` basta ni que una cr
 
 ## Tests y límites
 
-Pruebas unitarias: `node --test supabase/functions/car-autopilot/handler.test.mjs`; workflow GitHub Actions `CAR Autopilot Webhook Tests`. El registro SQL se verifica en un entorno seguro antes de producción. La función no corrige PR fallidos por sí sola: esa labor queda para el agente Copilot y el seguimiento horario. Si la migración no existe o GitHub rechaza el token, no hay despacho, que es el comportamiento seguro.
+Pruebas unitarias: `node --test supabase/functions/car-autopilot/handler.test.mjs supabase/functions/car-autopilot/index.test.mjs`; workflow GitHub Actions `CAR Autopilot Webhook Tests`. Ese workflow también verifica el entrypoint, analiza `supabase/config.toml` con Python `tomllib` y ejecuta el SQL de migración y el contrato `ledger.test.sql` sobre PostgreSQL efímero local, comprobando RLS, permisos y resistencia a replays. Los títulos CAR malformados se rechazan mediante pruebas adversariales. Estas pruebas **no equivalen** a un despliegue ni a validar un token real de Copilot. La función no corrige PR fallidos por sí sola: esa labor queda para el agente Copilot y el seguimiento horario. Si la migración no existe o GitHub rechaza el token, no hay despacho, que es el comportamiento seguro.
 
 **Estado actual:** archivos en PR #196 draft, no fusionados ni desplegados; credenciales y webhook externo sin configurar. No considerar el circuito operativo hasta una validación real.
