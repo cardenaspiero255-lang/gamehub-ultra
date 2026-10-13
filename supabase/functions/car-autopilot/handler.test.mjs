@@ -153,3 +153,34 @@ test("issue closure lacking active CAR or completed state must not hand off", as
     assert.equal(api.calls.length, 0);
   }
 });
+
+
+test("RED: manual issue closure cannot dispatch unless a matching PR is actually merged", async () => {
+  const e = fixture({
+    issue: {
+      number: 254, title: "CAR-75 — old", state: "closed", state_reason: "completed",
+      closed_at: "2026-10-13T17:00:00Z",
+      labels: [{ name: "car:active" }], user: { login: "cardenaspiero255-lang" },
+    },
+  });
+  const gh = fakeGithub({ ready: [next], latest: next });
+  const response = await handleCarWebhook(await request(e,{"x-github-event":"issues"}),config,gh.transport,stamp);
+  assert.notEqual(response.status,200,"manual close without an authenticated linked merged PR must not dispatch");
+});
+
+test("RED: two concurrent signed webhook deliveries must not both assign an issue", async () => {
+  const e = fixture({
+    issue: {
+      number: 254, title: "CAR-75 — old", state: "closed", state_reason: "completed",
+      closed_at: "2026-10-13T17:00:00Z",
+      labels: [{ name: "car:active" }], user: { login: "cardenaspiero255-lang" },
+    },
+  });
+  const gh = fakeGithub({ ready:[next],latest:next });
+  const [a,b]=await Promise.all([
+    handleCarWebhook(await request(e,{"x-github-event":"issues"}),config,gh.transport,stamp),
+    handleCarWebhook(await request(e,{"x-github-event":"issues","x-github-delivery":"8ad436a5-e722-44b4-86d4-b9f4b235216d"}),config,gh.transport,stamp),
+  ]);
+  const successful=[a,b].filter(x=>x.status===200);
+  assert.ok(successful.length<=1,"concurrent deliveries must not both assign the next CAR");
+});
