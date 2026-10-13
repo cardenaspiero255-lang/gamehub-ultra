@@ -153,6 +153,15 @@ test('both reviewers reattest the same run immediately before making an exceptio
   assert.ok(terminal>summary,'must reattest after async summary work: '+file);
   assert.ok(decision>terminal,'decision must follow terminal attestation: '+file);
   assert.match(text,/protectedRunAttempt/);
+  const upload=text.lastIndexOf('uses: actions/upload-artifact@');
+  const post=text.lastIndexOf('- name: Reauthenticate scoped evidence after artifact upload');
+  assert.ok(upload>=0&&post>upload,'post-upload check must be the last job step: '+file);
+  const afterUpload=text.slice(post);
+  assert.match(afterUpload,/const current=await attestScopedPr172\(\{github,owner,repo,pr,files\}\)/);
+  assert.match(afterUpload,/if\(pr\.head\.sha!==report\.sha\)/);
+  assert.match(afterUpload,/if\(current\.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'/);
+  assert.match(afterUpload,/if\(current\[field\]!==stored\[field\]\)/);
+  assert.match(afterUpload,/core\.setFailed\('Post-upload attestation changed/);
  }
 });
 test('trusted-main reviewers tolerate absent not-yet-merged scope module and fail closed',()=>{
