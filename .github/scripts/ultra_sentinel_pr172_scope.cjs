@@ -63,11 +63,11 @@ function latestRun(runs,head,base){
   if(r.workflow_id!==REVIEWER_ID||r.name!==REVIEWER_NAME||
    r.event!=='pull_request_target'||r.head_sha!==head||
    r.head_repository?.full_name!==REPO||
-   !Array.isArray(r.pull_requests)||r.pull_requests.length>1)
+   !Array.isArray(r.pull_requests)||r.pull_requests.length!==1)
    throw Error('UNTRUSTED_RUN_PROVENANCE');
-  // Another PR can refer to the same commit; accept only GitHub's
-  // exact, single PR172 association to authenticate the protected run.
-  if(r.pull_requests.length===0)continue;
+  // An unlinked run could be a newer pending/failed PR172 attempt:
+  // never silently skip it and reuse an earlier green attestation.
+  // Another PR can refer to the same commit; only accept exact PR linkage.
   const linked=r.pull_requests[0];
   if(linked?.number!==172)continue;
   if(linked.head?.sha!==head||linked.base?.sha!==base)
