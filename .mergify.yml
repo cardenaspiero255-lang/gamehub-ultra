@@ -1,36 +1,7 @@
-# GameHub Ultra: Mergify event-driven merges, no cron or ChatGPT Tasks.
-# Scoped auto-merge for bot-created source-only CAR PRs. The bot rule
-# never runs on CI, release or security configuration changes.
-# A green CI check is evidence of tests passing, not proof of zero bugs.
-pull_request_rules:
-  # An owner's approved label survives new commits. Do not auto-merge owner
-  # PRs until approval can be tied durably to the current HEAD SHA.
-  # Owner PRs are repaired/reviewed by the hourly agent and merged only
-  # after a fresh authenticated verification.
-
-  # This rule needs no ChatGPT messages or approval labels. The external
-  # Copilot cloud agent must finish its draft and satisfy the checks itself.
-  # Never authorize PRs by a human mimicking the bot's title/branch.
-  - name: "Auto-merge safe completed CARs from Copilot"
-    conditions:
-      - "base = main"
-      - "author = copilot-swe-agent[bot]"
-      - "head ~= ^copilot/"
-      - "title ~= ^CAR-[0-9]+\\b"
-      - "-draft"
-      - "-from-fork"
-      - "-conflict"
-      - "label != merge:blocked"
-      - "label != security:review-required"
-      - "label != do-not-merge"
-      - "#review-threads-unresolved = 0"
-      - "#check-failure = 0"
-      - "check-success = @github-actions/build"
-      - "check-success = @github-actions/coverage"
-      - "check-success = @github-actions/Ultra Sentinel Core — own reviewer"
-      - "check-success = @github-actions/read-only-review"
-      # Fail closed: ANY changed path outside ordinary Kotlin/Java code and tests blocks merge.
-      - '-files ~= ^(?!app/src/(?:main/java|test|androidTest)/)'
-    actions:
-      merge:
-        method: squash
+# GameHub Ultra — fail-closed PR policy.
+# Automatic merges are intentionally disabled pending:
+# (1) cryptographically or API-verifiable CAR assignment/session provenance tied to HEAD SHA;
+# (2) every applicable required and pending GitHub check reaching success;
+# (3) mandatory human Copilot draft/workflow approval handoff.
+# GitHub branch protection remains authoritative. PRs require explicit verified manual merge.
+pull_request_rules: []
