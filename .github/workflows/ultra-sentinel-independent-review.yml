@@ -236,3 +236,38 @@ jobs:
           path: ${{ runner.temp }}/sentinel-independent/
           if-no-files-found: error
           retention-days: 7
+      - name: Reauthenticate scoped evidence after artifact upload
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            // Verify that the last uploaded read-only report is still supported
+            // by the latest protected run before this independent job finishes.
+            const fs=require('node:fs'),path=require('node:path');
+            const report=JSON.parse(fs.readFileSync(
+              path.join(process.env.RUNNER_TEMP,'sentinel-independent','report.json'),'utf8'));
+            if(report.scopedAccepted===true){
+              const stored=report.scopedProtectedDelta;
+              const scopePath=path.resolve('.github/scripts/ultra_sentinel_pr172_scope.cjs');
+              if(report.pr!==172||!fs.existsSync(scopePath)){
+                core.setFailed('Post-upload attestation changed: missing trusted reviewer');return;
+              }
+              const {attestScopedPr172}=require(scopePath);
+              const owner=context.repo.owner,repo=context.repo.repo;
+              const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:172});
+              if(pr.head.sha!==report.sha){
+                core.setFailed('Post-upload attestation changed: PR HEAD moved');return;
+              }
+              const files=await github.paginate(github.rest.pulls.listFiles,
+                {owner,repo,pull_number:172,per_page:100});
+              const current=await attestScopedPr172({github,owner,repo,pr,files});
+              if(current.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'||
+                 stored?.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'){
+                core.setFailed('Post-upload attestation changed: protected run unavailable');return;
+              }
+              for(const field of ['headSha','mainSha','protectedRunId','protectedRunAttempt']){
+                if(current[field]!==stored[field]){
+                  core.setFailed('Post-upload attestation changed: protected run superseded');return;
+                }
+              }
+            }
