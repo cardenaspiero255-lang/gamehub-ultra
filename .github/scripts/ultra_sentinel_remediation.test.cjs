@@ -134,6 +134,9 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  const malformedEvidence=[
   ['unknown confidence',{confidence:null}],
   ['non-string evidence',{evidence:{text:'untrusted'}}],
+  ['empty evidence',{evidence:''}],
+  ['whitespace evidence',{evidence:'   '}],
+  ['forged confidence',{confidence:'CERTIFIED'}],
   ['non-string reason',{reason:42}],
   ['no verification method',{verification:''}],
   ['invalid domains',{domains:'voice'}],
