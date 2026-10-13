@@ -22,6 +22,15 @@ function fixture(overrides = {}) {
     ...overrides,
   };
 }
+function completedFixture() {
+  return fixture({
+    issue: {
+      number: 254, title: "CAR-75 — finished", state: "closed",
+      state_reason: "completed", closed_at: "2026-10-13T17:00:00Z",
+      user: { login: "cardenaspiero255-lang" }, labels: [{ name: "car:active" }],
+    },
+  });
+}
 async function request(event = fixture(), headers = {}) {
   const raw = JSON.stringify(event);
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), {
@@ -71,8 +80,8 @@ const next = {
 };
 
 test("reject missing config, invalid auth and invalid method", async () => {
-  assert.equal((await handleCarWebhook(await request(), {}, fetch, stamp)).status, 503);
-  const bad = await request();
+  assert.equal((await handleCarWebhook(await request(completedFixture()), {}, fetch, stamp)).status, 503);
+  const bad = await request(completedFixture());
   bad.headers.set("x-hub-signature-256", "sha256=" + "0".repeat(64));
   assert.equal((await handleCarWebhook(bad, config, fetch, stamp)).status, 401);
   const get = new Request("https://edge.example");
@@ -91,14 +100,14 @@ test("ignore unrelated, stale and unauthorized events without API calls", async 
     assert.equal((await handleCarWebhook(await request(ev), config, api.transport, stamp)).status, 202);
     assert.equal(api.calls.length, 0);
   }
-  const late = await handleCarWebhook(await request(), config, fakeGithub().transport, stamp + 7200000);
+  const late = await handleCarWebhook(await request(completedFixture()), config, fakeGithub().transport, stamp + 7200000);
   assert.equal((await late.json()).status, "stale_or_ambiguous_event");
 });
 
 test("dispatch exactly one oldest ready CAR with custom agent and no merge permissions", async () => {
   const older = { ...next, number: 255, title: "CAR-74 — scheduler safe" };
   const api = fakeGithub({ ready: [next, older], latest: older });
-  const res = await handleCarWebhook(await request(), config, api.transport, stamp);
+  const res = await handleCarWebhook(await request(completedFixture()), config, api.transport, stamp);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { status: "car_assigned", issue: 255 });
   const assign = api.calls.find((x) => x.url.endsWith("/issues/255/assignees"));
@@ -115,18 +124,18 @@ test("dispatch exactly one oldest ready CAR with custom agent and no merge permi
 test("active CAR blocks duplicate dispatch; no ready or invalid issue does not dispatch", async () => {
   const running = { ...next, title: "CAR-74 — still active", labels: [{ name: "car:active" }] };
   const f1 = fakeGithub({ active: [running], ready: [next] });
-  assert.equal((await (await handleCarWebhook(await request(), config, f1.transport, stamp)).json()).status, "active_car_exists");
+  assert.equal((await (await handleCarWebhook(await request(completedFixture()), config, f1.transport, stamp)).json()).status, "active_car_exists");
   assert.equal(f1.calls.filter((x) => x.options.method === "POST").length, 0);
   const f2 = fakeGithub({ ready: [{ ...next, user: { login: "attacker" } }] });
-  assert.equal((await (await handleCarWebhook(await request(), config, f2.transport, stamp)).json()).status, "no_ready_car");
+  assert.equal((await (await handleCarWebhook(await request(completedFixture()), config, f2.transport, stamp)).json()).status, "no_ready_car");
 });
 
 test("fail closed on changed issue or GitHub API error", async () => {
   const modified = { ...next, labels: [{ name: "car:blocked" }] };
   const f1 = fakeGithub({ ready: [next], latest: modified });
-  assert.equal((await handleCarWebhook(await request(), config, f1.transport, stamp)).status, 409);
+  assert.equal((await handleCarWebhook(await request(completedFixture()), config, f1.transport, stamp)).status, 409);
   const f2 = fakeGithub({ broken: true });
-  assert.equal((await handleCarWebhook(await request(), config, f2.transport, stamp)).status, 502);
+  assert.equal((await handleCarWebhook(await request(completedFixture()), config, f2.transport, stamp)).status, 502);
 });
 
 
