@@ -17,6 +17,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  actions: read
 
 concurrency:
   group: sentinel-independent-${{ github.event.pull_request.number }}
@@ -57,6 +58,15 @@ jobs:
             const path = require("node:path");
             const {analyze,markdown,recoverAddedPatch,missingAddedPatch} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
+            // Only execute reviewer code from the trusted main checkout.
+            // Before this PR merges, the new module may not exist there.
+            const scopePath=path.resolve(".github/scripts/ultra_sentinel_pr172_scope.cjs");
+            const scopedModule=fs.existsSync(scopePath)?require(scopePath):{
+              attestScopedPr172:async()=>({status:'INCOMPLETE',provenanceAuthenticated:false,
+                manualReviewRequired:true,autoApproveAllowed:false,autoMergeAllowed:false}),
+              permitScopedOpaqueYaml:()=>false
+            };
+            const {attestScopedPr172,permitScopedOpaqueYaml}=scopedModule;
             const deployed=fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"))&&
               fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"))&&
               fs.existsSync(path.resolve("package-lock.json"));
@@ -75,6 +85,7 @@ jobs:
             }
             const files = await github.paginate(github.rest.pulls.listFiles,
               {owner,repo,pull_number:number,per_page:100});
+            const scopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
             // Independently obtain bounded Kotlin full-file context at the
             // same immutable PR SHA; never execute or checkout candidate code.
             const evidenceFiles=files.map(item=>({...item}));
@@ -171,8 +182,6 @@ jobs:
                 }
               }
               structural=reviewWorkflowSources({expected,sources,trustedRepository:owner+'/'+repo});
-              if(structural.coverage.partial)
-                core.setFailed('Unable to structurally parse every changed workflow.');
               if(structural.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
                 core.setFailed('HIGH/BLOCKER structural workflow security finding requires repair before merge.');
             }else{
@@ -190,6 +199,7 @@ jobs:
             const report = buildReport({pr:number,sha:pr.head.sha,analysis:result});
             report.structuralYaml=structural;
             report.protectedChanges=protectedChanges;
+            report.scopedProtectedDelta=scopedProtected;
             const dest = path.join(process.env.RUNNER_TEMP,"sentinel-independent");
             fs.mkdirSync(dest,{recursive:true});
             fs.writeFileSync(path.join(dest,"report.json"),JSON.stringify(report,null,2)+"\n",
@@ -198,6 +208,23 @@ jobs:
               {encoding:"utf8",mode:0o600});
             await core.summary.addHeading("Ultra Sentinel · Independent Read-only Review")
               .addRaw(markdown(result)+'\nStructural YAML: '+(structural?.status||'NOT_DEPLOYED_ON_TRUSTED_MAIN')).write();
+            // Reauthenticate *after* all async work, immediately before YAML waiver.
+            const terminalScopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
+            const scopedAccepted=scopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
+              terminalScopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
+              terminalScopedProtected.headSha===scopedProtected.headSha&&
+              terminalScopedProtected.mainSha===scopedProtected.mainSha&&
+              terminalScopedProtected.protectedRunId===scopedProtected.protectedRunId&&
+              terminalScopedProtected.protectedRunAttempt===scopedProtected.protectedRunAttempt&&
+              permitScopedOpaqueYaml(structural);
+            report.scopedProtectedDelta=terminalScopedProtected;
+            report.scopedAccepted=scopedAccepted;
+            fs.writeFileSync(path.join(dest,"report.json"),JSON.stringify(report,null,2)+"\n",
+              {encoding:"utf8",mode:0o600});
+            if(structural?.coverage?.partial&&!scopedAccepted)
+              core.setFailed('Unable to structurally parse every changed workflow.');
+            else if(structural?.coverage?.partial)
+              core.warning('Opaque YAML remains INCOMPLETE; authenticated Stage 2 requires manual review.');
             if (result.coverage.partial) core.setFailed("Incomplete changed-file evidence; manual review required.");
             if (result.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
               core.setFailed('HIGH/BLOCKER finding; reproduce and verify before merging.');
@@ -209,3 +236,38 @@ jobs:
           path: ${{ runner.temp }}/sentinel-independent/
           if-no-files-found: error
           retention-days: 7
+      - name: Reauthenticate scoped evidence after artifact upload
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8 Node 24
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            // Verify that the last uploaded read-only report is still supported
+            // by the latest protected run before this independent job finishes.
+            const fs=require('node:fs'),path=require('node:path');
+            const report=JSON.parse(fs.readFileSync(
+              path.join(process.env.RUNNER_TEMP,'sentinel-independent','report.json'),'utf8'));
+            if(report.scopedAccepted===true){
+              const stored=report.scopedProtectedDelta;
+              const scopePath=path.resolve('.github/scripts/ultra_sentinel_pr172_scope.cjs');
+              if(report.pr!==172||!fs.existsSync(scopePath)){
+                core.setFailed('Post-upload attestation changed: missing trusted reviewer');return;
+              }
+              const {attestScopedPr172}=require(scopePath);
+              const owner=context.repo.owner,repo=context.repo.repo;
+              const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:172});
+              if(pr.head.sha!==report.sha){
+                core.setFailed('Post-upload attestation changed: PR HEAD moved');return;
+              }
+              const files=await github.paginate(github.rest.pulls.listFiles,
+                {owner,repo,pull_number:172,per_page:100});
+              const current=await attestScopedPr172({github,owner,repo,pr,files});
+              if(current.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'||
+                 stored?.status!=='SCOPED_AUTHENTICATED_MANUAL_REVIEW'){
+                core.setFailed('Post-upload attestation changed: protected run unavailable');return;
+              }
+              for(const field of ['headSha','mainSha','protectedRunId','protectedRunAttempt']){
+                if(current[field]!==stored[field]){
+                  core.setFailed('Post-upload attestation changed: protected run superseded');return;
+                }
+              }
+            }
