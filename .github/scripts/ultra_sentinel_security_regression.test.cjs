@@ -91,7 +91,11 @@ test('automatic and post-CI reviewers fail closed on untrusted CI without exact 
   const code=fs.readFileSync(path.resolve(__dirname,'../workflows',file),'utf8');
   if(file==='ultra-sentinel-auto-review.yml'){
    // The exception only adds scoped MANUAL review, never CI certification.
-   assert.match(code,/const scopedAccepted=scopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+   assert.match(code,/const scopedCandidate=scopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+   assert.match(code,/const scopedAccepted=scopedCandidate&&\s*terminalScopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+   for(const field of ['headSha','mainSha','protectedRunId','protectedRunAttempt']){
+    assert.match(code,new RegExp('terminalScopedProtected\\.'+field+'===scopedProtected\\.'+field));
+   }
    assert.match(code,/permitScopedOpaqueYaml\(structuralYaml\)/);
    assert.match(code,/if\(ci\.status==='UNTRUSTED'&&!scopedAccepted\)\s*core\.setFailed/);
    assert.match(code,/if\s*\(structuralYaml\.coverage\.partial&&!scopedAccepted\)\s*core\.setFailed/);
