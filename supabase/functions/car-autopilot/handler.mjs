@@ -36,27 +36,43 @@ export async function handleCarWebhook(req, config, transport = fetch, timestamp
   const delivery = req.headers.get("x-github-delivery");
   if (!delivery || !/^[0-9a-f-]{20,64}$/i.test(delivery))
     return json(400, { status: "invalid_delivery_id" });
-  if (req.headers.get("x-github-event") !== "pull_request")
+  const eventType = req.headers.get("x-github-event");
+  if (!["pull_request", "issues"].includes(eventType))
     return json(202, { status: "ignored_event" });
 
   let event;
   try { event = JSON.parse(new TextDecoder().decode(raw)); }
   catch { return json(400, { status: "invalid_json" }); }
-  const pr = event?.pull_request;
   if (event?.repository?.id !== REPOSITORY_ID ||
-      event?.repository?.owner?.id !== OWNER_ID ||
-      event?.action !== "closed" || pr?.merged !== true ||
-      pr?.base?.ref !== "main" ||
-      pr?.head?.repo?.id !== REPOSITORY_ID ||
-      ![BOT, "cardenaspiero255-lang"].includes(pr?.user?.login))
-    return json(202, { status: "ignored_non_authorized_merge" });
+      event?.repository?.owner?.id !== OWNER_ID)
+    return json(202, { status: "bad_repository_identity" });
 
-  const previousCar = exactCar(pr.title);
-  if (!previousCar || !pr.merged_at) return json(202, { status: "ignored_non_car" });
-  const merged = Date.parse(pr.merged_at);
-  if (!Number.isFinite(merged) || timestamp - merged < -300000 ||
-      timestamp - merged > 600000)
-    return json(202, { status: "stale_or_ambiguous_event" });
+  // A successful merge may close its issue AFTER the PR webhook fires.
+  // Listen to both signed events so dispatch occurs on the confirmed issue closure.
+  if (eventType === "pull_request") {
+    const pr = event?.pull_request;
+    if (event?.action !== "closed" || pr?.merged !== true ||
+        pr?.base?.ref !== "main" || pr?.head?.repo?.id !== REPOSITORY_ID ||
+        ![BOT, "cardenaspiero255-lang"].includes(pr?.user?.login))
+      return json(202, { status: "ignored_non_authorized_merge" });
+    if (!exactCar(pr.title) || !/\\b(?:fixes|closes|resolves)\\s+#\\d+/i.test(pr.body || ""))
+      return json(202, { status: "ignored_non_car" });
+    const merged = Date.parse(pr.merged_at || "");
+    if (!Number.isFinite(merged) || timestamp - merged < -300000 ||
+        timestamp - merged > 600000)
+      return json(202, { status: "stale_or_ambiguous_event" });
+  } else {
+    const issue = event?.issue;
+    if (event?.action !== "closed" || issue?.state !== "closed" ||
+        issue?.state_reason !== "completed" ||
+        issue?.user?.login !== "cardenaspiero255-lang" ||
+        !hasLabel(issue, "car:active") || !exactCar(issue.title))
+      return json(202, { status: "ignored_non_car_close" });
+    const closed = Date.parse(issue.closed_at || "");
+    if (!Number.isFinite(closed) || timestamp - closed < -300000 ||
+        timestamp - closed > 600000)
+      return json(202, { status: "stale_or_ambiguous_event" });
+  }
 
   const fullName = event.repository.full_name;
   const [owner, name] = String(fullName || "").split("/");
