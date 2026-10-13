@@ -13,7 +13,7 @@ La configuración `.mergify.yml` tiene **dos políticas separadas**. (A) PR norm
 Condiciones obligatorias:
 - Ausencia de etiquetas de bloqueo `merge:blocked`, `security:review-required` o `do-not-merge`, y cero conversaciones de revisión pendientes de resolver.
 - Cero checks fallidos, y éxito explícito de `@github-actions/build`, `@github-actions/coverage`, `@github-actions/Ultra Sentinel Core — own reviewer` y `@github-actions/read-only-review` (revisión independiente).
-- La política excluye cambios de `.github/**`, `.mergify.yml`, wrappers/configuración de build sensible y archivos de seguridad o credenciales.
+- La política **falla cerrada por ruta**: solo permite fusionar automáticamente cambios cuyo *cada archivo* esté bajo `app/src/main/java/`, `app/src/test/` o `app/src/androidTest/`. Un PR mixto (Kotlin + `.github/`, `supabase/`, Manifest, Gradle, etc.) exige fusión manual y revisión humana. El patrón se prueba con regresiones y Mergify debe confirmar que lo acepta.
 - Mergify respetará todas las protecciones de `main` y no fusionará PR draft ni con conflictos. GitHub CI y revisiones asociadas a HEAD actual son obligatorias. Un check de infraestructura en verde **no garantiza ausencia de bugs**; el propietario debe confirmar que se investigaron los hallazgos relevantes.
 
 **Mergify ya se ha instalado y su check `Configuration changed` se observó en verde en PR #195.** Esto solo valida el archivo en el PR; Mergify lee la configuración activa de `main`, por lo que todavía hay que fusionar #195 después de verificar su CI. El bot de Copilot y una política de fusión en verde no prueban ausencia total de defectos.
@@ -29,7 +29,7 @@ Condiciones obligatorias:
 ## Circuito CAR: Copilot cloud coding agent (app externa)
 
 - `.github/agents/gamehub-car-engineer.agent.md`: agente específico de GameHub con prompt refinado (rol, límites, objetivo, evidencia, TDD, familias de errores y criterios de aceptación).
-- `.github/ISSUE_TEMPLATE/car-agent.yml`: formulario GitHub que solicita número del CAR, dependencias, alcance y criterios. Intenta asignar el issue automáticamente a `copilot-swe-agent[bot]`, si tiene acceso a issues. La asignación de agente **puede requerir permisos o interfaz de Copilot** y el formulario no garantiza ejecución; el propietario debe comprobarla en el issue.
+- `.github/ISSUE_TEMPLATE/car-agent.yml`: formulario GitHub que solicita número del CAR, dependencias, alcance y criterios. **No autoasigna** al bot al abrir un issue: el controlador externo debe comprobar dependencias, permisos y duplicados antes de iniciar una tarea; su instalación está pendiente.
 - El agente debe abrir PR *draft*, reproducir fallos con tests (RED), corregir familia + variantes justificadas (GREEN), refactorizar, ejecutar pruebas, registrar CI del commit y bloquear cierre por P1/P2 o errores confirmados.
 - Para avanzar la **cola completa automáticamente** después de fusionar cada CAR (sin crear tareas programadas) hace falta una automatización externa por webhook como Supabase Edge Functions, n8n o Make: evento `pull_request.closed` con `merged=true` y nombre `CAR-N` → buscar el siguiente issue CAR explícitamente listo, no duplicado y con dependencias completadas → asignarlo al agente → esperar PR y validaciones. No está conectada todavía. Limitar a una asignación activa para evitar bucles y conflictos.
 - Los plugins de ChatGPT (GitHub y Prompt Engineer) sirven para tareas interactivas. **No** quedan ejecutándose por sí mismos fuera de la conversación.
@@ -51,7 +51,7 @@ El agente creado en `.github/agents/gamehub-car-engineer.agent.md` debe terminar
 
 ### Condiciones que impiden operación completamente autónoma hoy
 
-- GitHub confirma que **`main` no está protegida** (13-10-2026). Esta configuración de GitHub la debe crear el propietario en Settings o un cliente con API de administración; el conector actual no permite editar reglas de protección.
+- **`main` está protegida desde el 13-10-2026:** GitHub confirmó `protected=true` y los cuatro checks obligatorios (`build`, `coverage`, Sentinel Core y `read-only-review`). La rama deberá seguir protegida antes de cada merge; la lectura avanzada de la API de protección puede estar restringida.
 - La configuración Mergify todavía vive en PR #195 draft y no en `main`. Se exige una única fusión manual de arranque tras CI y revisión completa, ya que afecta las reglas que autorizan futuros merges.
 - Instalar Mergify **no instala Copilot cloud coding agent** ni autoriza su asignación por issue. El template intenta asignar `copilot-swe-agent[bot]`, pero hay que confirmar el plan, los permisos y ejecutar un CAR piloto. La API de GitHub también permite pasar `agent_assignment.custom_agent = "gamehub-car-engineer"` al delegar un issue desde un integrador.
 - Una cadena de CAR tras `pull_request.closed` todavía requiere un integrador externo **con permisos `issues:write` exclusivamente** y autenticación por firma de webhook. No hay ese webhook desplegado ni credenciales configuradas. Sin él, Copilot ejecutará los CAR que sean asignados explícitamente, pero no todos los CAR futuros por sí mismo.
@@ -73,3 +73,8 @@ Tampoco es válido activar `cron` o ChatGPT Tasks como sustituto: el usuario sol
 ## Próximo punto de control
 
 La arquitectura declarativa se activará al llegar `.mergify.yml` a `main`, si Mergify Workflow Automation está habilitado y GitHub acepta todos los requisitos. El PR #195 continúa en draft y exige revisión manual final; esta guía no habilita la aplicación, no protege la rama ni crea el integrador por el solo hecho de estar documentada.
+
+
+## Endurecimiento adicional de la revisión
+
+La acción Mergify del propietario aún exige `automerge:approved` y los cuatro controles del HEAD. **Una etiqueta normal no está ligada al SHA**: si cambia el commit después de aplicar la etiqueta, se deben volver a validar revisión y pruebas. No considerar una etiqueta vieja como nueva aprobación humana. Hasta disponer de invalidación automática de etiquetas, limitar su uso a PR no sensibles y revisar la procedencia del consentimiento; el repositorio mantiene la protección de main como defensa separada. El patrón de archivos fuente se verifica en `.github/scripts/ultra_sentinel_automerge_policy.test.cjs` y la aceptación de sintaxis depende del check `Configuration changed` emitido por Mergify.
