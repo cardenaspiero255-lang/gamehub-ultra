@@ -1,0 +1,1194 @@
+name: Android build
+# CAR-18 merge-sync validation
+# CAR-18 validation trigger
+# CAR-18 force-run 2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "codex/car-18-final"
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  quality-contract-shard:
+    name: quality-contract-shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Run packed CI contract shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          logical_shards=(0 1 2 3 4 5)
+          log_dir="$RUNNER_TEMP/quality-contracts"
+          mkdir -p "$log_dir"
+
+          run_contract() {
+            case "$1" in
+              0) bash .github/scripts/test-benchmark-fast-path.sh ;;
+              1) python3 .github/scripts/test-ci-safety-contract-regressions.py ;;
+              2) python3 .github/scripts/test-local-patch-coverage.py ;;
+              3) bash .github/scripts/test-ci-safety-contract.sh ;;
+              4) python3 .github/scripts/test-sentry-release-auth-fallback.py ;;
+              5) python3 .github/scripts/test-ci-performance-metrics.py ;;
+              *) echo "Unknown quality logical shard: $1"; return 2 ;;
+            esac
+          }
+
+          pids=()
+          for logical_shard in "${logical_shards[@]}"; do
+            (
+              set -euo pipefail
+              echo "Starting quality logical shard $logical_shard"
+              run_contract "$logical_shard"
+            ) >"$log_dir/shard-$logical_shard.log" 2>&1 &
+            pids+=("$!")
+          done
+
+          status=0
+          for index in "${!pids[@]}"; do
+            logical_shard="${logical_shards[$index]}"
+            if ! wait "${pids[$index]}"; then
+              echo "::error::Quality logical shard $logical_shard failed."
+              status=1
+            fi
+            cat "$log_dir/shard-$logical_shard.log"
+          done
+          exit "$status"
+
+      - name: Upload quality contract diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-quality-contracts
+          path: ${{ runner.temp }}/quality-contracts/*.log
+          if-no-files-found: ignore
+          compression-level: 1
+
+  quality-contracts:
+    name: quality-contracts
+    if: always()
+    needs: quality-contract-shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify packed quality contract shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.quality-contract-shard.result }}" = "success"
+
+  android-test-shard:
+    name: android-test-shard-${{ matrix.runner }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        runner: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      GAMEHUB_UNIT_TEST_FORKS: "8"
+      GAMEHUB_UNIT_TEST_HEAP: "512m"
+      GAMEHUB_ENABLE_UNIT_TEST_COVERAGE: "false"
+      ANDROID_LOGICAL_SHARD_COUNT: "64"
+      ANDROID_PHYSICAL_SHARD_COUNT: "8"
+      ANDROID_RUNNER_INDEX: "${{ matrix.runner }}"
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Install Android SDK packages only when missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "Android shard SDK packages already present; skipping sdkmanager."
+            exit 0
+          fi
+          sdkmanager "${missing[@]}"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: "8.13"
+          cache-disabled: false
+          cache-read-only: true
+
+      - name: Select deterministic Android logical test shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > "$RUNNER_TEMP/android-test-classes.txt"
+          import hashlib
+          import os
+          import re
+          from pathlib import Path
+
+          logical_count = int(os.environ["ANDROID_LOGICAL_SHARD_COUNT"])
+          physical_count = int(os.environ["ANDROID_PHYSICAL_SHARD_COUNT"])
+          runner = int(os.environ["ANDROID_RUNNER_INDEX"])
+          if logical_count % physical_count != 0:
+              raise SystemExit("Logical Android shards must divide evenly across physical runners")
+
+          owned = {
+              runner + wave * physical_count
+              for wave in range(logical_count // physical_count)
+          }
+          selected = []
+          for root in (Path("app/src/test/java"), Path("app/src/test/kotlin")):
+              if not root.exists():
+                  continue
+              for source in sorted(root.rglob("*.kt")):
+                  content = source.read_text(encoding="utf-8")
+                  package_match = re.search(
+                      r"(?m)^\s*package\s+([A-Za-z0-9_.]+)",
+                      content,
+                  )
+                  if not package_match:
+                      continue
+                  package_name = package_match.group(1)
+                  class_names = re.findall(
+                      r"(?m)^\s*(?:public\s+|internal\s+|private\s+|protected\s+)?"
+                      r"(?:abstract\s+|open\s+|final\s+)?(?:class|object)\s+"
+                      r"([A-Za-z_][A-Za-z0-9_]*(?:Test|Tests))\b",
+                      content,
+                  )
+                  for class_name in class_names:
+                      fqcn = f"{package_name}.{class_name}"
+                      logical_shard = int.from_bytes(
+                          hashlib.sha256(fqcn.encode("utf-8")).digest()[:8],
+                          "big",
+                      ) % logical_count
+                      if logical_shard in owned:
+                          selected.append((logical_shard, fqcn))
+
+          if not selected:
+              raise SystemExit(
+                  f"No Android unit tests selected for physical runner {runner}; "
+                  f"owned={sorted(owned)}"
+              )
+
+          for _, fqcn in sorted(set(selected)):
+              print(fqcn)
+
+          print(
+              f"runner={runner} logical_shards={sorted(owned)} "
+              f"tests={len(set(selected))}",
+              file=os.sys.stderr,
+          )
+          PY
+          test -s "$RUNNER_TEMP/android-test-classes.txt"
+          wc -l "$RUNNER_TEMP/android-test-classes.txt"
+
+      - name: Run packed Android unit shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t TEST_CLASSES < "$RUNNER_TEMP/android-test-classes.txt"
+          TEST_ARGS=()
+          for test_class in "${TEST_CLASSES[@]}"; do
+            TEST_ARGS+=(--tests "$test_class")
+          done
+
+          # Retry only transient Maven Central throttling or the known dependency
+          # resolution failures seen on CI. A real test/compile error stays blocking.
+          attempt_log="$RUNNER_TEMP/android-gradle-attempt.log"
+          for attempt in 1 2 3; do
+            retry_args=()
+            if [ "$attempt" -gt 1 ]; then
+              # Refresh negative-resolution cache entries on subsequent attempts.
+              retry_args+=(--refresh-dependencies)
+            fi
+            set +e
+            gradle :app:testDebugUnitTest \
+              "${TEST_ARGS[@]}" \
+              --build-cache \
+              --parallel \
+              --max-workers=12 \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --console=plain \
+              --stacktrace "${retry_args[@]}" 2>&1 | tee "$attempt_log"
+            pipeline_codes=("${PIPESTATUS[@]}")
+            set -e
+
+            if [ "${pipeline_codes[1]}" -ne 0 ]; then
+              echo "::error::Cannot capture Android Gradle output."
+              exit "${pipeline_codes[1]}"
+            fi
+            gradle_status="${pipeline_codes[0]}"
+            if [ "$gradle_status" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit "$gradle_status"
+            fi
+
+            retryable=false
+            if grep -Fq "repo.maven.apache.org" "$attempt_log" && \
+               grep -Fq "Received status code 429 from server: Too Many Requests" "$attempt_log"; then
+              retryable=true
+            fi
+            if grep -Eq 'Could not find org[.]robolectric:robolectric:4[.]17[.]|Could not find org[.]mockito:mockito-core:5[.]14[.]2[.]' "$attempt_log"; then
+              retryable=true
+            fi
+            if [ "$retryable" != true ]; then
+              exit "$gradle_status"
+            fi
+
+            delay=$((30 * attempt + 3 * ANDROID_RUNNER_INDEX))
+            echo "::warning::Transient Android test dependency resolution failure; retrying in ${delay}s ($((attempt + 1))/3)."
+            sleep "$delay"
+          done
+
+  android-test-shards:
+    name: android-test-shards
+    if: always()
+    needs: android-test-shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify packed Android unit shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.android-test-shard.result }}" = "success"
+
+  quality-lint:
+    runs-on: ubuntu-22.04
+    env:
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ""
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Install build SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            for attempt in 1 2 3; do
+              if sdkmanager "${missing[@]}"; then
+                break
+              fi
+              rm -rf "$SDK_ROOT/.temp"
+              if [ "$attempt" -eq 3 ]; then
+                exit 1
+              fi
+              sleep $((attempt * 10))
+            done
+          fi
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: "8.13"
+          cache-disabled: false
+          cache-read-only: true
+
+      - name: Run fast quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          QUALITY_LOG="$RUNNER_TEMP/quality-gates.log"
+          QUALITY_ATTEMPT_LOG="$RUNNER_TEMP/quality-gates-attempt.log"
+          QUALITY_TERMINAL_LOG="$RUNNER_TEMP/quality-gates-terminal.log"
+          QUALITY_MAX_ATTEMPTS=3
+          QUALITY_RETRY_BASE_SECONDS=5
+          QUALITY_TRANSIENT_RE='Received status code (408|425|429|500|502|503|504)|Read timed out|Connect timed out|Connection reset|Temporary failure in name resolution|Remote host terminated the handshake'
+
+          run_quality_graph() {
+            gradle \
+              :app:lintDebug \
+              --build-cache \
+              --parallel \
+              --max-workers=12 \
+              --configuration-cache \
+              --configuration-cache-problems=fail \
+              --console=plain \
+              --stacktrace 2>&1 | tee "$QUALITY_ATTEMPT_LOG"
+          }
+
+          extract_quality_terminal_failure() {
+            awk '/^\* What went wrong:$/ { capture=1; block=$0 ORS; next } capture && /^\* Try:$/ { terminal=block; capture=0; next } capture { block=block $0 ORS } END { if (capture) terminal=block; printf "%s", terminal }' "$QUALITY_ATTEMPT_LOG" > "$QUALITY_TERMINAL_LOG"
+          }
+
+          : > "$QUALITY_LOG"
+          quality_attempt=1
+          while true; do
+            : > "$QUALITY_ATTEMPT_LOG"
+            if run_quality_graph; then
+              cat "$QUALITY_ATTEMPT_LOG" >> "$QUALITY_LOG"
+              break
+            else
+              quality_status=$?
+            fi
+            cat "$QUALITY_ATTEMPT_LOG" >> "$QUALITY_LOG"
+
+            if (( quality_attempt >= QUALITY_MAX_ATTEMPTS )); then
+              exit "$quality_status"
+            fi
+            : > "$QUALITY_TERMINAL_LOG"
+            extract_quality_terminal_failure
+            if [[ ! -s "$QUALITY_TERMINAL_LOG" ]]; then
+              exit "$quality_status"
+            fi
+            if ! grep -Eq "$QUALITY_TRANSIENT_RE" "$QUALITY_TERMINAL_LOG"; then
+              exit "$quality_status"
+            fi
+
+            sleep_seconds=$((QUALITY_RETRY_BASE_SECONDS * quality_attempt))
+            sleep "$sleep_seconds"
+            quality_attempt=$((quality_attempt + 1))
+          done
+
+      - name: Upload quality diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-quality-diagnostics
+          path: ${{ runner.temp }}/quality-gates.log
+          if-no-files-found: ignore
+
+  quality:
+    name: quality
+    if: always()
+    needs:
+      - quality-contracts
+      - quality-lint
+      - android-test-shards
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify quality shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.quality-contracts.result }}" = "success"
+          test "${{ needs.quality-lint.result }}" = "success"
+          test "${{ needs.android-test-shards.result }}" = "success"
+
+  release-bundle:
+    name: release-bundle
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Install build SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            sdkmanager "${missing[@]}"
+          fi
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: "8.13"
+          cache-disabled: false
+          cache-read-only: true
+
+      - name: Verify release research configuration
+        shell: bash
+        env:
+          TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
+        run: |
+          set -euo pipefail
+          research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"
+          if [ -z "$research_key_compact" ] && [ "${TRUSTED_RELEASE_CONTEXT}" = "true" ]; then
+            echo "::error::SUPABASE_PUBLISHABLE_KEY is empty or whitespace-only; refusing trusted release bundle."
+            exit 1
+          fi
+
+      - name: Create ephemeral release signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/gamehub-ultra-ci-release-bundle.jks"
+          PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storetype JKS \
+            -storepass "$PASSWORD" \
+            -keypass "$PASSWORD" \
+            -alias gamehub-ci \
+            -keyalg RSA \
+            -keysize 3072 \
+            -validity 1 \
+            -dname "CN=GameHub Ultra CI,O=GameHub Ultra,C=CL" \
+            -noprompt
+          {
+            echo "GAMEHUB_RELEASE_KEYSTORE_PATH=$KEYSTORE"
+            echo "GAMEHUB_RELEASE_STORE_PASSWORD=$PASSWORD"
+            echo "GAMEHUB_RELEASE_KEY_ALIAS=gamehub-ci"
+            echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build release bundle in parallel shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:bundleRelease \
+            --build-cache \
+            --parallel \
+            --max-workers=12 \
+            --configuration-cache \
+            --configuration-cache-problems=fail \
+            --console=plain \
+            --stacktrace
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-release-bundle
+          path: app/build/outputs/bundle/release/**/*.aab
+          if-no-files-found: error
+          compression-level: 0
+
+  device-validation-shard:
+    name: device-validation-${{ matrix.shard }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        # Four logical performance checks are packed into two physical emulator
+        # runners so Android boot/setup is reused instead of repeated four times.
+        shard: [release-apk, ui, performance-a, performance-b]
+    runs-on: ubuntu-22.04
+    env:
+      VALIDATION_SHARD: ${{ matrix.shard }}
+      EPIC_AUTH_BACKEND_URL: ${{ vars.EPIC_AUTH_BACKEND_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+      SENTRY_DSN: ""
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: 15859902
+          accept-android-sdk-licenses: true
+
+      - name: Use current Android command-line tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
+          test -n "$CMDLINE_DIR"
+          rm -rf "$SDK_ROOT/cmdline-tools/latest"
+          ln -s "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR" "$SDK_ROOT/cmdline-tools/latest"
+          echo "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Enable KVM for Android emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          if [ ! -e /dev/kvm ]; then
+            echo "KVM device /dev/kvm is unavailable on this runner."
+            exit 1
+          fi
+          sudo chmod 666 /dev/kvm
+
+      - name: Test Android SDK retry safety
+        if: matrix.shard == 'release-apk'
+        shell: bash
+        run: bash .github/scripts/test-android-sdk-retry-safety.sh
+
+      - name: Install build SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          missing=()
+          [ -s "$SDK_ROOT/platforms/android-36/android.jar" ] || missing+=("platforms;android-36")
+          [ -x "$SDK_ROOT/build-tools/36.0.0/aapt2" ] || missing+=("build-tools;36.0.0")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            for attempt in 1 2 3; do
+              if sdkmanager "${missing[@]}"; then
+                break
+              fi
+              rm -rf "$SDK_ROOT/.temp"
+              if [ "$attempt" -eq 3 ]; then
+                exit 1
+              fi
+              sleep $((attempt * 10))
+            done
+          fi
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6
+        with:
+          gradle-version: "8.13"
+          cache-disabled: false
+          cache-read-only: ${{ matrix.shard != 'release-apk' }}
+
+      - name: Verify release research configuration
+        if: matrix.shard == 'release-apk'
+        shell: bash
+        env:
+          TRUSTED_RELEASE_CONTEXT: ${{ github.event_name != 'pull_request' || (github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository) }}
+        run: |
+          set -euo pipefail
+          echo "RESEARCH_RELEASE_READY=false" >> "$GITHUB_ENV"
+          research_key_compact="${SUPABASE_PUBLISHABLE_KEY//[[:space:]]/}"
+          if [ -z "$research_key_compact" ]; then
+            if [ "${TRUSTED_RELEASE_CONTEXT}" = "true" ]; then
+              echo "::error::SUPABASE_PUBLISHABLE_KEY is empty or whitespace-only; refusing trusted release."
+              exit 1
+            fi
+            echo "::warning::SUPABASE_PUBLISHABLE_KEY unavailable for untrusted pull request."
+          else
+            echo "RESEARCH_RELEASE_READY=true" >> "$GITHUB_ENV"
+          fi
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "SUPABASE_URL is empty; Android uses the checked-in production fallback."
+          fi
+
+      - name: Create ephemeral release signing key
+        if: matrix.shard != 'ui'
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/gamehub-ultra-ci-release.jks"
+          PASSWORD="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storetype JKS \
+            -storepass "$PASSWORD" \
+            -keypass "$PASSWORD" \
+            -alias gamehub-ci \
+            -keyalg RSA \
+            -keysize 3072 \
+            -validity 1 \
+            -dname "CN=GameHub Ultra CI,O=GameHub Ultra,C=CL" \
+            -noprompt
+          {
+            echo "GAMEHUB_RELEASE_KEYSTORE_PATH=$KEYSTORE"
+            echo "GAMEHUB_RELEASE_STORE_PASSWORD=$PASSWORD"
+            echo "GAMEHUB_RELEASE_KEY_ALIAS=gamehub-ci"
+            echo "GAMEHUB_RELEASE_KEY_PASSWORD=$PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build shard while installing emulator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          BUILD_LOG="$RUNNER_TEMP/device-${VALIDATION_SHARD}-build.log"
+          SDK_LOG="$RUNNER_TEMP/runtime-sdk-install.log"
+          EMULATOR_LOG="$RUNNER_TEMP/gamehub-emulator.log"
+          AB_METRICS="$RUNNER_TEMP/emulator-startup-ab.md"
+          BUILD_START_EPOCH="$(date +%s)"
+          mkdir -p "$HOME/.config/.android/cache"
+
+          bash .github/scripts/install-android-runtime-sdk.sh >"$SDK_LOG" 2>&1 &
+          SDK_PID=$!
+
+          (
+            set -o pipefail
+            case "$VALIDATION_SHARD" in
+              release-apk)
+                gradle :app:assembleRelease \
+                  --build-cache --parallel --max-workers=12 \
+                  --configuration-cache --configuration-cache-problems=fail \
+                  --stacktrace
+                ;;
+              ui)
+                gradle :app:assembleDebug :app:assembleDebugAndroidTest \
+                  --build-cache --parallel --max-workers=12 \
+                  --configuration-cache --configuration-cache-problems=fail \
+                  --stacktrace
+                ;;
+              performance-*)
+                gradle :app:assembleNonMinifiedRelease :baseline-profile:assembleNonMinifiedRelease \
+                  --build-cache --parallel --max-workers=12 \
+                  --configuration-cache --configuration-cache-problems=fail \
+                  --stacktrace
+                ;;
+              *)
+                echo "Unknown validation shard: $VALIDATION_SHARD"
+                exit 2
+                ;;
+            esac
+          ) 2>&1 | tee "$BUILD_LOG" &
+          BUILD_PID=$!
+
+          if ! wait "$SDK_PID"; then
+            cat "$SDK_LOG"
+            kill "$BUILD_PID" 2>/dev/null || true
+            wait "$BUILD_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          IMAGE_DIR="$SDK_ROOT/system-images/android-35/google_apis/x86_64"
+          EMULATOR_BIN="$SDK_ROOT/emulator/emulator"
+          test -x "$EMULATOR_BIN"
+          test -x "$SDK_ROOT/platform-tools/adb"
+          test -s "$IMAGE_DIR/system.img"
+          test -s "$IMAGE_DIR/ramdisk.img"
+          test -e "$IMAGE_DIR/data/empty_data_disk"
+
+          AVD_HOME="$HOME/.android/avd"
+          AVD_DIR="$AVD_HOME/gamehub-api35.avd"
+          AVD_INI="$AVD_HOME/gamehub-api35.ini"
+          unset ANDROID_EMULATOR_HOME ANDROID_AVD_HOME
+          rm -rf "$AVD_DIR" "$AVD_INI"
+          mkdir -p "$AVD_DIR"
+
+          cat > "$AVD_INI" <<EOF
+          avd.ini.encoding=UTF-8
+          path=$AVD_DIR
+          path.rel=avd/gamehub-api35.avd
+          target=android-35
+          EOF
+
+          cat > "$AVD_DIR/config.ini" <<EOF
+          AvdId=gamehub-api35
+          PlayStore.enabled=false
+          abi.type=x86_64
+          avd.ini.displayname=gamehub-api35
+          disk.dataPartition.size=4G
+          hw.audioInput=no
+          hw.battery=yes
+          hw.camera.back=none
+          hw.camera.front=none
+          hw.cpu.arch=x86_64
+          hw.cpu.ncore=4
+          hw.gpu.enabled=yes
+          hw.gpu.mode=auto
+          hw.keyboard=yes
+          hw.lcd.density=420
+          hw.lcd.height=1920
+          hw.lcd.width=1080
+          hw.ramSize=4096
+          image.sysdir.1=system-images/android-35/google_apis/x86_64/
+          runtime.network.latency=none
+          runtime.network.speed=full
+          showDeviceFrame=no
+          tag.id=google_apis
+          target=android-35
+          vm.heapSize=512
+          EOF
+
+          mkdir -p "$HOME/.android"
+          : > "$HOME/.emulator_console_auth_token"
+          "$EMULATOR_BIN" -list-avds | grep -Fxq "gamehub-api35"
+
+          adb start-server >/dev/null
+          EMULATOR_LAUNCH_EPOCH="$(date +%s)"
+          nohup "$EMULATOR_BIN" -avd gamehub-api35 \
+            -port 5554 \
+            -no-window \
+            -no-audio \
+            -no-boot-anim \
+            -no-snapshot-load \
+            -no-snapshot-save \
+            -no-metrics \
+            -gpu swiftshader_indirect \
+            -memory 4096 \
+            -cores 4 \
+            -camera-back none \
+            -camera-front none \
+            -netdelay none \
+            -netspeed full \
+            >"$EMULATOR_LOG" 2>&1 &
+          EMULATOR_PID=$!
+          {
+            echo "EMULATOR_PID=$EMULATOR_PID"
+            echo "EMULATOR_LOG=$EMULATOR_LOG"
+          } >> "$GITHUB_ENV"
+
+          sleep 2
+          kill -0 "$EMULATOR_PID"
+
+          if ! wait "$BUILD_PID"; then
+            echo "Gradle prebuild failed for $VALIDATION_SHARD."
+            exit 1
+          fi
+
+          BUILD_COMPLETE_EPOCH="$(date +%s)"
+          {
+            echo "# Emulator startup A/B"
+            echo
+            echo "- shard: $VALIDATION_SHARD"
+            echo "- build_start_epoch: $BUILD_START_EPOCH"
+            echo "- emulator_launch_epoch: $EMULATOR_LAUNCH_EPOCH"
+            echo "- build_complete_epoch: $BUILD_COMPLETE_EPOCH"
+            echo "- build_duration_seconds: $((BUILD_COMPLETE_EPOCH - BUILD_START_EPOCH))"
+          } > "$AB_METRICS"
+
+      - name: Wait for API 35 emulator readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${EMULATOR_PID:-}"
+          kill -0 "$EMULATOR_PID"
+          timeout 300 adb wait-for-device
+          timeout 600 bash -c '
+            while true; do
+              state="$(adb get-state 2>/dev/null || true)"
+              boot="$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d "\r" || true)"
+              if [ "$state" = "device" ] && [ "$boot" = "1" ]; then
+                break
+              fi
+              sleep 2
+            done
+          '
+          adb shell settings put global window_animation_scale 0
+          adb shell settings put global transition_animation_scale 0
+          adb shell settings put global animator_duration_scale 0
+          adb shell getprop ro.build.version.sdk | grep -Fxq "35"
+          adb devices
+
+      - name: Validate shard on API 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$VALIDATION_SHARD" in
+            release-apk)
+              APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
+              test -n "$APK"
+              test -s "$APK"
+              adb install "$APK"
+              adb shell pm path com.cardenaspiero255.gamehubultra | grep -q "base.apk"
+              adb shell monkey -p com.cardenaspiero255.gamehubultra 1 >/dev/null
+              adb install -r "$APK"
+              adb shell pm path com.cardenaspiero255.gamehubultra | grep -q "base.apk"
+              adb shell dumpsys package com.cardenaspiero255.gamehubultra | grep -q "versionCode"
+              adb uninstall com.cardenaspiero255.gamehubultra
+              if adb shell pm path com.cardenaspiero255.gamehubultra 2>/dev/null | grep -q "base.apk"; then
+                exit 1
+              fi
+              ;;
+            ui)
+              gradle :app:connectedDebugAndroidTest \
+                --build-cache \
+                --max-workers=12 \
+                --configuration-cache \
+                --configuration-cache-problems=fail \
+                --stacktrace
+              ;;
+            performance-*)
+              case "$VALIDATION_SHARD" in
+                performance-a)
+                  LOGICAL_SHARDS=(baseline macro-startup)
+                  ;;
+                performance-b)
+                  LOGICAL_SHARDS=(macro-library macro-settings)
+                  ;;
+                *)
+                  echo "Unknown packed performance shard: $VALIDATION_SHARD"
+                  exit 2
+                  ;;
+              esac
+
+              AGGREGATE_LOG="$RUNNER_TEMP/performance-validation.log"
+              : > "$AGGREGATE_LOG"
+              PERF_ARCHIVE="$RUNNER_TEMP/performance-reports"
+              mkdir -p "$PERF_ARCHIVE"
+
+              for LOGICAL_SHARD in "${LOGICAL_SHARDS[@]}"; do
+                rm -rf \
+                  baseline-profile/build/outputs/androidTest-results \
+                  baseline-profile/build/reports/androidTests
+
+                TEST_FILTER_ARGS=()
+                if [ "$LOGICAL_SHARD" = "baseline" ]; then
+                  RULE="BaselineProfile"
+                  EXPECTED_METHOD=""
+                else
+                  RULE="Macrobenchmark"
+                  case "$LOGICAL_SHARD" in
+                    macro-startup) EXPECTED_METHOD="coldStartup" ;;
+                    macro-library) EXPECTED_METHOD="navigationToLibrary" ;;
+                    macro-settings) EXPECTED_METHOD="navigationToSettings" ;;
+                    *) echo "Unknown logical performance shard: $LOGICAL_SHARD"; exit 2 ;;
+                  esac
+                  TEST_FILTER_ARGS+=(
+                    "-Pandroid.testInstrumentationRunnerArguments.class=com.cardenaspiero255.gamehubultra.baselineprofile.GameHubMacrobenchmark#$EXPECTED_METHOD"
+                  )
+                fi
+                export EXPECTED_METHOD LOGICAL_SHARD
+
+                echo "=== logical performance shard: $LOGICAL_SHARD ===" | tee -a "$AGGREGATE_LOG"
+                gradle :baseline-profile:connectedNonMinifiedReleaseAndroidTest \
+                  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules="$RULE" \
+                  "${TEST_FILTER_ARGS[@]}" \
+                  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR \
+                  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.skipBenchmarksOnEmulator=false \
+                  --build-cache \
+                  --max-workers=12 \
+                  --configuration-cache \
+                  --configuration-cache-problems=fail \
+                  --stacktrace 2>&1 | tee -a "$AGGREGATE_LOG"
+
+                if grep -Fq "[EmulatorConsole]: Failed to start Emulator console" "$AGGREGATE_LOG"; then
+                  exit 1
+                fi
+
+                python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import xml.etree.ElementTree as ET
+
+          reports = list(
+              Path("baseline-profile/build/outputs/androidTest-results").rglob("TEST-*.xml")
+          )
+          baseline_cases = []
+          macro_cases = []
+          for report in reports:
+              try:
+                  root = ET.parse(report).getroot()
+              except ET.ParseError:
+                  continue
+              for case in root.iter("testcase"):
+                  classname = case.attrib.get("classname", "")
+                  if classname.endswith("BaselineProfileGenerator"):
+                      baseline_cases.append(case)
+                  if classname.endswith("GameHubMacrobenchmark"):
+                      macro_cases.append(case)
+
+          shard = os.environ["LOGICAL_SHARD"]
+          required = baseline_cases if shard == "baseline" else macro_cases
+          label = "BaselineProfileGenerator" if shard == "baseline" else "GameHubMacrobenchmark"
+          if len(required) < 1:
+              raise SystemExit(f"Expected at least one {label} case for {shard}, found {len(required)}")
+
+          expected_method = os.environ.get("EXPECTED_METHOD", "")
+          if expected_method:
+              names = [case.attrib.get("name", "") for case in required]
+              if expected_method not in names:
+                  raise SystemExit(
+                      f"Expected macrobenchmark {expected_method}, found {names}"
+                  )
+
+          skipped = [
+              f"{case.attrib.get('classname', '<unknown>')}#{case.attrib.get('name', '<unknown>')}"
+              for case in required
+              if case.find("skipped") is not None
+          ]
+          if skipped:
+              raise SystemExit(f"Required performance tests were skipped: {skipped}")
+
+          print(
+              f"Executed {label} cases for {shard}:",
+              [case.attrib.get("name") for case in required],
+          )
+          PY
+
+                archive="$PERF_ARCHIVE/$LOGICAL_SHARD"
+                mkdir -p "$archive"
+                if [ -d baseline-profile/build/outputs/androidTest-results ]; then
+                  cp -R baseline-profile/build/outputs/androidTest-results "$archive/"
+                fi
+                if [ -d baseline-profile/build/reports/androidTests ]; then
+                  cp -R baseline-profile/build/reports/androidTests "$archive/"
+                fi
+              done
+              ;;
+          esac
+
+      - name: Record Phase 3 artifact provenance
+        if: matrix.shard == 'ui'
+        shell: bash
+        env:
+          PHASE3_RUN_ID: ${{ github.run_id }}
+          PHASE3_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="app/build/outputs/apk/debug"
+          APK="$ARTIFACT_DIR/app-debug.apk"
+          PROVENANCE="$ARTIFACT_DIR/phase3-artifact-provenance.env"
+          test -f "$APK"
+          APK_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          {
+            printf 'run_id=%s\n' "$PHASE3_RUN_ID"
+            printf 'sha=%s\n' "$PHASE3_SHA"
+            printf 'apk_sha256=%s\n' "$APK_SHA256"
+          } > "$PROVENANCE"
+
+      - name: Stop API 35 emulator without noisy console shutdown
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -n "${EMULATOR_PID:-}" ] && kill -0 "$EMULATOR_PID" 2>/dev/null; then
+            kill -KILL "$EMULATOR_PID" 2>/dev/null || true
+            wait "$EMULATOR_PID" 2>/dev/null || true
+          fi
+          adb kill-server >/dev/null 2>&1 || true
+
+      - name: Reject known CAR-29 emulator noise
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad=0
+          for log in \
+            "$RUNNER_TEMP/runtime-sdk-install.log" \
+            "$RUNNER_TEMP/performance-validation.log" \
+            "${EMULATOR_LOG:-$RUNNER_TEMP/gamehub-emulator.log}"; do
+            [ -f "$log" ] || continue
+            if grep -En \
+              'Could not load devices|adb.*failed with exit code 1|Failed to start Emulator console|stop: Not implemented' \
+              "$log"; then
+              bad=1
+            fi
+          done
+          test "$bad" -eq 0
+
+      - name: Discover Sentry project for trusted release
+        if: success() && matrix.shard == 'release-apk' && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        shell: bash
+        run: python3 .github/scripts/register_sentry_release.py --discover-only
+
+      - name: Build distributable release APK with Sentry
+        if: success() && matrix.shard == 'release-apk' && github.event_name != 'pull_request'
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle :app:assembleRelease \
+            --build-cache \
+            --max-workers=12 \
+            --rerun-tasks \
+            --stacktrace 2>&1 | tee "$RUNNER_TEMP/distributable-release.log"
+
+      - name: Register Sentry release and GitHub commit
+        if: success() && matrix.shard == 'release-apk' && github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SENTRY_RELEASE: gamehub-ultra@${{ github.sha }}
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_SHA: ${{ github.sha }}
+        shell: bash
+        run: python3 .github/scripts/register_sentry_release.py
+
+      - name: Upload debug APK
+        if: matrix.shard == 'ui'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-debug
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/debug/phase3-artifact-provenance.env
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload emulator startup A/B metrics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-emulator-startup-ab-${{ matrix.shard }}
+          path: ${{ runner.temp }}/emulator-startup-ab.md
+          if-no-files-found: ignore
+          compression-level: 1
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-emulator-diagnostics-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/runtime-sdk-install.log
+            ${{ runner.temp }}/gamehub-emulator.log
+            ${{ runner.temp }}/device-${{ matrix.shard }}-build.log
+          if-no-files-found: ignore
+          compression-level: 1
+
+      - name: Upload benchmark reports
+        if: always() && startsWith(matrix.shard, 'performance-')
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-benchmark-reports-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/performance-reports/**
+            baseline-profile/build/outputs/**
+            app/build/reports/**
+          if-no-files-found: ignore
+          compression-level: 1
+
+      - name: Upload installable release outputs
+        if: matrix.shard == 'release-apk' && env.RESEARCH_RELEASE_READY == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gamehub-ultra-release
+          path: app/build/outputs/apk/release/**/*.apk
+          if-no-files-found: error
+          compression-level: 0
+
+  device-validation:
+    name: device-validation
+    if: always()
+    needs:
+      - device-validation-shard
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify device validation shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.device-validation-shard.result }}" = "success"
+
+  build:
+    name: build
+    if: always()
+    needs:
+      - quality
+      - device-validation
+      - release-bundle
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify all Android CI gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "quality=${{ needs.quality.result }}"
+          echo "device-validation=${{ needs.device-validation.result }}"
+          echo "release-bundle=${{ needs.release-bundle.result }}"
+          test "${{ needs.quality.result }}" = "success"
+          test "${{ needs.device-validation.result }}" = "success"
+          test "${{ needs.release-bundle.result }}" = "success"
+
+      - name: Download exact-run debug artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gamehub-ultra-debug
+          path: ${{ runner.temp }}/phase3-debug-reuse
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: false
+
+      - name: Verify Phase 3 artifact provenance
+        shell: bash
+        env:
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="${RUNNER_TEMP}/phase3-debug-reuse"
+          APK="$ARTIFACT_DIR/app-debug.apk"
+          PROVENANCE="$ARTIFACT_DIR/phase3-artifact-provenance.env"
+          test -f "$APK"
+          test -f "$PROVENANCE"
+          grep -Fxq "run_id=$EXPECTED_RUN_ID" "$PROVENANCE"
+          grep -Fxq "sha=$EXPECTED_SHA" "$PROVENANCE"
+          RECORDED_SHA256="$(sed -n 's/^apk_sha256=//p' "$PROVENANCE")"
+          test -n "$RECORDED_SHA256"
+          test "$(printf '%s' "$RECORDED_SHA256" | wc -l)" -eq 0
+          ACTUAL_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          test "$ACTUAL_SHA256" = "$RECORDED_SHA256"
+
