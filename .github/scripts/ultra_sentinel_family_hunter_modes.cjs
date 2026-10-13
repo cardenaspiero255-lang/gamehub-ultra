@@ -33,10 +33,21 @@ function completeShape(analysis){
     coverage.partial!==(analysis.verdict==='INCOMPLETE'))return false;
  // A no-signal claim requires real scanned coverage and untruncated findings.
  if(!coverage.partial&&(coverage.returned===0||coverage.analyzed===0))return false;
+ // Core evidence fields are part of the security contract. The read-only
+ // adapter must never certify a finding whose evidence/provenance was dropped
+ // while moving between report formats or truncated by another component.
  if(findings.some(f=>!f||typeof f!=='object'||Array.isArray(f)||
     typeof f.rule!=='string'||!f.rule||
     !['BLOCKER','HIGH','MEDIUM','LOW'].includes(f.severity)||
-    typeof f.path!=='string'||!Number.isSafeInteger(f.line)||f.line<0))
+    typeof f.path!=='string'||!Number.isSafeInteger(f.line)||f.line<0||
+    typeof f.confidence!=='string'||!f.confidence.trim()||
+    typeof f.evidence!=='string'||
+    typeof f.reason!=='string'||!f.reason.trim()||
+    typeof f.verification!=='string'||!f.verification.trim()||
+    !Array.isArray(f.domains)||
+    f.domains.some(d=>typeof d!=='string'||!d.trim())||
+    f.origin!=='Ultra Sentinel Core'||
+    f.status!=='NEEDS_VERIFICATION'))
    return false;
  const hasCritical=findings.some(f=>f.severity==='BLOCKER'||f.severity==='HIGH');
  if(analysis.verdict==='NO_CRITICAL_PATTERN'&&(hasCritical||analysis.omitted>0))
