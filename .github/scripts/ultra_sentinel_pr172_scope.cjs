@@ -58,9 +58,10 @@ function latestRun(runs,head,base){
   const started=parsedRunTime(r);
   if(distinct.has(r.id))throw Error('DUPLICATE_RUN');
   distinct.add(r.id);
-  // pull_request_target runs against the *base* commit, never the PR head.
+  // The runner GITHUB_SHA is the base for pull_request_target, but the
+  // Actions REST workflow_runs.head_sha is the PR HEAD (verified in live runs).
   if(r.workflow_id!==REVIEWER_ID||r.name!==REVIEWER_NAME||
-   r.event!=='pull_request_target'||r.head_sha!==base||
+   r.event!=='pull_request_target'||r.head_sha!==head||
    r.head_repository?.full_name!==REPO||
    !Array.isArray(r.pull_requests)||r.pull_requests.length>1)
    throw Error('UNTRUSTED_RUN_PROVENANCE');
@@ -116,7 +117,7 @@ async function attestScopedPr172({github,owner,repo,pr,files}={}){
      wf?.path!==REVIEWER_PATH||wf?.state!=='active')
    throw Error('UNTRUSTED_WORKFLOW_ID');
   const result=(await github.rest.actions.listWorkflowRuns({owner,repo,
-    workflow_id:wf.id,head_sha:main,event:'pull_request_target',
+    workflow_id:wf.id,head_sha:head,event:'pull_request_target',
     per_page:100,page:1})).data;
   if(!Number.isSafeInteger(result?.total_count)||result.total_count<1||
      result.total_count>100||!Array.isArray(result.workflow_runs)||
