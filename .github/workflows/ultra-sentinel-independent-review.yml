@@ -174,11 +174,6 @@ jobs:
                 }
               }
               structural=reviewWorkflowSources({expected,sources,trustedRepository:owner+'/'+repo});
-              if(structural.coverage.partial&&!(scopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
-                 permitScopedOpaqueYaml(structural)))
-                core.setFailed('Unable to structurally parse every changed workflow.');
-              else if(structural.coverage.partial)
-                core.warning('Opaque YAML remains INCOMPLETE; SHA-bound trusted Stage 2 evidence requires explicit manual review.');
               if(structural.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
                 core.setFailed('HIGH/BLOCKER structural workflow security finding requires repair before merge.');
             }else{
@@ -205,6 +200,23 @@ jobs:
               {encoding:"utf8",mode:0o600});
             await core.summary.addHeading("Ultra Sentinel · Independent Read-only Review")
               .addRaw(markdown(result)+'\nStructural YAML: '+(structural?.status||'NOT_DEPLOYED_ON_TRUSTED_MAIN')).write();
+            // Reauthenticate *after* all async work, immediately before YAML waiver.
+            const terminalScopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
+            const scopedAccepted=scopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
+              terminalScopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
+              terminalScopedProtected.headSha===scopedProtected.headSha&&
+              terminalScopedProtected.mainSha===scopedProtected.mainSha&&
+              terminalScopedProtected.protectedRunId===scopedProtected.protectedRunId&&
+              terminalScopedProtected.protectedRunAttempt===scopedProtected.protectedRunAttempt&&
+              permitScopedOpaqueYaml(structural);
+            report.scopedProtectedDelta=terminalScopedProtected;
+            report.scopedAccepted=scopedAccepted;
+            fs.writeFileSync(path.join(dest,"report.json"),JSON.stringify(report,null,2)+"\n",
+              {encoding:"utf8",mode:0o600});
+            if(structural?.coverage?.partial&&!scopedAccepted)
+              core.setFailed('Unable to structurally parse every changed workflow.');
+            else if(structural?.coverage?.partial)
+              core.warning('Opaque YAML remains INCOMPLETE; authenticated Stage 2 requires manual review.');
             if (result.coverage.partial) core.setFailed("Incomplete changed-file evidence; manual review required.");
             if (result.findings.some(f=>f.severity==='HIGH'||f.severity==='BLOCKER'))
               core.setFailed('HIGH/BLOCKER finding; reproduce and verify before merging.');
