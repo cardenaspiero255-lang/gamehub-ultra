@@ -226,3 +226,43 @@ test("PR number and CAR number must match completed issue to prevent skipping ta
   assert.equal((await result.json()).status,"unverified_car_completion");
   assert.ok(!gh.calls.some(x=>x.options.method==="POST"));
 });
+
+
+test("P1 regression: malformed CAR tokens in the completed issue never dispatch", async () => {
+  for (const badTitle of [
+    "CAR-75malformed", "CAR-75x", "CAR-75_extra",
+    "CAR-75.2", "CAR-75/alias", "CAR-075 — leading zero", "CAR-0",
+  ]) {
+    const event = completedFixture();
+    event.issue.title = badTitle;
+    const api = fakeGithub({ready:[next],latest:next});
+    const res = await handleCarWebhook(await request(event), config, api.transport, stamp);
+    assert.notEqual(res.status, 200, badTitle + " must never dispatch");
+    assert.equal(api.calls.some(c => c.options.method === "POST"), false);
+  }
+});
+
+test("P1 regression: malformed CAR tokens in merged PR never dispatch even if both match", async () => {
+  for (const badTitle of ["CAR-75malformed", "CAR-75x", "CAR-75_extra", "CAR-75.2"]) {
+    const event = completedFixture();
+    event.issue.title = badTitle;
+    const api = fakeGithub({ready:[next],latest:next,closed:[{
+      number: 700, title:badTitle,body:"Fixes #254",merged_at:"2026-10-13T17:00:00Z",
+      base:{ref:"main"}, head:{repo:{id:1375408706}},
+      user:{login:"copilot-swe-agent[bot]"}
+    }]});
+    const res = await handleCarWebhook(await request(event),config,api.transport,stamp);
+    assert.notEqual(res.status,200,badTitle+" must not dispatch with two matching malformed titles");
+    assert.equal(api.calls.some(c=>c.options.method==="POST"),false);
+  }
+});
+
+test("P1 control: legitimate CAR titles with explicit separators remain eligible", async () => {
+  for (const label of ["CAR-75", "CAR-75 — new", "CAR-75 - new", "CAR-75: new", "CAR-75 new"]) {
+    const event=completedFixture();
+    event.issue.title=label;
+    const api=fakeGithub({ready:[next],latest:next});
+    const res=await handleCarWebhook(await request(event),config,api.transport,stamp);
+    assert.equal(res.status,200,label+" should still dispatch after a real linked merge");
+  }
+});
