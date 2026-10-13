@@ -32,7 +32,15 @@ test('analyzes PR with trusted main engine and verifies current immutable SHA', 
   assert.match(wf,/if\(!independentlyApproved\)\s*core\.setFailed\('Critical controls changed:/);
   assert.match(wf,/if\(protectedChanges\.status==='BLOCKED'\|\|protectedChanges\.status==='INCOMPLETE'\)/);
   // A protected SHA-bound exception is never a general-purpose CI bypass.
-  assert.match(wf,/const scopedAccepted=scopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+  // The scope is provisional until a fresh terminal authentication succeeds.
+  assert.match(wf,/const scopedCandidate=scopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+  assert.match(wf,/const scopedAccepted=scopedCandidate&&\s*terminalScopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+  for(const field of ['headSha','mainSha','protectedRunId','protectedRunAttempt']){
+    assert.match(wf,new RegExp('terminalScopedProtected\\.'+field+'===scopedProtected\\.'+field));
+  }
+  assert.ok(wf.indexOf('const terminalScopedProtected=await attestScopedPr172(')>
+    wf.indexOf('await core.summary.addHeading('),
+    'terminal security recheck must occur after asynchronous review work');
   assert.match(wf,/permitScopedOpaqueYaml\(structuralYaml\)/);
   assert.match(wf,/if\(ci\.status==='UNTRUSTED'&&!scopedAccepted\)\s*core\.setFailed/);
   assert.match(wf,/if\s*\(structuralYaml\.coverage\.partial&&!scopedAccepted\)\s*core\.setFailed/);
