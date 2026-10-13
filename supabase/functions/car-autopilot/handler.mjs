@@ -98,7 +98,8 @@ export async function handleCarWebhook(req, config, transport = fetch, timestamp
     const recent = await api("GET", "/pulls?state=closed&sort=updated&direction=desc&per_page=100");
     if (!Array.isArray(recent) || recent.length >= 100)
       return json(409, { status: "ambiguous_linked_merges" });
-    const reference = new RegExp("(?:^|\\s)(?:fixes|closes|resolves)\\s+#" + completedIssue.number + "(?!\\d)", "i");
+    // An exact GitHub closing reference must not treat #254abc or #254.6 as #254.
+    const reference = new RegExp("(?:^|\\s)(?:fixes|closes|resolves)\\s+#" + completedIssue.number + "(?=$|\\s|[,.!?;:)](?=\\s|$))", "i");
     const confirmed = recent.some((pr) => {
       const mergedAt = Date.parse(pr.merged_at || "");
       return Boolean(
