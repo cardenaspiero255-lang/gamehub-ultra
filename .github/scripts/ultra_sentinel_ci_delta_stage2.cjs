@@ -12,7 +12,6 @@ const crypto=require('node:crypto');
 const {createGitHubReader}=require('./ultra_sentinel_api_budget.cjs');
 const OWNER='cardenaspiero255-lang',REPO_NAME='gamehub-ultra';
 const REPO=OWNER+'/'+REPO_NAME;
-const HEAD='bb08782350201f97576a974a4684a611c21701c0';
 const BASE='7aa5df3e3c704965862ea728fb4c390d2c15a7f0';
 const SHA=/^[a-f0-9]{40}$/;
 const FILES=Object.freeze({
@@ -54,9 +53,11 @@ function decode(record){
   throw Error('INVALID_BLOB_HASH');
  return {body,sha:record.sha};
 }
-function validatePr(pr){
+function validatePr(pr,expectedHead){
  if(pr?.number!==172||pr?.state!=='open'||pr.changed_files!==5||
-  pr.head?.sha!==HEAD||pr.head?.repo?.full_name!==REPO||
+  !SHA.test(pr.head?.sha||'')||
+  (expectedHead!==undefined&&pr.head.sha!==expectedHead)||
+  pr.head?.repo?.full_name!==REPO||
   pr.base?.ref!=='main'||pr.base?.repo?.full_name!==REPO||
   !SHA.test(pr.base?.sha||''))throw Error('PR_IDENTITY_CHANGED');
 }
@@ -85,7 +86,7 @@ function latestRun(list){
  }
  return selected;
 }
-function validateRunHistory(runs,workflowName,workflowId,expectedBase){
+function validateRunHistory(runs,workflowName,workflowId,expectedBase,expectedHead){
  if(!runs||!Number.isSafeInteger(runs.total_count)||runs.total_count<1||
   runs.total_count>100||!Array.isArray(runs.workflow_runs)||
   runs.workflow_runs.length!==runs.total_count)throw Error('INCOMPLETE_RUN_HISTORY');
@@ -94,14 +95,14 @@ function validateRunHistory(runs,workflowName,workflowId,expectedBase){
   if(Array.isArray(r?.pull_requests)){
    for(const link of r.pull_requests){
     if(link?.number===172){
-     if(link?.base?.sha!==expectedBase||link?.head?.sha!==HEAD)
+     if(link?.base?.sha!==expectedBase||link?.head?.sha!==expectedHead)
       throw Error('RUN_TARGET_BASE_MISMATCH');
      linked=true;
     }
    }
   }
   if(!r||r.workflow_id!==workflowId||r.name!==workflowName||
-   r.head_sha!==HEAD||r.event!=='pull_request'||
+   r.head_sha!==expectedHead||r.event!=='pull_request'||
    r.head_repository?.full_name!==REPO||!Number.isSafeInteger(r.id)||
    !Number.isSafeInteger(r.run_attempt)||r.run_attempt<1||!linked)
     throw Error('UNTRUSTED_RUN');
@@ -111,8 +112,8 @@ function validateRunHistory(runs,workflowName,workflowId,expectedBase){
   throw Error('LATEST_RUN_NOT_GREEN');
  return latest;
 }
-function validateJobEvidence(runs,jobs,workflowName,workflowId,expectedBase){
- const latest=validateRunHistory(runs,workflowName,workflowId,expectedBase);
+function validateJobEvidence(runs,jobs,workflowName,workflowId,expectedBase,expectedHead){
+ const latest=validateRunHistory(runs,workflowName,workflowId,expectedBase,expectedHead);
  if(!jobs||!Number.isSafeInteger(jobs.total_count)||!Array.isArray(jobs.jobs)||
     jobs.total_count!==JOBS[workflowName].length||
     jobs.jobs.length!==jobs.total_count)throw Error('INCOMPLETE_CI_JOBS');
@@ -133,6 +134,8 @@ async function evaluateRemote(get){
   if(typeof get!=='function')return incomplete('MISSING_READ_ONLY_CLIENT');
   const before=await get('pulls/172');
   validatePr(before);
+  // Anchor this evaluation to a single live HEAD; exact reviewed blobs stay pinned.
+  const HEAD=before.head.sha;
   const mainBefore=(await get('git/ref/heads/main'))?.object?.sha;
   if(!SHA.test(mainBefore||''))return incomplete('MAIN_REF_MISSING');
   if(before.base.sha!==mainBefore)return incomplete('PR_BASE_NOT_CURRENT_MAIN');
@@ -194,7 +197,7 @@ async function evaluateRemote(get){
    if(!latest||!Number.isSafeInteger(latest.id))
     return incomplete('LATEST_RUN_MISSING');
    const jobs=await get('actions/runs/'+latest.id+'/jobs?per_page=100&filter=latest');
-   validateJobEvidence(hist,jobs,name,workflow.id,mainBefore);
+   validateJobEvidence(hist,jobs,name,workflow.id,mainBefore,HEAD);
    const witnessed={name,workflowId:workflow.id,runId:latest.id,
     attempt:latest.run_attempt};
    if(name==='Android build')androidWitness=witnessed;
@@ -210,14 +213,14 @@ async function evaluateRemote(get){
       !Array.isArray(again.workflow_runs)||
       again.workflow_runs.length!==again.total_count)
     return incomplete('RUN_HISTORY_CHANGED');
-   const recent=validateRunHistory(again,witness.name,witness.workflowId,mainBefore);
+   const recent=validateRunHistory(again,witness.name,witness.workflowId,mainBefore,HEAD);
    if(!recent||recent.id!==witness.runId||
       recent.run_attempt!==witness.attempt||
       recent.status!=='completed'||recent.conclusion!=='success')
     return incomplete('NEWER_OR_CHANGED_CI_RUN');
   }
   const after=await get('pulls/172');
-  validatePr(after);
+  validatePr(after,HEAD);
   const mainAfter=(await get('git/ref/heads/main'))?.object?.sha;
   if(after.base.sha!==before.base.sha||mainAfter!==mainBefore)
    return incomplete('MAIN_MOVED_DURING_REVIEW');
@@ -242,10 +245,10 @@ async function evaluateRemote(get){
    return incomplete('FINAL_REPOSITORY_WORKFLOW_MISSING');
   const newestAndroid=validateRunHistory({
    total_count:androidRuns.length,workflow_runs:androidRuns
-  },first.name,first.workflowId,mainBefore);
+  },first.name,first.workflowId,mainBefore,HEAD);
   const newestCoverage=validateRunHistory({
    total_count:coverageRuns.length,workflow_runs:coverageRuns
-  },second.name,second.workflowId,mainBefore);
+  },second.name,second.workflowId,mainBefore,HEAD);
   if(newestAndroid.id!==first.runId||
      newestAndroid.run_attempt!==first.attempt||
      newestCoverage.id!==second.runId||
@@ -254,7 +257,7 @@ async function evaluateRemote(get){
   // The branch can move while the single CI snapshot is fetched. Verify
   // the PR and trusted main ref again after it, never certify an old base.
   const terminalPr=await get('pulls/172');
-  validatePr(terminalPr);
+  validatePr(terminalPr,HEAD);
   const terminalMain=(await get('git/ref/heads/main'))?.object?.sha;
   if(terminalPr.base.sha!==mainBefore||terminalPr.head.sha!==HEAD||
      terminalMain!==mainBefore)
