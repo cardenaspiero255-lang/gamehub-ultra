@@ -15,14 +15,15 @@ const protectedFiles=[
 ].map(([filename,sha,status])=>({filename,sha,status}));
 function fixture(){
  const state={main:MAIN,head:HEAD,runStatus:'completed',runConclusion:'success',
-  badLink:false,badJob:false,mainMoves:false,prMoves:false,rerunPending:false,missingRuns:false};
+  badLink:false,badLinkHead:false,missingLink:false,badRunSha:false,unrelatedRun:false,
+  badJob:false,mainMoves:false,prMoves:false,rerunPending:false,missingRuns:false,listHeadSha:null};
  const pr={number:172,state:'open',changed_files:5,author_association:'OWNER',
   user:{login:'cardenaspiero255-lang',id:322222186,type:'User'},
   head:{sha:HEAD,repo:{full_name:REPO}},
   base:{sha:MAIN,ref:'main',repo:{full_name:REPO}}};
  const run=(id,attempt,started,conclusion='success',status='completed')=>({
   id,workflow_id:382593687,name:'Ultra Sentinel PR172 Protected Delta Review',
-  event:'pull_request_target',status,conclusion,head_sha:HEAD,run_attempt:attempt,
+  event:'pull_request_target',status,conclusion,head_sha:MAIN,run_attempt:attempt,
   run_started_at:started,head_repository:{full_name:REPO},
   pull_requests:[{number:172,base:{sha:MAIN},head:{sha:HEAD}}]
  });
@@ -35,12 +36,18 @@ function fixture(){
   actions:{
    getWorkflow:async()=>({data:{id:382593687,name:'Ultra Sentinel PR172 Protected Delta Review',
     path:'.github/workflows/ultra-sentinel-ci-delta-protected.yml',state:'active'}}),
-   listWorkflowRuns:async()=>{let runs=state.missingRuns?[]:[original];
+   listWorkflowRuns:async args=>{state.listHeadSha=args.head_sha;
+    let runs=state.missingRuns?[]:[original];
+    if(state.unrelatedRun)runs.push({...run(901,1,'2026-10-13T03:30:00Z'),
+      pull_requests:[{number:191,base:{sha:MAIN},head:{sha:'a'.repeat(40)}}]});
     if(state.rerunPending)runs.push(run(899,2,'2026-10-13T03:00:00Z',null,'in_progress'));
     runs=runs.map(v=>({...v,
      status:state.runStatus==='completed'?v.status:state.runStatus,
+     head_sha:state.badRunSha?HEAD:v.head_sha,
      conclusion:state.runConclusion==='success'?v.conclusion:state.runConclusion,
-     pull_requests:state.badLink?[{number:172,head:{sha:HEAD},base:{sha:'e'.repeat(40)}}]:v.pull_requests
+     pull_requests:state.missingLink?[]:state.badLink?
+       [{number:172,head:{sha:HEAD},base:{sha:'e'.repeat(40)}}]:state.badLinkHead?
+       [{number:172,head:{sha:'f'.repeat(40)},base:{sha:MAIN}}]:v.pull_requests
     }));
     return{data:{total_count:runs.length,workflow_runs:runs}};},
    listJobsForWorkflowRun:async()=>({data:{total_count:2,jobs:[
@@ -56,7 +63,9 @@ function fixture(){
 const run=async f=>attestScopedPr172({github:f.github,owner:'cardenaspiero255-lang',
  repo:'gamehub-ultra',pr:f.pr,files:f.files});
 test('exact GitHub-origin scoped stage2 evidence stays manual and non-approving',async()=>{
- const x=await run(fixture());
+ const f=fixture();
+ const x=await run(f);
+ assert.equal(f.state.listHeadSha,MAIN,'pull_request_target runs are keyed to the current base SHA');
  assert.equal(x.status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
  assert.equal(x.provenanceAuthenticated,true);
  assert.equal(x.manualReviewRequired,true);
@@ -81,8 +90,15 @@ test('stale failed, newer pending rerun and missing protected run fail closed',a
   assert.notEqual((await run(f)).status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
  }
 });
-test('forged workflow target base and job failures fail closed',async()=>{
- for(const change of [x=>x.state.badLink=true,x=>x.state.badJob=true]){
+test('unrelated PR target runs sharing the same base cannot impersonate PR172',async()=>{
+ const f=fixture();f.state.unrelatedRun=true;
+ const x=await run(f);
+ assert.equal(x.status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
+ assert.equal(x.protectedRunId,900);
+});
+test('forged workflow target base, missing PR linkage and job failures fail closed',async()=>{
+ for(const change of [x=>x.state.badLink=true,x=>x.state.badLinkHead=true,
+  x=>x.state.missingLink=true,x=>x.state.badRunSha=true,x=>x.state.badJob=true]){
   const f=fixture();change(f);
   assert.notEqual((await run(f)).status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
  }
