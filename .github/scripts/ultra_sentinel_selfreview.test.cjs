@@ -27,6 +27,16 @@ test('read-only benign diff remains advisory, never an approval',()=>{
  // Bootstrap regressions: only simple frozen, immutable export metadata
  // and literal failure exit codes may be treated as inert data.
  const capabilityEngine=require('./ultra_sentinel_capabilities.cjs');
+ // A candidate runner executes this test unprivileged and prints the precise
+ // provenance error; trusted main continues to treat incomplete AST as BLOCKER.
+ for(const filename of ['ultra_sentinel_core.cjs','ultra_sentinel_report.cjs']){
+  const src=fs.readFileSync(path.resolve(__dirname,filename),'utf8');
+  const candidateAst=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',
+   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+   locations:true,ranges:true});
+  try{capabilityEngine.findCapabilities(candidateAst);}
+  catch(error){throw Error('FAMILY_MODE_AST_PROVENANCE '+filename+': '+error.message);}
+ }
  const options={ecmaVersion:'latest',sourceType:'script',
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true};
