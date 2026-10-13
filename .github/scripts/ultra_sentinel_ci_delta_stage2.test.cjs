@@ -236,3 +236,18 @@ test('Stage 2 fails closed if PR172 HEAD changes during rebased verification',as
  assert.equal(out.status,'INCOMPLETE');
  assert.equal(out.autoMergeAllowed,false);
 });
+
+
+test('P2: historical PR172 fixtures exist and match immutable Git blob hashes',()=>{
+ const folder=path.resolve(__dirname,'../sentinel-fixtures/pr172-ci-baseline');
+ const expected={
+  'android.yml':'418287ceb11221f1879ee81cbef40c4b008c4f04',
+  'coverage.yml':'5ccf1c5de322a29c6e5b1d884ea659d310efa83c',
+  'check-ci-safety-contract.py':'e297ca93aface84cda6a7769cd21da6e47e0e7af',
+  'test-ci-safety-contract-regressions.py':'f3c8fa8c0f0c2a9361a33a12fe7386729404e5df'
+ };
+ for(const [filename,sha] of Object.entries(expected)){
+  const bytes=fs.readFileSync(path.join(folder,filename));
+  assert.equal(blob(bytes),sha,filename+' historical Git blob mismatch');
+ }
+});
