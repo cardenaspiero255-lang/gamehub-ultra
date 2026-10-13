@@ -94,7 +94,7 @@ test('automatic and post-CI reviewers fail closed on untrusted CI without exact 
    assert.match(code,/const scopedAccepted=scopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
    assert.match(code,/permitScopedOpaqueYaml\(structuralYaml\)/);
    assert.match(code,/if\(ci\.status==='UNTRUSTED'&&!scopedAccepted\)\s*core\.setFailed/);
-   assert.match(code,/if\(structuralYaml\.coverage\.partial&&!scopedAccepted\)\s*core\.setFailed/);
+   assert.match(code,/if\s*\(structuralYaml\.coverage\.partial&&!scopedAccepted\)\s*core\.setFailed/);
    assert.match(code,/if \(supplyChain\.coverage\.partial\) core\.setFailed/);
    assert.match(code,/if \(evidence\.coverage\.partial\) core\.setFailed/);
   }else{
