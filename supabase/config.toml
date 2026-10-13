@@ -2,3 +2,4 @@
 # This exception applies ONLY to the independently authenticated CAR webhook.
 [functions.car-autopilot]
 verify_jwt = false
+entrypoint = "./functions/car-autopilot/index.mjs"
