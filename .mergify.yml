@@ -1,0 +1,30 @@
+# GameHub Ultra: opt-in auto-merge, evaluated by the installed Mergify GitHub App.
+# No cron, GitHub Actions write tokens, secret access, or unreviewed autonomous merges.
+# This configuration is INERT until the repository owner installs Mergify.
+pull_request_rules:
+  - name: "Safeguarded auto-merge of verified owner PRs"
+    conditions:
+      - "base = main"
+      - "author = cardenaspiero255-lang"
+      - "-draft"
+      - "-from-fork"
+      - "-conflict"
+      - "label = automerge:approved"
+      - "label != merge:blocked"
+      - "label != security:review-required"
+      - "label != do-not-merge"
+      - "#review-threads-unresolved = 0"
+      - "#check-failure = 0"
+      # CI checks from the verified GitHub Actions app. Missing/skipped checks do not pass.
+      - "check-success = @github-actions/build"
+      - "check-success = @github-actions/coverage"
+      - "check-success = @github-actions/Ultra Sentinel Core — own reviewer"
+      - "check-success = @github-actions/Sentinel Core / full regression suite"
+      # Governance, reviewer and workflow changes ALWAYS require manual merge.
+      - '-files ~= ^\.github/'
+      - '-files ~= ^\.mergify\.yml$'
+      - '-files ~= ^(?:gradle/wrapper/|gradle\.properties$|settings\.gradle|build\.gradle)'
+      - '-files ~= (?:^|/)(?:secrets?|credentials?|security)(?:/|\.|$)'
+    actions:
+      merge:
+        method: squash
