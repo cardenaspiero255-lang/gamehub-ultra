@@ -42,6 +42,30 @@ function completeShape(analysis){
  if(analysis.verdict==='NO_CRITICAL_PATTERN'&&(hasCritical||analysis.omitted>0))
    return false;
  if(analysis.verdict==='REVIEW_REQUIRED'&&!hasCritical)return false;
+ // The existing planner yields one draft per finding, capped at 35.
+ // A missing, extra or misplaced proposal could mask a real risk or
+ // associate another file's repair with an unrelated finding.
+ if(rem.suggestions.length!==Math.min(findings.length,35))return false;
+ for(let i=0;i<findings.length;i++){
+  const finding=findings[i];
+  for(let j=0;j<i;j++){
+   const previous=findings[j];
+   if(finding.rule===previous.rule&&finding.path===previous.path&&
+      finding.line===previous.line)return false;
+  }
+  if(i>=35)continue;
+  const suggestion=rem.suggestions[i];
+  if(!suggestion||typeof suggestion!=='object'||Array.isArray(suggestion)||
+     suggestion.rule!==finding.rule||suggestion.path!==finding.path||
+     suggestion.line!==finding.line||suggestion.severity!==finding.severity||
+     suggestion.status!=='DRAFT_REQUIRES_VALIDATION'||suggestion.autofix!==false||
+     typeof suggestion.title!=='string'||!suggestion.title.trim()||
+     typeof suggestion.test!=='string'||!suggestion.test.trim()||
+     typeof suggestion.caution!=='string'||!suggestion.caution.trim()||
+     !Array.isArray(suggestion.steps)||suggestion.steps.length===0||
+     suggestion.steps.some(step=>typeof step!=='string'||!step.trim()))
+    return false;
+ }
  return true;
 }
 function present(analysis,requested){
