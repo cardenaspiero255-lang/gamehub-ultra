@@ -31,8 +31,10 @@ function completeShape(analysis){
     !Number.isSafeInteger(analysis.omitted)||analysis.omitted<0)return false;
  if(!['INCOMPLETE','REVIEW_REQUIRED','NO_CRITICAL_PATTERN'].includes(analysis.verdict)||
     coverage.partial!==(analysis.verdict==='INCOMPLETE'))return false;
- // A no-signal claim requires real scanned coverage and untruncated findings.
- if(!coverage.partial&&(coverage.returned===0||coverage.analyzed===0))return false;
+ // Core can legitimately skip documentation/test-only/deletion-only files.
+ // Keep nonempty PR coverage, but never equate zero production scans with
+ // malformed analysis when Core explicitly reports a complete verdict.
+ if(!coverage.partial&&coverage.returned===0)return false;
  // Core evidence fields are part of the security contract. The read-only
  // adapter must never certify a finding whose evidence/provenance was dropped
  // while moving between report formats or truncated by another component.
