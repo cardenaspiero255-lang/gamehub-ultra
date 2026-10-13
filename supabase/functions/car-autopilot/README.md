@@ -1,26 +1,33 @@
-# CAR Autopilot — event-driven external connector (not yet deployed)
+# CAR Autopilot — webhook GitHub → Supabase → Copilot (preparado, **NO DESPLEGADO**)
 
-The job is to hand off the **next already-approved CAR issue** to GitHub Copilot after a verified CAR PR has merged. It does **not** write code, enable GH bypass, run on a timer, create new CARs, or merge PRs. Mergify remains independently responsible for merging clean code. Written for the already-existing `Gamehub ultra` Supabase project. Safe failure when the required secrets are absent.
+## Contrato de seguridad
 
-## One-time owner setup
+- Solo procesa eventos `issues.closed` firmados por GitHub con `X-Hub-Signature-256`, tamaño <=128 KiB, ID inmutable de repositorio y emisor verificables, CAR del propietario con `car:active`, estado `completed` y cierre reciente.
+- **No confía en el cierre manual**: consulta a GitHub y exige un PR `CAR-N` realmente fusionado a `main`, mismo número CAR, mismo repositorio, usuario de confianza y `Fixes #<número EXACTO de issue>` en el cuerpo, cerca de la fecha del cierre.
+- Solo selecciona un issue `car:ready` creado por el propietario. Relee el issue antes de actuar. Si hay otro CAR activo, datos ambiguos o resultados truncados, falla cerrado.
+- **Una reserva transaccional y duradera** en Supabase (tabla/RPC del archivo `supabase/migrations/20261013180000_car_autopilot_dispatch.sql`) se obtiene antes de asignar el CAR. La RPC serializa las entregas con un advisory lock, registra el CAR más recientemente asignado y rechaza eventos duplicados/retrasados. Si faltan migración o credenciales, **NO asigna nada**. No se almacena información privada de los issues.
+- Si GitHub confirma la asignación pero falla el etiquetado o viceversa, se conserva la reserva y se detiene para recuperación manual (no se repite ciegamente el despacho).
+- **No fusiona PR ni modifica código**. Las reglas independientes de Mergify y la protección de main gobiernan las fusiones.
 
-1. Merge PR #195 first after passing all gates; it carries the Copilot agent profile and Mergify policy. Protect `main` in GitHub; do not allow bypass, require Android, Coverage and Sentinel checks.
-2. Deploy this Edge Function only after reviewing the tests, security and CI. The Supabase platform must use **verify_jwt=false only for this function** because GitHub authenticates through raw HMAC SHA-256. `handler.mjs` rejects requests without a valid signed header.
-3. Configure these Supabase Edge Function secrets in the **Supabase dashboard**, never in GitHub issues or chat: `CAR_GITHUB_WEBHOOK_SECRET` (new strong random string), `CAR_GITHUB_ISSUES_TOKEN` (fine-grained token for this single repo: Metadata read, Issues read/write, Pull Requests read; do not grant Contents write, administration, workflows or merge permissions).
-4. Add a GitHub repository webhook in **Settings → Webhooks** with URL `https://<your-project-ref>.supabase.co/functions/v1/car-autopilot`, content type `application/json`, the **same** signing secret and events **Pull requests** and **Issues** only. Keep SSL verification enabled.
-5. Open only one CAR issue with `car:ready` at first and use the owner-created issue template; dependencies must already be validated before adding the label. Ensure Copilot cloud coding agent is enabled and able to access custom agent `gamehub-car-engineer`.
-6. Copilot must include `Fixes #<CAR ISSUE NUMBER>` in the PR body, create PR title beginning `CAR-N`, and leave it draft until validation. Its merge closes the linked CAR; the webhook refuses to dispatch another CAR while any `car:active` issue remains open.
-7. Test with one small non-privileged CAR and verify: HMAC rejection, issue assignment, draft PR, tests, Mergify merge, auto-close issue, next ready CAR assignment. If any stage fails, stop and repair; do not skip rules.
+## Limitación importante de permisos de Copilot
 
-## Security and limits
+La API de GitHub Copilot para asignar un issue a un agente **requiere un token de usuario** (PAT o GitHub App user-to-server token). GitHub documenta que un PAT de granularidad fina debe tener **Metadata:read y Actions, Contents, Issues y Pull requests:read/write**, incluso aunque este webhook invoque solo el endpoint de asignación. Ver https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-cloud-agent-via-the-api.
 
-- Validates `X-Hub-Signature-256` over raw bytes, repository immutable ID (survives rename), owner ID, exact source repo, merged PR, CAR identity, recent timestamp and GitHub `X-GitHub-Delivery` format.
-- Rejects payloads above 128KiB and returns 503 without secrets. Never logs secrets or bodies.
-- This function selects the earliest ready owner-authored CAR and uses GitHub's documented `agent_assignment` mechanism. It cannot verify Copilot entitlements; a rejected API call fails safely.
-- At most one active CAR; no new issues are fabricated. Queue labels `car:ready`, `car:active`, `car:blocked` are external contracts, not authorization substitutes.
-- A merged PR can precede the issue-closing webhook; both signed event types are accepted, but an `issues.closed` handoff requires `car:active` + `state_reason=completed`. Repeated webhook deliveries after assignment see `car:active`. There is no *durable* database ledger for `X-GitHub-Delivery`, so strict global exactly-once across concurrency/restarts is **not guaranteed**. Before production-scale use, add a unique delivery ledger with transactional locking and replay windows; do not claim perfect idempotency.
-- A repo rename keeps the immutable ID, but the GitHub webhook and token application scope must be checked afterwards. Mergify's configuration lives with the renamed repo.
+Por eso **NO ES CORRECTO** decir que un token `Issues:write` basta ni que una credencial para el servicio nunca podría modificar código. Por seguridad, usa una identidad GitHub específica, credencial de corta duración si es posible, limitada a este único repositorio, sin compartirla en chats ni en archivos. La autorización de esos permisos sensibles requiere una decisión consciente del propietario antes de desplegar. Usa el secreto `CAR_GITHUB_COPILOT_USER_TOKEN`.
 
-Local tests: `node --test supabase/functions/car-autopilot/handler.test.mjs`. Github CI workflow `CAR Autopilot Webhook Tests` is unprivileged and event-driven.
+## Instalación manual única (pendiente)
 
-**Actual status:** Source-only draft PR until merged, Supabase-deployed, secrets added and webhook enabled. It does not run merely because this document exists.
+1. Validar y fusionar el PR #195 con revisión de seguridad y todas sus comprobaciones verdes en el HEAD; confirma que el agente `gamehub-car-engineer` esté en `main`.
+2. Verificar protección `main` en GitHub. El 13/10/2026 GitHub reportó `protected=true` y cuatro checks obligatorios.
+3. Revisar la migración SQL, su RLS, privilegios y transacción. Aplicarla **solo después de la revisión** al proyecto Supabase autorizado. No habilitar Data API de escritura a usuarios anónimos o autenticados; la función RPC y tabla conceden acceso solo a `service_role`.
+4. Configurar en los secrets de Supabase Edge Functions: `CAR_GITHUB_WEBHOOK_SECRET` (secreto aleatorio fuerte propio) y `CAR_GITHUB_COPILOT_USER_TOKEN` (token de usuario con los permisos documentados, restringido a este repositorio). El servicio recibe `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` en backend; nunca los envíes al cliente ni a GitHub. Validar su presencia tras el despliegue.
+5. Desplegar **únicamente esta función** con `verify_jwt=false`, porque GitHub autentica con la firma HMAC del cuerpo. Se rechazan solicitudes no firmadas o sin secrets. No desactivar JWT de otras funciones.
+6. Crear en GitHub Settings → Webhooks un webhook con URL `https://<ref-del-proyecto>.supabase.co/functions/v1/car-autopilot`, content type JSON, SSL verification habilitado, el secreto igual al de Supabase, y evento **Issues** únicamente. El webhook no necesita escuchar `pull_request`, evitando carreras mientras GitHub cierra issues.
+7. Habilitar Copilot cloud coding agent y verificar que es asignable en el repositorio; crear primero un CAR piloto no sensible con `car:ready`. Las dependencias deben verificarse antes de aplicar esa etiqueta. El agente tiene que crear PR draft con título `CAR-N` y `Fixes #<issue>` en el cuerpo.
+8. Prueba de extremo a extremo: cierre manual sin merge no activa otro CAR; CAR fusionado activa exactamente uno; dos webhooks paralelos no duplican; secretos inválidos y errores de GitHub fallan cerrado; la nueva fusión requiere los cuatro checks de main. Registrar pruebas y bloquear ante fallos.
+
+## Tests y límites
+
+Pruebas unitarias: `node --test supabase/functions/car-autopilot/handler.test.mjs`; workflow GitHub Actions `CAR Autopilot Webhook Tests`. El registro SQL se verifica en un entorno seguro antes de producción. La función no corrige PR fallidos por sí sola: esa labor queda para el agente Copilot y el seguimiento horario. Si la migración no existe o GitHub rechaza el token, no hay despacho, que es el comportamiento seguro.
+
+**Estado actual:** archivos en PR #196 draft, no fusionados ni desplegados; credenciales y webhook externo sin configurar. No considerar el circuito operativo hasta una validación real.
