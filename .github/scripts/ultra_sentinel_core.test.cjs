@@ -46,7 +46,7 @@ test('recognizes unsupervised Android coroutine',()=>{
  assert.equal(review.familyHunter.mode,'REVIEW_ONLY');
  assert.equal(review.remediations.suggestions.length,0);
  assert.equal(review.validationPlan.checks.length,0);
- assert.ok(review.findings.every(f=>!Object.hasOwn(f,'verification')));
+ assert.ok(review.findings.every(f=>f.verification===null));
  assert.doesNotMatch(markdown(review),/Soluciones propuestas|Tests adversariales propuestos|Prueba necesaria/);
  assert.ok(solutions.remediations.suggestions.length>0);
  assert.equal(solutions.familyHunter.repairCommits,'OFF');

@@ -282,15 +282,16 @@ function analyze(files,config={}){
  const familyHunter=resolveFamilyHunterMode(config.familyHunterMode);
  const reviewOnly=familyHunter.mode==='REVIEW_ONLY';
  const originalPlan=validationPlan(list);
- const plan=reviewOnly?{domains:originalPlan.domains,checks:[]}:originalPlan;
+ const plan={domains:originalPlan.domains,
+  checks:reviewOnly?[]:originalPlan.checks};
  // Modes share exactly the same detection and severity gates. Mode 1 only
  // suppresses repair-oriented fields after findings are determined.
- const findings=alerts.slice(0,40).map(f=>{
-  if(!reviewOnly)return f;
-  return {rule:f.rule,severity:f.severity,confidence:f.confidence,
-   path:f.path,line:f.line,evidence:f.evidence,reason:f.reason,
-   domains:f.domains,origin:f.origin,status:f.status};
- });
+ const findings=alerts.slice(0,40).map(f=>({
+  rule:f.rule,severity:f.severity,confidence:f.confidence,
+  path:f.path,line:f.line,evidence:f.evidence,reason:f.reason,
+  verification:reviewOnly?null:f.verification,
+  domains:f.domains,origin:f.origin,status:f.status
+ }));
  const repairs=buildRemediations({sha,findings:reviewOnly?[]:findings});
  // Only validated historical fixes are marked verified. Curated playbooks are explicitly advisory.
  for(const suggestion of repairs.suggestions){

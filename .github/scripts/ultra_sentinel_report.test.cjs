@@ -31,7 +31,7 @@ test('machine repair preserves line and reproducibility',()=>{
  input.analysis.familyHunter={mode:'REVIEW_ONLY',repairCommits:'OFF'};
  const review=buildReport(input);
  assert.equal(review.findings[0].repair,null);
- assert.equal(review.findings[0].check,null);
+ assert.equal(review.findings[0].check,'');
  assert.equal(review.familyHunter.mode,'REVIEW_ONLY');
  assert.equal(review.familyHunter.repairCommits,'OFF');
 });

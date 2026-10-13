@@ -21,15 +21,16 @@ function buildReport(args){
  if(String(analysis.sha).toLowerCase()!==sha.toLowerCase())
    throw new Error('Analysis belongs to a different commit');
  const reviewOnly=analysis.familyHunter?.mode==='REVIEW_ONLY';
+ const suggestions=reviewOnly?[]:analysis.remediations?.suggestions;
  const risks=analysis.findings.slice(0,10).map((f,i)=>{
-   const s=analysis.remediations?.suggestions?.find(x=>
+   const s=suggestions?.find(x=>
     x.rule===f.rule&&x.path===f.path&&x.line===f.line);
    return {
     rule:clean(f.rule,85),severity:clean(f.severity,20),
     location:{path:clean(f.path,240),line:Number.isSafeInteger(f.line)?f.line:0},
     confidence:clean(f.confidence,12),
-    why:clean(f.reason,360),check:reviewOnly?null:clean(f.verification,340),
-    repair:s&&!reviewOnly?{
+    why:clean(f.reason,360),check:clean(reviewOnly?'':f.verification,340),
+    repair:s?{
      title:clean(s.title,150),
      steps:Array.isArray(s.steps)?s.steps.slice(0,5).map(x=>clean(x,260)):[],
      test:clean(s.test,300),
