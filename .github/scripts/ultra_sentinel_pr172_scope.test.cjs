@@ -16,7 +16,8 @@ const protectedFiles=[
 function fixture(){
  const state={main:MAIN,head:HEAD,runStatus:'completed',runConclusion:'success',
   badLink:false,badLinkHead:false,missingLink:false,badRunSha:false,unrelatedRun:false,
-  badJob:false,mainMoves:false,prMoves:false,rerunPending:false,missingRuns:false,listHeadSha:null};
+  badJob:false,mainMoves:false,prMoves:false,rerunPending:false,missingRuns:false,
+  lateRun:false,listReads:0,listHeadSha:null};
  const pr={number:172,state:'open',changed_files:5,author_association:'OWNER',
   user:{login:'cardenaspiero255-lang',id:322222186,type:'User'},
   head:{sha:HEAD,repo:{full_name:REPO}},
@@ -36,11 +37,13 @@ function fixture(){
   actions:{
    getWorkflow:async()=>({data:{id:382593687,name:'Ultra Sentinel PR172 Protected Delta Review',
     path:'.github/workflows/ultra-sentinel-ci-delta-protected.yml',state:'active'}}),
-   listWorkflowRuns:async args=>{state.listHeadSha=args.head_sha;
+   listWorkflowRuns:async args=>{state.listHeadSha=args.head_sha;state.listReads++;
     let runs=state.missingRuns?[]:[original];
     if(state.unrelatedRun)runs.push({...run(901,1,'2026-10-13T03:30:00Z'),
       pull_requests:[{number:191,base:{sha:MAIN},head:{sha:'a'.repeat(40)}}]});
     if(state.rerunPending)runs.push(run(899,2,'2026-10-13T03:00:00Z',null,'in_progress'));
+    if(state.lateRun&&state.listReads>1)
+      runs.push(run(902,1,'2026-10-13T04:00:00Z',null,'in_progress'));
     runs=runs.map(v=>({...v,
      status:state.runStatus==='completed'?v.status:state.runStatus,
      head_sha:state.badRunSha?MAIN:v.head_sha,
@@ -103,6 +106,12 @@ test('forged workflow target base, missing PR linkage and job failures fail clos
   const f=fixture();change(f);
   assert.notEqual((await run(f)).status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
  }
+});
+test('a new protected run during terminal verification blocks stale success',async()=>{
+ const f=fixture();f.state.lateRun=true;
+ const x=await run(f);
+ assert.equal(x.status,'INCOMPLETE');
+ assert.equal(f.state.listReads,2);
 });
 test('HEAD or main moving during verification fails closed',async()=>{
  for(const change of [x=>x.state.prMoves=true,x=>x.state.mainMoves=true]){
