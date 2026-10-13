@@ -58,12 +58,18 @@ function latestRun(runs,head,base){
   const started=parsedRunTime(r);
   if(distinct.has(r.id))throw Error('DUPLICATE_RUN');
   distinct.add(r.id);
+  // pull_request_target runs against the *base* commit, never the PR head.
   if(r.workflow_id!==REVIEWER_ID||r.name!==REVIEWER_NAME||
-   r.event!=='pull_request_target'||r.head_sha!==head||
+   r.event!=='pull_request_target'||r.head_sha!==base||
    r.head_repository?.full_name!==REPO||
-   !Array.isArray(r.pull_requests)||r.pull_requests.length!==1||
-   r.pull_requests[0]?.number!==172||
-   r.pull_requests[0]?.head?.sha!==head||r.pull_requests[0]?.base?.sha!==base)
+   !Array.isArray(r.pull_requests)||r.pull_requests.length>1)
+   throw Error('UNTRUSTED_RUN_PROVENANCE');
+  // Other PRs may have protected runs on the same main SHA. They cannot
+  // certify PR172; accept only GitHub's exact, single PR association.
+  if(r.pull_requests.length===0)continue;
+  const linked=r.pull_requests[0];
+  if(linked?.number!==172)continue;
+  if(linked.head?.sha!==head||linked.base?.sha!==base)
    throw Error('UNTRUSTED_RUN_PROVENANCE');
   if(started===bestAt&&r.id!==best?.id)throw Error('AMBIGUOUS_RUN_ORDER');
   if(started>bestAt||(started===bestAt&&r.run_attempt>best.run_attempt)){
@@ -110,7 +116,7 @@ async function attestScopedPr172({github,owner,repo,pr,files}={}){
      wf?.path!==REVIEWER_PATH||wf?.state!=='active')
    throw Error('UNTRUSTED_WORKFLOW_ID');
   const result=(await github.rest.actions.listWorkflowRuns({owner,repo,
-    workflow_id:wf.id,head_sha:head,event:'pull_request_target',
+    workflow_id:wf.id,head_sha:main,event:'pull_request_target',
     per_page:100,page:1})).data;
   if(!Number.isSafeInteger(result?.total_count)||result.total_count<1||
      result.total_count>100||!Array.isArray(result.workflow_runs)||
