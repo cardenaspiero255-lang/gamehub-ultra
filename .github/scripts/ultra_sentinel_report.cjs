@@ -20,16 +20,14 @@ function buildReport(args){
    throw new Error('Invalid PR, SHA or audit payload');
  if(String(analysis.sha).toLowerCase()!==sha.toLowerCase())
    throw new Error('Analysis belongs to a different commit');
- const reviewOnly=analysis.familyHunter?.mode==='REVIEW_ONLY';
- const suggestions=reviewOnly?[]:analysis.remediations?.suggestions;
  const risks=analysis.findings.slice(0,10).map((f,i)=>{
-   const s=suggestions?.find(x=>
-    x.rule===f.rule&&x.path===f.path&&x.line===f.line);
+   const s=analysis.remediations?.suggestions?.find(x=>x.rule===f.rule&&x.path===f.path&&x.line===f.line)
+    ;
    return {
     rule:clean(f.rule,85),severity:clean(f.severity,20),
     location:{path:clean(f.path,240),line:Number.isSafeInteger(f.line)?f.line:0},
     confidence:clean(f.confidence,12),
-    why:clean(f.reason,360),check:clean(reviewOnly?'':f.verification,340),
+    why:clean(f.reason,360),check:clean(f.verification,340),
     repair:s?{
      title:clean(s.title,150),
      steps:Array.isArray(s.steps)?s.steps.slice(0,5).map(x=>clean(x,260)):[],
@@ -53,12 +51,6 @@ function buildReport(args){
  return {
   schema:SCHEMA,repo:'cardenaspiero255-lang/gamehub-ultra',pr,sha:sha.toLowerCase(),
   engine:clean(analysis.engine,70),engineVersion:clean(analysis.version,20),
-  familyHunter:{
-   mode:reviewOnly?'REVIEW_ONLY':'REVIEW_WITH_SOLUTIONS',
-   status:analysis.familyHunter?.status==='AUTHORIZATION_REQUIRED'?'AUTHORIZATION_REQUIRED':
-    analysis.familyHunter?.status==='INVALID_MODE'?'INVALID_MODE':'READ_ONLY',
-   repairCommits:'OFF',autoCommitAllowed:false,autoMergeAllowed:false
-  },
   status:partial?'incomplete':risks.some(x=>['HIGH','BLOCKER'].includes(x.severity))?'review_required':'no_critical_signal',
   partial,coverage:{
    returned:Number(analysis.coverage?.returned)||0,analyzed:Number(analysis.coverage?.analyzed)||0
@@ -73,8 +65,7 @@ function buildReport(args){
   })),
   limitations:[
    'Diff-only heuristics: no proof of correctness or confirmed bug.',
-   reviewOnly?'Review-only mode deliberately omits repairs and test instructions.':
-    'Remediation templates require source-context inspection, RED/GREEN tests and review.',
+   'Remediation templates require source-context inspection, RED/GREEN tests and review.',
    'Never merge or approve only from this report.'
   ]
  };

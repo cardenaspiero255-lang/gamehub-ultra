@@ -26,14 +26,6 @@ test('report tied to analysis SHA',()=>{
 test('machine repair preserves line and reproducibility',()=>{
  const r=buildReport(sample());assert.equal(r.findings[0].location.line,12);
  assert.equal(r.findings[0].repair.test,'100 callbacks');
- // Mode 1 must not leak repair instructions even from a malformed caller payload.
- const input=sample();
- input.analysis.familyHunter={mode:'REVIEW_ONLY',repairCommits:'OFF'};
- const review=buildReport(input);
- assert.equal(review.findings[0].repair,null);
- assert.equal(review.findings[0].check,'');
- assert.equal(review.familyHunter.mode,'REVIEW_ONLY');
- assert.equal(review.familyHunter.repairCommits,'OFF');
 });
 test('partial scan cannot be called clean',()=>{
  const x=sample();x.analysis.coverage.partial=true;x.analysis.findings=[];

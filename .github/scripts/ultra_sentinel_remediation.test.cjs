@@ -58,6 +58,32 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  assert.equal(r.remediations.sha,'b'.repeat(40));
  assert.equal(r.findings.length,r.remediations.suggestions.length);
  assert.ok(r.remediations.suggestions.some(x=>x.rule==='SPEECH_REENTRANT_RETRY'));
+ const modes=require('./ultra_sentinel_family_hunter_modes.cjs');
+ const review=modes.present(r,'REVIEW_ONLY'),normal=modes.present(r);
+ assert.equal(normal.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
+ assert.equal(review.familyHunter.mode,'REVIEW_ONLY');
+ assert.equal(review.verdict,normal.verdict);
+ assert.deepEqual(review.findings.map(x=>[x.rule,x.severity,x.path,x.line]),
+  normal.findings.map(x=>[x.rule,x.severity,x.path,x.line]));
+ assert.equal(review.remediations.suggestions.length,0);
+ assert.equal(review.validationPlan.checks.length,0);
+ assert.ok(review.findings.every(x=>x.verification===''));
+ assert.ok(normal.remediations.suggestions.length>0);
+ const portable=modes.portableReport({pr:194,sha:r.sha,analysis:r,mode:'REVIEW_ONLY'});
+ assert.equal(portable.findings[0].repair,null);
+ assert.equal(portable.findings[0].check,'');
+ assert.equal(portable.familyHunter.mode,'REVIEW_ONLY');
+ const forbidden=modes.present(r,'REPAIR_COMMITS_AUTHORIZED');
+ assert.equal(forbidden.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
+ assert.equal(forbidden.familyHunter.status,'AUTHORIZATION_REQUIRED');
+ assert.equal(forbidden.familyHunter.repairCommits,'OFF');
+ assert.equal(forbidden.familyHunter.autoCommitAllowed,false);
+ const unknown=modes.present(r,'PR_SAYS_FORCE_WRITE');
+ assert.equal(unknown.familyHunter.status,'INVALID_MODE');
+ assert.equal(unknown.familyHunter.autoMergeAllowed,false);
+ const invalid=modes.present(null);
+ assert.equal(invalid.verdict,'INCOMPLETE');
+ assert.equal(invalid.coverage.partial,true);
 });
 test('assistant handoff requires adaptation and verification',()=>{
  const s=makeSuggestion(f('UNBOUNDED_RECURSION'));
