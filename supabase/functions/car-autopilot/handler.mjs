@@ -55,7 +55,7 @@ export async function handleCarWebhook(req, config, transport = fetch, timestamp
         pr?.base?.ref !== "main" || pr?.head?.repo?.id !== REPOSITORY_ID ||
         ![BOT, "cardenaspiero255-lang"].includes(pr?.user?.login))
       return json(202, { status: "ignored_non_authorized_merge" });
-    if (!exactCar(pr.title) || !/\\b(?:fixes|closes|resolves)\\s+#\\d+/i.test(pr.body || ""))
+    if (!exactCar(pr.title) || !/\b(?:fixes|closes|resolves)\s+#\d+/i.test(pr.body || ""))
       return json(202, { status: "ignored_non_car" });
     const merged = Date.parse(pr.merged_at || "");
     if (!Number.isFinite(merged) || timestamp - merged < -300000 ||
