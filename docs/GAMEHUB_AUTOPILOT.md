@@ -1,80 +1,21 @@
-# GameHub Ultra — PR/CAR autopilot (sin tareas programadas)
+# GameHub Ultra — PR/CAR autopilot: estado de seguridad
 
-## Estado real
+## Estado actual
 
-Configuración preparada **en PR #195, DRAFT**. Ningún merge automático ni creación/implementación desatendida de CAR está habilitado hasta que las aplicaciones externas estén instaladas, el propietario configure las protecciones de GitHub y se fusione el PR tras revisar CI. Los proveedores no pueden invocarse desde un prompt de ChatGPT cuando esta conversación no está activa.
+**La autofusión Mergify está deshabilitada deliberadamente** (`pull_request_rules: []`). La configuración original del PR #195 tenía tres problemas confirmados por Codex: no autenticaba la procedencia de cada CAR y sesión Copilot contra el HEAD, podía fusionar mientras checks aplicables seguían pendientes y omitía la aprobación humana requerida para PR draft/workflows de Copilot. No se deben describir esos riesgos como resueltos por tener cuatro checks verdes.
 
-No hay `cron`, ChatGPT Tasks, temporizadores, programaciones horarias ni GitHub Actions que reciban nuevos permisos de escritura. Todo se dispara por **eventos**: PR abierto/actualizado, checks completados, issues creados y asignados a un agente.
+Mergify instalado **no significa** que exista una política segura de autofusión. Los PR se revisan y fusionan explícitamente por el propietario una vez verificado el HEAD, la CI completa, las revisiones y las protecciones de `main`. Ningún label persistente autoriza un merge.
 
-## Circuito PR: Mergify (aplicación externa independiente)
+## Condiciones antes de reactivar cualquier autofusión
 
-La configuración `.mergify.yml` tiene **una sola regla de autofusión**, aplicable únicamente a CAR creados por `copilot-swe-agent[bot]`, con título `CAR-N`, rama `copilot/`, fuera de borrador, archivos de código Android permitidos y todos los gates verdes. **Los PR del propietario requieren fusión explícita tras revisión del HEAD.** Se retiró su regla automática: la etiqueta `automerge:approved` perduraba después de nuevos commits y no podía considerarse autorización ligada al SHA. Ambas rutas exigen destino `main`, sin conflictos, sin cambios de seguridad/CI/.github, sin hilos abiertos y sin checks fallidos. **Ninguna IA ni el texto del PR puede concederse excepciones a estos gates.**
+1. Demostrar mediante un verificador independiente, con credenciales limitadas, que el PR fue generado para el issue CAR autorizado por la sesión Copilot delegada y que la autorización corresponde al **SHA actual**; identidad del bot, título, rama y etiquetas no son prueba suficiente.
+2. Enumerar y esperar **todos** los checks y workflows aplicables a los archivos modificados, incluyendo los que aún están `queued`, `pending` o `in_progress`; bloquear si falta evidencia, hay conflictos, hilos abiertos o revisiones P1/P2 sin corregir.
+3. Respetar el paso humano de GitHub para sacar de draft y aprobar ejecución de workflows de Copilot. No afirmar que esta etapa está completamente desatendida.
+4. Excluir archivos privilegiados (`.github/`, `.mergify.yml`, `supabase/`, Gradle, manifest, configuración de seguridad, scripts de despliegue) y PR del propietario. Mantener las protecciones de `main` sin bypass.
+5. Crear pruebas negativas para falsificación de procedencia, nuevos commits tras aprobación, checks pendientes/faltantes, archivos mixtos, PR draft y ejecución sin aprobación humana. Exigir CI verde y revisión independiente del HEAD antes de habilitar una nueva regla.
 
-Condiciones obligatorias:
-- Ausencia de etiquetas de bloqueo `merge:blocked`, `security:review-required` o `do-not-merge`, y cero conversaciones de revisión pendientes de resolver.
-- Cero checks fallidos, y éxito explícito de `@github-actions/build`, `@github-actions/coverage`, `@github-actions/Ultra Sentinel Core — own reviewer` y `@github-actions/read-only-review` (revisión independiente).
-- La política **falla cerrada por ruta**: solo permite fusionar automáticamente cambios cuyo *cada archivo* esté bajo `app/src/main/java/`, `app/src/test/` o `app/src/androidTest/`. Un PR mixto (Kotlin + `.github/`, `supabase/`, Manifest, Gradle, etc.) exige fusión manual y revisión humana. El patrón se prueba con regresiones y Mergify debe confirmar que lo acepta.
-- Mergify respetará todas las protecciones de `main` y no fusionará PR draft ni con conflictos. GitHub CI y revisiones asociadas a HEAD actual son obligatorias. Un check de infraestructura en verde **no garantiza ausencia de bugs**; el propietario debe confirmar que se investigaron los hallazgos relevantes.
+## Secuencia acordada
 
-**Mergify ya se ha instalado y su check `Configuration changed` se observó en verde en PR #195.** Esto solo valida el archivo en el PR; Mergify lee la configuración activa de `main`, por lo que todavía hay que fusionar #195 después de verificar su CI. El bot de Copilot y una política de fusión en verde no prueban ausencia total de defectos.
+PR #195 (configuración segura sin autofusión) → PR #196 (webhook CAR, tras correcciones y pruebas) → despliegue controlado Supabase → verificación Copilot/Mergify → prueba integral Family Hunter PR #194, **con fusión manual para cambios privilegiados** → CAR restantes. Hasta probar el flujo de extremo a extremo, no declarar que los CAR avanzan autónomamente.
 
-**Configuración única por el propietario:**
-1. Instalar <https://github.com/marketplace/mergify> **solo** en el repositorio `cardenaspiero255-lang/gamehub-ultra`, revisando los permisos del proveedor.
-2. En GitHub Settings, proteger `main`: requerir PR y checks exitosos `build`, `coverage`, `Ultra Sentinel Core — own reviewer` y `read-only-review` (comprobar el origen GitHub Actions y que aparecen en todos los PR elegibles). Requerir conversaciones resueltas y rama actualizada antes de la fusión; deshabilitar pushes forzados y bypass. Evitar exigir aprobación de un revisor humano separado imposible para el autor único del repositorio; mantener un control manual en las categorías sensibles.
-3. En Mergify, verificar que **Workflow Automation** esté habilitado para este repositorio y que detecte la configuración del PR y que su check de configuración sea correcto. Ajustar los nombres de checks solo si difieren de los resultados reales de GitHub; nunca degradar condiciones porque la CI falla.
-4. Los PR del propietario, incluidos #195/#196, requieren merge explícito tras revisar el SHA vigente. **La etiqueta `automerge:approved` no autoriza merge automático**, porque esa regla fue retirada.
-
-**Límite de la autorización:** una etiqueta de GitHub no está ligada a un SHA. Por eso los PR del propietario **no tienen política automática de fusión**. La rama main exige los cuatro checks en el último HEAD, y el propietario/automatización horaria puede hacer una fusión explícita cuando realmente se verifiquen todas las condiciones.
-
-## Circuito CAR: Copilot cloud coding agent (app externa)
-
-- `.github/agents/gamehub-car-engineer.agent.md`: agente específico de GameHub con prompt refinado (rol, límites, objetivo, evidencia, TDD, familias de errores y criterios de aceptación).
-- `.github/ISSUE_TEMPLATE/car-agent.yml`: formulario GitHub que solicita número del CAR, dependencias, alcance y criterios. **No autoasigna** al bot al abrir un issue: el controlador externo debe comprobar dependencias, permisos y duplicados antes de iniciar una tarea; su instalación está pendiente.
-- El agente debe abrir PR *draft*, reproducir fallos con tests (RED), corregir familia + variantes justificadas (GREEN), refactorizar, ejecutar pruebas, registrar CI del commit y bloquear cierre por P1/P2 o errores confirmados.
-- Para avanzar la **cola completa automáticamente** después de fusionar cada CAR (sin crear tareas programadas) hace falta una automatización externa por webhook como Supabase Edge Functions, n8n o Make: evento `pull_request.closed` con `merged=true` y nombre `CAR-N` → buscar el siguiente issue CAR explícitamente listo, no duplicado y con dependencias completadas → asignarlo al agente → esperar PR y validaciones. No está conectada todavía. Limitar a una asignación activa para evitar bucles y conflictos.
-- Los plugins de ChatGPT (GitHub y Prompt Engineer) sirven para tareas interactivas. **No** quedan ejecutándose por sí mismos fuera de la conversación.
-
-### Prompt de delegación breve
-
-> Implementa exclusivamente el CAR del issue vinculado en GameHub Ultra. Consulta main y roadmap, comprueba dependencias y PRs duplicados. Aplica TDD RED → GREEN → REFACTOR, busca familias y variantes con evidencia, conserva funcionalidades existentes, ejecuta pruebas Android/coverage y Ultra Sentinel en el commit final. Abre PR draft. Bloquea si hay P1/P2, CI pendiente/fallida o revisión requerida ausente. No merges, ni permisos privilegiados, ni ocultación de errores. Publica una tabla de evidencia con pruebas, SHA, revisores, límites y pendientes.
-
-## Seguridad y validación de PR #195
-
-El primer diseño (GitHub Actions con escritura) fue bloqueado por Ultra Sentinel como cambio de permisos inesperado y se **retiró**; nunca se incorporó a `main`. Esta revisión usa configuración declarativa de la App externa y definición de agente, sin secretos ni `write` tokens nuevos en workflows.
-
-Revisar todos los checks del último SHA de #195, pruebas de sintaxis, seguridad y revisión independiente; fusionar este PR **solo manualmente y si está limpio**. Después conectar los servicios externos; confirmar con un PR/CAR de prueba antes de considerarlo operativo.
-
-
-## Nueva vía sin mensajes para CAR de Copilot
-
-El agente creado en `.github/agents/gamehub-car-engineer.agent.md` debe terminar el PR y sacarlo de **draft** solo después de investigar y corregir todos los problemas confirmados, incluir `CAR-N` al comienzo del título y presentar resultados reproducibles. Cuando los checks Android, Coverage y Sentinel revierten éxito y no hay conversaciones de revisión abiertas, Mergify puede fusionarlo. Los PR del propietario fuera de esta vía deben recibir fusión explícita luego de una revisión del SHA actual; ninguna etiqueta antigua equivale a una aprobación vigente.
-
-### Condiciones que impiden operación completamente autónoma hoy
-
-- **`main` está protegida desde el 13-10-2026:** GitHub confirmó `protected=true` y los cuatro checks obligatorios (`build`, `coverage`, Sentinel Core y `read-only-review`). La rama deberá seguir protegida antes de cada merge; la lectura avanzada de la API de protección puede estar restringida.
-- La configuración Mergify todavía vive en PR #195 draft y no en `main`. Se exige una única fusión manual de arranque tras CI y revisión completa, ya que afecta las reglas que autorizan futuros merges.
-- Instalar Mergify **no instala Copilot cloud coding agent** ni autoriza su asignación por issue. El template intenta asignar `copilot-swe-agent[bot]`, pero hay que confirmar el plan, los permisos y ejecutar un CAR piloto. La API de GitHub también permite pasar `agent_assignment.custom_agent = "gamehub-car-engineer"` al delegar un issue desde un integrador.
-- Una cadena de CAR tras `pull_request.closed` todavía requiere un integrador externo **con permisos `issues:write` exclusivamente** y autenticación por firma de webhook. No hay ese webhook desplegado ni credenciales configuradas. Sin él, Copilot ejecutará los CAR que sean asignados explícitamente, pero no todos los CAR futuros por sí mismo.
-- Los plugins de ChatGPT se pueden emplear mientras la conversación está abierta, pero no son procesos residentes y no ejecutan PR/CAR al cerrarla.
-
-### Diseño recomendado del integrador por webhook (no desplegado)
-
-Disparador: GitHub `pull_request.closed`, verificar `merged=true`, repositorio, SHA, identidad del CAR y firma HMAC SHA-256 del mensaje. Consultar issues `car:ready`; rechazar duplicados, CAR `car:active`, dependencias incompletas y estados ambiguos. Elegir solo **un CAR** por evento y asignarlo a `copilot-swe-agent[bot]` con `agent_assignment` en la API REST y `custom_agent = gamehub-car-engineer`. Requiere registro idempotente de `X-GitHub-Delivery`, control de concurrencia, reintentos limitados y auditoría. No usar temporizadores, cron ni tareas de ChatGPT. Si algo falla, conservar `car:ready`, no saltar CAR ni fusionar código.
-
-La función externa sería un ejecutor automatizado diferente de ChatGPT; yo no puedo mantener esta conversación ejecutándose permanentemente.
-
-
-## Limitación de los Copilot Automations nativos (verificada, octubre de 2026)
-
-La función GitHub Copilot cloud agent **Automations** por eventos está limitada a repositorios **privados e internos**. Este repositorio es **público**; por tanto, crear una automation allí sin cambiar su visibilidad no es una alternativa operativa. Copilot cloud agent *asignado a issues* sigue siendo una opción independiente, si la cuenta tiene la licencia y autorización. Para encadenar CARs automáticamente manteniendo el repositorio público, usar webhook externo autenticado (n8n/Make/Supabase) o un servicio que implemente GitHub App con permisos de Issues.
-
-Tampoco es válido activar `cron` o ChatGPT Tasks como sustituto: el usuario solicitó exclusivamente eventos.
-
-## Próximo punto de control
-
-La arquitectura declarativa se activará al llegar `.mergify.yml` a `main`, si Mergify Workflow Automation está habilitado y GitHub acepta todos los requisitos. El PR #195 continúa en draft y exige revisión manual final; esta guía no habilita la aplicación, no protege la rama ni crea el integrador por el solo hecho de estar documentada.
-
-
-## Endurecimiento adicional de la revisión
-
-Se eliminó la autofusión de PR del propietario porque su etiqueta de aprobación persistía tras nuevos commits. Se conservó únicamente la regla Mergify para CAR de Copilot de código Android en rutas permitidas, sin un permiso tácito para modificar seguridad/CI/Supabase. Las fusiones del propietario son decisiones explícitas con CI y revisión del HEAD vigente. El patrón de archivos fuente se verifica en `tests/automerge_policy.test.cjs` y la aceptación de sintaxis depende del check `Configuration changed` emitido por Mergify.
+El webhook de Supabase no está desplegado ni tiene credenciales verificadas. Los plugins de ChatGPT tampoco ejecutan trabajos continuos por sí mismos.
