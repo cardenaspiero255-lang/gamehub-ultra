@@ -1,0 +1,118 @@
+name: Ultra Sentinel - Safeguarded PR Auto Merge
+# Trusted base-branch automation. No PR source is checked out or executed.
+# NO scheduling. A maintainer must explicitly add 'automerge:approved'.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, labeled]
+    branches: [main]
+  workflow_run:
+    workflows:
+      - Android build
+      - Unit Test Coverage
+      - Ultra Sentinel - Independent Read-only Review
+      - Ultra Sentinel - Automatic CAR Review
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: guarded-automerge-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  guarded-merge:
+    name: Guarded PR merge (owner authorization + strict CI)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+      checks: read
+    steps:
+      - name: Check independent evidence before a SHA-pinned merge
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            // Trusted code from the DEFAULT branch; no PR checkout, scripts, or secrets.
+            const owner=context.repo.owner, repo=context.repo.repo;
+            if(owner!=='cardenaspiero255-lang'||repo!=='gamehub-ultra')return;
+            const number=Number(context.payload.pull_request?.number||
+              context.payload.workflow_run?.pull_requests?.[0]?.number);
+            if(!Number.isSafeInteger(number)||number<=0)return;
+            const readPR=async()=>(await github.rest.pulls.get({owner,repo,pull_number:number})).data;
+            let pr=await readPR();
+            const labels=p=>(p.labels||[]).map(x=>x.name);
+            const eligible=p=>p.state==='open'&&!p.draft&&p.base.ref==='main'&&
+              p.user?.login===owner&&p.head.repo?.full_name===owner+'/'+repo&&
+              labels(p).includes('automerge:approved')&&
+              !labels(p).some(x=>['merge:blocked','security:review-required','do-not-merge'].includes(x));
+            if(!eligible(pr)||!pr.head.sha||pr.mergeable!==true)return;
+            // Require actual GitHub branch protection and exact required checks.
+            const [{data:config},{data:branch}]=await Promise.all([
+              github.rest.repos.get({owner,repo}),
+              github.rest.repos.getBranch({owner,repo,branch:'main'})
+            ]);
+            const rc=branch.protection?.required_status_checks;
+            const required=new Set([...(rc?.contexts||[]),...(rc?.checks||[]).map(x=>x.context)]);
+            if(!branch.protected||rc?.enforcement_level==='off'||
+               !['build','coverage'].every(n=>required.has(n))||
+               rc?.strict!==true){
+              core.notice('Protected main with strict required build + coverage checks not verified.');
+              return;
+            }
+            // Never auto-merge changes to automation, secrets, CI, security, or governance.
+            const files=await github.paginate(github.rest.pulls.listFiles,
+              {owner,repo,pull_number:number,per_page:100});
+            if(files.length!==pr.changed_files || files.some(f=>
+              /^\.github\//.test(f.filename||'')||
+              /^(?:gradle\/wrapper\/|gradle\.properties$|settings\.gradle|build\.gradle)/.test(f.filename||'')||
+              /(?:^|\/)(?:secrets?|credentials?|security)(?:\/|\.|$)/i.test(f.filename||''))){
+              core.notice('Security/CI/control files require manual merge.');
+              return;
+            }
+            // The authoritative PR SHA must have complete, successful native CI
+            // AND trusted Sentinel reviewer runs, not only green advisory text.
+            const {data:resp}=await github.rest.actions.listWorkflowRunsForRepo({
+              owner,repo,head_sha:pr.head.sha,per_page:100
+            });
+            if(resp.total_count>100||!Array.isArray(resp.workflow_runs))return;
+            const expected=[
+              '.github/workflows/android.yml',
+              '.github/workflows/coverage.yml',
+              '.github/workflows/ultra-sentinel-independent-review.yml',
+              '.github/workflows/ultra-sentinel-auto-review.yml'
+            ];
+            for(const path of expected){
+              const candidates=resp.workflow_runs.filter(r=>r.path===path&&r.head_sha===pr.head.sha);
+              candidates.sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at)||
+                b.run_attempt-a.run_attempt);
+              const latest=candidates[0];
+              if(!latest||latest.status!=='completed'||latest.conclusion!=='success'){
+                core.notice('Required exact-SHA workflow not successful: '+path);return;
+              }
+            }
+            // Any unresolved conversation or change request fails closed.
+            const reviews=await github.paginate(github.rest.pulls.listReviews,
+              {owner,repo,pull_number:number,per_page:100});
+            const latestByUser=new Map();
+            for(const r of reviews)latestByUser.set(r.user?.login,r.state);
+            if([...latestByUser.values()].includes('CHANGES_REQUESTED'))return;
+            const threads=await github.graphql(`query($o:String!,$r:String!,$n:Int!){
+              repository(owner:$o,name:$r){pullRequest(number:$n){
+                reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved}}
+              }}
+            }`,{o:owner,r:repo,n:number});
+            const t=threads.repository?.pullRequest?.reviewThreads;
+            if(!t||t.pageInfo.hasNextPage||t.nodes.some(x=>!x.isResolved))return;
+            // Re-fetch immediately before mutation to reject any new push,
+            // removal of authorization, draft conversion or change of target.
+            const after=await readPR();
+            const mainNow=(await github.rest.repos.getBranch({owner,repo,branch:'main'})).data;
+            if(!eligible(after)||after.head.sha!==pr.head.sha||
+               after.base.sha!==pr.base.sha||mainNow.commit.sha!==branch.commit.sha||
+               after.mergeable!==true)return;
+            await github.rest.pulls.merge({
+              owner,repo,pull_number:number,merge_method:'squash',sha:pr.head.sha,
+              commit_title:'Merge verified PR #'+number
+            });
+            core.notice('Merged SHA-pinned verified PR #'+number);
