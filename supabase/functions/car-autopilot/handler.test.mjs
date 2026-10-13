@@ -43,7 +43,7 @@ async function request(event = fixture(), headers = {}) {
   return new Request("https://edge.example/car-autopilot", {
     method: "POST", body: raw, headers: {
       "x-github-delivery": "c2d327d1-4350-43b8-a886-7802417fa2fa",
-      "x-github-event": "pull_request",
+      "x-github-event": event.issue ? "issues" : "pull_request",
       "x-hub-signature-256": "sha256=" + sig,
       ...headers,
     },
