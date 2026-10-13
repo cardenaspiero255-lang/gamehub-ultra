@@ -65,8 +65,8 @@ function latestRun(runs,head,base){
    r.head_repository?.full_name!==REPO||
    !Array.isArray(r.pull_requests)||r.pull_requests.length>1)
    throw Error('UNTRUSTED_RUN_PROVENANCE');
-  // Other PRs may have protected runs on the same main SHA. They cannot
-  // certify PR172; accept only GitHub's exact, single PR association.
+  // Another PR can refer to the same commit; accept only GitHub's
+  // exact, single PR172 association to authenticate the protected run.
   if(r.pull_requests.length===0)continue;
   const linked=r.pull_requests[0];
   if(linked?.number!==172)continue;
@@ -116,19 +116,26 @@ async function attestScopedPr172({github,owner,repo,pr,files}={}){
   if(wf?.id!==REVIEWER_ID||wf?.name!==REVIEWER_NAME||
      wf?.path!==REVIEWER_PATH||wf?.state!=='active')
    throw Error('UNTRUSTED_WORKFLOW_ID');
-  const result=(await github.rest.actions.listWorkflowRuns({owner,repo,
-    workflow_id:wf.id,head_sha:head,event:'pull_request_target',
-    per_page:100,page:1})).data;
-  if(!Number.isSafeInteger(result?.total_count)||result.total_count<1||
-     result.total_count>100||!Array.isArray(result.workflow_runs)||
-     result.workflow_runs.length!==result.total_count)
-   throw Error('INCOMPLETE_RUN_HISTORY');
-  const latest=latestRun(result.workflow_runs,head,main);
+  const getLatest=async()=>{
+   const result=(await github.rest.actions.listWorkflowRuns({owner,repo,
+     workflow_id:wf.id,head_sha:head,event:'pull_request_target',
+     per_page:100,page:1})).data;
+   if(!Number.isSafeInteger(result?.total_count)||result.total_count<1||
+      result.total_count>100||!Array.isArray(result.workflow_runs)||
+      result.workflow_runs.length!==result.total_count)
+    throw Error('INCOMPLETE_RUN_HISTORY');
+   return latestRun(result.workflow_runs,head,main);
+  };
+  const latest=await getLatest();
   const jobs=(await github.rest.actions.listJobsForWorkflowRun({owner,repo,
     run_id:latest.id,per_page:100,filter:'latest'})).data;
   validateJobs(jobs,latest.id);
   const after=(await github.rest.pulls.get({owner,repo,pull_number:172})).data;
   validatePr(after,head,main);
+  // A failed/pending newer attempt must supersede a previously green run.
+  const terminal=await getLatest();
+  if(terminal.id!==latest.id||terminal.run_attempt!==latest.run_attempt)
+   throw Error('PROTECTED_RUN_CHANGED_DURING_VERIFICATION');
   if((await getMain())!==main)throw Error('MAIN_MOVED_DURING_VERIFICATION');
   return Object.freeze({status:'SCOPED_AUTHENTICATED_MANUAL_REVIEW',
    headSha:head,mainSha:main,protectedRunId:latest.id,
