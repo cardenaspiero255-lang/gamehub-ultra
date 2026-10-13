@@ -4,6 +4,8 @@
 
 **La autofusión Mergify está deshabilitada deliberadamente** (`pull_request_rules: []`). La configuración original del PR #195 tenía tres problemas confirmados por Codex: no autenticaba la procedencia de cada CAR y sesión Copilot contra el HEAD, podía fusionar mientras checks aplicables seguían pendientes y omitía la aprobación humana requerida para PR draft/workflows de Copilot. No se deben describir esos riesgos como resueltos por tener cuatro checks verdes.
 
+Las pruebas `tests/automerge_policy.test.cjs` bloquean de manera fail-closed las vías conocidas de activación de autofusión: `pull_request_rules[].actions.merge`, `actions.queue`, `merge_protections_settings.auto_merge_conditions`, variantes heredadas `auto_merge`, y `queue_rules[].autoqueue`. Se comprueba la **presencia** de cada clave, incluso con YAML `null` o `false`, y se prueban configuraciones adversariales: las pruebas no dependen solo de que la configuración actual esté vacía. Esto es una barrera de regresión; **no** es una autorización para reactivar la autofusión.
+
 Mergify instalado **no significa** que exista una política segura de autofusión. Los PR se revisan y fusionan explícitamente por el propietario una vez verificado el HEAD, la CI completa, las revisiones y las protecciones de `main`. Ningún label persistente autoriza un merge.
 
 ## Condiciones antes de reactivar cualquier autofusión
