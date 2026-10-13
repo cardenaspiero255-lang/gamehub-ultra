@@ -86,10 +86,20 @@ test('both review workflows lookup trusted main identities and changed files for
   assert.match(txt,/actions: read/);
  }
 });
-test('automatic and post-CI reviewers fail rather than report green on untrusted CI definitions',()=>{
+test('automatic and post-CI reviewers fail closed on untrusted CI without exact protected PR172 evidence',()=>{
  for(const file of ['ultra-sentinel-auto-review.yml','ultra-sentinel-sss-post-ci.yml']){
   const code=fs.readFileSync(path.resolve(__dirname,'../workflows',file),'utf8');
-  assert.match(code,/if\s*\(\s*(?:ci\.status===['"]UNTRUSTED['"]|ci\.status!==['"]PASS['"])\s*\)\s*core\.setFailed/);
+  if(file==='ultra-sentinel-auto-review.yml'){
+   // The exception only adds scoped MANUAL review, never CI certification.
+   assert.match(code,/const scopedAccepted=scopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+   assert.match(code,/permitScopedOpaqueYaml\(structuralYaml\)/);
+   assert.match(code,/if\(ci\.status==='UNTRUSTED'&&!scopedAccepted\)\s*core\.setFailed/);
+   assert.match(code,/if\(structuralYaml\.coverage\.partial&&!scopedAccepted\)\s*core\.setFailed/);
+   assert.match(code,/if \(supplyChain\.coverage\.partial\) core\.setFailed/);
+   assert.match(code,/if \(evidence\.coverage\.partial\) core\.setFailed/);
+  }else{
+   assert.match(code,/if\s*\(\s*(?:ci\.status===['"]UNTRUSTED['"]|ci\.status!==['"]PASS['"])\s*\)\s*core\.setFailed/);
+  }
  }
 });
 

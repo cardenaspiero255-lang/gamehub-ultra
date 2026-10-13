@@ -30,7 +30,8 @@ function fixture(){
  let prReads=0,mainReads=0;
  const github={rest:{
   git:{getRef:async()=>({data:{object:{sha:state.mainMoves&&++mainReads>1?'e'.repeat(40):state.main}}})},
-  pulls:{get:async()=>{prReads++;return{data:{...pr,head:{...pr.head,sha:state.prMoves&&prReads>1?'f'.repeat(40):state.head}}};}},
+  // The caller-supplied PR was the first snapshot: this mock is the final reread.
+  pulls:{get:async()=>{prReads++;return{data:{...pr,head:{...pr.head,sha:state.prMoves&&prReads>=1?'f'.repeat(40):state.head}}};}},
   actions:{
    getWorkflow:async()=>({data:{id:382593687,name:'Ultra Sentinel PR172 Protected Delta Review',
     path:'.github/workflows/ultra-sentinel-ci-delta-protected.yml',state:'active'}}),

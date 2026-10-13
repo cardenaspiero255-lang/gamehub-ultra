@@ -31,7 +31,11 @@ test('analyzes PR with trusted main engine and verifies current immutable SHA', 
   assert.match(wf,/if\(!independentlyApproved\)\s*\{\s*try\s*\{/);
   assert.match(wf,/if\(!independentlyApproved\)\s*core\.setFailed\('Critical controls changed:/);
   assert.match(wf,/if\(protectedChanges\.status==='BLOCKED'\|\|protectedChanges\.status==='INCOMPLETE'\)/);
-  assert.match(wf,/if\(ci\.status==='UNTRUSTED'\)core\.setFailed/);
+  // A protected SHA-bound exception is never a general-purpose CI bypass.
+  assert.match(wf,/const scopedAccepted=scopedProtected\.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&/);
+  assert.match(wf,/permitScopedOpaqueYaml\(structuralYaml\)/);
+  assert.match(wf,/if\(ci\.status==='UNTRUSTED'&&!scopedAccepted\)\s*core\.setFailed/);
+  assert.match(wf,/if\(structuralYaml\.coverage\.partial&&!scopedAccepted\)\s*core\.setFailed/);
   assert.match(wf, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
   assert.match(wf, /persist-credentials: false/);
   assert.match(wf, /github\.rest\.pulls\.listFiles/);
