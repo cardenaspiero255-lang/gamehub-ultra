@@ -194,3 +194,45 @@ test('P2: successful newer rerun with lower ID becomes the verified witness',asy
  assert.equal(out.status,'SCOPED_CI_REVIEW_REQUIRED');
  assert.deepEqual(out.observedRunIds,[399,401]);
 });
+
+
+// PR172 must remain verifiable after merging new trusted main into its branch.
+// The five immutable reviewed blobs, branch identity, base and CI runs are still pinned.
+function updatedHeadFixture(nextHead){
+ const f=fixture();
+ f.state.prHead=nextHead;
+ const get=async relative=>{
+  if(relative.includes(HEAD))throw Error('STALE_PINNED_HEAD');
+  const forwarded=relative.replaceAll(nextHead,HEAD);
+  const response=await f.get(forwarded);
+  return JSON.parse(JSON.stringify(response).replaceAll(HEAD,nextHead));
+ };
+ return {get,state:f.state};
+}
+test('Stage 2 accepts a rebased PR172 HEAD when exact reviewed blobs and CI evidence match',async()=>{
+ const nextHead='d'.repeat(40),f=updatedHeadFixture(nextHead);
+ const out=await evaluateRemote(f.get);
+ assert.equal(out.status,'SCOPED_CI_REVIEW_REQUIRED');
+ assert.equal(out.headSha,nextHead);
+ assert.equal(out.provenanceAuthenticated,false);
+ assert.equal(out.autoMergeAllowed,false);
+ assert.equal(out.manualReviewRequired,true);
+});
+test('Stage 2 rejects altered Git tree even with a consistently rebased HEAD',async()=>{
+ const f=updatedHeadFixture('d'.repeat(40));
+ f.state.fakeTree=true;
+ const out=await evaluateRemote(f.get);
+ assert.equal(out.status,'INCOMPLETE');
+ assert.equal(out.autoApproveAllowed,false);
+});
+test('Stage 2 fails closed if PR172 HEAD changes during rebased verification',async()=>{
+ const f=updatedHeadFixture('d'.repeat(40));
+ let observed=0;
+ const get=async relative=>{
+  if(relative==='pulls/172'&&++observed===2)f.state.prHead='e'.repeat(40);
+  return f.get(relative);
+ };
+ const out=await evaluateRemote(get);
+ assert.equal(out.status,'INCOMPLETE');
+ assert.equal(out.autoMergeAllowed,false);
+});
