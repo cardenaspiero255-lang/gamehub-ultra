@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'supabase/functions/car-autopilot/**'
+      - 'supabase/config.toml'
+      - 'supabase/migrations/**'
       - '.github/workflows/car-autopilot-webhook-tests.yml'
   workflow_dispatch:
 
