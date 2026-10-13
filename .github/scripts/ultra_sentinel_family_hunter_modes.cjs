@@ -48,6 +48,20 @@ function completeShape(analysis){
  if(rem.suggestions.length!==Math.min(findings.length,35))return false;
  for(let i=0;i<findings.length;i++){
   const finding=findings[i];
+  // Core orders *all* findings by descending severity, then filename,
+  // then ascending line. The portable report exposes only ten entries;
+  // accepting permutations can hide a HIGH/BLOCKER in its omitted suffix.
+  if(i>0){
+   const previous=findings[i-1];
+   const left=previous.severity==='BLOCKER'?4:
+    previous.severity==='HIGH'?3:previous.severity==='MEDIUM'?2:1;
+   const right=finding.severity==='BLOCKER'?4:
+    finding.severity==='HIGH'?3:finding.severity==='MEDIUM'?2:1;
+   if(left<right||(left===right&&(
+      previous.path.localeCompare(finding.path)>0||
+      (previous.path===finding.path&&previous.line>finding.line))))
+    return false;
+  }
   for(let j=0;j<i;j++){
    const previous=findings[j];
    if(finding.rule===previous.rule&&finding.path===previous.path&&
