@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { handleCarWebhook, validSignature } from "./handler.mjs";
 
 const secret = "unit-test-signing-secret";
-const config = { secret, token: "unit-test-token" };
+const config = { secret, token: "unit-test-token", claim: async () => true };
 const stamp = Date.parse("2026-10-13T17:00:00Z");
 
 function fixture(overrides = {}) {
@@ -40,14 +40,20 @@ async function request(event = fixture(), headers = {}) {
     },
   });
 }
-function fakeGithub({ active = [], ready = [], latest = null, broken = false } = {}) {
+function fakeGithub({ active = [], ready = [], latest = null, broken = false, closed = [{
+    number:700,title:"CAR-75 — finished",body:"Fixes #254",merged_at:"2026-10-13T17:00:00Z",
+    base:{ref:"main"}, head:{repo:{id:1375408706}},
+    user:{login:"copilot-swe-agent[bot]"}
+  }] } = {}) {
   const calls = [];
   async function transport(url, options) {
     calls.push({ url, options });
     if (broken) return new Response("unavailable", { status: 503 });
     const path = new URL(url).pathname;
     let payload = {};
-    if (path.endsWith("/issues")) {
+    if (path.endsWith("/pulls")) {
+      payload = closed;
+    } else if (path.endsWith("/issues")) {
       payload = url.includes("car%3Aactive") ? active : ready;
     } else if (/\/issues\/\d+\/assignees$/.test(path)) {
       payload = { assignees: [{ login: "copilot-swe-agent[bot]" }] };
@@ -163,7 +169,7 @@ test("RED: manual issue closure cannot dispatch unless a matching PR is actually
       labels: [{ name: "car:active" }], user: { login: "cardenaspiero255-lang" },
     },
   });
-  const gh = fakeGithub({ ready: [next], latest: next });
+  const gh = fakeGithub({ ready: [next], latest: next, closed: [] });
   const response = await handleCarWebhook(await request(e,{"x-github-event":"issues"}),config,gh.transport,stamp);
   assert.notEqual(response.status,200,"manual close without an authenticated linked merged PR must not dispatch");
 });
@@ -177,9 +183,14 @@ test("RED: two concurrent signed webhook deliveries must not both assign an issu
     },
   });
   const gh = fakeGithub({ ready:[next],latest:next });
+  const held=new Set();
+  const atomic={...config,claim:async (_delivery, issue) => {
+    if(held.has(issue))return false;
+    held.add(issue);return true;
+  }};
   const [a,b]=await Promise.all([
-    handleCarWebhook(await request(e,{"x-github-event":"issues"}),config,gh.transport,stamp),
-    handleCarWebhook(await request(e,{"x-github-event":"issues","x-github-delivery":"8ad436a5-e722-44b4-86d4-b9f4b235216d"}),config,gh.transport,stamp),
+    handleCarWebhook(await request(e,{"x-github-event":"issues"}),atomic,gh.transport,stamp),
+    handleCarWebhook(await request(e,{"x-github-event":"issues","x-github-delivery":"8ad436a5-e722-44b4-86d4-b9f4b235216d"}),atomic,gh.transport,stamp),
   ]);
   const successful=[a,b].filter(x=>x.status===200);
   assert.ok(successful.length<=1,"concurrent deliveries must not both assign the next CAR");
