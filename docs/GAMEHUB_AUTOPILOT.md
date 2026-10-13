@@ -62,3 +62,14 @@ El agente creado en `.github/agents/gamehub-car-engineer.agent.md` debe terminar
 Disparador: GitHub `pull_request.closed`, verificar `merged=true`, repositorio, SHA, identidad del CAR y firma HMAC SHA-256 del mensaje. Consultar issues `car:ready`; rechazar duplicados, CAR `car:active`, dependencias incompletas y estados ambiguos. Elegir solo **un CAR** por evento y asignarlo a `copilot-swe-agent[bot]` con `agent_assignment` en la API REST y `custom_agent = gamehub-car-engineer`. Requiere registro idempotente de `X-GitHub-Delivery`, control de concurrencia, reintentos limitados y auditoría. No usar temporizadores, cron ni tareas de ChatGPT. Si algo falla, conservar `car:ready`, no saltar CAR ni fusionar código.
 
 La función externa sería un ejecutor automatizado diferente de ChatGPT; yo no puedo mantener esta conversación ejecutándose permanentemente.
+
+
+## Limitación de los Copilot Automations nativos (verificada, octubre de 2026)
+
+La función GitHub Copilot cloud agent **Automations** por eventos está limitada a repositorios **privados e internos**. Este repositorio es **público**; por tanto, crear una automation allí sin cambiar su visibilidad no es una alternativa operativa. Copilot cloud agent *asignado a issues* sigue siendo una opción independiente, si la cuenta tiene la licencia y autorización. Para encadenar CARs automáticamente manteniendo el repositorio público, usar webhook externo autenticado (n8n/Make/Supabase) o un servicio que implemente GitHub App con permisos de Issues.
+
+Tampoco es válido activar `cron` o ChatGPT Tasks como sustituto: el usuario solicitó exclusivamente eventos.
+
+## Próximo punto de control
+
+La arquitectura declarativa se activará al llegar `.mergify.yml` a `main`, si Mergify Workflow Automation está habilitado y GitHub acepta todos los requisitos. El PR #195 continúa en draft y exige revisión manual final; esta guía no habilita la aplicación, no protege la rama ni crea el integrador por el solo hecho de estar documentada.
