@@ -1,0 +1,4 @@
+# GitHub supplies an HMAC signature instead of a Supabase JWT.
+# This exception applies ONLY to the independently authenticated CAR webhook.
+[functions.car-autopilot]
+verify_jwt = false
