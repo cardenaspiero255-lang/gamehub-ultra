@@ -58,7 +58,15 @@ jobs:
             const path = require("node:path");
             const {analyze,markdown,recoverAddedPatch,missingAddedPatch} = require(path.resolve(".github/scripts/ultra_sentinel_core.cjs"));
             const {buildReport} = require(path.resolve(".github/scripts/ultra_sentinel_report.cjs"));
-            const {attestScopedPr172,permitScopedOpaqueYaml} = require(path.resolve(".github/scripts/ultra_sentinel_pr172_scope.cjs"));
+            // Only execute reviewer code from the trusted main checkout.
+            // Before this PR merges, the new module may not exist there.
+            const scopePath=path.resolve(".github/scripts/ultra_sentinel_pr172_scope.cjs");
+            const scopedModule=fs.existsSync(scopePath)?require(scopePath):{
+              attestScopedPr172:async()=>({status:'INCOMPLETE',provenanceAuthenticated:false,
+                manualReviewRequired:true,autoApproveAllowed:false,autoMergeAllowed:false}),
+              permitScopedOpaqueYaml:()=>false
+            };
+            const {attestScopedPr172,permitScopedOpaqueYaml}=scopedModule;
             const deployed=fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_yaml_ast.cjs"))&&
               fs.existsSync(path.resolve(".github/scripts/ultra_sentinel_policy.cjs"))&&
               fs.existsSync(path.resolve("package-lock.json"));
