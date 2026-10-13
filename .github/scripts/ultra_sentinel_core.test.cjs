@@ -14,9 +14,31 @@ test('no external API/model dependency for independent engine',()=>{
  const z=analyze([file(app+'Engine.kt',['fun safe() = 42'])],{sha:'a'.repeat(40)});
  assert.equal(z.engine,'Ultra Sentinel Core');
  assert.equal(z.sha,'a'.repeat(40));assert.equal(VERSION,'2.0.0');
+ // Family Hunter defaults to advisory mode 2; untrusted mode 3 cannot write.
+ assert.equal(z.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
+ assert.equal(z.familyHunter.repairCommits,'OFF');
+ assert.equal(z.familyHunter.autoCommitAllowed,false);
+ const denied=analyze([file(app+'Engine.kt',['fun safe() = 42'])],{
+  sha:'a'.repeat(40),familyHunterMode:'REPAIR_COMMITS_AUTHORIZED'
+ });
+ assert.equal(denied.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
+ assert.equal(denied.familyHunter.status,'AUTHORIZATION_REQUIRED');
+ assert.equal(denied.familyHunter.repairCommits,'OFF');
 });
 test('recognizes unsupervised Android coroutine',()=>{
- assert.ok(rules(analyze([file(app+'Service.kt',['GlobalScope.launch { work() }'])])).includes('UNSCOPED_COROUTINE'));
+ const input=[file(app+'Service.kt',['GlobalScope.launch { work() }'])];
+ const review=analyze(input,{familyHunterMode:'REVIEW_ONLY'});
+ const solutions=analyze(input,{familyHunterMode:'REVIEW_WITH_SOLUTIONS'});
+ assert.ok(rules(review).includes('UNSCOPED_COROUTINE'));
+ assert.deepEqual(review.findings.map(f=>[f.rule,f.severity,f.path,f.line]),
+  solutions.findings.map(f=>[f.rule,f.severity,f.path,f.line]));
+ assert.equal(review.familyHunter.mode,'REVIEW_ONLY');
+ assert.equal(review.remediations.suggestions.length,0);
+ assert.equal(review.validationPlan.checks.length,0);
+ assert.ok(review.findings.every(f=>!Object.hasOwn(f,'verification')));
+ assert.doesNotMatch(markdown(review),/Soluciones propuestas|Tests adversariales propuestos|Prueba necesaria/);
+ assert.ok(solutions.remediations.suggestions.length>0);
+ assert.equal(solutions.familyHunter.repairCommits,'OFF');
 });
 test('recognizes main thread blocking candidate',()=>{
  assert.ok(rules(analyze([file(app+'MainActivity.kt',['Thread.sleep(1000)'])])).includes('BLOCKING_ANDROID_CALL'));
