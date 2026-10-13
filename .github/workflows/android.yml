@@ -536,11 +536,11 @@ jobs:
     name: device-validation-${{ matrix.shard }}
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 6
       matrix:
-        # Four logical performance checks are packed into two physical emulator
-        # runners so Android boot/setup is reused instead of repeated four times.
-        shard: [release-apk, ui, performance-a, performance-b]
+        # Four real performance checks run on independent API 35 emulators.
+        # Keeps baseline + cold-start + library + settings with no serial waves.
+        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]
     runs-on: ubuntu-22.04
     env:
       VALIDATION_SHARD: ${{ matrix.shard }}
@@ -572,11 +572,21 @@ jobs:
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
-          test -n "$CMDLINE_DIR"
-          rm -rf "$SDK_ROOT/cmdline-tools/latest"
-          ln -s "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR" "$SDK_ROOT/cmdline-tools/latest"
-          echo "$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin" >> "$GITHUB_PATH"
+          # Never delete the runner's working cmdline-tools/latest installation.
+          SDK_BIN="$SDK_ROOT/cmdline-tools/latest/bin"
+          if [ ! -x "$SDK_BIN/sdkmanager" ]; then
+            CMDLINE_DIR="$(find "$SDK_ROOT/cmdline-tools" -mindepth 1 -maxdepth 1 -type d ! -name latest -printf '%f\n' | sort -V | tail -n1)"
+            if [ -z "$CMDLINE_DIR" ]; then
+              echo "::error::No installed Android command-line tools are available."
+              exit 1
+            fi
+            SDK_BIN="$SDK_ROOT/cmdline-tools/$CMDLINE_DIR/bin"
+          fi
+          if [ ! -x "$SDK_BIN/sdkmanager" ]; then
+            echo "::error::Android command-line tools are missing sdkmanager."
+            exit 1
+          fi
+          printf '%s\n' "$SDK_BIN" >> "$GITHUB_PATH"
 
       - name: Enable KVM for Android emulator
         shell: bash
@@ -701,7 +711,7 @@ jobs:
                   --configuration-cache --configuration-cache-problems=fail \
                   --stacktrace
                 ;;
-              performance-*)
+              baseline|macro-*)
                 gradle :app:assembleNonMinifiedRelease :baseline-profile:assembleNonMinifiedRelease \
                   --build-cache --parallel --max-workers=12 \
                   --configuration-cache --configuration-cache-problems=fail \
@@ -870,19 +880,9 @@ jobs:
                 --configuration-cache-problems=fail \
                 --stacktrace
               ;;
-            performance-*)
-              case "$VALIDATION_SHARD" in
-                performance-a)
-                  LOGICAL_SHARDS=(baseline macro-startup)
-                  ;;
-                performance-b)
-                  LOGICAL_SHARDS=(macro-library macro-settings)
-                  ;;
-                *)
-                  echo "Unknown packed performance shard: $VALIDATION_SHARD"
-                  exit 2
-                  ;;
-              esac
+            baseline|macro-*)
+              # Every matrix runner owns exactly one logical benchmark.
+              LOGICAL_SHARDS=("$VALIDATION_SHARD")
 
               AGGREGATE_LOG="$RUNNER_TEMP/performance-validation.log"
               : > "$AGGREGATE_LOG"
@@ -1108,7 +1108,7 @@ jobs:
           compression-level: 1
 
       - name: Upload benchmark reports
-        if: always() && startsWith(matrix.shard, 'performance-')
+        if: always() && (matrix.shard == 'baseline' || startsWith(matrix.shard, 'macro-'))
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gamehub-ultra-benchmark-reports-${{ matrix.shard }}

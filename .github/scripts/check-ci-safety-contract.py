@@ -516,18 +516,21 @@ def main() -> None:
         fail("device validation strategy is missing")
     if strategy.get("fail-fast") is not False:
         fail("device validation matrix must keep fail-fast disabled")
-    if strategy.get("max-parallel") != 4:
-        fail("device validation matrix must keep four physical runners")
+    device_parallel = strategy.get("max-parallel")
+    if device_parallel != 6:
+        fail("device validation must run six independent API 35 shards")
     matrix = strategy.get("matrix")
     if not isinstance(matrix, dict):
         fail("device validation matrix definition is missing")
     if set(matrix.get("shard", [])) != {
         "release-apk",
         "ui",
-        "performance-a",
-        "performance-b",
+        "baseline",
+        "macro-startup",
+        "macro-library",
+        "macro-settings",
     }:
-        fail("device validation lost release/ui/packed performance coverage")
+        fail("device validation lost release/ui or one of four performance validations")
 
     retry_test = require_step(
         android,
@@ -557,7 +560,7 @@ def main() -> None:
         ":app:assembleDebugAndroidTest",
         ":app:assembleNonMinifiedRelease",
         ":baseline-profile:assembleNonMinifiedRelease",
-        "performance-*",
+        "baseline|macro-*)",
         "--max-workers=12",
         "EMULATOR_LAUNCH_EPOCH=",
         "-no-window",
@@ -569,6 +572,18 @@ def main() -> None:
         require_run_fragment(prebuild, "parallel device prebuild", fragment)
     if ":app:bundleRelease" in str(prebuild.get("run", "")):
         fail("AAB build must stay isolated in release-bundle shard")
+
+    selector = require_step(
+        android,
+        "device-validation-shard",
+        "Use current Android command-line tools",
+        shell="bash",
+    )
+    require_run_fragment(selector, "safe SDK tools", 'SDK_BIN="$SDK_ROOT/cmdline-tools/latest/bin"')
+    require_run_fragment(selector, "safe SDK tools", 'if [ ! -x "$SDK_BIN/sdkmanager" ]; then')
+    require_run_fragment(selector, "safe SDK tools", 'printf \'%s\\n\' "$SDK_BIN" >> "$GITHUB_PATH"')
+    if 'rm -rf "$SDK_ROOT/cmdline-tools/latest"' in str(selector.get("run", "")):
+        fail("device runner must not destroy the preinstalled SDK")
 
     readiness = require_step(
         android,
@@ -595,8 +610,10 @@ def main() -> None:
         "adb uninstall",
         ":app:connectedDebugAndroidTest",
         ":baseline-profile:connectedNonMinifiedReleaseAndroidTest",
-        'LOGICAL_SHARDS=(baseline macro-startup)',
-        'LOGICAL_SHARDS=(macro-library macro-settings)',
+        'LOGICAL_SHARDS=("$VALIDATION_SHARD")',
+        'macro-startup) EXPECTED_METHOD="coldStartup"',
+        'macro-library) EXPECTED_METHOD="navigationToLibrary"',
+        'macro-settings) EXPECTED_METHOD="navigationToSettings"',
         'RULE="BaselineProfile"',
         'RULE="Macrobenchmark"',
         "coldStartup",
@@ -632,7 +649,7 @@ def main() -> None:
     )
     validate_run = str(validate.get("run", ""))
     if validate_run.count(":baseline-profile:connectedNonMinifiedReleaseAndroidTest") != 1:
-        fail("packed performance script must contain exactly one looped instrumentation command")
+        fail("performance tests must use one fail-closed instrumentation command")
     for expected_command in (
         ("adb", "install", "$APK"),
         ("adb", "install", "-r", "$APK"),
@@ -758,7 +775,7 @@ def main() -> None:
         "device-validation-shard",
         "Upload benchmark reports",
         uses_prefix="actions/upload-artifact@",
-        allowed_if="always() && startsWith(matrix.shard, 'performance-')",
+        allowed_if="always() && (matrix.shard == 'baseline' || startsWith(matrix.shard, 'macro-'))",
     )
     benchmark_with = benchmark_upload.get("with")
     if not isinstance(benchmark_with, dict):
@@ -899,8 +916,12 @@ def main() -> None:
         fail("coverage shard strategy is missing")
     if coverage_strategy.get("fail-fast") is not False:
         fail("coverage shards must keep fail-fast disabled")
-    if coverage_strategy.get("max-parallel") != 4:
-        fail("coverage physical concurrency changed")
+    if coverage_strategy.get("max-parallel") != 7:
+        fail("coverage must retain seven bounded concurrent workers and eight total runners")
+    # 4 Android unit runners + 6 emulator runners + 3 support jobs + 7 Coverage = 20.
+    # Account for all four simultaneous resource families; no overcommit by CI design.
+    if 4 + device_parallel + 3 + coverage_strategy.get("max-parallel") > 20:
+        fail("combined CI runner allocation exceeds the 20-runner budget")
     coverage_matrix = coverage_strategy.get("matrix")
     if (
         not isinstance(coverage_matrix, dict)

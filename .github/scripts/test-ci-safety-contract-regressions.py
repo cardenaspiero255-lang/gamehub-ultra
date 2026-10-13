@@ -389,23 +389,15 @@ def main() -> None:
     reject_mutation(
         "performance physical shard removed",
         android_replace=(
-            "        shard: [release-apk, ui, performance-a, performance-b]\n",
-            "        shard: [release-apk, ui, performance-a]\n",
+            "        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]\n",
+            "        shard: [release-apk, ui, baseline, macro-startup, macro-library]\n",
         ),
     )
     reject_mutation(
         "device physical parallelism reduced",
         android_replace=(
-            "      max-parallel: 4\n"
-            "      matrix:\n"
-            "        # Four logical performance checks are packed into two physical emulator\n"
-            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
-            "        shard: [release-apk, ui, performance-a, performance-b]\n",
-            "      max-parallel: 2\n"
-            "      matrix:\n"
-            "        # Four logical performance checks are packed into two physical emulator\n"
-            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
-            "        shard: [release-apk, ui, performance-a, performance-b]\n",
+            "      max-parallel: 6\n      matrix:\n        # Four real performance checks run on independent API 35 emulators.\n        # Keeps baseline + cold-start + library + settings with no serial waves.\n        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]",
+            "      max-parallel: 4\n      matrix:\n        # Four real performance checks run on independent API 35 emulators.\n        # Keeps baseline + cold-start + library + settings with no serial waves.\n        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]",
         ),
     )
     reject_mutation(
@@ -446,15 +438,15 @@ def main() -> None:
     reject_mutation(
         "packed startup macro removed",
         android_replace=(
-            "                  LOGICAL_SHARDS=(baseline macro-startup)\n",
-            "                  LOGICAL_SHARDS=(baseline)\n",
+            "              LOGICAL_SHARDS=(\"$VALIDATION_SHARD\")\n",
+            "              LOGICAL_SHARDS=()\n",
         ),
     )
     reject_mutation(
         "packed settings macro removed",
         android_replace=(
-            "                  LOGICAL_SHARDS=(macro-library macro-settings)\n",
-            "                  LOGICAL_SHARDS=(macro-library)\n",
+            "                    macro-settings) EXPECTED_METHOD=\"navigationToSettings\" ;;",
+            "                    macro-settings) EXPECTED_METHOD=\"navigationToLibrary\" ;;",
         ),
     )
     reject_mutation(
@@ -565,7 +557,7 @@ def main() -> None:
     reject_mutation(
         "coverage physical concurrency raised",
         coverage_replace=(
-            "      max-parallel: 4\n",
+            "      max-parallel: 7\n",
             "      max-parallel: 8\n",
         ),
     )
@@ -639,6 +631,42 @@ def main() -> None:
         post_replace=(
             "          override_pr: ${{ github.event.workflow_run.pull_requests[0].number || '' }}\n",
             "",
+        ),
+    )
+
+    reject_mutation(
+        "coverage parallel regression to two waves",
+        coverage_replace=(
+            "      max-parallel: 7\n",
+            "      max-parallel: 4\n",
+        ),
+    )
+    reject_mutation(
+        "benchmark artifact upload made advisory",
+        android_replace=(
+            "        if: always() && (matrix.shard == 'baseline' || startsWith(matrix.shard, 'macro-'))\n",
+            "        if: always()\n",
+        ),
+    )
+    reject_mutation(
+        "SDK selector deletes runner-installed tools",
+        android_replace=(
+            "          printf '%s\\n' \"$SDK_BIN\" >> \"$GITHUB_PATH\"\n",
+            "          rm -rf \"$SDK_ROOT/cmdline-tools/latest\"\n          printf '%s\\n' \"$SDK_BIN\" >> \"$GITHUB_PATH\"\n",
+        ),
+    )
+    reject_mutation(
+        "startup benchmark method mapped to library",
+        android_replace=(
+            "                    macro-startup) EXPECTED_METHOD=\"coldStartup\" ;;",
+            "                    macro-startup) EXPECTED_METHOD=\"navigationToLibrary\" ;;",
+        ),
+    )
+    reject_mutation(
+        "library benchmark method mapped to settings",
+        android_replace=(
+            "                    macro-library) EXPECTED_METHOD=\"navigationToLibrary\" ;;",
+            "                    macro-library) EXPECTED_METHOD=\"navigationToSettings\" ;;",
         ),
     )
 
