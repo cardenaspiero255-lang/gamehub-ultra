@@ -257,10 +257,11 @@ jobs:
             const old = await github.paginate(github.rest.issues.listComments,{owner,repo,issue_number:n,per_page:100});
             annotate(evidence,old,{pr:n,sha:pr.head.sha});
             const report = buildReport({pr:n,sha:pr.head.sha,analysis:evidence,causalGraph});
-            const scopedAccepted=scopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
+            const scopedCandidate=scopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
               permitScopedOpaqueYaml(structuralYaml);
+            // Report remains explicitly preliminary until final no-await attestation.
             report.frontier={ci,repairs,supplyChain,structuralYaml,protectedChanges,
-              scopedProtected,scopedAccepted};
+              scopedProtected,scopedAccepted:false,scopeDecision:'PENDING_TERMINAL_CHECK'};
             const summary="## Ultra Sentinel SSS · Verified CI & Safe Repair"+
               "\n- Android Build + Coverage: "+ci.status+" ("+ci.counts.success+"/2 verified green)"+
               "\n- Unknown/pending: "+ci.counts.pending+", failed: "+ci.counts.failed+
@@ -285,6 +286,19 @@ jobs:
             // immutable artifacts also work on repositories denying write tokens.
             core.notice("No external provider approval is required; Ultra Sentinel Core independently analyzes the PR.");
             await core.summary.addHeading("Ultra Sentinel Core").addRaw(body).write();
+            // Re-read trusted evidence *after* all async analysis and summary work.
+            // No further await is allowed before applying the manual-review waiver.
+            const terminalScopedProtected=await attestScopedPr172({github,owner,repo,pr,files});
+            const scopedAccepted=scopedCandidate&&
+              terminalScopedProtected.status==='SCOPED_AUTHENTICATED_MANUAL_REVIEW'&&
+              terminalScopedProtected.headSha===scopedProtected.headSha&&
+              terminalScopedProtected.mainSha===scopedProtected.mainSha&&
+              terminalScopedProtected.protectedRunId===scopedProtected.protectedRunId&&
+              terminalScopedProtected.protectedRunAttempt===scopedProtected.protectedRunAttempt;
+            report.frontier.scopedProtected=terminalScopedProtected;
+            report.frontier.scopedAccepted=scopedAccepted;
+            report.frontier.scopeDecision=scopedAccepted?'TERMINAL_AUTHENTICATED_MANUAL_REVIEW':'FAIL_CLOSED';
+            fs.writeFileSync(path.join(folder,"report.json"),JSON.stringify(report,null,2)+"\\n",{encoding:"utf8",mode:0o600});
             if (evidence.coverage.partial) core.setFailed("Incomplete patch coverage; review manually before merging.");
             if(ci.status==='UNTRUSTED'&&!scopedAccepted)
               core.setFailed("Untrusted Android/Coverage workflow definition changed in PR. No CI approval possible.");
