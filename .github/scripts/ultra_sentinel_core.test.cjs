@@ -24,6 +24,17 @@ test('no external API/model dependency for independent engine',()=>{
  assert.equal(denied.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
  assert.equal(denied.familyHunter.status,'AUTHORIZATION_REQUIRED');
  assert.equal(denied.familyHunter.repairCommits,'OFF');
+ // Reproduce exactly the trusted self-review AST provenance requirement.
+ const acorn=require('acorn'),fs=require('node:fs'),path=require('node:path');
+ const findCapabilities=require('./ultra_sentinel_capabilities.cjs').findCapabilities;
+ for(const name of ['ultra_sentinel_core.cjs','ultra_sentinel_report.cjs']){
+  const src=fs.readFileSync(path.join(__dirname,name),'utf8');
+  const ast=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',
+   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+   locations:true,ranges:true});
+  assert.doesNotThrow(()=>findCapabilities(ast),
+   'trusted self-review must attest complete AST of '+name);
+ }
 });
 test('recognizes unsupervised Android coroutine',()=>{
  const input=[file(app+'Service.kt',['GlobalScope.launch { work() }'])];
