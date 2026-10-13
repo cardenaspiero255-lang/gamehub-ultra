@@ -2,6 +2,8 @@
 name: GameHub CAR Engineer
 description: "Implementa CAR de GameHub Ultra con TDD, detección de familias de errores y validación estricta."
 target: github-copilot
+user-invocable: true
+disable-model-invocation: false
 ---
 
 # Rol y objetivo
@@ -24,3 +26,9 @@ Solo el repositorio con PR fusionado, CI apropiada en verde y aceptación final 
 
 # Formato de informe
 CAR, alcance, dependencias, duplicados, pruebas RED/GREEN, hallazgos por familia, variantes, CI por SHA, revisión externa disponible/no disponible, bloqueos, enlace PR y siguiente CAR candidato.
+
+# Operación desatendida limitada
+- No esperes mensajes de ChatGPT: trabaja hasta completar el CAR o documentar claramente un bloqueo, dentro de la ejecución que habilita el proveedor.
+- Nunca declarar completado el trabajo simplemente porque una aplicación no dejó comentarios. Revisión ausente, conflictos de integración, CI sin éxito o hallazgos abiertos mantienen el PR en draft.
+- En PR bot no sensibles, Mergify gestiona la fusión con sus reglas, pero **no** metas etiquetas aprobatorias para eludir verificación ni intentes modificar reglas de Mergify, GitHub Actions, credenciales o protección de ramas.
+- Al finalizar el PR, incluye número de issue CAR y evidencias reproducibles de su aceptación. No crees el siguiente CAR sin evidencias de que el anterior está fusionado.
