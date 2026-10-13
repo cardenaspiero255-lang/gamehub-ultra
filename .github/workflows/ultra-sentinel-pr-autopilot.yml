@@ -48,16 +48,12 @@ jobs:
               !labels(p).some(x=>['merge:blocked','security:review-required','do-not-merge'].includes(x));
             if(!eligible(pr)||!pr.head.sha||pr.mergeable!==true)return;
             // Require actual GitHub branch protection and exact required checks.
-            const [{data:config},{data:branch}]=await Promise.all([
-              github.rest.repos.get({owner,repo}),
-              github.rest.repos.getBranch({owner,repo,branch:'main'})
-            ]);
+            const {data:branch}=await github.rest.repos.getBranch({owner,repo,branch:'main'});
             const rc=branch.protection?.required_status_checks;
             const required=new Set([...(rc?.contexts||[]),...(rc?.checks||[]).map(x=>x.context)]);
-            if(!branch.protected||rc?.enforcement_level==='off'||
-               !['build','coverage'].every(n=>required.has(n))||
-               rc?.strict!==true){
-              core.notice('Protected main with strict required build + coverage checks not verified.');
+            if(!branch.protected||rc?.enforcement_level!=='everyone'||
+               !['build','coverage'].every(n=>required.has(n))){
+              core.notice('Protected main with enforced build + coverage required checks not verified.');
               return;
             }
             // Never auto-merge changes to automation, secrets, CI, security, or governance.
@@ -70,6 +66,12 @@ jobs:
               core.notice('Security/CI/control files require manual merge.');
               return;
             }
+            // A label alone is stale after a new push. Only the owner can
+            // authorize this EXACT immutable SHA in the PR conversation.
+            const comments=await github.paginate(github.rest.issues.listComments,
+              {owner,repo,issue_number:number,per_page:100});
+            if(!comments.some(x=>x.user?.login===owner&&
+                 String(x.body||'').trim()==='AUTOMERGE_OK '+pr.head.sha))return;
             // The authoritative PR SHA must have complete, successful native CI
             // AND trusted Sentinel reviewer runs, not only green advisory text.
             const {data:resp}=await github.rest.actions.listWorkflowRunsForRepo({
