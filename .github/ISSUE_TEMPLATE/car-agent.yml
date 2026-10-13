@@ -2,13 +2,13 @@ name: "CAR · implementación mediante agente"
 description: "Crear un CAR con criterios verificables para delegarlo a Copilot (si está disponible)."
 title: "CAR-XX — "
 labels: ["enhancement"]
-assignees: ["copilot-swe-agent[bot]"]
+
 body:
   - type: markdown
     attributes:
       value: |
-        Este formulario intenta asignar el issue a Copilot cuando esté autorizado para el repositorio.
-        La asignación puede requerir activación manual o un conector externo. El CAR no se declara terminado por crearlo.
+        Este formulario recopila el CAR. La delegación a Copilot se realiza por el integrador externo, después de comprobar dependencias y permisos.
+        No se crea ni se fusiona código al abrir este formulario. Evita asignación directa que ignore la cola.
   - type: input
     id: car
     attributes:
