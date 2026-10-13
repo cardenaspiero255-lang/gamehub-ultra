@@ -83,10 +83,53 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  assert.equal(unknown.familyHunter.status,'INVALID_MODE');
  assert.equal(unknown.familyHunter.autoMergeAllowed,false);
  assert.throws(()=>modes.present(null),/INCOMPLETE_ANALYSIS/);
+ // P2 family: incomplete data must never be promoted to a clean portable report.
+ const clean={
+  ...r,findings:[],warnings:[],omitted:0,verdict:'NO_CRITICAL_PATTERN',
+  coverage:{returned:1,analyzed:1,partial:false},
+  remediations:{...r.remediations,suggestions:[]},
+  validationPlan:{domains:[],checks:[]}
+ };
+ assert.equal(modes.present(clean).verdict,'NO_CRITICAL_PATTERN');
+ const invalid=[
+  ['missing coverage details',{...clean,coverage:{}}],
+  ['missing analyzed count',{...clean,coverage:{returned:1,partial:false}}],
+  ['text count instead of integer',{...clean,coverage:{returned:'1',analyzed:1,partial:false}}],
+  ['impossible excess scanned files',{...clean,coverage:{returned:1,analyzed:2,partial:false}}],
+  ['no scanned files cannot claim clear',{...clean,coverage:{returned:1,analyzed:0,partial:false}}],
+  ['empty input cannot claim clear',{...clean,coverage:{returned:0,analyzed:0,partial:false}}],
+  ['partial cannot claim clear',{...clean,coverage:{returned:1,analyzed:1,partial:true}}],
+  ['incomplete verdict must match coverage',{...clean,verdict:'INCOMPLETE'}],
+  ['unknown verdict',{...clean,verdict:'CERTIFIED_CLEAN'}],
+  ['malformed commit SHA',{...clean,sha:'unknown'}],
+  ['mismatched remediation SHA',{...clean,remediations:{...clean.remediations,sha:'c'.repeat(40)}}],
+  ['untrusted self-certified remediation',{...clean,remediations:{...clean.remediations,verified:true}}],
+  ['missing validation domains',{...clean,validationPlan:{checks:[]}}],
+  ['missing warnings',{...clean,warnings:undefined}],
+  ['unbounded missing finding count',{...clean,omitted:1}],
+  ['negative omitted count',{...clean,omitted:-1}],
+  ['critical finding concealed behind no-signal verdict',{
+   ...clean,findings:[{rule:'DYNAMIC_EVAL',severity:'BLOCKER',confidence:'high',
+    path:'.github/scripts/reviewer.cjs',line:7,evidence:'[REDACTED]',
+    reason:'Executable injection',verification:'Run trust review'}]
+  }],
+  ['unstructured finding',{...clean,findings:[null]}]
+ ];
+ for(const [name,bad] of invalid)
+  assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,name);
+ const incomplete={
+  ...clean,coverage:{returned:1,analyzed:0,partial:true},verdict:'INCOMPLETE'
+ };
+ assert.equal(modes.present(incomplete).verdict,'INCOMPLETE');
+ const incompleteReport=require('./ultra_sentinel_report.cjs').buildReport({
+  pr:194,sha:r.sha,analysis:modes.present(incomplete)
+ });
+ assert.equal(incompleteReport.status,'incomplete');
+ assert.equal(incompleteReport.partial,true);
  // Same provenance engine used by trusted main self-review must accept this
  // complete read-only adapter; never weaken or bypass that independent gate.
- const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
- const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_family_hunter_modes.cjs'),'utf8');
+ const fs=require('node:fs'),nodePath=require('node:path'),acorn=require('acorn');
+ const source=fs.readFileSync(nodePath.resolve(__dirname,'ultra_sentinel_family_hunter_modes.cjs'),'utf8');
  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
