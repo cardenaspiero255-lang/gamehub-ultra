@@ -7,6 +7,55 @@ const yaml = require("js-yaml");
 const config = yaml.load(fs.readFileSync(path.resolve(".mergify.yml"), "utf8"));
 const rules = config.pull_request_rules || [];
 const mergeRules = rules.filter(rule => rule.actions != null && Object.hasOwn(rule.actions, "merge"));
+
+// The policy is fail-closed: a future re-enablement needs independent approval.
+// YAML null, false or {} still count as a configured action/setting.
+function automaticMergePaths(candidate) {
+  const found = [];
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return ["invalid root configuration"];
+  }
+  const pullRules = candidate.pull_request_rules ?? [];
+  if (!Array.isArray(pullRules)) return ["invalid pull_request_rules"];
+  for (const [i, rule] of pullRules.entries()) {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
+      found.push("pull_request_rules[" + i + "]: invalid rule");
+      continue;
+    }
+    const actions = rule.actions;
+    if (actions === undefined) continue;
+    if (!actions || typeof actions !== "object" || Array.isArray(actions)) {
+      found.push("pull_request_rules[" + i + "].actions: invalid");
+      continue;
+    }
+    for (const kind of ["merge", "queue"]) {
+      if (Object.hasOwn(actions, kind)) found.push("pull_request_rules[" + i + "].actions." + kind);
+    }
+  }
+  for (const name of ["merge_protections_settings", "merge_protection_settings"]) {
+    if (!Object.hasOwn(candidate, name)) continue;
+    const settings = candidate[name];
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      found.push(name + ": invalid");
+      continue;
+    }
+    for (const key of ["auto_merge_conditions", "auto_merge"]) {
+      if (Object.hasOwn(settings, key)) found.push(name + "." + key);
+    }
+  }
+  if (Object.hasOwn(candidate, "queue_rules") && !Array.isArray(candidate.queue_rules)) {
+    found.push("queue_rules: invalid");
+  }
+  for (const [i, queue] of (Array.isArray(candidate.queue_rules) ? candidate.queue_rules : []).entries()) {
+    if (!queue || typeof queue !== "object" || Array.isArray(queue)) {
+      found.push("queue_rules[" + i + "]: invalid");
+    } else if (Object.hasOwn(queue, "autoqueue")) {
+      found.push("queue_rules[" + i + "].autoqueue");
+    }
+  }
+  return found;
+}
+
 test("detects all Mergify merge actions including null and empty options",()=>{
   const hasMerge = rule => rule.actions != null && Object.hasOwn(rule.actions, "merge");
   assert.equal(hasMerge({actions:{merge:null}}),true);
@@ -69,4 +118,47 @@ test("bot rule never accepts owner identity and requires narrowly scoped CAR bra
 
 test("owner PRs never auto-merge based on an old persistent approval label",()=>{
   assert.equal(mergeRules.some(rule=>rule.conditions.includes("author = cardenaspiero255-lang")),false);
+});
+
+
+// Use adversarial YAML round-trips rather than inspecting only the real empty file:
+// otherwise future bypasses would pass the test suite vacuously.
+test("fail-closed: no Mergify merge, queue or auto-merge path exists", () => {
+  assert.deepEqual(automaticMergePaths(config), [], "Unsafe Mergify auto-merge path found");
+});
+const dangerousConfigurations = [
+  ["merge:null", {pull_request_rules:[{name:"x",conditions:[],actions:{merge:null}}]}],
+  ["merge:{}", {pull_request_rules:[{name:"x",conditions:[],actions:{merge:{}}}]}],
+  ["queue:null", {pull_request_rules:[{name:"x",conditions:[],actions:{queue:null}}]}],
+  ["queue:{}", {pull_request_rules:[{name:"x",conditions:[],actions:{queue:{}}}]}],
+  ["mixed actions", {pull_request_rules:[{name:"x",conditions:[],actions:{comment:{message:"hi"},queue:null,merge:null}}]}],
+  ["queue in disabled rule", {pull_request_rules:[{name:"x",disabled:{reason:"paused"},conditions:[],actions:{queue:null}}]}],
+  ["auto_merge_conditions:true", {merge_protections_settings:{auto_merge_conditions:true}}],
+  ["auto_merge_conditions:list", {merge_protections_settings:{auto_merge_conditions:["label = ok"]}}],
+  ["auto_merge_conditions:null", {merge_protections_settings:{auto_merge_conditions:null}}],
+  ["auto_merge_conditions:false", {merge_protections_settings:{auto_merge_conditions:false}}],
+  ["auto_merge:legacy", {merge_protections_settings:{auto_merge:true}}],
+  ["auto_merge:singular settings", {merge_protection_settings:{auto_merge:true}}],
+  ["queue_rules.autoqueue:true", {queue_rules:[{name:"q",queue_conditions:[],autoqueue:true}]}],
+  ["queue_rules.autoqueue:null", {queue_rules:[{name:"q",queue_conditions:[],autoqueue:null}]}],
+  ["queue_rules.autoqueue:false", {queue_rules:[{name:"q",queue_conditions:[],autoqueue:false}]}],
+];
+for (const [name, candidate] of dangerousConfigurations) {
+  test("adversarial auto-merge configuration is rejected: " + name, () => {
+    const decoded = yaml.load(yaml.dump(candidate));
+    assert.notEqual(automaticMergePaths(decoded).length, 0, name + " escaped the guard");
+  });
+}
+test("benign comments and manual-only queues do not trigger the auto-merge guard", () => {
+  const safe = yaml.load(yaml.dump({
+    pull_request_rules:[{name:"comment",conditions:["base = main"],actions:{comment:{message:"ok"}}}],
+    queue_rules:[{name:"manual",queue_conditions:["label = manual"]}]
+  }));
+  assert.deepEqual(automaticMergePaths(safe), []);
+});
+test("invalid policy roots and action shapes fail closed", () => {
+  for (const candidate of [null, [], {pull_request_rules:"invalid"}, {queue_rules:{}},
+    {pull_request_rules:[{name:"x", actions:null}]}, {merge_protections_settings:null}]) {
+    assert.notEqual(automaticMergePaths(candidate).length, 0);
+  }
 });
