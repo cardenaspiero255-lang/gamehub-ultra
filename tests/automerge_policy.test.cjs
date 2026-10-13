@@ -6,7 +6,16 @@ const path = require("node:path");
 const yaml = require("js-yaml");
 const config = yaml.load(fs.readFileSync(path.resolve(".mergify.yml"), "utf8"));
 const rules = config.pull_request_rules || [];
-const mergeRules = rules.filter(rule => Boolean(rule.actions?.merge));
+const mergeRules = rules.filter(rule => rule.actions != null && Object.hasOwn(rule.actions, "merge"));
+test("detects all Mergify merge actions including null and empty options",()=>{
+  const hasMerge = rule => rule.actions != null && Object.hasOwn(rule.actions, "merge");
+  assert.equal(hasMerge({actions:{merge:null}}),true);
+  assert.equal(hasMerge({actions:{merge:{}}}),true);
+  assert.equal(hasMerge({actions:{merge:{method:"squash"}}}),true);
+  assert.equal(hasMerge({actions:{comment:{message:"ok"}}}),false);
+  assert.equal(hasMerge({actions:{}}),false);
+  assert.equal(hasMerge({}),false);
+});
 test("no automatic merge without SHA-bound authenticated CAR provenance and completed human handoff",()=>{
   assert.equal(mergeRules.length,0,"unsafe Copilot auto-merge must remain disabled until provenance, all pending checks and human handoff are verified");
 });
@@ -42,11 +51,11 @@ test("Mergify always requires all four current-HEAD checks and unresolved thread
 test("no rule can automatically merge any known governance or privileged file, including mixed changes",()=>{
   for(const rule of mergeRules) for(const file of forbidden)
     assert.equal(allowsFile(rule,file),false,rule.name+" wrongly permits "+file);
-  for(const rule of rules) for(const file of forbidden)
+  for(const rule of mergeRules) for(const file of forbidden)
     assert.equal(permitted.every(p=>allowsFile(rule,p)) && allowsFile(rule,file),false,rule.name+" permitted mixed "+file);
 });
 test("rules still permit pure ordinary Android source and regression tests",()=>{
-  for(const rule of rules) for(const file of permitted)
+  for(const rule of mergeRules) for(const file of permitted)
     assert.equal(allowsFile(rule,file),true,rule.name+" blocks ordinary source "+file);
 });
 test("bot rule never accepts owner identity and requires narrowly scoped CAR branch and title",()=>{
@@ -59,5 +68,5 @@ test("bot rule never accepts owner identity and requires narrowly scoped CAR bra
 });
 
 test("owner PRs never auto-merge based on an old persistent approval label",()=>{
-  assert.equal(rules.some(rule=>rule.actions?.merge && rule.conditions.includes("author = cardenaspiero255-lang")),false);
+  assert.equal(mergeRules.some(rule=>rule.conditions.includes("author = cardenaspiero255-lang")),false);
 });
