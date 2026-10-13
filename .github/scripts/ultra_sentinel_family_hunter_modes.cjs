@@ -7,12 +7,45 @@ function resolveMode(requested){
  else if(requested!==undefined&&requested!=='REVIEW_WITH_SOLUTIONS')status='INVALID_MODE';
  return {mode,status,repairCommits:'OFF',autoCommitAllowed:false,autoMergeAllowed:false};
 }
+// The adapter is not an attestation authority. It rejects structurally
+// unverifiable inputs rather than converting them into a clean-looking report.
+// Real Core analysis may legitimately be INCOMPLETE; retain that verdict.
+function completeShape(analysis){
+ if(!analysis||typeof analysis!=='object'||Array.isArray(analysis))return false;
+ const coverage=analysis.coverage,rem=analysis.remediations;
+ const plan=analysis.validationPlan,findings=analysis.findings;
+ if(!coverage||typeof coverage!=='object'||Array.isArray(coverage)||
+    !rem||typeof rem!=='object'||Array.isArray(rem)||
+    !plan||typeof plan!=='object'||Array.isArray(plan)||
+    !Array.isArray(findings)||findings.length>40||
+    !Array.isArray(analysis.warnings)||
+    !Array.isArray(rem.suggestions)||!Array.isArray(plan.domains)||
+    !Array.isArray(plan.checks))return false;
+ if(typeof analysis.engine!=='string'||!analysis.engine.trim()||
+    typeof analysis.version!=='string'||!analysis.version.trim()||
+    typeof analysis.sha!=='string'||!/^[a-f0-9]{40}$/i.test(analysis.sha)||
+    rem.sha!==analysis.sha||rem.verified!==false||rem.autoMerge!==false)return false;
+ if(!Number.isSafeInteger(coverage.returned)||coverage.returned<0||
+    !Number.isSafeInteger(coverage.analyzed)||coverage.analyzed<0||
+    coverage.analyzed>coverage.returned||typeof coverage.partial!=='boolean'||
+    !Number.isSafeInteger(analysis.omitted)||analysis.omitted<0)return false;
+ if(!['INCOMPLETE','REVIEW_REQUIRED','NO_CRITICAL_PATTERN'].includes(analysis.verdict)||
+    coverage.partial!==(analysis.verdict==='INCOMPLETE'))return false;
+ // A no-signal claim requires real scanned coverage and untruncated findings.
+ if(!coverage.partial&&(coverage.returned===0||coverage.analyzed===0))return false;
+ if(findings.some(f=>!f||typeof f!=='object'||Array.isArray(f)||
+    typeof f.rule!=='string'||!f.rule||
+    !['BLOCKER','HIGH','MEDIUM','LOW'].includes(f.severity)||
+    typeof f.path!=='string'||!Number.isSafeInteger(f.line)||f.line<0))
+   return false;
+ const hasCritical=findings.some(f=>f.severity==='BLOCKER'||f.severity==='HIGH');
+ if(analysis.verdict==='NO_CRITICAL_PATTERN'&&(hasCritical||analysis.omitted>0))
+   return false;
+ if(analysis.verdict==='REVIEW_REQUIRED'&&!hasCritical)return false;
+ return true;
+}
 function present(analysis,requested){
- if(!analysis||!Array.isArray(analysis.findings)||
-    !analysis.remediations||!Array.isArray(analysis.remediations.suggestions)||
-    !analysis.validationPlan||!Array.isArray(analysis.validationPlan.checks)||
-    !analysis.coverage||typeof analysis.verdict!=='string')
-   throw Error('INCOMPLETE_ANALYSIS');
+ if(!completeShape(analysis))throw Error('INCOMPLETE_ANALYSIS');
  const familyHunter=resolveMode(requested);
  const only=familyHunter.mode==='REVIEW_ONLY';
  const findings=analysis.findings.slice(0,40).map(f=>({
