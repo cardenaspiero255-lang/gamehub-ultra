@@ -23,7 +23,7 @@ function fixture(){
   base:{sha:MAIN,ref:'main',repo:{full_name:REPO}}};
  const run=(id,attempt,started,conclusion='success',status='completed')=>({
   id,workflow_id:382593687,name:'Ultra Sentinel PR172 Protected Delta Review',
-  event:'pull_request_target',status,conclusion,head_sha:MAIN,run_attempt:attempt,
+  event:'pull_request_target',status,conclusion,head_sha:HEAD,run_attempt:attempt,
   run_started_at:started,head_repository:{full_name:REPO},
   pull_requests:[{number:172,base:{sha:MAIN},head:{sha:HEAD}}]
  });
@@ -43,7 +43,7 @@ function fixture(){
     if(state.rerunPending)runs.push(run(899,2,'2026-10-13T03:00:00Z',null,'in_progress'));
     runs=runs.map(v=>({...v,
      status:state.runStatus==='completed'?v.status:state.runStatus,
-     head_sha:state.badRunSha?HEAD:v.head_sha,
+     head_sha:state.badRunSha?MAIN:v.head_sha,
      conclusion:state.runConclusion==='success'?v.conclusion:state.runConclusion,
      pull_requests:state.missingLink?[]:state.badLink?
        [{number:172,head:{sha:HEAD},base:{sha:'e'.repeat(40)}}]:state.badLinkHead?
@@ -65,7 +65,8 @@ const run=async f=>attestScopedPr172({github:f.github,owner:'cardenaspiero255-la
 test('exact GitHub-origin scoped stage2 evidence stays manual and non-approving',async()=>{
  const f=fixture();
  const x=await run(f);
- assert.equal(f.state.listHeadSha,MAIN,'pull_request_target runs are keyed to the current base SHA');
+ assert.equal(f.state.listHeadSha,HEAD,
+  'Actions REST workflow_runs.head_sha is the PR head, unlike the runner GITHUB_SHA base');
  assert.equal(x.status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
  assert.equal(x.provenanceAuthenticated,true);
  assert.equal(x.manualReviewRequired,true);
@@ -90,7 +91,7 @@ test('stale failed, newer pending rerun and missing protected run fail closed',a
   assert.notEqual((await run(f)).status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
  }
 });
-test('unrelated PR target runs sharing the same base cannot impersonate PR172',async()=>{
+test('unrelated PR target runs with the same head commit cannot impersonate PR172',async()=>{
  const f=fixture();f.state.unrelatedRun=true;
  const x=await run(f);
  assert.equal(x.status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
