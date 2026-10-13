@@ -18,15 +18,54 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: local-ci-contract-only
+          POSTGRES_DB: car_contract
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d car_contract"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout unprivileged test sources
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Run offline Node tests (no network or credentials)
+
+      - name: Verify production JavaScript and signed-webhook unit tests
         run: |
+          set -euo pipefail
           node --version
           node --check supabase/functions/car-autopilot/handler.mjs
-          node --test supabase/functions/car-autopilot/handler.test.mjs
+          node --check supabase/functions/car-autopilot/index.mjs
+          node --test supabase/functions/car-autopilot/handler.test.mjs supabase/functions/car-autopilot/index.test.mjs
+
+      - name: Parse TOML and validate deployment entrypoint and JWT scope
+        run: |
+          set -euo pipefail
+          python3 --version
+          python3 supabase/functions/car-autopilot/deployment.test.py
+
+      - name: Execute migration and security contract against isolated PostgreSQL
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: local-ci-contract-only
+          PGDATABASE: car_contract
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql -v ON_ERROR_STOP=1 -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;"
+          psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261013180000_car_autopilot_dispatch.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/functions/car-autopilot/ledger.test.sql
