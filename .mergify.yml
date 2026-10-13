@@ -20,10 +20,8 @@ pull_request_rules:
       - "check-success = @github-actions/coverage"
       - "check-success = @github-actions/Ultra Sentinel Core — own reviewer"
       - "check-success = @github-actions/read-only-review"
-      - '-files ~= ^\.github/'
-      - '-files ~= ^\.mergify\.yml$'
-      - '-files ~= ^(?:gradle/wrapper/|gradle\.properties$|settings\.gradle|build\.gradle)'
-      - '-files ~= (?:^|/)(?:secrets?|credentials?|security)(?:/|\.|$)'
+      # Fail closed: ANY changed path outside ordinary Kotlin/Java code and tests blocks merge.
+      - '-files ~= ^(?!app/src/(?:main/java|test|androidTest)/)'
     actions:
       merge:
         method: squash
@@ -49,10 +47,8 @@ pull_request_rules:
       - "check-success = @github-actions/coverage"
       - "check-success = @github-actions/Ultra Sentinel Core — own reviewer"
       - "check-success = @github-actions/read-only-review"
-      - '-files ~= ^\.github/'
-      - '-files ~= ^\.mergify\.yml$'
-      - '-files ~= ^(?:gradle/wrapper/|gradle\.properties$|settings\.gradle|build\.gradle)'
-      - '-files ~= (?:^|/)(?:secrets?|credentials?|security)(?:/|\.|$)'
+      # Fail closed: ANY changed path outside ordinary Kotlin/Java code and tests blocks merge.
+      - '-files ~= ^(?!app/src/(?:main/java|test|androidTest)/)'
     actions:
       merge:
         method: squash
