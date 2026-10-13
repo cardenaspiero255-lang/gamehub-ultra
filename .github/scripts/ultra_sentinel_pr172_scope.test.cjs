@@ -158,11 +158,11 @@ test('both reviewers reattest the same run immediately before making an exceptio
 test('trusted-main reviewers tolerate absent not-yet-merged scope module and fail closed',()=>{
  for(const file of ['ultra-sentinel-auto-review.yml','ultra-sentinel-independent-review.yml']){
   const text=fs.readFileSync(path.resolve(__dirname,'../workflows',file),'utf8');
-  assert.match(text,/fs\\.existsSync\\(scopePath\\)/);
-  assert.match(text,/permitScopedOpaqueYaml:\\(\\)=>false/);
+  assert.match(text,/fs\.existsSync\(scopePath\)/);
+  assert.match(text,/permitScopedOpaqueYaml:\(\)=>false/);
   assert.match(text,/status:'INCOMPLETE'/);
-  assert.match(text,/require\\(scopePath\\)/);
-  assert.doesNotMatch(text,/require\\(path\\.resolve\\("\\.github\\/scripts\\/ultra_sentinel_pr172_scope\\.cjs"\\)\\)/);
+  assert.match(text,/require\(scopePath\)/);
+  assert.doesNotMatch(text,/require\(path\.resolve\("\.github\/scripts\/ultra_sentinel_pr172_scope\.cjs"\)\)/);
  }
 });
 test('scoped authenticator never uses GitHub writes or dynamically executes PR code',()=>{
