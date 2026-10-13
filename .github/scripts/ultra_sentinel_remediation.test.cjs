@@ -117,6 +117,36 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  ];
  for(const [name,bad] of invalid)
   assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,name);
+ // P2 proof: a truncated finding must never become an apparently complete
+ // Family Hunter review, even if its remediation proposal still matches.
+ // Preserve all real Core provenance and evidence fields when tests are valid.
+ const coreFinding=r.findings[0];
+ for(const missing of ['confidence','evidence','reason','verification',
+                       'domains','origin','status']){
+  const truncated={...coreFinding};
+  delete truncated[missing];
+  const bad={...r,findings:[truncated,...r.findings.slice(1)]};
+  assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,
+   'missing mandatory evidence '+missing);
+  assert.throws(()=>modes.present(bad,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,
+   'mode 1 must reject missing '+missing);
+ }
+ const malformedEvidence=[
+  ['unknown confidence',{confidence:null}],
+  ['non-string evidence',{evidence:{text:'untrusted'}}],
+  ['non-string reason',{reason:42}],
+  ['no verification method',{verification:''}],
+  ['invalid domains',{domains:'voice'}],
+  ['domain with wrong element type',{domains:[null]}],
+  ['forged origin',{origin:'Untrusted Adapter'}],
+  ['forged status',{status:'VERIFIED'}]
+ ];
+ for(const [name,delta] of malformedEvidence){
+  const bad={...r,findings:[{...coreFinding,...delta},...r.findings.slice(1)]};
+  assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,name);
+  assert.throws(()=>modes.present(bad,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,
+   name+' mode 1');
+ }
  // Codex P2 family: every advisory repair must refer to the exact finding
  // at the same index. No missing, foreign, duplicated or executable fixes.
  const suggestions=r.remediations.suggestions;
