@@ -298,7 +298,7 @@ jobs:
             report.frontier.scopedProtected=terminalScopedProtected;
             report.frontier.scopedAccepted=scopedAccepted;
             report.frontier.scopeDecision=scopedAccepted?'TERMINAL_AUTHENTICATED_MANUAL_REVIEW':'FAIL_CLOSED';
-            fs.writeFileSync(path.join(folder,"report.json"),JSON.stringify(report,null,2)+"\\n",{encoding:"utf8",mode:0o600});
+            fs.writeFileSync(path.join(folder,"report.json"),JSON.stringify(report,null,2)+"\n",{encoding:"utf8",mode:0o600});
             if (evidence.coverage.partial) core.setFailed("Incomplete patch coverage; review manually before merging.");
             if(ci.status==='UNTRUSTED'&&!scopedAccepted)
               core.setFailed("Untrusted Android/Coverage workflow definition changed in PR. No CI approval possible.");
