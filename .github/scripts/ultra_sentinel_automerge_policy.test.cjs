@@ -27,7 +27,7 @@ function allowsFile(rule, file) {
   return !excludes.some(x=>new RegExp(x.slice("-files ~= ".length)).test(file));
 }
 test("Mergify always requires all four current-HEAD checks and unresolved threads = 0",()=>{
-  assert.equal(rules.length,2);
+  assert.equal(rules.length,1);
   for (const rule of rules) {
     assert.ok(rule.conditions.includes("-draft"));
     assert.ok(rule.conditions.includes("-conflict"));
@@ -51,4 +51,8 @@ test("bot rule never accepts owner identity and requires narrowly scoped CAR bra
   assert.ok(bot.conditions.includes("head ~= ^copilot/"));
   assert.ok(bot.conditions.some(x=>x.startsWith("title ~= ^CAR-")));
   assert.ok(!bot.conditions.includes("label = automerge:approved"));
+});
+
+test("owner PRs never auto-merge based on an old persistent approval label",()=>{
+  assert.equal(rules.some(rule=>rule.actions?.merge && rule.conditions.includes("author = cardenaspiero255-lang")),false);
 });
