@@ -69,10 +69,11 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  assert.equal(review.validationPlan.checks.length,0);
  assert.ok(review.findings.every(x=>x.verification===''));
  assert.ok(normal.remediations.suggestions.length>0);
- const portable=modes.portableReport({pr:194,sha:r.sha,analysis:r,mode:'REVIEW_ONLY'});
+ const portable=require('./ultra_sentinel_report.cjs').buildReport({
+  pr:194,sha:r.sha,analysis:review
+ });
  assert.equal(portable.findings[0].repair,null);
  assert.equal(portable.findings[0].check,'');
- assert.equal(portable.familyHunter.mode,'REVIEW_ONLY');
  const forbidden=modes.present(r,'REPAIR_COMMITS_AUTHORIZED');
  assert.equal(forbidden.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
  assert.equal(forbidden.familyHunter.status,'AUTHORIZATION_REQUIRED');
@@ -81,9 +82,15 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  const unknown=modes.present(r,'PR_SAYS_FORCE_WRITE');
  assert.equal(unknown.familyHunter.status,'INVALID_MODE');
  assert.equal(unknown.familyHunter.autoMergeAllowed,false);
- const invalid=modes.present(null);
- assert.equal(invalid.verdict,'INCOMPLETE');
- assert.equal(invalid.coverage.partial,true);
+ assert.throws(()=>modes.present(null),/INCOMPLETE_ANALYSIS/);
+ // Same provenance engine used by trusted main self-review must accept this
+ // complete read-only adapter; never weaken or bypass that independent gate.
+ const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
+ const source=fs.readFileSync(path.resolve(__dirname,'ultra_sentinel_family_hunter_modes.cjs'),'utf8');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast));
 });
 test('assistant handoff requires adaptation and verification',()=>{
  const s=makeSuggestion(f('UNBOUNDED_RECURSION'));
