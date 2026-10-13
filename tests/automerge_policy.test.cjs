@@ -12,6 +12,11 @@ const mergeRules = rules.filter(rule => rule.actions != null && Object.hasOwn(ru
 // YAML null, false or {} still count as a configured action/setting.
 function automaticMergePaths(candidate) {
   const found = [];
+  // An imported Mergify configuration can carry merge/queue actions even if our rules are empty.
+  // Never accept an uninspectable external policy (including `extends: null`).
+  if (candidate && typeof candidate === "object" && !Array.isArray(candidate) && Object.hasOwn(candidate, "extends")) {
+    found.push("extends: imported policy not verified");
+  }
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
     return ["invalid root configuration"];
   }
@@ -127,6 +132,8 @@ test("fail-closed: no Mergify merge, queue or auto-merge path exists", () => {
   assert.deepEqual(automaticMergePaths(config), [], "Unsafe Mergify auto-merge path found");
 });
 const dangerousConfigurations = [
+  ["extends:external", {extends:"other-project",pull_request_rules:[]}],
+  ["extends:null", {extends:null,pull_request_rules:[]}],
   ["merge:null", {pull_request_rules:[{name:"x",conditions:[],actions:{merge:null}}]}],
   ["merge:{}", {pull_request_rules:[{name:"x",conditions:[],actions:{merge:{}}}]}],
   ["queue:null", {pull_request_rules:[{name:"x",conditions:[],actions:{queue:null}}]}],
