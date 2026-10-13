@@ -117,6 +117,37 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  ];
  for(const [name,bad] of invalid)
   assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,name);
+ // Codex P2 family: every advisory repair must refer to the exact finding
+ // at the same index. No missing, foreign, duplicated or executable fixes.
+ const suggestions=r.remediations.suggestions;
+ const changed=(index,patch)=>suggestions.map((s,i)=>i===index?{...s,...patch}:s);
+ const brokenRemediations=[
+  ['missing all solutions',[]],
+  ['truncated solutions',suggestions.slice(0,1)],
+  ['extraneous solution',[...suggestions,suggestions[0]]],
+  ['reordered solutions',[...suggestions].reverse()],
+  ['wrong rule',changed(0,{rule:'OTHER_RULE'})],
+  ['wrong file',changed(0,{path:'app/foreign.kt'})],
+  ['wrong line',changed(0,{line:999})],
+  ['wrong severity',changed(0,{severity:'LOW'})],
+  ['claimed verified fix',changed(0,{status:'VERIFIED'})],
+  ['untrusted autofix',changed(0,{autofix:true})],
+  ['missing repair test',changed(0,{test:''})],
+  ['no suggested steps',changed(0,{steps:[]})],
+  ['non-string step',changed(0,{steps:[null]})],
+  ['malformed solution',suggestions.map((s,i)=>i===0?null:s)]
+ ];
+ for(const [name,badSuggestions] of brokenRemediations){
+  const broken={...r,remediations:{...r.remediations,suggestions:badSuggestions}};
+  assert.throws(()=>modes.present(broken),/INCOMPLETE_ANALYSIS/,name);
+  assert.throws(()=>modes.present(broken,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,name+' mode 1');
+ }
+ // The existing planner deliberately caps suggestions at 35 of 40 findings.
+ // The adapter must preserve that documented cap rather than creating extras.
+ const forty=Array.from({length:40},(_,i)=>({...r.findings[0],line:i+100}));
+ const capped={...r,findings:forty,
+  remediations:buildRemediations({sha:r.sha,findings:forty})};
+ assert.equal(modes.present(capped).remediations.suggestions.length,35);
  const incomplete={
   ...clean,coverage:{returned:1,analyzed:0,partial:true},verdict:'INCOMPLETE'
  };
