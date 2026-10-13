@@ -1,0 +1,30 @@
+name: CAR Autopilot Webhook Tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/functions/car-autopilot/**'
+      - '.github/workflows/car-autopilot-webhook-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: car-autopilot-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout unprivileged test sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Run offline Node tests (no network or credentials)
+        run: |
+          node --version
+          node --check supabase/functions/car-autopilot/handler.mjs
+          node --test supabase/functions/car-autopilot/handler.test.mjs
