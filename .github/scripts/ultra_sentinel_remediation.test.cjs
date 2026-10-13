@@ -91,12 +91,22 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   validationPlan:{domains:[],checks:[]}
  };
  assert.equal(modes.present(clean).verdict,'NO_CRITICAL_PATTERN');
+ // Core legitimately skips documentation, test-only and deletion-only diffs.
+ for(const filename of ['README.md','app/src/test/DemoTest.kt']){
+  const skipped=core.analyze([{filename,patch:'@@ -0,0 +1 @@\\n+example',changes:1}],{sha:r.sha});
+  assert.equal(skipped.coverage.analyzed,0);
+  assert.equal(skipped.coverage.partial,false);
+  assert.equal(modes.present(skipped).verdict,skipped.verdict);
+  assert.equal(modes.present(skipped,'REVIEW_ONLY').verdict,skipped.verdict);
+ }
+ const zeroScanned={...clean,coverage:{returned:1,analyzed:0,partial:false}};
+ assert.equal(modes.present(zeroScanned).verdict,'NO_CRITICAL_PATTERN');
+ assert.equal(modes.present(zeroScanned,'REVIEW_ONLY').verdict,'NO_CRITICAL_PATTERN');
  const invalid=[
   ['missing coverage details',{...clean,coverage:{}}],
   ['missing analyzed count',{...clean,coverage:{returned:1,partial:false}}],
   ['text count instead of integer',{...clean,coverage:{returned:'1',analyzed:1,partial:false}}],
   ['impossible excess scanned files',{...clean,coverage:{returned:1,analyzed:2,partial:false}}],
-  ['no scanned files cannot claim clear',{...clean,coverage:{returned:1,analyzed:0,partial:false}}],
   ['empty input cannot claim clear',{...clean,coverage:{returned:0,analyzed:0,partial:false}}],
   ['partial cannot claim clear',{...clean,coverage:{returned:1,analyzed:1,partial:true}}],
   ['incomplete verdict must match coverage',{...clean,verdict:'INCOMPLETE'}],
