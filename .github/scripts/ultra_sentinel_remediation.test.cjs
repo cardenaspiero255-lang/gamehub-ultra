@@ -148,6 +148,50 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  const capped={...r,findings:forty,
   remediations:buildRemediations({sha:r.sha,findings:forty})};
  assert.equal(modes.present(capped).remediations.suggestions.length,35);
+ // P2 family: Core promises BLOCKER > HIGH > MEDIUM > LOW, then filename
+ // (localeCompare), then ascending line. A jointly permuted finding+repair
+ // pair must not hide a critical risk beyond buildReport's ten-item window.
+ const critical=(severity,filename,line)=>({
+  ...r.findings[0],rule:severity==='BLOCKER'?'PRIVILEGED_UNTRUSTED_CHECKOUT':
+   'SPEECH_REENTRANT_RETRY',severity,path:filename,line
+ });
+ const medium=(index)=>({
+  ...r.findings[1],rule:'REGRESSION_TEST_COVERAGE',severity:'MEDIUM',
+  path:'app/src/main/java/demo/M'+String(index).padStart(2,'0')+'.kt',
+  line:index
+ });
+ const med=Array.from({length:10},(_,i)=>medium(i+1));
+ const high=critical('HIGH','app/src/main/java/demo/Top.kt',1);
+ const blocker=critical('BLOCKER','app/src/main/java/demo/Blocker.kt',1);
+ const candidate=(list)=>({...r,findings:list,
+  coverage:{returned:list.length,analyzed:list.length,partial:false},
+  remediations:buildRemediations({sha:r.sha,findings:list}),omitted:0,
+  verdict:'REVIEW_REQUIRED'});
+ const ordered=candidate([high,...med]);
+ const orderedReport=require('./ultra_sentinel_report.cjs').buildReport({
+  pr:194,sha:r.sha,analysis:modes.present(ordered)
+ });
+ assert.equal(orderedReport.status,'review_required');
+ assert.equal(orderedReport.findings[0].severity,'HIGH');
+ const rejectOrder=(name,list)=>{
+  const input=candidate(list);
+  assert.throws(()=>modes.present(input),/INCOMPLETE_ANALYSIS/,name);
+  assert.throws(()=>modes.present(input,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,
+   name+' mode 1');
+ };
+ rejectOrder('HIGH hidden at eleventh',[...med,high]);
+ rejectOrder('BLOCKER hidden at eleventh',[...med,blocker]);
+ rejectOrder('HIGH at tenth',[...med.slice(0,9),high,med[9]]);
+ rejectOrder('critical severity inverted',[high,blocker,...med]);
+ rejectOrder('equal severity filenames permuted',
+  [high,med[1],med[0],...med.slice(2)]);
+ const samePath='app/src/main/java/demo/Shared.kt';
+ const same=[{...med[0],path:samePath,line:10},
+  {...med[1],path:samePath,line:11}];
+ assert.equal(modes.present(candidate([high,...same])).verdict,'REVIEW_REQUIRED');
+ rejectOrder('equal path lines permuted',[high,same[1],same[0]]);
+ const fortieth=Array.from({length:39},(_,i)=>medium(i+1));
+ rejectOrder('BLOCKER pushed past 35-repair cap',[...fortieth,blocker]);
  const incomplete={
   ...clean,coverage:{returned:1,analyzed:0,partial:true},verdict:'INCOMPLETE'
  };
