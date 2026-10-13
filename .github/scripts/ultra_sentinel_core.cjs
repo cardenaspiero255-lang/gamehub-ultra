@@ -4,6 +4,16 @@
 const VERSION='2.0.0';
 const {buildRemediations,markdown:repairMarkdown}=require('./ultra_sentinel_remediation.cjs');
 const {search:searchMemory}=require('./ultra_sentinel_memory.cjs');
+// Family Hunter is an output policy for the existing engine, not another detector.
+// Mode 3 remains unavailable until a separate trusted, revocable authorization exists.
+function resolveFamilyHunterMode(requested){
+ const mode=requested==='REVIEW_ONLY'?'REVIEW_ONLY':'REVIEW_WITH_SOLUTIONS';
+ const status=requested==='REPAIR_COMMITS_AUTHORIZED'?'AUTHORIZATION_REQUIRED':
+  typeof requested==='string'&&requested!=='REVIEW_ONLY'&&
+  requested!=='REVIEW_WITH_SOLUTIONS'?'INVALID_MODE':'READ_ONLY';
+ return Object.freeze({mode,status,repairCommits:'OFF',
+  autoCommitAllowed:false,autoMergeAllowed:false});
+}
 const MAX_FILES=300,MAX_PATCH=320000;
 const SEVERITY={BLOCKER:4,HIGH:3,MEDIUM:2,LOW:1};
 function sanitize(s){
@@ -269,22 +279,34 @@ function analyze(files,config={}){
  if(!list.length){partial=true;warnings.push('Sin archivos disponibles; no se realizó auditoría.');}
  if(partial)warnings.push('Cobertura parcial: la ausencia de alertas no significa que el PR esté limpio.');
  alerts.sort((a,b)=>SEVERITY[b.severity]-SEVERITY[a.severity]||a.path.localeCompare(b.path)||a.line-b.line);
- const plan=validationPlan(list);
- const repairs=buildRemediations({sha,findings:alerts.slice(0,40)});
+ const familyHunter=resolveFamilyHunterMode(config.familyHunterMode);
+ const reviewOnly=familyHunter.mode==='REVIEW_ONLY';
+ const originalPlan=validationPlan(list);
+ const plan=reviewOnly?{domains:originalPlan.domains,checks:[]}:originalPlan;
+ // Modes share exactly the same detection and severity gates. Mode 1 only
+ // suppresses repair-oriented fields after findings are determined.
+ const findings=alerts.slice(0,40).map(f=>{
+  if(!reviewOnly)return f;
+  const evidence={...f};delete evidence.verification;return evidence;
+ });
+ const repairs=buildRemediations({sha,findings:reviewOnly?[]:findings});
  // Only validated historical fixes are marked verified. Curated playbooks are explicitly advisory.
  for(const suggestion of repairs.suggestions){
    const f=alerts.find(x=>x.rule===suggestion.rule&&x.path===suggestion.path&&x.line===suggestion.line);
    suggestion.relatedEvidence=searchMemory({rule:suggestion.rule,path:suggestion.path,reason:f?.reason,domain:f?.domains?.[0]},[],2);
  }
  return {engine:'Ultra Sentinel Core',version:VERSION,sha,mode:'independent-rule-and-structure-reasoner',
-  coverage:{returned:list.length,analyzed:scanned,partial},validationPlan:plan,remediations:repairs,findings:alerts.slice(0,40),
+  familyHunter,coverage:{returned:list.length,analyzed:scanned,partial},
+  validationPlan:plan,remediations:repairs,findings,
   omitted:Math.max(0,alerts.length-40),warnings:warnings.slice(0,25),
   verdict:partial?'INCOMPLETE':alerts.some(x=>SEVERITY[x.severity]>=3)?'REVIEW_REQUIRED':'NO_CRITICAL_PATTERN',
   note:'Heurísticas verificables: no es un modelo fundacional entrenado, ni sustituye compilación o revisión humana.'};
 }
 function markdown(result){
+ const reviewOnly=result.familyHunter?.mode==='REVIEW_ONLY';
  const lines=['<!-- ultra-sentinel-core -->','## Ultra Sentinel Core · Analista propio','',
    '**Commit:** '+result.sha+' · **Motor:** '+result.version,
+   '**Family Hunter:** '+(reviewOnly?'REVIEW_ONLY':'REVIEW_WITH_SOLUTIONS')+' · repair_commits = OFF',
    '**Resultado:** '+result.verdict,
    '**Cobertura:** '+result.coverage.analyzed+' archivos analizados de '+result.coverage.returned+'.',
    '','**Independiente:** esta revisión se ejecuta incluso sin Claude, Grok, DeepSeek o Groq.',
@@ -294,9 +316,9 @@ function markdown(result){
  for(const f of result.findings){
    lines.push('','### ['+f.severity+'] '+f.rule+' — '+f.path+':'+f.line,
      '- Evidencia (redactada): '+f.evidence,
-     '- Hipótesis: '+f.reason,
-     '- Prueba necesaria: '+f.verification,
-     '- Confianza heurística: '+f.confidence+'.');
+     '- Hipótesis: '+f.reason);
+   if(!reviewOnly)lines.push('- Prueba necesaria: '+f.verification);
+   lines.push('- Confianza heurística: '+f.confidence+'.');
  }
  if(result.validationPlan.checks.length){
    lines.push('','### Tests adversariales propuestos por Ultra Sentinel');
