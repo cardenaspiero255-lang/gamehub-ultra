@@ -37,7 +37,7 @@ export async function handleCarWebhook(req, config, transport = fetch, timestamp
   if (!delivery || !/^[0-9a-f-]{20,64}$/i.test(delivery))
     return json(400, { status: "invalid_delivery_id" });
   const eventType = req.headers.get("x-github-event");
-  if (!["pull_request", "issues"].includes(eventType))
+  if (eventType !== "issues")
     return json(202, { status: "ignored_event" });
 
   let event;
@@ -47,32 +47,19 @@ export async function handleCarWebhook(req, config, transport = fetch, timestamp
       event?.repository?.owner?.id !== OWNER_ID)
     return json(202, { status: "bad_repository_identity" });
 
-  // A successful merge may close its issue AFTER the PR webhook fires.
-  // Listen to both signed events so dispatch occurs on the confirmed issue closure.
-  if (eventType === "pull_request") {
-    const pr = event?.pull_request;
-    if (event?.action !== "closed" || pr?.merged !== true ||
-        pr?.base?.ref !== "main" || pr?.head?.repo?.id !== REPOSITORY_ID ||
-        ![BOT, "cardenaspiero255-lang"].includes(pr?.user?.login))
-      return json(202, { status: "ignored_non_authorized_merge" });
-    if (!exactCar(pr.title) || !/\b(?:fixes|closes|resolves)\s+#\d+/i.test(pr.body || ""))
-      return json(202, { status: "ignored_non_car" });
-    const merged = Date.parse(pr.merged_at || "");
-    if (!Number.isFinite(merged) || timestamp - merged < -300000 ||
-        timestamp - merged > 600000)
-      return json(202, { status: "stale_or_ambiguous_event" });
-  } else {
-    const issue = event?.issue;
-    if (event?.action !== "closed" || issue?.state !== "closed" ||
-        issue?.state_reason !== "completed" ||
-        issue?.user?.login !== "cardenaspiero255-lang" ||
-        !hasLabel(issue, "car:active") || !exactCar(issue.title))
-      return json(202, { status: "ignored_non_car_close" });
-    const closed = Date.parse(issue.closed_at || "");
-    if (!Number.isFinite(closed) || timestamp - closed < -300000 ||
-        timestamp - closed > 600000)
-      return json(202, { status: "stale_or_ambiguous_event" });
-  }
+  // Only the issue CLOSED event may dispatch. The linked, merged PR is
+  // independently verified below via REST to prevent manual "completed" skips.
+  const completedIssue = event?.issue;
+  if (event?.action !== "closed" || completedIssue?.state !== "closed" ||
+      completedIssue?.state_reason !== "completed" ||
+      completedIssue?.user?.login !== "cardenaspiero255-lang" ||
+      !Number.isSafeInteger(completedIssue?.number) || completedIssue.number <= 0 ||
+      !hasLabel(completedIssue, "car:active") || !exactCar(completedIssue.title))
+    return json(202, { status: "ignored_non_car_close" });
+  const closed = Date.parse(completedIssue.closed_at || "");
+  if (!Number.isFinite(closed) || timestamp - closed < -300000 ||
+      timestamp - closed > 600000)
+    return json(202, { status: "stale_or_ambiguous_event" });
 
   const fullName = event.repository.full_name;
   const [owner, name] = String(fullName || "").split("/");
@@ -98,7 +85,32 @@ export async function handleCarWebhook(req, config, transport = fetch, timestamp
     return response.json();
   };
 
+  // Claim must be backed by a durable, atomic external ledger. No in-memory
+  // promise, Set, or best-effort label write provides global idempotency.
+  if (typeof config.claim !== "function")
+    return json(503, { status: "durable_claim_not_configured" });
+
   try {
+    // A manual issue closure must NOT unlock the next CAR. Inspect real
+    // merged PRs and require an exact closing-reference and CAR identity.
+    const recent = await api("GET", "/pulls?state=closed&sort=updated&direction=desc&per_page=100");
+    if (!Array.isArray(recent) || recent.length >= 100)
+      return json(409, { status: "ambiguous_linked_merges" });
+    const reference = new RegExp("(?:^|\\s)(?:fixes|closes|resolves)\\s+#" + completedIssue.number + "(?!\\d)", "i");
+    const confirmed = recent.some((pr) => {
+      const mergedAt = Date.parse(pr.merged_at || "");
+      return Boolean(
+        exactCar(pr.title) === exactCar(completedIssue.title) &&
+        reference.test(pr.body || "") &&
+        pr.base?.ref === "main" &&
+        pr.head?.repo?.id === REPOSITORY_ID &&
+        [BOT, "cardenaspiero255-lang"].includes(pr.user?.login) &&
+        Number.isFinite(mergedAt) && mergedAt <= closed &&
+        closed - mergedAt <= 900000
+      );
+    });
+    if (!confirmed) return json(202, { status: "unverified_car_completion" });
+
     // One active CAR at a time. A duplicate webhook will be a no-op.
     const active = await api("GET", "/issues?state=open&labels=car%3Aactive&per_page=100");
     if (!Array.isArray(active) || active.length >= 100)
@@ -126,8 +138,14 @@ export async function handleCarWebhook(req, config, transport = fetch, timestamp
         latest.assignees?.some((a) => a.login === BOT))
       return json(409, { status: "car_changed_during_selection" });
 
-    // Scope token to repository Issues read/write, Pull requests read, and Metadata.
-    // No GitHub Contents write, CI bypass, or Merge API permissions.
+    // Atomic reservation BEFORE any write; if claim fails do not assign.
+    // Production adapter must persist and serialize claims across isolates.
+    const claim = await config.claim(delivery, latest.number, completedIssue.number);
+    if (claim !== true) return json(202, { status: "already_claimed" });
+
+    // NOTE: Copilot assignment API may require a high-privilege user token.
+    // The integration cannot be activated by a low-scope Issues-only token.
+    // Never grant broader permissions without explicit owner authorization.
     await api("POST", "/issues/" + latest.number + "/assignees", {
       assignees: [BOT],
       agent_assignment: {
