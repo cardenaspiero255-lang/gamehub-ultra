@@ -1,0 +1,47 @@
+name: "CAR · implementación mediante agente"
+description: "Crear un CAR con criterios verificables para delegarlo a Copilot (si está disponible)."
+title: "CAR-XX — "
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Este formulario recopila el CAR. La delegación a Copilot se realiza por el integrador externo, después de comprobar dependencias y permisos.
+        No se crea ni se fusiona código al abrir este formulario. Evita asignación directa que ignore la cola.
+  - type: input
+    id: car
+    attributes:
+      label: "Número CAR"
+      description: "Por ejemplo CAR-75. Verifica que no exista otro PR del mismo CAR."
+      placeholder: "CAR-75"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: "Objetivo y alcance"
+      description: "Explica qué debe cambiar y qué funcionalidades deben preservarse."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: "Dependencias, PR anteriores y posibles duplicados"
+      description: "Incluye enlaces y el orden del roadmap."
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Criterios de aceptación y pruebas"
+      description: "Especifica pruebas RED, GREEN, variantes, CI, revisión y restricciones."
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: "Reglas de seguridad"
+      options:
+        - label: "PR draft, TDD, revisión de familias/variantes, sin autofusión ni bypass de CI"
+          required: true
