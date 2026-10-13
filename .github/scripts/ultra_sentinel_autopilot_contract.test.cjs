@@ -47,8 +47,8 @@ test('PR gate refuses unprotected main, draft, missing owner approval and missin
   const code=scripts(w)[0];
   for(const required of [
     "p.base.ref==='main'","!p.draft","p.user?.login===owner",
-    "automerge:approved","branch.protected",
-    "rc?.strict!==true","'build','coverage'",
+    "automerge:approved","branch.protected","AUTOMERGE_OK ","listComments",
+    "rc?.enforcement_level!=='everyone'","'build','coverage'",
     "r.head_sha===pr.head.sha","pr.changed_files","^\\.github\\/",
     "listReviews","reviewThreads(first:100)","t.pageInfo.hasNextPage",
     "after.head.sha!==pr.head.sha","after.base.sha!==pr.base.sha",
