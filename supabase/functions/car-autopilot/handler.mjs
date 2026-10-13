@@ -6,7 +6,9 @@ const BOT = "copilot-swe-agent[bot]";
 const json = (status, data) => new Response(JSON.stringify(data), {
   status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
 });
-const exactCar = (value) => /^CAR-([0-9]+)(?=\b|[^0-9])/i.exec(String(value || ""))?.[1] ?? null;
+// Accept only an exact CAR-N token, followed by end-of-title, whitespace, or
+// a genuine punctuation separator. Never treat CAR-75malformed as CAR-75.
+const exactCar = (value) => /^CAR-([1-9][0-9]*)(?=$|[ \t]|[:—–-][ \t])/i.exec(String(value || ""))?.[1] ?? null;
 const hasLabel = (issue, name) => issue.labels?.some((l) => (typeof l === "string" ? l : l.name) === name) === true;
 
 export async function validSignature(bytes, header, secret) {
