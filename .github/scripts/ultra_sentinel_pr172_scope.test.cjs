@@ -17,7 +17,7 @@ function fixture(){
  const state={main:MAIN,head:HEAD,runStatus:'completed',runConclusion:'success',
   badLink:false,badLinkHead:false,missingLink:false,badRunSha:false,unrelatedRun:false,
   badJob:false,mainMoves:false,prMoves:false,rerunPending:false,missingRuns:false,
-  lateRun:false,listReads:0,listHeadSha:null};
+  lateRun:false,unlinkedNewer:false,listReads:0,listHeadSha:null};
  const pr={number:172,state:'open',changed_files:5,author_association:'OWNER',
   user:{login:'cardenaspiero255-lang',id:322222186,type:'User'},
   head:{sha:HEAD,repo:{full_name:REPO}},
@@ -44,6 +44,7 @@ function fixture(){
     if(state.rerunPending)runs.push(run(899,2,'2026-10-13T03:00:00Z',null,'in_progress'));
     if(state.lateRun&&state.listReads>1)
       runs.push(run(902,1,'2026-10-13T04:00:00Z',null,'in_progress'));
+    if(state.unlinkedNewer)runs.push({...run(903,1,'2026-10-13T04:01:00Z',null,'in_progress'),pull_requests:[]});
     runs=runs.map(v=>({...v,
      status:state.runStatus==='completed'?v.status:state.runStatus,
      head_sha:state.badRunSha?MAIN:v.head_sha,
@@ -106,6 +107,10 @@ test('forged workflow target base, missing PR linkage and job failures fail clos
   const f=fixture();change(f);
   assert.notEqual((await run(f)).status,'SCOPED_AUTHENTICATED_MANUAL_REVIEW');
  }
+});
+test('mixed linked-green and newer unlinked runs cannot certify a stale success',async()=>{
+ const f=fixture();f.state.unlinkedNewer=true;
+ assert.equal((await run(f)).status,'INCOMPLETE');
 });
 test('a new protected run during terminal verification blocks stale success',async()=>{
  const f=fixture();f.state.lateRun=true;
