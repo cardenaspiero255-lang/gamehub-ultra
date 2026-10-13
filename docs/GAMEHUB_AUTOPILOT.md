@@ -8,7 +8,7 @@ No hay `cron`, ChatGPT Tasks, temporizadores, programaciones horarias ni GitHub 
 
 ## Circuito PR: Mergify (aplicación externa independiente)
 
-La configuración `.mergify.yml` tiene **dos políticas separadas**. (A) PR normales del propietario: exigen etiqueta `automerge:approved` tras revisión del HEAD. (B) CAR creados por `copilot-swe-agent[bot]`: pueden fusionarse sin enviar mensajes ni etiquetar manualmente, pero deben tener título `CAR-N`, rama `copilot/`, no estar en borrador y pasar todos los gates. Ambas rutas exigen destino `main`, sin conflictos, sin cambios de seguridad/CI/.github, sin hilos abiertos y sin checks fallidos. **Ninguna IA ni el texto del PR puede concederse excepciones a estos gates.**
+La configuración `.mergify.yml` tiene **una sola regla de autofusión**, aplicable únicamente a CAR creados por `copilot-swe-agent[bot]`, con título `CAR-N`, rama `copilot/`, fuera de borrador, archivos de código Android permitidos y todos los gates verdes. **Los PR del propietario requieren fusión explícita tras revisión del HEAD.** Se retiró su regla automática: la etiqueta `automerge:approved` perduraba después de nuevos commits y no podía considerarse autorización ligada al SHA. Ambas rutas exigen destino `main`, sin conflictos, sin cambios de seguridad/CI/.github, sin hilos abiertos y sin checks fallidos. **Ninguna IA ni el texto del PR puede concederse excepciones a estos gates.**
 
 Condiciones obligatorias:
 - Ausencia de etiquetas de bloqueo `merge:blocked`, `security:review-required` o `do-not-merge`, y cero conversaciones de revisión pendientes de resolver.
@@ -22,9 +22,9 @@ Condiciones obligatorias:
 1. Instalar <https://github.com/marketplace/mergify> **solo** en el repositorio `cardenaspiero255-lang/gamehub-ultra`, revisando los permisos del proveedor.
 2. En GitHub Settings, proteger `main`: requerir PR y checks exitosos `build`, `coverage`, `Ultra Sentinel Core — own reviewer` y `read-only-review` (comprobar el origen GitHub Actions y que aparecen en todos los PR elegibles). Requerir conversaciones resueltas y rama actualizada antes de la fusión; deshabilitar pushes forzados y bypass. Evitar exigir aprobación de un revisor humano separado imposible para el autor único del repositorio; mantener un control manual en las categorías sensibles.
 3. En Mergify, verificar que **Workflow Automation** esté habilitado para este repositorio y que detecte la configuración del PR y que su check de configuración sea correcto. Ajustar los nombres de checks solo si difieren de los resultados reales de GitHub; nunca degradar condiciones porque la CI falla.
-4. Crear en GitHub la etiqueta `automerge:approved`. **No ponerla en el PR de bootstrap #195.** Solo aplicarla a un PR no sensible, con hallazgos confirmados resueltos, una vez que CI y revisiones actuales pasen.
+4. Los PR del propietario, incluidos #195/#196, requieren merge explícito tras revisar el SHA vigente. **La etiqueta `automerge:approved` no autoriza merge automático**, porque esa regla fue retirada.
 
-**Límite de la autorización:** una etiqueta de GitHub no queda ligada a un SHA. Si se suben commits después del visto bueno, el propietario debe reexaminar el PR. Como control adicional, las protecciones de main con checks asociados al commit actualizado deben impedir un merge de CI obsoleta. Si se requiere un visto bueno criptográficamente vinculado al SHA del último commit, hace falta un integrador externo que elimine o invalide la etiqueta al evento `synchronize` antes de autorizar merge. No lo hemos instalado ni probado aún.
+**Límite de la autorización:** una etiqueta de GitHub no está ligada a un SHA. Por eso los PR del propietario **no tienen política automática de fusión**. La rama main exige los cuatro checks en el último HEAD, y el propietario/automatización horaria puede hacer una fusión explícita cuando realmente se verifiquen todas las condiciones.
 
 ## Circuito CAR: Copilot cloud coding agent (app externa)
 
@@ -47,7 +47,7 @@ Revisar todos los checks del último SHA de #195, pruebas de sintaxis, seguridad
 
 ## Nueva vía sin mensajes para CAR de Copilot
 
-El agente creado en `.github/agents/gamehub-car-engineer.agent.md` debe terminar el PR y sacarlo de **draft** solo después de investigar y corregir todos los problemas confirmados, incluir `CAR-N` al comienzo del título y presentar resultados reproducibles. Cuando los checks Android, Coverage y Sentinel revierten éxito y no hay conversaciones de revisión abiertas, Mergify puede fusionarlo. Los PR del propietario fuera de esta vía siguen exigiendo `automerge:approved`; las ramas históricas nunca reciben aprobación automática por existir.
+El agente creado en `.github/agents/gamehub-car-engineer.agent.md` debe terminar el PR y sacarlo de **draft** solo después de investigar y corregir todos los problemas confirmados, incluir `CAR-N` al comienzo del título y presentar resultados reproducibles. Cuando los checks Android, Coverage y Sentinel revierten éxito y no hay conversaciones de revisión abiertas, Mergify puede fusionarlo. Los PR del propietario fuera de esta vía deben recibir fusión explícita luego de una revisión del SHA actual; ninguna etiqueta antigua equivale a una aprobación vigente.
 
 ### Condiciones que impiden operación completamente autónoma hoy
 
@@ -77,4 +77,4 @@ La arquitectura declarativa se activará al llegar `.mergify.yml` a `main`, si M
 
 ## Endurecimiento adicional de la revisión
 
-La acción Mergify del propietario aún exige `automerge:approved` y los cuatro controles del HEAD. **Una etiqueta normal no está ligada al SHA**: si cambia el commit después de aplicar la etiqueta, se deben volver a validar revisión y pruebas. No considerar una etiqueta vieja como nueva aprobación humana. Hasta disponer de invalidación automática de etiquetas, limitar su uso a PR no sensibles y revisar la procedencia del consentimiento; el repositorio mantiene la protección de main como defensa separada. El patrón de archivos fuente se verifica en `.github/scripts/ultra_sentinel_automerge_policy.test.cjs` y la aceptación de sintaxis depende del check `Configuration changed` emitido por Mergify.
+Se eliminó la autofusión de PR del propietario porque su etiqueta de aprobación persistía tras nuevos commits. Se conservó únicamente la regla Mergify para CAR de Copilot de código Android en rutas permitidas, sin un permiso tácito para modificar seguridad/CI/Supabase. Las fusiones del propietario son decisiones explícitas con CI y revisión del HEAD vigente. El patrón de archivos fuente se verifica en `.github/scripts/ultra_sentinel_automerge_policy.test.cjs` y la aceptación de sintaxis depende del check `Configuration changed` emitido por Mergify.
