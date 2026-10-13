@@ -5,12 +5,14 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const {buildExpectedAndroid,buildExpectedCoverage,buildExpectedContract,buildExpectedRegressions,buildExpectedDocs,classifyCiDelta,checkJobEvidence,verifyCiDeltaFromGitHub,verifyCiJobsFromGitHub}
  =require('./ultra_sentinel_ci_delta.cjs');
 const REPO='cardenaspiero255-lang/gamehub-ultra',BASE='7aa5df3e3c704965862ea728fb4c390d2c15a7f0',HEAD='bb08782350201f97576a974a4684a611c21701c0';
-const root=path.resolve(__dirname,'../workflows');
+// Use the immutable pre-V2 fixtures, not the current main branch contents.
+// The SHA-1 Git blob hashes are independently pinned in the stage-2 test.
+const root=path.resolve(__dirname,'../sentinel-fixtures/pr172-ci-baseline');
 const trusted={
  android:fs.readFileSync(path.join(root,'android.yml'),'utf8'),
  coverage:fs.readFileSync(path.join(root,'coverage.yml'),'utf8'),
- safetyContract:fs.readFileSync(path.resolve(__dirname,'check-ci-safety-contract.py'),'utf8'),
- regressions:fs.readFileSync(path.resolve(__dirname,'test-ci-safety-contract-regressions.py'),'utf8')
+ safetyContract:fs.readFileSync(path.join(root,'check-ci-safety-contract.py'),'utf8'),
+ regressions:fs.readFileSync(path.join(root,'test-ci-safety-contract-regressions.py'),'utf8')
 };
 const files=[
  {filename:'.github/workflows/android.yml',status:'modified',sha:'0f78d28d5e8974b988490bd9facdf63cb6be6485'},
