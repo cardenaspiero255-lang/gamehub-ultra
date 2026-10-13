@@ -1,8 +1,9 @@
-# GameHub Ultra: opt-in auto-merge, evaluated by the installed Mergify GitHub App.
-# No cron, GitHub Actions write tokens, secret access, or unreviewed autonomous merges.
-# This configuration is INERT until the repository owner installs Mergify.
+# GameHub Ultra: Mergify event-driven merges, no cron or ChatGPT Tasks.
+# Scoped opt-in for owner PRs plus bot-created CAR PRs. The bot rule
+# never runs on CI, release or security configuration changes.
+# A green CI check is evidence of tests passing, not proof of zero bugs.
 pull_request_rules:
-  - name: "Safeguarded auto-merge of verified owner PRs"
+  - name: "Auto-merge vetted owner PRs"
     conditions:
       - "base = main"
       - "author = cardenaspiero255-lang"
@@ -15,12 +16,39 @@ pull_request_rules:
       - "label != do-not-merge"
       - "#review-threads-unresolved = 0"
       - "#check-failure = 0"
-      # CI checks from the verified GitHub Actions app. Missing/skipped checks do not pass.
       - "check-success = @github-actions/build"
       - "check-success = @github-actions/coverage"
       - "check-success = @github-actions/Ultra Sentinel Core — own reviewer"
       - "check-success = @github-actions/read-only-review"
-      # Governance, reviewer and workflow changes ALWAYS require manual merge.
+      - '-files ~= ^\.github/'
+      - '-files ~= ^\.mergify\.yml$'
+      - '-files ~= ^(?:gradle/wrapper/|gradle\.properties$|settings\.gradle|build\.gradle)'
+      - '-files ~= (?:^|/)(?:secrets?|credentials?|security)(?:/|\.|$)'
+    actions:
+      merge:
+        method: squash
+
+  # This rule needs no ChatGPT messages or approval labels. The external
+  # Copilot cloud agent must finish its draft and satisfy the checks itself.
+  # Never authorize PRs by a human mimicking the bot's title/branch.
+  - name: "Auto-merge safe completed CARs from Copilot"
+    conditions:
+      - "base = main"
+      - "author = copilot-swe-agent[bot]"
+      - "head ~= ^copilot/"
+      - "title ~= ^CAR-[0-9]+\\b"
+      - "-draft"
+      - "-from-fork"
+      - "-conflict"
+      - "label != merge:blocked"
+      - "label != security:review-required"
+      - "label != do-not-merge"
+      - "#review-threads-unresolved = 0"
+      - "#check-failure = 0"
+      - "check-success = @github-actions/build"
+      - "check-success = @github-actions/coverage"
+      - "check-success = @github-actions/Ultra Sentinel Core — own reviewer"
+      - "check-success = @github-actions/read-only-review"
       - '-files ~= ^\.github/'
       - '-files ~= ^\.mergify\.yml$'
       - '-files ~= ^(?:gradle/wrapper/|gradle\.properties$|settings\.gradle|build\.gradle)'
