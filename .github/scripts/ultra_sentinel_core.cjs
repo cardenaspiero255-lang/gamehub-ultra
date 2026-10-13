@@ -11,8 +11,8 @@ function resolveFamilyHunterMode(requested){
  const status=requested==='REPAIR_COMMITS_AUTHORIZED'?'AUTHORIZATION_REQUIRED':
   typeof requested==='string'&&requested!=='REVIEW_ONLY'&&
   requested!=='REVIEW_WITH_SOLUTIONS'?'INVALID_MODE':'READ_ONLY';
- return Object.freeze({mode,status,repairCommits:'OFF',
-  autoCommitAllowed:false,autoMergeAllowed:false});
+ return {mode,status,repairCommits:'OFF',
+  autoCommitAllowed:false,autoMergeAllowed:false};
 }
 const MAX_FILES=300,MAX_PATCH=320000;
 const SEVERITY={BLOCKER:4,HIGH:3,MEDIUM:2,LOW:1};
@@ -287,7 +287,9 @@ function analyze(files,config={}){
  // suppresses repair-oriented fields after findings are determined.
  const findings=alerts.slice(0,40).map(f=>{
   if(!reviewOnly)return f;
-  const evidence={...f};delete evidence.verification;return evidence;
+  return {rule:f.rule,severity:f.severity,confidence:f.confidence,
+   path:f.path,line:f.line,evidence:f.evidence,reason:f.reason,
+   domains:f.domains,origin:f.origin,status:f.status};
  });
  const repairs=buildRemediations({sha,findings:reviewOnly?[]:findings});
  // Only validated historical fixes are marked verified. Curated playbooks are explicitly advisory.
