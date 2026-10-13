@@ -14,7 +14,10 @@ const mapping={
  'docs/CI_ACCELERATION_172_V2.md':['documentation',stage1.buildExpectedDocs]
 };
 const blob=body=>crypto.createHash('sha1').update('blob '+Buffer.byteLength(body)+'\0'+body).digest('hex');
-const baseline=Object.fromEntries(Object.entries(mapping).filter(([k])=>!k.startsWith('docs/')).map(([k])=>[k,fs.readFileSync(path.join(__dirname,k.split('/').at(-1).endsWith('.yml')?'../workflows/'+k.split('/').at(-1):k.split('/').at(-1)),'utf8')]));
+// Do not read mutable main here: after PR172 merge, it contains optimized YAML.
+// Historical original blobs live in a SHA-verified immutable fixture directory.
+const historical=path.resolve(__dirname,'../sentinel-fixtures/pr172-ci-baseline');
+const baseline=Object.fromEntries(Object.entries(mapping).filter(([k])=>!k.startsWith('docs/')).map(([k])=>[k,fs.readFileSync(path.join(historical,path.basename(k)),'utf8')]));
 const candidate=Object.fromEntries(Object.entries(mapping).map(([k,v])=>[k,v[1](baseline[k])]));
 const paths=Object.keys(mapping);
 const androidNames=['quality-lint','quality-contract-shard','quality-contracts','release-bundle','quality',
