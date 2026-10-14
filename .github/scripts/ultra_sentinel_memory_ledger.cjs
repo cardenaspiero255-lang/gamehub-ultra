@@ -8,6 +8,11 @@
  */
 const {createHash}=require('node:crypto');
 const memory=require('./ultra_sentinel_memory.cjs');
+ // Capture the trusted curated entrypoints and inert result before any
+ // consumer can tamper with public exports or JavaScript intrinsics.
+const TRUSTED_EMPTY=Object.freeze([]);
+const trustedCuratedSearch=memory.search;
+const trustedCuratedById=memory.getCuratedPlaybookById;
 const SCHEMA='ultra-sentinel-family-hunter-memory/v1';
 const REPO='cardenaspiero255-lang/gamehub-ultra';
 const MAX_RECORDS=200;
@@ -71,43 +76,51 @@ async function verifiedEntries(ledger,_ignoredVerifier){
  // This does not invoke caller code, Reflect.apply or mutable prototype
  // operations on the security authorization path.
  parseLedger(ledger);
- return Object.freeze([]);
+ return TRUSTED_EMPTY;
 }
-// Only verifiedEntries may contribute historical fixes; untrusted callers
-// cannot make direct memory.search mark arbitrary extra records as confirmed.
-function rankApproved(query,entries){
- let rule='',domain='',parts=[];
- if(typeof query==='string')parts=[query];
- else if(isRecord(query)){
-  if(typeof query.rule==='string'){rule=query.rule;parts.push(rule);}
-  if(typeof query.path==='string')parts.push(query.path);
-  if(typeof query.reason==='string')parts.push(query.reason);
-  if(typeof query.text==='string')parts.push(query.text);
-  if(typeof query.domain==='string')domain=query.domain;
- }
- const q=memory.terms(parts.join(' '));
- if(!q.length)return [];
- const out=[];
- for(const entry of entries){
-  const tokens=memory.terms(entry.summary+' '+entry.rule+' '+entry.domain);
-  let score=0;
-  for(const token of q){if(tokens.includes(token))score+=1;}
-  if(rule&&rule===entry.rule)score+=7;
-  if(domain&&domain===entry.domain)score+=2;
-  if(score<=0)continue;
-  out.push({id:entry.id,type:'verified_fix',domain:entry.domain,rule:entry.rule,
-   score:Number(score.toFixed(3)),advice:entry.advice.slice(0,380),
-   tests:entry.tests.slice(0,4).map(x=>x.slice(0,180)),
-   evidenceUrl:entry.evidenceUrl,verification:'confirmed_tests'});
- }
- return out;
+// The reviewed historical allowlist is empty: return ONLY curated playbooks
+// until a separately attested record can be installed by trusted-main.
+// A tampered Array.prototype.sort/slice can fabricate the result of search(),
+// so rebuild every returned row from frozen, private source material.
+function certifyCurated(row){
+ if(!row||row.type!=='playbook'||row.verification!=='curated_playbook'||
+    typeof row.id!=='string'||typeof row.score!=='number'||
+    !Number.isFinite(row.score)||row.score<0)return null;
+ const original=trustedCuratedById(row.id);
+ if(!original||row.domain!==original.domain||row.rule!==original.rule||
+    row.advice!==original.advice||row.evidenceUrl!==null||
+    !Array.isArray(row.tests))return null;
+ const n=original.tests.length>4?4:original.tests.length;
+ if(row.tests.length!==n)return null;
+ for(let i=0;i<n;i++){if(row.tests[i]!==original.tests[i])return null;}
+ return {id:original.id,type:'playbook',domain:original.domain,
+  rule:original.rule,score:row.score,advice:original.advice,
+  tests:original.tests,evidenceUrl:null,verification:'curated_playbook'};
 }
-async function searchVerified(query,ledger,verifier,max=3){
- const approved=await verifiedEntries(ledger); // ignore untrusted legacy callback
+async function searchVerified(query,ledger,_ignoredVerifier,max=3){
+ await verifiedEntries(ledger);
  const limit=Math.max(0,Math.min(5,Number(max)||3));
- const curated=memory.search(query,[],5);
- return [...curated,...rankApproved(query,approved)].sort((a,b)=>
-  b.score-a.score||a.id.localeCompare(b.id)).slice(0,limit);
+ // The underlying search remains advisory. Treat all of its returned objects
+ // as untrusted data, even if built by our code: mutable global sort/slice
+ // methods can be changed by unrelated modules.
+ const candidate=trustedCuratedSearch(query,[],limit);
+ if(!Array.isArray(candidate)||candidate.length>limit)return TRUSTED_EMPTY;
+ if(candidate.length===0)return TRUSTED_EMPTY;
+ const a=certifyCurated(candidate[0]);
+ const b=candidate.length>1?certifyCurated(candidate[1]):null;
+ const c=candidate.length>2?certifyCurated(candidate[2]):null;
+ const d=candidate.length>3?certifyCurated(candidate[3]):null;
+ const e=candidate.length>4?certifyCurated(candidate[4]):null;
+ if(!a||(candidate.length>1&&!b)||(candidate.length>2&&!c)||
+    (candidate.length>3&&!d)||(candidate.length>4&&!e))
+  return TRUSTED_EMPTY;
+ // Array literals cannot invoke monkeypatched push/sort/slice and do not
+ // allow a hostile prototype to replace the return value.
+ if(candidate.length===1)return [a];
+ if(candidate.length===2)return [a,b];
+ if(candidate.length===3)return [a,b,c];
+ if(candidate.length===4)return [a,b,c,d];
+ return [a,b,c,d,e];
 }
 // Export inert primitive literals directly so the trusted main provenance
 // analyzer can certify CommonJS exports without guessing a string alias.

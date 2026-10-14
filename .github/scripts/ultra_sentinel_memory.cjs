@@ -42,7 +42,13 @@ function vetted(entry){
 // External records can never be registered as playbooks through this module.
 function getCuratedPlaybookById(id){
  if(typeof id!=='string')return null;
- return KNOWN.find(entry=>entry.id===id)||null;
+ // A for-index walk does not consult mutable Array.prototype.find or iterator
+ // hooks for the private frozen authority registry.
+ for(let i=0;i<KNOWN.length;i++){
+  const entry=KNOWN[i];
+  if(entry.id===id)return entry;
+ }
+ return null;
 }
 // Avoid conditional unions of inferred object provenance in the trusted
 // AST reviewer; playbooks have no URL and verified fixes carry an attested URL.
