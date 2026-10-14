@@ -128,6 +128,12 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   ['mismatched remediation SHA',{...clean,remediations:{...clean.remediations,sha:'c'.repeat(40)}}],
   ['untrusted self-certified remediation',{...clean,remediations:{...clean.remediations,verified:true}}],
   ['missing validation domains',{...clean,validationPlan:{checks:[]}}],
+  ['null validation check',{...r,validationPlan:{...r.validationPlan,checks:[null]}}],
+  ['non-object validation check',{...r,validationPlan:{...r.validationPlan,checks:['compile']}}],
+  ['empty validation domain',{...r,validationPlan:{...r.validationPlan,checks:[{domain:'',check:'compile'}]}}],
+  ['empty validation description',{...r,validationPlan:{...r.validationPlan,checks:[{domain:'voice',check:'  '}]}}],
+  ['unknown validation domain',{...r,validationPlan:{...r.validationPlan,checks:[{domain:'nonexistent',check:'compile'}]}}],
+  ['malformed plan domains',{...r,validationPlan:{...r.validationPlan,domains:[null]}}],
   ['missing warnings',{...clean,warnings:undefined}],
   ['unbounded missing finding count',{...clean,omitted:1}],
   ['negative omitted count',{...clean,omitted:-1}],
@@ -236,6 +242,16 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   ['related evidence empty object',changed(0,{relatedEvidence:[{}]})],
   ['related evidence missing ID',changed(0,{relatedEvidence:[{type:'playbook',advice:'text'}]})],
   ['related evidence forged status',changed(0,{relatedEvidence:[{id:'fake',type:'playbook',verification:'CERTIFIED'}]})],
+  // Core currently passes zero user-provided fixes into searchMemory. A
+  // fabricated "confirmed_tests" label must never become trusted history.
+  ...['missing fixSha','missing testSha','fabricated fix and test hashes'].map((name,i)=>{
+   const forged={id:'fix-fabricated-01',type:'verified_fix',domain:'voice',
+    rule:'SPEECH_REENTRANT_RETRY',score:2.7,advice:'A repair that claims tests passed',
+    tests:['fake verification'],evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/194',
+    verification:'confirmed_tests',
+    ...(i===1?{fixSha:'b'.repeat(40)}:i===2?{fixSha:'a'.repeat(40),testSha:'b'.repeat(40)}:{testSha:'b'.repeat(40)})};
+   return [name,changed(0,{relatedEvidence:[forged]})];
+  }),
   ['related evidence oversize',changed(0,{relatedEvidence:Array(3).fill({id:'fake'})})],
   ['missing handoff',changed(0,{handoff:undefined})],
   ['empty handoff',changed(0,{handoff:''})],
