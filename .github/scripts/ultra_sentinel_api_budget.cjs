@@ -32,6 +32,15 @@ function createGitHubReader(repo,token,fetcher=globalThis.fetch,options={}){
    if(!response||typeof response.ok!=='boolean')throw Error('GITHUB_API_UNAVAILABLE');
    if(response.ok)return response.json();
    const status=response.status,header=key=>response.headers?.get?.(key)??null;
+   // Bounded retry only for genuine transient GitHub/server gateway failures.
+   // Still fail closed on the second response. Never retry ordinary 4xx,
+   // skip any check or turn an unavailable API into approved evidence.
+   if([500,502,503,504].includes(status)){
+    if(attempt===1)throw Error('GITHUB_API_UNAVAILABLE');
+    if(typeof options.pause==='function')await options.pause(1000);
+    else await new Promise(resolve=>setTimeout(resolve,1000));
+    continue;
+   }
    const remaining=header('x-ratelimit-remaining'),retryAfter=header('retry-after');
    let secondary=false;
    if(status===403&&remaining!=='0'&&retryAfter===null){
