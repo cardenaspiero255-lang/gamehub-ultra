@@ -127,6 +127,10 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   ['malformed commit SHA',{...clean,sha:'unknown'}],
   ['mismatched remediation SHA',{...clean,remediations:{...clean.remediations,sha:'c'.repeat(40)}}],
   ['untrusted self-certified remediation',{...clean,remediations:{...clean.remediations,verified:true}}],
+  ['missing canonical checks',{...r,validationPlan:{...r.validationPlan,checks:[]}}],
+  ['truncated domain checklist',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.slice(1)}}],
+  ['fabricated checklist text',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.map((x,i)=>i===0?{...x,check:'everything is fine'}:x)}}],
+  ['reordered domain checklist',{...r,validationPlan:{...r.validationPlan,checks:[...r.validationPlan.checks].reverse()}}],
   ['missing validation domains',{...clean,validationPlan:{checks:[]}}],
   ['null validation check',{...r,validationPlan:{...r.validationPlan,checks:[null]}}],
   ['non-object validation check',{...r,validationPlan:{...r.validationPlan,checks:['compile']}}],
@@ -179,6 +183,25 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  // P2 proof: a truncated finding must never become an apparently complete
  // Family Hunter review, even if its remediation proposal still matches.
  // Preserve all real Core provenance and evidence fields when tests are valid.
+ // Two distinct long Android filenames can share a 185-character prefix.
+ // Core must preserve unique, bounded identities through the presentation
+ // layer, not manufacture duplicate (rule,path,line) triples.
+ const longPrefix='app/src/main/java/demo/'+ 'p'.repeat(178);
+ const longFiles=['Alpha.kt','Beta.kt'].map(name=>({
+  filename:longPrefix+name,status:'added',changes:1,
+  patch:'@@ -0,0 +1 @@\\n+System.gc()'
+ }));
+ const longReview=core.analyze([...longFiles,{
+  filename:'app/src/test/CollisionTest.kt',status:'added',changes:1,
+  patch:'@@ -0,0 +1 @@\\n+// Regression guard'
+ }],{sha:r.sha});
+ const pathAlerts=longReview.findings.filter(x=>x.rule==='FORCED_GC');
+ assert.equal(pathAlerts.length,2,'both Core findings must remain represented');
+ assert.notEqual(pathAlerts[0].path,pathAlerts[1].path,
+  'sanitized paths must not collapse distinct affected files');
+ for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+  assert.doesNotThrow(()=>modes.present(longReview,mode));
+ }
  const coreFinding=r.findings[0];
  for(const missing of ['confidence','evidence','reason','verification',
                        'domains','origin','status']){
