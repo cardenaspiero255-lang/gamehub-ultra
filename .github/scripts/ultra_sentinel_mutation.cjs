@@ -23,7 +23,7 @@ const CASES=Object.freeze([
  ['orchestrator','wrong-sha-judge-disabled',"if(options.sha&&proposal.sha!==options.sha)","if(false&&proposal.sha!==options.sha)"],
  ['orchestrator','automerge-incorrectly-allowed',"autoMergeAllowed:false","autoMergeAllowed:true"],
  ['memory','unverified-memory-admitted',"if(entry.type!=='verified_fix')return false;","if(false)return false;"],
- ['memory','foreign-url-admitted',"validMemoryUrl(entry.evidenceUrl)","true"]
+ ['memory','foreign-url-admitted',"validUrl(entry.evidenceUrl)","true"]
 ]);
 const T={report:'ultra_sentinel_report.test.cjs',core:'ultra_sentinel_core.test.cjs',
  orchestrator:'ultra_sentinel_orchestrator.test.cjs',memory:'ultra_sentinel_memory.test.cjs'};
