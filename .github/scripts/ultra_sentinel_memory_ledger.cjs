@@ -86,4 +86,8 @@ async function searchVerified(query,ledger,verifier,max=3){
  const approved=await verifiedEntries(ledger,verifier);
  return memory.search(query,approved,max);
 }
-module.exports={SCHEMA,REPO,MAX_RECORDS,parseLedger,entryDigest,verifiedEntries,searchVerified};
+// Export inert primitive literals directly so the trusted main provenance
+// analyzer can certify CommonJS exports without guessing a string alias.
+module.exports={SCHEMA:'ultra-sentinel-family-hunter-memory/v1',
+ REPO:'cardenaspiero255-lang/gamehub-ultra',MAX_RECORDS:200,
+ parseLedger,entryDigest,verifiedEntries,searchVerified};
