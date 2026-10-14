@@ -95,6 +95,18 @@ test('extra verified records include provenance',async()=>{
  };
  assert.equal((await ledger.verifiedEntries(raw,hostile)).length,0);
  assert.equal(callbacks,0,'untrusted callbacks must not be executed');
+ // RED: changing a shared prototype must not turn a fabricated ledger
+ // entry into a confirmed fix. Restore before awaiting to isolate the test.
+ const intrinsicIncludes=Array.prototype.includes;
+ let injectedResult;
+ try{
+  Array.prototype.includes=()=>true;
+  injectedResult=ledger.verifiedEntries(raw);
+ }finally{
+  Array.prototype.includes=intrinsicIncludes;
+ }
+ assert.equal((await injectedResult).length,0,
+  'a globally replaced Array.includes must not authorize history');
  const impersonated=await ledger.verifiedEntries(raw,async()=>({repository:ledger.REPO,
    fixSha:sha,testSha:b,mergedToProtectedMain:true,testsPassedAtFixSha:true,
    independentReviewPassed:false}));
