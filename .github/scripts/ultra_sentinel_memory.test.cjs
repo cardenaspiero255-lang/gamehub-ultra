@@ -177,7 +177,11 @@ test('extra verified records include provenance',async()=>{
    if(this[0]?.verification==='curated_playbook')return [forgedOutput];
    return originalSort.call(this,compare);
   };
-  const result=await ledger.searchVerified({rule:e.rule},raw);
+  const result=await ledger.searchVerified({rule:e.rule},raw).catch(error=>{
+   assert.match(String(error?.message||error),/CURATED_MEMORY_UNVERIFIED/,
+    'a tampered sort must fail closed with a known security reason');
+   return [];
+  });
   assert.ok(!result.some(item=>item.verification==='confirmed_tests'),
    'a tampered sort must not manufacture trusted historical fixes');
  }finally{Array.prototype.sort=originalSort;}
@@ -187,7 +191,11 @@ test('extra verified records include provenance',async()=>{
    if(this[0]?.verification==='curated_playbook')return [forgedOutput];
    return originalSlice.call(this,start,end);
   };
-  const result=await ledger.searchVerified({rule:e.rule},raw);
+  const result=await ledger.searchVerified({rule:e.rule},raw).catch(error=>{
+   assert.match(String(error?.message||error),/CURATED_MEMORY_UNVERIFIED/,
+    'a tampered slice must fail closed with a known security reason');
+   return [];
+  });
   assert.ok(!result.some(item=>item.verification==='confirmed_tests'),
    'a tampered slice must not manufacture trusted historical fixes');
  }finally{Array.prototype.slice=originalSlice;}
