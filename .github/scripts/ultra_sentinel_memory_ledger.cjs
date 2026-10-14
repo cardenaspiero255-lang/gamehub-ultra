@@ -50,7 +50,7 @@ async function verifiedEntries(ledger,verifier){
   if(!isRecord(facts)||facts.repository!==REPO||
      facts.fixSha!==e.fixSha||facts.testSha!==e.testSha||
      facts.mergedToProtectedMain!==true||facts.testsPassedAtFixSha!==true||
-     facts.independentReviewPassed===false)
+     facts.independentReviewPassed!==true)
     continue;
   // Never let a user-provided field become "verified" without GitHub evidence.
   confirmed.push(e);
