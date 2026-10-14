@@ -39,9 +39,9 @@ function completeShape(analysis){
  // adapter must never certify a finding whose evidence/provenance was dropped
  // while moving between report formats or truncated by another component.
  if(findings.some(f=>!f||typeof f!=='object'||Array.isArray(f)||
-    typeof f.rule!=='string'||!f.rule||
+    typeof f.rule!=='string'||!f.rule.trim()||
     !['BLOCKER','HIGH','MEDIUM','LOW'].includes(f.severity)||
-    typeof f.path!=='string'||!Number.isSafeInteger(f.line)||f.line<0||
+    typeof f.path!=='string'||!f.path.trim()||!Number.isSafeInteger(f.line)||f.line<0||
     !['high','medium','low'].includes(f.confidence)||
     typeof f.evidence!=='string'||!f.evidence.trim()||
     typeof f.reason!=='string'||!f.reason.trim()||
@@ -95,6 +95,7 @@ function completeShape(analysis){
      suggestion.status!=='DRAFT_REQUIRES_VALIDATION'||suggestion.autofix!==false||
      typeof suggestion.title!=='string'||!suggestion.title.trim()||
      typeof suggestion.test!=='string'||!suggestion.test.trim()||
+     typeof suggestion.handoff!=='string'||!suggestion.handoff.trim()||
      typeof suggestion.caution!=='string'||!suggestion.caution.trim()||
      !Array.isArray(suggestion.steps)||suggestion.steps.length===0||
      suggestion.steps.some(step=>typeof step!=='string'||!step.trim()))
