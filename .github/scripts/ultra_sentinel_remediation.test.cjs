@@ -3,6 +3,12 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const {RULES,makeSuggestion,buildRemediations,markdown}=require('./ultra_sentinel_remediation.cjs');
 const core=require('./ultra_sentinel_core.cjs');
+// Core enriches each planner draft with bounded memory; synthetic fixtures
+// must model that contract rather than omitting the required property.
+const buildCoreRemediations=review=>{
+ const rem=buildRemediations(review);
+ return {...rem,suggestions:rem.suggestions.map(s=>({...s,relatedEvidence:[]}))};
+};
 const path='app/src/main/java/com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt';
 const f=(rule,evidence='startListening(intent)')=>({rule,severity:'HIGH',confidence:'medium',path,line:88,evidence});
 test('repair planner covers all dedicated rules',()=>{
@@ -248,7 +254,7 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  // The adapter must preserve that documented cap rather than creating extras.
  const forty=Array.from({length:40},(_,i)=>({...r.findings[0],line:i+100}));
  const capped={...r,findings:forty,
-  remediations:buildRemediations({sha:r.sha,findings:forty})};
+  remediations:buildCoreRemediations({sha:r.sha,findings:forty})};
  assert.equal(modes.present(capped).remediations.suggestions.length,35);
  // P2 family: Core promises BLOCKER > HIGH > MEDIUM > LOW, then filename
  // (localeCompare), then ascending line. A jointly permuted finding+repair
@@ -267,7 +273,7 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  const blocker=critical('BLOCKER','app/src/main/java/demo/Blocker.kt',1);
  const candidate=(list)=>({...r,findings:list,
   coverage:{returned:list.length,analyzed:list.length,partial:false},
-  remediations:buildRemediations({sha:r.sha,findings:list}),omitted:0,
+  remediations:buildCoreRemediations({sha:r.sha,findings:list}),omitted:0,
   verdict:'REVIEW_REQUIRED'});
  const ordered=candidate([high,...med]);
  const orderedReport=require('./ultra_sentinel_report.cjs').buildReport({
@@ -353,7 +359,7 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  for(const visible of [0,1,2,10,35,39]){
   const shortFindings=overflowing.findings.slice(0,visible);
   const malformed={...overflowing,findings:shortFindings,
-   remediations:buildRemediations({sha:overflowing.sha,findings:shortFindings})};
+   remediations:buildCoreRemediations({sha:overflowing.sha,findings:shortFindings})};
   for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
    assert.throws(()=>modes.present(malformed,mode),/INCOMPLETE_ANALYSIS/,
     'omitted>0 must not accept '+visible+' visible findings');
@@ -361,7 +367,7 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  const forgedHigh={...overflowing.findings[0],severity:'HIGH'};
  const inconsistent={...overflowing,
   findings:[forgedHigh,...overflowing.findings.slice(1)],
-  remediations:buildRemediations({sha:overflowing.sha,
+  remediations:buildCoreRemediations({sha:overflowing.sha,
    findings:[forgedHigh,...overflowing.findings.slice(1)]})
  };
  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
