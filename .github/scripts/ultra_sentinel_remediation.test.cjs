@@ -197,10 +197,21 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  }],{sha:r.sha});
  const pathAlerts=longReview.findings.filter(x=>x.rule==='FORCED_GC');
  assert.equal(pathAlerts.length,2,'both Core findings must remain represented');
- assert.notEqual(pathAlerts[0].path,pathAlerts[1].path,
-  'sanitized paths must not collapse distinct affected files');
+ // Core 2.0.0 currently truncates paths to 185 chars; preserve a
+ // conservative partial report rather than trusting ambiguous identities.
+ assert.equal(pathAlerts[0].path,pathAlerts[1].path,
+  'the regression must reproduce an authentic Core path collision');
  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
-  assert.doesNotThrow(()=>modes.present(longReview,mode));
+  const presented=modes.present(longReview,mode);
+  assert.equal(presented.verdict,'INCOMPLETE');
+  assert.equal(presented.coverage.partial,true);
+  assert.equal(presented.familyHunter.status,'INCOMPLETE_ANALYSIS');
+  assert.equal(presented.remediations.suggestions.length,0);
+  const report=require('./ultra_sentinel_report.cjs').buildReport({
+   pr:194,sha:r.sha,analysis:presented
+  });
+  assert.equal(report.status,'incomplete');
+  assert.equal(report.partial,true);
  }
  const coreFinding=r.findings[0];
  for(const missing of ['confidence','evidence','reason','verification',
