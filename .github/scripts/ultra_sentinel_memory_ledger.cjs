@@ -40,12 +40,26 @@ function boundedEntry(raw){
   raw.tests.every(t=>typeof t==='string'&&!!t.trim()&&t.length<=220);
 }
 function parseLedger(value){
- if(!isRecord(value)||value.schema!==SCHEMA||
-    !Number.isSafeInteger(value.revision)||value.revision<0||
-    !Array.isArray(value.entries)||value.entries.length>MAX_RECORDS)
+ // Snapshot every untrusted header field once. Re-reading a getter or proxy
+ // after checking MAX_RECORDS would permit an oversized second value.
+ if(!isRecord(value))throw Error('INVALID_LEDGER_HEADER');
+ let schema,revision,rawEntries,entryCount;
+ try{
+  schema=value.schema;
+  revision=value.revision;
+  rawEntries=value.entries;
+  if(!Array.isArray(rawEntries))throw Error('INVALID_LEDGER_HEADER');
+  entryCount=rawEntries.length;
+ }catch{throw Error('INVALID_LEDGER_HEADER');}
+ if(schema!==SCHEMA||!Number.isSafeInteger(revision)||revision<0||
+    !Number.isSafeInteger(entryCount)||entryCount<0||entryCount>MAX_RECORDS)
   throw Error('INVALID_LEDGER_HEADER');
  const ids=new Set(),entries=[];
- for(const raw of value.entries){
+ // A for-of loop over untrusted arrays consults Symbol.iterator and length
+ // repeatedly. Indexing a prevalidated count keeps processing bounded.
+ for(let index=0;index<entryCount;index++){
+  let raw;
+  try{raw=rawEntries[index];}catch{throw Error('INVALID_LEDGER_ENTRY');}
   if(!isRecord(raw))throw Error('INVALID_LEDGER_ENTRY');
   // One read of each untrusted property. Validate and persist this exact
   // snapshot: accessors cannot swap a valid primitive for an unsafe value.
