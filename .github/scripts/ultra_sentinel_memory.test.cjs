@@ -246,3 +246,43 @@ test('camelCase identifiers tokenize before lowercasing and retrieve playbook',(
  assert.deepEqual(m.terms('startListening'),['start','listening']);
  assert.ok(m.search({text:'SpeechRecognizer'}).some(x=>x.id==='pattern-voice-retry'));
 });
+
+test('curated ranking remains authentic if sort and push are monkeypatched',()=>{
+ const query={text:'SpeechRecognizer onError recursive retry',domain:'voice'};
+ const baseline=m.search(query,[],5);
+ const sort=Array.prototype.sort,push=Array.prototype.push;
+ let hardened;
+ try{
+  Array.prototype.sort=()=>{throw Error('POISONED_SORT');};
+  Array.prototype.push=function(...items){
+   if(items.some(item=>item&&item.verification==='curated_playbook'))
+    throw Error('POISONED_CURATED_PUSH');
+   return Reflect.apply(push,this,items);
+  };
+  hardened=m.search(query,[],5);
+ }finally{
+  Array.prototype.sort=sort;
+  Array.prototype.push=push;
+ }
+ assert.deepEqual(hardened,baseline);
+ assert.equal(new Set(hardened.map(row=>row.id)).size,hardened.length);
+ assert.ok(hardened.every(row=>row.verification==='curated_playbook'));
+});
+
+test('ledger snapshots a proxied tests length once before copying',()=>{
+ const ledger=require('./ultra_sentinel_memory_ledger.cjs');
+ const entry={id:'verified-proxy-case',type:'verified_fix',fixSha:sha,
+  testSha:b,evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/197',
+  rule:'SPEECH_REENTRANT_RETRY',domain:'voice',
+  summary:'Proxied evidence summary with enough validation details',
+  advice:'Validate a one-read bounded test count before storing evidence',
+  tests:null};
+ let lengthReads=0;
+ entry.tests=new Proxy(['bounded snapshot test'],{get(target,key,receiver){
+  if(key==='length'){lengthReads++;return lengthReads===1?1:1000000;}
+  return Reflect.get(target,key,receiver);
+ }});
+ const parsed=ledger.parseLedger({schema:ledger.SCHEMA,revision:1,entries:[entry]});
+ assert.equal(lengthReads,1,'proxy length must never be polled repeatedly');
+ assert.deepEqual(parsed[0].tests,['bounded snapshot test']);
+});
