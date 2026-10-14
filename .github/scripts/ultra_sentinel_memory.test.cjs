@@ -47,6 +47,16 @@ test('unknown query no invented evidence',()=>{
  }finally{String.prototype.match=nativeMatch;}
  assert.deepEqual(spoofedMatchResults,[],
   'poisoned String.match must never fabricate matching playbooks');
+ // Independent P2: swapping the global String after module load must not
+ // manufacture relevance for an unrelated query.
+ const trustedString=String;
+ let resultsWithPoisonedString;
+ try{
+  globalThis.String=()=> 'SpeechRecognizer onError startListening';
+  resultsWithPoisonedString=m.search(unknown);
+ }finally{globalThis.String=trustedString;}
+ assert.deepEqual(resultsWithPoisonedString,[],
+  'poisoned global String must not fabricate relevance');
 });
 test('verified memory requires fix and test sha',()=>{
  const e={id:'fix-2026-001',type:'verified_fix',fixSha:sha,testSha:b,
@@ -177,6 +187,16 @@ test('extra verified records include provenance',async()=>{
  assert.throws(()=>{ledger.searchVerified=async()=>[{verification:'confirmed_tests'}];},
   TypeError,'a consumer must not replace the ledger certification entrypoint');
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
+ // Independent P2: Set.prototype.has cannot bypass duplicate ID rejection.
+ const originalHas=Set.prototype.has;
+ let acceptedRepeatedId=false,duplicateError;
+ try{
+  Set.prototype.has=()=>false;
+  try{ledger.parseLedger({...raw,entries:[e,e]});acceptedRepeatedId=true;}
+  catch(error){duplicateError=error;}
+ }finally{Set.prototype.has=originalHas;}
+ assert.equal(acceptedRepeatedId,false,'duplicate ledger IDs must fail closed');
+ assert.match(String(duplicateError?.message),/INVALID_LEDGER_ENTRY/);
  // Codex P2: normalization must preserve the validated SHA primitives when
  // String.prototype.toLowerCase is poisoned even after a valid snapshot.
  const uppercaseEntry={...e,fixSha:'A'.repeat(40),testSha:'B'.repeat(40)};
