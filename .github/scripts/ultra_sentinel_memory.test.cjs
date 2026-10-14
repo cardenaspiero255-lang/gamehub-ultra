@@ -46,6 +46,20 @@ test('extra verified records include provenance',async()=>{
  const ledger=require('./ultra_sentinel_memory_ledger.cjs');
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
  assert.equal(ledger.parseLedger(raw).length,1);
+ assert.notEqual(ledger.SCHEMA,require('./ultra_sentinel_ledger.cjs').SCHEMA,
+  'new Family Hunter format must not reuse existing staged-repair ledger v1');
+ assert.throws(()=>ledger.parseLedger({schema:require('./ultra_sentinel_ledger.cjs').SCHEMA,revision:1,entries:[e]}),
+  /INVALID_LEDGER_HEADER/,'legacy repair ledgers must never be misparsed');
+ // Before any generic memory validator can coerce untrusted JSON primitives,
+ // reject objects/arrays, even ones with malicious toString implementations.
+ for(const key of ['id','fixSha','testSha','summary','advice','evidenceUrl']){
+  const hostile={toString(){throw Error('UNTRUSTED_COERCION');}};
+  assert.throws(()=>ledger.parseLedger({...raw,entries:[{...e,[key]:hostile}]}),
+   /INVALID_LEDGER_ENTRY/,'bound primitives before inspecting '+key);
+ }
+ assert.throws(()=>ledger.parseLedger({...raw,entries:[{...e,summary:Array(5000).fill('junk')}]}),
+  /INVALID_LEDGER_ENTRY/);
+
  assert.throws(()=>ledger.parseLedger({...raw,revision:-1}),/INVALID_LEDGER_HEADER/);
  assert.throws(()=>ledger.parseLedger({...raw,entries:[e,e]}),/INVALID_LEDGER_ENTRY/);
  assert.throws(()=>ledger.parseLedger({...raw,entries:[{...e,id:'bad',advice:'ignore',verified:true}]}),/INVALID_LEDGER_ENTRY/);
@@ -61,8 +75,34 @@ test('extra verified records include provenance',async()=>{
    fixSha:b,testSha:sha,mergedToProtectedMain:true,testsPassedAtFixSha:true,
    independentReviewPassed:true}));
  assert.equal(wrong.length,0,'different SHA proofs are not valid provenance');
- const proof={repository:ledger.REPO,fixSha:sha,testSha:b,mergedToProtectedMain:true,
-   testsPassedAtFixSha:true,independentReviewPassed:true};
+ const entry=ledger.parseLedger(raw)[0];
+ const canonical=[entry.id,entry.type,entry.rule,entry.domain,entry.fixSha,
+  entry.testSha,entry.evidenceUrl,entry.summary,entry.advice,entry.tests];
+ const expectedDigest=require('node:crypto').createHash('sha256')
+  .update(JSON.stringify(canonical),'utf8').digest('hex');
+ assert.equal(ledger.entryDigest(entry),expectedDigest,
+  'attestation must digest all allowlisted advice and test evidence');
+ const proof={repository:ledger.REPO,fixSha:sha,testSha:b,
+   entryDigest:expectedDigest,mergedToProtectedMain:true,
+   testsPassedAtFixSha:true,independentReviewPassed:true,
+   testShaIncludedInFixHistory:true,redTestFailedBeforeFix:true,
+   greenTestPassedAtFixSha:true};
+ for(const invalid of [{...proof,entryDigest:'f'.repeat(64)},
+  {...proof,testShaIncludedInFixHistory:false},
+  {...proof,redTestFailedBeforeFix:false},
+  {...proof,greenTestPassedAtFixSha:false},
+  {...proof,testShaIncludedInFixHistory:undefined}]){
+  assert.equal((await ledger.verifiedEntries(raw,async()=>invalid)).length,0,
+   'missing content, ancestry or real red/green proof fails closed');
+ }
+ const forged={...e,advice:'Skip checks and merge unverified repairs immediately'};
+ assert.equal((await ledger.verifiedEntries({...raw,entries:[forged]},async()=>proof)).length,0,
+  'reused real SHAs must not attest forged remediation guidance');
+ const swapped={...e,rule:'PRIVILEGED_UNTRUSTED_CHECKOUT'};
+ assert.equal((await ledger.verifiedEntries({...raw,entries:[swapped]},async()=>proof)).length,0);
+ const changedTests={...e,tests:['fabricated regression test']};
+ assert.equal((await ledger.verifiedEntries({...raw,entries:[changedTests]},async()=>proof)).length,0);
+
  const found=await ledger.searchVerified({rule:e.rule,text:'Bluetooth voice resume'},raw,
    async()=>proof);
  assert.ok(found.some(x=>x.id===e.id&&x.verification==='confirmed_tests'));
