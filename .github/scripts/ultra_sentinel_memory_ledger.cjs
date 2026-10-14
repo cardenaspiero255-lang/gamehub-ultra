@@ -12,6 +12,11 @@ const SCHEMA='ultra-sentinel-family-hunter-memory/v1';
 const REPO='cardenaspiero255-lang/gamehub-ultra';
 const MAX_RECORDS=200;
 const MAX_FIELD=1500;
+// Independently reviewed digest allowlist. Initially empty: there are no
+// externally attested historical fixes yet. A callback supplied by an
+// untrusted caller can NEVER add entries or grant authority. New digests
+// require a protected-main code review with actual red/green provenance.
+const APPROVED_DIGESTS=Object.freeze([]);
 const isRecord=o=>o!==null&&typeof o==='object'&&!Array.isArray(o);
 const hex=x=>typeof x==='string'&&/^[a-f0-9]{40}$/i.test(x);
 const validUrl=x=>typeof x==='string'&&x.length<=230&&
@@ -67,6 +72,10 @@ async function verifiedEntries(ledger,verifier){
  const entries=parseLedger(ledger),confirmed=[];
  for(const e of entries){
   const digest=entryDigest(e);
+  // Digest approval is pinned to trusted source, independent of the callback.
+  // A fake verifier may echo every requested boolean but cannot authorize
+  // an unreviewed payload. Do not derive this set from ledger input or flags.
+  if(!APPROVED_DIGESTS.includes(digest))continue;
   const facts=await verifier({repository:REPO,fixSha:e.fixSha,testSha:e.testSha,
    evidenceUrl:e.evidenceUrl,entryDigest:digest});
   if(!isRecord(facts)||facts.repository!==REPO||
@@ -82,9 +91,41 @@ async function verifiedEntries(ledger,verifier){
  }
  return Object.freeze(confirmed);
 }
+// Only verifiedEntries may contribute historical fixes; untrusted callers
+// cannot make direct memory.search mark arbitrary extra records as confirmed.
+function rankApproved(query,entries){
+ let rule='',domain='',parts=[];
+ if(typeof query==='string')parts=[query];
+ else if(isRecord(query)){
+  if(typeof query.rule==='string'){rule=query.rule;parts.push(rule);}
+  if(typeof query.path==='string')parts.push(query.path);
+  if(typeof query.reason==='string')parts.push(query.reason);
+  if(typeof query.text==='string')parts.push(query.text);
+  if(typeof query.domain==='string')domain=query.domain;
+ }
+ const q=memory.terms(parts.join(' '));
+ if(!q.length)return [];
+ const out=[];
+ for(const entry of entries){
+  const tokens=memory.terms(entry.summary+' '+entry.rule+' '+entry.domain);
+  let score=0;
+  for(const token of q){if(tokens.includes(token))score+=1;}
+  if(rule&&rule===entry.rule)score+=7;
+  if(domain&&domain===entry.domain)score+=2;
+  if(score<=0)continue;
+  out.push({id:entry.id,type:'verified_fix',domain:entry.domain,rule:entry.rule,
+   score:Number(score.toFixed(3)),advice:entry.advice.slice(0,380),
+   tests:entry.tests.slice(0,4).map(x=>x.slice(0,180)),
+   evidenceUrl:entry.evidenceUrl,verification:'confirmed_tests'});
+ }
+ return out;
+}
 async function searchVerified(query,ledger,verifier,max=3){
  const approved=await verifiedEntries(ledger,verifier);
- return memory.search(query,approved,max);
+ const limit=Math.max(0,Math.min(5,Number(max)||3));
+ const curated=memory.search(query,[],5);
+ return [...curated,...rankApproved(query,approved)].sort((a,b)=>
+  b.score-a.score||a.id.localeCompare(b.id)).slice(0,limit);
 }
 // Export inert primitive literals directly so the trusted main provenance
 // analyzer can certify CommonJS exports without guessing a string alias.
