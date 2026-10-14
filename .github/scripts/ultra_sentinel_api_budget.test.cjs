@@ -91,6 +91,26 @@ test('GitHub secondary 403 with no rate headers retries after 60 seconds, once o
  assert.deepEqual(pauses,[60000]);
 });
 test('plain GitHub forbidden 403 never retries or weakens permissions',async()=>{
+ // Fail closed on persistent gateway failures but retry a transient 5xx
+ // exactly once. Never treat them as verified evidence or an approval.
+ for(const status of [500,502,503,504]){
+  const delays=[];let calls=0;
+  const get=createGitHubReader(repo,'test-token-value',async()=>{
+   calls++;return calls===1?reply(status,{message:'temporary'}):
+    reply(200,{files:2});
+  },{pause:async ms=>delays.push(ms)});
+  assert.deepEqual(await get('pulls/194/files?per_page=100'),{files:2});
+  assert.equal(calls,2);
+  assert.deepEqual(delays,[1000]);
+ }
+ let failures=0;
+ const failed=createGitHubReader(repo,'test-token-value',async()=>{
+  failures++;return reply(503,{message:'unavailable'});
+ },{pause:async()=>undefined});
+ await assert.rejects(()=>failed('pulls/194/files?per_page=100'),
+  /GITHUB_API_UNAVAILABLE/);
+ assert.equal(failures,2,'persistent 5xx must still block merge and reviews');
+
  let calls=0;
  const get=createGitHubReader(repo,'test-token-value',async()=>{
   calls++;return reply(403,{message:'Resource not accessible by integration'});
