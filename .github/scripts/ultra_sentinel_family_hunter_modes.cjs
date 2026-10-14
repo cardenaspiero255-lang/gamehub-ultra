@@ -11,7 +11,7 @@ function resolveMode(requested){
 // Core 2.0.0 searches only built-in curated playbooks (extra=[]), never a
 // user-contributed verified_fix. Match the actual curated source content to
 // prevent a copied ID or fabricated "confirmed_tests" label becoming proof.
-const {KNOWN:CURATED_MEMORY}=require('./ultra_sentinel_memory.cjs');
+const {getCuratedPlaybookById}=require('./ultra_sentinel_memory.cjs');
 const CORE_DOMAIN_FILES=Object.freeze({
  voice:'speech/notes.md',ai:'frontier/notes.md',
  network:'dns/notes.md',performance:'thermal/notes.md',
@@ -50,7 +50,7 @@ function validRelatedEvidence(items){
      typeof item.score!=='number'||!Number.isFinite(item.score)||item.score<=0||
      !Array.isArray(item.tests))return false;
   seen.add(item.id);
-  const entry=CURATED_MEMORY.find(x=>x.id===item.id);
+  const entry=getCuratedPlaybookById(item.id);
   if(!entry||item.domain!==entry.domain||item.rule!==entry.rule||
      item.advice!==entry.advice.slice(0,380))return false;
   const tests=entry.tests.slice(0,4).map(t=>String(t).slice(0,180));
