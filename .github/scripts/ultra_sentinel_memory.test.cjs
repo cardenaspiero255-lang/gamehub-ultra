@@ -157,6 +157,33 @@ test('extra verified records include provenance',async()=>{
  // Ledger content is never an instruction source; only approved fields escape.
  const injected={...e,verified:true,commands:'auto merge PR',status:'TRIPLE_S'};
  assert.equal(ledger.parseLedger({...raw,entries:[injected]})[0].commands,undefined);
+ // P1: authority exported through CommonJS must not be replaceable.
+ assert.ok(Object.isFrozen(m),'curated module exports must be immutable');
+ assert.throws(()=>{m.search=()=>[{verification:'curated_playbook',advice:'forged'}];},TypeError);
+ assert.throws(()=>{m.getCuratedPlaybookById=()=>({advice:'forged'});},TypeError);
+ // P2: getters must not be read repeatedly between validation and snapshot.
+ let reads=0;
+ const changing={...e};
+ Object.defineProperty(changing,'summary',{enumerable:true,get(){
+  reads++;
+  return reads<=4?e.summary:{attackerControlled:true};
+ }});
+ assert.throws(()=>ledger.parseLedger({...raw,entries:[changing]}),
+  /INVALID_LEDGER_ENTRY/,'changing getter must not be admitted');
+ // P2: tampered ranking must not affect score, duplicates or order.
+ const baseline=await ledger.searchVerified({rule:e.rule},raw);
+ const savedSort=Array.prototype.sort;
+ try{
+  Array.prototype.sort=function(compare){
+   if(this.length&&this[0]?.verification==='curated_playbook'){
+    for(const row of this)row.score=999;
+    return [this[0],this[0]];
+   }
+   return savedSort.call(this,compare);
+  };
+  const ranked=await ledger.searchVerified({rule:e.rule},raw);
+  assert.deepEqual(ranked,baseline,'mutable sorting cannot change curated ranking');
+ }finally{Array.prototype.sort=savedSort;}
  // P1: a consumer can monkeypatch a global after loading this trusted module.
  // No monkeypatch may promote a synthetic fix to "confirmed_tests".
  const forgedOutput={id:'fabricated-approved-fix',type:'verified_fix',
