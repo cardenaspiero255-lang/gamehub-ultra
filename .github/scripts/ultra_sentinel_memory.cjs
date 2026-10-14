@@ -2,31 +2,26 @@
 /* Ultra Sentinel evidence memory — deterministic/offline; never learns from unverified bot output. */
 const VERSION='1.0.0',MAX_ENTRIES=500,MAX_QUERY=1200;
 const STOP=new Set(['the','and','for','this','from','into','with','para','que','los','las','una','por','del','error','file','test','code','kotlin','android','github','line','app','src','main','java','com','gamehubultra']);
-const KNOWN=[
- {id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
+const KNOWN=Object.freeze([
+ Object.freeze({id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
   summary:'SpeechRecognizer onError synchronous startListening recursion stack overflow restart retry gate lifecycle',
   advice:'Reutilizar VoiceRecognitionRetryGate; programar reintento cancelable mediante Handler y comprobar ciclo de vida.',
-  tests:['100 callbacks onError sin recursión','destruir sesión cancela el próximo reintento']},
- {id:'pattern-android-scope',type:'playbook',domain:'android',rule:'UNSCOPED_COROUTINE',
+  tests:Object.freeze(['100 callbacks onError sin recursión','destruir sesión cancela el próximo reintento'])}),
+ Object.freeze({id:'pattern-android-scope',type:'playbook',domain:'android',rule:'UNSCOPED_COROUTINE',
   summary:'GlobalScope launch coroutine cancelled Activity ViewModel Service leak lifecycle',
   advice:'Usar el CoroutineScope existente ligado al propietario, no elegir lifecycleScope sin comprobar el componente.',
-  tests:['cierre del propietario cancela jobs','CancellationException se propaga']},
- {id:'pattern-recursion',type:'playbook',domain:'android',rule:'UNBOUNDED_RECURSION',
+  tests:Object.freeze(['cierre del propietario cancela jobs','CancellationException se propaga'])}),
+ Object.freeze({id:'pattern-recursion',type:'playbook',domain:'android',rule:'UNBOUNDED_RECURSION',
   summary:'recursive function stack overflow node graph cycle visited depth limit terminating',
   advice:'Revisar función completa; acotar profundidad o visited sin introducir fallback inválido.',
-  tests:['grafo cíclico acotado','entrada profunda sin StackOverflowError']},
- {id:'pattern-ci-trust',type:'playbook',domain:'ci',rule:'PRIVILEGED_UNTRUSTED_CHECKOUT',
+  tests:Object.freeze(['grafo cíclico acotado','entrada profunda sin StackOverflowError'])}),
+ Object.freeze({id:'pattern-ci-trust',type:'playbook',domain:'ci',rule:'PRIVILEGED_UNTRUSTED_CHECKOUT',
   summary:'pull_request_target privileged checkout fork untrusted code secrets permissions',
   advice:'Ejecutar scripts de la rama base confiable en job privilegiado; tratar cambios del PR como datos.',
-  tests:['fork no accede a secrets','permisos mínimos por job']}
-];
-// This array is a trusted authority for curated playbook identity. It MUST
-// remain immutable in memory, including nested regression-test descriptions.
-for(const entry of KNOWN){
- Object.freeze(entry.tests);
- Object.freeze(entry);
-}
-Object.freeze(KNOWN);
+  tests:Object.freeze(['fork no accede a secrets','permisos mínimos por job'])})
+]);
+// Freeze each source entry and nested tests at construction time. Keeping
+// the authority private prevents untrusted consumer mutation or ID spoofing.
 function terms(value){
  const s=String(value||'').slice(0,MAX_QUERY).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
  return [...new Set((s.match(/[a-z0-9_]{3,}/g)||[]).filter(x=>!STOP.has(x)))];
