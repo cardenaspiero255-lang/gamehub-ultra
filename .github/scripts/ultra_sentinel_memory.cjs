@@ -59,7 +59,11 @@ function search(query,extra=[],max=3){
  }else{text=String(query||'');}
  const q=terms([rule,path,reason,text].filter(Boolean).join(' '));
  if(!q.length)return [];
- const corpus=[...KNOWN,...(Array.isArray(extra)?extra.slice(0,MAX_ENTRIES):[])].filter(vetted);
+ // Materialize one bounded list without a ternary union of arrays that
+ // the trusted capability analyser cannot establish as a single provenance.
+ const collection=[...KNOWN];
+ if(Array.isArray(extra))collection.push(...extra.slice(0,MAX_ENTRIES));
+ const corpus=collection.filter(vetted);
  const df=new Map();for(const e of corpus){for(const t of terms(e.summary+' '+e.rule+' '+e.domain)){df.set(t,(df.get(t)||0)+1)}}
  const scores=[];
  for(const e of corpus){
