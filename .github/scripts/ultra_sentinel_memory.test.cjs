@@ -35,6 +35,18 @@ test('unknown query no invented evidence',()=>{
  }finally{Set.prototype[Symbol.iterator]=setIterator;}
  assert.deepEqual(withSetIterator,[],
   'poisoned Set iterator must not fabricate matching query terms');
+ // Codex P2: forged String.match results cannot manufacture query relevance.
+ const nativeMatch=String.prototype.match;
+ let spoofedMatchResults;
+ try{
+  String.prototype.match=function(re){
+   if(String(this)===unknown)return ['speech'];
+   return nativeMatch.call(this,re);
+  };
+  spoofedMatchResults=m.search(unknown);
+ }finally{String.prototype.match=nativeMatch;}
+ assert.deepEqual(spoofedMatchResults,[],
+  'poisoned String.match must never fabricate matching playbooks');
 });
 test('verified memory requires fix and test sha',()=>{
  const e={id:'fix-2026-001',type:'verified_fix',fixSha:sha,testSha:b,
@@ -165,6 +177,19 @@ test('extra verified records include provenance',async()=>{
  assert.throws(()=>{ledger.searchVerified=async()=>[{verification:'confirmed_tests'}];},
   TypeError,'a consumer must not replace the ledger certification entrypoint');
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
+ // Codex P2: normalization must preserve the validated SHA primitives when
+ // String.prototype.toLowerCase is poisoned even after a valid snapshot.
+ const uppercaseEntry={...e,fixSha:'A'.repeat(40),testSha:'B'.repeat(40)};
+ const nativeLower=String.prototype.toLowerCase;
+ let normalized;
+ try{
+  String.prototype.toLowerCase=function(){
+   return {toJSON(){throw Error('POISONED_SHA_TO_JSON');}};
+  };
+  normalized=ledger.parseLedger({...raw,entries:[uppercaseEntry]});
+ }finally{String.prototype.toLowerCase=nativeLower;}
+ assert.equal(normalized[0].fixSha,sha,'fix SHA remains primitive and canonical');
+ assert.equal(normalized[0].testSha,b,'test SHA remains primitive and canonical');
  // P2: a global RegExp.test replacement must not bypass bounded primitive
  // validators, even if memory.vetted also sees the patched intrinsic.
  const nativeTest=RegExp.prototype.test;
