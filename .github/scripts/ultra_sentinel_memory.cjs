@@ -24,13 +24,36 @@ const KNOWN=Object.freeze([
 // the authority private prevents untrusted consumer mutation or ID spoofing.
 function terms(value){
  const s=String(value||'').slice(0,MAX_QUERY).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
- return [...new Set((s.match(/[a-z0-9_]{3,}/g)||[]).filter(x=>!STOP.has(x)))];
+ const matched=s.match(/[a-z0-9_]{3,}/g);
+ if(!matched)return [];
+ const distinct=new Set();
+ for(let i=0;i<matched.length;i++){
+  const token=matched[i];
+  if(!STOP.has(token))distinct.add(token);
+ }
+ return [...distinct];
+}
+function hasToken(tokens,needle){
+ for(let i=0;i<tokens.length;i++){
+  if(tokens[i]===needle)return true;
+ }
+ return false;
+}
+function curatedTests(tests){
+ // Preserve immutable private tests; avoid replaceable slice/map intrinsics.
+ if(tests.length<=4)return tests;
+ return [tests[0],tests[1],tests[2],tests[3]];
 }
 function vetted(entry){
  if(!entry||typeof entry!=='object')return false;
  // A matching public ID is not sufficient: an untrusted record could
  // impersonate a curated playbook and inject fabricated repair advice.
- if(entry.type==='playbook')return KNOWN.includes(entry);
+ if(entry.type==='playbook'){
+  for(let i=0;i<KNOWN.length;i++){
+   if(KNOWN[i]===entry)return true;
+  }
+  return false;
+ }
  if(entry.type!=='verified_fix')return false;
  const hex=x=>/^[a-f0-9]{40}$/i.test(x||'');
  const validUrl=u=>typeof u==='string'&&/^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[a-z0-9]+(?:\/)?$/.test(u);
@@ -65,7 +88,7 @@ function search(query,_extra=[],max=3){
   rule=query.rule;path=query.path;reason=query.reason;
   text=query.text;domain=query.domain;
  }else{text=String(query||'');}
- const q=terms([rule,path,reason,text].filter(Boolean).join(' '));
+ const q=terms(String(rule||'')+' '+String(path||'')+' '+String(reason||'')+' '+String(text||''));
  if(!q.length)return [];
  // A local array whose elements are later overwritten or re-bound cannot be
  // certified by the trusted-main callback provenance analyser. Rank directly
@@ -87,15 +110,15 @@ function search(query,_extra=[],max=3){
    const tokens=terms(e.summary+' '+e.rule+' '+e.domain);
    let score=0;
    for(const t of q){
-    if(tokens.includes(t))score+=Math.log(1+(corpus.length+1)/(df.get(t)||1));
+    if(hasToken(tokens,t))score+=Math.log(1+(corpus.length+1)/(df.get(t)||1));
    }
    if(rule&&e.rule===rule)score+=7;
    if(domain&&e.domain===domain)score+=2;
    if(score<=0)continue;
    const row={id:e.id,type:e.type,domain:e.domain||'general',
     rule:e.rule||'',score:Number(score.toFixed(3)),
-    advice:String(e.advice).slice(0,380),
-    tests:e.tests.slice(0,4).map(t=>String(t).slice(0,180)),
+    advice:e.advice,
+    tests:curatedTests(e.tests),
     evidenceUrl:evidenceLink(e),
     verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'};
    if(best===null||row.score>best.score||
