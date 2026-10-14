@@ -160,6 +160,17 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   assert.throws(()=>modes.present(bad,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,
    name+' mode 1');
  }
+ // Codex P2: malformed rule/path can be aligned with an equally malformed
+ // suggestion. Matching malformed fields must not make the record genuine.
+ for(const delta of [{rule:''},{rule:'   '},{path:''},{path:'   '}]){
+  const findings=[{...r.findings[0],...delta},...r.findings.slice(1)];
+  const suggestions=r.remediations.suggestions.map((s,i)=>
+   i===0?{...s,rule:findings[0].rule,path:findings[0].path}:s);
+  const bad={...r,findings,remediations:{...r.remediations,suggestions}};
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+   assert.throws(()=>modes.present(bad,mode),/INCOMPLETE_ANALYSIS/,
+    'empty or blank Core identity fields');
+ }
  // Codex P2 family: every advisory repair must refer to the exact finding
  // at the same index. No missing, foreign, duplicated or executable fixes.
  const suggestions=r.remediations.suggestions;
@@ -176,6 +187,10 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   ['claimed verified fix',changed(0,{status:'VERIFIED'})],
   ['untrusted autofix',changed(0,{autofix:true})],
   ['missing repair test',changed(0,{test:''})],
+  ['missing handoff',changed(0,{handoff:undefined})],
+  ['empty handoff',changed(0,{handoff:''})],
+  ['blank handoff',changed(0,{handoff:'   '})],
+  ['invalid handoff',changed(0,{handoff:{data:'untrusted'}})],
   ['no suggested steps',changed(0,{steps:[]})],
   ['non-string step',changed(0,{steps:[null]})],
   ['malformed solution',suggestions.map((s,i)=>i===0?null:s)]
