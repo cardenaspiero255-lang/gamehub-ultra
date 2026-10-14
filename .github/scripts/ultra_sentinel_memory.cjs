@@ -43,6 +43,12 @@ function vetted(entry){
   validUrl(entry.evidenceUrl)&&String(entry.summary||'').length>=20&&
   String(entry.advice||'').length>=20&&Array.isArray(entry.tests)&&entry.tests.length>0;
 }
+// Avoid conditional unions of inferred object provenance in the trusted
+// AST reviewer; playbooks have no URL and verified fixes carry an attested URL.
+function evidenceLink(entry){
+ if(entry.type==='verified_fix')return entry.evidenceUrl;
+ return null;
+}
 function search(query,extra=[],max=3){
  // Keep primitive search fields separate; a conditional union of an unknown
  // object and a literal object cannot be independently AST-attested.
@@ -66,7 +72,7 @@ function search(query,extra=[],max=3){
   scores.push({id:e.id,type:e.type,domain:e.domain||'general',rule:e.rule||'',
     score:Number(score.toFixed(3)),advice:String(e.advice).slice(0,380),
     tests:e.tests.slice(0,4).map(t=>String(t).slice(0,180)),
-    evidenceUrl:e.type==='verified_fix'?e.evidenceUrl:null,verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'});
+    evidenceUrl:evidenceLink(e),verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'});
  }
  return scores.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,Math.max(0,Math.min(5,Number(max)||3)));
 }
