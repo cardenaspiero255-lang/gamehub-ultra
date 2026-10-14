@@ -28,3 +28,14 @@ test('each mutant is paired with a real standalone test file',()=>{
 test('module changes are never written into source files by planner',()=>{
  const xs=plan();assert.equal(xs[0].file,'report');
 });
+
+test('every planned mutation anchor exists exactly once in the current source',()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ for(const mutant of plan()){
+  const source=fs.readFileSync(path.join(__dirname,'ultra_sentinel_'+mutant.file+'.cjs'),'utf8');
+  const first=source.indexOf(mutant.from);
+  assert.notEqual(first,-1,'missing anchor: '+mutant.id);
+  assert.equal(source.indexOf(mutant.from,first+mutant.from.length),-1,
+   'ambiguous anchor: '+mutant.id);
+ }
+});
