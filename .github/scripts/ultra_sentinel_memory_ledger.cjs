@@ -25,6 +25,16 @@ const isRecord=o=>o!==null&&typeof o==='object'&&!Array.isArray(o);
 const hex=x=>typeof x==='string'&&/^[a-f0-9]{40}$/i.test(x);
 const validUrl=x=>typeof x==='string'&&x.length<=230&&
  /^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[a-z0-9]+\/?$/.test(x);
+function boundedTests(tests){
+ if(!Array.isArray(tests))return false;
+ const count=tests.length;
+ if(!Number.isSafeInteger(count)||count<1||count>12)return false;
+ for(let i=0;i<count;i++){
+  const t=tests[i];
+  if(typeof t!=='string'||t.length>220||!t.trim())return false;
+ }
+ return true;
+}
 function boundedEntry(raw){
  // Bound decoded primitive types BEFORE memory.vetted() can coerce them.
  // Never stringify an untrusted object, array, getter or deep JSON value.
@@ -36,8 +46,7 @@ function boundedEntry(raw){
   hex(raw.fixSha)&&hex(raw.testSha)&&validUrl(raw.evidenceUrl)&&
   typeof raw.summary==='string'&&raw.summary.length>=20&&raw.summary.length<=MAX_FIELD&&
   typeof raw.advice==='string'&&raw.advice.length>=20&&raw.advice.length<=MAX_FIELD&&
-  Array.isArray(raw.tests)&&raw.tests.length>0&&raw.tests.length<=12&&
-  raw.tests.every(t=>typeof t==='string'&&!!t.trim()&&t.length<=220);
+  boundedTests(raw.tests);
 }
 function parseLedger(value){
  // Snapshot every untrusted header field once. Re-reading a getter or proxy
@@ -149,3 +158,4 @@ async function searchVerified(query,ledger,_ignoredVerifier,max=3){
 module.exports={SCHEMA:'ultra-sentinel-family-hunter-memory/v1',
  REPO:'cardenaspiero255-lang/gamehub-ultra',MAX_RECORDS:200,
  parseLedger,entryDigest,verifiedEntries,searchVerified};
+Object.freeze(module.exports);
