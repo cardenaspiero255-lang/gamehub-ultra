@@ -111,6 +111,19 @@ function boundedEntry(raw){
   typeof raw.advice==='string'&&raw.advice.length>=20&&raw.advice.length<=MAX_FIELD&&
   boundedTests(raw.tests);
 }
+// Each accepted ID is ASCII [A-Za-z0-9_-], so the delimiter cannot appear
+// in a validated ID. Never trust mutable Set.prototype.has/add for authority.
+function recordedId(packed,id){
+ let candidate='';
+ for(let i=0;i<packed.length;i++){
+  const c=packed[i];
+  if(c==='|'){
+   if(candidate===id)return true;
+   candidate='';
+  }else candidate+=c;
+ }
+ return false;
+}
 function parseLedger(value){
  // Snapshot every untrusted header field once. Re-reading a getter or proxy
  // after checking MAX_RECORDS would permit an oversized second value.
@@ -126,7 +139,7 @@ function parseLedger(value){
  if(schema!==SCHEMA||!Number.isSafeInteger(revision)||revision<0||
     !Number.isSafeInteger(entryCount)||entryCount<0||entryCount>MAX_RECORDS)
   throw Error('INVALID_LEDGER_HEADER');
- const ids=new Set();
+ let recordedIds='|';
  // Captured native Array.from maps exactly the validated count, without
  // mutable Array.prototype.push or a hostile source iterator.
  const entries=TRUSTED_ARRAY_FROM({length:entryCount},(_,index)=>{
@@ -146,9 +159,9 @@ function parseLedger(value){
    const copy=TRUSTED_ARRAY_FROM({length:count},(_,i)=>tests[i]);
    snap={id,type,rule,domain,fixSha,testSha,evidenceUrl,summary,advice,tests:copy};
   }catch{throw Error('INVALID_LEDGER_ENTRY');}
-  if(!boundedEntry(snap)||!memory.vetted(snap)||ids.has(snap.id))
+  if(!boundedEntry(snap)||!memory.vetted(snap)||recordedId(recordedIds,snap.id))
    throw Error('INVALID_LEDGER_ENTRY');
-  ids.add(snap.id);
+  recordedIds+=snap.id+'|';
   return TRUSTED_FREEZE({id:snap.id,type:'verified_fix',rule:snap.rule,
    domain:snap.domain,fixSha:canonicalHex(snap.fixSha),testSha:canonicalHex(snap.testSha),
    evidenceUrl:snap.evidenceUrl,summary:snap.summary,advice:snap.advice,
