@@ -5,6 +5,7 @@ const STOP=Object.freeze(['the','and','for','this','from','into','with','para','
 // Capture arithmetic intrinsics while loading trusted code, before consumers
 // can alter their global prototypes or Math properties.
 const TRUSTED_LOG=Math.log,TRUSTED_ROUND=Math.round;
+const TRUSTED_ARRAY_FROM=Array.from;
 const KNOWN=Object.freeze([
  Object.freeze({id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
   summary:'SpeechRecognizer onError synchronous startListening recursion stack overflow restart retry gate lifecycle',
@@ -32,23 +33,54 @@ function isStopWord(token){
  return false;
 }
 function terms(value){
- const s=String(value||'').slice(0,MAX_QUERY).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
- const matched=s.match(/[a-z0-9_]{3,}/g);
- if(!matched)return [];
- // Only regex-delimited [a-z0-9_] tokens enter this string. Building
- // the output with the native regex engine avoids mutable Array/Set methods,
- // inherited iterators and dynamic indexed writes rejected by trusted AST.
- let accepted='';
- for(let i=0;i<matched.length;i++){
-  const token=matched[i];
-  if(isStopWord(token))continue;
-  let duplicate=false;
-  for(let j=0;j<i;j++){
-   if(matched[j]===token){duplicate=true;break;}
+ // Parse ASCII tokens without mutable String/RegExp prototype dispatch.
+ // The packed representation has no externally writable array slots.
+ const input=String(value||'');
+ const end=input.length<MAX_QUERY?input.length:MAX_QUERY;
+ const upper='ABCDEFGHIJKLMNOPQRSTUVWXYZ',lower='abcdefghijklmnopqrstuvwxyz';
+ let packed='',word='',count=0,lastLower=false;
+ for(let i=0;i<=end;i++){
+  const c=i===end?' ':input[i];
+  const isLower=c>='a'&&c<='z';
+  const isUpper=c>='A'&&c<='Z';
+  const isToken=isLower||isUpper||(c>='0'&&c<='9')||c==='_';
+  const boundary=!isToken||(lastLower&&isUpper);
+  if(boundary){
+   if(word.length>=3&&!isStopWord(word)){
+    let duplicate=false,previous='';
+    for(let j=0;j<packed.length;j++){
+     if(packed[j]===' '){
+      if(previous===word){duplicate=true;break;}
+      previous='';
+     }else previous+=packed[j];
+    }
+    if(!duplicate){packed+=word+' ';count++;}
+   }
+   word='';
   }
-  if(!duplicate)accepted+=token+' ';
+  if(isToken){
+   if(isUpper){
+    for(let j=0;j<26;j++){
+     if(upper[j]===c){word+=lower[j];break;}
+    }
+   }else word+=c;
+  }
+  lastLower=isLower;
  }
- return accepted.match(/[a-z0-9_]{3,}/g)||[];
+ // A captured native Array.from constructs dense slots without consulting
+ // Array.prototype.push, the iterator, or mutable regex/string methods.
+ const tokenPack=packed,tokenCount=count;
+ return TRUSTED_ARRAY_FROM({length:tokenCount},(_,wanted)=>{
+  let seen=0,token='';
+  for(let i=0;i<tokenPack.length;i++){
+   const c=tokenPack[i];
+   if(c===' '){
+    if(seen===wanted)return token;
+    seen++;token='';
+   }else token+=c;
+  }
+  return '';
+ });
 }
 function hasToken(tokens,needle){
  for(let i=0;i<tokens.length;i++){
