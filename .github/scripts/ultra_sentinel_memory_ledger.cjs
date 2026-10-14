@@ -54,8 +54,10 @@ function parseLedger(value){
    const id=raw.id,type=raw.type,rule=raw.rule,domain=raw.domain;
    const fixSha=raw.fixSha,testSha=raw.testSha,evidenceUrl=raw.evidenceUrl;
    const summary=raw.summary,advice=raw.advice,tests=raw.tests;
-   if(!Array.isArray(tests)||tests.length>12)throw Error('INVALID_LEDGER_ENTRY');
-   const copy=[];for(let i=0;i<tests.length;i++)copy[i]=tests[i];
+   if(!Array.isArray(tests))throw Error('INVALID_LEDGER_ENTRY');
+   const count=tests.length;
+   if(!Number.isSafeInteger(count)||count<1||count>12)throw Error('INVALID_LEDGER_ENTRY');
+   const copy=Array.from({length:count},(_,i)=>tests[i]);
    snap={id,type,rule,domain,fixSha,testSha,evidenceUrl,summary,advice,tests:copy};
   }catch{throw Error('INVALID_LEDGER_ENTRY');}
   if(!boundedEntry(snap)||!memory.vetted(snap)||ids.has(snap.id))
