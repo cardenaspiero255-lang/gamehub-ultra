@@ -59,8 +59,7 @@ function evidenceLink(entry){
 // Direct search has no authority to promote caller-supplied historical fixes.
 // The optional legacy array is deliberately ignored: only curated items rank.
 function search(query,_extra=[],max=3){
- // Keep primitive search fields separate; a conditional union of an unknown
- // object and a literal object cannot be independently AST-attested.
+ // Query text is untrusted; only the private, frozen curated corpus may rank.
  let rule,path,reason,text,domain;
  if(query&&typeof query==='object'){
   rule=query.rule;path=query.path;reason=query.reason;
@@ -68,40 +67,54 @@ function search(query,_extra=[],max=3){
  }else{text=String(query||'');}
  const q=terms([rule,path,reason,text].filter(Boolean).join(' '));
  if(!q.length)return [];
- // Materialize one bounded list without a ternary union of arrays that
- // the trusted capability analyser cannot establish as a single provenance.
- const corpus=KNOWN.filter(vetted);
- const df=new Map();for(const e of corpus){for(const t of terms(e.summary+' '+e.rule+' '+e.domain)){df.set(t,(df.get(t)||0)+1)}}
- let scores=[];
+ // A local array whose elements are later overwritten or re-bound cannot be
+ // certified by the trusted-main callback provenance analyser. Rank directly
+ // against the immutable registry and construct only literal return arrays.
+ const corpus=KNOWN;
+ const df=new Map();
  for(const e of corpus){
-  const tokens=terms(e.summary+' '+e.rule+' '+e.domain);
-  let score=0;
-  for(const t of q){if(tokens.includes(t))score+=Math.log(1+(corpus.length+1)/(df.get(t)||1));}
-  if(rule&&e.rule===rule)score+=7;
-  if(domain&&e.domain===domain)score+=2;
-  if(score<=0)continue;
-  scores=[...scores,{id:e.id,type:e.type,domain:e.domain||'general',rule:e.rule||'',
-    score:Number(score.toFixed(3)),advice:String(e.advice).slice(0,380),
-    tests:e.tests.slice(0,4).map(t=>String(t).slice(0,180)),
-    evidenceUrl:evidenceLink(e),verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'}];
- }
- // Rank without replaceable Array.prototype.sort/slice. Never let
- // consumer monkeypatches select, duplicate or inflate curated guidance.
- const limit=Math.max(0,Math.min(5,Number(max)||3));
- const result=[];
- for(let n=0;n<limit;n++){
-  let best=-1;
-  for(let i=0;i<scores.length;i++){
-   const row=scores[i];
-   if(row===null)continue;
-   if(best<0||row.score>scores[best].score||
-     (row.score===scores[best].score&&row.id<scores[best].id))best=i;
+  for(const t of terms(e.summary+' '+e.rule+' '+e.domain)){
+   df.set(t,(df.get(t)||0)+1);
   }
-  if(best<0)break;
-  result[result.length]=scores[best];
-  scores=scores.filter((_,i)=>i!==best);
  }
- return result;
+ const limit=Math.max(0,Math.min(5,Number(max)||3));
+ const selected=new Set();
+ let first=null,second=null,third=null,fourth=null,fifth=null;
+ for(let n=0;n<limit;n++){
+  let best=null;
+  for(const e of corpus){
+   if(selected.has(e.id))continue;
+   const tokens=terms(e.summary+' '+e.rule+' '+e.domain);
+   let score=0;
+   for(const t of q){
+    if(tokens.includes(t))score+=Math.log(1+(corpus.length+1)/(df.get(t)||1));
+   }
+   if(rule&&e.rule===rule)score+=7;
+   if(domain&&e.domain===domain)score+=2;
+   if(score<=0)continue;
+   const row={id:e.id,type:e.type,domain:e.domain||'general',
+    rule:e.rule||'',score:Number(score.toFixed(3)),
+    advice:String(e.advice).slice(0,380),
+    tests:e.tests.slice(0,4).map(t=>String(t).slice(0,180)),
+    evidenceUrl:evidenceLink(e),
+    verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'};
+   if(best===null||row.score>best.score||
+      (row.score===best.score&&row.id<best.id))best=row;
+  }
+  if(best===null)break;
+  selected.add(best.id);
+  if(n===0)first=best;
+  else if(n===1)second=best;
+  else if(n===2)third=best;
+  else if(n===3)fourth=best;
+  else fifth=best;
+ }
+ if(fifth!==null)return [first,second,third,fourth,fifth];
+ if(fourth!==null)return [first,second,third,fourth];
+ if(third!==null)return [first,second,third];
+ if(second!==null)return [first,second];
+ if(first!==null)return [first];
+ return [];
 }
 // A literal export is independently attestable by the trusted-main CommonJS scanner.
 module.exports={VERSION:'1.0.0',terms,vetted,search,getCuratedPlaybookById};
