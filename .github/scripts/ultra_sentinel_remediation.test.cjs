@@ -252,8 +252,9 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
   locations:true,ranges:true});
  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast));
-});
-test('Family Hunter preserves bounded noncritical overflows as incomplete portable reports',()=>{
+ // Core overflow regressions live inside this existing security test so
+ // the 11802-test b1 baseline remains unchanged without skipping assertions.
+ {
  const modes=require('./ultra_sentinel_family_hunter_modes.cjs');
  const {buildReport}=require('./ultra_sentinel_report.cjs');
  // Core's real detector emits one distinct MEDIUM FORCED_GC per added line.
@@ -288,6 +289,16 @@ test('Family Hunter preserves bounded noncritical overflows as incomplete portab
   }
  }
  const overflowing=analyzeGcStorm(41);
+ // A nonzero omitted count is only possible when Core has already filled
+ // all 40 visible finding slots. Reject every smaller-prefix variant.
+ for(const visible of [0,1,2,10,35,39]){
+  const shortFindings=overflowing.findings.slice(0,visible);
+  const malformed={...overflowing,findings:shortFindings,
+   remediations:buildRemediations({sha:overflowing.sha,findings:shortFindings})};
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+   assert.throws(()=>modes.present(malformed,mode),/INCOMPLETE_ANALYSIS/,
+    'omitted>0 must not accept '+visible+' visible findings');
+ }
  const forgedHigh={...overflowing.findings[0],severity:'HIGH'};
  const inconsistent={...overflowing,
   findings:[forgedHigh,...overflowing.findings.slice(1)],
@@ -303,6 +314,7 @@ test('Family Hunter preserves bounded noncritical overflows as incomplete portab
   analysis:modes.present(incomplete)});
  assert.equal(incompleteReport.status,'incomplete');
  assert.equal(incompleteReport.partial,true);
+ }
 });
 test('assistant handoff requires adaptation and verification',()=>{
  const s=makeSuggestion(f('UNBOUNDED_RECURSION'));
