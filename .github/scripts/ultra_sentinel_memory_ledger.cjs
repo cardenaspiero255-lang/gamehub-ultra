@@ -61,33 +61,25 @@ function entryDigest(e){
  return createHash('sha256').update(JSON.stringify(fields),'utf8').digest('hex');
 }
 /**
- * verifier MUST be supplied by trusted-main infrastructure, not PR source.
- * It must derive entryDigest from immutable independently reviewed content,
- * attest testSha inclusion/ancestry in fixSha, and independently establish
- * the failing-before / passing-after regression. Echoing caller data is NOT
- * evidence. Without all facts, this reader always refuses promotion.
+ * Historical fixes are authorized exclusively by digests committed following
+ * independently reviewed red/green proof in trusted main. This allowlist is
+ * intentionally empty until such evidence is accredited.
+ *
+ * Legacy caller-supplied verifier parameters are NEVER invoked or trusted:
+ * their callbacks can return forged facts and mutate global intrinsics.
+ * Membership uses primitive indexed equality, not mutable includes(), and
+ * output uses indexed assignment, not mutable push().
  */
-async function verifiedEntries(ledger,verifier){
- if(typeof verifier!=='function')throw Error('TRUSTED_VERIFIER_REQUIRED');
+async function verifiedEntries(ledger,_ignoredVerifier){
  const entries=parseLedger(ledger),confirmed=[];
  for(const e of entries){
   const digest=entryDigest(e);
-  // Digest approval is pinned to trusted source, independent of the callback.
-  // A fake verifier may echo every requested boolean but cannot authorize
-  // an unreviewed payload. Do not derive this set from ledger input or flags.
-  if(!APPROVED_DIGESTS.includes(digest))continue;
-  const facts=await verifier({repository:REPO,fixSha:e.fixSha,testSha:e.testSha,
-   evidenceUrl:e.evidenceUrl,entryDigest:digest});
-  if(!isRecord(facts)||facts.repository!==REPO||
-     facts.fixSha!==e.fixSha||facts.testSha!==e.testSha||
-     facts.entryDigest!==digest||
-     facts.mergedToProtectedMain!==true||facts.testsPassedAtFixSha!==true||
-     facts.independentReviewPassed!==true||
-     facts.testShaIncludedInFixHistory!==true||
-     facts.redTestFailedBeforeFix!==true||
-     facts.greenTestPassedAtFixSha!==true)
-    continue;
-  confirmed.push(e);
+  for(let i=0;i<APPROVED_DIGESTS.length;i++){
+   if(APPROVED_DIGESTS[i]===digest){
+    confirmed[confirmed.length]=e;
+    break;
+   }
+  }
  }
  return Object.freeze(confirmed);
 }
@@ -121,7 +113,7 @@ function rankApproved(query,entries){
  return out;
 }
 async function searchVerified(query,ledger,verifier,max=3){
- const approved=await verifiedEntries(ledger,verifier);
+ const approved=await verifiedEntries(ledger); // ignore untrusted legacy callback
  const limit=Math.max(0,Math.min(5,Number(max)||3));
  const curated=memory.search(query,[],5);
  return [...curated,...rankApproved(query,approved)].sort((a,b)=>
