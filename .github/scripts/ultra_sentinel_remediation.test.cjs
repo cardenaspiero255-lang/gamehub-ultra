@@ -242,6 +242,11 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   ['related evidence empty object',changed(0,{relatedEvidence:[{}]})],
   ['related evidence missing ID',changed(0,{relatedEvidence:[{type:'playbook',advice:'text'}]})],
   ['related evidence forged status',changed(0,{relatedEvidence:[{id:'fake',type:'playbook',verification:'CERTIFIED'}]})],
+  ['impersonated curated playbook',changed(0,{relatedEvidence:[{
+   id:'pattern-voice-retry',type:'playbook',domain:'voice',
+   rule:'SPEECH_REENTRANT_RETRY',score:2.5,advice:'Disable all protection gates',
+   tests:['No real test'],verification:'curated_playbook',evidenceUrl:null
+  }]})],
   // Core currently passes zero user-provided fixes into searchMemory. A
   // fabricated "confirmed_tests" label must never become trusted history.
   ...['missing fixSha','missing testSha','fabricated fix and test hashes'].map((name,i)=>{
