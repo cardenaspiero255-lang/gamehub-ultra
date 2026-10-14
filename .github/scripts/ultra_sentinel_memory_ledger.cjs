@@ -17,6 +17,11 @@ const MAX_FIELD=1500;
 // untrusted caller can NEVER add entries or grant authority. New digests
 // require a protected-main code review with actual red/green provenance.
 const APPROVED_DIGESTS=Object.freeze([]);
+// Capture trusted native operations once, before invoking any consumer code.
+// Later edits to Array.prototype cannot influence historical admission.
+const nativeIncludes=Array.prototype.includes;
+const nativePush=Array.prototype.push;
+const nativeApply=Reflect.apply;
 const isRecord=o=>o!==null&&typeof o==='object'&&!Array.isArray(o);
 const hex=x=>typeof x==='string'&&/^[a-f0-9]{40}$/i.test(x);
 const validUrl=x=>typeof x==='string'&&x.length<=230&&
@@ -70,10 +75,10 @@ async function verifiedEntries(ledger,_ignoredVerifier){
  const entries=parseLedger(ledger),confirmed=[];
  for(const e of entries){
   const digest=entryDigest(e);
-  // Unlike the older design, NO caller callback executes between admission
-  // and insertion. An untrusted verifier cannot alter our decision intrinsics.
-  if(!APPROVED_DIGESTS.includes(digest))continue;
-  confirmed.push(e);
+  // No caller callback runs here, and authorization uses operations captured
+  // before untrusted consumers can replace the shared array prototype.
+  if(!nativeApply(nativeIncludes,APPROVED_DIGESTS,[digest]))continue;
+  nativeApply(nativePush,confirmed,[e]);
  }
  return Object.freeze(confirmed);
 }
