@@ -125,7 +125,7 @@ function memoryPrefix(s,p){
  for(let i=0;i<p.length;i++)if(s[i]!==p[i])return false;
  return true;
 }
-function validMemoryUrl(x){
+function validUrl(x){
  if(typeof x!=='string'||x.length>230)return false;
  const pull='https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/';
  const commit='https://github.com/cardenaspiero255-lang/gamehub-ultra/commit/';
@@ -163,7 +163,7 @@ function vetted(entry){
  }
  if(entry.type!=='verified_fix')return false;
  if(!validMemoryId(entry.id)||!validMemorySha(entry.fixSha)||
-    !validMemorySha(entry.testSha)||!validMemoryUrl(entry.evidenceUrl)||
+    !validMemorySha(entry.testSha)||!validUrl(entry.evidenceUrl)||
     typeof entry.summary!=='string'||entry.summary.length<20||entry.summary.length>1500||
     typeof entry.advice!=='string'||entry.advice.length<20||entry.advice.length>1500||
     !Array.isArray(entry.tests)||entry.tests.length<1||entry.tests.length>12)
