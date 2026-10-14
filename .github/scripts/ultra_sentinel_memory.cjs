@@ -139,6 +139,18 @@ function validMemoryUrl(x){
  }
  return true;
 }
+// Test evidence must contain at least one Unicode non-whitespace character.
+// Do not dispatch String.prototype.trim, which downstream consumers can patch.
+function nonBlankEvidence(s){
+ for(let i=0;i<s.length;i++){
+  const c=s[i];
+  if(c===' '||(c>='\t'&&c<='\r')||c==='\u00a0'||c==='\u1680'||
+     (c>='\u2000'&&c<='\u200a')||c==='\u2028'||c==='\u2029'||
+     c==='\u202f'||c==='\u205f'||c==='\u3000'||c==='\ufeff')continue;
+  return true;
+ }
+ return false;
+}
 function vetted(entry){
  if(!entry||typeof entry!=='object')return false;
  // A matching public ID is not sufficient: an untrusted record could
@@ -158,7 +170,7 @@ function vetted(entry){
   return false;
  for(let i=0;i<entry.tests.length;i++){
   const t=entry.tests[i];
-  if(typeof t!=='string'||t.length>220||!t.trim())return false;
+  if(typeof t!=='string'||t.length>220||!nonBlankEvidence(t))return false;
  }
  return true;
 }
