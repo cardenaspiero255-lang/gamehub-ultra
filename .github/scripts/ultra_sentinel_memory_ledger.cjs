@@ -51,6 +51,21 @@ function hex(x){
  }
  return true;
 }
+// Canonicalize only an already validated 40-byte ASCII SHA. No mutable
+// String.prototype.toLowerCase call may change the validated snapshot.
+function canonicalHex(sha){
+ const capitals='ABCDEF',minuscule='abcdef';
+ let normalized='';
+ for(let i=0;i<40;i++){
+  const c=sha[i];
+  let lowerChar=c;
+  for(let j=0;j<6;j++){
+   if(c===capitals[j]){lowerChar=minuscule[j];break;}
+  }
+  normalized+=lowerChar;
+ }
+ return normalized;
+}
 function hasPrefix(s,prefix){
  if(s.length<prefix.length)return false;
  for(let i=0;i<prefix.length;i++){
@@ -135,7 +150,7 @@ function parseLedger(value){
    throw Error('INVALID_LEDGER_ENTRY');
   ids.add(snap.id);
   return TRUSTED_FREEZE({id:snap.id,type:'verified_fix',rule:snap.rule,
-   domain:snap.domain,fixSha:snap.fixSha.toLowerCase(),testSha:snap.testSha.toLowerCase(),
+   domain:snap.domain,fixSha:canonicalHex(snap.fixSha),testSha:canonicalHex(snap.testSha),
    evidenceUrl:snap.evidenceUrl,summary:snap.summary,advice:snap.advice,
    tests:TRUSTED_FREEZE(snap.tests)});
  });
