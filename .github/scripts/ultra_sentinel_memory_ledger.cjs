@@ -11,6 +11,8 @@ const memory=require('./ultra_sentinel_memory.cjs');
  // Capture the trusted curated entrypoints and inert result before any
  // consumer can tamper with public exports or JavaScript intrinsics.
 const TRUSTED_EMPTY=Object.freeze([]);
+const TRUSTED_ARRAY_FROM=Array.from;
+const TRUSTED_FREEZE=Object.freeze;
 const trustedCuratedSearch=memory.search;
 const trustedCuratedById=memory.getCuratedPlaybookById;
 const SCHEMA='ultra-sentinel-family-hunter-memory/v1';
@@ -22,9 +24,54 @@ const MAX_FIELD=1500;
 // until it is reviewed on protected main with authentic evidence. In
 // particular, callers cannot supply an attestor or affect authorization.
 const isRecord=o=>o!==null&&typeof o==='object'&&!Array.isArray(o);
-const hex=x=>typeof x==='string'&&/^[a-f0-9]{40}$/i.test(x);
-const validUrl=x=>typeof x==='string'&&x.length<=230&&
- /^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[a-z0-9]+\/?$/.test(x);
+const lower=c=>c>='a'&&c<='z';
+const upper=c=>c>='A'&&c<='Z';
+const digit=c=>c>='0'&&c<='9';
+function validId(x){
+ if(typeof x!=='string'||x.length<6||x.length>80)return false;
+ for(let i=0;i<x.length;i++){
+  const c=x[i];
+  if(!lower(c)&&!upper(c)&&!digit(c)&&c!=='_'&&c!=='-')return false;
+ }
+ return true;
+}
+function validRule(x){
+ if(typeof x!=='string'||x.length<3||x.length>76||!upper(x[0]))return false;
+ for(let i=1;i<x.length;i++){
+  const c=x[i];
+  if(!upper(c)&&!digit(c)&&c!=='_')return false;
+ }
+ return true;
+}
+function hex(x){
+ if(typeof x!=='string'||x.length!==40)return false;
+ for(let i=0;i<x.length;i++){
+  const c=x[i];
+  if(!digit(c)&&!(c>='a'&&c<='f')&&!(c>='A'&&c<='F'))return false;
+ }
+ return true;
+}
+function hasPrefix(s,prefix){
+ if(s.length<prefix.length)return false;
+ for(let i=0;i<prefix.length;i++){
+  if(s[i]!==prefix[i])return false;
+ }
+ return true;
+}
+function validUrl(x){
+ if(typeof x!=='string'||x.length>230)return false;
+ const p1='https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/';
+ const p2='https://github.com/cardenaspiero255-lang/gamehub-ultra/commit/';
+ const start=hasPrefix(x,p1)?p1.length:hasPrefix(x,p2)?p2.length:-1;
+ if(start<0)return false;
+ const end=x[x.length-1]==='/'?x.length-1:x.length;
+ if(end<=start)return false;
+ for(let i=start;i<end;i++){
+  const c=x[i];
+  if(!lower(c)&&!digit(c))return false;
+ }
+ return true;
+}
 function boundedTests(tests){
  if(!Array.isArray(tests))return false;
  const count=tests.length;
@@ -39,8 +86,7 @@ function boundedEntry(raw){
  // Bound decoded primitive types BEFORE memory.vetted() can coerce them.
  // Never stringify an untrusted object, array, getter or deep JSON value.
  return isRecord(raw)&&raw.type==='verified_fix'&&
-  typeof raw.id==='string'&&/^[a-z0-9_-]{6,80}$/i.test(raw.id)&&
-  typeof raw.rule==='string'&&/^[A-Z][A-Z_0-9]{2,75}$/.test(raw.rule)&&
+  validId(raw.id)&&validRule(raw.rule)&&
   typeof raw.domain==='string'&&
    (raw.domain==='android'||raw.domain==='voice'||raw.domain==='network'||
     raw.domain==='ci'||raw.domain==='security'||raw.domain==='ai'||
@@ -65,10 +111,10 @@ function parseLedger(value){
  if(schema!==SCHEMA||!Number.isSafeInteger(revision)||revision<0||
     !Number.isSafeInteger(entryCount)||entryCount<0||entryCount>MAX_RECORDS)
   throw Error('INVALID_LEDGER_HEADER');
- const ids=new Set(),entries=[];
- // A for-of loop over untrusted arrays consults Symbol.iterator and length
- // repeatedly. Indexing a prevalidated count keeps processing bounded.
- for(let index=0;index<entryCount;index++){
+ const ids=new Set();
+ // Captured native Array.from maps exactly the validated count, without
+ // mutable Array.prototype.push or a hostile source iterator.
+ const entries=TRUSTED_ARRAY_FROM({length:entryCount},(_,index)=>{
   let raw;
   try{raw=rawEntries[index];}catch{throw Error('INVALID_LEDGER_ENTRY');}
   if(!isRecord(raw))throw Error('INVALID_LEDGER_ENTRY');
@@ -82,18 +128,18 @@ function parseLedger(value){
    if(!Array.isArray(tests))throw Error('INVALID_LEDGER_ENTRY');
    const count=tests.length;
    if(!Number.isSafeInteger(count)||count<1||count>12)throw Error('INVALID_LEDGER_ENTRY');
-   const copy=Array.from({length:count},(_,i)=>tests[i]);
+   const copy=TRUSTED_ARRAY_FROM({length:count},(_,i)=>tests[i]);
    snap={id,type,rule,domain,fixSha,testSha,evidenceUrl,summary,advice,tests:copy};
   }catch{throw Error('INVALID_LEDGER_ENTRY');}
   if(!boundedEntry(snap)||!memory.vetted(snap)||ids.has(snap.id))
    throw Error('INVALID_LEDGER_ENTRY');
   ids.add(snap.id);
-  entries.push(Object.freeze({id:snap.id,type:'verified_fix',rule:snap.rule,
+  return TRUSTED_FREEZE({id:snap.id,type:'verified_fix',rule:snap.rule,
    domain:snap.domain,fixSha:snap.fixSha.toLowerCase(),testSha:snap.testSha.toLowerCase(),
    evidenceUrl:snap.evidenceUrl,summary:snap.summary,advice:snap.advice,
-   tests:Object.freeze(snap.tests)}));
- }
- return Object.freeze(entries);
+   tests:TRUSTED_FREEZE(snap.tests)});
+ });
+ return TRUSTED_FREEZE(entries);
 }
 // Stable, length-preserving canonical content format. A SHA pair by itself
 // never authenticates rule, domain, remediation advice or regression tests.
