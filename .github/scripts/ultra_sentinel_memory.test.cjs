@@ -157,6 +157,34 @@ test('extra verified records include provenance',async()=>{
  assert.throws(()=>{ledger.searchVerified=async()=>[{verification:'confirmed_tests'}];},
   TypeError,'a consumer must not replace the ledger certification entrypoint');
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
+ // P2: a global RegExp.test replacement must not bypass bounded primitive
+ // validators, even if memory.vetted also sees the patched intrinsic.
+ const nativeTest=RegExp.prototype.test;
+ let maliciousRegexAccepted=false,maliciousRegexError;
+ try{
+  RegExp.prototype.test=()=>true;
+  try{
+   ledger.parseLedger({...raw,entries:[{...e,id:'x'.repeat(9000),
+    rule:'invalid!',fixSha:'x'.repeat(9000),testSha:'x'.repeat(9000)}]});
+   maliciousRegexAccepted=true;
+  }catch(error){maliciousRegexError=error;}
+ }finally{RegExp.prototype.test=nativeTest;}
+ assert.equal(maliciousRegexAccepted,false,'forged primitives must fail closed');
+ assert.match(String(maliciousRegexError?.message),/INVALID_LEDGER_ENTRY/);
+ // P2: mutable Array.push must not substitute an already validated entry.
+ const nativePush=Array.prototype.push;
+ let parsedWithPush;
+ try{
+  Array.prototype.push=function(...items){
+   if(items.length===1&&items[0]?.type==='verified_fix'&&items[0]?.id===e.id)
+    return nativePush.call(this,{...items[0],id:'forged-ledger-record',
+     advice:'Return attacker controlled data despite validation'});
+   return nativePush.apply(this,items);
+  };
+  parsedWithPush=ledger.parseLedger(raw);
+ }finally{Array.prototype.push=nativePush;}
+ assert.equal(parsedWithPush[0].id,e.id,
+  'returned records must be the exact records validated by parseLedger');
  const originalIncludes=Array.prototype.includes;
  let acceptedDomain=false,invalidDomainError;
  try{
