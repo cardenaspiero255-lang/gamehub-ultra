@@ -68,6 +68,44 @@ function documentFrequency(token){
  }
  return count;
 }
+function lowerAscii(c){return c>='a'&&c<='z';}
+function upperAscii(c){return c>='A'&&c<='Z';}
+function digitAscii(c){return c>='0'&&c<='9';}
+function validMemoryId(x){
+ if(typeof x!=='string'||x.length<6||x.length>80)return false;
+ for(let i=0;i<x.length;i++){
+  const c=x[i];
+  if(!lowerAscii(c)&&!upperAscii(c)&&!digitAscii(c)&&c!=='_'&&c!=='-')return false;
+ }
+ return true;
+}
+function validMemorySha(x){
+ if(typeof x!=='string'||x.length!==40)return false;
+ for(let i=0;i<40;i++){
+  const c=x[i];
+  if(!digitAscii(c)&&!(c>='a'&&c<='f')&&!(c>='A'&&c<='F'))return false;
+ }
+ return true;
+}
+function memoryPrefix(s,p){
+ if(s.length<p.length)return false;
+ for(let i=0;i<p.length;i++)if(s[i]!==p[i])return false;
+ return true;
+}
+function validMemoryUrl(x){
+ if(typeof x!=='string'||x.length>230)return false;
+ const pull='https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/';
+ const commit='https://github.com/cardenaspiero255-lang/gamehub-ultra/commit/';
+ const start=memoryPrefix(x,pull)?pull.length:memoryPrefix(x,commit)?commit.length:-1;
+ if(start<0)return false;
+ const end=x[x.length-1]==='/'?x.length-1:x.length;
+ if(end<=start)return false;
+ for(let i=start;i<end;i++){
+  const c=x[i];
+  if(!lowerAscii(c)&&!digitAscii(c))return false;
+ }
+ return true;
+}
 function vetted(entry){
  if(!entry||typeof entry!=='object')return false;
  // A matching public ID is not sufficient: an untrusted record could
@@ -79,11 +117,17 @@ function vetted(entry){
   return false;
  }
  if(entry.type!=='verified_fix')return false;
- const hex=x=>/^[a-f0-9]{40}$/i.test(x||'');
- const validUrl=u=>typeof u==='string'&&/^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[a-z0-9]+(?:\/)?$/.test(u);
- return /^[a-z0-9_-]{6,80}$/i.test(entry.id||'')&&hex(entry.fixSha)&&hex(entry.testSha)&&
-  validUrl(entry.evidenceUrl)&&String(entry.summary||'').length>=20&&
-  String(entry.advice||'').length>=20&&Array.isArray(entry.tests)&&entry.tests.length>0;
+ if(!validMemoryId(entry.id)||!validMemorySha(entry.fixSha)||
+    !validMemorySha(entry.testSha)||!validMemoryUrl(entry.evidenceUrl)||
+    typeof entry.summary!=='string'||entry.summary.length<20||entry.summary.length>1500||
+    typeof entry.advice!=='string'||entry.advice.length<20||entry.advice.length>1500||
+    !Array.isArray(entry.tests)||entry.tests.length<1||entry.tests.length>12)
+  return false;
+ for(let i=0;i<entry.tests.length;i++){
+  const t=entry.tests[i];
+  if(typeof t!=='string'||t.length>220||!t.trim())return false;
+ }
+ return true;
 }
 // Only a read-only lookup is exposed; the curated authority remains private.
 // External records can never be registered as playbooks through this module.
