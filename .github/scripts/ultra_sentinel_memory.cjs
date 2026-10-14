@@ -26,7 +26,9 @@ function terms(value){
 }
 function vetted(entry){
  if(!entry||typeof entry!=='object')return false;
- if(entry.type==='playbook')return KNOWN.some(x=>x.id===entry.id);
+ // A matching public ID is not sufficient: an untrusted record could
+ // impersonate a curated playbook and inject fabricated repair advice.
+ if(entry.type==='playbook')return KNOWN.includes(entry);
  if(entry.type!=='verified_fix')return false;
  const hex=x=>/^[a-f0-9]{40}$/i.test(x||'');
  const validUrl=u=>typeof u==='string'&&/^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[a-z0-9]+(?:\/)?$/.test(u);
