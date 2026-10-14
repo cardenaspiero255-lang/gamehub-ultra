@@ -12,16 +12,10 @@ const SCHEMA='ultra-sentinel-family-hunter-memory/v1';
 const REPO='cardenaspiero255-lang/gamehub-ultra';
 const MAX_RECORDS=200;
 const MAX_FIELD=1500;
-// Independently reviewed digest allowlist. Initially empty: there are no
-// externally attested historical fixes yet. A callback supplied by an
-// untrusted caller can NEVER add entries or grant authority. New digests
-// require a protected-main code review with actual red/green provenance.
-const APPROVED_DIGESTS=Object.freeze([]);
-// Capture trusted native operations once, before invoking any consumer code.
-// Later edits to Array.prototype cannot influence historical admission.
-const nativeIncludes=Array.prototype.includes;
-const nativePush=Array.prototype.push;
-const nativeApply=Reflect.apply;
+// No historical fixes have an independently accredited content digest and
+// correlated red/green provenance yet. Do not install an approval mechanism
+// until it is reviewed on protected main with authentic evidence. In
+// particular, callers cannot supply an attestor or affect authorization.
 const isRecord=o=>o!==null&&typeof o==='object'&&!Array.isArray(o);
 const hex=x=>typeof x==='string'&&/^[a-f0-9]{40}$/i.test(x);
 const validUrl=x=>typeof x==='string'&&x.length<=230&&
@@ -72,15 +66,12 @@ function entryDigest(e){
  * Legacy caller-supplied callbacks are NEVER executed or trusted.
  */
 async function verifiedEntries(ledger,_ignoredVerifier){
- const entries=parseLedger(ledger),confirmed=[];
- for(const e of entries){
-  const digest=entryDigest(e);
-  // No caller callback runs here, and authorization uses operations captured
-  // before untrusted consumers can replace the shared array prototype.
-  if(!nativeApply(nativeIncludes,APPROVED_DIGESTS,[digest]))continue;
-  nativeApply(nativePush,confirmed,[e]);
- }
- return Object.freeze(confirmed);
+ // Always parse and validate the complete untrusted ledger, then fail closed:
+ // zero independently approved historical entries means zero promoted fixes.
+ // This does not invoke caller code, Reflect.apply or mutable prototype
+ // operations on the security authorization path.
+ parseLedger(ledger);
+ return Object.freeze([]);
 }
 // Only verifiedEntries may contribute historical fixes; untrusted callers
 // cannot make direct memory.search mark arbitrary extra records as confirmed.
