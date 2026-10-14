@@ -85,14 +85,18 @@ async function verifiedEntries(ledger,_ignoredVerifier){
 function certifyCurated(row){
  if(!row||row.type!=='playbook'||row.verification!=='curated_playbook'||
     typeof row.id!=='string'||typeof row.score!=='number'||
-    !Number.isFinite(row.score)||row.score<0)return null;
+    !Number.isFinite(row.score)||row.score<0)
+  throw Error('CURATED_MEMORY_UNVERIFIED');
  const original=trustedCuratedById(row.id);
  if(!original||row.domain!==original.domain||row.rule!==original.rule||
     row.advice!==original.advice||row.evidenceUrl!==null||
-    !Array.isArray(row.tests))return null;
+    !Array.isArray(row.tests))
+  throw Error('CURATED_MEMORY_UNVERIFIED');
  const n=original.tests.length>4?4:original.tests.length;
- if(row.tests.length!==n)return null;
- for(let i=0;i<n;i++){if(row.tests[i]!==original.tests[i])return null;}
+ if(row.tests.length!==n)throw Error('CURATED_MEMORY_UNVERIFIED');
+ for(let i=0;i<n;i++){
+  if(row.tests[i]!==original.tests[i])throw Error('CURATED_MEMORY_UNVERIFIED');
+ }
  return {id:original.id,type:'playbook',domain:original.domain,
   rule:original.rule,score:row.score,advice:original.advice,
   tests:original.tests,evidenceUrl:null,verification:'curated_playbook'};
@@ -103,21 +107,15 @@ async function searchVerified(query,ledger,_ignoredVerifier,max=3){
  // The underlying search remains advisory. Treat all of its returned objects
  // as untrusted data, even if built by our code: mutable global sort/slice
  // methods can be changed by unrelated modules.
- const candidate=trustedCuratedSearch(query,[],limit);
- if(!Array.isArray(candidate)||candidate.length>limit)return TRUSTED_EMPTY;
- if(candidate.length===0)return TRUSTED_EMPTY;
- const a=certifyCurated(candidate[0]);
- const b=candidate.length>1?certifyCurated(candidate[1]):null;
- const c=candidate.length>2?certifyCurated(candidate[2]):null;
- const d=candidate.length>3?certifyCurated(candidate[3]):null;
- const e=candidate.length>4?certifyCurated(candidate[4]):null;
- if(!a||(candidate.length>1&&!b)||(candidate.length>2&&!c)||
-    (candidate.length>3&&!d)||(candidate.length>4&&!e))
-  return TRUSTED_EMPTY;
- // Array literals cannot invoke monkeypatched push/sort/slice and do not
- // allow a hostile prototype to replace the return value.
- if(candidate.length===1)return [a];
- if(candidate.length===2)return [a,b];
+ con if(candidate.length===0)return TRUSTED_EMPTY;
+ // Every branch returns direct literal arrays of independently checked,
+ // freshly constructed curated objects. No nullable mixed-provenance aliases,
+ // and no mutable sort/slice/push on the trusted output path.
+ if(candidate.length===1)return [certifyCurated(candidate[0])];
+ if(candidate.length===2)return [certifyCurated(candidate[0]),certifyCurated(candidate[1])];
+ if(candidate.length===3)return [certifyCurated(candidate[0]),certifyCurated(candidate[1]),certifyCurated(candidate[2])];
+ if(candidate.length===4)return [certifyCurated(candidate[0]),certifyCurated(candidate[1]),certifyCurated(candidate[2]),certifyCurated(candidate[3])];
+ return [certifyCurated(candidate[0]),certifyCurated(candidate[1]),certifyCurated(candidate[2]),certifyCurated(candidate[3]),certifyCurated(candidate[4])];ngth===2)return [a,b];
  if(candidate.length===3)return [a,b,c];
  if(candidate.length===4)return [a,b,c,d];
  return [a,b,c,d,e];
