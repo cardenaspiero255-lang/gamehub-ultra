@@ -12,22 +12,32 @@ function resolveMode(requested){
 // user-contributed verified_fix. Match the actual curated source content to
 // prevent a copied ID or fabricated "confirmed_tests" label becoming proof.
 const {KNOWN:CURATED_MEMORY}=require('./ultra_sentinel_memory.cjs');
-const {DOMAIN_VALIDATION}=require('./ultra_sentinel_core.cjs');
-const CORE_DOMAINS=new Set(Object.keys(DOMAIN_VALIDATION));
+const CORE_DOMAIN_FILES=Object.freeze({
+ voice:'speech/notes.md',ai:'frontier/notes.md',
+ network:'dns/notes.md',performance:'thermal/notes.md',
+ security:'auth/notes.md',ci:'.github/workflows/notes.md',
+ android:'app/src/main/README.md'
+});
+const CORE_DOMAINS=new Set(Object.keys(CORE_DOMAIN_FILES));
 function validValidationPlan(plan){
  if(!Array.isArray(plan.domains)||!Array.isArray(plan.checks)||
     plan.domains.length>CORE_DOMAINS.size||plan.checks.length>24||
     plan.domains.some(d=>typeof d!=='string'||!CORE_DOMAINS.has(d))||
     new Set(plan.domains).size!==plan.domains.length||
     plan.domains.some((d,i)=>i>0&&plan.domains[i-1]>d))return false;
- // Core emits precisely three canonical checks for each selected domain.
- // Empty, truncated, re-ordered or fabricated checks cannot be treated as
- // complete guidance simply because their surviving objects have strings.
- const required=plan.domains.flatMap(domain=>
-  DOMAIN_VALIDATION[domain].map(check=>({domain,check}))).slice(0,24);
- return plan.checks.length===required.length&&plan.checks.every((item,i)=>
-  item&&typeof item==='object'&&!Array.isArray(item)&&
-  item.domain===required[i].domain&&item.check===required[i].check);
+ // Ask the actual pinned Core 2.0.0 producer for its canonical check list.
+ // All filenames are our own inert documentation fixtures, never PR paths.
+ // This avoids changing protected Core code or duplicating its rules.
+ const {analyze}=require('./ultra_sentinel_core.cjs');
+ const actual=analyze(plan.domains.map(d=>({
+  filename:CORE_DOMAIN_FILES[d],status:'added',changes:0,patch:''
+ })),{sha:'0'.repeat(40)}).validationPlan;
+ return actual.domains.length===plan.domains.length&&
+  actual.domains.every((d,i)=>d===plan.domains[i])&&
+  plan.checks.length===actual.checks.length&&plan.checks.every((item,i)=>
+   item&&typeof item==='object'&&!Array.isArray(item)&&
+   item.domain===actual.checks[i].domain&&
+   item.check===actual.checks[i].check);
 }
 function validRelatedEvidence(items){
  if(!Array.isArray(items)||items.length>2)return false;
@@ -131,11 +141,6 @@ function completeShape(analysis){
       (previous.path===finding.path&&previous.line>finding.line))))
     return false;
   }
-  for(let j=0;j<i;j++){
-   const previous=findings[j];
-   if(finding.rule===previous.rule&&finding.path===previous.path&&
-      finding.line===previous.line)return false;
-  }
   if(i>=35)continue;
   const suggestion=rem.suggestions[i];
   if(!suggestion||typeof suggestion!=='object'||Array.isArray(suggestion)||
@@ -153,10 +158,23 @@ function completeShape(analysis){
  }
  return true;
 }
+function hasAmbiguousIdentities(findings){
+ const known=new Set();
+ for(const f of findings){
+  const key=JSON.stringify([f.rule,f.path,f.line]);
+  if(known.has(key))return true;
+  known.add(key);
+ }
+ return false;
+}
 function present(analysis,requested){
  if(!completeShape(analysis))throw Error('INCOMPLETE_ANALYSIS');
+ const collision=hasAmbiguousIdentities(analysis.findings);
  const familyHunter=resolveMode(requested);
- const only=familyHunter.mode==='REVIEW_ONLY';
+ // Core 2.0.0 may truncate distinct long paths to the same visible ID.
+ // Never claim "clean", offer repairs or authorize a write in that case.
+ if(collision)familyHunter.status='INCOMPLETE_ANALYSIS';
+ const only=familyHunter.mode==='REVIEW_ONLY'||collision;
  const findings=analysis.findings.slice(0,40).map(f=>({
   rule:f.rule,severity:f.severity,confidence:f.confidence,path:f.path,
   line:f.line,evidence:f.evidence,reason:f.reason,
@@ -174,9 +192,14 @@ function present(analysis,requested){
  };
  return {
   engine:analysis.engine,version:analysis.version,sha:analysis.sha,
-  mode:analysis.mode,coverage:analysis.coverage,validationPlan,
-  remediations,findings,omitted:analysis.omitted,warnings:analysis.warnings,
-  verdict:analysis.verdict,note:analysis.note,familyHunter
+  mode:analysis.mode,
+  coverage:collision?{...analysis.coverage,partial:true}:analysis.coverage,
+  validationPlan,remediations,findings,omitted:analysis.omitted,
+  warnings:collision?[...analysis.warnings.slice(0,24),
+   'Rutas sanitizadas ambiguas: revisar fuentes originales y pruebas completas.']:
+   analysis.warnings,
+  verdict:collision?'INCOMPLETE':analysis.verdict,
+  note:analysis.note,familyHunter
  };
 }
 module.exports={resolveMode,present};
