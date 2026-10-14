@@ -85,7 +85,23 @@ function search(query,_extra=[],max=3){
     tests:e.tests.slice(0,4).map(t=>String(t).slice(0,180)),
     evidenceUrl:evidenceLink(e),verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'});
  }
- return scores.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,Math.max(0,Math.min(5,Number(max)||3)));
+ // Rank without replaceable Array.prototype.sort/slice. Never let
+ // consumer monkeypatches select, duplicate or inflate curated guidance.
+ const limit=Math.max(0,Math.min(5,Number(max)||3));
+ const result=[];
+ for(let n=0;n<limit;n++){
+  let best=-1;
+  for(let i=0;i<scores.length;i++){
+   const row=scores[i];
+   if(row===null)continue;
+   if(best<0||row.score>scores[best].score||
+     (row.score===scores[best].score&&row.id<scores[best].id))best=i;
+  }
+  if(best<0)break;
+  result[result.length]=scores[best];
+  scores[best]=null;
+ }
+ return result;
 }
 // A literal export is independently attestable by the trusted-main CommonJS scanner.
 module.exports={VERSION:'1.0.0',terms,vetted,search,getCuratedPlaybookById};
