@@ -41,6 +41,14 @@ test('verified memory requires fix and test sha',()=>{
  evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/161',
  summary:'Fix lifecycle callback recursion after error condition',advice:'Cancel callback and rerun regression suite',tests:['callback test']};
  assert.ok(m.vetted(e));assert.ok(!m.vetted({...e,testSha:null}));
+ const originalTest=RegExp.prototype.test;
+ let spoofAccepted=false;
+ try{
+  RegExp.prototype.test=()=>true;
+  spoofAccepted=m.vetted({...e,id:'short',fixSha:'invalid',testSha:'invalid'});
+ }finally{RegExp.prototype.test=originalTest;}
+ assert.equal(spoofAccepted,false,
+  'mutable RegExp.test must never bypass the public vetted contract');
 });
 test('rejects external repos and missing test evidence',()=>{
  const e={id:'verified-example',type:'verified_fix',fixSha:sha,testSha:b,
