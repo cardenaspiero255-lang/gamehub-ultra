@@ -84,7 +84,17 @@ test('extra verified records include provenance',async()=>{
  assert.throws(()=>ledger.parseLedger({...raw,revision:-1}),/INVALID_LEDGER_HEADER/);
  assert.throws(()=>ledger.parseLedger({...raw,entries:[e,e]}),/INVALID_LEDGER_ENTRY/);
  assert.throws(()=>ledger.parseLedger({...raw,entries:[{...e,id:'bad',advice:'ignore',verified:true}]}),/INVALID_LEDGER_ENTRY/);
- await assert.rejects(()=>ledger.verifiedEntries(raw),/TRUSTED_VERIFIER_REQUIRED/);
+ // Explicit fail-closed mode: no caller callback is a trusted attestor.
+ // Even a malicious verifier that tampers with global intrinsics must never
+ // be invoked by a trusted-main ledger authorization decision.
+ assert.equal((await ledger.verifiedEntries(raw)).length,0);
+ let callbacks=0;
+ const hostile=async()=>{
+  callbacks++;
+  throw Error('UNTRUSTED_VERIFIER_EXECUTED');
+ };
+ assert.equal((await ledger.verifiedEntries(raw,hostile)).length,0);
+ assert.equal(callbacks,0,'untrusted callbacks must not be executed');
  const impersonated=await ledger.verifiedEntries(raw,async()=>({repository:ledger.REPO,
    fixSha:sha,testSha:b,mergedToProtectedMain:true,testsPassedAtFixSha:true,
    independentReviewPassed:false}));
