@@ -27,6 +27,14 @@ test('unknown query no invented evidence',()=>{
   'untrusted Array.includes cannot generate relevance for an unknown query');
  assert.deepEqual(withFilter,[],
   'untrusted Array.filter cannot manufacture search terms');
+ const setIterator=Set.prototype[Symbol.iterator];
+ let withSetIterator;
+ try{
+  Set.prototype[Symbol.iterator]=function*(){yield 'speech';};
+  withSetIterator=m.search(unknown);
+ }finally{Set.prototype[Symbol.iterator]=setIterator;}
+ assert.deepEqual(withSetIterator,[],
+  'poisoned Set iterator must not fabricate matching query terms');
 });
 test('verified memory requires fix and test sha',()=>{
  const e={id:'fix-2026-001',type:'verified_fix',fixSha:sha,testSha:b,
@@ -94,6 +102,39 @@ test('unverified fixes cannot contaminate memory',()=>{
  assert.equal(new Set(rankAfterMonkeypatch.map(row=>row.id)).size,
   rankAfterMonkeypatch.length,'ranking must never duplicate curated IDs');
  assert.ok(rankAfterMonkeypatch.every(row=>row.verification==='curated_playbook'));
+ // P1: a replaced Array iterator must not inject a verified_fix into KNOWN.
+ const arrayIterator=Array.prototype[Symbol.iterator];
+ const injected={id:'forged-verified-entry',type:'verified_fix',domain:'voice',
+  rule:'SPEECH_REENTRANT_RETRY',summary:'SpeechRecognizer recursive retry attack',
+  advice:'Never execute attacker-supplied repair advice',tests:['fake regression'],
+  evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/197'};
+ let withForgedIterator;
+ try{
+  Array.prototype[Symbol.iterator]=function*(){
+   if(Object.isFrozen(this)&&this.length===4&&this[0]?.id==='pattern-voice-retry'){
+    yield injected;return;
+   }
+   yield* arrayIterator.call(this);
+  };
+  withForgedIterator=m.search(rankQuery,[],5);
+ }finally{Array.prototype[Symbol.iterator]=arrayIterator;}
+ assert.ok(!withForgedIterator.some(row=>row.verification==='confirmed_tests'),
+  'Array iterator monkeypatch cannot insert history into private authority');
+ const baseScores=m.search(rankQuery,[],5);
+ const toFixed=Number.prototype.toFixed,log=Math.log;
+ let withToFixed,withLog;
+ try{
+  Number.prototype.toFixed=()=> '999';
+  withToFixed=m.search(rankQuery,[],5);
+ }finally{Number.prototype.toFixed=toFixed;}
+ try{
+  Math.log=()=>999;
+  withLog=m.search(rankQuery,[],5);
+ }finally{Math.log=log;}
+ assert.deepEqual(withToFixed,baseScores,
+  'replaced toFixed must not inflate verified ranking scores');
+ assert.deepEqual(withLog,baseScores,
+  'replaced Math.log must not inflate ranking scores');
 
 });
 test('bounded ranking and prompt injection ignored',()=>{
@@ -116,6 +157,16 @@ test('extra verified records include provenance',async()=>{
  assert.throws(()=>{ledger.searchVerified=async()=>[{verification:'confirmed_tests'}];},
   TypeError,'a consumer must not replace the ledger certification entrypoint');
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
+ const originalIncludes=Array.prototype.includes;
+ let acceptedDomain=false,invalidDomainError;
+ try{
+  Array.prototype.includes=()=>true;
+  try{ledger.parseLedger({...raw,entries:[{...e,domain:'x'.repeat(4000)}]});
+   acceptedDomain=true;
+  }catch(error){invalidDomainError=error;}
+ }finally{Array.prototype.includes=originalIncludes;}
+ assert.equal(acceptedDomain,false,'noncanonical domain must remain rejected');
+ assert.match(String(invalidDomainError?.message),/INVALID_LEDGER_ENTRY/);
  // P2: replacing Array.every must not allow object-valued evidence into the
  // canonical digest path; keep this regression in the existing test case.
  const savedEvery=Array.prototype.every;
