@@ -12,16 +12,22 @@ function resolveMode(requested){
 // user-contributed verified_fix. Match the actual curated source content to
 // prevent a copied ID or fabricated "confirmed_tests" label becoming proof.
 const {KNOWN:CURATED_MEMORY}=require('./ultra_sentinel_memory.cjs');
-const CORE_DOMAINS=new Set(['voice','ai','network','performance','security','ci','android']);
+const {DOMAIN_VALIDATION}=require('./ultra_sentinel_core.cjs');
+const CORE_DOMAINS=new Set(Object.keys(DOMAIN_VALIDATION));
 function validValidationPlan(plan){
  if(!Array.isArray(plan.domains)||!Array.isArray(plan.checks)||
     plan.domains.length>CORE_DOMAINS.size||plan.checks.length>24||
     plan.domains.some(d=>typeof d!=='string'||!CORE_DOMAINS.has(d))||
-    new Set(plan.domains).size!==plan.domains.length)return false;
- return plan.checks.every(item=>item&&typeof item==='object'&&
-  !Array.isArray(item)&&typeof item.domain==='string'&&
-  plan.domains.includes(item.domain)&&typeof item.check==='string'&&
-  !!item.check.trim()&&item.check.length<=500);
+    new Set(plan.domains).size!==plan.domains.length||
+    plan.domains.some((d,i)=>i>0&&plan.domains[i-1]>d))return false;
+ // Core emits precisely three canonical checks for each selected domain.
+ // Empty, truncated, re-ordered or fabricated checks cannot be treated as
+ // complete guidance simply because their surviving objects have strings.
+ const required=plan.domains.flatMap(domain=>
+  DOMAIN_VALIDATION[domain].map(check=>({domain,check}))).slice(0,24);
+ return plan.checks.length===required.length&&plan.checks.every((item,i)=>
+  item&&typeof item==='object'&&!Array.isArray(item)&&
+  item.domain===required[i].domain&&item.check===required[i].check);
 }
 function validRelatedEvidence(items){
  if(!Array.isArray(items)||items.length>2)return false;
