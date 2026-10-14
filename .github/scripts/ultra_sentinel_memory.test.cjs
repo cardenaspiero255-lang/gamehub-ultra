@@ -86,11 +86,15 @@ test('extra verified records include provenance',async()=>{
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
  // P2: the untrusted header must capture the array reference once and
  // iterate a fixed bounded length, even when getters or proxies change it.
+ const oversizedEntries=Array.from({length:201},(_,i)=>
+  ({...e,id:'verified-bypass-'+String(i).padStart(3,'0')}));
+ assert.throws(()=>ledger.parseLedger({...raw,entries:oversizedEntries}),
+  /INVALID_LEDGER_HEADER/,'ordinary oversized ledgers must be rejected');
  let entryGetterReads=0;
  const swappingHeader={schema:ledger.SCHEMA,revision:1,
   get entries(){
    entryGetterReads++;
-   return entryGetterReads===1?[e]:Array.from({length:201},()=>e);
+   return entryGetterReads<=2?[e]:oversizedEntries;
   }};
  const capturedHeader=ledger.parseLedger(swappingHeader);
  assert.equal(entryGetterReads,1,'entries getter must only be read once');
