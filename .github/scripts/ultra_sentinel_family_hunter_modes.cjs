@@ -7,25 +7,40 @@ function resolveMode(requested){
  else if(requested!==undefined&&requested!=='REVIEW_WITH_SOLUTIONS')status='INVALID_MODE';
  return {mode,status,repairCommits:'OFF',autoCommitAllowed:false,autoMergeAllowed:false};
 }
-// Core attaches at most two evidence-memory hits to every draft.
-// Reject truncated, forged or non-object memory before portable rendering,
-// which otherwise dereferences memory.id without its own schema check.
+// Historical repair evidence is NOT a verified attestation source here.
+// Core 2.0.0 searches only built-in curated playbooks (extra=[]), never a
+// user-contributed verified_fix. Match the actual curated source content to
+// prevent a copied ID or fabricated "confirmed_tests" label becoming proof.
+const {KNOWN:CURATED_MEMORY}=require('./ultra_sentinel_memory.cjs');
+const CORE_DOMAINS=new Set(['voice','ai','network','performance','security','ci','android']);
+function validValidationPlan(plan){
+ if(!Array.isArray(plan.domains)||!Array.isArray(plan.checks)||
+    plan.domains.length>CORE_DOMAINS.size||plan.checks.length>24||
+    plan.domains.some(d=>typeof d!=='string'||!CORE_DOMAINS.has(d))||
+    new Set(plan.domains).size!==plan.domains.length)return false;
+ return plan.checks.every(item=>item&&typeof item==='object'&&
+  !Array.isArray(item)&&typeof item.domain==='string'&&
+  plan.domains.includes(item.domain)&&typeof item.check==='string'&&
+  !!item.check.trim()&&item.check.length<=500);
+}
 function validRelatedEvidence(items){
  if(!Array.isArray(items)||items.length>2)return false;
- return items.every(item=>item&&typeof item==='object'&&!Array.isArray(item)&&
-  typeof item.id==='string'&&item.id.trim()&&item.id.length<=90&&
-  ['playbook','verified_fix'].includes(item.type)&&
-  typeof item.domain==='string'&&item.domain.trim()&&
-  typeof item.rule==='string'&&
-  typeof item.score==='number'&&Number.isFinite(item.score)&&item.score>0&&
-  typeof item.advice==='string'&&item.advice.trim()&&
-  Array.isArray(item.tests)&&item.tests.length>0&&item.tests.length<=4&&
-  item.tests.every(t=>typeof t==='string'&&t.trim())&&
-  ((item.type==='playbook'&&item.verification==='curated_playbook'&&
-    item.evidenceUrl===null)||
-   (item.type==='verified_fix'&&item.verification==='confirmed_tests'&&
-    typeof item.evidenceUrl==='string'&&
-    /^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[a-z0-9]+\/?$/i.test(item.evidenceUrl))));
+ const seen=new Set();
+ return items.every(item=>{
+  if(!item||typeof item!=='object'||Array.isArray(item)||
+     item.type!=='playbook'||item.verification!=='curated_playbook'||
+     item.evidenceUrl!==null||
+     typeof item.id!=='string'||seen.has(item.id)||
+     typeof item.score!=='number'||!Number.isFinite(item.score)||item.score<=0||
+     !Array.isArray(item.tests))return false;
+  seen.add(item.id);
+  const entry=CURATED_MEMORY.find(x=>x.id===item.id);
+  if(!entry||item.domain!==entry.domain||item.rule!==entry.rule||
+     item.advice!==entry.advice.slice(0,380))return false;
+  const tests=entry.tests.slice(0,4).map(t=>String(t).slice(0,180));
+  return item.tests.length===tests.length&&
+   item.tests.every((t,i)=>t===tests[i]);
+ });
 }
 // The adapter is not an attestation authority. It rejects structurally
 // unverifiable inputs rather than converting them into a clean-looking report.
@@ -39,8 +54,7 @@ function completeShape(analysis){
     !plan||typeof plan!=='object'||Array.isArray(plan)||
     !Array.isArray(findings)||findings.length>40||
     !Array.isArray(analysis.warnings)||
-    !Array.isArray(rem.suggestions)||!Array.isArray(plan.domains)||
-    !Array.isArray(plan.checks))return false;
+    !Array.isArray(rem.suggestions)||!validValidationPlan(plan))return false;
  // Accept only the exact trusted Core/planner protocol. A plausible SHA and
  // correctly shaped containers do not prove an analysis came from Core.
  // Future protocol upgrades must explicitly update and retest this adapter.
