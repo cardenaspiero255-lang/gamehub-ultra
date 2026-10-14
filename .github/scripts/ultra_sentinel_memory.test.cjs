@@ -168,8 +168,9 @@ test('extra verified records include provenance',async()=>{
   reads++;
   return reads<=4?e.summary:{attackerControlled:true};
  }});
- assert.throws(()=>ledger.parseLedger({...raw,entries:[changing]}),
-  /INVALID_LEDGER_ENTRY/,'changing getter must not be admitted');
+ const captured=ledger.parseLedger({...raw,entries:[changing]});
+ assert.equal(reads,1,'untrusted getter must be read exactly once');
+ assert.equal(captured[0].summary,e.summary,'the validated snapshot must be persisted');
  // P2: tampered ranking must not affect score, duplicates or order.
  const baseline=await ledger.searchVerified({rule:e.rule},raw);
  const savedSort=Array.prototype.sort;
