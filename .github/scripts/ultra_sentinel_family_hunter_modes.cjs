@@ -52,7 +52,11 @@ function completeShape(analysis){
     f.status!=='NEEDS_VERIFICATION'))
    return false;
  const hasCritical=findings.some(f=>f.severity==='BLOCKER'||f.severity==='HIGH');
- if(analysis.verdict==='NO_CRITICAL_PATTERN'&&(hasCritical||analysis.omitted>0))
+ // Core can legitimately exceed its 40-finding display cap with only
+ // MEDIUM/LOW alerts. Preserve that authentic verdict: the portable
+ // report treats omitted>0 as incomplete, never a certified clean result.
+ // Contradictory visible HIGH/BLOCKER findings must still fail closed.
+ if(analysis.verdict==='NO_CRITICAL_PATTERN'&&hasCritical)
    return false;
  if(analysis.verdict==='REVIEW_REQUIRED'&&!hasCritical)return false;
  // The existing planner yields one draft per finding, capped at 35.
