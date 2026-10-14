@@ -16,7 +16,7 @@ test('verified memory requires fix and test sha',async()=>{
  const {preflightRepair}=require('./ultra_sentinel_repair_authorization.cjs');
  const context={repository:'cardenaspiero255-lang/gamehub-ultra',number:201,
   headSha:sha,headRepo:'cardenaspiero255-lang/gamehub-ultra',
-  draft:false,files:['app/src/main/java/voice/Ultra.kt','app/src/test/UltraTest.kt'],
+  draft:false,changedFiles:2,files:['app/src/main/java/voice/Ultra.kt','app/src/test/UltraTest.kt'],
   checks:[{name:'Android build',sha,status:'completed',conclusion:'success'},
           {name:'Ultra Sentinel Core Tests',sha,status:'completed',conclusion:'success'}],
   requiredChecks:['Android build','Ultra Sentinel Core Tests'],now:2000000};
@@ -35,7 +35,8 @@ test('verified memory requires fix and test sha',async()=>{
   {...context,files:['app/src/main/AndroidManifest.xml']},
   {...context,checks:[{name:'Android build',sha,status:'queued',conclusion:null}]},
   {...context,requiredChecks:[]},
-  {...context,headRepo:'attacker/fork'}
+  {...context,headRepo:'attacker/fork'},
+  {...context,changedFiles:3}
  ]){
   const no=await preflightRepair(bad,attested);
   assert.equal(no.status,'BLOCKED','invalid context must not authorize a commit');
