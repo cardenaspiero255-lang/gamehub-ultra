@@ -5,10 +5,6 @@ const STOP=Object.freeze(['the','and','for','this','from','into','with','para','
 // Capture arithmetic intrinsics while loading trusted code, before consumers
 // can alter their global prototypes or Math properties.
 const TRUSTED_LOG=Math.log,TRUSTED_ROUND=Math.round;
-// The native push function is bound while loading trusted code. Later
-// monkeypatches to Array.prototype.push or Function.prototype.call cannot
-// change this private append-only token builder.
-const APPEND_TOKEN=Function.prototype.call.bind(Array.prototype.push);
 const KNOWN=Object.freeze([
  Object.freeze({id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
   summary:'SpeechRecognizer onError synchronous startListening recursion stack overflow restart retry gate lifecycle',
@@ -39,18 +35,20 @@ function terms(value){
  const s=String(value||'').slice(0,MAX_QUERY).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
  const matched=s.match(/[a-z0-9_]{3,}/g);
  if(!matched)return [];
- // Do not trust Array/Set iterators, push, filter or includes on this path.
- const tokens=[];
+ // Only regex-delimited [a-z0-9_] tokens enter this string. Building
+ // the output with the native regex engine avoids mutable Array/Set methods,
+ // inherited iterators and dynamic indexed writes rejected by trusted AST.
+ let accepted='';
  for(let i=0;i<matched.length;i++){
   const token=matched[i];
   if(isStopWord(token))continue;
   let duplicate=false;
-  for(let j=0;j<tokens.length;j++){
-   if(tokens[j]===token){duplicate=true;break;}
+  for(let j=0;j<i;j++){
+   if(matched[j]===token){duplicate=true;break;}
   }
-  if(!duplicate)APPEND_TOKEN(tokens,token);
+  if(!duplicate)accepted+=token+' ';
  }
- return tokens;
+ return accepted.match(/[a-z0-9_]{3,}/g)||[];
 }
 function hasToken(tokens,needle){
  for(let i=0;i<tokens.length;i++){
