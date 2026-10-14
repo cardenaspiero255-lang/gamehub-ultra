@@ -29,11 +29,14 @@ function completeShape(analysis){
     rem.scope!=='human-supervised'||
     typeof analysis.sha!=='string'||!/^[a-f0-9]{40}$/i.test(analysis.sha)||
     rem.sha!==analysis.sha||rem.verified!==false||rem.autoMerge!==false)return false;
- // Core slices its input to MAX_FILES=300; even a partial scan never
- // reports more than 300 returned files in its bounded output.
- if(!Number.isSafeInteger(coverage.returned)||coverage.returned<0||coverage.returned>300||
+ // Core scans the first 300 files but reports the original list.length.
+ // More than 300 returned files is legitimate ONLY when coverage is partial,
+ // the verdict is INCOMPLETE and no more than 300 files were analyzed.
+ if(!Number.isSafeInteger(coverage.returned)||coverage.returned<0||
     !Number.isSafeInteger(coverage.analyzed)||coverage.analyzed<0||
-    coverage.analyzed>coverage.returned||typeof coverage.partial!=='boolean'||
+    coverage.analyzed>coverage.returned||coverage.analyzed>300||
+    typeof coverage.partial!=='boolean'||
+    (coverage.returned>300&&!coverage.partial)||
     !Number.isSafeInteger(analysis.omitted)||analysis.omitted<0)return false;
  if(!['INCOMPLETE','REVIEW_REQUIRED','NO_CRITICAL_PATTERN'].includes(analysis.verdict)||
     coverage.partial!==(analysis.verdict==='INCOMPLETE'))return false;
