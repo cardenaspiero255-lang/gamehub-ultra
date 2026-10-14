@@ -6,6 +6,7 @@ const STOP=Object.freeze(['the','and','for','this','from','into','with','para','
 // can alter their global prototypes or Math properties.
 const TRUSTED_LOG=Math.log,TRUSTED_ROUND=Math.round;
 const TRUSTED_ARRAY_FROM=Array.from;
+const TRUSTED_STRING=String;
 const KNOWN=Object.freeze([
  Object.freeze({id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
   summary:'SpeechRecognizer onError synchronous startListening recursion stack overflow restart retry gate lifecycle',
@@ -35,7 +36,7 @@ function isStopWord(token){
 function terms(value){
  // Parse ASCII tokens without mutable String/RegExp prototype dispatch.
  // The packed representation has no externally writable array slots.
- const input=String(value||'');
+ const input=TRUSTED_STRING(value||'');
  const end=input.length<MAX_QUERY?input.length:MAX_QUERY;
  const upper='ABCDEFGHIJKLMNOPQRSTUVWXYZ',lower='abcdefghijklmnopqrstuvwxyz';
  let packed='',word='',count=0,lastLower=false;
@@ -186,8 +187,8 @@ function search(query,_extra=[],max=3){
  if(query&&typeof query==='object'){
   rule=query.rule;path=query.path;reason=query.reason;
   text=query.text;domain=query.domain;
- }else{text=String(query||'');}
- const q=terms(String(rule||'')+' '+String(path||'')+' '+String(reason||'')+' '+String(text||''));
+ }else{text=TRUSTED_STRING(query||'');}
+ const q=terms(TRUSTED_STRING(rule||'')+' '+TRUSTED_STRING(path||'')+' '+TRUSTED_STRING(reason||'')+' '+TRUSTED_STRING(text||''));
  if(!q.length)return [];
  const limit=Math.max(0,Math.min(5,Number(max)||3));
  let first=null,second=null,third=null,fourth=null,fifth=null;
