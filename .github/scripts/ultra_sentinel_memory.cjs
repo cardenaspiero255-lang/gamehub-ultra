@@ -20,6 +20,13 @@ const KNOWN=[
   advice:'Ejecutar scripts de la rama base confiable en job privilegiado; tratar cambios del PR como datos.',
   tests:['fork no accede a secrets','permisos mínimos por job']}
 ];
+// This array is a trusted authority for curated playbook identity. It MUST
+// remain immutable in memory, including nested regression-test descriptions.
+for(const entry of KNOWN){
+ Object.freeze(entry.tests);
+ Object.freeze(entry);
+}
+Object.freeze(KNOWN);
 function terms(value){
  const s=String(value||'').slice(0,MAX_QUERY).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
  return [...new Set((s.match(/[a-z0-9_]{3,}/g)||[]).filter(x=>!STOP.has(x)))];
