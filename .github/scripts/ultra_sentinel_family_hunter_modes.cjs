@@ -110,11 +110,26 @@ function completeShape(analysis){
     f.origin!=='Ultra Sentinel Core'||
     f.status!=='NEEDS_VERIFICATION'))
    return false;
- // A syntactically canonical checklist can still be truncated by removing
- // both a domain and its checks. Every Core finding must remain represented
- // in the plan's domain set or no review may be presented as complete.
- if(findings.some(f=>f.domains.some(d=>!plan.domains.includes(d))))
-   return false;
+ // A caller could truncate the finding domains AND the checklist together.
+ // Derive independent path tags from the actual trusted Core producer using
+ // inert filename-only fixtures; never trust two fields of the same payload
+ // to authenticate one another. This does not execute PR source.
+ const {analyze:coreAnalyze}=require('./ultra_sentinel_core.cjs');
+ const observedDomains=new Map();
+ for(const finding of findings){
+  if(finding.domains.some(d=>!plan.domains.includes(d)))return false;
+  // Core sanitizes long paths at 185 chars, and may redact path contents.
+  // They cannot prove their original tags; quarantine as INCOMPLETE below.
+  if(finding.path.length>=185||finding.path.includes('[REDACTED]'))continue;
+  let expected=observedDomains.get(finding.path);
+  if(!expected){
+   expected=coreAnalyze([{filename:finding.path,status:'added',
+    changes:0,patch:''}],{sha:analysis.sha}).validationPlan.domains;
+   observedDomains.set(finding.path,expected);
+  }
+  if(expected.length!==finding.domains.length||
+     expected.some(d=>!finding.domains.includes(d)))return false;
+ }
  const hasCritical=findings.some(f=>f.severity==='BLOCKER'||f.severity==='HIGH');
  // Core can legitimately exceed its 40-finding display cap with only
  // MEDIUM/LOW alerts. Preserve that authentic verdict: the portable
@@ -174,7 +189,9 @@ function hasAmbiguousIdentities(findings){
 }
 function present(analysis,requested){
  if(!completeShape(analysis))throw Error('INCOMPLETE_ANALYSIS');
- const collision=hasAmbiguousIdentities(analysis.findings);
+ const collision=hasAmbiguousIdentities(analysis.findings)||
+  analysis.findings.some(f=>f.path.length>=185||
+   f.path.includes('[REDACTED]'));
  const familyHunter=resolveMode(requested);
  // Core 2.0.0 may truncate distinct long paths to the same visible ID.
  // Never claim "clean", offer repairs or authorize a write in that case.
