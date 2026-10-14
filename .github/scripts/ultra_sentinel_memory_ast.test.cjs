@@ -13,9 +13,16 @@ function assertTrustedAst(file){
   locations:true,ranges:true});
  assert.deepEqual(findCapabilities(ast),[],'failed trusted AST: '+file);
 }
-test('trusted AST: memory.cjs is independently auditable',()=>{
- assertTrustedAst('ultra_sentinel_memory.cjs');
-});
-test('trusted AST: memory_ledger.cjs is independently auditable',()=>{
- assertTrustedAst('ultra_sentinel_memory_ledger.cjs');
-});
+// Include the exact fail-closed reason in the test title: the Core shard
+// aggregates failures by name and otherwise hides the underlying exception.
+// The assertion is NEVER skipped when the scanner cannot attest a file.
+function attestFile(file){
+ let failure=null;
+ try{assertTrustedAst(file);}catch(err){failure=err;}
+ test('trusted AST: '+file+' is independently auditable'+
+  (failure?' ['+String(failure.message).slice(0,130)+']':''),()=>{
+  if(failure)throw failure;
+ });
+}
+attestFile('ultra_sentinel_memory.cjs');
+attestFile('ultra_sentinel_memory_ledger.cjs');
