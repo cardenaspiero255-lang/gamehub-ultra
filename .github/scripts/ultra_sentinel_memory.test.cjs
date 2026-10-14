@@ -49,7 +49,11 @@ test('bounded ranking and prompt injection ignored',()=>{
  assert.equal(x.autoMergeAllowed,false);
  assert.equal(x.families[0].locations.length,2);
  assert.ok(!JSON.stringify(x).includes('onError() startListening()'));
- assert.equal(analyzeFamilies({...analysis,omitted:3}).status,'INCOMPLETE');
+ const forty=Array.from({length:40},(_,i)=>({...one,
+   path:'app/src/main/java/voice/F'+String(i).padStart(2,'0')+'.kt',line:1}));
+ const truncated={...analysis,findings:forty,
+   coverage:{returned:40,analyzed:40,partial:false},omitted:3};
+ assert.equal(analyzeFamilies(truncated).status,'INCOMPLETE');
  assert.equal(analyzeFamilies({...analysis,coverage:{...analysis.coverage,partial:true},verdict:'INCOMPLETE'}).status,'INCOMPLETE');
  for(const invalid of [
    {...analysis,findings:[{...one,origin:'Untrusted bot'}]},
