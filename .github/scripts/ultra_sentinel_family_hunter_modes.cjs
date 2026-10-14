@@ -7,6 +7,26 @@ function resolveMode(requested){
  else if(requested!==undefined&&requested!=='REVIEW_WITH_SOLUTIONS')status='INVALID_MODE';
  return {mode,status,repairCommits:'OFF',autoCommitAllowed:false,autoMergeAllowed:false};
 }
+// Core attaches at most two evidence-memory hits to every draft.
+// Reject truncated, forged or non-object memory before portable rendering,
+// which otherwise dereferences memory.id without its own schema check.
+function validRelatedEvidence(items){
+ if(!Array.isArray(items)||items.length>2)return false;
+ return items.every(item=>item&&typeof item==='object'&&!Array.isArray(item)&&
+  typeof item.id==='string'&&item.id.trim()&&item.id.length<=90&&
+  ['playbook','verified_fix'].includes(item.type)&&
+  typeof item.domain==='string'&&item.domain.trim()&&
+  typeof item.rule==='string'&&
+  typeof item.score==='number'&&Number.isFinite(item.score)&&item.score>0&&
+  typeof item.advice==='string'&&item.advice.trim()&&
+  Array.isArray(item.tests)&&item.tests.length>0&&item.tests.length<=4&&
+  item.tests.every(t=>typeof t==='string'&&t.trim())&&
+  ((item.type==='playbook'&&item.verification==='curated_playbook'&&
+    item.evidenceUrl===null)||
+   (item.type==='verified_fix'&&item.verification==='confirmed_tests'&&
+    typeof item.evidenceUrl==='string'&&
+    /^https:\/\/github\.com\/cardenaspiero255-lang\/gamehub-ultra\/(?:pull|commit)\/[a-z0-9]+\/?$/i.test(item.evidenceUrl))));
+}
 // The adapter is not an attestation authority. It rejects structurally
 // unverifiable inputs rather than converting them into a clean-looking report.
 // Real Core analysis may legitimately be INCOMPLETE; retain that verdict.
@@ -105,6 +125,7 @@ function completeShape(analysis){
      typeof suggestion.title!=='string'||!suggestion.title.trim()||
      typeof suggestion.test!=='string'||!suggestion.test.trim()||
      typeof suggestion.handoff!=='string'||!suggestion.handoff.trim()||
+     !validRelatedEvidence(suggestion.relatedEvidence)||
      typeof suggestion.caution!=='string'||!suggestion.caution.trim()||
      !Array.isArray(suggestion.steps)||suggestion.steps.length===0||
      suggestion.steps.some(step=>typeof step!=='string'||!step.trim()))
