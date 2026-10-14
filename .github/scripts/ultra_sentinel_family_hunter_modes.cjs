@@ -21,11 +21,17 @@ function completeShape(analysis){
     !Array.isArray(analysis.warnings)||
     !Array.isArray(rem.suggestions)||!Array.isArray(plan.domains)||
     !Array.isArray(plan.checks))return false;
- if(typeof analysis.engine!=='string'||!analysis.engine.trim()||
-    typeof analysis.version!=='string'||!analysis.version.trim()||
+ // Accept only the exact trusted Core/planner protocol. A plausible SHA and
+ // correctly shaped containers do not prove an analysis came from Core.
+ // Future protocol upgrades must explicitly update and retest this adapter.
+ if(analysis.engine!=='Ultra Sentinel Core'||analysis.version!=='2.0.0'||
+    rem.engine!=='Ultra Sentinel Repair Planner'||rem.version!=='2.0.0'||
+    rem.scope!=='human-supervised'||
     typeof analysis.sha!=='string'||!/^[a-f0-9]{40}$/i.test(analysis.sha)||
     rem.sha!==analysis.sha||rem.verified!==false||rem.autoMerge!==false)return false;
- if(!Number.isSafeInteger(coverage.returned)||coverage.returned<0||
+ // Core slices its input to MAX_FILES=300; even a partial scan never
+ // reports more than 300 returned files in its bounded output.
+ if(!Number.isSafeInteger(coverage.returned)||coverage.returned<0||coverage.returned>300||
     !Number.isSafeInteger(coverage.analyzed)||coverage.analyzed<0||
     coverage.analyzed>coverage.returned||typeof coverage.partial!=='boolean'||
     !Number.isSafeInteger(analysis.omitted)||analysis.omitted<0)return false;
