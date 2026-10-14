@@ -1,6 +1,6 @@
 'use strict';
 /* Ultra Sentinel evidence memory — deterministic/offline; never learns from unverified bot output. */
-const MAX_ENTRIES=500,MAX_QUERY=1200;
+const MAX_QUERY=1200;
 const STOP=new Set(['the','and','for','this','from','into','with','para','que','los','las','una','por','del','error','file','test','code','kotlin','android','github','line','app','src','main','java','com','gamehubultra']);
 const KNOWN=Object.freeze([
  Object.freeze({id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
@@ -50,7 +50,9 @@ function evidenceLink(entry){
  if(entry.type==='verified_fix')return entry.evidenceUrl;
  return null;
 }
-function search(query,extra=[],max=3){
+// Direct search has no authority to promote caller-supplied historical fixes.
+// The optional legacy array is deliberately ignored: only curated items rank.
+function search(query,_extra=[],max=3){
  // Keep primitive search fields separate; a conditional union of an unknown
  // object and a literal object cannot be independently AST-attested.
  let rule,path,reason,text,domain;
@@ -62,9 +64,7 @@ function search(query,extra=[],max=3){
  if(!q.length)return [];
  // Materialize one bounded list without a ternary union of arrays that
  // the trusted capability analyser cannot establish as a single provenance.
- const collection=[...KNOWN];
- if(Array.isArray(extra))collection.push(...extra.slice(0,MAX_ENTRIES));
- const corpus=collection.filter(vetted);
+ const corpus=KNOWN.filter(vetted);
  const df=new Map();for(const e of corpus){for(const t of terms(e.summary+' '+e.rule+' '+e.domain)){df.set(t,(df.get(t)||0)+1)}}
  const scores=[];
  for(const e of corpus){
