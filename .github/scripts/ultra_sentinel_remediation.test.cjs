@@ -103,6 +103,13 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  assert.equal(modes.present(zeroScanned).verdict,'NO_CRITICAL_PATTERN');
  assert.equal(modes.present(zeroScanned,'REVIEW_ONLY').verdict,'NO_CRITICAL_PATTERN');
  const invalid=[
+  ['forged Core identity',{...clean,engine:'Not Core'}],
+  ['arbitrary Core version',{...clean,version:'999.0.0'}],
+  ['forged planner identity',{...clean,remediations:{...clean.remediations,engine:'Other Planner'}}],
+  ['planner version mismatch',{...clean,remediations:{...clean.remediations,version:'999.0.0'}}],
+  ['untrusted repair scope',{...clean,remediations:{...clean.remediations,scope:'automatic-writes'}}],
+  ['301 complete files',{...clean,coverage:{returned:301,analyzed:0,partial:false}}],
+  ['301 partial files',{...clean,coverage:{returned:301,analyzed:0,partial:true},verdict:'INCOMPLETE'}],
   ['missing coverage details',{...clean,coverage:{}}],
   ['missing analyzed count',{...clean,coverage:{returned:1,partial:false}}],
   ['text count instead of integer',{...clean,coverage:{returned:'1',analyzed:1,partial:false}}],
@@ -125,8 +132,16 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   }],
   ['unstructured finding',{...clean,findings:[null]}]
  ];
- for(const [name,bad] of invalid)
-  assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,name);
+ for(const [name,bad] of invalid){
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+   assert.throws(()=>modes.present(bad,mode),/INCOMPLETE_ANALYSIS/,name+' '+mode);
+ }
+ // Core scans at most 300 files; that exact boundary is legitimate,
+ // including a documentation-only diff containing zero production files.
+ for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+  const limit={...clean,coverage:{returned:300,analyzed:0,partial:false}};
+  assert.equal(modes.present(limit,mode).coverage.returned,300);
+ }
  // P2 proof: a truncated finding must never become an apparently complete
  // Family Hunter review, even if its remediation proposal still matches.
  // Preserve all real Core provenance and evidence fields when tests are valid.
