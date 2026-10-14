@@ -44,8 +44,14 @@ function vetted(entry){
   String(entry.advice||'').length>=20&&Array.isArray(entry.tests)&&entry.tests.length>0;
 }
 function search(query,extra=[],max=3){
- const input=query&&typeof query==='object'?query:{text:String(query||'')};
- const q=terms([input.rule,input.path,input.reason,input.text].filter(Boolean).join(' '));
+ // Keep primitive search fields separate; a conditional union of an unknown
+ // object and a literal object cannot be independently AST-attested.
+ let rule,path,reason,text,domain;
+ if(query&&typeof query==='object'){
+  rule=query.rule;path=query.path;reason=query.reason;
+  text=query.text;domain=query.domain;
+ }else{text=String(query||'');}
+ const q=terms([rule,path,reason,text].filter(Boolean).join(' '));
  if(!q.length)return [];
  const corpus=[...KNOWN,...(Array.isArray(extra)?extra.slice(0,MAX_ENTRIES):[])].filter(vetted);
  const df=new Map();for(const e of corpus){for(const t of terms(e.summary+' '+e.rule+' '+e.domain)){df.set(t,(df.get(t)||0)+1)}}
@@ -54,8 +60,8 @@ function search(query,extra=[],max=3){
   const tokens=terms(e.summary+' '+e.rule+' '+e.domain);
   let score=0;
   for(const t of q){if(tokens.includes(t))score+=Math.log(1+(corpus.length+1)/(df.get(t)||1));}
-  if(input.rule&&e.rule===input.rule)score+=7;
-  if(input.domain&&e.domain===input.domain)score+=2;
+  if(rule&&e.rule===rule)score+=7;
+  if(domain&&e.domain===domain)score+=2;
   if(score<=0)continue;
   scores.push({id:e.id,type:e.type,domain:e.domain||'general',rule:e.rule||'',
     score:Number(score.toFixed(3)),advice:String(e.advice).slice(0,380),
