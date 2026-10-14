@@ -55,6 +55,9 @@ function completeShape(analysis){
  // Core can legitimately exceed its 40-finding display cap with only
  // MEDIUM/LOW alerts. Preserve that authentic verdict: the portable
  // report treats omitted>0 as incomplete, never a certified clean result.
+ // Core only increases omitted after filling all 40 visible slots.
+ // Reject malformed/truncated prefixes even if their severity seems benign.
+ if(analysis.omitted>0&&findings.length!==40)return false;
  // Contradictory visible HIGH/BLOCKER findings must still fail closed.
  if(analysis.verdict==='NO_CRITICAL_PATTERN'&&hasCritical)
    return false;
