@@ -127,6 +127,13 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   ['malformed commit SHA',{...clean,sha:'unknown'}],
   ['mismatched remediation SHA',{...clean,remediations:{...clean.remediations,sha:'c'.repeat(40)}}],
   ['untrusted self-certified remediation',{...clean,remediations:{...clean.remediations,verified:true}}],
+  ['missing domain required by finding',{...r,validationPlan:{
+   domains:['android'],
+   checks:core.analyze([{filename:'app/src/main/README.md',status:'added',
+    changes:0,patch:''}],{sha:r.sha}).validationPlan.checks
+  }}],
+  ['forged finding-domain outside plan',{...r,findings:r.findings.map((f,i)=>
+   i===0?{...f,domains:['network']}:f)}],
   ['missing canonical checks',{...r,validationPlan:{...r.validationPlan,checks:[]}}],
   ['truncated domain checklist',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.slice(1)}}],
   ['fabricated checklist text',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.map((x,i)=>i===0?{...x,check:'everything is fine'}:x)}}],
@@ -189,11 +196,11 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  const longPrefix='app/src/main/java/demo/'+ 'p'.repeat(178);
  const longFiles=['Alpha.kt','Beta.kt'].map(name=>({
   filename:longPrefix+name,status:'added',changes:1,
-  patch:'@@ -0,0 +1 @@\\n+System.gc()'
+  patch:'@@ -0,0 +1 @@\n+System.gc()'
  }));
  const longReview=core.analyze([...longFiles,{
   filename:'app/src/test/CollisionTest.kt',status:'added',changes:1,
-  patch:'@@ -0,0 +1 @@\\n+// Regression guard'
+  patch:'@@ -0,0 +1 @@\n+// Regression guard'
  }],{sha:r.sha});
  const pathAlerts=longReview.findings.filter(x=>x.rule==='FORCED_GC');
  assert.equal(pathAlerts.length,2,'both Core findings must remain represented');
