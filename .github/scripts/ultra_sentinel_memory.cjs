@@ -1,6 +1,6 @@
 'use strict';
 /* Ultra Sentinel evidence memory — deterministic/offline; never learns from unverified bot output. */
-const VERSION='1.0.0',MAX_ENTRIES=500,MAX_QUERY=1200;
+const MAX_ENTRIES=500,MAX_QUERY=1200;
 const STOP=new Set(['the','and','for','this','from','into','with','para','que','los','las','una','por','del','error','file','test','code','kotlin','android','github','line','app','src','main','java','com','gamehubultra']);
 const KNOWN=Object.freeze([
  Object.freeze({id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
@@ -81,4 +81,5 @@ function search(query,extra=[],max=3){
  }
  return scores.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,Math.max(0,Math.min(5,Number(max)||3)));
 }
-module.exports={VERSION,terms,vetted,search,getCuratedPlaybookById};
+// A literal export is independently attestable by the trusted-main CommonJS scanner.
+module.exports={VERSION:'1.0.0',terms,vetted,search,getCuratedPlaybookById};
