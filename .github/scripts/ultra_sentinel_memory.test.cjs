@@ -136,6 +136,22 @@ test('rejects unsupported memory type even when all provenance fields look valid
  assert.ok(!m.search({rule:impostor.rule},[impostor]).some(r=>r.id===impostor.id));
 });
 
+// Trusted main rejects a reviewer module when it cannot independently
+// attest a complete JavaScript AST; this runs the same pinned analyser on
+// each candidate file to expose compatibility regressions before merging.
+for(const name of ['ultra_sentinel_memory.cjs','ultra_sentinel_memory_ledger.cjs']){
+ test('trusted AST source attests '+name,()=>{
+  const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
+  const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
+  const text=fs.readFileSync(path.join(__dirname,name),'utf8');
+  const ast=acorn.parse(text,{ecmaVersion:'latest',sourceType:'script',
+   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+   locations:true,ranges:true});
+  assert.deepEqual(findCapabilities(ast),[],
+   'trusted reviewer cannot attest '+name);
+ });
+}
+
 test('camelCase identifiers tokenize before lowercasing and retrieve playbook',()=>{
  assert.deepEqual(m.terms('SpeechRecognizer'),['speech','recognizer']);
  assert.deepEqual(m.terms('startListening'),['start','listening']);
