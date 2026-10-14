@@ -87,13 +87,25 @@ function validUrl(x){
  }
  return true;
 }
+// Test evidence must contain at least one Unicode non-whitespace character.
+// Do not dispatch String.prototype.trim, which downstream consumers can patch.
+function nonBlankEvidence(s){
+ for(let i=0;i<s.length;i++){
+  const c=s[i];
+  if(c===' '||(c>='\t'&&c<='\r')||c==='\u00a0'||c==='\u1680'||
+     (c>='\u2000'&&c<='\u200a')||c==='\u2028'||c==='\u2029'||
+     c==='\u202f'||c==='\u205f'||c==='\u3000'||c==='\ufeff')continue;
+  return true;
+ }
+ return false;
+}
 function boundedTests(tests){
  if(!Array.isArray(tests))return false;
  const count=tests.length;
  if(!Number.isSafeInteger(count)||count<1||count>12)return false;
  for(let i=0;i<count;i++){
   const t=tests[i];
-  if(typeof t!=='string'||t.length>220||!t.trim())return false;
+  if(typeof t!=='string'||t.length>220||!nonBlankEvidence(t))return false;
  }
  return true;
 }
