@@ -97,6 +97,12 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   validationPlan:{domains:[],checks:[]}
  };
  assert.equal(modes.present(clean).verdict,'NO_CRITICAL_PATTERN');
+ // A legitimate Core result with real path-derived domains must still pass.
+ const trueTags=core.analyze([{
+  filename:r.findings[0].path,status:'added',changes:0,patch:''
+ }],{sha:r.sha}).validationPlan.domains;
+ assert.ok(trueTags.includes('voice')&&trueTags.includes('android'));
+ assert.equal(modes.present(r).verdict,r.verdict);
  // Core legitimately skips documentation, test-only and deletion-only diffs.
  for(const filename of ['README.md','app/src/test/DemoTest.kt']){
   const skipped=core.analyze([{filename,patch:'@@ -0,0 +1 @@\\n+example',changes:1}],{sha:r.sha});
@@ -134,6 +140,23 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   }}],
   ['forged finding-domain outside plan',{...r,findings:r.findings.map((f,i)=>
    i===0?{...f,domains:['network']}:f)}],
+  // Codex P2: never use two forged fields in one payload to attest each other.
+  // Independently derive exact path tags through trusted Core instead.
+  ['coordinated voice-domain removal',{...r,
+   findings:r.findings.map(f=>({...f,domains:['android']})),
+   validationPlan:core.analyze([{
+    filename:'app/src/main/README.md',status:'added',changes:0,patch:''
+   }],{sha:r.sha}).validationPlan}],
+  ['coordinated voice-domain removal with extra unrelated domain',{...r,
+   findings:r.findings.map(f=>({...f,domains:['android','ci']})),
+   validationPlan:core.analyze([{
+    filename:'app/src/main/README.md',status:'added',changes:0,patch:''
+   },{
+    filename:'.github/workflows/demo.md',status:'added',changes:0,patch:''
+   }],{sha:r.sha}).validationPlan}],
+  ['forged finding domains despite original plan',{...r,
+   findings:r.findings.map(f=>({...f,domains:['android']}))}],
+
   ['missing canonical checks',{...r,validationPlan:{...r.validationPlan,checks:[]}}],
   ['truncated domain checklist',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.slice(1)}}],
   ['fabricated checklist text',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.map((x,i)=>i===0?{...x,check:'everything is fine'}:x)}}],
