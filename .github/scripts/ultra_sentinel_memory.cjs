@@ -89,3 +89,4 @@ function search(query,_extra=[],max=3){
 }
 // A literal export is independently attestable by the trusted-main CommonJS scanner.
 module.exports={VERSION:'1.0.0',terms,vetted,search,getCuratedPlaybookById};
+Object.freeze(module.exports);

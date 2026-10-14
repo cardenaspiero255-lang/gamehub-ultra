@@ -46,14 +46,25 @@ function parseLedger(value){
   throw Error('INVALID_LEDGER_HEADER');
  const ids=new Set(),entries=[];
  for(const raw of value.entries){
-  if(!boundedEntry(raw)||!memory.vetted(raw)||ids.has(raw.id))
+  if(!isRecord(raw))throw Error('INVALID_LEDGER_ENTRY');
+  // One read of each untrusted property. Validate and persist this exact
+  // snapshot: accessors cannot swap a valid primitive for an unsafe value.
+  let snap;
+  try{
+   const id=raw.id,type=raw.type,rule=raw.rule,domain=raw.domain;
+   const fixSha=raw.fixSha,testSha=raw.testSha,evidenceUrl=raw.evidenceUrl;
+   const summary=raw.summary,advice=raw.advice,tests=raw.tests;
+   if(!Array.isArray(tests)||tests.length>12)throw Error('INVALID_LEDGER_ENTRY');
+   const copy=[];for(let i=0;i<tests.length;i++)copy[i]=tests[i];
+   snap={id,type,rule,domain,fixSha,testSha,evidenceUrl,summary,advice,tests:copy};
+  }catch{throw Error('INVALID_LEDGER_ENTRY');}
+  if(!boundedEntry(snap)||!memory.vetted(snap)||ids.has(snap.id))
    throw Error('INVALID_LEDGER_ENTRY');
-  ids.add(raw.id);
-  // Copy allowlisted primitives; ignore claimed verification flags and commands.
-  entries.push(Object.freeze({id:raw.id,type:'verified_fix',rule:raw.rule,
-   domain:raw.domain,fixSha:raw.fixSha.toLowerCase(),testSha:raw.testSha.toLowerCase(),
-   evidenceUrl:raw.evidenceUrl,summary:raw.summary,advice:raw.advice,
-   tests:Object.freeze([...raw.tests])}));
+  ids.add(snap.id);
+  entries.push(Object.freeze({id:snap.id,type:'verified_fix',rule:snap.rule,
+   domain:snap.domain,fixSha:snap.fixSha.toLowerCase(),testSha:snap.testSha.toLowerCase(),
+   evidenceUrl:snap.evidenceUrl,summary:snap.summary,advice:snap.advice,
+   tests:Object.freeze(snap.tests)}));
  }
  return Object.freeze(entries);
 }
