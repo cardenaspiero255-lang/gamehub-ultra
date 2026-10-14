@@ -260,9 +260,9 @@ test('Family Hunter preserves bounded noncritical overflows as incomplete portab
  // A test-only file suppresses the unrelated REGRESSION_TEST_COVERAGE alert.
  const analyzeGcStorm=(n)=>core.analyze([
   {filename:'app/src/main/java/demo/GcStorm.kt',status:'added',changes:n,
-   patch:'@@ -0,0 +1,'+n+' @@\\n'+Array(n).fill('+System.gc()').join('\\n')+'\\n'},
+   patch:'@@ -0,0 +1,'+n+' @@\n'+Array(n).fill('+System.gc()').join('\n')+'\n'},
   {filename:'app/src/test/DemoTest.kt',status:'added',changes:1,
-   patch:'@@ -0,0 +1 @@\\n+// test-only fixture\\n'}
+   patch:'@@ -0,0 +1 @@\n+// test-only fixture\n'}
  ],{sha:'c'.repeat(40)});
  for(const count of [40,41,47]){
   const original=analyzeGcStorm(count);
