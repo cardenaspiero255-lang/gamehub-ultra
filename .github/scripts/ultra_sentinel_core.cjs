@@ -12,6 +12,15 @@ function sanitize(s){
  .replace(/(?:sk-|ghp_|github_pat_)[\w-]{10,}/g,'[REDACTED]')
  .slice(0,185);
 }
+// File identities need a stable fingerprint when sanitization truncates or
+// redacts a filename. Keep the output bounded without confusing two distinct
+// affected files or reporting a fabricated duplicate finding.
+function sanitizePath(path){
+ const original=String(path??''),visible=sanitize(original);
+ if(original.length<=185&&visible===original)return visible;
+ return visible.slice(0,170)+'~'+createHash('sha256').update(original)
+  .digest('hex').slice(0,14);
+}
 function parsePatch(text){
  if(typeof text!=='string')return {added:[],partial:true};
  let n=0,active=false;const added=[],scan=[];
@@ -148,7 +157,7 @@ function analyze(files,config={}){
  const sha=/^[0-9a-f]{40}$/i.test(config.sha||'')?config.sha:'unknown';
  const put=(rule,severity,confidence,path,line,text,why,check)=>{
    const key=rule+'#'+path+'#'+line;if(dedupe.has(key))return;dedupe.add(key);
-   alerts.push({rule,severity,confidence,path:sanitize(path),line,
+   alerts.push({rule,severity,confidence,path:sanitizePath(path),line,
      evidence:sanitize(text),reason:why,verification:check,domains:tags(path),
      origin:'Ultra Sentinel Core',status:'NEEDS_VERIFICATION'});
  };
@@ -308,4 +317,4 @@ function markdown(result){
  lines.push('','Sin auto-merge ni auto-aprobación. Exigir pruebas y revisiones completas.');
  return lines.join('\n').slice(0,58000);
 }
-module.exports={recoverAddedPatch,missingAddedPatch,analyze,parsePatch,markdown,VERSION};
+module.exports={recoverAddedPatch,missingAddedPatch,analyze,parsePatch,markdown,DOMAIN_VALIDATION,VERSION};
