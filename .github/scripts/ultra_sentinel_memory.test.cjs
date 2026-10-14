@@ -197,6 +197,18 @@ test('extra verified records include provenance',async()=>{
  }finally{Set.prototype.has=originalHas;}
  assert.equal(acceptedRepeatedId,false,'duplicate ledger IDs must fail closed');
  assert.match(String(duplicateError?.message),/INVALID_LEDGER_ENTRY/);
+ // P2 variant: a mutable String.trim must not reclassify blank evidence
+ // as a substantive regression test.
+ const originalTrim=String.prototype.trim;
+ let blankAdmitted=false,blankError;
+ try{
+  String.prototype.trim=()=> 'forged non-empty test';
+  try{ledger.parseLedger({...raw,entries:[{...e,tests:['   ','\\u2003']}]});blankAdmitted=true;}
+  catch(error){blankError=error;}
+ }finally{String.prototype.trim=originalTrim;}
+ assert.equal(blankAdmitted,false,
+  'poisoned String.trim must not admit blank test evidence');
+ assert.match(String(blankError?.message),/INVALID_LEDGER_ENTRY/);
  // Codex P2: normalization must preserve the validated SHA primitives when
  // String.prototype.toLowerCase is poisoned even after a valid snapshot.
  const uppercaseEntry={...e,fixSha:'A'.repeat(40),testSha:'B'.repeat(40)};
