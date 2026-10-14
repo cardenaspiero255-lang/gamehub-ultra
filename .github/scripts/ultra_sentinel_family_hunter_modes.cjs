@@ -110,6 +110,11 @@ function completeShape(analysis){
     f.origin!=='Ultra Sentinel Core'||
     f.status!=='NEEDS_VERIFICATION'))
    return false;
+ // A syntactically canonical checklist can still be truncated by removing
+ // both a domain and its checks. Every Core finding must remain represented
+ // in the plan's domain set or no review may be presented as complete.
+ if(findings.some(f=>f.domains.some(d=>!plan.domains.includes(d))))
+   return false;
  const hasCritical=findings.some(f=>f.severity==='BLOCKER'||f.severity==='HIGH');
  // Core can legitimately exceed its 40-finding display cap with only
  // MEDIUM/LOW alerts. Preserve that authentic verdict: the portable
