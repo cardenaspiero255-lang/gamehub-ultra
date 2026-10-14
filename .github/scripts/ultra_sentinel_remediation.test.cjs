@@ -253,6 +253,57 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   locations:true,ranges:true});
  assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast));
 });
+test('Family Hunter preserves bounded noncritical overflows as incomplete portable reports',()=>{
+ const modes=require('./ultra_sentinel_family_hunter_modes.cjs');
+ const {buildReport}=require('./ultra_sentinel_report.cjs');
+ // Core's real detector emits one distinct MEDIUM FORCED_GC per added line.
+ // A test-only file suppresses the unrelated REGRESSION_TEST_COVERAGE alert.
+ const analyzeGcStorm=(n)=>core.analyze([
+  {filename:'app/src/main/java/demo/GcStorm.kt',status:'added',changes:n,
+   patch:'@@ -0,0 +1,'+n+' @@\\n'+Array(n).fill('+System.gc()').join('\\n')+'\\n'},
+  {filename:'app/src/test/DemoTest.kt',status:'added',changes:1,
+   patch:'@@ -0,0 +1 @@\\n+// test-only fixture\\n'}
+ ],{sha:'c'.repeat(40)});
+ for(const count of [40,41,47]){
+  const original=analyzeGcStorm(count);
+  assert.equal(original.coverage.partial,false);
+  assert.equal(original.verdict,'NO_CRITICAL_PATTERN');
+  assert.equal(original.findings.length,40);
+  assert.equal(original.omitted,count-40);
+  assert.ok(original.findings.every(f=>f.severity==='MEDIUM'));
+  assert.equal(original.remediations.suggestions.length,35);
+  for(const requestedMode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+   const presented=modes.present(original,requestedMode);
+   assert.equal(presented.verdict,original.verdict);
+   assert.equal(presented.omitted,count-40);
+   assert.equal(presented.familyHunter.autoMergeAllowed,false);
+   const report=buildReport({pr:194,sha:original.sha,analysis:presented});
+   assert.equal(report.partial,count>40,
+    'omitted alerts must never generate a complete-looking report');
+   assert.equal(report.status,count>40?'incomplete':'no_critical_signal');
+   assert.equal(report.reportTruncated,true);
+   if(requestedMode==='REVIEW_ONLY'){
+    assert.ok(report.findings.every(f=>f.repair===null));
+   }
+  }
+ }
+ const overflowing=analyzeGcStorm(41);
+ const forgedHigh={...overflowing.findings[0],severity:'HIGH'};
+ const inconsistent={...overflowing,
+  findings:[forgedHigh,...overflowing.findings.slice(1)],
+  remediations:buildRemediations({sha:overflowing.sha,
+   findings:[forgedHigh,...overflowing.findings.slice(1)]})
+ };
+ for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+  assert.throws(()=>modes.present(inconsistent,mode),/INCOMPLETE_ANALYSIS/,
+   'hidden critical signals must still be rejected');
+ const incomplete={...overflowing,coverage:{...overflowing.coverage,partial:true},
+  verdict:'INCOMPLETE'};
+ const incompleteReport=buildReport({pr:194,sha:incomplete.sha,
+  analysis:modes.present(incomplete)});
+ assert.equal(incompleteReport.status,'incomplete');
+ assert.equal(incompleteReport.partial,true);
+});
 test('assistant handoff requires adaptation and verification',()=>{
  const s=makeSuggestion(f('UNBOUNDED_RECURSION'));
  assert.match(s.handoff,/NO pegar/);
