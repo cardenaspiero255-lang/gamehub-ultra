@@ -1,0 +1,67 @@
+name: Ultra Sentinel SSS — Read-only provider observer
+# Trusted main code only. No candidate checkout, no write token, no merge.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+concurrency:
+  group: sentinel-sss-observer-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  advisory:
+    name: Family Hunter and plugin evidence (advisory only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout trusted main scripts without credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # pinned v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Report Family Hunter and exact-HEAD plugin evidence
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # pinned v8
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const path=require('node:path');
+            // Only execute code from trusted main, never from the PR.
+            const {analyze}=require(path.resolve('.github/scripts/ultra_sentinel_core.cjs'));
+            const {analyzeFamilies}=require(path.resolve('.github/scripts/ultra_sentinel_family_fingerprints.cjs'));
+            const {auditProviders}=require(path.resolve('.github/scripts/ultra_sentinel_review_integrations.cjs'));
+            const owner=context.repo.owner,repo=context.repo.repo;
+            const n=context.payload.pull_request?.number;
+            if(!Number.isSafeInteger(n)||n<1){core.setFailed('Invalid PR number');return;}
+            const {data:pr}=await github.rest.pulls.get({owner,repo,pull_number:n});
+            if(pr.state!=='open'||pr.head.repo?.full_name!==owner+'/'+repo){
+              core.setFailed('Unsupported PR provenance');return;
+            }
+            const files=await github.paginate(github.rest.pulls.listFiles,
+              {owner,repo,pull_number:n,per_page:100});
+            if(files.length!==pr.changed_files||files.length>300){
+              core.setFailed('Incomplete/unbounded PR file inventory');return;
+            }
+            const analysis=analyze(files,{sha:pr.head.sha});
+            const family=analyzeFamilies(analysis);
+            const reviews=await github.paginate(github.rest.pulls.listReviews,
+              {owner,repo,pull_number:n,per_page:100});
+            const checks=await github.paginate(github.rest.checks.listForRef,
+              {owner,repo,ref:pr.head.sha,per_page:100});
+            const providers=auditProviders({headSha:pr.head.sha,reviews,checks});
+            const {data:latest}=await github.rest.pulls.get({owner,repo,pull_number:n});
+            if(latest.head.sha!==pr.head.sha){
+              core.setFailed('HEAD moved during review');return;
+            }
+            const detail=Object.entries(providers.providers)
+              .map(([name,state])=>'- '+name+': '+state).join('\n');
+            await core.summary.addHeading('Ultra Sentinel SSS · advisory evidence')
+              .addRaw('Immutable SHA: '+pr.head.sha+'\n\nFamily clusters: '+
+                family.families.length+'\nFamily status: '+family.status+
+                '\n\n'+detail+
+                '\n\nNo plugin status authorizes a repair, approval or merge.')
+              .write();
+            if(family.status==='INCOMPLETE')core.warning('Incomplete evidence; no clean result is certified.');
