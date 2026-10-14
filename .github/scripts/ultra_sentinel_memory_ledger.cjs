@@ -61,25 +61,19 @@ function entryDigest(e){
  return createHash('sha256').update(JSON.stringify(fields),'utf8').digest('hex');
 }
 /**
- * Historical fixes are authorized exclusively by digests committed following
- * independently reviewed red/green proof in trusted main. This allowlist is
- * intentionally empty until such evidence is accredited.
- *
- * Legacy caller-supplied verifier parameters are NEVER invoked or trusted:
- * their callbacks can return forged facts and mutate global intrinsics.
- * Membership uses primitive indexed equality, not mutable includes(), and
- * output uses indexed assignment, not mutable push().
+ * Historical fixes require a digest committed following independent
+ * red/green attestation in trusted main. Until that proof exists, the
+ * private approved-digest allowlist remains empty and all records quarantine.
+ * Legacy caller-supplied callbacks are NEVER executed or trusted.
  */
 async function verifiedEntries(ledger,_ignoredVerifier){
  const entries=parseLedger(ledger),confirmed=[];
  for(const e of entries){
   const digest=entryDigest(e);
-  for(let i=0;i<APPROVED_DIGESTS.length;i++){
-   if(APPROVED_DIGESTS[i]===digest){
-    confirmed[confirmed.length]=e;
-    break;
-   }
-  }
+  // Unlike the older design, NO caller callback executes between admission
+  // and insertion. An untrusted verifier cannot alter our decision intrinsics.
+  if(!APPROVED_DIGESTS.includes(digest))continue;
+  confirmed.push(e);
  }
  return Object.freeze(confirmed);
 }
