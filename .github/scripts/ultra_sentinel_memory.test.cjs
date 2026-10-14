@@ -62,6 +62,29 @@ test('bounded ranking and prompt injection ignored',()=>{
 test('result contains tests rather than ungrounded confidence',()=>{
  const [r]=m.search({rule:'PRIVILEGED_UNTRUSTED_CHECKOUT'});
  assert.ok(r.tests.length);assert.equal(typeof r.score,'number');assert.equal(r.evidenceUrl,null);
+ const {auditProviders}=require('./ultra_sentinel_review_integrations.cjs');
+ const observed='a'.repeat(40),outdated='b'.repeat(40);
+ const result=auditProviders({headSha:observed,
+   reviews:[
+    {user:{login:'chatgpt-codex-connector[bot]'},state:'COMMENTED',commit_id:outdated},
+    {user:{login:'coderabbitai[bot]'},state:'COMMENTED',commit_id:observed},
+    {user:{login:'unknown-reviewer[bot]'},state:'APPROVED',commit_id:observed}
+   ],
+   checks:[
+    {name:'Sentry',head_sha:observed,status:'completed',conclusion:'success',
+     app:{slug:'sentry'}},
+    {name:'Qodo Review',head_sha:outdated,status:'completed',conclusion:'success',
+     app:{slug:'qodo'}}
+   ]});
+ assert.equal(result.autoMergeAllowed,false);
+ assert.equal(result.providers.codex,'STALE');
+ assert.equal(result.providers.coderabbit,'COMMENT_ONLY_NOT_APPROVED');
+ assert.equal(result.providers.qodo,'STALE');
+ assert.equal(result.providers.sentry,'CHECK_SUCCESS_ADVISORY');
+ assert.equal(result.independentVerified,false);
+ assert.equal(auditProviders({headSha:observed,reviews:[],checks:[]}).independentVerified,false);
+ assert.throws(()=>auditProviders({headSha:'untrusted',reviews:[],checks:[]}),/INVALID_REVIEW_EVIDENCE/);
+ assert.throws(()=>auditProviders({headSha:observed,reviews:'all green',checks:[]}),/INVALID_REVIEW_EVIDENCE/);
 });
 test('extra verified records include provenance',async()=>{
  const e={id:'verified-100',type:'verified_fix',fixSha:sha,testSha:b,
