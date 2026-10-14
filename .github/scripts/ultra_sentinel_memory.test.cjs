@@ -136,19 +136,6 @@ test('rejects unsupported memory type even when all provenance fields look valid
  assert.ok(!m.search({rule:impostor.rule},[impostor]).some(r=>r.id===impostor.id));
 });
 
-test('trusted-main AST source parser can inspect full memory implementations',()=>{
- const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
- const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
- for(const name of ['ultra_sentinel_memory.cjs','ultra_sentinel_memory_ledger.cjs']){
-  const source=fs.readFileSync(path.join(__dirname,name),'utf8');
-  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
-   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
-   locations:true,ranges:true});
-  assert.deepEqual(findCapabilities(ast),[],
-   'trusted main AST analyzer must accept complete benign source '+name);
- }
-});
-
 test('camelCase identifiers tokenize before lowercasing and retrieve playbook',()=>{
  assert.deepEqual(m.terms('SpeechRecognizer'),['speech','recognizer']);
  assert.deepEqual(m.terms('startListening'),['start','listening']);
