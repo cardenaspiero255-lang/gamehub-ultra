@@ -1,7 +1,10 @@
 'use strict';
 /* Ultra Sentinel evidence memory — deterministic/offline; never learns from unverified bot output. */
 const MAX_QUERY=1200;
-const STOP=new Set(['the','and','for','this','from','into','with','para','que','los','las','una','por','del','error','file','test','code','kotlin','android','github','line','app','src','main','java','com','gamehubultra']);
+const STOP=Object.freeze(['the','and','for','this','from','into','with','para','que','los','las','una','por','del','error','file','test','code','kotlin','android','github','line','app','src','main','java','com','gamehubultra']);
+// Capture arithmetic intrinsics while loading trusted code, before consumers
+// can alter their global prototypes or Math properties.
+const TRUSTED_LOG=Math.log,TRUSTED_ROUND=Math.round;
 const KNOWN=Object.freeze([
  Object.freeze({id:'pattern-voice-retry',type:'playbook',domain:'voice',rule:'SPEECH_REENTRANT_RETRY',
   summary:'SpeechRecognizer onError synchronous startListening recursion stack overflow restart retry gate lifecycle',
@@ -22,16 +25,28 @@ const KNOWN=Object.freeze([
 ]);
 // Freeze each source entry and nested tests at construction time. Keeping
 // the authority private prevents untrusted consumer mutation or ID spoofing.
+function isStopWord(token){
+ for(let i=0;i<STOP.length;i++){
+  if(STOP[i]===token)return true;
+ }
+ return false;
+}
 function terms(value){
  const s=String(value||'').slice(0,MAX_QUERY).replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase();
  const matched=s.match(/[a-z0-9_]{3,}/g);
  if(!matched)return [];
- const distinct=new Set();
+ // Do not trust Array/Set iterators, push, filter or includes on this path.
+ const tokens=[];
  for(let i=0;i<matched.length;i++){
   const token=matched[i];
-  if(!STOP.has(token))distinct.add(token);
+  if(isStopWord(token))continue;
+  let duplicate=false;
+  for(let j=0;j<tokens.length;j++){
+   if(tokens[j]===token){duplicate=true;break;}
+  }
+  if(!duplicate)tokens[tokens.length]=token;
  }
- return [...distinct];
+ return tokens;
 }
 function hasToken(tokens,needle){
  for(let i=0;i<tokens.length;i++){
@@ -40,9 +55,16 @@ function hasToken(tokens,needle){
  return false;
 }
 function curatedTests(tests){
- // Preserve immutable private tests; avoid replaceable slice/map intrinsics.
  if(tests.length<=4)return tests;
  return [tests[0],tests[1],tests[2],tests[3]];
+}
+function documentFrequency(token){
+ let count=0;
+ for(let i=0;i<KNOWN.length;i++){
+  const entry=KNOWN[i];
+  if(hasToken(terms(entry.summary+' '+entry.rule+' '+entry.domain),token))count++;
+ }
+ return count;
 }
 function vetted(entry){
  if(!entry||typeof entry!=='object')return false;
@@ -82,7 +104,6 @@ function evidenceLink(entry){
 // Direct search has no authority to promote caller-supplied historical fixes.
 // The optional legacy array is deliberately ignored: only curated items rank.
 function search(query,_extra=[],max=3){
- // Query text is untrusted; only the private, frozen curated corpus may rank.
  let rule,path,reason,text,domain;
  if(query&&typeof query==='object'){
   rule=query.rule;path=query.path;reason=query.reason;
@@ -90,42 +111,39 @@ function search(query,_extra=[],max=3){
  }else{text=String(query||'');}
  const q=terms(String(rule||'')+' '+String(path||'')+' '+String(reason||'')+' '+String(text||''));
  if(!q.length)return [];
- // A local array whose elements are later overwritten or re-bound cannot be
- // certified by the trusted-main callback provenance analyser. Rank directly
- // against the immutable registry and construct only literal return arrays.
- const corpus=KNOWN;
- const df=new Map();
- for(const e of corpus){
-  for(const t of terms(e.summary+' '+e.rule+' '+e.domain)){
-   df.set(t,(df.get(t)||0)+1);
-  }
- }
  const limit=Math.max(0,Math.min(5,Number(max)||3));
- const selected=new Set();
  let first=null,second=null,third=null,fourth=null,fifth=null;
  for(let n=0;n<limit;n++){
   let best=null;
-  for(const e of corpus){
-   if(selected.has(e.id))continue;
+  // An Array.prototype[Symbol.iterator] override must never supply an
+  // external record to the private authority. Use the frozen slots directly.
+  for(let i=0;i<KNOWN.length;i++){
+   const e=KNOWN[i];
+   if((first!==null&&e.id===first.id)||
+      (second!==null&&e.id===second.id)||
+      (third!==null&&e.id===third.id)||
+      (fourth!==null&&e.id===fourth.id)||
+      (fifth!==null&&e.id===fifth.id))continue;
    const tokens=terms(e.summary+' '+e.rule+' '+e.domain);
    let score=0;
-   for(const t of q){
-    if(hasToken(tokens,t))score+=Math.log(1+(corpus.length+1)/(df.get(t)||1));
+   for(let j=0;j<q.length;j++){
+    const t=q[j];
+    if(hasToken(tokens,t)){
+     const freq=documentFrequency(t)||1;
+     score+=TRUSTED_LOG(1+(KNOWN.length+1)/freq);
+    }
    }
    if(rule&&e.rule===rule)score+=7;
    if(domain&&e.domain===domain)score+=2;
    if(score<=0)continue;
-   const row={id:e.id,type:e.type,domain:e.domain||'general',
-    rule:e.rule||'',score:Number(score.toFixed(3)),
-    advice:e.advice,
-    tests:curatedTests(e.tests),
-    evidenceUrl:evidenceLink(e),
-    verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'};
+   const row={id:e.id,type:'playbook',domain:e.domain,rule:e.rule,
+    score:TRUSTED_ROUND(score*1000)/1000,advice:e.advice,
+    tests:curatedTests(e.tests),evidenceUrl:null,
+    verification:'curated_playbook'};
    if(best===null||row.score>best.score||
       (row.score===best.score&&row.id<best.id))best=row;
   }
   if(best===null)break;
-  selected.add(best.id);
   if(n===0)first=best;
   else if(n===1)second=best;
   else if(n===2)third=best;
