@@ -8,11 +8,50 @@ test('voice retriever returns matching playbook',()=>{
  assert.equal(r[0].verification,'curated_playbook');
 });
 test('unknown query no invented evidence',()=>assert.deepEqual(m.search('zzzxxyyqqq'),[]));
-test('verified memory requires fix and test sha',()=>{
+test('verified memory requires fix and test sha',async()=>{
  const e={id:'fix-2026-001',type:'verified_fix',fixSha:sha,testSha:b,
  evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/161',
  summary:'Fix lifecycle callback recursion after error condition',advice:'Cancel callback and rerun regression suite',tests:['callback test']};
  assert.ok(m.vetted(e));assert.ok(!m.vetted({...e,testSha:null}));
+ const {preflightRepair}=require('./ultra_sentinel_repair_authorization.cjs');
+ const context={repository:'cardenaspiero255-lang/gamehub-ultra',number:201,
+  headSha:sha,headRepo:'cardenaspiero255-lang/gamehub-ultra',
+  draft:false,files:['app/src/main/java/voice/Ultra.kt','app/src/test/UltraTest.kt'],
+  checks:[{name:'Android build',sha,status:'completed',conclusion:'success'},
+          {name:'Ultra Sentinel Core Tests',sha,status:'completed',conclusion:'success'}],
+  requiredChecks:['Android build','Ultra Sentinel Core Tests'],now:2000000};
+ const attested=async()=>({repository:context.repository,prNumber:201,sha,
+   actor:'cardenaspiero255-lang',scope:'repair:commit-to-pr-branch',
+   signedApprovalVerified:true,independentReviewVerified:true,
+   issuedAt:1999000,nonceUnused:true});
+ const ok=await preflightRepair(context,attested);
+ assert.equal(ok.status,'ELIGIBLE_FOR_HUMAN_COMMIT');
+ assert.equal(ok.autoCommitAllowed,false);
+ assert.equal(ok.autoMergeAllowed,false);
+ for(const bad of [
+  {...context,headSha:b},
+  {...context,draft:true},
+  {...context,files:['.github/workflows/deploy.yml']},
+  {...context,files:['app/src/main/AndroidManifest.xml']},
+  {...context,checks:[{name:'Android build',sha,status:'queued',conclusion:null}]},
+  {...context,requiredChecks:[]},
+  {...context,headRepo:'attacker/fork'}
+ ]){
+  const no=await preflightRepair(bad,attested);
+  assert.equal(no.status,'BLOCKED','invalid context must not authorize a commit');
+  assert.equal(no.autoCommitAllowed,false);
+ }
+ for(const facts of [
+  {...await attested(),signedApprovalVerified:false},
+  {...await attested(),independentReviewVerified:false},
+  {...await attested(),nonceUnused:false},
+  {...await attested(),sha:b},
+  {...await attested(),issuedAt:1}
+ ]){
+  const no=await preflightRepair(context,async()=>facts);
+  assert.equal(no.status,'BLOCKED');
+ }
+ assert.equal((await preflightRepair(context,null)).status,'BLOCKED');
 });
 test('rejects external repos and missing test evidence',()=>{
  const e={id:'verified-example',type:'verified_fix',fixSha:sha,testSha:b,
