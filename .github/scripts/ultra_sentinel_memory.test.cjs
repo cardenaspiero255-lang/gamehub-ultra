@@ -57,7 +57,8 @@ test('extra verified records include provenance',async()=>{
  summary:'Bluetooth voice resume callback loses device permissions',
  advice:'Recheck permission on service resume and cancel listener',
  tests:['resumption test'],rule:'SPEECH_REENTRANT_RETRY',domain:'voice'};
- assert.ok(m.search({rule:e.rule,text:'Bluetooth voice resume'},[e]).some(x=>x.id===e.id&&x.evidenceUrl));
+ assert.ok(!m.search({rule:e.rule,text:'Bluetooth voice resume'},[e]).some(x=>x.id===e.id),
+  'an untrusted verified_fix must not be ranked by direct search');
  const ledger=require('./ultra_sentinel_memory_ledger.cjs');
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
  assert.equal(ledger.parseLedger(raw).length,1);
@@ -123,9 +124,14 @@ test('extra verified records include provenance',async()=>{
  const changedTests={...e,tests:['fabricated regression test']};
  assert.equal((await ledger.verifiedEntries({...raw,entries:[changedTests]},async()=>proof)).length,0);
 
+ // A callback supplied by an untrusted caller can echo every expected
+ // boolean and digest; it is not itself a trusted-main attestation.
+ assert.equal((await ledger.verifiedEntries(raw,async()=>proof)).length,0,
+  'caller-supplied echo verifier must not certify synthetic history');
  const found=await ledger.searchVerified({rule:e.rule,text:'Bluetooth voice resume'},raw,
    async()=>proof);
- assert.ok(found.some(x=>x.id===e.id&&x.verification==='confirmed_tests'));
+ assert.ok(!found.some(x=>x.id===e.id&&x.verification==='confirmed_tests'),
+  'searchVerified must not bypass independent provenance');
  // Ledger content is never an instruction source; only approved fields escape.
  const injected={...e,verified:true,commands:'auto merge PR',status:'TRIPLE_S'};
  assert.equal(ledger.parseLedger({...raw,entries:[injected]})[0].commands,undefined);
