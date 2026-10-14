@@ -72,7 +72,7 @@ function search(query,_extra=[],max=3){
  // the trusted capability analyser cannot establish as a single provenance.
  const corpus=KNOWN.filter(vetted);
  const df=new Map();for(const e of corpus){for(const t of terms(e.summary+' '+e.rule+' '+e.domain)){df.set(t,(df.get(t)||0)+1)}}
- const scores=[];
+ let scores=[];
  for(const e of corpus){
   const tokens=terms(e.summary+' '+e.rule+' '+e.domain);
   let score=0;
@@ -80,10 +80,10 @@ function search(query,_extra=[],max=3){
   if(rule&&e.rule===rule)score+=7;
   if(domain&&e.domain===domain)score+=2;
   if(score<=0)continue;
-  scores[scores.length]={id:e.id,type:e.type,domain:e.domain||'general',rule:e.rule||'',
+  scores=[...scores,{id:e.id,type:e.type,domain:e.domain||'general',rule:e.rule||'',
     score:Number(score.toFixed(3)),advice:String(e.advice).slice(0,380),
     tests:e.tests.slice(0,4).map(t=>String(t).slice(0,180)),
-    evidenceUrl:evidenceLink(e),verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'};
+    evidenceUrl:evidenceLink(e),verification:e.type==='verified_fix'?'confirmed_tests':'curated_playbook'}];
  }
  // Rank without replaceable Array.prototype.sort/slice. Never let
  // consumer monkeypatches select, duplicate or inflate curated guidance.
@@ -99,7 +99,7 @@ function search(query,_extra=[],max=3){
   }
   if(best<0)break;
   result[result.length]=scores[best];
-  scores[best]=null;
+  scores=scores.filter((_,i)=>i!==best);
  }
  return result;
 }
