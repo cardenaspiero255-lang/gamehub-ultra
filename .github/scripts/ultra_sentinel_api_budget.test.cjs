@@ -58,11 +58,16 @@ test('secondary limit without headers honors a full minute before one retry',asy
 test('trusted main AST can parse and certify API budget source context',()=>{
  const fs=require('node:fs'),path=require('node:path'),acorn=require('acorn');
  const {findCapabilities}=require('./ultra_sentinel_capabilities.cjs');
- const src=fs.readFileSync(path.join(__dirname,'ultra_sentinel_api_budget.cjs'),'utf8');
- const ast=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',
-  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
-  locations:true,ranges:true});
- assert.deepEqual(findCapabilities(ast),[]);
+ // Assert all three independently. Keep the Core b1 test-registration
+ // contract unchanged while adding strict memory/ledger AST coverage.
+ for(const file of ['ultra_sentinel_api_budget.cjs',
+   'ultra_sentinel_memory.cjs','ultra_sentinel_memory_ledger.cjs']){
+  const src=fs.readFileSync(path.join(__dirname,file),'utf8');
+  const ast=acorn.parse(src,{ecmaVersion:'latest',sourceType:'script',
+   allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+   locations:true,ranges:true});
+  assert.deepEqual(findCapabilities(ast),[],'trusted AST: '+file);
+ }
 });
 
 test('GitHub compare accepts exact SHA...SHA while blocking traversal',async()=>{
