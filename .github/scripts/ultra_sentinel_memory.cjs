@@ -43,6 +43,12 @@ function vetted(entry){
   validUrl(entry.evidenceUrl)&&String(entry.summary||'').length>=20&&
   String(entry.advice||'').length>=20&&Array.isArray(entry.tests)&&entry.tests.length>0;
 }
+// Only a read-only lookup is exposed; the curated authority remains private.
+// External records can never be registered as playbooks through this module.
+function getCuratedPlaybookById(id){
+ if(typeof id!=='string')return null;
+ return KNOWN.find(entry=>entry.id===id)||null;
+}
 // Avoid conditional unions of inferred object provenance in the trusted
 // AST reviewer; playbooks have no URL and verified fixes carry an attested URL.
 function evidenceLink(entry){
@@ -80,4 +86,4 @@ function search(query,extra=[],max=3){
  }
  return scores.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,Math.max(0,Math.min(5,Number(max)||3)));
 }
-module.exports={VERSION,terms,vetted,search,KNOWN};
+module.exports={VERSION,terms,vetted,search,getCuratedPlaybookById};
