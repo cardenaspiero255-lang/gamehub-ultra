@@ -346,12 +346,12 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  // pair must not hide a critical risk beyond buildReport's ten-item window.
  const critical=(severity,filename,line)=>({
   ...r.findings[0],rule:severity==='BLOCKER'?'PRIVILEGED_UNTRUSTED_CHECKOUT':
-   'SPEECH_REENTRANT_RETRY',severity,path:filename,line
+   'SPEECH_REENTRANT_RETRY',severity,path:filename,line,domains:['android']
  });
  const medium=(index)=>({
   ...r.findings[1],rule:'REGRESSION_TEST_COVERAGE',severity:'MEDIUM',
   path:'app/src/main/java/demo/M'+String(index).padStart(2,'0')+'.kt',
-  line:index
+  line:index,domains:['android']
  });
  const med=Array.from({length:10},(_,i)=>medium(i+1));
  const high=critical('HIGH','app/src/main/java/demo/Top.kt',1);
@@ -360,6 +360,12 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   coverage:{returned:list.length,analyzed:list.length,partial:false},
   remediations:buildCoreRemediations({sha:r.sha,findings:list}),omitted:0,
   verdict:'REVIEW_REQUIRED'});
+ // The fixture metadata must match the exact Core-derived path domains.
+ for(const f of [high,blocker,...med]){
+  const expected=core.analyze([{filename:f.path,status:'added',changes:0,
+   patch:''}],{sha:r.sha}).validationPlan.domains;
+  assert.deepEqual(f.domains,expected,'fixture domains must match Core');
+ }
  const ordered=candidate([high,...med]);
  const orderedReport=require('./ultra_sentinel_report.cjs').buildReport({
   pr:194,sha:r.sha,analysis:modes.present(ordered)
