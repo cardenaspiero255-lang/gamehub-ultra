@@ -84,6 +84,28 @@ test('extra verified records include provenance',async()=>{
   'an untrusted verified_fix must not be ranked by direct search');
  const ledger=require('./ultra_sentinel_memory_ledger.cjs');
  const raw={schema:ledger.SCHEMA,revision:1,entries:[e]};
+ // P2: the untrusted header must capture the array reference once and
+ // iterate a fixed bounded length, even when getters or proxies change it.
+ let entryGetterReads=0;
+ const swappingHeader={schema:ledger.SCHEMA,revision:1,
+  get entries(){
+   entryGetterReads++;
+   return entryGetterReads===1?[e]:Array.from({length:201},()=>e);
+  }};
+ const capturedHeader=ledger.parseLedger(swappingHeader);
+ assert.equal(entryGetterReads,1,'entries getter must only be read once');
+ assert.equal(capturedHeader.length,1,'later getter values must be irrelevant');
+ let entryLengthReads=0;
+ const volatileEntries=new Proxy([e],{get(target,key,receiver){
+  if(key==='length'){
+   entryLengthReads++;
+   return entryLengthReads===1?1:201;
+  }
+  return Reflect.get(target,key,receiver);
+ }});
+ const boundedHeader=ledger.parseLedger({...raw,entries:volatileEntries});
+ assert.equal(entryLengthReads,1,'entries proxy length must be read once');
+ assert.equal(boundedHeader.length,1);
  assert.equal(ledger.parseLedger(raw).length,1);
  for(const domain of ['ai','performance']){
   assert.equal(ledger.parseLedger({...raw,entries:[{...e,domain}]}).length,1,
