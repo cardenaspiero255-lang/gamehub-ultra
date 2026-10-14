@@ -109,7 +109,7 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
   ['planner version mismatch',{...clean,remediations:{...clean.remediations,version:'999.0.0'}}],
   ['untrusted repair scope',{...clean,remediations:{...clean.remediations,scope:'automatic-writes'}}],
   ['301 complete files',{...clean,coverage:{returned:301,analyzed:0,partial:false}}],
-  ['301 partial files',{...clean,coverage:{returned:301,analyzed:0,partial:true},verdict:'INCOMPLETE'}],
+  ['301 scanned despite Core MAX_FILES=300',{...clean,coverage:{returned:301,analyzed:301,partial:true},verdict:'INCOMPLETE'}],
   ['missing coverage details',{...clean,coverage:{}}],
   ['missing analyzed count',{...clean,coverage:{returned:1,partial:false}}],
   ['text count instead of integer',{...clean,coverage:{returned:'1',analyzed:1,partial:false}}],
@@ -141,6 +141,28 @@ test('integrated engine returns plan per risk and keeps SHA',()=>{
  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
   const limit={...clean,coverage:{returned:300,analyzed:0,partial:false}};
   assert.equal(modes.present(limit,mode).coverage.returned,300);
+ }
+ // Core preserves the full incoming file count, but scans only 300.
+ // Real >300-file inputs MUST survive as partial/incomplete reports.
+ const {buildReport:buildPartialReport}=require('./ultra_sentinel_report.cjs');
+ for(const count of [301,305]){
+  const files=Array.from({length:count},(_,i)=>({
+   filename:'docs/oversize-'+i+'.md',status:'added',changes:1,
+   patch:'@@ -0,0 +1 @@\\n+document-only change'
+  }));
+  const trueCore=core.analyze(files,{sha:r.sha});
+  assert.equal(trueCore.coverage.returned,count);
+  assert.equal(trueCore.coverage.analyzed,0);
+  assert.equal(trueCore.coverage.partial,true);
+  assert.equal(trueCore.verdict,'INCOMPLETE');
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+   const presented=modes.present(trueCore,mode);
+   assert.equal(presented.coverage.returned,count);
+   const report=buildPartialReport({pr:194,sha:r.sha,analysis:presented});
+   assert.equal(report.status,'incomplete');
+   assert.equal(report.partial,true);
+   assert.equal(presented.familyHunter.autoMergeAllowed,false);
+  }
  }
  // P2 proof: a truncated finding must never become an apparently complete
  // Family Hunter review, even if its remediation proposal still matches.
