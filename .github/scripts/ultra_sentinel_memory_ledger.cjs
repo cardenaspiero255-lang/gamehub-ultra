@@ -23,7 +23,7 @@ function boundedEntry(raw){
   typeof raw.id==='string'&&/^[a-z0-9_-]{6,80}$/i.test(raw.id)&&
   typeof raw.rule==='string'&&/^[A-Z][A-Z_0-9]{2,75}$/.test(raw.rule)&&
   typeof raw.domain==='string'&&
-   ['android','voice','network','ci','security','general'].includes(raw.domain)&&
+   ['android','voice','network','ci','security','ai','performance','general'].includes(raw.domain)&&
   hex(raw.fixSha)&&hex(raw.testSha)&&validUrl(raw.evidenceUrl)&&
   typeof raw.summary==='string'&&raw.summary.length>=20&&raw.summary.length<=MAX_FIELD&&
   typeof raw.advice==='string'&&raw.advice.length>=20&&raw.advice.length<=MAX_FIELD&&
