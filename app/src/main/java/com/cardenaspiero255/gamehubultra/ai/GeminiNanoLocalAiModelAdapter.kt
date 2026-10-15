@@ -83,7 +83,7 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
                     return@boundedNanoCall null
                 }
 
-                val response = client.generateContent(buildPrompt(question, context))
+                val response = client.generateContent(buildNanoAdvicePrompt(question, context))
                 val raw = response.candidates
                     .firstOrNull()
                     ?.text
@@ -145,7 +145,9 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
         }.getOrNull()
 
 
-    private fun buildPrompt(
+}
+
+internal fun buildNanoAdvicePrompt(
         question: String,
         context: GameHubAiContext
     ): String = buildString {
@@ -177,7 +179,7 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
         appendLine("Selected profile: " + context.selectedProfile.name)
         appendLine("Session active: " + context.sessionActive)
     }
-}
+
 internal fun buildGeminiChatPrompt(
         message: String,
         context: GameHubAiContext,
