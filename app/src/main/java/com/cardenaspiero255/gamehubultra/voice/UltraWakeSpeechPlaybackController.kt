@@ -33,16 +33,31 @@ internal class UltraWakeSpeechPlaybackController(
         val token = speechGeneration.begin()
         val startedAtMillis = System.currentTimeMillis()
         playbackGuard.onPlaybackStarted(response)
-        val result = tts?.speak(
-            response,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "$COMMAND_UTTERANCE_PREFIX-$token"
-        ) ?: TextToSpeech.ERROR
-
-        if (result == TextToSpeech.ERROR) {
+        val chunks = UltraSpeechChunker.chunk(response)
+        val engine = tts
+        if (engine == null || chunks.isEmpty()) {
             complete(token)
             return
+        }
+        for ((index, segment) in chunks.withIndex()) {
+            // Intermediate TTS completion callbacks must not resume listening
+            // or finish the speech generation before the entire answer ends.
+            val utteranceId = if (index == chunks.lastIndex) {
+                "$COMMAND_UTTERANCE_PREFIX-$token"
+            } else {
+                "ultra-speech-part-$token-$index"
+            }
+            val result = engine.speak(
+                segment,
+                if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                null,
+                utteranceId
+            )
+            if (result == TextToSpeech.ERROR) {
+                engine.stop()
+                complete(token)
+                return
+            }
         }
         scheduleWatchdog(token, startedAtMillis, COMMAND_SPEECH_TIMEOUT_MS)
     }
