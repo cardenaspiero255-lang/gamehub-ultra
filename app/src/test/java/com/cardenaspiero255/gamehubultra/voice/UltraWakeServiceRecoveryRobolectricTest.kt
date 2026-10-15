@@ -163,7 +163,9 @@ class UltraWakeServiceRecoveryRobolectricTest {
     fun rejectedForegroundMicDuringOnCreateDisablesStoredListeningWithoutInitializingTts() {
         val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
         val service = controller.get()
-        val gateway = AndroidContinuousVoiceGateway(service)
+        val gateway = AndroidContinuousVoiceGateway(
+            org.robolectric.RuntimeEnvironment.getApplication()
+        )
         gateway.setEnabled(true)
         val foreground = rejectForegroundPromotion(
             service, SecurityException("RECORD_AUDIO revoked during foreground promotion")
@@ -186,7 +188,7 @@ class UltraWakeServiceRecoveryRobolectricTest {
     @Test
     fun rejectedForegroundMicOnStartCommandDisablesStoredListeningAndReturnsNotSticky() {
         val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
-        val service = controller.get()
+        val service = controller.create().get()
         val gateway = AndroidContinuousVoiceGateway(service)
         gateway.setEnabled(true)
         val foreground = rejectForegroundPromotion(
