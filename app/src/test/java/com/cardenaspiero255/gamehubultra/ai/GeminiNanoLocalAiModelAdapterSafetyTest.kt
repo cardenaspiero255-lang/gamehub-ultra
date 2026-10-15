@@ -1,6 +1,8 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import android.os.Looper
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -122,6 +124,44 @@ class GeminiNanoLocalAiModelAdapterSafetyTest {
         assertTrue(unknown.contains("Thermal status: -1"))
         assertTrue(unknown.contains("Latency ms: -1"))
         assertTrue(unknown.contains("Battery: -1"))
+    }
+
+    @Test
+    fun nanoVoiceClassificationPromptNeverGrantsActionExecutionAndLimitsTranscript() {
+        val prompt = buildNanoVoiceIntentPrompt("Abre Minecraft")
+        assertTrue(prompt.contains("OPEN_GAME|exact game name spoken"))
+        assertTrue(prompt.contains("Respond with exactly one item, no explanation."))
+        assertTrue(prompt.contains("Use NONE for informational questions or unclear intent."))
+        assertTrue(prompt.contains("Voice input: Abre Minecraft"))
+        val oversized = buildNanoVoiceIntentPrompt("X".repeat(360))
+        assertTrue(oversized.contains("Voice input: " + "X".repeat(300)))
+        assertFalse(oversized.contains("X".repeat(301)))
+    }
+
+    @Test
+    fun nanoWorkerDoesNotNeedInstalledModelForSuccessfulBoundedCoroutineOrFailureFallback() {
+        val executor = Executors.newSingleThreadExecutor()
+        val adapter = GeminiNanoLocalAiModelAdapter()
+        try {
+            val executed = executor.submit<String?> {
+                adapter.boundedNanoCall { "OFF_MAIN_SAFE_RESULT" }
+            }
+            assertTrue(executed.get(3L, TimeUnit.SECONDS) == "OFF_MAIN_SAFE_RESULT")
+            val failed = executor.submit<String?> {
+                adapter.boundedNanoCall<String> {
+                    throw IllegalStateException("synthetic model rejection")
+                }
+            }
+            assertNull(failed.get(3L, TimeUnit.SECONDS))
+            adapter.close()
+            val stopped = executor.submit<String?> {
+                adapter.boundedNanoCall { "FORBIDDEN_AFTER_CLOSE" }
+            }
+            assertNull(stopped.get(3L, TimeUnit.SECONDS))
+        } finally {
+            adapter.close()
+            executor.shutdownNow()
+        }
     }
 
 }
