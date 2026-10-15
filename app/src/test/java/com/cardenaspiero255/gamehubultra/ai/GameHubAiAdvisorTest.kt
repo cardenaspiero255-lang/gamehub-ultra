@@ -1002,6 +1002,42 @@ class GameHubAiAdvisorTest {
         assertEquals("Prefiero perfiles estables", receivedMemories.single().text)
     }
 
+    @Test
+    fun optionalNanoVoiceProposalsRequireExplicitSpeechAndNeverTrustInventedGameTargets() {
+        var modelInvocations = 0
+        var modelAvailable = true
+        var predictedGame = "Minecraft"
+        val model = object : LocalAiModelAdapter {
+            override fun isAvailable(): Boolean = modelAvailable
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+            override fun interpretVoiceIntent(transcript: String): LocalVoiceIntentCandidate {
+                modelInvocations++
+                return LocalVoiceIntentCandidate("OPEN_GAME", predictedGame)
+            }
+        }
+        val resolver = GameHubAiAdvisor(modelAdapter = model).intentResolver()
+        val permitted = resolver.resolve("Podrías abrir Minecraft")
+        assertEquals("Minecraft", assertIs<VoiceCommand.OpenGame>(permitted).query)
+        assertEquals(1, modelInvocations)
+
+        predictedGame = "Banco"
+        assertNull(resolver.resolve("Podrías abrir Minecraft"))
+        assertEquals(2, modelInvocations)
+
+        modelAvailable = false
+        assertNull(resolver.resolve("Podrías abrir Minecraft"))
+        assertEquals(2, modelInvocations)
+
+        modelAvailable = true
+        assertNull(resolver.resolve("Podrías explicar cómo abrir Minecraft"))
+        assertEquals(3, modelInvocations)
+        assertNull(resolver.resolve("¿Qué es un agujero negro?"))
+        assertEquals(3, modelInvocations)
+    }
+
     private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =
         object : UltraLongTermMemoryGateway {
             override fun handleCommand(message: String, scope: UltraMemoryScope): String? = null
