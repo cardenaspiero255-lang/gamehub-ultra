@@ -5688,6 +5688,15 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "y cuya gravedad le da una forma aproximadamente redondeada. " +
         "Los planetas del sistema solar, como la Tierra, orbitan el Sol.",
     },
+    "escala aerea": {
+      claim: "local-stable:aviation-layover",
+      text:
+        "Una escala aérea es una parada intermedia durante un viaje en avión, " +
+        "entre el aeropuerto de salida y el destino final. Puede implicar " +
+        "esperar en el aeropuerto o cambiar de vuelo para continuar el " +
+        "trayecto; el tiempo disponible y el cambio de avión dependen " +
+        "del itinerario y la conexión.",
+    },
     "maraton": {
       claim: "local-stable:marathon",
       text:
