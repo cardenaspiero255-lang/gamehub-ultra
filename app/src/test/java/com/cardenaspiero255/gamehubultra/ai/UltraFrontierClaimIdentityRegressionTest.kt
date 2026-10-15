@@ -161,6 +161,37 @@ class UltraFrontierClaimIdentityRegressionTest {
     }
 
     @Test
+    fun byteAndBitMeasurementsMustNotBeReportedAsConflictingValues() {
+        val examples = listOf(
+            "8GB" to "64Gb",
+            "8 GB" to "64 Gb",
+            "10MW" to "10000mW",
+            "5MHz" to "5000mHz"
+        )
+        examples.forEach { (first, second) ->
+            val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    checked("El enlace tiene $first.", "source-a") to 100L,
+                    checked("El enlace tiene $second.", "source-b") to 110L
+                )
+            ))
+            assertFalse(result.abstained, "Case-sensitive units $first and $second are not the same unit")
+            assertEquals(null, result.reasonCode)
+        }
+    }
+
+    @Test
+    fun sameCaseSensitiveUnitWithDifferentNumbersStillConflicts() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("La memoria tiene 8GB.", "source-a") to 100L,
+                checked("La memoria tiene 12 GB.", "source-b") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", result.reasonCode)
+    }
+
+    @Test
     fun differentMeasurementsWithSameAttachedUnitTriggerConflict() {
         val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
             listOf(
