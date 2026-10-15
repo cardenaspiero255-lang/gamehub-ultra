@@ -47,6 +47,17 @@ class UltraWakeServiceRecoveryRobolectricTest {
     }
 
     @Test
+    fun shutdownBeforeStartupDoesNotInitializeUnusedAiAdvisor() {
+        val service = UltraWakeService()
+        val advisor = UltraWakeService::class.java.getDeclaredField("aiAdvisorLazy")
+            .apply { isAccessible = true }
+            .get(service) as Lazy<*>
+        kotlin.test.assertFalse(advisor.isInitialized())
+        service.onDestroy()
+        kotlin.test.assertFalse(advisor.isInitialized())
+    }
+
+    @Test
     fun nonBusySpeechErrorsAlsoUseBoundedRetryInsteadOfImmediateSpin() {
         val service = UltraWakeService()
         listener(service).onError(SpeechRecognizer.ERROR_NETWORK)
