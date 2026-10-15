@@ -2673,9 +2673,48 @@ async function comparisonEvidence(
     specificationEvidenceForProduct(products[1], deps),
   ]);
   if (left.abstained || right.abstained) {
-    return abstain(
-      "No pude verificar con suficiente confianza las fichas de ambos productos.",
-    );
+    // TechAPI is not a comprehensive product catalog. Missing or unverified
+    // records must not prevent independent, source-grounded web research.
+    // Only search the phone(s) still lacking a verified specification record.
+    const [fallbackLeft, fallbackRight] = await Promise.all([
+      left.abstained ? tavilyEvidence(products[0], deps) : Promise.resolve(left),
+      right.abstained ? tavilyEvidence(products[1], deps) : Promise.resolve(right),
+    ]);
+    if (fallbackLeft.abstained || fallbackRight.abstained) {
+      return abstain(
+        "No pude contrastar ambos teléfonos con fuentes independientes. " +
+          "Falta información verificable de uno o ambos modelos.",
+        {
+          reasonCode: "COMPARISON_SOURCES_INSUFFICIENT",
+          retryable: true,
+          stage: "comparison",
+        },
+      );
+    }
+
+    const fallbackSources = unique([
+      ...(fallbackLeft.sourceIds ??
+        (fallbackLeft.sourceId ? [fallbackLeft.sourceId] : [])),
+      ...(fallbackRight.sourceIds ??
+        (fallbackRight.sourceId ? [fallbackRight.sourceId] : [])),
+    ]);
+    // Both sides must have source-backed evidence. Search excerpts are not
+    // equivalent to full official spec records or real-world benchmark tests.
+    return {
+      claimKey: `comparison-web:${slug(products[0])}:${slug(products[1])}`,
+      value: `${fallbackLeft.value ?? ""}||${fallbackRight.value ?? ""}`,
+      displayText:
+        `Comparación basada en fuentes web (extractos, no fichas completas). ` +
+        `${products[0]}: ${fallbackLeft.displayText ?? ""} ` +
+        `${products[1]}: ${fallbackRight.displayText ?? ""} ` +
+        "Los detalles que no aparezcan en estas fuentes siguen pendientes de verificar.",
+      sourceId: fallbackSources[0],
+      sourceIds: fallbackSources,
+      independentSourceCount: independentDomains(fallbackSources),
+      authoritative:
+        fallbackLeft.authoritative === true &&
+        fallbackRight.authoritative === true,
+    };
   }
 
   const sources = unique([
