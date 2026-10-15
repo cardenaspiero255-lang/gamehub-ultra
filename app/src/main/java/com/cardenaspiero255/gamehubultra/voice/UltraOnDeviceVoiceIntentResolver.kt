@@ -8,10 +8,8 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
  * names must match the original spoken target at whole-word boundaries.
  */
 object UltraOnDeviceVoiceIntentResolver {
-    private const val LAUNCH_IMPERATIVE =
-        """(?:abre|abrir|abreme|lanza|lanzar|inicia|iniciar|ejecuta|juega|open|launch|play|start)\s+(?:el juego\s+|al juego\s+)?(.+?)(?:\s+por favor)?$"""
-    private const val PROFILE_IMPERATIVE =
-        """(?:pon|poner|activa|activar|selecciona|seleccionar|cambia|cambiar|usa|usar|aplica|configura|set|switch|activate)\s+.+$"""
+    private const val LAUNCH_IMPERATIVE = """(?:abre|abrir|abreme|lanza|lanzar|inicia|iniciar|ejecuta|juega|open|launch|play|start)\s+(?:el juego\s+|al juego\s+)?(.+?)(?:\s+por favor)?$"""
+    private const val PROFILE_IMPERATIVE = """(?:pon|poner|activa|activar|selecciona|seleccionar|cambia|cambiar|usa|usar|aplica|configura|set|switch|activate)\s+.+$"""
 
     private fun validateGameLaunch(argument: String?, explicitLaunch: MatchResult?): VoiceCommand? {
         val name = argument?.trim().orEmpty()
