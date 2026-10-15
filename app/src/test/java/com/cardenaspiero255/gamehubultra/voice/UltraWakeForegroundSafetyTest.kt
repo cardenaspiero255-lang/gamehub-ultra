@@ -40,6 +40,20 @@ class UltraWakeForegroundSafetyTest {
     }
 
     @Test
+    fun rejectedForegroundMicClearsPersistentListeningBeforeStopping() {
+        var enabled = true
+        var stoppedWithEnabled = false
+        val success = UltraWakeForegroundSafety.tryStart(
+            ensureForeground = { throw SecurityException("Microphone unavailable") },
+            stop = { stoppedWithEnabled = enabled },
+            disableContinuousVoice = { enabled = false }
+        )
+        assertFalse(success)
+        assertFalse(enabled)
+        assertFalse(stoppedWithEnabled)
+    }
+
+    @Test
     fun stoppingAlreadyDestroyedServiceDoesNotCrashRecovery() {
         val started = UltraWakeForegroundSafety.tryStart(
             ensureForeground = { throw SecurityException("Microphone revoked") },
