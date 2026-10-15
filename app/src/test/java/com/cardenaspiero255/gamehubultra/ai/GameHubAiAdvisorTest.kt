@@ -62,6 +62,49 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun historyQuestionAboutOtherExplicitGameNeverUsesSelectedGameMetrics() {
+        fun session(game: String, hz: Int) =
+            com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession(
+                packageName = game,
+                startedAtMillis = 1_000L,
+                endedAtMillis = 10_000L,
+                measuredSampleCount = 6,
+                typicalRefreshRateHz = hz,
+                minimumBatteryPercent = 30,
+                maximumThermalStatus = 2,
+                playedAtNight = false
+            )
+        val advisor = GameHubAiAdvisor(gameSessionHistory = {
+            listOf(session("com.example.game", 60), session("com.example.other", 120))
+        })
+        val other = assertNotNull(advisor.generalKnowledgeChatOrNull(
+            message = "¿Cómo fue mi última sesión de com.example.other?",
+            context = healthyContext, conversation = emptyList()
+        ))
+        assertTrue(other.contains("com.example.other"), other)
+        assertTrue(other.contains("120 Hz"), other)
+        assertFalse(other.contains("60 Hz"), other)
+
+        val selected = assertNotNull(advisor.generalKnowledgeChatOrNull(
+            message = "¿Cómo fue mi última sesión?",
+            context = healthyContext, conversation = emptyList()
+        ))
+        assertTrue(selected.contains("com.example.game"), selected)
+        assertTrue(selected.contains("60 Hz"), selected)
+
+        // Unknown/multiple explicitly requested packages must not be
+        // silently replaced by metrics of whichever game is selected.
+        assertNull(advisor.generalKnowledgeChatOrNull(
+            "¿Cómo fue mi última sesión de com.example.unknown?",
+            healthyContext, emptyList()
+        ))
+        assertNull(advisor.generalKnowledgeChatOrNull(
+            "Compara mi última sesión de com.example.game y com.example.other",
+            healthyContext, emptyList()
+        ))
+    }
+
+    @Test
     fun reportedStableDefinitionsRemainAnswerableWithoutLocalModel() {
         val advisor = GameHubAiAdvisor()
 
