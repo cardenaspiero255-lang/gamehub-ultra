@@ -4948,6 +4948,23 @@ async function tavilyEvidence(
     );
   }
 
+  if (
+    requiredProduct &&
+    selected.some((item, index) =>
+      selected.slice(index + 1).some((other) =>
+        !evidenceNumericFactsCompatible(item.content, other.content)
+      )
+    )
+  ) {
+    return abstain(
+      "Las fuentes del teléfono discrepan en datos numéricos; no puedo verificar esas cifras.",
+      {
+        reasonCode: "CONFLICTING_PRODUCT_SOURCES",
+        stage: "tavily",
+      },
+    );
+  }
+
   const evidenceText = selected
     .slice(0, 3)
     .map((item, index) =>
