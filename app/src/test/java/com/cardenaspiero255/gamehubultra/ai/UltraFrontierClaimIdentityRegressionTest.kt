@@ -116,4 +116,58 @@ class UltraFrontierClaimIdentityRegressionTest {
         assertFalse(result.abstained)
         assertEquals(null, result.reasonCode)
     }
+
+    @Test
+    fun contradictoryAttachedBatteryCapacitiesAreNotAcceptedAsVerified() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("La batería tiene 5000mAh.", "battery-a") to 100L,
+                checked("La batería tiene 6000mAh.", "battery-b") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", result.reasonCode)
+        assertFalse(result.verified)
+        assertEquals(true, result.abstained)
+    }
+
+    @Test
+    fun attachedAndSpacedUnitsRepresentSameClaimAndValue() {
+        listOf(
+            "5000mAh" to "5000 mAh",
+            "3,5GHz" to "3.5 GHz",
+            "120Hz" to "120 Hz"
+        ).forEach { (attached, spaced) ->
+            val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    checked("La batería tiene $attached.", "source-a") to 100L,
+                    checked("La batería tiene $spaced.", "source-b") to 110L
+                )
+            ))
+            assertFalse(result.abstained, "Equivalent $attached and $spaced must agree")
+            assertEquals(null, result.reasonCode)
+        }
+    }
+
+    @Test
+    fun differentAttachedUnitsAreNotMistakenForContradictoryMeasurements() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("La batería tiene 5000mAh.", "source-a") to 100L,
+                checked("La batería tiene 5000Wh.", "source-b") to 110L
+            )
+        ))
+        assertFalse(result.abstained)
+        assertEquals(null, result.reasonCode)
+    }
+
+    @Test
+    fun differentMeasurementsWithSameAttachedUnitTriggerConflict() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("El procesador tiene 3.5GHz.", "source-a") to 100L,
+                checked("El procesador tiene 4.2GHz.", "source-b") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", result.reasonCode)
+    }
 }
