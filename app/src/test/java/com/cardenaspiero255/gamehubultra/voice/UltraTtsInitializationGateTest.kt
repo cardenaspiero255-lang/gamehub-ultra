@@ -41,6 +41,16 @@ class UltraTtsInitializationGateTest {
     }
 
     @Test
+    fun cancellingSpeechBeforeInitializationDropsOnlyPendingAnswer() {
+        val gate = UltraTtsInitializationGate()
+        gate.offer("Respuesta que el usuario acaba de cancelar")
+        kotlin.test.assertTrue(gate.cancelPending())
+        kotlin.test.assertNull(gate.initialized(true))
+        assertEquals("La siguiente consulta se puede pronunciar", gate.offer("La siguiente consulta se puede pronunciar"))
+        kotlin.test.assertFalse(gate.cancelPending())
+    }
+
+    @Test
     fun blankInputIsNeverEnqueued() {
         val gate = UltraTtsInitializationGate()
         assertNull(gate.offer("    "))
