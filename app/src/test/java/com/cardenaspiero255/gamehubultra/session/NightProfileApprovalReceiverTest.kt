@@ -89,6 +89,51 @@ class NightProfileApprovalReceiverTest {
         assertFalse(applyPendingNightProfile(context, "com.test.other"))
         assertFalse(store.isNightProfileProposalPending(game))
     }
+
+    @Test
+    fun approvedNightProfilePostsReceiptAndRejectsReplayedConsent() = runBlocking {
+        val game = "com.test.night.receipt"
+        val manager = context.getSystemService(NotificationManager::class.java)
+        shadowOf(manager).setNotificationsEnabled(true)
+        val store = SessionCoachSessionStore(context)
+        assertTrue(store.takeNightProfileProposalToShow(game))
+
+        assertTrue(applyNightProfileAndNotify(context, game))
+        assertFalse(store.isNightProfileProposalPending(game))
+        val saved = GameHubProductionComposition.selectionRepository(context)
+            .gameProfileConfigFlow(game).first()
+        assertEquals(PerformanceProfile.BALANCED, saved?.performanceProfile)
+        assertEquals(ThermalPreference.COOLER, saved?.thermalPreference)
+        assertTrue(manager.activeNotifications.any {
+            it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)
+                ?.toString() == "Propuesta Noche aplicada"
+        }, "An approved night profile must have a visible success receipt")
+
+        manager.cancelAll()
+        assertFalse(applyNightProfileAndNotify(context, game))
+        assertTrue(manager.activeNotifications.isEmpty(),
+            "Replaying an already consumed approval must not create a new receipt")
+    }
+
+    @Test
+    fun failedNightProfileWriteReportsFailureAndKeepsApprovalPending() = runBlocking {
+        val game = "com.test.night.failed"
+        val manager = context.getSystemService(NotificationManager::class.java)
+        shadowOf(manager).setNotificationsEnabled(true)
+        val store = SessionCoachSessionStore(context)
+        assertTrue(store.takeNightProfileProposalToShow(game))
+
+        val result = applyNightProfileAndNotify(context, game,
+            applyProfile = { _, _ -> throw IllegalStateException("simulated persistence failure") })
+        assertFalse(result)
+        assertTrue(store.isNightProfileProposalPending(game),
+            "Unsuccessful persistence cannot consume user approval")
+        assertTrue(manager.activeNotifications.any {
+            it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)
+                ?.toString() == "No pude guardar la propuesta Noche"
+        }, "A failure must report the inability to save the user's settings")
+    }
+
     @Test
     fun measuredNightSessionsProduceOneExplicitApprovalActionAndNeverRepeat() {
         val manager = context.getSystemService(NotificationManager::class.java)
