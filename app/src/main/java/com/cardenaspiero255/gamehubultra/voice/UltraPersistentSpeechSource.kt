@@ -8,7 +8,6 @@ import android.os.ParcelFileDescriptor
 import java.io.Closeable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -141,7 +140,8 @@ internal class UltraPersistentSpeechSource private constructor(
         runCatching { writeDescriptor.close() }
         runCatching { readDescriptor.close() }
         worker.shutdownNow()
-        runCatching { worker.awaitTermination(500, TimeUnit.MILLISECONDS) }
+        // Shutdown is asynchronous: never join a blocked AudioRecord worker
+        // on the service/main thread while the user is playing.
         runCatching { audioRecord.release() }
     }
 }
