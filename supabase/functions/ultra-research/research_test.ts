@@ -1575,6 +1575,86 @@ Deno.test("phone comparison rejects one unsupported web result", async () => {
   }
 });
 
+
+Deno.test("phone comparison recovers from TechAPI connection errors", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = String(input);
+      if (url.includes("api.github.com")) {
+        throw new Error("GitHub network unavailable");
+      }
+      if (url === "https://api.tavily.com/search") {
+        const query = JSON.parse(String(init?.body)).query as string;
+        const name = query.includes("11S Pro")
+          ? "RedMagic 11S Pro"
+          : "RedMagic 12 Pro";
+        return jsonResponse({
+          results: [
+            {
+              title: name + " specifications",
+              content: name + " product specifications.",
+              url: "https://manufacturer.example/specs/" + name,
+              score: 0.99,
+            },
+            {
+              title: name + " independent technical analysis",
+              content: name + " independent technical analysis.",
+              url: "https://reviews.example/phones/" + name,
+              score: 0.94,
+            },
+          ],
+        });
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+  };
+  const answer = await routeResearchQuery(
+    "Ultra, compara el RedMagic 11S Pro con el RedMagic 12 Pro",
+    deps,
+    "",
+    "COMPARISON_RESEARCH",
+  );
+  if (answer.abstained) {
+    throw new Error("TechAPI outage must not prevent corroborated web comparison");
+  }
+});
+
+Deno.test("phone comparison rejects a verified record for the wrong model", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = String(input);
+      if (url.includes("api.github.com/search/code")) {
+        return jsonResponse({
+          items: [{
+            path: "data/smartphone/redmagic/phone.json",
+          }],
+        });
+      }
+      if (url.includes("/contents/")) {
+        return jsonResponse({
+          name: "RedMagic 11 Pro",
+          brand: "redmagic",
+          verified: true,
+          battery_mah: 8000,
+          source_urls: ["https://global.redmagic.gg/products/11-pro"],
+        });
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+    env: () => undefined,
+  };
+  const answer = await routeResearchQuery(
+    "Ultra, compara el RedMagic 11S Pro con el RedMagic 12 Pro",
+    deps,
+    "",
+    "COMPARISON_RESEARCH",
+  );
+  if (!answer.abstained) {
+    throw new Error("A different model cannot pass as a verified phone");
+  }
+});
+
 Deno.test("marketplace price uses current Mercado Libre listings when configured", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
