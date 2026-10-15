@@ -77,4 +77,40 @@ class UltraSessionHistoryIntelligenceTest {
             history.map { it.copy(minimumBatteryPercent = 80) }, "com.example.cod"
         ))
     }
+
+    @Test
+    fun invalidMeasurementsAndMissingHistoryNeverFabricateVerifiedSessionFacts() {
+        assertNull(UltraSessionHistoryIntelligence.fromMeasuredSamples(
+            packageName = "com.example.cod",
+            startedAtMillis = 2_000L,
+            endedAtMillis = 1_000L,
+            samples = emptyList()
+        ))
+
+        val recordedWithoutMetrics = session(
+            day = 5, refresh = null, battery = null, thermal = null
+        )
+        val summary = UltraSessionHistoryIntelligence.lastSessionSummary(
+            listOf(recordedWithoutMetrics), "com.example.cod"
+        )
+        assertTrue(summary.orEmpty().contains("no métricas verificables"))
+
+        val missing = UltraSessionHistoryIntelligence.response(
+            query = "¿Cómo fue mi última sesión?",
+            packageName = "com.example.cod",
+            history = emptyList()
+        )
+        assertEquals("No tengo una sesión anterior medida de este juego.", missing)
+
+        val unqualified = UltraSessionHistoryIntelligence.response(
+            query = "¿Me propones un perfil Noche?",
+            packageName = "com.example.cod",
+            history = emptyList()
+        )
+        assertEquals(
+            "Todavía no tengo suficientes sesiones medidas para proponerte un perfil Noche.",
+            unqualified
+        )
+    }
+
 }
