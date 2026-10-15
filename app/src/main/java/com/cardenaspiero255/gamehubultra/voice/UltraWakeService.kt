@@ -111,7 +111,10 @@ class UltraWakeService : Service() {
         GameHubProductionComposition.configureUltraResearchPersistence(
             applicationContext
         )
-        foregroundController.ensureForeground()
+        if (!UltraWakeForegroundSafety.tryStart(
+                foregroundController::ensureForeground, this::stopSelf
+            )
+        ) return
         tts = TextToSpeech(this) { status ->
             // The engine may initialize before the constructor assigns tts.
             mainHandler.post { handleTtsInitialization(status) }
@@ -142,7 +145,10 @@ class UltraWakeService : Service() {
             ACTION_START, null -> {
                 stopped = false
                 lifecycleGate.restart()
-                foregroundController.ensureForeground()
+                if (!UltraWakeForegroundSafety.tryStart(
+                        foregroundController::ensureForeground, this::stopSelf
+                    )
+                ) return START_NOT_STICKY
                 mainHandler.post { startRecognition() }
             }
         }
