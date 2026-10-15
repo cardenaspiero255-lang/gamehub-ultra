@@ -12,6 +12,14 @@ import kotlin.test.assertEquals
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class VoiceAssistantControllerRobolectricTest {
+    private fun markSpeechInitialized(controller: VoiceAssistantController) {
+        val gate = VoiceAssistantController::class.java
+            .getDeclaredField("speechInitGate")
+            .apply { isAccessible = true }
+            .get(controller) as UltraTtsInitializationGate
+        gate.initialized(true)
+    }
+
     @Test
     fun languageErrorSwitchesControllerToSpanishFallbackWithoutEscaping() {
         val controller = VoiceAssistantController(
@@ -130,6 +138,7 @@ class VoiceAssistantControllerRobolectricTest {
         ttsField.set(controller, speech)
         val answer = "La primera fuente informa las características. ".repeat(115)
         try {
+            markSpeechInitialized(controller)
             controller.speak(answer)
             val invocations = org.mockito.Mockito.mockingDetails(speech)
                 .invocations.filter { it.method.name == "speak" }
@@ -172,6 +181,7 @@ class VoiceAssistantControllerRobolectricTest {
         (ttsField.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
         ttsField.set(controller, speech)
         try {
+            markSpeechInitialized(controller)
             controller.speak("Una comparación extensa con varias fuentes. ".repeat(140))
             val commands = org.mockito.Mockito.mockingDetails(speech)
                 .invocations.filter { it.method.name == "speak" }
