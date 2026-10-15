@@ -105,6 +105,18 @@ class GameHubAiAdvisorTest {
     }
 
     @Test
+    fun unavailablePrivateHistoryDoesNotCrashOrLeakIntoPublicAnswer() {
+        val advisor = GameHubAiAdvisor(
+            gameSessionHistory = { throw IllegalStateException("private session token") }
+        )
+        val result = assertNotNull(advisor.generalKnowledgeChatOrNull(
+            "¿Qué es un exoplaneta?", healthyContext, emptyList()
+        ))
+        assertTrue(result.contains("exoplaneta", ignoreCase = true))
+        assertFalse(result.contains("private session token"))
+    }
+
+    @Test
     fun reportedStableDefinitionsRemainAnswerableWithoutLocalModel() {
         val advisor = GameHubAiAdvisor()
 
