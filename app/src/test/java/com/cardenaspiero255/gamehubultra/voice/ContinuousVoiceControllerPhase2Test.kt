@@ -35,6 +35,17 @@ class ContinuousVoiceControllerPhase2Test {
     }
 
     @Test
+    fun disablingContinuesEvenIfAndroidCannotStopAnAlreadyDeadService() {
+        val gateway = RestrictedGateway()
+        gateway.enabled = true
+        gateway.failStop = true
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.DISABLED, controller.setEnabled(false))
+        assertFalse(controller.isEnabled())
+        assertEquals(1, gateway.stopCalls)
+    }
+
+    @Test
     fun permissionGrantDoesNotBypassSystemSupportCheck() {
         val gateway = RestrictedGateway()
         gateway.supported = false
@@ -50,6 +61,7 @@ class ContinuousVoiceControllerPhase2Test {
         var failure: RuntimeException = IllegalStateException("Foreground microphone service start denied")
         var startCalls = 0
         var stopCalls = 0
+        var failStop = false
         override fun isEnabled() = enabled
         override fun setEnabled(enabled: Boolean) { this.enabled = enabled }
         override fun hasRecordAudioPermission() = true
@@ -58,6 +70,9 @@ class ContinuousVoiceControllerPhase2Test {
             startCalls += 1
             throw failure
         }
-        override fun stopWakeService() { stopCalls += 1 }
+        override fun stopWakeService() {
+            stopCalls += 1
+            if (failStop) throw SecurityException("service no longer registered")
+        }
     }
 }
