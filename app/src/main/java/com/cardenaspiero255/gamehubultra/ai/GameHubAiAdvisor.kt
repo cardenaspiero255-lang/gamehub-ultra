@@ -90,14 +90,14 @@ class GameHubAiAdvisor(
         // selected game. Never attribute one game's private measurements to
         // a different game, or guess when the target is unknown/ambiguous.
         val spokenTokens = message.lowercase(Locale.ROOT)
-            .split(Regex("""[^\\p{L}\\d._]+"""))
+            .split(Regex("""[^\p{L}\d._]+"""))
             .filter(String::isNotBlank)
         val knownPackages = history.map { it.packageName }.distinct()
         val mentioned = knownPackages.filter { packageName ->
             packageName.lowercase(Locale.ROOT) in spokenTokens
         }
         val explicitPackage = Regex(
-            """^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){2,}$"""
+            """^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){2,}$"""
         )
         if (mentioned.size > 1 || spokenTokens.any { token ->
                 explicitPackage.matches(token) &&
