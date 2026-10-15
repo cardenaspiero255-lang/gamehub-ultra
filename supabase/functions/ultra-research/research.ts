@@ -4793,7 +4793,7 @@ function searchResultMentionsExactProduct(
   // Equally, "RedMagic 12 Pro+" is not the requested "12 Pro".
   // Reject a candidate containing a mismatched variant even when another
   // sentence happens to mention the base model.
-  const variantSuffix = /^(?:\\+|(?:pro|plus|max|ultra|mini|lite|fe|se|air|neo|edge|promax)(?=\\s|\\+|$))/;
+  const variantSuffix = /^(?:\+|(?:pro|plus|max|ultra|mini|lite|fe|se|air|neo|edge|promax)(?=\s|\+|$))/;
   let start = 0;
   let exact = false;
   while ((start = padded.indexOf(phrase, start)) >= 0) {
