@@ -360,8 +360,8 @@ class UltraFrontierDeepTaskGraphExecutionTest {
                 evolution = evolution,
                 frontier = UltraFrontierOrchestrator(
                     policy = UltraFrontierPolicy(
-                        verifiedSourceBudget = 6,
-                        deepSourceBudget = 7,
+                        verifiedSourceBudget = 2,
+                        deepSourceBudget = 2,
                         deepResearchPassBudget = 2
                     ),
                     evolution = evolution
