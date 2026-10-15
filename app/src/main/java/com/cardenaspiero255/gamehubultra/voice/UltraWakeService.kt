@@ -81,6 +81,7 @@ class UltraWakeService : Service() {
         )
     }
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
+    private val recoveryPolicy = UltraWakeRecoveryPolicy()
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
     private val aliasRepository by lazy {
@@ -163,7 +164,7 @@ class UltraWakeService : Service() {
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart()
+            scheduleRestart(recoveryPolicy.nextDelayMillis())
             return
         }
 
@@ -203,18 +204,24 @@ class UltraWakeService : Service() {
         recognitionStarting = false
 
         if (!started) {
-            recognizer?.cancel()
+            // A failed recognizer may be poisoned/busy. Rebuild it on the next
+            // attempt rather than repeatedly restarting the same instance.
+            runCatching { recognizer?.cancel() }
+            runCatching { recognizer?.destroy() }
+            recognizer = null
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 sessionPolicy.onPersistentSessionFailure()
             }
             closePersistentSpeechSource()
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart()
+            scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
 
     private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) = Unit
+        override fun onReadyForSpeech(params: Bundle?) {
+            recoveryPolicy.onRecognitionHealthy()
+        }
         override fun onBeginningOfSpeech() = Unit
         override fun onRmsChanged(rmsdB: Float) = Unit
         override fun onBufferReceived(buffer: ByteArray?) = Unit
@@ -223,6 +230,7 @@ class UltraWakeService : Service() {
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onSegmentResults(segmentResults: Bundle) {
+            recoveryPolicy.onRecognitionHealthy()
             if (persistentSessionActive) {
                 handleRecognitionBundle(
                     results = segmentResults,
@@ -242,6 +250,7 @@ class UltraWakeService : Service() {
         }
 
         override fun onResults(results: Bundle?) {
+            recoveryPolicy.onRecognitionHealthy()
             val wasPersistent = persistentSessionActive
             if (wasPersistent) {
                 sessionPolicy.onPersistentSessionFailure()
@@ -255,6 +264,7 @@ class UltraWakeService : Service() {
         }
 
         override fun onError(error: Int) {
+            if (stopped || !lifecycleGate.canAcceptRecognition()) return
             val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
                 error = error,
                 currentTag = recognitionLanguageTag
@@ -267,7 +277,14 @@ class UltraWakeService : Service() {
                 closePersistentSpeechSource()
             }
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart()
+            if (
+                error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ||
+                error == SpeechRecognizer.ERROR_CLIENT
+            ) {
+                runCatching { recognizer?.destroy() }
+                recognizer = null
+            }
+            scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
 
@@ -458,10 +475,10 @@ class UltraWakeService : Service() {
         persistentSpeechSource = null
     }
 
-    private fun scheduleRestart() {
+    private fun scheduleRestart(delayMillis: Long = RESTART_DELAY_MS) {
         mainHandler.removeCallbacks(restartRecognition)
         if (!stopped && !commandCoordinator.isCommandRunning()) {
-            mainHandler.postDelayed(restartRecognition, RESTART_DELAY_MS)
+            mainHandler.postDelayed(restartRecognition, delayMillis)
         }
     }
 
