@@ -690,7 +690,12 @@ internal object SessionCoachNotifications {
                     ?.importance != NotificationManager.IMPORTANCE_NONE
         val proposedNightProfile = if (notificationsEnabled) {
             UltraSessionHistoryIntelligence.proposeNightProfile(
-                history = historyStore.readRecentGameSessions(),
+                // Filter by game BEFORE limiting recent history. Otherwise
+                // unrelated games can evict eligible night sessions.
+                history = historyStore.readRecentGameSessions(
+                    limit = 32,
+                    packageName = session.packageName
+                ),
                 packageName = session.packageName
             )?.takeIf {
                 historyStore.takeNightProfileProposalToShow(session.packageName)
