@@ -45,6 +45,52 @@ internal suspend fun applyPendingNightProfile(context: Context, game: String): B
     return store.markNightProfileProposalApplied(target)
 }
 
+/**
+ * Complete the approval after the system has delivered the user's action.
+ * This suspend boundary is shared by the real receiver and deterministic unit
+ * tests; only a persisted pending proposal can change any game settings.
+ *
+ * The optional apply function lets tests reproduce a failed write without
+ * substituting fake Android broadcasts or silently claiming device coverage.
+ */
+internal suspend fun applyNightProfileAndNotify(
+    context: Context,
+    game: String,
+    applyProfile: suspend (Context, String) -> Boolean = ::applyPendingNightProfile
+): Boolean {
+    val app = context.applicationContext
+    return try {
+        if (!applyProfile(app, game)) {
+            false
+        } else {
+            // User approval applies only balanced/cooler settings; no unverified
+            // device refresh-rate target is changed.
+            SessionCoachNotifications.postAction(
+                app,
+                SessionCoachMessage(
+                    signal = SessionCoachSignal.GENERAL,
+                    priority = SessionCoachPriority.INFO,
+                    title = "Propuesta Noche aplicada",
+                    detail = "Perfil equilibrado y preferencia térmica fría guardados para el juego.",
+                    action = "Puedes editar los ajustes del juego cuando quieras."
+                )
+            )
+            true
+        }
+    } catch (_: Exception) {
+        SessionCoachNotifications.postAction(
+            app,
+            SessionCoachMessage(
+                signal = SessionCoachSignal.GENERAL,
+                priority = SessionCoachPriority.WATCH,
+                title = "No pude guardar la propuesta Noche",
+                detail = "No se guardaron los nuevos ajustes. Prueba desde GameHub Ultra."
+            )
+        )
+        false
+    }
+}
+
 class NightProfileApprovalReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != ACTION_APPLY) return
@@ -56,30 +102,7 @@ class NightProfileApprovalReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                // The user opted in to safer balanced/cooler settings. Do not
-                // set a refresh-rate target without device capability proof.
-                if (applyPendingNightProfile(app, game)) {
-                    SessionCoachNotifications.postAction(
-                        app,
-                        SessionCoachMessage(
-                            signal = SessionCoachSignal.GENERAL,
-                            priority = SessionCoachPriority.INFO,
-                            title = "Propuesta Noche aplicada",
-                            detail = "Perfil equilibrado y preferencia térmica fría guardados para el juego.",
-                            action = "Puedes editar los ajustes del juego cuando quieras."
-                        )
-                    )
-                }
-            } catch (_: Exception) {
-                SessionCoachNotifications.postAction(
-                    app,
-                    SessionCoachMessage(
-                        signal = SessionCoachSignal.GENERAL,
-                        priority = SessionCoachPriority.WATCH,
-                        title = "No pude guardar la propuesta Noche",
-                        detail = "No se guardaron los nuevos ajustes. Prueba desde GameHub Ultra."
-                    )
-                )
+                applyNightProfileAndNotify(app, game)
             } finally {
                 pending.finish()
             }
