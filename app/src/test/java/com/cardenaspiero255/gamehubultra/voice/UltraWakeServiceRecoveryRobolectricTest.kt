@@ -58,6 +58,21 @@ class UltraWakeServiceRecoveryRobolectricTest {
     }
 
     @Test
+    fun teardownContinuesWhenAlreadyBrokenRecognizerThrowsOnCancel() {
+        val service = UltraWakeService()
+        val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        org.mockito.Mockito.doThrow(IllegalStateException("Recognizer already closed"))
+            .`when`(recognizer).cancel()
+        UltraWakeService::class.java.getDeclaredField("recognizer")
+            .apply { isAccessible = true }
+            .set(service, recognizer)
+
+        service.onDestroy()
+
+        org.mockito.Mockito.verify(recognizer).destroy()
+    }
+
+    @Test
     fun nonBusySpeechErrorsAlsoUseBoundedRetryInsteadOfImmediateSpin() {
         val service = UltraWakeService()
         listener(service).onError(SpeechRecognizer.ERROR_NETWORK)
