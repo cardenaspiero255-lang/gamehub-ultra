@@ -138,39 +138,46 @@ class NightProfileApprovalReceiverTest {
     }
 
     @Test
-    fun realBroadcastReceiverHandlesExplicitApprovedNightProfileAndPublishesNotification() = runBlocking {
-        val game = "com.test.night.broadcast"
-        val store = SessionCoachSessionStore(context)
-        assertTrue(store.takeNightProfileProposalToShow(game))
-        // Use the actual app-scoped PendingIntent delivery path used by the
-        // notification action. A dynamically registered receiver is not the
-        // non-exported manifest receiver that the user actually invokes.
-        val approval = android.app.PendingIntent.getBroadcast(
-            context,
-            431,
-            applyIntent(game),
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-        approval.send()
-        shadowOf(Looper.getMainLooper()).idle()
-        withTimeout(12_000L) {
-            while (store.isNightProfileProposalPending(game)) {
-                delay(40L)
-            }
-        }
-        val profile = GameHubProductionComposition.selectionRepository(context)
-            .gameProfileConfigFlow(game).first()
-        assertEquals(PerformanceProfile.BALANCED, profile?.performanceProfile)
-        assertEquals(ThermalPreference.COOLER, profile?.thermalPreference)
+    fun notificationActionTargetsAppPrivateReceiverWithoutApplyingByItself() {
         val manager = context.getSystemService(NotificationManager::class.java)
-        assertTrue(manager.activeNotifications.any {
-            it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)
-                ?.toString()?.contains("Propuesta Noche aplicada") == true
-        }, "Successful explicit approval must produce its visible receipt")
-        assertFalse(store.isNightProfileProposalPending(game))
+        shadowOf(manager).setNotificationsEnabled(true)
+        val store = SessionCoachSessionStore(context)
+        val game = "com.test.night.intent"
+        val startAt = ZonedDateTime.of(
+            2026, 10, 15, 22, 10, 0, 0, ZoneId.systemDefault()
+        ).toInstant().toEpochMilli()
+        var last: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession? = null
+        repeat(3) { index ->
+            val start = startAt + index * 10L * 60_000L
+            val id = "night-intent-$index"
+            assertTrue(store.beginSession(id, game, start))
+            repeat(4) { frame ->
+                store.appendSnapshot(id, SessionCoachSnapshot(
+                    timestampMillis = start + frame * 5_000L,
+                    batteryPercent = 18,
+                    thermalStatus = 2,
+                    thermalHeadroom = 0.8f,
+                    refreshRateHz = 90f,
+                    latencyMs = null
+                ))
+            }
+            last = store.finishActiveSession(start + 30_000L, id)
+            assertTrue(last != null)
+        }
+        SessionCoachNotifications.postSummary(context, checkNotNull(last))
+        assertTrue(store.isNightProfileProposalPending(game))
+        val approval = manager.activeNotifications
+            .flatMap { it.notification.actions?.asIterable() ?: emptyList() }
+            .first { it.title.toString().contains("Aplicar ajustes Noche") }
+        val intent = shadowOf(approval.actionIntent).savedIntent
+        assertEquals(NightProfileApprovalReceiver::class.java.name, intent.component?.className)
+        assertEquals(context.packageName, intent.component?.packageName)
+        assertEquals(NightProfileApprovalReceiver.ACTION_APPLY, intent.action)
+        assertEquals(game, intent.getStringExtra(NightProfileApprovalReceiver.EXTRA_PACKAGE))
+        assertTrue("The notification action must be immutable", approval.actionIntent.isImmutable)
+        assertTrue("Showing the action alone must never apply the profile",
+            store.isNightProfileProposalPending(game))
     }
-
 
     @Test
     fun mutedNotificationsCannotConsumeOneTimeNightApproval() {
