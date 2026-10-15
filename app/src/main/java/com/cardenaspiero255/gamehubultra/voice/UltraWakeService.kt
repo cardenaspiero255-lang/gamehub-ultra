@@ -117,7 +117,10 @@ class UltraWakeService : Service() {
             applicationContext
         )
         if (!UltraWakeForegroundSafety.tryStart(
-                foregroundController::ensureForeground, this::stopSelf
+                foregroundController::ensureForeground, this::stopSelf,
+                disableContinuousVoice = {
+                    AndroidContinuousVoiceGateway(this).setEnabled(false)
+                }
             )
         ) return
         tts = TextToSpeech(this) { status ->
@@ -151,7 +154,10 @@ class UltraWakeService : Service() {
                 stopped = false
                 lifecycleGate.restart()
                 if (!UltraWakeForegroundSafety.tryStart(
-                        foregroundController::ensureForeground, this::stopSelf
+                        foregroundController::ensureForeground, this::stopSelf,
+                        disableContinuousVoice = {
+                            AndroidContinuousVoiceGateway(this).setEnabled(false)
+                        }
                     )
                 ) return START_NOT_STICKY
                 mainHandler.post { startRecognition() }
@@ -242,7 +248,9 @@ class UltraWakeService : Service() {
 
         override fun onSegmentResults(segmentResults: Bundle) {
             if (persistentSessionActive) {
-                if (hasMeaningfulRecognition(segmentResults)) {
+                if (UltraWakeRecognitionHealth.hasTranscript(
+                    segmentResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                )) {
                     recoveryPolicy.onRecognitionHealthy()
                 }
                 handleRecognitionBundle(
@@ -263,7 +271,9 @@ class UltraWakeService : Service() {
         }
 
         override fun onResults(results: Bundle?) {
-            if (hasMeaningfulRecognition(results)) {
+            if (UltraWakeRecognitionHealth.hasTranscript(
+                results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            )) {
                 recoveryPolicy.onRecognitionHealthy()
             }
             val wasPersistent = persistentSessionActive
@@ -302,10 +312,6 @@ class UltraWakeService : Service() {
             scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
-
-    private fun hasMeaningfulRecognition(results: Bundle?): Boolean =
-        results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            ?.any { it.isNotBlank() } == true
 
     private fun handleRecognitionBundle(
         results: Bundle?,
