@@ -147,6 +147,64 @@ class UltraWakeServiceRecoveryRobolectricTest {
         }
     }
 
+    private fun rejectForegroundPromotion(
+        service: UltraWakeService,
+        failure: RuntimeException
+    ): UltraWakeForegroundController {
+        val foreground = org.mockito.Mockito.mock(UltraWakeForegroundController::class.java)
+        org.mockito.Mockito.doThrow(failure).`when`(foreground).ensureForeground()
+        UltraWakeService::class.java.getDeclaredField("foregroundController\\$delegate")
+            .apply { isAccessible = true }
+            .set(service, lazyOf(foreground))
+        return foreground
+    }
+
+    @Test
+    fun rejectedForegroundMicDuringOnCreateDisablesStoredListeningWithoutInitializingTts() {
+        val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.get()
+        val gateway = AndroidContinuousVoiceGateway(service)
+        gateway.setEnabled(true)
+        val foreground = rejectForegroundPromotion(
+            service, SecurityException("RECORD_AUDIO revoked during foreground promotion")
+        )
+
+        try {
+            controller.create()
+
+            org.mockito.Mockito.verify(foreground).ensureForeground()
+            kotlin.test.assertFalse(gateway.isEnabled())
+            val advisor = UltraWakeService::class.java.getDeclaredField("aiAdvisorLazy")
+                .apply { isAccessible = true }
+                .get(service) as Lazy<*>
+            kotlin.test.assertFalse(advisor.isInitialized())
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun rejectedForegroundMicOnStartCommandDisablesStoredListeningAndReturnsNotSticky() {
+        val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.get()
+        val gateway = AndroidContinuousVoiceGateway(service)
+        gateway.setEnabled(true)
+        val foreground = rejectForegroundPromotion(
+            service, IllegalStateException("Mic foreground service prohibited in background")
+        )
+        val start = android.content.Intent(service, UltraWakeService::class.java)
+            .setAction(UltraWakeService.ACTION_START)
+
+        try {
+            assertEquals(android.app.Service.START_NOT_STICKY,
+                service.onStartCommand(start, 0, 1))
+            org.mockito.Mockito.verify(foreground).ensureForeground()
+            kotlin.test.assertFalse(gateway.isEnabled())
+        } finally {
+            controller.destroy()
+        }
+    }
+
     @Test
     fun shutdownBeforeStartupDoesNotInitializeUnusedAiAdvisor() {
         val service = UltraWakeService()
