@@ -129,7 +129,22 @@ class VoiceAssistantController(
 
     fun speak(text: String) {
         if (released) return
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "gamehub-ultra-voice")
+        val engine = tts ?: return
+        val chunks = UltraSpeechChunker.chunk(text)
+        val token = System.nanoTime()
+        chunks.forEachIndexed { index, segment ->
+            val result = engine.speak(
+                segment,
+                if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                null,
+                "gamehub-ultra-voice-$token-$index"
+            )
+            if (result == TextToSpeech.ERROR) {
+                // Never leave half an explanation queued after a TTS failure.
+                engine.stop()
+                return
+            }
+        }
     }
 
     fun release() {
