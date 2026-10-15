@@ -1,5 +1,7 @@
 package com.cardenaspiero255.gamehubultra.voice
 
+import android.os.Bundle
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -54,7 +56,13 @@ class UltraWakeServiceTtsInitializationTest {
         val playback = speechController(service)
         playback.attach(tts)
         call(service, "speakAndResume", "Esta respuesta debe cancelarse.")
-        call(service, "cancelPendingSpeechAndResume")
+        val heard = Bundle().apply {
+            putStringArrayList(
+                SpeechRecognizer.RESULTS_RECOGNITION,
+                arrayListOf("Ultra, para")
+            )
+        }
+        call(service, "handleRecognitionBundle", heard, true)
         call(service, "handleTtsInitialization", TextToSpeech.SUCCESS)
         assertEquals(0, Mockito.mockingDetails(tts).invocations.count {
             it.method.name == "speak"
