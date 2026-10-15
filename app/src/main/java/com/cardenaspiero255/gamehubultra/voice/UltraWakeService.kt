@@ -269,11 +269,9 @@ class UltraWakeService : Service() {
         }
 
         override fun onResults(results: Bundle?) {
-            if (UltraWakeRecognitionHealth.hasTranscript(
+            recoveryPolicy.onRecognitionResult(
                 results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            )) {
-                recoveryPolicy.onRecognitionHealthy()
-            }
+            )
             val wasPersistent = persistentSessionActive
             if (wasPersistent) {
                 sessionPolicy.onPersistentSessionFailure()
