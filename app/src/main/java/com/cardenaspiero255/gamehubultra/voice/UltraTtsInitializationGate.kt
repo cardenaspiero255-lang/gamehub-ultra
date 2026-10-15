@@ -29,6 +29,17 @@ internal class UltraTtsInitializationGate {
         return pending.also { pending = null }
     }
 
+    /**
+     * Drops an unspoken answer without permanently disabling the TTS engine.
+     * A new answer may still be offered before initialization completes.
+     */
+    @Synchronized
+    fun cancelPending(): Boolean {
+        if (state != State.STARTING || pending == null) return false
+        pending = null
+        return true
+    }
+
     @Synchronized
     fun close() {
         state = State.CLOSED
