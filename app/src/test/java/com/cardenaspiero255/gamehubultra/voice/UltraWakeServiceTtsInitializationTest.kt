@@ -55,6 +55,10 @@ class UltraWakeServiceTtsInitializationTest {
         val tts = Mockito.mock(TextToSpeech::class.java)
         val playback = speechController(service)
         playback.attach(tts)
+        val coordinator = UltraWakeService::class.java.getDeclaredField("commandCoordinator")
+            .apply { isAccessible = true }
+            .get(service) as UltraWakeCommandCoordinator
+        assertTrue(coordinator.tryBeginCommand(keepRecognitionActive = true))
         call(service, "speakAndResume", "Esta respuesta debe cancelarse.")
         val heard = Bundle().apply {
             putStringArrayList(
@@ -63,6 +67,7 @@ class UltraWakeServiceTtsInitializationTest {
             )
         }
         call(service, "handleRecognitionBundle", heard, true)
+        kotlin.test.assertFalse(coordinator.isCommandRunning())
         call(service, "handleTtsInitialization", TextToSpeech.SUCCESS)
         assertEquals(0, Mockito.mockingDetails(tts).invocations.count {
             it.method.name == "speak"
