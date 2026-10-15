@@ -193,6 +193,71 @@ class VoiceAssistantControllerRobolectricTest {
     }
 
     @Test
+    fun firstResponseIsSpokenAfterTtsBecomesReadyAndNeverAgainAfterRelease() {
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = {},
+            onTranscript = {},
+            onError = {}
+        )
+        val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
+        val engineField = VoiceAssistantController::class.java
+            .getDeclaredField("tts").apply { isAccessible = true }
+        (engineField.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
+        engineField.set(controller, speech)
+        val readinessField = VoiceAssistantController::class.java
+            .getDeclaredField("speechInitGate").apply { isAccessible = true }
+        readinessField.set(controller, UltraTtsInitializationGate())
+        val initialized = VoiceAssistantController::class.java
+            .getDeclaredMethod("handleTtsInitialization", Int::class.javaPrimitiveType)
+            .apply { isAccessible = true }
+        try {
+            controller.speak("Compara ambos teléfonos sin perder esta respuesta.")
+            kotlin.test.assertTrue(org.mockito.Mockito.mockingDetails(speech)
+                .invocations.none { it.method.name == "speak" })
+            initialized.invoke(controller, android.speech.tts.TextToSpeech.SUCCESS)
+            assertEquals(1, org.mockito.Mockito.mockingDetails(speech)
+                .invocations.count { it.method.name == "speak" })
+            controller.release()
+            initialized.invoke(controller, android.speech.tts.TextToSpeech.SUCCESS)
+            assertEquals(1, org.mockito.Mockito.mockingDetails(speech)
+                .invocations.count { it.method.name == "speak" })
+        } finally {
+            controller.release()
+        }
+    }
+
+    @Test
+    fun failedTtsInitializationDropsPendingSpeechWithoutSpeaking() {
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = {},
+            onTranscript = {},
+            onError = {}
+        )
+        val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
+        val engineField = VoiceAssistantController::class.java
+            .getDeclaredField("tts").apply { isAccessible = true }
+        (engineField.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
+        engineField.set(controller, speech)
+        val readinessField = VoiceAssistantController::class.java
+            .getDeclaredField("speechInitGate").apply { isAccessible = true }
+        readinessField.set(controller, UltraTtsInitializationGate())
+        try {
+            controller.speak("Consulta que no puede reproducirse.")
+            VoiceAssistantController::class.java
+                .getDeclaredMethod("handleTtsInitialization", Int::class.javaPrimitiveType)
+                .apply { isAccessible = true }
+                .invoke(controller, android.speech.tts.TextToSpeech.ERROR)
+            controller.speak("Otro mensaje después del error")
+            kotlin.test.assertTrue(org.mockito.Mockito.mockingDetails(speech)
+                .invocations.none { it.method.name == "speak" })
+        } finally {
+            controller.release()
+        }
+    }
+
+    @Test
     fun releaseCleansSpeechAndTtsEvenWhenListeningCallbackThrows() {
         val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
         val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
