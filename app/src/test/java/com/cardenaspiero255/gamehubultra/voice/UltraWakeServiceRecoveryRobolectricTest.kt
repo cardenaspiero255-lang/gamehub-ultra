@@ -153,7 +153,92 @@ class UltraWakeServiceRecoveryRobolectricTest {
     ): UltraWakeForegroundController {
         val foreground = org.mockito.Mockito.mock(UltraWakeForegroundController::class.java)
         org.mockito.Mockito.doThrow(failure).`when`(foreground).ensureForeground()
-        UltraWakeService::class.java.getDeclaredField("foregroundController\\$delegate")
+        UltraWakeService::class.java.getDeclaredField("foregroundController" + ')
+            .apply { isAccessible = true }
+            .set(service, lazyOf(foreground))
+        return foreground
+    }
+
+    @Test
+    fun rejectedForegroundMicDuringOnCreateDisablesStoredListeningWithoutInitializingTts() {
+        val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.get()
+        val gateway = AndroidContinuousVoiceGateway(service)
+        gateway.setEnabled(true)
+        val foreground = rejectForegroundPromotion(
+            service, SecurityException("RECORD_AUDIO revoked during foreground promotion")
+        )
+
+        try {
+            controller.create()
+
+            org.mockito.Mockito.verify(foreground).ensureForeground()
+            kotlin.test.assertFalse(gateway.isEnabled())
+            val advisor = UltraWakeService::class.java.getDeclaredField("aiAdvisorLazy")
+                .apply { isAccessible = true }
+                .get(service) as Lazy<*>
+            kotlin.test.assertFalse(advisor.isInitialized())
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun rejectedForegroundMicOnStartCommandDisablesStoredListeningAndReturnsNotSticky() {
+        val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.get()
+        val gateway = AndroidContinuousVoiceGateway(service)
+        gateway.setEnabled(true)
+        val foreground = rejectForegroundPromotion(
+            service, IllegalStateException("Mic foreground service prohibited in background")
+        )
+        val start = android.content.Intent(service, UltraWakeService::class.java)
+            .setAction(UltraWakeService.ACTION_START)
+
+        try {
+            assertEquals(android.app.Service.START_NOT_STICKY,
+                service.onStartCommand(start, 0, 1))
+            org.mockito.Mockito.verify(foreground).ensureForeground()
+            kotlin.test.assertFalse(gateway.isEnabled())
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
+    fun shutdownBeforeStartupDoesNotInitializeUnusedAiAdvisor() {
+        val service = UltraWakeService()
+        val advisor = UltraWakeService::class.java.getDeclaredField("aiAdvisorLazy")
+            .apply { isAccessible = true }
+            .get(service) as Lazy<*>
+        kotlin.test.assertFalse(advisor.isInitialized())
+        service.onDestroy()
+        kotlin.test.assertFalse(advisor.isInitialized())
+    }
+
+    @Test
+    fun teardownContinuesWhenAlreadyBrokenRecognizerThrowsOnCancel() {
+        val service = UltraWakeService()
+        val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        org.mockito.Mockito.doThrow(IllegalStateException("Recognizer already closed"))
+            .`when`(recognizer).cancel()
+        UltraWakeService::class.java.getDeclaredField("recognizer")
+            .apply { isAccessible = true }
+            .set(service, recognizer)
+
+        service.onDestroy()
+
+        org.mockito.Mockito.verify(recognizer).destroy()
+    }
+
+    @Test
+    fun nonBusySpeechErrorsAlsoUseBoundedRetryInsteadOfImmediateSpin() {
+        val service = UltraWakeService()
+        listener(service).onError(SpeechRecognizer.ERROR_NETWORK)
+        assertEquals(1_000L, recovery(service).nextDelayMillis())
+    }
+}
+ + "delegate")
             .apply { isAccessible = true }
             .set(service, lazyOf(foreground))
         return foreground
