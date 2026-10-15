@@ -143,6 +143,29 @@ class GeminiNanoLocalAiModelAdapterSafetyTest {
     }
 
     @Test
+    fun interruptedWorkerCancelsNanoWaitWithoutLeavingAnUnsafeResult() {
+        val adapter = GeminiNanoLocalAiModelAdapter()
+        val finished = java.util.concurrent.CountDownLatch(1)
+        val output = java.util.concurrent.atomic.AtomicReference<String?>()
+        val restoredInterrupt = java.util.concurrent.atomic.AtomicBoolean(false)
+        try {
+            val worker = Thread {
+                Thread.currentThread().interrupt()
+                output.set(adapter.boundedNanoCall { "SHOULD_NOT_BE_RETURNED" })
+                restoredInterrupt.set(Thread.currentThread().isInterrupted)
+                finished.countDown()
+            }
+            worker.start()
+            assertTrue(finished.await(3, TimeUnit.SECONDS))
+            worker.join(1_000)
+            assertNull(output.get())
+            assertTrue(restoredInterrupt.get(), "Interrupted status must be preserved")
+        } finally {
+            adapter.close()
+        }
+    }
+
+    @Test
     fun nanoWorkerDoesNotNeedInstalledModelForSuccessfulBoundedCoroutineOrFailureFallback() {
         val executor = Executors.newSingleThreadExecutor()
         val adapter = GeminiNanoLocalAiModelAdapter()
