@@ -1526,7 +1526,7 @@ Deno.test("verified device accepts a separate brand and model name", async () =>
   let webCalls = 0;
   const deps: ResearchDependencies = {
     fetcher: (input) => {
-      const url = decodeURIComponent(String(input));
+      const url = decodeURIComponent(String(input)).replaceAll("+", " ");
       if (url.includes("api.github.com/search/code")) {
         return jsonResponse({
           items: [{
