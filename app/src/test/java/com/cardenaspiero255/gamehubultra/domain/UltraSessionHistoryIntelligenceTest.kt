@@ -113,4 +113,33 @@ class UltraSessionHistoryIntelligenceTest {
         )
     }
 
+
+    @Test
+    fun thirdPartyGamingQuestionsCannotExposePrivateSessionHistory() {
+        val history = listOf(session(day = 4, refresh = 120))
+        for (query in listOf(
+            "¿Cuándo fue la última vez que jugó Messi?",
+            "¿Cómo fue la última sesión de Messi?",
+            "¿Cuál fue la última partida de otro jugador?"
+        )) {
+            assertNull(
+                UltraSessionHistoryIntelligence.response(
+                    query, "com.example.cod", history
+                ), "Unrelated third-party history cannot reveal local metrics: $query"
+            )
+        }
+        for (query in listOf(
+            "¿Cómo fue mi última sesión?",
+            "¿Cuándo fue la última vez que jugué?",
+            "¿Cómo estuvo mi última partida?"
+        )) {
+            assertTrue(
+                UltraSessionHistoryIntelligence.response(
+                    query, "com.example.cod", history
+                ).orEmpty().contains("120 Hz"),
+                "Explicit first-person gaming history must remain available: $query"
+            )
+        }
+    }
+
 }
