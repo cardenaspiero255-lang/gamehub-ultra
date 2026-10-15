@@ -67,7 +67,7 @@ class UltraOnDeviceVoiceIntentResolverTest {
     @Test
     fun explicitProfilesAndStatusRequireSpokenIntentRatherThanModelGuess() {
         val balanced = UltraOnDeviceVoiceIntentResolver.validate(
-            "Quiero que pongas el perfil equilibrado",
+            "Por favor pon el perfil equilibrado",
             LocalVoiceIntentCandidate("PROFILE_BALANCED")
         )
         assertEquals(
