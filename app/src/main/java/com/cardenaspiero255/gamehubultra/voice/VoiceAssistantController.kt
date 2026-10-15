@@ -38,6 +38,7 @@ class VoiceAssistantController(
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackRetryGate = VoiceRecognitionRetryGate()
+    private val speechInitGate = UltraTtsInitializationGate()
     @Volatile private var released = false
     private val fallbackRetry = Runnable {
         if (released) return@Runnable
@@ -56,10 +57,19 @@ class VoiceAssistantController(
 
     init {
         tts = TextToSpeech(appContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.let(UltraSpeechLocalePolicy::applyTo)
-            }
+            // Dispatch after the constructor assigns tts. A late callback is
+            // harmless after the controller has been released.
+            mainHandler.post { handleTtsInitialization(status) }
         }
+    }
+
+    private fun handleTtsInitialization(status: Int) {
+        if (released) return
+        val success = status == TextToSpeech.SUCCESS
+        if (success) {
+            tts?.let(UltraSpeechLocalePolicy::applyTo)
+        }
+        speechInitGate.initialized(success)?.let(::speak)
     }
 
     fun startListening() {
@@ -129,12 +139,29 @@ class VoiceAssistantController(
 
     fun speak(text: String) {
         if (released) return
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "gamehub-ultra-voice")
+        val readyText = speechInitGate.offer(text) ?: return
+        val engine = tts ?: return
+        val chunks = UltraSpeechChunker.chunk(readyText)
+        val token = System.nanoTime()
+        chunks.forEachIndexed { index, segment ->
+            val result = engine.speak(
+                segment,
+                if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                null,
+                "gamehub-ultra-voice-$token-$index"
+            )
+            if (result == TextToSpeech.ERROR) {
+                // Never leave half an explanation queued after a TTS failure.
+                engine.stop()
+                return
+            }
+        }
     }
 
     fun release() {
         if (released) return
         released = true
+        speechInitGate.close()
         // Make release terminal before calling any client or platform callbacks.
         fallbackRetryGate.close()
         runCatching { mainHandler.removeCallbacks(fallbackRetry) }

@@ -2593,19 +2593,40 @@ function specsDisplay(record: JsonObject): string {
   return `${name}: ${parts.length ? parts.join(", ") : "ficha verificada disponible"}.`;
 }
 
+function matchingVerifiedDeviceRecord(product: string, record: JsonObject): boolean {
+  const name = stringValue(record.name);
+  if (!name) return false;
+  const compact = (value: string) => normalize(value).replace(/[^a-z0-9]+/g, "");
+  const requested = compact(product);
+  const found = compact(name);
+  const brand = compact(stringValue(record.brand) ?? "");
+  // Device catalogs may store only "11S Pro" in name and "RedMagic"
+  // separately in brand; also support full names without the brand field.
+  return found === requested ||
+    (brand.length > 0 && (brand + found === requested || found === brand + requested));
+}
+
 async function specificationEvidenceForProduct(
   product: string,
   deps: ResearchDependencies,
 ): Promise<ResearchResult> {
-  const path = await searchTechApiPath(product, deps);
+  // Missing catalog entries and transient GitHub failures are recoverable:
+  // the comparison planner can try independently corroborated web evidence.
+  const path = await searchTechApiPath(product, deps).catch(() => null);
   if (!path) {
     return abstain("No encontré una ficha verificable para ese producto.");
   }
 
-  const record = await fetchTechApiRecord(path, deps);
+  const record = await fetchTechApiRecord(path, deps).catch(() => null);
   if (!record || record.verified !== true) {
     return abstain(
       "Encontré una ficha, pero todavía no está marcada como verificada.",
+    );
+  }
+  if (!matchingVerifiedDeviceRecord(product, record)) {
+    return abstain(
+      "La ficha encontrada corresponde a un modelo diferente.",
+      { reasonCode: "SPEC_MODEL_MISMATCH", stage: "specifications" },
     );
   }
 
@@ -2656,7 +2677,17 @@ function extractComparisonProducts(query: string): [string, string] | null {
     /(?:compara|compare)\s+(?:el\s+|la\s+)?(.+?)\s+(?:con|vs\.?|versus)\s+(?:el\s+|la\s+)?([^\n?!]+)/i,
   );
   if (!match?.[1] || !match[2]) return null;
-  return [match[1].trim(), match[2].trim()];
+  // Do not mistake a conversational instruction for part of the second
+  // device name (e.g. "... 12 Pro y dime cuál es mejor para jugar").
+  const second = match[2]
+    .replace(
+      /(?:[,;]\s*|\s+y\s+)(?:(?:dime|explicame|explícame|cuentame|cuéntame|indicame|indícame|recomiendame|recomiéndame)\b|(?:cual|cuál|que|qué)\s+(?:es|me)\b).*$/i,
+      "",
+    )
+    .replace(/[.,;:]\s*$/, "")
+    .trim();
+  if (!second) return null;
+  return [match[1].trim(), second];
 }
 
 async function comparisonEvidence(
@@ -2673,9 +2704,52 @@ async function comparisonEvidence(
     specificationEvidenceForProduct(products[1], deps),
   ]);
   if (left.abstained || right.abstained) {
-    return abstain(
-      "No pude verificar con suficiente confianza las fichas de ambos productos.",
-    );
+    // TechAPI is not a comprehensive product catalog. Missing or unverified
+    // records must not prevent independent, source-grounded web research.
+    // Only search the phone(s) still lacking a verified specification record.
+    const [fallbackLeft, fallbackRight] = await Promise.all([
+      left.abstained
+        ? tavilyEvidence(products[0], deps, "", undefined, products[0])
+        : Promise.resolve(left),
+      right.abstained
+        ? tavilyEvidence(products[1], deps, "", undefined, products[1])
+        : Promise.resolve(right),
+    ]);
+    if (fallbackLeft.abstained || fallbackRight.abstained) {
+      return abstain(
+        "No pude contrastar ambos teléfonos con fuentes independientes. " +
+          "Falta información verificable de uno o ambos modelos.",
+        {
+          reasonCode: "COMPARISON_SOURCES_INSUFFICIENT",
+          retryable: true,
+          stage: "comparison",
+        },
+      );
+    }
+
+    const fallbackSources = unique([
+      ...(fallbackLeft.sourceIds ??
+        (fallbackLeft.sourceId ? [fallbackLeft.sourceId] : [])),
+      ...(fallbackRight.sourceIds ??
+        (fallbackRight.sourceId ? [fallbackRight.sourceId] : [])),
+    ]);
+    // Both sides must have source-backed evidence. Search excerpts are not
+    // equivalent to full official spec records or real-world benchmark tests.
+    return {
+      claimKey: `comparison-web:${slug(products[0])}:${slug(products[1])}`,
+      value: `${fallbackLeft.value ?? ""}||${fallbackRight.value ?? ""}`,
+      displayText:
+        `Comparación basada en fuentes web (extractos, no fichas completas). ` +
+        `${products[0]}: ${fallbackLeft.displayText ?? ""} ` +
+        `${products[1]}: ${fallbackRight.displayText ?? ""} ` +
+        "Los detalles que no aparezcan en estas fuentes siguen pendientes de verificar.",
+      sourceId: fallbackSources[0],
+      sourceIds: fallbackSources,
+      independentSourceCount: independentDomains(fallbackSources),
+      authoritative:
+        fallbackLeft.authoritative === true &&
+        fallbackRight.authoritative === true,
+    };
   }
 
   const sources = unique([
@@ -4701,11 +4775,45 @@ async function stackOverflowSpanishEvidence(
   };
 }
 
+function searchResultMentionsExactProduct(
+  product: string,
+  candidateText: string,
+): boolean {
+  const model = (value: string) =>
+    normalize(value)
+      .replace(/\bred\s+magic\b/g, "redmagic")
+      .replace(/[^a-z0-9+]+/g, " ")
+      .trim();
+  const expected = model(product);
+  const candidate = model(candidateText);
+  if (!expected || !candidate) return false;
+  const padded = ` ${candidate} `;
+  const phrase = ` ${expected}`;
+  // "iPhone 16 Pro" must never be used as evidence for "iPhone 16".
+  // Equally, "RedMagic 12 Pro+" is not the requested "12 Pro".
+  // Reject a candidate containing a mismatched variant even when another
+  // sentence happens to mention the base model.
+  const variantSuffix = /^(?:\+|(?:pro|plus|max|ultra|mini|lite|fe|se|air|neo|edge|promax)(?=\s|\+|$))/;
+  let start = 0;
+  let exact = false;
+  while ((start = padded.indexOf(phrase, start)) >= 0) {
+    const following = padded.slice(start + phrase.length);
+    if (following[0] === " " && variantSuffix.test(following.trimStart())) {
+      return false;
+    }
+    if (following.startsWith("+")) return false;
+    if (following.startsWith(" ") || following.length === 0) exact = true;
+    start += phrase.length;
+  }
+  return exact;
+}
+
 async function tavilyEvidence(
   query: string,
   deps: ResearchDependencies,
   supportText = "",
   signal?: AbortSignal,
+  requiredProduct?: string,
 ): Promise<ResearchResult> {
   const apiKey = await providerSecret(deps, "TAVILY_API_KEY", signal);
   if (!apiKey) {
@@ -4831,7 +4939,13 @@ async function tavilyEvidence(
     const candidateRejected = supportText
       ? !candidateSupportsPrimary(query, supportText, candidateText)
       : !candidateMatchesQuery(query, candidateText);
-    if (candidateRejected) {
+    // For a model-specific phone comparison, token overlap with a similarly
+    // named product is not enough. Require the complete model phrase.
+    if (
+      candidateRejected ||
+      (requiredProduct &&
+        !searchResultMentionsExactProduct(requiredProduct, candidateText))
+    ) {
       continue;
     }
 
@@ -4850,6 +4964,23 @@ async function tavilyEvidence(
   if (selected.length < 2 || domainCount < 2) {
     return abstain(
       "Tavily no encontró suficientes fuentes independientes para verificar la consulta.",
+    );
+  }
+
+  if (
+    requiredProduct &&
+    selected.some((item, index) =>
+      selected.slice(index + 1).some((other) =>
+        !evidenceNumericFactsCompatible(item.content, other.content)
+      )
+    )
+  ) {
+    return abstain(
+      "Las fuentes del teléfono discrepan en datos numéricos; no puedo verificar esas cifras.",
+      {
+        reasonCode: "CONFLICTING_PRODUCT_SOURCES",
+        stage: "tavily",
+      },
     );
   }
 

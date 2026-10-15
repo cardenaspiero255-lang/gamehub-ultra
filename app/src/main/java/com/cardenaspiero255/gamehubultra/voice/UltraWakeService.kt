@@ -67,6 +67,9 @@ class UltraWakeService : Service() {
     private val voiceConversationLedger = UltraVoiceConversationLedger(maxEntries = 8)
     private val speechGeneration = UltraWakeSpeechGeneration()
     private val playbackGuard = UltraWakePlaybackGuard()
+    private val speechInitGate = UltraTtsInitializationGate()
+    private var waitingForSpeechEngine = false
+    private var speechEngineFailed = false
     private val repeatGate = UltraWakeRepeatGate()
     private val lifecycleGate = UltraWakeLifecycleGate()
     private val speechPlayback by lazy {
@@ -109,11 +112,27 @@ class UltraWakeService : Service() {
         )
         foregroundController.ensureForeground()
         tts = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.let(UltraSpeechLocalePolicy::applyTo)
-            }
+            // The engine may initialize before the constructor assigns tts.
+            mainHandler.post { handleTtsInitialization(status) }
         }
         tts?.let(speechPlayback::attach)
+    }
+
+    private fun handleTtsInitialization(status: Int) {
+        if (stopped || !lifecycleGate.canAcceptRecognition()) return
+        val ready = status == TextToSpeech.SUCCESS
+        if (ready) tts?.let(UltraSpeechLocalePolicy::applyTo)
+        val pending = speechInitGate.initialized(ready)
+        speechEngineFailed = !ready
+        if (pending != null && waitingForSpeechEngine) {
+            waitingForSpeechEngine = false
+            speechPlayback.speak(pending)
+        } else if (!ready && waitingForSpeechEngine) {
+            // No TTS is available. Complete this turn so wake recognition
+            // never remains stuck waiting for a speech callback.
+            waitingForSpeechEngine = false
+            speechPlayback.speak("")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -281,7 +300,12 @@ class UltraWakeService : Service() {
         ) {
             UltraWakeRecognitionDisposition.SUPPRESS -> return
 
-            UltraWakeRecognitionDisposition.STOP_TTS -> return stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) { finishCommandAndResume(it, playbackEnded = true) }
+            UltraWakeRecognitionDisposition.STOP_TTS -> {
+                if (cancelPendingSpeechAndResume()) return
+                return stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) {
+                    finishCommandAndResume(it, playbackEnded = true)
+                }
+            }
 
             UltraWakeRecognitionDisposition.INTERRUPT_TTS -> {
                 val now = System.currentTimeMillis()
@@ -379,7 +403,28 @@ class UltraWakeService : Service() {
         }
     }
 
-    private fun speakAndResume(response: String) = speechPlayback.speak(response)
+    private fun speakAndResume(response: String) {
+        val readyText = speechInitGate.offer(response)
+        when {
+            readyText != null -> speechPlayback.speak(readyText)
+            speechEngineFailed -> speechPlayback.speak("")
+            response.isNotBlank() -> waitingForSpeechEngine = true
+            else -> speechPlayback.speak("")
+        }
+    }
+
+    /**
+     * The recognizer can hear "Ultra, para" before the TTS engine is ready.
+     * No speech generation token exists yet in that state, so release the
+     * pending answer explicitly and finish its command exactly once.
+     */
+    private fun cancelPendingSpeechAndResume(): Boolean {
+        if (!waitingForSpeechEngine) return false
+        waitingForSpeechEngine = false
+        speechInitGate.cancelPending()
+        finishCommandAndResume(speechGeneration.begin(), playbackEnded = false)
+        return true
+    }
 
     private fun finishCommandAndResume(
         token: Long,
@@ -424,6 +469,8 @@ class UltraWakeService : Service() {
 
     override fun onDestroy() {
         stopped = true
+        waitingForSpeechEngine = false
+        speechInitGate.close()
         lifecycleGate.stop()
         mainHandler.removeCallbacksAndMessages(null)
         commandExecutor.shutdownNow()
