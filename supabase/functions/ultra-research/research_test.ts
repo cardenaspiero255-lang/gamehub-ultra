@@ -1549,6 +1549,48 @@ Deno.test("verified device accepts a separate brand and model name", async () =>
   }
 });
 
+Deno.test("comparison rejects contradictory battery figures from independent web sources", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = String(input);
+      if (url.includes("api.github.com/search/code")) return jsonResponse({ items: [] });
+      if (url.includes("/git/trees/develop")) return jsonResponse({ tree: [] });
+      if (url === "https://api.tavily.com/search") {
+        const query = JSON.parse(String(init?.body)).query as string;
+        const is11 = query.includes("11S Pro");
+        const name = is11 ? "RedMagic 11S Pro" : "RedMagic 12 Pro";
+        return jsonResponse({
+          results: [
+            {
+              title: name + " ficha técnica",
+              url: "https://specs.example/device/" + name,
+              content: name + " batería 5000 mAh.",
+              score: 0.99,
+            },
+            {
+              title: name + " análisis independiente",
+              url: "https://review.example/device/" + name,
+              content: name + " batería " + (is11 ? "6000" : "5000") + " mAh.",
+              score: 0.95,
+            },
+          ],
+        });
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+  };
+  const answer = await routeResearchQuery(
+    "Ultra, compara el RedMagic 11S Pro con el RedMagic 12 Pro",
+    deps,
+    "",
+    "COMPARISON_RESEARCH",
+  );
+  if (!answer.abstained) {
+    throw new Error("Contradictory battery figures must not be called verified.");
+  }
+});
+
 Deno.test("phone comparison uses corroborated web fallback", async () => {
   const requests: string[] = [];
   const deps: ResearchDependencies = {
