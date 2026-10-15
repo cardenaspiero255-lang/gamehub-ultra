@@ -33,4 +33,11 @@ internal class UltraWakeRecoveryPolicy(
     fun onRecognitionHealthy() {
         nextDelay = initialDelayMillis
     }
+
+    /** READY is not recovery. Reset only after a non-blank transcription. */
+    fun onRecognitionResult(transcripts: List<String>?) {
+        if (UltraWakeRecognitionHealth.hasTranscript(transcripts)) {
+            onRecognitionHealthy()
+        }
+    }
 }
