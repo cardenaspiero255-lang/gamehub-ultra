@@ -1482,13 +1482,23 @@ Deno.test("comparison separates follow-up gaming request from second model", asy
       if (url === "https://api.tavily.com/search") {
         const query = JSON.parse(String(init?.body)).query as string;
         searches.push(query);
-        const name = query.includes("11S") ? "RedMagic 11S Pro" : "RedMagic 12 Pro";
+        const name = query.includes("11S")
+          ? "RedMagic 11S Pro"
+          : "RedMagic 12 Pro";
         return jsonResponse({
           results: [
-            { title: name + " review", url: "https://first.example/phone/" + name,
-              content: name + " technical details.", score: 0.9 },
-            { title: name + " specifications", url: "https://second.example/phone/" + name,
-              content: name + " battery and display.", score: 0.8 },
+            {
+              title: name + " review",
+              url: "https://first.example/phone/" + name,
+              content: name + " technical details.",
+              score: 0.9,
+            },
+            {
+              title: name + " specifications",
+              url: "https://second.example/phone/" + name,
+              content: name + " battery and display.",
+              score: 0.8,
+            },
           ],
         });
       }
@@ -1502,9 +1512,13 @@ Deno.test("comparison separates follow-up gaming request from second model", asy
     "",
     "COMPARISON_RESEARCH",
   );
-  if (result.abstained) throw new Error("Valid source-backed comparison was lost");
+  if (result.abstained) {
+    throw new Error("Valid source-backed comparison was lost");
+  }
   if (!searches.includes("RedMagic 12 Pro") || searches.length !== 2) {
-    throw new Error("Must search exact device names without user follow-up: " + searches);
+    throw new Error(
+      "Must search exact device names without user follow-up: " + searches,
+    );
   }
 });
 
@@ -1514,19 +1528,29 @@ Deno.test("verified device accepts a separate brand and model name", async () =>
     fetcher: (input) => {
       const url = decodeURIComponent(String(input));
       if (url.includes("api.github.com/search/code")) {
-        return jsonResponse({ items: [{ path: url.toLowerCase().includes("11s pro")
-          ? "data/smartphone/redmagic/11s.json"
-          : "data/smartphone/redmagic/12.json" }] });
+        return jsonResponse({
+          items: [{
+            path: url.toLowerCase().includes("11s pro")
+              ? "data/smartphone/redmagic/11s.json"
+              : "data/smartphone/redmagic/12.json",
+          }],
+        });
       }
       if (url.includes("/contents/data/smartphone/redmagic/11s.json")) {
         return jsonResponse({
-          brand: "RedMagic", name: "11S Pro", verified: true, battery_mah: 7500,
+          brand: "RedMagic",
+          name: "11S Pro",
+          verified: true,
+          battery_mah: 7500,
           source_urls: ["https://global.redmagic.gg/specs/11s"],
         });
       }
       if (url.includes("/contents/data/smartphone/redmagic/12.json")) {
         return jsonResponse({
-          brand: "RedMagic", name: "12 Pro", verified: true, battery_mah: 8000,
+          brand: "RedMagic",
+          name: "12 Pro",
+          verified: true,
+          battery_mah: 8000,
           source_urls: ["https://global.redmagic.gg/specs/12"],
         });
       }
@@ -1545,7 +1569,9 @@ Deno.test("verified device accepts a separate brand and model name", async () =>
     "COMPARISON_RESEARCH",
   );
   if (result.abstained || webCalls !== 0) {
-    throw new Error("Verified brand + model records must be accepted without fallback");
+    throw new Error(
+      "Verified brand + model records must be accepted without fallback",
+    );
   }
 });
 
@@ -1553,7 +1579,9 @@ Deno.test("comparison rejects contradictory battery figures from independent web
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
       const url = String(input);
-      if (url.includes("api.github.com/search/code")) return jsonResponse({ items: [] });
+      if (url.includes("api.github.com/search/code")) {
+        return jsonResponse({ items: [] });
+      }
       if (url.includes("/git/trees/develop")) return jsonResponse({ tree: [] });
       if (url === "https://api.tavily.com/search") {
         const query = JSON.parse(String(init?.body)).query as string;
@@ -1587,7 +1615,9 @@ Deno.test("comparison rejects contradictory battery figures from independent web
     "COMPARISON_RESEARCH",
   );
   if (!answer.abstained) {
-    throw new Error("Contradictory battery figures must not be called verified.");
+    throw new Error(
+      "Contradictory battery figures must not be called verified.",
+    );
   }
 });
 
