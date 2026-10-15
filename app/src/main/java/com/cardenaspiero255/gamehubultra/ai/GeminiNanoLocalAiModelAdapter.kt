@@ -174,7 +174,7 @@ internal fun buildNanoAdvicePrompt(
         appendLine("Battery: " + (context.batteryPercent ?: -1))
         appendLine("Charging: " + context.charging)
         appendLine("Refresh Hz: " + (context.refreshRateHz ?: -1f))
-        appendLine("Validated network: " + context.networkValidated)
+        appendLine("Network validated: " + context.networkValidated)
         appendLine("Latency ms: " + (context.networkLatencyMs ?: -1))
         appendLine("Bandwidth kbps: " + (context.downstreamBandwidthKbps ?: -1))
         appendLine("Storage free percent: " + context.storageFreePercent)
