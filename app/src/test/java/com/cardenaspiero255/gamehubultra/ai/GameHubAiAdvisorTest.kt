@@ -32,6 +32,91 @@ class GameHubAiAdvisorTest {
     )
 
     @Test
+    fun localSessionMemoryIsAnswerableBeforeGenerativeResearch() {
+        val advisor = GameHubAiAdvisor(
+            gameSessionHistory = {
+                listOf(
+                    com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession(
+                        packageName = "com.example.game",
+                        startedAtMillis = 1_000L,
+                        endedAtMillis = 10_000L,
+                        measuredSampleCount = 6,
+                        typicalRefreshRateHz = 120,
+                        minimumBatteryPercent = 30,
+                        maximumThermalStatus = 4,
+                        playedAtNight = false
+                    )
+                )
+            }
+        )
+        val result = assertNotNull(
+            advisor.generalKnowledgeChatOrNull(
+                "¿Cómo estuvo mi última sesión?",
+                healthyContext,
+                emptyList()
+            )
+        )
+        assertTrue(result.contains("120 Hz"))
+        assertTrue(result.contains("estado térmico 4"))
+        assertFalse(result.contains("45 °C"))
+    }
+
+    @Test
+    fun historyQuestionAboutOtherExplicitGameNeverUsesSelectedGameMetrics() {
+        fun session(game: String, hz: Int) =
+            com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession(
+                packageName = game,
+                startedAtMillis = 1_000L,
+                endedAtMillis = 10_000L,
+                measuredSampleCount = 6,
+                typicalRefreshRateHz = hz,
+                minimumBatteryPercent = 30,
+                maximumThermalStatus = 2,
+                playedAtNight = false
+            )
+        val advisor = GameHubAiAdvisor(gameSessionHistory = {
+            listOf(session("com.example.game", 60), session("com.example.other", 120))
+        })
+        val other = assertNotNull(advisor.generalKnowledgeChatOrNull(
+            message = "¿Cómo fue mi última sesión de com.example.other?",
+            context = healthyContext, conversation = emptyList()
+        ))
+        assertTrue(other.contains("com.example.other"), other)
+        assertTrue(other.contains("120 Hz"), other)
+        assertFalse(other.contains("60 Hz"), other)
+
+        val selected = assertNotNull(advisor.generalKnowledgeChatOrNull(
+            message = "¿Cómo fue mi última sesión?",
+            context = healthyContext, conversation = emptyList()
+        ))
+        assertTrue(selected.contains("com.example.game"), selected)
+        assertTrue(selected.contains("60 Hz"), selected)
+
+        // Unknown/multiple explicitly requested packages must not be
+        // silently replaced by metrics of whichever game is selected.
+        assertNull(advisor.generalKnowledgeChatOrNull(
+            "¿Cómo fue mi última sesión de com.example.unknown?",
+            healthyContext, emptyList()
+        ))
+        assertNull(advisor.generalKnowledgeChatOrNull(
+            "Compara mi última sesión de com.example.game y com.example.other",
+            healthyContext, emptyList()
+        ))
+    }
+
+    @Test
+    fun unavailablePrivateHistoryDoesNotCrashOrLeakIntoPublicAnswer() {
+        val advisor = GameHubAiAdvisor(
+            gameSessionHistory = { throw IllegalStateException("private session token") }
+        )
+        val result = assertNotNull(advisor.generalKnowledgeChatOrNull(
+            "¿Qué es un exoplaneta?", healthyContext, emptyList()
+        ))
+        assertTrue(result.contains("exoplaneta", ignoreCase = true))
+        assertFalse(result.contains("private session token"))
+    }
+
+    @Test
     fun reportedStableDefinitionsRemainAnswerableWithoutLocalModel() {
         val advisor = GameHubAiAdvisor()
 
@@ -927,6 +1012,42 @@ class GameHubAiAdvisorTest {
         assertEquals(1, recallCalls)
         assertEquals(1, receivedMemories.size)
         assertEquals("Prefiero perfiles estables", receivedMemories.single().text)
+    }
+
+    @Test
+    fun optionalNanoVoiceProposalsRequireExplicitSpeechAndNeverTrustInventedGameTargets() {
+        var modelInvocations = 0
+        var modelAvailable = true
+        var predictedGame = "Minecraft"
+        val model = object : LocalAiModelAdapter {
+            override fun isAvailable(): Boolean = modelAvailable
+            override fun advise(
+                question: String,
+                context: GameHubAiContext
+            ): LocalAiActionCandidate? = null
+            override fun interpretVoiceIntent(transcript: String): LocalVoiceIntentCandidate {
+                modelInvocations++
+                return LocalVoiceIntentCandidate("OPEN_GAME", predictedGame)
+            }
+        }
+        val resolver = GameHubAiAdvisor(modelAdapter = model).intentResolver()
+        val permitted = resolver.resolve("Podrías abrir Minecraft")
+        assertEquals("Minecraft", assertIs<VoiceCommand.OpenGame>(permitted).query)
+        assertEquals(1, modelInvocations)
+
+        predictedGame = "Banco"
+        assertNull(resolver.resolve("Podrías abrir Minecraft"))
+        assertEquals(2, modelInvocations)
+
+        modelAvailable = false
+        assertNull(resolver.resolve("Podrías abrir Minecraft"))
+        assertEquals(2, modelInvocations)
+
+        modelAvailable = true
+        assertNull(resolver.resolve("Podrías explicar cómo abrir Minecraft"))
+        assertEquals(3, modelInvocations)
+        assertNull(resolver.resolve("¿Qué es un agujero negro?"))
+        assertEquals(3, modelInvocations)
     }
 
     private fun fixedMemoryGateway(text: String): UltraLongTermMemoryGateway =

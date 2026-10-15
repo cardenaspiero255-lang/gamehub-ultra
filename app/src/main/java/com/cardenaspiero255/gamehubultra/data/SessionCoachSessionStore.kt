@@ -5,6 +5,8 @@ import com.cardenaspiero255.gamehubultra.domain.SessionCoachMessage
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachPriority
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSignal
 import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
+import com.cardenaspiero255.gamehubultra.domain.UltraRecordedGameSession
+import com.cardenaspiero255.gamehubultra.domain.UltraSessionHistoryIntelligence
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
@@ -126,6 +128,48 @@ internal object SessionCoachMessageCodec {
     }.getOrNull()
 }
 
+
+/**
+ * Compact archive: measured summary only, not duplicated raw samples.
+ * Each finished session is stored at most once, with a bounded local history.
+ */
+internal object UltraGameSessionHistoryCodec {
+    fun encode(fact: UltraRecordedGameSession): String = listOf(
+        Base64.getEncoder().encodeToString(
+            fact.packageName.toByteArray(StandardCharsets.UTF_8)
+        ),
+        fact.startedAtMillis.toString(),
+        fact.endedAtMillis.toString(),
+        fact.measuredSampleCount.toString(),
+        fact.typicalRefreshRateHz?.toString().orEmpty(),
+        fact.minimumBatteryPercent?.toString().orEmpty(),
+        fact.maximumThermalStatus?.toString().orEmpty(),
+        fact.playedAtNight.toString()
+    ).joinToString("|")
+
+    fun decode(raw: String): UltraRecordedGameSession? {
+        val parts = raw.split("|")
+        if (parts.size != 8) return null
+        return runCatching {
+            val game = String(Base64.getDecoder().decode(parts[0]), StandardCharsets.UTF_8)
+            val start = parts[1].toLong()
+            val end = parts[2].toLong()
+            val count = parts[3].toInt()
+            if (game.isBlank() || start < 0L || end < start || count <= 0) return null
+            UltraRecordedGameSession(
+                packageName = game,
+                startedAtMillis = start,
+                endedAtMillis = end,
+                measuredSampleCount = count,
+                typicalRefreshRateHz = parts[4].toIntOrNull()?.takeIf { it in 30..240 },
+                minimumBatteryPercent = parts[5].toIntOrNull()?.takeIf { it in 0..100 },
+                maximumThermalStatus = parts[6].toIntOrNull()?.takeIf { it in 0..7 },
+                playedAtNight = parts[7].toBooleanStrict()
+            )
+        }.getOrNull()
+    }
+}
+
 class SessionCoachSessionStore(
     context: Context,
     private val maxSamples: Int = DEFAULT_MAX_SAMPLES
@@ -219,6 +263,22 @@ class SessionCoachSessionStore(
         val editor = preferences.edit()
         LAST_KEYS.forEach(editor::remove)
         writeSession(editor, LAST_PREFIX, finished)
+        UltraSessionHistoryIntelligence.fromMeasuredSamples(
+            packageName = finished.packageName,
+            startedAtMillis = finished.startedAtMillis,
+            endedAtMillis = checkNotNull(finished.endedAtMillis),
+            samples = finished.samples
+        )?.let { newFact ->
+            val previousFacts = readRecentGameSessions(MAX_HISTORY)
+                .filterNot { it.packageName == newFact.packageName &&
+                    it.startedAtMillis == newFact.startedAtMillis }
+            editor.putString(
+                HISTORY_KEY,
+                (previousFacts + newFact).sortedBy { it.endedAtMillis }
+                    .takeLast(MAX_HISTORY)
+                    .joinToString("\n", transform = UltraGameSessionHistoryCodec::encode)
+            )
+        }
         ACTIVE_KEYS.forEach(editor::remove)
         editor.apply()
         return finished
@@ -242,6 +302,52 @@ class SessionCoachSessionStore(
 
     fun readLastCompletedSession(): SessionCoachStoredSession? =
         readSession(LAST_PREFIX)?.takeIf { it.endedAtMillis != null }
+
+    /** Historical summaries are sourced only from completed measured sessions. */
+    fun readRecentGameSessions(
+        limit: Int = 24,
+        packageName: String? = null
+    ): List<UltraRecordedGameSession> =
+        preferences.getString(HISTORY_KEY, null).orEmpty()
+            .lineSequence()
+            .mapNotNull(UltraGameSessionHistoryCodec::decode)
+            .filter { packageName == null || it.packageName == packageName }
+            .toList()
+            .takeLast(limit.coerceIn(1, MAX_HISTORY))
+
+    /**
+     * A notification proposes settings only once per game. Showing a prompt
+     * never applies a profile: a separate explicit action must confirm it.
+     */
+    @Synchronized
+    fun takeNightProfileProposalToShow(packageName: String): Boolean {
+        val clean = packageName.trim()
+        if (clean.isBlank()) return false
+        val key = nightProposalKey(clean)
+        if (preferences.contains(key)) return false
+        preferences.edit().putString(key, "pending").apply()
+        return true
+    }
+
+    @Synchronized
+    fun isNightProfileProposalPending(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        return preferences.getString(nightProposalKey(packageName.trim()), null) == "pending"
+    }
+
+    @Synchronized
+    fun markNightProfileProposalApplied(packageName: String): Boolean {
+        val clean = packageName.trim()
+        if (!isNightProfileProposalPending(clean)) return false
+        preferences.edit()
+            .putString(nightProposalKey(clean), "applied")
+            .apply()
+        return true
+    }
+
+    private fun nightProposalKey(packageName: String): String =
+        "night_proposal_" + Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(packageName.toByteArray(StandardCharsets.UTF_8))
 
     private fun readSession(prefix: String): SessionCoachStoredSession? {
         val id = preferences.getString(prefix + KEY_ID, null)?.trim().orEmpty()
@@ -315,6 +421,8 @@ class SessionCoachSessionStore(
 
     private companion object {
         const val PREFERENCES_NAME = "gamehub_ultra_session_coach"
+        const val HISTORY_KEY = "completed_session_history_v1"
+        const val MAX_HISTORY = 32
         const val ACTIVE_PREFIX = "active_"
         const val LAST_PREFIX = "last_"
         const val KEY_ID = "id"
