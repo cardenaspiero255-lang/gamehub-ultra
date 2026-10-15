@@ -99,12 +99,13 @@ class UltraWakeService : Service() {
     private val ultraMemoryStore by lazy {
         GameHubProductionComposition.ultraConversationMemory(applicationContext)
     }
-    private val aiAdvisor by lazy {
+    private val aiAdvisorLazy = lazy {
         GameHubAiAdvisor(
             modelAdapter = GeminiNanoLocalAiModelAdapter(),
             memoryGateway = ultraMemoryStore
         )
     }
+    private val aiAdvisor by aiAdvisorLazy
 
     override fun onCreate() {
         super.onCreate()
@@ -510,7 +511,11 @@ class UltraWakeService : Service() {
         recognizer = null
         speechPlayback.shutdown()
         tts = null
-        aiAdvisor.close()
+        // A denied foreground microphone startup may stop the service before
+        // any AI command ran. Do not initialize GeminiNano solely to close it.
+        if (aiAdvisorLazy.isInitialized()) {
+            aiAdvisor.close()
+        }
         super.onDestroy()
     }
 }
