@@ -314,7 +314,7 @@ class UltraFrontierV2ClaimProvenanceGraph {
     @Synchronized
     fun record(evidence: UltraFrontierV2ClaimEvidence) {
         val normalized = evidence.copy(
-            claimId = normalize(evidence.claimId),
+            claimId = normalizeClaimId(evidence.claimId),
             normalizedValue = normalize(evidence.normalizedValue),
             sourceId = normalizeSourceId(evidence.sourceId),
             providerId = normalize(evidence.providerId)
@@ -339,7 +339,7 @@ class UltraFrontierV2ClaimProvenanceGraph {
         claimId: String,
         preferredValue: String
     ): UltraFrontierV2ClaimProvenanceSnapshot? {
-        val normalizedClaim = normalize(claimId)
+        val normalizedClaim = normalizeClaimId(claimId)
         val normalizedPreferred = normalize(preferredValue)
         val evidence = evidenceByClaim[normalizedClaim]
             ?.values
@@ -369,6 +369,23 @@ class UltraFrontierV2ClaimProvenanceGraph {
     @Synchronized
     fun clear() {
         evidenceByClaim.clear()
+    }
+
+    /**
+     * Ordinary semantic claim keys have historically been case-insensitive.
+     * A measurement-bearing research identity is different: SI and storage
+     * unit case can change its meaning (GB != Gb, MW != mW, MHz != mHz).
+     * Preserve only that normalized research payload's case; don't alter
+     * older graph consumers or the normalization of provider/source IDs.
+     */
+    private fun normalizeClaimId(value: String): String {
+        val trimmed = value.trim()
+        val researchPrefix = "research-answer:"
+        return if (trimmed.startsWith(researchPrefix, ignoreCase = true)) {
+            researchPrefix + trimmed.substring(researchPrefix.length)
+        } else {
+            normalize(trimmed)
+        }
     }
 
     private fun normalizeSourceId(value: String): String {
