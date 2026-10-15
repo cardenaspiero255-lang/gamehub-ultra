@@ -116,6 +116,42 @@ class VoiceAssistantControllerRobolectricTest {
 
 
     @Test
+    fun detailedComparisonQueuesBoundedTtsChunksInTheVisibleAssistant() {
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = {},
+            onTranscript = {},
+            onError = {}
+        )
+        val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
+        val ttsField = VoiceAssistantController::class.java
+            .getDeclaredField("tts").apply { isAccessible = true }
+        (ttsField.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
+        ttsField.set(controller, speech)
+        val answer = "La primera fuente informa las características. ".repeat(115)
+        try {
+            controller.speak(answer)
+            val invocations = org.mockito.Mockito.mockingDetails(speech)
+                .invocations.filter { it.method.name == "speak" }
+            kotlin.test.assertTrue(invocations.size >= 3)
+            assertEquals(android.speech.tts.TextToSpeech.QUEUE_FLUSH, invocations.first().arguments[1])
+            kotlin.test.assertTrue(invocations.drop(1).all {
+                it.arguments[1] == android.speech.tts.TextToSpeech.QUEUE_ADD
+            })
+            kotlin.test.assertTrue(invocations.all {
+                (it.arguments[0] as String).length <= UltraSpeechChunker.DEFAULT_CHUNK_CHARS
+            })
+            assertEquals(answer.trim(), invocations.joinToString(" ") {
+                it.arguments[0] as String
+            })
+            kotlin.test.assertTrue(invocations.map { it.arguments[3] }.distinct().size ==
+                invocations.size)
+        } finally {
+            controller.release()
+        }
+    }
+
+    @Test
     fun releaseCleansSpeechAndTtsEvenWhenListeningCallbackThrows() {
         val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
         val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
