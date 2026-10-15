@@ -506,8 +506,10 @@ class UltraWakeService : Service() {
         closePersistentSpeechSource()
         commandCoordinator.onRecognitionFinished()
         commandCoordinator.finishCommand()
-        recognizer?.cancel()
-        recognizer?.destroy()
+        // Android SpeechRecognizer can throw after the microphone service
+        // is revoked or the recognizer was invalidated by the system.
+        runCatching { recognizer?.cancel() }
+        runCatching { recognizer?.destroy() }
         recognizer = null
         speechPlayback.shutdown()
         tts = null
