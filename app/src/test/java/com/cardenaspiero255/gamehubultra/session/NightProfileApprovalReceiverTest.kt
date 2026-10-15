@@ -14,6 +14,8 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
+import org.robolectric.Robolectric
 import kotlinx.coroutines.withTimeout
 import org.junit.Before
 import org.junit.Test
@@ -133,6 +135,33 @@ class NightProfileApprovalReceiverTest {
         assertTrue(after.any { notification ->
             notification.notification.actions.isNullOrEmpty()
         }, "Repeated summaries must not re-offer approval")
+    }
+
+    @Test
+    fun realBroadcastReceiverHandlesExplicitApprovedNightProfileAndPublishesNotification() = runBlocking {
+        val game = "com.test.night.broadcast"
+        val store = SessionCoachSessionStore(context)
+        assertTrue(store.takeNightProfileProposalToShow(game))
+        // Use Robolectric's receiver lifecycle so goAsync() has a real
+        // PendingResult, while the repository is exercised on Dispatchers.IO.
+        Robolectric.buildReceiver(NightProfileApprovalReceiver::class.java)
+            .create()
+            .receiveIntent(applyIntent(game))
+        withTimeout(12_000L) {
+            while (store.isNightProfileProposalPending(game)) {
+                delay(40L)
+            }
+        }
+        val profile = GameHubProductionComposition.selectionRepository(context)
+            .gameProfileConfigFlow(game).first()
+        assertEquals(PerformanceProfile.BALANCED, profile?.performanceProfile)
+        assertEquals(ThermalPreference.COOLER, profile?.thermalPreference)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        assertTrue(manager.activeNotifications.any {
+            it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)
+                ?.toString()?.contains("Propuesta Noche aplicada") == true
+        }, "Successful explicit approval must produce its visible receipt")
+        assertFalse(store.isNightProfileProposalPending(game))
     }
 
     @Test
