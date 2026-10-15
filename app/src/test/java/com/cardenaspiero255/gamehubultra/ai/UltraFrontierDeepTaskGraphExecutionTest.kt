@@ -301,7 +301,7 @@ class UltraFrontierDeepTaskGraphExecutionTest {
     }
 
     @Test
-    fun constrainedRetryWithTwoActualProvidersUsesInRangeNextSlot() {
+    fun constrainedRetryWithThreeActualProvidersDoesNotReuseBudgetedSlots() {
         UltraFrontierWorldStateRegistry.clear()
         val offsets = Collections.synchronizedList(mutableListOf<Int>())
         try {
@@ -327,13 +327,13 @@ class UltraFrontierDeepTaskGraphExecutionTest {
             )
             val gateway = object : UltraResearchGateway {
                 override val supportsProviderPartitioning: Boolean = true
-                override val providerPartitionCapacity: Int = 2
+                override val providerPartitionCapacity: Int = 3
 
                 override fun answer(
                     request: UltraGeneralQueryRequest
                 ): UltraVerifiedResearchResult {
                     offsets += request.researchProviderOffset
-                    return if (request.researchProviderOffset == 0) {
+                    return if (request.researchProviderOffset < 2) {
                         UltraVerifiedResearchResult(
                             message = "No hay información suficiente.",
                             confidence = UltraAnswerConfidence.LOW,
@@ -372,7 +372,7 @@ class UltraFrontierDeepTaskGraphExecutionTest {
                     "Compara profundamente dos teléfonos actuales y verifica nuevas fuentes"
                 )
             ) { null }
-            assertEquals(listOf(0, 1), offsets.toList())
+            assertEquals(listOf(0, 2), offsets.toList())
             assertTrue(answer.verified)
             assertFalse(answer.abstained)
         } finally {
