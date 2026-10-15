@@ -1575,7 +1575,6 @@ Deno.test("phone comparison rejects one unsupported web result", async () => {
   }
 });
 
-
 Deno.test("phone comparison recovers from TechAPI connection errors", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
@@ -1616,7 +1615,9 @@ Deno.test("phone comparison recovers from TechAPI connection errors", async () =
     "COMPARISON_RESEARCH",
   );
   if (answer.abstained) {
-    throw new Error("TechAPI outage must not prevent corroborated web comparison");
+    throw new Error(
+      "TechAPI outage must not prevent corroborated web comparison",
+    );
   }
 });
 
