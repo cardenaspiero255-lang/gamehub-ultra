@@ -59,6 +59,49 @@ Deno.test("required verification consults healthy live source instead of unsourc
   }
 });
 
+Deno.test(
+  "aviation layover survives rate limits without claiming independent citations",
+  async () => {
+    const prompts = [
+      "¿Qué es una escala aérea?",
+      "¿Cómo explicarías una escala aérea? de forma clara y directa, en pocas frases!",
+      "¿Para qué sirve o por qué importa una escala aérea? sin asumir conocimientos previos, con una explicación breve.",
+      "Describe una escala aérea para un estudiante, sin inventar datos?",
+      "Dime lo esencial sobre una escala aérea en lenguaje cotidiano, y destaca una idea clave.",
+    ];
+    for (const prompt of prompts) {
+      let remoteCalls = 0;
+      const deps: ResearchDependencies = {
+        fetcher: () => {
+          remoteCalls++;
+          return jsonResponse({ error: "Too Many Requests" }, 429);
+        },
+        env: () => undefined,
+      };
+      const result = await routeResearchQuery(
+        prompt,
+        deps,
+        "",
+        "GENERAL_KNOWLEDGE",
+        "OPTIONAL",
+      );
+      const answer = (result.displayText ?? "").toLowerCase();
+      if (
+        result.abstained || !answer.includes("escala") ||
+        !answer.includes("vuelo") || !answer.includes("aeropuerto") ||
+        remoteCalls !== 0 || result.authoritative === true ||
+        (result.independentSourceCount ?? 0) !== 0 ||
+        (result.sourceIds?.length ?? 0) !== 0
+      ) {
+        throw new Error(
+          "Stable aviation layover must answer accurately and remain unverified: " +
+            prompt + " / " + answer,
+        );
+      }
+    }
+  },
+);
+
 Deno.test("Wi-Fi definitions remain complete without upstream data", async () => {
   const deps: ResearchDependencies = {
     fetcher: () => {
