@@ -34,7 +34,7 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
      * This bounds worker waiting; moving the full interface to suspend APIs
      * remains a future API migration, not a prerequisite for UI safety.
      */
-    private fun <T> boundedNanoCall(block: suspend () -> T): T? {
+    internal fun <T> boundedNanoCall(block: suspend () -> T): T? {
         if (closed.get()) return null
         val mainLooper = Looper.getMainLooper()
         if (mainLooper != null && Looper.myLooper() == mainLooper) return null
@@ -104,15 +104,7 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
             boundedNanoCall {
                 val client = model.value ?: return@boundedNanoCall null
                 if (client.checkStatus() != FeatureStatus.AVAILABLE) return@boundedNanoCall null
-                val prompt = buildString {
-                    appendLine("Classify an explicit gaming voice command as one of:")
-                    appendLine("PROFILE_BALANCED, PROFILE_X4, PROFILE_INTERPOLATION")
-                    appendLine("OPEN_GAME|exact game name spoken")
-                    appendLine("DEVICE_STATUS, HELP, NONE")
-                    appendLine("Respond with exactly one item, no explanation.")
-                    appendLine("Use NONE for informational questions or unclear intent.")
-                    appendLine("Voice input: " + transcript.take(300))
-                }
+                val prompt = buildNanoVoiceIntentPrompt(transcript)
                 val raw = client.generateContent(prompt).candidates
                     .firstOrNull()?.text?.trim() ?: return@boundedNanoCall null
                 if (raw.length > 100 || raw.contains('\n')) return@boundedNanoCall null
@@ -145,6 +137,18 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
         }.getOrNull()
 
 
+}
+
+
+/** Pure prompt contract for bounded, opt-in, non-executable local intent data. */
+internal fun buildNanoVoiceIntentPrompt(transcript: String): String = buildString {
+    appendLine("Classify an explicit gaming voice command as one of:")
+    appendLine("PROFILE_BALANCED, PROFILE_X4, PROFILE_INTERPOLATION")
+    appendLine("OPEN_GAME|exact game name spoken")
+    appendLine("DEVICE_STATUS, HELP, NONE")
+    appendLine("Respond with exactly one item, no explanation.")
+    appendLine("Use NONE for informational questions or unclear intent.")
+    appendLine("Voice input: " + transcript.take(300))
 }
 
 internal fun buildNanoAdvicePrompt(
