@@ -174,9 +174,9 @@ class NightProfileApprovalReceiverTest {
         assertEquals(context.packageName, intent.component?.packageName)
         assertEquals(NightProfileApprovalReceiver.ACTION_APPLY, intent.action)
         assertEquals(game, intent.getStringExtra(NightProfileApprovalReceiver.EXTRA_PACKAGE))
-        assertTrue("The notification action must be immutable", approval.actionIntent.isImmutable)
-        assertTrue("Showing the action alone must never apply the profile",
-            store.isNightProfileProposalPending(game))
+        assertTrue(approval.actionIntent.isImmutable, "The notification action must be immutable")
+        assertTrue(store.isNightProfileProposalPending(game),
+            "Showing the action alone must never apply the profile")
     }
 
     @Test
