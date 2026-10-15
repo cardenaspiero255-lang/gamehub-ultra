@@ -24,14 +24,12 @@ object UltraOnDeviceVoiceIntentResolver {
         ) return null
 
         val polite = """(?:(?:por favor|oye)\s+)?(?:(?:podrias|puedes|quiero que|necesito que)\s+)?"""
-        val explicitLaunch = Regex(
-            "^" + polite +
-                """(?:abre|abrir|abreme|lanza|lanzar|inicia|iniciar|ejecuta|juega|open|launch|play|start)\s+(?:el juego\s+|al juego\s+)?(.+?)(?:\s+por favor)?$"""
-        ).matchEntire(clean)
-        val explicitProfile = Regex(
-            "^" + polite +
-                """(?:pon|poner|activa|activar|selecciona|seleccionar|cambia|cambiar|usa|usar|aplica|configura|set|switch|activate)\s+.+$"""
-        ).matches(clean)
+        val explicitLaunchPattern = "^" + polite +
+            """(?:abre|abrir|abreme|lanza|lanzar|inicia|iniciar|ejecuta|juega|open|launch|play|start)\s+(?:el juego\s+|al juego\s+)?(.+?)(?:\s+por favor)?$"""
+        val explicitLaunch = Regex(explicitLaunchPattern).matchEntire(clean)
+        val explicitProfilePattern = "^" + polite +
+            """(?:pon|poner|activa|activar|selecciona|seleccionar|cambia|cambiar|usa|usar|aplica|configura|set|switch|activate)\s+.+$"""
+        val explicitProfile = Regex(explicitProfilePattern).matches(clean)
 
         return when (candidate.command.trim().uppercase(java.util.Locale.ROOT)) {
             "PROFILE_BALANCED" -> if (explicitProfile &&
