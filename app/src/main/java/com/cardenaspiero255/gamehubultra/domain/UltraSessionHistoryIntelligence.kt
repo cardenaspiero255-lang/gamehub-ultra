@@ -112,7 +112,13 @@ object UltraSessionHistoryIntelligence {
         val clean = java.text.Normalizer.normalize(
             query.lowercase(java.util.Locale.ROOT), java.text.Normalizer.Form.NFD
         ).replace(Regex("""\p{M}+"""), "")
-        if (listOf("ultima sesion", "ultima partida", "la ultima vez que jug").any(clean::contains)) {
+        // Only first-person requests may reveal locally measured user sessions.
+        // Broad substrings such as "la ultima vez que jug" also match
+        // third-party facts ("la última vez que jugó Messi").
+        val personalSessionQuestion = Regex(
+            """\bmi\s+ultima\s+(?:sesion|partida)\b|\b(?:la\s+)?ultima\s+vez\s+que\s+jugue\b|\bcuando\s+jugue\s+por\s+ultima\s+vez\b"""
+        ).containsMatchIn(clean)
+        if (personalSessionQuestion) {
             return lastSessionSummary(history, game)
                 ?: "No tengo una sesión anterior medida de este juego."
         }
