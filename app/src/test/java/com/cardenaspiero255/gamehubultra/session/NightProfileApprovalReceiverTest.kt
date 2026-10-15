@@ -8,7 +8,6 @@ import java.time.ZonedDateTime
 import org.robolectric.Shadows.shadowOf
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Looper
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
@@ -143,29 +142,22 @@ class NightProfileApprovalReceiverTest {
         val game = "com.test.night.broadcast"
         val store = SessionCoachSessionStore(context)
         assertTrue(store.takeNightProfileProposalToShow(game))
-        // Register a receiver and dispatch a real broadcast so goAsync()
-        // gets lifecycle state while Dispatchers.IO performs the write.
-        val receiver = NightProfileApprovalReceiver()
-        context.registerReceiver(
-            receiver,
-            IntentFilter(NightProfileApprovalReceiver.ACTION_APPLY),
-            Context.RECEIVER_NOT_EXPORTED
+        // Use the actual app-scoped PendingIntent delivery path used by the
+        // notification action. A dynamically registered receiver is not the
+        // non-exported manifest receiver that the user actually invokes.
+        val approval = android.app.PendingIntent.getBroadcast(
+            context,
+            431,
+            applyIntent(game),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                android.app.PendingIntent.FLAG_IMMUTABLE
         )
-        try {
-            // Dynamic receivers match this implicit action; an explicit component
-            // addresses only the manifest receiver and can bypass the registered one.
-            context.sendBroadcast(
-                Intent(NightProfileApprovalReceiver.ACTION_APPLY)
-                    .putExtra(NightProfileApprovalReceiver.EXTRA_PACKAGE, game)
-            )
-            shadowOf(Looper.getMainLooper()).idle()
-            withTimeout(12_000L) {
-                while (store.isNightProfileProposalPending(game)) {
-                    delay(40L)
-                }
+        approval.send()
+        shadowOf(Looper.getMainLooper()).idle()
+        withTimeout(12_000L) {
+            while (store.isNightProfileProposalPending(game)) {
+                delay(40L)
             }
-        } finally {
-            context.unregisterReceiver(receiver)
         }
         val profile = GameHubProductionComposition.selectionRepository(context)
             .gameProfileConfigFlow(game).first()
