@@ -38,6 +38,7 @@ class VoiceAssistantController(
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackRetryGate = VoiceRecognitionRetryGate()
+    private val speechInitGate = UltraTtsInitializationGate()
     @Volatile private var released = false
     private val fallbackRetry = Runnable {
         if (released) return@Runnable
@@ -56,8 +57,16 @@ class VoiceAssistantController(
 
     init {
         tts = TextToSpeech(appContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.let(UltraSpeechLocalePolicy::applyTo)
+            // The platform callback may fire before the constructor has
+            // assigned tts, or after the UI has released this controller.
+            mainHandler.post {
+                if (!released) {
+                    val success = status == TextToSpeech.SUCCESS
+                    if (success) {
+                        tts?.let(UltraSpeechLocalePolicy::applyTo)
+                    }
+                    speechInitGate.initialized(success)?.let(::speak)
+                }
             }
         }
     }
@@ -129,8 +138,9 @@ class VoiceAssistantController(
 
     fun speak(text: String) {
         if (released) return
+        val readyText = speechInitGate.offer(text) ?: return
         val engine = tts ?: return
-        val chunks = UltraSpeechChunker.chunk(text)
+        val chunks = UltraSpeechChunker.chunk(readyText)
         val token = System.nanoTime()
         chunks.forEachIndexed { index, segment ->
             val result = engine.speak(
@@ -150,6 +160,7 @@ class VoiceAssistantController(
     fun release() {
         if (released) return
         released = true
+        speechInitGate.close()
         // Make release terminal before calling any client or platform callbacks.
         fallbackRetryGate.close()
         runCatching { mainHandler.removeCallbacks(fallbackRetry) }
