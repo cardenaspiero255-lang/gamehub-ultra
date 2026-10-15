@@ -35,7 +35,10 @@ internal class ContinuousVoiceController(
             gateway.stopWakeService()
             return false
         }
-        gateway.startWakeService()
+        if (!startServiceSafely()) {
+            disableAfterStartFailure()
+            return false
+        }
         return true
     }
 
@@ -55,18 +58,32 @@ internal class ContinuousVoiceController(
             return ContinuousVoiceChange.SYSTEM_RESTRICTED
         }
 
+        if (!startServiceSafely()) {
+            disableAfterStartFailure()
+            return ContinuousVoiceChange.SYSTEM_RESTRICTED
+        }
         gateway.setEnabled(true)
-        gateway.startWakeService()
         return ContinuousVoiceChange.ENABLED
     }
 
-    fun enableAfterPermissionGranted(): ContinuousVoiceChange {
-        if (!gateway.hasRecordAudioPermission()) {
-            return ContinuousVoiceChange.PERMISSION_REQUIRED
+    fun enableAfterPermissionGranted(): ContinuousVoiceChange =
+        setEnabled(true)
+
+    private fun startServiceSafely(): Boolean =
+        try {
+            gateway.startWakeService()
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: IllegalStateException) {
+            // Android may disallow foreground microphone capture while the app
+            // is backgrounded. Do not persist a mode that could not start.
+            false
         }
-        gateway.setEnabled(true)
-        gateway.startWakeService()
-        return ContinuousVoiceChange.ENABLED
+
+    private fun disableAfterStartFailure() {
+        gateway.setEnabled(false)
+        runCatching { gateway.stopWakeService() }
     }
 }
 
