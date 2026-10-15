@@ -87,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           log="$RUNNER_TEMP/ultra-research-local.log"
-          nohup deno run --allow-env --allow-net             supabase/functions/ultra-research/index.ts             >"$log" 2>&1 &
+          nohup deno run --node-modules-dir=auto --allow-env --allow-net             supabase/functions/ultra-research/index.ts             >"$log" 2>&1 &
           pid=$!
           echo "ULTRA_RESEARCH_PID=$pid" >> "$GITHUB_ENV"
           echo "ULTRA_RESEARCH_ENDPOINT=http://127.0.0.1:8000" >> "$GITHUB_ENV"
