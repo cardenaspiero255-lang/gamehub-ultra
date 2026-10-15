@@ -134,6 +134,20 @@ class UltraWakeServiceRecoveryRobolectricTest {
     }
 
     @Test
+    fun actualForegroundLifecycleCanStartAndShutDownWithoutCrashing() {
+        val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
+        try {
+            val service = controller.create().get()
+            val startIntent = android.content.Intent(service, UltraWakeService::class.java)
+                .setAction(UltraWakeService.ACTION_START)
+            assertEquals(android.app.Service.START_NOT_STICKY,
+                service.onStartCommand(startIntent, 0, 1))
+        } finally {
+            controller.destroy()
+        }
+    }
+
+    @Test
     fun shutdownBeforeStartupDoesNotInitializeUnusedAiAdvisor() {
         val service = UltraWakeService()
         val advisor = UltraWakeService::class.java.getDeclaredField("aiAdvisorLazy")
