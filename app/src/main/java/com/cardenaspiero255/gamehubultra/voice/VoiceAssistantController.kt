@@ -38,7 +38,9 @@ class VoiceAssistantController(
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackRetryGate = VoiceRecognitionRetryGate()
+    @Volatile private var released = false
     private val fallbackRetry = Runnable {
+        if (released) return@Runnable
         fallbackRetryGate.onRetryDispatched()
         VoiceRecognitionStartGuard.run(
             onListeningChanged = onListeningChanged,
@@ -61,6 +63,7 @@ class VoiceAssistantController(
     }
 
     fun startListening() {
+        if (released) return
         mainHandler.removeCallbacks(fallbackRetry)
         fallbackRetryGate.reset()
         recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
@@ -77,6 +80,7 @@ class VoiceAssistantController(
     }
 
     private fun startListeningWithCurrentLanguage() {
+        if (released) return
         val microphoneGranted =
             ContextCompat.checkSelfPermission(
                 appContext,
@@ -116,6 +120,7 @@ class VoiceAssistantController(
     }
 
     fun stopListening() {
+        if (released) return
         mainHandler.removeCallbacks(fallbackRetry)
         fallbackRetryGate.reset()
         recognizer?.cancel()
@@ -123,18 +128,25 @@ class VoiceAssistantController(
     }
 
     fun speak(text: String) {
+        if (released) return
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "gamehub-ultra-voice")
     }
 
     fun release() {
-        mainHandler.removeCallbacks(fallbackRetry)
-        fallbackRetryGate.reset()
-        onListeningChanged(false)
-        recognizer?.destroy()
+        if (released) return
+        released = true
+        // Make release terminal before calling any client or platform callbacks.
+        fallbackRetryGate.close()
+        runCatching { mainHandler.removeCallbacks(fallbackRetry) }
+        // Every cleanup step must execute even if a previous callback throws.
+        runCatching { onListeningChanged(false) }
+        val oldRecognizer = recognizer
         recognizer = null
-        tts?.stop()
-        tts?.shutdown()
+        runCatching { oldRecognizer?.destroy() }
+        val oldTts = tts
         tts = null
+        runCatching { oldTts?.stop() }
+        runCatching { oldTts?.shutdown() }
     }
 
     private val listener = object : RecognitionListener {
@@ -142,9 +154,12 @@ class VoiceAssistantController(
         override fun onBeginningOfSpeech() = Unit
         override fun onRmsChanged(rmsdB: Float) = Unit
         override fun onBufferReceived(buffer: ByteArray?) = Unit
-        override fun onEndOfSpeech() = onListeningChanged(false)
+        override fun onEndOfSpeech() {
+            if (!released) onListeningChanged(false)
+        }
 
         override fun onResults(results: Bundle?) {
+            if (released) return
             onListeningChanged(false)
             val alternatives = results
                 ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -158,14 +173,17 @@ class VoiceAssistantController(
             )?.let(onTranscript)
         }
 
-        override fun onPartialResults(partialResults: Bundle?) =
+        override fun onPartialResults(partialResults: Bundle?) {
+            if (released) return
             VoicePartialTranscriptForwarder.forward(
                 partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION),
                 onPartialTranscript
             )
+        }
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onError(error: Int) {
+            if (released) return
             val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
                 error = error,
                 currentTag = recognitionLanguageTag

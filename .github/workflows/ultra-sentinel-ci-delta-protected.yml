@@ -1,0 +1,77 @@
+name: Ultra Sentinel PR172 Protected Delta Review
+# Candidate PR code is tested ONLY without privileges. Protected runs execute main.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_ci_delta_stage2*.cjs'
+      - '.github/scripts/ultra_sentinel_api_budget*.cjs'
+      - '.github/workflows/ultra-sentinel-ci-delta-protected.yml'
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_ci_delta_stage2*.cjs'
+      - '.github/scripts/ultra_sentinel_api_budget*.cjs'
+      - '.github/workflows/ultra-sentinel-ci-delta-protected.yml'
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+concurrency:
+  group: sentinel-pr172-protected-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  stage2-candidate-tests:
+    if: github.event_name == 'pull_request'
+    name: Unprivileged protected-delta regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout untrusted candidate without persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run stage 2 tests
+        run: |
+          node --check .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs
+          node --check .github/scripts/ultra_sentinel_api_budget.cjs
+          node --test .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs .github/scripts/ultra_sentinel_api_budget.test.cjs
+  stage2-trusted-main:
+    if: (github.event_name == 'pull_request_target' && github.event.pull_request.number == 172) || github.event_name == 'push'
+    name: Trusted main PR172 SHA/tree/31 jobs (manual review required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout reviewed main source, NEVER PR head
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            .github/scripts
+            .github/workflows
+            .github/sentinel-fixtures/pr172-ci-baseline
+            package.json
+            package-lock.json
+          persist-credentials: false
+      - name: Install only main-locked parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Run trusted source regression tests
+        run: |
+          node --check .github/scripts/ultra_sentinel_ci_delta_stage2.cjs
+          node --check .github/scripts/ultra_sentinel_api_budget.cjs
+          node --test .github/scripts/ultra_sentinel_ci_delta_stage2.test.cjs .github/scripts/ultra_sentinel_api_budget.test.cjs
+      - name: Collect exact-SHA authenticated evidence for PR172
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          PR_NUMBER: '172'
+        run: node .github/scripts/ultra_sentinel_ci_delta_stage2.cjs

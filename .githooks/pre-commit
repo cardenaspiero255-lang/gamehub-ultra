@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+if ! command -v node >/dev/null 2>&1; then
+  echo "Ultra Sentinel pre-commit: Node.js is not installed. Run CI." >&2
+  if [ "${SENTINEL_PRECOMMIT_STRICT:-}" = "1" ]; then
+    exit 2
+  fi
+  exit 0
+fi
+node .github/scripts/ultra_sentinel_precommit.cjs

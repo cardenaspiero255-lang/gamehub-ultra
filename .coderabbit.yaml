@@ -1,0 +1,9 @@
+# Permanent opt-out from paid external AI review for GameHub Ultra.
+# Do not re-enable unless the repository owner explicitly requests it.
+reviews:
+  auto_review:
+    enabled: false
+    auto_incremental_review: false
+  review_status: false
+chat:
+  auto_reply: false

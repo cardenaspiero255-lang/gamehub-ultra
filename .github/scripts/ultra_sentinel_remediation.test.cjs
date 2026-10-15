@@ -1,0 +1,480 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {RULES,makeSuggestion,buildRemediations,markdown}=require('./ultra_sentinel_remediation.cjs');
+const core=require('./ultra_sentinel_core.cjs');
+// Core enriches each planner draft with bounded memory; synthetic fixtures
+// must model that contract rather than omitting the required property.
+const buildCoreRemediations=review=>{
+ const rem=buildRemediations(review);
+ return {...rem,suggestions:rem.suggestions.map(s=>({...s,relatedEvidence:[]}))};
+};
+const path='app/src/main/java/com/cardenaspiero255/gamehubultra/voice/UltraWakeService.kt';
+const f=(rule,evidence='startListening(intent)')=>({rule,severity:'HIGH',confidence:'medium',path,line:88,evidence});
+test('repair planner covers all dedicated rules',()=>{
+ const expected=['UNSCOPED_COROUTINE','SPEECH_REENTRANT_RETRY','UNBOUNDED_RECURSION','BLOCKING_ANDROID_CALL','POTENTIAL_HARDCODED_SECRET','POTENTIAL_PRIVATE_LOG','PRIVILEGED_UNTRUSTED_CHECKOUT','NON_CANCELLABLE_LOOP','FORCED_GC','REGRESSION_TEST_COVERAGE'];
+ assert.deepEqual(Object.keys(RULES).sort(),expected.sort());
+});
+test('voice retry handoff contains gate and regression test',()=>{
+ const s=makeSuggestion(f('SPEECH_REENTRANT_RETRY'));
+ assert.match(s.handoff,/VoiceRecognitionRetryGate/);
+ assert.match(s.handoff,/100 onError/);
+ assert.match(s.sample,/postDelayed/);
+ assert.equal(s.autofix,false);
+});
+test('coroutine repair requires correct owner',()=>{
+ const s=makeSuggestion(f('UNSCOPED_COROUTINE'));
+ assert.match(s.steps.join(' '),/propietario/);
+ assert.match(s.caution,/no.*pegar/i);
+});
+test('secrets never appear in suggested repair',()=>{
+ const secret='sk-super_secret_token_123456789';
+ const s=makeSuggestion(f('POTENTIAL_HARDCODED_SECRET','SENTRY_AUTH_TOKEN="'+secret+'"'));
+ assert.doesNotMatch(JSON.stringify(s),/super_secret_token/);
+ assert.equal(s.evidence,'[REDACTED]');
+});
+test('no repair claims to be autofix or compile-safe',()=>{
+ for(const rule of Object.keys(RULES)){
+  const s=makeSuggestion(f(rule));
+  assert.equal(s.autofix,false,rule);
+  assert.equal(s.status,'DRAFT_REQUIRES_VALIDATION');
+  assert.ok(s.test.length>15);
+  assert.ok(s.caution.length>5);
+  assert.ok(s.handoff.includes('Android Build'));
+ }
+});
+test('unknown findings receive cautious template',()=>{
+ const s=makeSuggestion(f('UNKNOWN_RULE'));
+ assert.match(s.sample,/No existe parche universal/);
+ assert.equal(s.autofix,false);
+});
+test('bounds suggestions',()=>{
+ const rem=buildRemediations({sha:'a'.repeat(40),findings:Array(90).fill(f('BLOCKING_ANDROID_CALL'))});
+ assert.equal(rem.suggestions.length,35);
+});
+test('markdown contains TDD and escapes untrusted evidence',()=>{
+ const s=markdown(buildRemediations({findings:[f('SPEECH_REENTRANT_RETRY','<script>alert(1)</script>')]}));
+ assert.match(s,/Test RED/);
+ assert.doesNotMatch(s,/<script>/);
+});
+test('integrated engine returns plan per risk and keeps SHA',()=>{
+ const p='@@ -1,0 +1,2 @@\n+override fun onError(error: Int) {\n+startListening(intent)';
+ const r=core.analyze([{filename:path,patch:p,changes:2}],{sha:'b'.repeat(40)});
+ assert.equal(r.version,'2.0.0');
+ assert.equal(r.remediations.sha,'b'.repeat(40));
+ assert.equal(r.findings.length,r.remediations.suggestions.length);
+ assert.ok(r.remediations.suggestions.some(x=>x.rule==='SPEECH_REENTRANT_RETRY'));
+ const modes=require('./ultra_sentinel_family_hunter_modes.cjs');
+ const review=modes.present(r,'REVIEW_ONLY'),normal=modes.present(r);
+ assert.equal(normal.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
+ assert.equal(review.familyHunter.mode,'REVIEW_ONLY');
+ assert.equal(review.verdict,normal.verdict);
+ assert.deepEqual(review.findings.map(x=>[x.rule,x.severity,x.path,x.line]),
+  normal.findings.map(x=>[x.rule,x.severity,x.path,x.line]));
+ assert.equal(review.remediations.suggestions.length,0);
+ assert.equal(review.validationPlan.checks.length,0);
+ assert.ok(review.findings.every(x=>x.verification===''));
+ assert.ok(normal.remediations.suggestions.length>0);
+ const portable=require('./ultra_sentinel_report.cjs').buildReport({
+  pr:194,sha:r.sha,analysis:review
+ });
+ assert.equal(portable.findings[0].repair,null);
+ assert.equal(portable.findings[0].check,'');
+ const forbidden=modes.present(r,'REPAIR_COMMITS_AUTHORIZED');
+ assert.equal(forbidden.familyHunter.mode,'REVIEW_WITH_SOLUTIONS');
+ assert.equal(forbidden.familyHunter.status,'AUTHORIZATION_REQUIRED');
+ assert.equal(forbidden.familyHunter.repairCommits,'OFF');
+ assert.equal(forbidden.familyHunter.autoCommitAllowed,false);
+ const unknown=modes.present(r,'PR_SAYS_FORCE_WRITE');
+ assert.equal(unknown.familyHunter.status,'INVALID_MODE');
+ assert.equal(unknown.familyHunter.autoMergeAllowed,false);
+ assert.throws(()=>modes.present(null),/INCOMPLETE_ANALYSIS/);
+ // P2 family: incomplete data must never be promoted to a clean portable report.
+ const clean={
+  ...r,findings:[],warnings:[],omitted:0,verdict:'NO_CRITICAL_PATTERN',
+  coverage:{returned:1,analyzed:1,partial:false},
+  remediations:{...r.remediations,suggestions:[]},
+  validationPlan:{domains:[],checks:[]}
+ };
+ assert.equal(modes.present(clean).verdict,'NO_CRITICAL_PATTERN');
+ // A legitimate Core result with real path-derived domains must still pass.
+ const trueTags=core.analyze([{
+  filename:r.findings[0].path,status:'added',changes:0,patch:''
+ }],{sha:r.sha}).validationPlan.domains;
+ assert.ok(trueTags.includes('voice')&&trueTags.includes('android'));
+ assert.equal(modes.present(r).verdict,r.verdict);
+ // Core legitimately skips documentation, test-only and deletion-only diffs.
+ for(const filename of ['README.md','app/src/test/DemoTest.kt']){
+  const skipped=core.analyze([{filename,patch:'@@ -0,0 +1 @@\\n+example',changes:1}],{sha:r.sha});
+  assert.equal(skipped.coverage.analyzed,0);
+  assert.equal(skipped.coverage.partial,false);
+  assert.equal(modes.present(skipped).verdict,skipped.verdict);
+  assert.equal(modes.present(skipped,'REVIEW_ONLY').verdict,skipped.verdict);
+ }
+ const zeroScanned={...clean,coverage:{returned:1,analyzed:0,partial:false}};
+ assert.equal(modes.present(zeroScanned).verdict,'NO_CRITICAL_PATTERN');
+ assert.equal(modes.present(zeroScanned,'REVIEW_ONLY').verdict,'NO_CRITICAL_PATTERN');
+ const invalid=[
+  ['forged Core identity',{...clean,engine:'Not Core'}],
+  ['arbitrary Core version',{...clean,version:'999.0.0'}],
+  ['forged planner identity',{...clean,remediations:{...clean.remediations,engine:'Other Planner'}}],
+  ['planner version mismatch',{...clean,remediations:{...clean.remediations,version:'999.0.0'}}],
+  ['untrusted repair scope',{...clean,remediations:{...clean.remediations,scope:'automatic-writes'}}],
+  ['301 complete files',{...clean,coverage:{returned:301,analyzed:0,partial:false}}],
+  ['301 scanned despite Core MAX_FILES=300',{...clean,coverage:{returned:301,analyzed:301,partial:true},verdict:'INCOMPLETE'}],
+  ['missing coverage details',{...clean,coverage:{}}],
+  ['missing analyzed count',{...clean,coverage:{returned:1,partial:false}}],
+  ['text count instead of integer',{...clean,coverage:{returned:'1',analyzed:1,partial:false}}],
+  ['impossible excess scanned files',{...clean,coverage:{returned:1,analyzed:2,partial:false}}],
+  ['empty input cannot claim clear',{...clean,coverage:{returned:0,analyzed:0,partial:false}}],
+  ['partial cannot claim clear',{...clean,coverage:{returned:1,analyzed:1,partial:true}}],
+  ['incomplete verdict must match coverage',{...clean,verdict:'INCOMPLETE'}],
+  ['unknown verdict',{...clean,verdict:'CERTIFIED_CLEAN'}],
+  ['malformed commit SHA',{...clean,sha:'unknown'}],
+  ['mismatched remediation SHA',{...clean,remediations:{...clean.remediations,sha:'c'.repeat(40)}}],
+  ['untrusted self-certified remediation',{...clean,remediations:{...clean.remediations,verified:true}}],
+  ['missing domain required by finding',{...r,validationPlan:{
+   domains:['android'],
+   checks:core.analyze([{filename:'app/src/main/README.md',status:'added',
+    changes:0,patch:''}],{sha:r.sha}).validationPlan.checks
+  }}],
+  ['forged finding-domain outside plan',{...r,findings:r.findings.map((f,i)=>
+   i===0?{...f,domains:['network']}:f)}],
+  // Codex P2: never use two forged fields in one payload to attest each other.
+  // Independently derive exact path tags through trusted Core instead.
+  ['coordinated voice-domain removal',{...r,
+   findings:r.findings.map(f=>({...f,domains:['android']})),
+   validationPlan:core.analyze([{
+    filename:'app/src/main/README.md',status:'added',changes:0,patch:''
+   }],{sha:r.sha}).validationPlan}],
+  ['coordinated voice-domain removal with extra unrelated domain',{...r,
+   findings:r.findings.map(f=>({...f,domains:['android','ci']})),
+   validationPlan:core.analyze([{
+    filename:'app/src/main/README.md',status:'added',changes:0,patch:''
+   },{
+    filename:'.github/workflows/demo.md',status:'added',changes:0,patch:''
+   }],{sha:r.sha}).validationPlan}],
+  ['forged finding domains despite original plan',{...r,
+   findings:r.findings.map(f=>({...f,domains:['android']}))}],
+
+  ['missing canonical checks',{...r,validationPlan:{...r.validationPlan,checks:[]}}],
+  ['truncated domain checklist',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.slice(1)}}],
+  ['fabricated checklist text',{...r,validationPlan:{...r.validationPlan,checks:r.validationPlan.checks.map((x,i)=>i===0?{...x,check:'everything is fine'}:x)}}],
+  ['reordered domain checklist',{...r,validationPlan:{...r.validationPlan,checks:[...r.validationPlan.checks].reverse()}}],
+  ['missing validation domains',{...clean,validationPlan:{checks:[]}}],
+  ['null validation check',{...r,validationPlan:{...r.validationPlan,checks:[null]}}],
+  ['non-object validation check',{...r,validationPlan:{...r.validationPlan,checks:['compile']}}],
+  ['empty validation domain',{...r,validationPlan:{...r.validationPlan,checks:[{domain:'',check:'compile'}]}}],
+  ['empty validation description',{...r,validationPlan:{...r.validationPlan,checks:[{domain:'voice',check:'  '}]}}],
+  ['unknown validation domain',{...r,validationPlan:{...r.validationPlan,checks:[{domain:'nonexistent',check:'compile'}]}}],
+  ['malformed plan domains',{...r,validationPlan:{...r.validationPlan,domains:[null]}}],
+  ['missing warnings',{...clean,warnings:undefined}],
+  ['unbounded missing finding count',{...clean,omitted:1}],
+  ['negative omitted count',{...clean,omitted:-1}],
+  ['critical finding concealed behind no-signal verdict',{
+   ...clean,findings:[{rule:'DYNAMIC_EVAL',severity:'BLOCKER',confidence:'high',
+    path:'.github/scripts/reviewer.cjs',line:7,evidence:'[REDACTED]',
+    reason:'Executable injection',verification:'Run trust review'}]
+  }],
+  ['unstructured finding',{...clean,findings:[null]}]
+ ];
+ for(const [name,bad] of invalid){
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+   assert.throws(()=>modes.present(bad,mode),/INCOMPLETE_ANALYSIS/,name+' '+mode);
+ }
+ // Core scans at most 300 files; that exact boundary is legitimate,
+ // including a documentation-only diff containing zero production files.
+ for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+  const limit={...clean,coverage:{returned:300,analyzed:0,partial:false}};
+  assert.equal(modes.present(limit,mode).coverage.returned,300);
+ }
+ // Core preserves the full incoming file count, but scans only 300.
+ // Real >300-file inputs MUST survive as partial/incomplete reports.
+ const {buildReport:buildPartialReport}=require('./ultra_sentinel_report.cjs');
+ for(const count of [301,305]){
+  const files=Array.from({length:count},(_,i)=>({
+   filename:'docs/oversize-'+i+'.md',status:'added',changes:1,
+   patch:'@@ -0,0 +1 @@\\n+document-only change'
+  }));
+  const trueCore=core.analyze(files,{sha:r.sha});
+  assert.equal(trueCore.coverage.returned,count);
+  assert.equal(trueCore.coverage.analyzed,0);
+  assert.equal(trueCore.coverage.partial,true);
+  assert.equal(trueCore.verdict,'INCOMPLETE');
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+   const presented=modes.present(trueCore,mode);
+   assert.equal(presented.coverage.returned,count);
+   const report=buildPartialReport({pr:194,sha:r.sha,analysis:presented});
+   assert.equal(report.status,'incomplete');
+   assert.equal(report.partial,true);
+   assert.equal(presented.familyHunter.autoMergeAllowed,false);
+  }
+ }
+ // P2 proof: a truncated finding must never become an apparently complete
+ // Family Hunter review, even if its remediation proposal still matches.
+ // Preserve all real Core provenance and evidence fields when tests are valid.
+ // Two distinct long Android filenames can share a 185-character prefix.
+ // Core must preserve unique, bounded identities through the presentation
+ // layer, not manufacture duplicate (rule,path,line) triples.
+ const longPrefix='app/src/main/java/demo/'+ 'p'.repeat(178);
+ const longFiles=['Alpha.kt','Beta.kt'].map(name=>({
+  filename:longPrefix+name,status:'added',changes:1,
+  patch:'@@ -0,0 +1 @@\n+System.gc()'
+ }));
+ const longReview=core.analyze([...longFiles,{
+  filename:'app/src/test/CollisionTest.kt',status:'added',changes:1,
+  patch:'@@ -0,0 +1 @@\n+// Regression guard'
+ }],{sha:r.sha});
+ const pathAlerts=longReview.findings.filter(x=>x.rule==='FORCED_GC');
+ assert.equal(pathAlerts.length,2,'both Core findings must remain represented');
+ // Core 2.0.0 currently truncates paths to 185 chars; preserve a
+ // conservative partial report rather than trusting ambiguous identities.
+ assert.equal(pathAlerts[0].path,pathAlerts[1].path,
+  'the regression must reproduce an authentic Core path collision');
+ for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+  const presented=modes.present(longReview,mode);
+  assert.equal(presented.verdict,'INCOMPLETE');
+  assert.equal(presented.coverage.partial,true);
+  assert.equal(presented.familyHunter.status,'INCOMPLETE_ANALYSIS');
+  assert.equal(presented.remediations.suggestions.length,0);
+  const report=require('./ultra_sentinel_report.cjs').buildReport({
+   pr:194,sha:r.sha,analysis:presented
+  });
+  assert.equal(report.status,'incomplete');
+  assert.equal(report.partial,true);
+ }
+ const coreFinding=r.findings[0];
+ for(const missing of ['confidence','evidence','reason','verification',
+                       'domains','origin','status']){
+  const truncated={...coreFinding};
+  delete truncated[missing];
+  const bad={...r,findings:[truncated,...r.findings.slice(1)]};
+  assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,
+   'missing mandatory evidence '+missing);
+  assert.throws(()=>modes.present(bad,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,
+   'mode 1 must reject missing '+missing);
+ }
+ const malformedEvidence=[
+  ['unknown confidence',{confidence:null}],
+  ['non-string evidence',{evidence:{text:'untrusted'}}],
+  ['empty evidence',{evidence:''}],
+  ['whitespace evidence',{evidence:'   '}],
+  ['forged confidence',{confidence:'CERTIFIED'}],
+  ['non-string reason',{reason:42}],
+  ['no verification method',{verification:''}],
+  ['invalid domains',{domains:'voice'}],
+  ['domain with wrong element type',{domains:[null]}],
+  ['forged origin',{origin:'Untrusted Adapter'}],
+  ['forged status',{status:'VERIFIED'}]
+ ];
+ for(const [name,delta] of malformedEvidence){
+  const bad={...r,findings:[{...coreFinding,...delta},...r.findings.slice(1)]};
+  assert.throws(()=>modes.present(bad),/INCOMPLETE_ANALYSIS/,name);
+  assert.throws(()=>modes.present(bad,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,
+   name+' mode 1');
+ }
+ // Codex P2: malformed rule/path can be aligned with an equally malformed
+ // suggestion. Matching malformed fields must not make the record genuine.
+ for(const delta of [{rule:''},{rule:'   '},{path:''},{path:'   '}]){
+  const findings=[{...r.findings[0],...delta},...r.findings.slice(1)];
+  const suggestions=r.remediations.suggestions.map((s,i)=>
+   i===0?{...s,rule:findings[0].rule,path:findings[0].path}:s);
+  const bad={...r,findings,remediations:{...r.remediations,suggestions}};
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+   assert.throws(()=>modes.present(bad,mode),/INCOMPLETE_ANALYSIS/,
+    'empty or blank Core identity fields');
+ }
+ // Codex P2 family: every advisory repair must refer to the exact finding
+ // at the same index. No missing, foreign, duplicated or executable fixes.
+ const suggestions=r.remediations.suggestions;
+ const changed=(index,patch)=>suggestions.map((s,i)=>i===index?{...s,...patch}:s);
+ const brokenRemediations=[
+  ['missing all solutions',[]],
+  ['truncated solutions',suggestions.slice(0,1)],
+  ['extraneous solution',[...suggestions,suggestions[0]]],
+  ['reordered solutions',[...suggestions].reverse()],
+  ['wrong rule',changed(0,{rule:'OTHER_RULE'})],
+  ['wrong file',changed(0,{path:'app/foreign.kt'})],
+  ['wrong line',changed(0,{line:999})],
+  ['wrong severity',changed(0,{severity:'LOW'})],
+  ['claimed verified fix',changed(0,{status:'VERIFIED'})],
+  ['untrusted autofix',changed(0,{autofix:true})],
+  ['missing repair test',changed(0,{test:''})],
+  ['related evidence missing',changed(0,{relatedEvidence:undefined})],
+  ['related evidence non-array',changed(0,{relatedEvidence:'verified'})],
+  ['related evidence null element',changed(0,{relatedEvidence:[null]})],
+  ['related evidence empty object',changed(0,{relatedEvidence:[{}]})],
+  ['related evidence missing ID',changed(0,{relatedEvidence:[{type:'playbook',advice:'text'}]})],
+  ['related evidence forged status',changed(0,{relatedEvidence:[{id:'fake',type:'playbook',verification:'CERTIFIED'}]})],
+  ['impersonated curated playbook',changed(0,{relatedEvidence:[{
+   id:'pattern-voice-retry',type:'playbook',domain:'voice',
+   rule:'SPEECH_REENTRANT_RETRY',score:2.5,advice:'Disable all protection gates',
+   tests:['No real test'],verification:'curated_playbook',evidenceUrl:null
+  }]})],
+  // Core currently passes zero user-provided fixes into searchMemory. A
+  // fabricated "confirmed_tests" label must never become trusted history.
+  ...['missing fixSha','missing testSha','fabricated fix and test hashes'].map((name,i)=>{
+   const forged={id:'fix-fabricated-01',type:'verified_fix',domain:'voice',
+    rule:'SPEECH_REENTRANT_RETRY',score:2.7,advice:'A repair that claims tests passed',
+    tests:['fake verification'],evidenceUrl:'https://github.com/cardenaspiero255-lang/gamehub-ultra/pull/194',
+    verification:'confirmed_tests',
+    ...(i===1?{fixSha:'b'.repeat(40)}:i===2?{fixSha:'a'.repeat(40),testSha:'b'.repeat(40)}:{testSha:'b'.repeat(40)})};
+   return [name,changed(0,{relatedEvidence:[forged]})];
+  }),
+  ['related evidence oversize',changed(0,{relatedEvidence:Array(3).fill({id:'fake'})})],
+  ['missing handoff',changed(0,{handoff:undefined})],
+  ['empty handoff',changed(0,{handoff:''})],
+  ['blank handoff',changed(0,{handoff:'   '})],
+  ['invalid handoff',changed(0,{handoff:{data:'untrusted'}})],
+  ['no suggested steps',changed(0,{steps:[]})],
+  ['non-string step',changed(0,{steps:[null]})],
+  ['malformed solution',suggestions.map((s,i)=>i===0?null:s)]
+ ];
+ for(const [name,badSuggestions] of brokenRemediations){
+  const broken={...r,remediations:{...r.remediations,suggestions:badSuggestions}};
+  assert.throws(()=>modes.present(broken),/INCOMPLETE_ANALYSIS/,name);
+  assert.throws(()=>modes.present(broken,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,name+' mode 1');
+ }
+ // The existing planner deliberately caps suggestions at 35 of 40 findings.
+ // The adapter must preserve that documented cap rather than creating extras.
+ const forty=Array.from({length:40},(_,i)=>({...r.findings[0],line:i+100}));
+ const capped={...r,findings:forty,
+  remediations:buildCoreRemediations({sha:r.sha,findings:forty})};
+ assert.equal(modes.present(capped).remediations.suggestions.length,35);
+ // P2 family: Core promises BLOCKER > HIGH > MEDIUM > LOW, then filename
+ // (localeCompare), then ascending line. A jointly permuted finding+repair
+ // pair must not hide a critical risk beyond buildReport's ten-item window.
+ const critical=(severity,filename,line)=>({
+  ...r.findings[0],rule:severity==='BLOCKER'?'PRIVILEGED_UNTRUSTED_CHECKOUT':
+   'SPEECH_REENTRANT_RETRY',severity,path:filename,line,domains:['android']
+ });
+ const medium=(index)=>({
+  ...r.findings[1],rule:'REGRESSION_TEST_COVERAGE',severity:'MEDIUM',
+  path:'app/src/main/java/demo/M'+String(index).padStart(2,'0')+'.kt',
+  line:index,domains:['android']
+ });
+ const med=Array.from({length:10},(_,i)=>medium(i+1));
+ const high=critical('HIGH','app/src/main/java/demo/Top.kt',1);
+ const blocker=critical('BLOCKER','app/src/main/java/demo/Blocker.kt',1);
+ const candidate=(list)=>({...r,findings:list,
+  coverage:{returned:list.length,analyzed:list.length,partial:false},
+  remediations:buildCoreRemediations({sha:r.sha,findings:list}),omitted:0,
+  verdict:'REVIEW_REQUIRED'});
+ // The fixture metadata must match the exact Core-derived path domains.
+ for(const f of [high,blocker,...med]){
+  const expected=core.analyze([{filename:f.path,status:'added',changes:0,
+   patch:''}],{sha:r.sha}).validationPlan.domains;
+  assert.deepEqual(f.domains,expected,'fixture domains must match Core');
+ }
+ const ordered=candidate([high,...med]);
+ const orderedReport=require('./ultra_sentinel_report.cjs').buildReport({
+  pr:194,sha:r.sha,analysis:modes.present(ordered)
+ });
+ assert.equal(orderedReport.status,'review_required');
+ assert.equal(orderedReport.findings[0].severity,'HIGH');
+ const rejectOrder=(name,list)=>{
+  const input=candidate(list);
+  assert.throws(()=>modes.present(input),/INCOMPLETE_ANALYSIS/,name);
+  assert.throws(()=>modes.present(input,'REVIEW_ONLY'),/INCOMPLETE_ANALYSIS/,
+   name+' mode 1');
+ };
+ rejectOrder('HIGH hidden at eleventh',[...med,high]);
+ rejectOrder('BLOCKER hidden at eleventh',[...med,blocker]);
+ rejectOrder('HIGH at tenth',[...med.slice(0,9),high,med[9]]);
+ rejectOrder('critical severity inverted',[high,blocker,...med]);
+ rejectOrder('equal severity filenames permuted',
+  [high,med[1],med[0],...med.slice(2)]);
+ const samePath='app/src/main/java/demo/Shared.kt';
+ const same=[{...med[0],path:samePath,line:10},
+  {...med[1],path:samePath,line:11}];
+ assert.equal(modes.present(candidate([high,...same])).verdict,'REVIEW_REQUIRED');
+ rejectOrder('equal path lines permuted',[high,same[1],same[0]]);
+ const fortieth=Array.from({length:39},(_,i)=>medium(i+1));
+ rejectOrder('BLOCKER pushed past 35-repair cap',[...fortieth,blocker]);
+ const incomplete={
+  ...clean,coverage:{returned:1,analyzed:0,partial:true},verdict:'INCOMPLETE'
+ };
+ assert.equal(modes.present(incomplete).verdict,'INCOMPLETE');
+ const incompleteReport=require('./ultra_sentinel_report.cjs').buildReport({
+  pr:194,sha:r.sha,analysis:modes.present(incomplete)
+ });
+ assert.equal(incompleteReport.status,'incomplete');
+ assert.equal(incompleteReport.partial,true);
+ // Same provenance engine used by trusted main self-review must accept this
+ // complete read-only adapter; never weaken or bypass that independent gate.
+ const fs=require('node:fs'),nodePath=require('node:path'),acorn=require('acorn');
+ const source=fs.readFileSync(nodePath.resolve(__dirname,'ultra_sentinel_family_hunter_modes.cjs'),'utf8');
+ const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'script',
+  allowHashBang:true,allowReturnOutsideFunction:true,allowAwaitOutsideFunction:true,
+  locations:true,ranges:true});
+ assert.doesNotThrow(()=>require('./ultra_sentinel_capabilities.cjs').findCapabilities(ast));
+ // Core overflow regressions live inside this existing security test so
+ // the 11802-test b1 baseline remains unchanged without skipping assertions.
+ {
+ const modes=require('./ultra_sentinel_family_hunter_modes.cjs');
+ const {buildReport}=require('./ultra_sentinel_report.cjs');
+ // Core's real detector emits one distinct MEDIUM FORCED_GC per added line.
+ // A test-only file suppresses the unrelated REGRESSION_TEST_COVERAGE alert.
+ const analyzeGcStorm=(n)=>core.analyze([
+  {filename:'app/src/main/java/demo/GcStorm.kt',status:'added',changes:n,
+   patch:'@@ -0,0 +1,'+n+' @@\n'+Array(n).fill('+System.gc()').join('\n')+'\n'},
+  {filename:'app/src/test/DemoTest.kt',status:'added',changes:1,
+   patch:'@@ -0,0 +1 @@\n+// test-only fixture\n'}
+ ],{sha:'c'.repeat(40)});
+ for(const count of [40,41,47]){
+  const original=analyzeGcStorm(count);
+  assert.equal(original.coverage.partial,false);
+  assert.equal(original.verdict,'NO_CRITICAL_PATTERN');
+  assert.equal(original.findings.length,40);
+  assert.equal(original.omitted,count-40);
+  assert.ok(original.findings.every(f=>f.severity==='MEDIUM'));
+  assert.equal(original.remediations.suggestions.length,35);
+  for(const requestedMode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS']){
+   const presented=modes.present(original,requestedMode);
+   assert.equal(presented.verdict,original.verdict);
+   assert.equal(presented.omitted,count-40);
+   assert.equal(presented.familyHunter.autoMergeAllowed,false);
+   const report=buildReport({pr:194,sha:original.sha,analysis:presented});
+   assert.equal(report.partial,count>40,
+    'omitted alerts must never generate a complete-looking report');
+   assert.equal(report.status,count>40?'incomplete':'no_critical_signal');
+   assert.equal(report.reportTruncated,true);
+   if(requestedMode==='REVIEW_ONLY'){
+    assert.ok(report.findings.every(f=>f.repair===null));
+   }
+  }
+ }
+ const overflowing=analyzeGcStorm(41);
+ // A nonzero omitted count is only possible when Core has already filled
+ // all 40 visible finding slots. Reject every smaller-prefix variant.
+ for(const visible of [0,1,2,10,35,39]){
+  const shortFindings=overflowing.findings.slice(0,visible);
+  const malformed={...overflowing,findings:shortFindings,
+   remediations:buildCoreRemediations({sha:overflowing.sha,findings:shortFindings})};
+  for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+   assert.throws(()=>modes.present(malformed,mode),/INCOMPLETE_ANALYSIS/,
+    'omitted>0 must not accept '+visible+' visible findings');
+ }
+ const forgedHigh={...overflowing.findings[0],severity:'HIGH'};
+ const inconsistent={...overflowing,
+  findings:[forgedHigh,...overflowing.findings.slice(1)],
+  remediations:buildCoreRemediations({sha:overflowing.sha,
+   findings:[forgedHigh,...overflowing.findings.slice(1)]})
+ };
+ for(const mode of ['REVIEW_ONLY','REVIEW_WITH_SOLUTIONS'])
+  assert.throws(()=>modes.present(inconsistent,mode),/INCOMPLETE_ANALYSIS/,
+   'hidden critical signals must still be rejected');
+ const incomplete={...overflowing,coverage:{...overflowing.coverage,partial:true},
+  verdict:'INCOMPLETE'};
+ const incompleteReport=buildReport({pr:194,sha:incomplete.sha,
+  analysis:modes.present(incomplete)});
+ assert.equal(incompleteReport.status,'incomplete');
+ assert.equal(incompleteReport.partial,true);
+ }
+});
+test('assistant handoff requires adaptation and verification',()=>{
+ const s=makeSuggestion(f('UNBOUNDED_RECURSION'));
+ assert.match(s.handoff,/NO pegar/);
+ assert.match(s.handoff,/prueba/i);
+ assert.match(s.handoff,/Android Build/);
+});

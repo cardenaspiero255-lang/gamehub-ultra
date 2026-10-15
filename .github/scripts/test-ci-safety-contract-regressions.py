@@ -36,6 +36,238 @@ def current_contract_must_pass() -> None:
         )
 
 
+
+def coverage_retry_behavior_cases() -> None:
+    """Exercise the actual YAML run block with a fake Gradle and zero network access."""
+    import os
+
+    extractor = r'''
+require "yaml"
+workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)
+step = workflow.fetch("jobs").fetch("coverage-shard").fetch("steps")
+  .find { |candidate| candidate["name"] == "Run packed coverage shards" }
+abort("packed coverage step not found") unless step
+print(step.fetch("run"))
+'''
+    parsed = subprocess.run(
+        ["ruby", "-e", extractor, str(COVERAGE)],
+        text=True, capture_output=True, check=False,
+    )
+    if parsed.returncode != 0:
+        raise SystemExit(f"Cannot load coverage runner for regression test: {parsed.stderr}")
+
+    fake_gradle = r'''#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$MOCK_GRADLE_CALLS"
+attempt="$(wc -l < "$MOCK_GRADLE_CALLS")"
+case "$MOCK_CASE" in
+  transient)
+    if [ "$attempt" -eq 1 ]; then
+      echo "Could not get resource 'https://repo.maven.apache.org/maven2/org/robolectric/robolectric/4.17/robolectric-4.17.pom'." >&2
+      echo "Received status code 429 from server: Too Many Requests" >&2
+      exit 42
+    fi
+    ;;
+  always429)
+    echo "Could not get resource 'https://repo.maven.apache.org/maven2/example.pom'." >&2
+    echo "Received status code 429 from server: Too Many Requests" >&2
+    exit 42
+    ;;
+  buildfailure)
+    echo "Compilation failed" >&2
+    exit 24
+    ;;
+  other429)
+    echo "Could not get resource 'https://unrelated.example/artifact'." >&2
+    echo "Received status code 429 from server: Too Many Requests" >&2
+    exit 19
+    ;;
+  *)
+    exit 99
+    ;;
+esac
+exit 0
+'''
+    fake_sleep = r'''#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$MOCK_SLEEP_CALLS"
+'''
+    for scenario, expected_status, expected_attempts, expected_sleeps in (
+        ("transient", 0, 2, 1),
+        ("always429", 42, 3, 2),
+        ("buildfailure", 24, 1, 0),
+        ("other429", 19, 1, 0),
+    ):
+        with tempfile.TemporaryDirectory(prefix="gamehub-coverage-retry-") as raw:
+            root = Path(raw)
+            (root / "bin").mkdir()
+            for name, code in (("gradle", fake_gradle), ("sleep", fake_sleep)):
+                target = root / "bin" / name
+                target.write_text(code, encoding="utf-8")
+                target.chmod(0o755)
+            (root / "coverage-test-classes.txt").write_text(
+                "com.example.TestStub\n", encoding="utf-8"
+            )
+            calls = root / "gradle-calls"
+            sleeps = root / "sleep-calls"
+            env = dict(os.environ)
+            env.update({
+                "RUNNER_TEMP": str(root),
+                "COVERAGE_RUNNER_INDEX": "4",
+                "MOCK_GRADLE_CALLS": str(calls),
+                "MOCK_SLEEP_CALLS": str(sleeps),
+                "MOCK_CASE": scenario,
+                "PATH": str(root / "bin") + os.pathsep + env["PATH"],
+            })
+            result = subprocess.run(
+                ["bash", "-c", parsed.stdout], cwd=ROOT, env=env,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=15, check=False,
+            )
+            call_lines = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
+            sleep_lines = sleeps.read_text(encoding="utf-8").splitlines() if sleeps.exists() else []
+            if (
+                result.returncode != expected_status
+                or len(call_lines) != expected_attempts
+                or len(sleep_lines) != expected_sleeps
+                or not all(
+                    ":app:testDebugUnitTest" in line and "--tests com.example.TestStub" in line
+                    for line in call_lines
+                )
+            ):
+                raise SystemExit(
+                    f"Coverage retry scenario {scenario} failed: status={result.returncode}, "
+                    f"attempts={len(call_lines)}, sleeps={len(sleep_lines)}; "
+                    f"expected=({expected_status}, {expected_attempts}, {expected_sleeps})"
+                    f"\n{result.stdout[-1500:]}"
+                )
+    print("Coverage Maven-429 retries verified; real Gradle failures remain blocking.")
+
+
+def android_dependency_retry_behavior_cases() -> None:
+    """Exercise the actual Android test step with fake Gradle and no network."""
+    import os
+
+    extractor = r'''
+require "yaml"
+workflow = YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true)
+step = workflow.fetch("jobs").fetch("android-test-shard").fetch("steps")
+  .find { |candidate| candidate["name"] == "Run packed Android unit shards" }
+abort("packed Android unit step not found") unless step
+print(step.fetch("run"))
+'''
+    parsed = subprocess.run(
+        ["ruby", "-e", extractor, str(ANDROID)],
+        text=True, capture_output=True, check=False,
+    )
+    if parsed.returncode != 0:
+        raise SystemExit(f"Cannot parse Android CI test runner: {parsed.stderr}")
+
+    fake_gradle = r'''#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$MOCK_GRADLE_CALLS"
+attempt="$(wc -l < "$MOCK_GRADLE_CALLS")"
+case "$MOCK_CASE" in
+  missing_robolectric)
+    if [ "$attempt" -eq 1 ]; then
+      echo "Could not find org.robolectric:robolectric:4.17." >&2
+      exit 42
+    fi
+    ;;
+  missing_mockito)
+    if [ "$attempt" -eq 1 ]; then
+      echo "Could not find org.mockito:mockito-core:5.14.2." >&2
+      exit 42
+    fi
+    ;;
+  transient429)
+    if [ "$attempt" -eq 1 ]; then
+      echo "Could not get resource 'https://repo.maven.apache.org/maven2/example.pom'." >&2
+      echo "Received status code 429 from server: Too Many Requests" >&2
+      exit 42
+    fi
+    ;;
+  always_missing)
+    echo "Could not find org.robolectric:robolectric:4.17." >&2
+    exit 36
+    ;;
+  build_failure)
+    echo "Compilation failed" >&2
+    exit 24
+    ;;
+  unrelated_missing)
+    echo "Could not find org.example:unknown:1.0." >&2
+    exit 19
+    ;;
+  *)
+    exit 99
+    ;;
+esac
+exit 0
+'''
+    fake_sleep = r'''#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$MOCK_SLEEP_CALLS"
+'''
+    for scenario, expected_status, expected_attempts, expected_sleeps in (
+        ("missing_robolectric", 0, 2, 1),
+        ("missing_mockito", 0, 2, 1),
+        ("transient429", 0, 2, 1),
+        ("always_missing", 36, 3, 2),
+        ("build_failure", 24, 1, 0),
+        ("unrelated_missing", 19, 1, 0),
+    ):
+        with tempfile.TemporaryDirectory(prefix="gamehub-android-dep-retry-") as raw:
+            root = Path(raw)
+            (root / "bin").mkdir()
+            for name, code in (("gradle", fake_gradle), ("sleep", fake_sleep)):
+                executable = root / "bin" / name
+                executable.write_text(code, encoding="utf-8")
+                executable.chmod(0o755)
+            (root / "android-test-classes.txt").write_text(
+                "com.example.TestStub\n", encoding="utf-8"
+            )
+            calls = root / "gradle-calls"
+            sleeps = root / "sleep-calls"
+            env = dict(os.environ)
+            env.update({
+                "RUNNER_TEMP": str(root),
+                "ANDROID_RUNNER_INDEX": "2",
+                "MOCK_GRADLE_CALLS": str(calls),
+                "MOCK_SLEEP_CALLS": str(sleeps),
+                "MOCK_CASE": scenario,
+                "PATH": str(root / "bin") + os.pathsep + env["PATH"],
+            })
+            result = subprocess.run(
+                ["bash", "-c", parsed.stdout], cwd=ROOT, env=env,
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=15, check=False,
+            )
+            invocations = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
+            sleep_lines = sleeps.read_text(encoding="utf-8").splitlines() if sleeps.exists() else []
+            correct_args = all(
+                ":app:testDebugUnitTest" in cmd
+                and "--tests com.example.TestStub" in cmd
+                and "--configuration-cache-problems=fail" in cmd
+                and ("--refresh-dependencies" in cmd) == (i > 0)
+                for i, cmd in enumerate(invocations)
+            )
+            if (
+                result.returncode != expected_status
+                or len(invocations) != expected_attempts
+                or len(sleep_lines) != expected_sleeps
+                or not correct_args
+            ):
+                raise SystemExit(
+                    f"Android dependency retry {scenario} failed: "
+                    f"status={result.returncode}, attempts={len(invocations)}, "
+                    f"sleeps={len(sleep_lines)}, args={correct_args}; "
+                    f"expected=({expected_status}, {expected_attempts}, {expected_sleeps})"
+                    f"\n{result.stdout[-1200:]}"
+                )
+    print("Android dependency retries verified; unrelated/test failures remain blocking.")
+
+
 def reject_mutation(
     label: str,
     *,
@@ -121,6 +353,8 @@ def reject_mutation(
 
 def main() -> None:
     current_contract_must_pass()
+    coverage_retry_behavior_cases()
+    android_dependency_retry_behavior_cases()
 
     reject_mutation(
         "quality lint made advisory",
@@ -155,23 +389,15 @@ def main() -> None:
     reject_mutation(
         "performance physical shard removed",
         android_replace=(
-            "        shard: [release-apk, ui, performance-a, performance-b]\n",
-            "        shard: [release-apk, ui, performance-a]\n",
+            "        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]\n",
+            "        shard: [release-apk, ui, baseline, macro-startup, macro-library]\n",
         ),
     )
     reject_mutation(
         "device physical parallelism reduced",
         android_replace=(
-            "      max-parallel: 4\n"
-            "      matrix:\n"
-            "        # Four logical performance checks are packed into two physical emulator\n"
-            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
-            "        shard: [release-apk, ui, performance-a, performance-b]\n",
-            "      max-parallel: 2\n"
-            "      matrix:\n"
-            "        # Four logical performance checks are packed into two physical emulator\n"
-            "        # runners so Android boot/setup is reused instead of repeated four times.\n"
-            "        shard: [release-apk, ui, performance-a, performance-b]\n",
+            "      max-parallel: 6\n      matrix:\n        # Four real performance checks run on independent API 35 emulators.\n        # Keeps baseline + cold-start + library + settings with no serial waves.\n        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]",
+            "      max-parallel: 4\n      matrix:\n        # Four real performance checks run on independent API 35 emulators.\n        # Keeps baseline + cold-start + library + settings with no serial waves.\n        shard: [release-apk, ui, baseline, macro-startup, macro-library, macro-settings]",
         ),
     )
     reject_mutation(
@@ -212,15 +438,15 @@ def main() -> None:
     reject_mutation(
         "packed startup macro removed",
         android_replace=(
-            "                  LOGICAL_SHARDS=(baseline macro-startup)\n",
-            "                  LOGICAL_SHARDS=(baseline)\n",
+            "              LOGICAL_SHARDS=(\"$VALIDATION_SHARD\")\n",
+            "              LOGICAL_SHARDS=()\n",
         ),
     )
     reject_mutation(
         "packed settings macro removed",
         android_replace=(
-            "                  LOGICAL_SHARDS=(macro-library macro-settings)\n",
-            "                  LOGICAL_SHARDS=(macro-library)\n",
+            "                    macro-settings) EXPECTED_METHOD=\"navigationToSettings\" ;;",
+            "                    macro-settings) EXPECTED_METHOD=\"navigationToLibrary\" ;;",
         ),
     )
     reject_mutation(
@@ -331,7 +557,7 @@ def main() -> None:
     reject_mutation(
         "coverage physical concurrency raised",
         coverage_replace=(
-            "      max-parallel: 4\n",
+            "      max-parallel: 7\n",
             "      max-parallel: 8\n",
         ),
     )
@@ -405,6 +631,42 @@ def main() -> None:
         post_replace=(
             "          override_pr: ${{ github.event.workflow_run.pull_requests[0].number || '' }}\n",
             "",
+        ),
+    )
+
+    reject_mutation(
+        "coverage parallel regression to two waves",
+        coverage_replace=(
+            "      max-parallel: 7\n",
+            "      max-parallel: 4\n",
+        ),
+    )
+    reject_mutation(
+        "benchmark artifact upload made advisory",
+        android_replace=(
+            "        if: always() && (matrix.shard == 'baseline' || startsWith(matrix.shard, 'macro-'))\n",
+            "        if: always()\n",
+        ),
+    )
+    reject_mutation(
+        "SDK selector deletes runner-installed tools",
+        android_replace=(
+            "          printf '%s\\n' \"$SDK_BIN\" >> \"$GITHUB_PATH\"\n",
+            "          rm -rf \"$SDK_ROOT/cmdline-tools/latest\"\n          printf '%s\\n' \"$SDK_BIN\" >> \"$GITHUB_PATH\"\n",
+        ),
+    )
+    reject_mutation(
+        "startup benchmark method mapped to library",
+        android_replace=(
+            "                    macro-startup) EXPECTED_METHOD=\"coldStartup\" ;;",
+            "                    macro-startup) EXPECTED_METHOD=\"navigationToLibrary\" ;;",
+        ),
+    )
+    reject_mutation(
+        "library benchmark method mapped to settings",
+        android_replace=(
+            "                    macro-library) EXPECTED_METHOD=\"navigationToLibrary\" ;;",
+            "                    macro-library) EXPECTED_METHOD=\"navigationToSettings\" ;;",
         ),
     )
 

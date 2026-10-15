@@ -1,0 +1,36 @@
+name: Ultra Sentinel GitHub Evidence - Shadow Contracts
+# This workflow only runs unprivileged contract tests. It never retrieves tokens
+# or runs any privileged action on untrusted pull-request source.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_github_collector*.cjs'
+      - '.github/scripts/ultra_sentinel_api_budget*.cjs'
+      - '.github/scripts/ultra_sentinel_quality_gate*.cjs'
+      - '.github/workflows/ultra-sentinel-github-evidence-shadow.yml'
+permissions:
+  contents: read
+jobs:
+  collector-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout candidate with no persisted credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked dependencies without lifecycle hooks
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate JavaScript syntax
+        run: |
+          node --check .github/scripts/ultra_sentinel_api_budget.cjs
+          node --check .github/scripts/ultra_sentinel_api_budget.test.cjs
+          node --check .github/scripts/ultra_sentinel_github_collector.cjs
+          node --check .github/scripts/ultra_sentinel_github_collector.test.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate.test.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate_external.cjs
+          node --check .github/scripts/ultra_sentinel_quality_gate_external.test.cjs
+      - name: Run malicious-provenance and fail-closed contracts
+        run: node --test .github/scripts/ultra_sentinel_api_budget.test.cjs .github/scripts/ultra_sentinel_github_collector.test.cjs .github/scripts/ultra_sentinel_quality_gate.test.cjs .github/scripts/ultra_sentinel_quality_gate_external.test.cjs

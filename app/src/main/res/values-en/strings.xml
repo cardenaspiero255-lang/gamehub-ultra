@@ -269,4 +269,9 @@
     <string name="session_coach_stable">No meaningful changes: Ultra avoids alerts for insignificant variation.</string>
     <string name="session_coach_waiting">Waiting for real telemetry to evaluate the next session.</string>
     <string name="session_coach_last_session">Last analyzed session</string>
+    <string name="sentinel_card_title">Ultra Sentinel</string>
+    <string name="sentinel_card_description">Code protection through GitHub reviews and tests.</string>
+    <string name="sentinel_card_ci_status">CI status: check GitHub</string>
+    <string name="sentinel_card_disclaimer">Error reports and fixes require verification. The app does not show results without a verified connection.</string>
+    <string name="sentinel_card_open_reviews">View reviews on GitHub</string>
 </resources>
