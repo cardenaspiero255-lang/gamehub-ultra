@@ -705,6 +705,13 @@ internal object SessionCoachNotifications {
             // notification can be delivered.
             null
         }
+        // notify(SUMMARY_ID) replaces the previous notification. Preserve its
+        // explicit apply action until the pending proposal has been accepted;
+        // only the explanatory suggestion text is shown once.
+        val approvalPending = notificationsEnabled && (
+            proposedNightProfile != null ||
+                historyStore.isNightProfileProposalPending(session.packageName)
+            )
         val detail = buildString {
             append(report.summary)
             report.nextSteps.take(3).forEach { step ->
@@ -724,7 +731,7 @@ internal object SessionCoachNotifications {
             .setContentIntent(openAppIntent(context))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-        if (proposedNightProfile != null) {
+        if (approvalPending) {
             val approvalUri = android.net.Uri.parse(
                 "gamehubultra://night/" + android.net.Uri.encode(session.packageName))
             val approvalIntent = Intent(context, NightProfileApprovalReceiver::class.java)
