@@ -57,18 +57,19 @@ class VoiceAssistantController(
 
     init {
         tts = TextToSpeech(appContext) { status ->
-            // The platform callback may fire before the constructor has
-            // assigned tts, or after the UI has released this controller.
-            mainHandler.post {
-                if (!released) {
-                    val success = status == TextToSpeech.SUCCESS
-                    if (success) {
-                        tts?.let(UltraSpeechLocalePolicy::applyTo)
-                    }
-                    speechInitGate.initialized(success)?.let(::speak)
-                }
-            }
+            // Dispatch after the constructor assigns tts. A late callback is
+            // harmless after the controller has been released.
+            mainHandler.post { handleTtsInitialization(status) }
         }
+    }
+
+    private fun handleTtsInitialization(status: Int) {
+        if (released) return
+        val success = status == TextToSpeech.SUCCESS
+        if (success) {
+            tts?.let(UltraSpeechLocalePolicy::applyTo)
+        }
+        speechInitGate.initialized(success)?.let(::speak)
     }
 
     fun startListening() {
