@@ -30,6 +30,9 @@ class UltraQueryExecutionCoordinator(
     val supportsProviderPartitioning: Boolean
         get() = researchGateway.supportsProviderPartitioning
 
+    val providerPartitionCapacity: Int?
+        get() = researchGateway.providerPartitionCapacity
+
     private fun safeLocalAnswer(localChat: () -> String?): String? =
         try {
             localChat()

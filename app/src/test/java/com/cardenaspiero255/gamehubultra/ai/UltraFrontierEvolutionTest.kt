@@ -16,6 +16,122 @@ import kotlin.test.assertTrue
 
 class UltraFrontierEvolutionTest {
     @Test
+    fun synthesisSeparatesNumericalClaimsAboutDifferentSubjects() {
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    UltraQueryExecutionAnswer(
+                        message = "El teléfono A cuesta 100 dólares.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("a", "b"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    ) to 10L,
+                    UltraQueryExecutionAnswer(
+                        message = "El teléfono B cuesta 200 dólares.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.MEDIUM,
+                        sources = listOf("c"),
+                        independentSourceCount = 1,
+                        abstained = false
+                    ) to 20L
+                )
+            )
+        )
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+        assertEquals("El teléfono A cuesta 100 dólares.", answer.message)
+    }
+
+    @Test
+    fun synthesisDoesNotConfuseDifferentModelNumbersWhenSubjectHasAnExtraCopula() {
+        val candidates = listOf(
+            UltraQueryExecutionAnswer(
+                message = "El precio que es oficial del iPhone 15 cuesta 800 euros.",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("source-a", "source-b"),
+                independentSourceCount = 2,
+                abstained = false
+            ) to 10L,
+            UltraQueryExecutionAnswer(
+                message = "El precio que es oficial del iPhone 16 cuesta 900 euros.",
+                verified = true,
+                confidence = UltraAnswerConfidence.MEDIUM,
+                sources = listOf("source-c"),
+                independentSourceCount = 1,
+                abstained = false
+            ) to 15L
+        )
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(candidates)
+        )
+        assertTrue(answer.verified)
+        assertFalse(answer.abstained)
+        assertEquals("El precio que es oficial del iPhone 15 cuesta 800 euros.", answer.message)
+    }
+
+    @Test
+    fun synthesisRejectsIncompatibleNumericValuesOfTheSameClaim() {
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    UltraQueryExecutionAnswer(
+                        message = "La batería tiene 5000 mAh.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("a", "b"),
+                        independentSourceCount = 2,
+                        abstained = false
+                    ) to 10L,
+                    UltraQueryExecutionAnswer(
+                        message = "La batería tiene 6000 mAh.",
+                        verified = true,
+                        confidence = UltraAnswerConfidence.HIGH,
+                        sources = listOf("c"),
+                        independentSourceCount = 1,
+                        abstained = false
+                    ) to 20L
+                )
+            )
+        )
+        assertFalse(answer.verified)
+        assertTrue(answer.abstained)
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", answer.reasonCode)
+    }
+
+    @Test
+    fun synthesisDoesNotMistakeDifferentComparisonCandidatesForConflictingClaims() {
+        val candidates = listOf(
+            UltraQueryExecutionAnswer(
+                message = "Candidato A",
+                verified = true,
+                confidence = UltraAnswerConfidence.HIGH,
+                sources = listOf("a", "b"),
+                independentSourceCount = 2,
+                abstained = false
+            ) to 12L,
+            UltraQueryExecutionAnswer(
+                message = "Candidato B",
+                verified = true,
+                confidence = UltraAnswerConfidence.MEDIUM,
+                sources = listOf("c"),
+                independentSourceCount = 1,
+                abstained = false
+            ) to 16L
+        )
+
+        val answer = assertNotNull(
+            UltraFrontierEvolutionController().synthesizeResearch(candidates)
+        )
+        assertFalse(answer.abstained)
+        assertTrue(answer.verified)
+        assertEquals("Candidato A", answer.message)
+        assertEquals(listOf("a", "b"), answer.sources)
+    }
+
+    @Test
     fun learningStorePrefersLaneWithBetterObservedOutcomes() {
         val learning = UltraFrontierLearningStore(minSamplesForPreference = 2)
         repeat(3) {
@@ -549,6 +665,65 @@ class UltraFrontierEvolutionTest {
         assertNotNull(synthesized)
         assertEquals(1, synthesized.independentSourceCount)
         assertTrue(synthesized.sources.size == 1)
+    }
+
+    @Test
+    fun synthesisProvenanceBlocksConflictingVerifiedClaimsAtRuntime() {
+        val evolution = UltraFrontierEvolutionController()
+        val selected = evolution.synthesizeResearch(
+            candidates = listOf(
+                UltraQueryExecutionAnswer(
+                    message = "El evento ocurrió en 2025.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://one.example/report"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 80L,
+                UltraQueryExecutionAnswer(
+                    message = "El evento ocurrió en 2024.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://two.example/report"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 85L
+            )
+        )
+        assertNotNull(selected)
+        assertFalse(selected.verified)
+        assertTrue(selected.abstained)
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", selected.reasonCode)
+    }
+
+    @Test
+    fun synthesisProvenancePreservesAgreementWithoutInventingExtraSources() {
+        val evolution = UltraFrontierEvolutionController()
+        val agreed = evolution.synthesizeResearch(
+            candidates = listOf(
+                UltraQueryExecutionAnswer(
+                    message = "El objeto tiene masa.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://one.example/a"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 100L,
+                UltraQueryExecutionAnswer(
+                    message = "El objeto tiene masa.",
+                    verified = true,
+                    confidence = UltraAnswerConfidence.HIGH,
+                    sources = listOf("https://two.example/b"),
+                    independentSourceCount = 1,
+                    abstained = false
+                ) to 120L
+            )
+        )
+        assertNotNull(agreed)
+        assertTrue(agreed.verified)
+        assertFalse(agreed.abstained)
+        assertEquals(2, agreed.sources.size)
+        assertEquals(2, agreed.independentSourceCount)
     }
 
     @Test

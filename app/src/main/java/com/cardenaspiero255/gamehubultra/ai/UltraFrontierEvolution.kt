@@ -1087,10 +1087,126 @@ class UltraFrontierEvolutionController(
             }
     }
 
+    /**
+     * A different candidate answer is not automatically a disagreement.
+     * A single measurable value can be compared only when the remaining
+     * normalized assertion, including its subject and unit, is identical.
+     * Multi-value/narrative answers stay independent rather than forcing
+     * a semantic decision without a structured claim.
+     */
+    private fun researchClaimIdentity(message: String): Pair<String, String> {
+        val normalized = java.text.Normalizer.normalize(
+            message,
+            java.text.Normalizer.Form.NFD
+        )
+            .replace(Regex("""\p{M}+"""), "")
+            .trim()
+            .lowercase(Locale.ROOT)
+            .replace(Regex("""\s+"""), " ")
+            .trimEnd('.', '!', '?')
+
+        // Numeric model identifiers belong to the subject; numeric values
+        // *after* the factual predicate belong to the assertion. Never
+        // replace every number in a sentence indiscriminately.
+        val predicates = Regex(
+            """\b(?:cuesta|costaba|vale|valia|tiene|tenia|mide|media|pesa|pesaba|comenzo|empezo|ocurrio|sucedio|termino|finalizo|fue|es|ser[aá]|costs|started|ended|happened|weighs|measures)\b"""
+        ).findAll(normalized).toList()
+        // More than one factual verb makes the subject/value boundary ambiguous:
+        // never fold model numbers into the measured value by guessing.
+        if (predicates.size != 1) {
+            return "research-answer:$normalized" to normalized
+        }
+        val predicate = predicates.single()
+
+        val subject = normalized.substring(0, predicate.range.first)
+        val assertion = normalized.substring(predicate.range.first)
+        val numericValue = Regex(
+            """(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)*(?![\p{L}\d])"""
+        )
+        val values = numericValue.findAll(assertion)
+            .map { canonicalResearchNumber(it.value) }.toList()
+        if (values.isEmpty()) {
+            return "research-answer:$normalized" to normalized
+        }
+        val skeleton = numericValue.replace(assertion, "valor-numerico")
+        return "research-answer:$subject$skeleton" to values.joinToString("|")
+    }
+
+    /**
+     * Compare a number's value instead of its locale-specific spelling.
+     * Separators followed by three-digit groups represent thousands
+     * (1.299 = 1299); otherwise the final separator represents a decimal
+     * (800,0 = 800). This heuristic is scoped to extracted measurements,
+     * never the product/version numbers before the factual predicate.
+     */
+    private fun canonicalResearchNumber(raw: String): String {
+        val digits = raw.removePrefix("+").removePrefix("-")
+        val sign = if (raw.startsWith("-")) "-" else ""
+        val parts = digits.split('.', ',')
+        // With mixed separators, the rightmost delimiter is a decimal
+        // separator even when the decimal has three digits: 1.234,567.
+        val hasMixedSeparators = digits.contains('.') && digits.contains(',')
+        val thousandsOnly = !hasMixedSeparators && parts.size > 1 &&
+            parts.first().length in 1..3 &&
+            parts.first().any { it != '0' } &&
+            parts.drop(1).all { it.length == 3 }
+        val decimalAt = if (thousandsOnly) -1
+            else digits.indexOfLast { it == '.' || it == ',' }
+        val whole = if (decimalAt == -1) digits else digits.substring(0, decimalAt)
+        val fraction = if (decimalAt == -1) "" else digits.substring(decimalAt + 1)
+        val canonical = sign + whole.filter(Char::isDigit) +
+            (if (fraction.isEmpty()) "" else "." + fraction)
+        return runCatching {
+            java.math.BigDecimal(canonical).stripTrailingZeros().toPlainString()
+        }.getOrElse { raw }
+    }
+
     fun synthesizeResearch(
         candidates: List<Pair<UltraQueryExecutionAnswer, Long>>
     ): UltraQueryExecutionAnswer? {
         val selected = selectBestResearch(candidates) ?: return null
+        // Provenance must be evaluated at synthesis time, not merely held in
+        // an unused utility class. Keep the graph scoped to this request so
+        // concurrent sessions never leak evidence into each other.
+        val provenanceGraph = UltraFrontierV2ClaimProvenanceGraph()
+        candidates.forEachIndexed { index, (candidate, _) ->
+            if (candidate.verified && !candidate.abstained) {
+                candidate.sources
+                    .map(String::trim)
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .forEach { source ->
+                        val (claimId, comparedValue) =
+                            researchClaimIdentity(candidate.message)
+                        provenanceGraph.record(
+                            UltraFrontierV2ClaimEvidence(
+                                claimId = claimId,
+                                normalizedValue = comparedValue,
+                                sourceId = source,
+                                providerId = "research-branch-$index",
+                                authoritative = true
+                            )
+                        )
+                    }
+            }
+        }
+        val (selectedClaimId, selectedValue) =
+            researchClaimIdentity(selected.message)
+        val provenance = provenanceGraph.snapshot(
+            claimId = selectedClaimId,
+            preferredValue = selectedValue
+        )
+        if (selected.verified && provenance?.hasConflict == true) {
+            return selected.copy(
+                message = "Encontré afirmaciones contradictorias entre fuentes " +
+                    "verificadas. Necesito corroboración adicional.",
+                verified = false,
+                abstained = true,
+                retryable = true,
+                reasonCode = "FRONTIER_CLAIM_PROVENANCE_CONFLICT",
+                stage = "frontier-synthesizer"
+            )
+        }
         val selectedText = selected.message
             .trim()
             .lowercase(Locale.ROOT)

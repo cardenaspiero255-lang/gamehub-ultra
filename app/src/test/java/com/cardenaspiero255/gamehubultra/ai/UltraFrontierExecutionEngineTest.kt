@@ -30,8 +30,10 @@ class UltraFrontierExecutionEngineTest {
                 }
             }
         }
+        val audit = UltraFrontierAuditTrail()
         val engine = UltraFrontierExecutionEngine(
-            coordinator = UltraQueryExecutionCoordinator(gateway)
+            coordinator = UltraQueryExecutionCoordinator(gateway),
+            auditTrail = audit
         )
         val request = UltraGeneralQueryRouter.classify("noticias de Android hoy")
 
@@ -41,6 +43,10 @@ class UltraFrontierExecutionEngineTest {
         assertEquals("Dato verificado.", answer.message)
         assertTrue(answer.verified)
         assertFalse(answer.abstained)
+        assertFalse(
+            audit.snapshot().any { it.event == UltraFrontierAuditEvent.REPLAN },
+            "VERIFIED_RESEARCH uses the coordinator, not a V2 replanned task graph"
+        )
     }
 
     @Test
@@ -63,9 +69,11 @@ class UltraFrontierExecutionEngineTest {
                 deepResearchPassBudget = 3
             )
         )
+        val audit = UltraFrontierAuditTrail()
         val engine = UltraFrontierExecutionEngine(
             coordinator = UltraQueryExecutionCoordinator(gateway),
-            frontier = frontier
+            frontier = frontier,
+            auditTrail = audit
         )
         val request = UltraGeneralQueryRouter.classify(
             "Compara dos teléfonos actuales y dime cuál es mejor"
@@ -76,6 +84,10 @@ class UltraFrontierExecutionEngineTest {
         assertEquals(3, calls)
         assertTrue(answer.abstained)
         assertFalse(answer.verified)
+        assertFalse(
+            audit.snapshot().any { it.event == UltraFrontierAuditEvent.REPLAN },
+            "A non-partitioning provider never executes the V2 research task graph"
+        )
     }
 
     @Test

@@ -197,12 +197,30 @@ class SupabaseUltraResearchProvider(
         val claimKey = decoded.claimKey.orEmpty().trim()
         val value = decoded.value.orEmpty().trim()
         val displayText = decoded.displayText.orEmpty().trim()
+        val sourceIds = decoded.sourceIds
+            .map(String::trim)
+            .filter { it.isNotBlank() }
+            .distinct()
+        // Corroboration can add sourceIds while leaving the local answer's
+        // primary sourceId blank. Use actual evidence, never a synthetic URL.
         val sourceId = decoded.sourceId.orEmpty().trim()
+            .ifBlank { sourceIds.firstOrNull().orEmpty() }
+        // Offline stable knowledge may be unsourced only if it makes no
+        // authority or independent-corroboration claims.
+        val unsourcedLocal =
+            sourceId.isBlank() &&
+                !decoded.authoritative &&
+                decoded.independentSourceCount == 0 &&
+                (
+                    claimKey.startsWith("local-") ||
+                        (claimKey.startsWith("terminology:") &&
+                            request.verificationMode != UltraVerificationMode.REQUIRED)
+                    )
         if (
             claimKey.isBlank() ||
             value.isBlank() ||
             displayText.isBlank() ||
-            sourceId.isBlank()
+            (sourceId.isBlank() && !unsourcedLocal)
         ) {
             return UltraProviderResult.Failure(
                 reasonCode = "INVALID_BACKEND_RESPONSE",
@@ -212,17 +230,26 @@ class SupabaseUltraResearchProvider(
             )
         }
 
+        // A backend-reported count is not evidence of independent sources.
+        // Never claim more corroboration than distinct, nonblank source IDs
+        // actually survive normalization and deduplication.
+        val distinctEvidenceSources = (listOf(sourceId) + sourceIds)
+            .filter(String::isNotBlank)
+            .distinct()
+        val corroboratedCount = if (unsourcedLocal) 0 else {
+            decoded.independentSourceCount.coerceAtLeast(1)
+                .coerceAtMost(distinctEvidenceSources.size)
+        }
+
         return UltraProviderResult.Evidence(
             UltraResearchEvidence(
                 claimKey = claimKey,
                 value = value,
                 displayText = displayText,
                 sourceId = sourceId,
-                supportingSourceIds = decoded.sourceIds
-                    .map(String::trim)
-                    .filter { it.isNotBlank() && it != sourceId }
-                    .distinct(),
-                independentSourceCount = decoded.independentSourceCount.coerceAtLeast(1),
+                supportingSourceIds = sourceIds
+                    .filter { it != sourceId },
+                independentSourceCount = corroboratedCount,
                 authoritative = decoded.authoritative
             )
         )

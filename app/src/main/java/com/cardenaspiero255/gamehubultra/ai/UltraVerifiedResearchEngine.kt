@@ -220,6 +220,11 @@ class UltraVerifiedResearchEngine(
 
     override val supportsProviderPartitioning: Boolean = true
 
+    // Offsets refer to the configured, stable provider slots, not the
+    // temporary set of healthy providers. Quarantine cannot renumber slots.
+    override val providerPartitionCapacity: Int?
+        get() = providers.size.takeIf { it > 0 }
+
     private data class ProviderAttempt(
         val index: Int,
         val providerId: String,
@@ -254,27 +259,14 @@ class UltraVerifiedResearchEngine(
         }
 
         val domain = UltraFrontierDomainClassifier.classify(request)
-        val healthyProviders = providerRanker.rank(
-            providers = providers.filter { provider ->
-                providerHealth.isAvailable(
-                    providerId = provider.id,
-                    nowMillis = nowMillis()
-                )
-            },
-            domain = domain
-        )
-        if (healthyProviders.isEmpty()) {
-            return abstention(
-                timedOut = false,
-                fallbackUsed = false,
-                reasonCode = "PROVIDERS_COOLDOWN",
-                retryable = false
-            )
-        }
-
-        val partitionedProviders = healthyProviders
-            .drop(request.researchProviderOffset)
-        if (partitionedProviders.isEmpty()) {
+        // Select immutable identity slots BEFORE applying health and ranking.
+        // Otherwise a completed branch can demote/quarantine a provider and
+        // cause a concurrent offset-based branch to retry the same provider.
+        val remainingSlots = providers.drop(request.researchProviderOffset)
+        val selectedSlots = request.researchProviderBudget?.let { budget ->
+            remainingSlots.take(budget)
+        } ?: remainingSlots
+        if (selectedSlots.isEmpty()) {
             return abstention(
                 timedOut = false,
                 fallbackUsed = false,
@@ -283,10 +275,27 @@ class UltraVerifiedResearchEngine(
             )
         }
 
-        val providerBudget = request.researchProviderBudget
-            ?.coerceAtMost(partitionedProviders.size)
-            ?: partitionedProviders.size
-        val activeProviders = partitionedProviders.take(providerBudget)
+        val healthySlots = selectedSlots.filter { provider ->
+            providerHealth.isAvailable(
+                providerId = provider.id,
+                nowMillis = nowMillis()
+            )
+        }
+        if (healthySlots.isEmpty()) {
+            return abstention(
+                timedOut = false,
+                fallbackUsed = false,
+                reasonCode = "PROVIDERS_COOLDOWN",
+                // A later stable slot may still be healthy. Allow the
+                // Frontier retry planner to move forward without retrying
+                // the quarantined identity.
+                retryable = request.researchProviderOffset + selectedSlots.size < providers.size
+            )
+        }
+        val activeProviders = providerRanker.rank(
+            providers = healthySlots,
+            domain = domain
+        )
         val requestExecutor = Executors.newFixedThreadPool(
             activeProviders.size.coerceIn(1, 4)
         )
@@ -513,6 +522,14 @@ class UltraVerifiedResearchEngine(
         val evidenceAttempts = attempts.mapNotNull { attempt ->
             val evidence = (attempt.result as? UltraProviderResult.Evidence)?.evidence
                 ?: return@mapNotNull null
+            // Only optional, non-fresh general knowledge may show unsourced
+            // local definitions. These must never join verified consensus.
+            if (
+                evidence.allSourceIds().isEmpty() &&
+                (!optionalStableKnowledge || evidence.authoritative)
+            ) {
+                return@mapNotNull null
+            }
             attempt to evidence
         }
         val configuredPrimaryId = providers.firstOrNull()?.id
@@ -528,7 +545,12 @@ class UltraVerifiedResearchEngine(
             optionalStableKnowledge &&
             evidenceAttempts.isNotEmpty()
         ) {
-            val stableEvidence = evidenceAttempts.map { it.second }
+            // Prefer a traceable source over a local answer without citations.
+            // Unsourced knowledge remains a fallback only if nothing sourced succeeded.
+            val stableAttempts = evidenceAttempts
+                .filter { (_, evidence) -> evidence.allSourceIds().isNotEmpty() }
+                .ifEmpty { evidenceAttempts }
+            val stableEvidence = stableAttempts.map { it.second }
             val hasConflict = stableEvidence.indices.any { firstIndex ->
                 ((firstIndex + 1) until stableEvidence.size).any { secondIndex ->
                     !stableKnowledgeEvidenceCompatible(
@@ -549,7 +571,7 @@ class UltraVerifiedResearchEngine(
                 )
             }
 
-            val (selectedAttempt, selectedEvidence) = evidenceAttempts
+            val (selectedAttempt, selectedEvidence) = stableAttempts
                 .maxByOrNull { (attempt, evidence) ->
                     stableKnowledgeEvidenceScore(
                         providerIndex = attempt.index,
@@ -561,8 +583,11 @@ class UltraVerifiedResearchEngine(
             val sources = selectedEvidence.allSourceIds()
             // Multiple URLs can still belong to one underlying source. Confidence
             // must follow the provider's independent-source count, not URL count.
-            val corroborationCount =
+            val corroborationCount = if (sources.isEmpty()) {
+                0 // Explicitly unsourced local reference knowledge.
+            } else {
                 selectedEvidence.independentSourceCount.coerceAtLeast(1)
+            }
             val confidence = when {
                 corroborationCount >= 2 -> UltraAnswerConfidence.HIGH
                 selectedEvidence.authoritative -> UltraAnswerConfidence.MEDIUM

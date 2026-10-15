@@ -8,6 +8,84 @@ import kotlin.test.assertTrue
 class UltraSupabaseResearchProviderTest {
 
     @Test
+    fun nonAuthoritativeLocalDefinitionCanCrossBackendWithoutInventingSources() {
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "engineVersion":"20",
+                  "claimKey":"local-stable:logic",
+                  "value":"La lógica estudia las reglas del razonamiento.",
+                  "displayText":"La lógica estudia las reglas del razonamiento.",
+                  "independentSourceCount":0,
+                  "authoritative":false
+                }
+            """.trimIndent()
+        }
+
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+        val evidence = assertIs<UltraProviderResult.Evidence>(
+            provider.fetchResult(UltraGeneralQueryRouter.classify("¿Qué es la lógica?"))
+        ).evidence
+        assertEquals("", evidence.sourceId)
+        assertEquals(0, evidence.independentSourceCount)
+        assertTrue(!evidence.authoritative)
+
+        val engine = UltraVerifiedResearchEngine(listOf(provider))
+        try {
+            val result = engine.answer(
+                UltraGeneralQueryRouter.classify("¿Qué es la lógica?")
+            )
+            assertTrue(!result.abstained)
+            assertEquals(UltraAnswerConfidence.LOW, result.confidence)
+            assertEquals(0, result.independentSourceCount)
+            assertTrue(result.sources.isEmpty())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
+    fun rejectsUnsourcedBackendAnswerClaimingAuthority() {
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "claimKey":"general:price",
+                  "value":"999",
+                  "displayText":"999",
+                  "independentSourceCount":2,
+                  "authoritative":true
+                }
+            """.trimIndent()
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport
+        )
+        val result = assertIs<UltraProviderResult.Failure>(
+            provider.fetchResult(
+                UltraGeneralQueryRouter.classify("¿Cuánto cuesta?")
+            )
+        )
+        assertEquals("INVALID_BACKEND_RESPONSE", result.reasonCode)
+    }
+
+    @Test
     fun parsesVerifiedEvidenceFromBackend() {
         val transport = object : UltraResearchBackendTransport {
             override fun post(
