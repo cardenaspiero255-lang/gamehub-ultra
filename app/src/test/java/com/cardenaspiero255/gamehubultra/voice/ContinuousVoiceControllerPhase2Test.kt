@@ -46,6 +46,17 @@ class ContinuousVoiceControllerPhase2Test {
     }
 
     @Test
+    fun authorizedMicStartSetsEnabledOnlyAfterAcceptedSubmission() {
+        val gateway = RestrictedGateway()
+        gateway.failure = null
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.ENABLED, controller.setEnabled(true))
+        kotlin.test.assertTrue(controller.isEnabled())
+        assertEquals(1, gateway.startCalls)
+        assertEquals(0, gateway.stopCalls)
+    }
+
+    @Test
     fun permissionGrantDoesNotBypassSystemSupportCheck() {
         val gateway = RestrictedGateway()
         gateway.supported = false
@@ -58,7 +69,7 @@ class ContinuousVoiceControllerPhase2Test {
     private class RestrictedGateway : ContinuousVoiceGateway {
         var storedEnabled = false
         var supported = true
-        var failure: RuntimeException = IllegalStateException("Foreground microphone service start denied")
+        var failure: RuntimeException? = IllegalStateException("Foreground microphone service start denied")
         var startCalls = 0
         var stopCalls = 0
         var failStop = false
@@ -68,7 +79,7 @@ class ContinuousVoiceControllerPhase2Test {
         override fun canRunContinuousVoice() = supported
         override fun startWakeService() {
             startCalls += 1
-            throw failure
+            failure?.let { throw it }
         }
         override fun stopWakeService() {
             stopCalls += 1
