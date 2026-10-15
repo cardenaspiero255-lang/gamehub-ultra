@@ -725,11 +725,11 @@ internal object SessionCoachNotifications {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
         if (proposedNightProfile != null) {
+            val approvalUri = android.net.Uri.parse(
+                "gamehubultra://night/" + android.net.Uri.encode(session.packageName))
             val approvalIntent = Intent(context, NightProfileApprovalReceiver::class.java)
                 .setAction(NightProfileApprovalReceiver.ACTION_APPLY)
-                .setData(android.net.Uri.parse(
-                    "gamehubultra://night/" + android.net.Uri.encode(session.packageName)
-                ))
+                .setData(approvalUri)
                 .putExtra(NightProfileApprovalReceiver.EXTRA_PACKAGE, session.packageName)
             val approveAction = PendingIntent.getBroadcast(
                 context,
