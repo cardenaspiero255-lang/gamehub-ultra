@@ -2695,8 +2695,12 @@ async function comparisonEvidence(
     // records must not prevent independent, source-grounded web research.
     // Only search the phone(s) still lacking a verified specification record.
     const [fallbackLeft, fallbackRight] = await Promise.all([
-      left.abstained ? tavilyEvidence(products[0], deps) : Promise.resolve(left),
-      right.abstained ? tavilyEvidence(products[1], deps) : Promise.resolve(right),
+      left.abstained
+        ? tavilyEvidence(products[0], deps, "", undefined, products[0])
+        : Promise.resolve(left),
+      right.abstained
+        ? tavilyEvidence(products[1], deps, "", undefined, products[1])
+        : Promise.resolve(right),
     ]);
     if (fallbackLeft.abstained || fallbackRight.abstained) {
       return abstain(
@@ -4758,11 +4762,26 @@ async function stackOverflowSpanishEvidence(
   };
 }
 
+function searchResultMentionsExactProduct(
+  product: string,
+  candidateText: string,
+): boolean {
+  const model = (value: string) =>
+    normalize(value)
+      .replace(/\bred\s+magic\b/g, "redmagic")
+      .replace(/[^a-z0-9+]+/g, " ")
+      .trim();
+  const expected = model(product);
+  const candidate = model(candidateText);
+  return expected.length > 0 && (` ${candidate} `).includes(` ${expected} `);
+}
+
 async function tavilyEvidence(
   query: string,
   deps: ResearchDependencies,
   supportText = "",
   signal?: AbortSignal,
+  requiredProduct?: string,
 ): Promise<ResearchResult> {
   const apiKey = await providerSecret(deps, "TAVILY_API_KEY", signal);
   if (!apiKey) {
@@ -4888,7 +4907,13 @@ async function tavilyEvidence(
     const candidateRejected = supportText
       ? !candidateSupportsPrimary(query, supportText, candidateText)
       : !candidateMatchesQuery(query, candidateText);
-    if (candidateRejected) {
+    // For a model-specific phone comparison, token overlap with a similarly
+    // named product is not enough. Require the complete model phrase.
+    if (
+      candidateRejected ||
+      (requiredProduct &&
+        !searchResultMentionsExactProduct(requiredProduct, candidateText))
+    ) {
       continue;
     }
 
