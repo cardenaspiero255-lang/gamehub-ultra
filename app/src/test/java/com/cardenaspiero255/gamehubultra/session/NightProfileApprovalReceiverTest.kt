@@ -152,7 +152,12 @@ class NightProfileApprovalReceiverTest {
             Context.RECEIVER_NOT_EXPORTED
         )
         try {
-            context.sendBroadcast(applyIntent(game))
+            // Dynamic receivers match this implicit action; an explicit component
+            // addresses only the manifest receiver and can bypass the registered one.
+            context.sendBroadcast(
+                Intent(NightProfileApprovalReceiver.ACTION_APPLY)
+                    .putExtra(NightProfileApprovalReceiver.EXTRA_PACKAGE, game)
+            )
             shadowOf(Looper.getMainLooper()).idle()
             withTimeout(12_000L) {
                 while (store.isNightProfileProposalPending(game)) {
