@@ -152,6 +152,37 @@ class VoiceAssistantControllerRobolectricTest {
     }
 
     @Test
+    fun visibleAssistantStopsPendingSpeechIfAndroidTtsRejectsALongAnswer() {
+        val controller = VoiceAssistantController(
+            context = RuntimeEnvironment.getApplication(),
+            onListeningChanged = {},
+            onTranscript = {},
+            onError = {}
+        )
+        val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
+        org.mockito.Mockito.doReturn(android.speech.tts.TextToSpeech.ERROR)
+            .`when`(speech).speak(
+                org.mockito.Mockito.anyString(),
+                org.mockito.Mockito.anyInt(),
+                org.mockito.Mockito.isNull(),
+                org.mockito.Mockito.anyString()
+            )
+        val ttsField = VoiceAssistantController::class.java
+            .getDeclaredField("tts").apply { isAccessible = true }
+        (ttsField.get(controller) as? android.speech.tts.TextToSpeech)?.shutdown()
+        ttsField.set(controller, speech)
+        try {
+            controller.speak("Una comparación extensa con varias fuentes. ".repeat(140))
+            val commands = org.mockito.Mockito.mockingDetails(speech)
+                .invocations.filter { it.method.name == "speak" }
+            assertEquals(1, commands.size)
+            org.mockito.Mockito.verify(speech, org.mockito.Mockito.atLeastOnce()).stop()
+        } finally {
+            controller.release()
+        }
+    }
+
+    @Test
     fun releaseCleansSpeechAndTtsEvenWhenListeningCallbackThrows() {
         val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
         val speech = org.mockito.Mockito.mock(android.speech.tts.TextToSpeech::class.java)
