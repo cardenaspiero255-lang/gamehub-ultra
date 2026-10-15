@@ -15,6 +15,16 @@ class ContinuousVoiceControllerPhase2Test {
     }
 
     @Test
+    fun microphonePermissionSecurityExceptionDisablesContinuousModeSafely() {
+        val gateway = RestrictedGateway()
+        gateway.failure = SecurityException("RECORD_AUDIO denied by Android")
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.SYSTEM_RESTRICTED, controller.setEnabled(true))
+        assertFalse(controller.isEnabled())
+        assertEquals(1, gateway.stopCalls)
+    }
+
+    @Test
     fun restoreAfterBackgroundRestrictionClearsMisleadingPersistentSetting() {
         val gateway = RestrictedGateway()
         gateway.enabled = true
@@ -37,6 +47,7 @@ class ContinuousVoiceControllerPhase2Test {
     private class RestrictedGateway : ContinuousVoiceGateway {
         var enabled = false
         var supported = true
+        var failure: RuntimeException = IllegalStateException("Foreground microphone service start denied")
         var startCalls = 0
         var stopCalls = 0
         override fun isEnabled() = enabled
@@ -45,7 +56,7 @@ class ContinuousVoiceControllerPhase2Test {
         override fun canRunContinuousVoice() = supported
         override fun startWakeService() {
             startCalls += 1
-            throw IllegalStateException("Foreground microphone service start denied")
+            throw failure
         }
         override fun stopWakeService() { stopCalls += 1 }
     }
