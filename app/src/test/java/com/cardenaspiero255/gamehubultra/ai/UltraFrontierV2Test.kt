@@ -47,6 +47,43 @@ class UltraFrontierV2Test {
     }
 
     @Test
+    fun hierarchicalPlannerWithoutRouterPreservesEvidenceAndSynthesizesSafely() {
+        val query = UltraGeneralQueryRouter.classify(
+            "Compara profundamente dos teléfonos actuales"
+        )
+        val request = UltraFrontierRequest(
+            message = query.originalText,
+            query = query,
+            networkAvailable = true
+        )
+        val tasks = listOf(
+            UltraFrontierTask("research-a", UltraFrontierSpecialist.RESEARCH),
+            UltraFrontierTask(
+                "synthesize",
+                UltraFrontierSpecialist.SYNTHESIZER,
+                dependsOn = setOf("research-a")
+            )
+        )
+        val result = UltraFrontierV2HierarchicalPlanner().plan(
+            request = request,
+            lane = UltraFrontierLane.DEEP_RESEARCH,
+            tasks = tasks
+        )
+        assertEquals(UltraFrontierV2Phase.ROUTING, result.phases.first().phase)
+        assertEquals(1, result.phases.count {
+            it.phase == UltraFrontierV2Phase.ROUTING
+        })
+        assertTrue(result.phases.any {
+            it.phase == UltraFrontierV2Phase.EVIDENCE &&
+                "research-a" in it.taskIds
+        })
+        assertTrue(result.phases.any {
+            it.phase == UltraFrontierV2Phase.SYNTHESIS &&
+                "synthesize" in it.taskIds
+        })
+    }
+
+    @Test
     fun replannerReplacesFailedResearchBranchAndRetargetsSynthesis() {
         val query = UltraGeneralQueryRouter.classify(
             "Compara profundamente dos teléfonos actuales"
