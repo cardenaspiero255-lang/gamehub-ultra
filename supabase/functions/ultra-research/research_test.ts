@@ -1468,6 +1468,101 @@ Deno.test("comparison combines two verified specification records", async () => 
   }
 });
 
+Deno.test("comparison uses two corroborated web sources per phone when TechAPI is unavailable", async () => {
+  const requests: string[] = [];
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = String(input);
+      if (url.includes("api.github.com/search/code")) {
+        return jsonResponse({ items: [] });
+      }
+      if (url.includes("api.github.com/repos/GetTechAPI/TechAPI/git/trees")) {
+        return jsonResponse({ tree: [] });
+      }
+      if (url === "https://api.tavily.com/search") {
+        const query = JSON.parse(String(init?.body)).query as string;
+        requests.push(query);
+        const is11 = query.includes("11S Pro");
+        const name = is11 ? "RedMagic 11S Pro" : "RedMagic 12 Pro";
+        const code = is11 ? "11s-pro" : "12-pro";
+        return jsonResponse({
+          results: [
+            {
+              title: name + " specifications",
+              url: "https://global.redmagic.gg/products/" + code,
+              content: name + " technical specifications and battery details.",
+              score: 0.99,
+            },
+            {
+              title: name + " technical review",
+              url: "https://independent-tech.example/reviews/" + code,
+              content: name + " technical analysis of display and processor.",
+              score: 0.90,
+            },
+          ],
+        });
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+  };
+  const answer = await routeResearchQuery(
+    "Ultra, compara el RedMagic 11S Pro con el RedMagic 12 Pro",
+    deps,
+    "",
+    "COMPARISON_RESEARCH",
+  );
+  if (answer.abstained) throw new Error("Expected sourced comparison fallback");
+  if (!answer.displayText?.includes("RedMagic 11S Pro") ||
+      !answer.displayText?.includes("RedMagic 12 Pro")) {
+    throw new Error("Comparison must name both phones");
+  }
+  if ((answer.sourceIds?.length ?? 0) !== 4) {
+    throw new Error("Comparison must cite four independent references");
+  }
+  if (answer.authoritative) {
+    throw new Error("Search summaries must not be marked as authoritative specification records");
+  }
+  if (requests.length !== 2) {
+    throw new Error("Web fallback must search each phone independently");
+  }
+});
+
+Deno.test("comparison never invents a second phone when its sources cannot be corroborated", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = String(input);
+      if (url.includes("api.github.com/search/code")) return jsonResponse({ items: [] });
+      if (url.includes("api.github.com/repos/GetTechAPI/TechAPI/git/trees")) {
+        return jsonResponse({ tree: [] });
+      }
+      if (url === "https://api.tavily.com/search") {
+        const query = JSON.parse(String(init?.body)).query as string;
+        const name = query.includes("11S Pro") ? "RedMagic 11S Pro" : "RedMagic 12 Pro";
+        return jsonResponse({
+          results: [{
+            title: name + " technical review",
+            url: "https://one-source.example/phones",
+            content: name + " technical review",
+            score: 0.99,
+          }],
+        });
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+  };
+  const answer = await routeResearchQuery(
+    "Ultra, compara el RedMagic 11S Pro con el RedMagic 12 Pro",
+    deps,
+    "",
+    "COMPARISON_RESEARCH",
+  );
+  if (!answer.abstained) {
+    throw new Error("A single unsupported search hit must not become a verified comparison");
+  }
+});
+
 Deno.test("marketplace price uses current Mercado Libre listings when configured", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
