@@ -676,12 +676,20 @@ class UltraFrontierExecutionEngine(
         val allocatedTasks = researchTasks.filter {
             allocation.containsKey(it.id)
         }
+        // A constrained single worker still needs enough source slots to
+        // corroborate a non-authoritative comparison. Serial execution and
+        // a one-provider budget are different limits.
+        val singleWorkerBudget = if (capacity != null) {
+            minOf(totalBudget, capacity - attemptProviderOffset)
+                .coerceAtLeast(1)
+        } else {
+            attemptRequest.researchProviderBudget
+        }
         if (capacity != null) {
-            // Single-worker fallback queries exactly one slot; branched calls
-            // consume their actual post-capacity allocation, not a nominal
-            // budget recomputed from the current retry.
+            // Advance by exactly the slots handed to the coordinator so
+            // the next retry cannot silently repeat a provider identity.
             val used = if (allocatedTasks.size < 2) {
-                1
+                singleWorkerBudget ?: 1
             } else {
                 allocation.values.sum()
             }
@@ -692,8 +700,7 @@ class UltraFrontierExecutionEngine(
             return coordinator.answer(
                 request = attemptRequest.copy(
                     researchProviderOffset = attemptProviderOffset,
-                    researchProviderBudget = if (capacity != null) 1
-                        else attemptRequest.researchProviderBudget
+                    researchProviderBudget = singleWorkerBudget
                 ),
                 localChat = localChat
             )
