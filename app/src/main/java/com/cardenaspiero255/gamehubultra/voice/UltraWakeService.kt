@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.speech.RecognitionListener
 import android.speech.SpeechRecognizer
+import android.speech.SpeechRecognizer.RESULTS_RECOGNITION
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -248,9 +249,7 @@ class UltraWakeService : Service() {
 
         override fun onSegmentResults(segmentResults: Bundle) {
             if (persistentSessionActive) {
-                recoveryPolicy.onRecognitionResult(
-                    segmentResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                )
+                recoveryPolicy.onRecognitionResult(segmentResults.getStringArrayList(RESULTS_RECOGNITION))
                 handleRecognitionBundle(
                     results = segmentResults,
                     keepRecognitionActive = true
@@ -269,9 +268,7 @@ class UltraWakeService : Service() {
         }
 
         override fun onResults(results: Bundle?) {
-            recoveryPolicy.onRecognitionResult(
-                results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            )
+            recoveryPolicy.onRecognitionResult(results?.getStringArrayList(RESULTS_RECOGNITION))
             val wasPersistent = persistentSessionActive
             if (wasPersistent) {
                 sessionPolicy.onPersistentSessionFailure()
