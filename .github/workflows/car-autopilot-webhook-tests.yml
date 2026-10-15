@@ -1,0 +1,55 @@
+name: CAR Autopilot Webhook Tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/functions/car-autopilot/**'
+      - 'supabase/config.toml'
+      - 'supabase/migrations/**'
+      - '.github/workflows/car-autopilot-webhook-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: car-autopilot-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout unprivileged test sources
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Verify production JavaScript and signed-webhook unit tests
+        run: |
+          set -euo pipefail
+          node --version
+          node --check supabase/functions/car-autopilot/handler.mjs
+          node --check supabase/functions/car-autopilot/index.mjs
+          node --test supabase/functions/car-autopilot/handler.test.mjs supabase/functions/car-autopilot/index.test.mjs
+
+      - name: Parse TOML and validate deployment entrypoint and JWT scope
+        run: |
+          set -euo pipefail
+          python3 --version
+          python3 supabase/functions/car-autopilot/deployment.test.py
+
+      - name: Execute migration and security contract in local PostgreSQL
+        run: |
+          set -euo pipefail
+          # Hosted Ubuntu supplies a local Postgres service; use peer auth only.
+          # Do not add a privileged or mutable external service image.
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql
+          fi
+          sudo service postgresql start
+          sudo -u postgres psql -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS;"
+          sudo -u postgres psql -d postgres -v ON_ERROR_STOP=1 -f supabase/migrations/20261013180000_car_autopilot_dispatch.sql
+          sudo -u postgres psql -d postgres -v ON_ERROR_STOP=1 -f supabase/functions/car-autopilot/ledger.test.sql

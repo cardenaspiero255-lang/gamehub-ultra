@@ -545,7 +545,12 @@ class UltraVerifiedResearchEngine(
             optionalStableKnowledge &&
             evidenceAttempts.isNotEmpty()
         ) {
-            val stableEvidence = evidenceAttempts.map { it.second }
+            // Prefer a traceable source over a local answer without citations.
+            // Unsourced knowledge remains a fallback only if nothing sourced succeeded.
+            val stableAttempts = evidenceAttempts
+                .filter { (_, evidence) -> evidence.allSourceIds().isNotEmpty() }
+                .ifEmpty { evidenceAttempts }
+            val stableEvidence = stableAttempts.map { it.second }
             val hasConflict = stableEvidence.indices.any { firstIndex ->
                 ((firstIndex + 1) until stableEvidence.size).any { secondIndex ->
                     !stableKnowledgeEvidenceCompatible(
@@ -566,7 +571,7 @@ class UltraVerifiedResearchEngine(
                 )
             }
 
-            val (selectedAttempt, selectedEvidence) = evidenceAttempts
+            val (selectedAttempt, selectedEvidence) = stableAttempts
                 .maxByOrNull { (attempt, evidence) ->
                     stableKnowledgeEvidenceScore(
                         providerIndex = attempt.index,

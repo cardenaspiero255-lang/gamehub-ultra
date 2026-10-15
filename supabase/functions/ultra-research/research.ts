@@ -5070,10 +5070,12 @@ function encyclopediaExcerptLooksTampered(extract: string): boolean {
   // Invisible formatting and embedded assistant instructions are not evidence.
   // Reject rather than silently stripping them and promoting source authority.
   const text = normalize(extract);
+  // Match explicit instruction override patterns; ordinary source text that
+  // merely discusses instructions must not be discarded as tampering.
   return /[\u200B-\u200D\u2060\uFEFF]/u.test(extract) ||
     /\b(?:ignora|ignore|disregard|olvida|omite)\s+(?:todas?\s+)?(?:las?\s+)?(?:instrucciones|instructions)\s+(?:previas|anteriores|previous|prior)\b/iu.test(text) ||
     /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:all\s+|todas?\s+las?\s+)?(?:previous|previas|anteriores|prior)\s+(?:instructions|instrucciones)\b/iu.test(text) ||
-    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|todas|las)\s+)*(?:instructions|instrucciones)\s+(?:above|below|de arriba|anteriores|previas)\b/iu.test(text);
+    /\b(?:ignore|ignora|disregard|olvida|omite)\s+(?:(?:all|the|any|above|below|previous|prior|earlier|system|of|todas?|las?|anteriores|previas|superiores)\s+)*(?:instructions|instrucciones)\b(?:\s+(?:above|below|anteriores|previas))?/iu.test(text);
 }
 
 function candidateMatchesKnownMeaning(
@@ -5090,7 +5092,15 @@ function candidateMatchesKnownMeaning(
   const requestedTopic = normalize(extractGeneralKnowledgeQuery(query))
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
   const candidateTitle = normalize(title)
-    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "");
+    .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
+    // Only remove known canonical subject-type qualifiers. Parentheticals
+    // like "(evento de Berlín)" distinguish a different, narrower entity
+    // and must remain visible to the generic-definition rejection.
+    .replace(
+      /\s*\((?:lenguaje de programacion|planeta|elemento quimico|cuerpo celeste)\)\s*$/,
+      "",
+    )
+    .trim();
   if (
     /^(?:que es|que son|define|explicame que es)\b/.test(
       cleanQuery.replace(/^[¿?¡!\s]+/, ""),
@@ -5103,6 +5113,52 @@ function candidateMatchesKnownMeaning(
     return false;
   }
   const candidate = normalize(title + " " + extract);
+
+  // Separate the navigational instrument from the homonymous southern
+  // constellation. A generic question about what a compass is used for
+  // must be corroborated by navigation semantics, not just a title match.
+  const navigationCompassIntent =
+    /\bbrujula\b/.test(cleanQuery) &&
+    !/\b(?:constelacion|astronomia|estrellas)\b/.test(cleanQuery);
+  if (navigationCompassIntent) {
+    const description = normalize(extract);
+    if (
+      /\b(?:constelacion|astros?|cielo austral)\b/.test(candidate) ||
+      !/\b(?:norte|orient\w*|magnet\w*|direcc\w*|cardinal\w*|naveg\w*)\b/.test(
+        description,
+      )
+    ) {
+      return false;
+    }
+  }
+
+  // Resolve ambiguous encyclopedia titles by the requested sense, not by
+  // superficial keyword overlap: a documentary about plants remains a film,
+  // even if its excerpt also mentions photosynthesis and solar energy.
+  if (
+    /\bfotosintesis\b/.test(cleanQuery) &&
+    !/\b(?:pelicula|film|documental)\b/.test(cleanQuery) &&
+    (
+      /\((?:pelicula|film|documental)\)/.test(normalize(title)) ||
+      /\b(?:pelicula|documental|largometraje|estrenada?|dirigida? por)\b/.test(
+        normalize(extract),
+      )
+    )
+  ) {
+    return false;
+  }
+
+  // The encyclopedia may contain films, works and brands sharing the name
+  // of a scientific concept. Do not treat a homonymous documentary as
+  // corroboration of the biological process.
+  if (
+    /\bfotosintesis\b/.test(cleanQuery) &&
+    !/\b(?:plantas?|algas?|clorofila|luz|energia (?:solar|luminosa|quimica)|dioxido de carbono|carbono)\b/.test(
+      normalize(extract),
+    )
+  ) {
+    return false;
+  }
 
   const genericBearIntent =
     /\b(?:que es|define|explicame|describe)\b.*\boso\b/.test(cleanQuery) &&
@@ -5506,6 +5562,60 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
     .replace(/^(?:el|la|los|las|un|una|unos|unas)\s+/, "")
     .trim();
 
+  // Stable, offline company/product basics. This is an intentionally
+  // non-authoritative answer, never a claim of current pricing or stock.
+  // Normalize explicit company/product question forms to one brand identity.
+  const brandName = clean
+    .replace(
+      /^(?:que\s+(?:tipo\s+de\s+(?:productos\s+fabrica|empresa\s+es)|productos\s+(?:son\s+conocidos\s+de|fabrica)|fabrica|hace)|por\s+que\s+es\s+conocida)\s+/,
+      "",
+    )
+    .replace(/\s+como\s+empresa$/, "")
+    .trim();
+  const brandDescriptions: Record<string, string> = {
+    sony:
+      "Sony es una empresa japonesa de electrónica y entretenimiento. " +
+      "Sus productos conocidos incluyen PlayStation, televisores Bravia, " +
+      "cámaras Alpha y equipos de audio como auriculares.",
+    samsung:
+      "Samsung fabrica teléfonos inteligentes, televisores, " +
+      "electrodomésticos y componentes electrónicos.",
+    apple:
+      "Apple es una empresa tecnológica conocida por el iPhone, " +
+      "las computadoras Mac, el iPad y sus servicios digitales.",
+    xiaomi:
+      "Xiaomi es una empresa de tecnología que fabrica smartphones, " +
+      "dispositivos conectados y productos de electrónica de consumo.",
+    nintendo:
+      "Nintendo es una empresa de videojuegos que desarrolla juegos " +
+      "y fabrica consolas como Nintendo Switch.",
+    nvidia:
+      "NVIDIA diseña GPU para gráficos y procesamiento de IA, " +
+      "además de chips y plataformas de computación.",
+    amd:
+      "AMD desarrolla procesadores CPU y GPU para computadoras, " +
+      "servidores y gráficos.",
+    lg:
+      "LG produce televisores, electrodomésticos y otros equipos " +
+      "de electrónica para el hogar.",
+    jbl:
+      "JBL es una marca de audio conocida por altavoces, " +
+      "auriculares y sistemas de sonido.",
+    lenovo:
+      "Lenovo fabrica computadores y equipos de tecnología, " +
+      "como laptops, PC y estaciones de trabajo.",
+  };
+  const brandText = brandDescriptions[brandName];
+  if (brandText) {
+    return {
+      claimKey: "local-stable:brand-" + brandName,
+      value: normalize(brandText),
+      displayText: brandText,
+      independentSourceCount: 0,
+      authoritative: false,
+    };
+  }
+
   if (clean === "ascensor" || clean === "ascensores" || clean === "elevador") {
     const displayText =
       "Un ascensor, también llamado elevador, es un sistema de transporte vertical " +
@@ -5522,6 +5632,41 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
   }
 
   const basicDefinitions: Record<string, { claim: string; text: string }> = {
+    "wi-fi": {
+      claim: "local-stable:wifi",
+      text:
+        "Wi-Fi es una tecnología de red inalámbrica basada en los estándares " +
+        "IEEE 802.11. Permite conectar dispositivos por ondas de radio a " +
+        "una red local y, si esa red dispone de acceso, a Internet.",
+    },
+    "hdmi": {
+      claim: "local-stable:hdmi",
+      text:
+        "HDMI es una interfaz digital que permite transmitir vídeo y audio " +
+        "entre dispositivos, como una consola o computadora y un televisor. " +
+        "Se utiliza para conectar pantallas y equipos audiovisuales.",
+    },
+    "brujula": {
+      claim: "local-stable:compass",
+      text:
+        "Una brújula es un instrumento de orientación que usa una aguja " +
+        "imantada para señalar el norte magnético. Ayuda a orientarse y " +
+        "seguir direcciones al navegar, caminar o consultar un mapa.",
+    },
+    "calendario": {
+      claim: "local-stable:calendar",
+      text:
+        "Un calendario organiza fechas, días, semanas y meses para planificar " +
+        "eventos, citas y actividades. Permite consultar fechas, organizar " +
+        "compromisos y recordar acontecimientos importantes.",
+    },
+    "fotosintesis": {
+      claim: "local-stable:photosynthesis",
+      text:
+        "La fotosíntesis es el proceso por el cual las plantas, las algas " +
+        "y algunas bacterias usan la luz para convertir agua y dióxido " +
+        "de carbono en materia orgánica, liberando oxígeno en muchos casos.",
+    },
     "auronplay": {
       claim: "local-stable:auronplay",
       text:
@@ -5542,6 +5687,15 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "Un planeta es un cuerpo celeste que orbita una estrella o un resto estelar " +
         "y cuya gravedad le da una forma aproximadamente redondeada. " +
         "Los planetas del sistema solar, como la Tierra, orbitan el Sol.",
+    },
+    "escala aerea": {
+      claim: "local-stable:aviation-layover",
+      text:
+        "Una escala aérea es una parada intermedia durante un viaje en avión, " +
+        "entre el aeropuerto de salida y el destino final. Puede implicar " +
+        "esperar en el aeropuerto o cambiar de vuelo para continuar el " +
+        "trayecto; el tiempo disponible y el cambio de avión dependen " +
+        "del itinerario y la conexión.",
     },
     "maraton": {
       claim: "local-stable:marathon",
@@ -5655,6 +5809,8 @@ function stableCoreKnowledgeEvidence(topic: string): ResearchResult | null {
         "televisores, electrodomésticos y semiconductores.",
     },
   };
+  basicDefinitions["wifi"] = basicDefinitions["wi-fi"];
+  basicDefinitions["wi fi"] = basicDefinitions["wi-fi"];
   basicDefinitions["motor turbofan de avion"] =
     basicDefinitions["motor turbofan"];
   basicDefinitions["planetas"] = basicDefinitions["planeta"];

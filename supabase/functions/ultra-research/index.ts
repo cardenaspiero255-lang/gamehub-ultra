@@ -110,7 +110,7 @@ Deno.serve(async (req: Request) => {
     ? body.correlationId
     : crypto.randomUUID();
   const kind = body.kind ?? "";
-  const verificationMode = body.verificationMode ?? "";
+  const verificationMode = body.verificationMode ?? "OPTIONAL";
   if (
     verificationMode !== "LOCAL" &&
     verificationMode !== "OPTIONAL" &&

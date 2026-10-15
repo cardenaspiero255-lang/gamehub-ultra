@@ -1,0 +1,35 @@
+name: Ultra Sentinel Intelligent Gate - Shadow
+# Diagnostic tests only; never a required merge approval or auto-fixer.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_intelligent_gate*.cjs'
+      - '.github/workflows/ultra-sentinel-intelligent-gate-shadow.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sentinel-intelligent-shadow-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  shadow-contract-tests:
+    name: Intelligent baseline shadow tests (not merge authority)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout source without credentials
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate syntax without executing untrusted dependencies
+        run: |
+          set -euo pipefail
+          node --check .github/scripts/ultra_sentinel_intelligent_gate.cjs
+          node --check .github/scripts/ultra_sentinel_intelligent_gate.test.cjs
+      - name: Install locked parser for AST regression without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify intelligent gate contracts and adversarial scenarios
+        run: |
+          set -euo pipefail
+          node --test .github/scripts/ultra_sentinel_intelligent_gate.test.cjs

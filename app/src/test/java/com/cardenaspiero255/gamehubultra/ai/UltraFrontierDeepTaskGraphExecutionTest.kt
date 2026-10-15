@@ -128,6 +128,100 @@ class UltraFrontierDeepTaskGraphExecutionTest {
     }
 
     @Test
+    fun constrainedKnownCapacitySingleWorkerCanCorroborateTwoIndependentProviders() {
+        UltraFrontierWorldStateRegistry.clear()
+        val partitions = Collections.synchronizedList(
+            mutableListOf<Pair<Int, Int?>>()
+        )
+        try {
+            UltraFrontierWorldStateRegistry.update(
+                UltraFrontierWorldState(
+                    selectedGamePackage = "constrained.research",
+                    sessionActive = true,
+                    selectedProfile = PerformanceProfile.BALANCED,
+                    networkValidated = true,
+                    networkLatencyMs = 40L,
+                    batteryPercent = 12,
+                    charging = false,
+                    thermalStatus = null,
+                    thermalHeadroom = null,
+                    thermalTrend = null,
+                    thermalRisk = null,
+                    thermalConfidence = null,
+                    batteryRecommendation = null,
+                    preventAggressiveProfiles = true,
+                    adaptiveScore = null,
+                    timestampMillis = System.currentTimeMillis()
+                )
+            )
+            val gateway = object : UltraResearchGateway {
+                override val supportsProviderPartitioning: Boolean = true
+                override val providerPartitionCapacity: Int = 2
+
+                override fun answer(
+                    request: UltraGeneralQueryRequest
+                ): UltraVerifiedResearchResult {
+                    partitions +=
+                        request.researchProviderOffset to request.researchProviderBudget
+                    val enoughIndependentEvidence =
+                        request.researchProviderOffset == 0 &&
+                            (request.researchProviderBudget ?: 0) >= 2
+                    return UltraVerifiedResearchResult(
+                        message = if (enoughIndependentEvidence) {
+                            "Comparación sustentada en dos proveedores independientes."
+                        } else {
+                            "Insuficientes fuentes independientes."
+                        },
+                        confidence = if (enoughIndependentEvidence) {
+                            UltraAnswerConfidence.HIGH
+                        } else {
+                            UltraAnswerConfidence.LOW
+                        },
+                        sources = if (enoughIndependentEvidence) {
+                            listOf("official-provider-a", "independent-provider-b")
+                        } else {
+                            listOf("official-provider-a")
+                        },
+                        independentSourceCount =
+                            if (enoughIndependentEvidence) 2 else 1,
+                        abstained = !enoughIndependentEvidence,
+                        retryable = !enoughIndependentEvidence,
+                        reasonCode = if (enoughIndependentEvidence) {
+                            null
+                        } else {
+                            "INSUFFICIENT_CORROBORATION"
+                        }
+                    )
+                }
+            }
+            val evolution = UltraFrontierEvolutionController()
+            val engine = UltraFrontierExecutionEngine(
+                coordinator = UltraQueryExecutionCoordinator(gateway),
+                evolution = evolution,
+                frontier = UltraFrontierOrchestrator(
+                    policy = UltraFrontierPolicy(
+                        verifiedSourceBudget = 6,
+                        deepSourceBudget = 7,
+                        deepResearchPassBudget = 2
+                    ),
+                    evolution = evolution
+                )
+            )
+            val answer = engine.answer(
+                UltraGeneralQueryRouter.classify(
+                    "Compara profundamente dos teléfonos actuales y verifica dos fuentes"
+                )
+            ) { null }
+
+            assertFalse(answer.abstained)
+            assertTrue(answer.verified)
+            assertEquals(listOf(0 to 2), partitions.toList())
+        } finally {
+            UltraFrontierWorldStateRegistry.clear()
+        }
+    }
+
+    @Test
     fun constrainedRetryUsesFreshProviderPartitionRatherThanRepeatingCachedFailure() {
         UltraFrontierWorldStateRegistry.clear()
         val offsets = Collections.synchronizedList(mutableListOf<Int>())
@@ -207,7 +301,7 @@ class UltraFrontierDeepTaskGraphExecutionTest {
     }
 
     @Test
-    fun constrainedRetryWithTwoActualProvidersUsesInRangeNextSlot() {
+    fun constrainedRetryWithThreeActualProvidersDoesNotReuseBudgetedSlots() {
         UltraFrontierWorldStateRegistry.clear()
         val offsets = Collections.synchronizedList(mutableListOf<Int>())
         try {
@@ -233,13 +327,13 @@ class UltraFrontierDeepTaskGraphExecutionTest {
             )
             val gateway = object : UltraResearchGateway {
                 override val supportsProviderPartitioning: Boolean = true
-                override val providerPartitionCapacity: Int = 2
+                override val providerPartitionCapacity: Int = 3
 
                 override fun answer(
                     request: UltraGeneralQueryRequest
                 ): UltraVerifiedResearchResult {
                     offsets += request.researchProviderOffset
-                    return if (request.researchProviderOffset == 0) {
+                    return if (request.researchProviderOffset < 2) {
                         UltraVerifiedResearchResult(
                             message = "No hay información suficiente.",
                             confidence = UltraAnswerConfidence.LOW,
@@ -266,8 +360,8 @@ class UltraFrontierDeepTaskGraphExecutionTest {
                 evolution = evolution,
                 frontier = UltraFrontierOrchestrator(
                     policy = UltraFrontierPolicy(
-                        verifiedSourceBudget = 6,
-                        deepSourceBudget = 7,
+                        verifiedSourceBudget = 2,
+                        deepSourceBudget = 2,
                         deepResearchPassBudget = 2
                     ),
                     evolution = evolution
@@ -278,7 +372,7 @@ class UltraFrontierDeepTaskGraphExecutionTest {
                     "Compara profundamente dos teléfonos actuales y verifica nuevas fuentes"
                 )
             ) { null }
-            assertEquals(listOf(0, 1), offsets.toList())
+            assertEquals(listOf(0, 2), offsets.toList())
             assertTrue(answer.verified)
             assertFalse(answer.abstained)
         } finally {

@@ -164,6 +164,76 @@ class UltraFrontierProviderPartitionRegressionTest {
     }
 
     @Test
+    fun duplicateCorroborationUrlsCannotClaimTwoIndependentSources() {
+        val url = "https://example.org/one-source"
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "engineVersion":"20",
+                  "claimKey":"general:planet",
+                  "value":"planet",
+                  "displayText":"Una definición corroborada.",
+                  "sourceIds":["$url","$url","  $url  "],
+                  "independentSourceCount":2,
+                  "authoritative":true
+                }
+            """.trimIndent()
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+        val evidence = assertIs<UltraProviderResult.Evidence>(
+            provider.fetchResult(UltraGeneralQueryRouter.classify("¿Qué es un planeta?"))
+        ).evidence
+        assertEquals(1, evidence.independentSourceCount)
+        assertEquals(listOf(url), listOf(evidence.sourceId) + evidence.supportingSourceIds)
+    }
+
+    @Test
+    fun optionalTerminologyWithoutSourcesRemainsUsableButUnverified() {
+        val transport = object : UltraResearchBackendTransport {
+            override fun post(
+                endpoint: String,
+                apiKey: String,
+                body: String,
+                timeoutMillis: Long
+            ): String = """
+                {
+                  "engineVersion":"20",
+                  "claimKey":"terminology:macroverso",
+                  "value":"nonstandard term",
+                  "displayText":"Macroverso es un término no estandarizado.",
+                  "sourceIds":[],
+                  "independentSourceCount":0,
+                  "authoritative":false
+                }
+            """.trimIndent()
+        }
+        val provider = SupabaseUltraResearchProvider(
+            supabaseUrl = "https://example.supabase.co",
+            publishableKey = "sb_publishable_test",
+            transport = transport,
+            requiredEngineVersion = UltraResearchProtocol.ENGINE_VERSION
+        )
+        val request = UltraGeneralQueryRouter.classify("¿Qué es un macroverso?")
+            .copy(verificationMode = UltraVerificationMode.OPTIONAL)
+        val evidence = assertIs<UltraProviderResult.Evidence>(
+            provider.fetchResult(request)
+        ).evidence
+        assertTrue(evidence.sourceId.isEmpty())
+        assertEquals(0, evidence.independentSourceCount)
+        assertFalse(evidence.authoritative)
+    }
+
+    @Test
     fun emptyCorroborationMustNotMakeAnUnsourcedAuthorityClaimValid() {
         val transport = object : UltraResearchBackendTransport {
             override fun post(

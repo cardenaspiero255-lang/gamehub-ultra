@@ -561,7 +561,11 @@ class UltraFrontierExecutionEngine(
         val baseResearchTaskIds = plan.tasks
             .filter { it.specialist == UltraFrontierSpecialist.RESEARCH }
             .mapTo(linkedSetOf()) { it.id }
-        val replanned = if (attempt > 1 && baseResearchTaskIds.isNotEmpty()) {
+        val canExecuteBranchedResearch =
+            plan.lane == UltraFrontierLane.DEEP_RESEARCH &&
+                coordinator.supportsProviderPartitioning &&
+                baseResearchTaskIds.size >= 2
+        val replanned = if (attempt > 1 && canExecuteBranchedResearch) {
             v2Replanner.replan(
                 tasks = plan.tasks,
                 failedTaskIds = baseResearchTaskIds,
@@ -575,16 +579,6 @@ class UltraFrontierExecutionEngine(
                 replacedTaskIds = emptySet()
             )
         }
-        if (replanned.changed) {
-            auditTrail.record(
-                correlationId = request.correlationId,
-                lane = plan.lane,
-                event = UltraFrontierAuditEvent.REPLAN,
-                attempt = attempt,
-                reasonCode = "FRONTIER_V2_RESEARCH_RECOVERY"
-            )
-        }
-
         val v2Request = UltraFrontierRequest(
             message = request.originalText,
             query = request,
@@ -682,12 +676,20 @@ class UltraFrontierExecutionEngine(
         val allocatedTasks = researchTasks.filter {
             allocation.containsKey(it.id)
         }
+        // A constrained single worker still needs enough source slots to
+        // corroborate a non-authoritative comparison. Serial execution and
+        // a one-provider budget are different limits.
+        val singleWorkerBudget = if (capacity != null) {
+            minOf(totalBudget, capacity - attemptProviderOffset)
+                .coerceAtLeast(1)
+        } else {
+            attemptRequest.researchProviderBudget
+        }
         if (capacity != null) {
-            // Single-worker fallback queries exactly one slot; branched calls
-            // consume their actual post-capacity allocation, not a nominal
-            // budget recomputed from the current retry.
+            // Advance by exactly the slots handed to the coordinator so
+            // the next retry cannot silently repeat a provider identity.
             val used = if (allocatedTasks.size < 2) {
-                1
+                singleWorkerBudget ?: 1
             } else {
                 allocation.values.sum()
             }
@@ -698,10 +700,22 @@ class UltraFrontierExecutionEngine(
             return coordinator.answer(
                 request = attemptRequest.copy(
                     researchProviderOffset = attemptProviderOffset,
-                    researchProviderBudget = if (capacity != null) 1
-                        else attemptRequest.researchProviderBudget
+                    researchProviderBudget = singleWorkerBudget
                 ),
                 localChat = localChat
+            )
+        }
+
+        // Record an actual V2 recovery only after the execution path has
+        // accepted its replanned tasks and a branched allocation. A retry
+        // delegated to coordinator.answer must not claim task-graph recovery.
+        if (replanned.changed) {
+            auditTrail.record(
+                correlationId = request.correlationId,
+                lane = plan.lane,
+                event = UltraFrontierAuditEvent.REPLAN,
+                attempt = attempt,
+                reasonCode = "FRONTIER_V2_RESEARCH_RECOVERY"
             )
         }
 

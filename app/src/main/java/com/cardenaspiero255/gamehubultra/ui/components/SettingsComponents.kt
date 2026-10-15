@@ -371,6 +371,7 @@ internal fun SettingsScreen(
                 Text(stringResource(R.string.language_value))
             }
         }
+        SentinelStatusCard()
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.padding(14.dp),

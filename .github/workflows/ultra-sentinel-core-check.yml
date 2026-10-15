@@ -1,0 +1,98 @@
+name: Ultra Sentinel Core Tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/scripts/ultra_sentinel_*.cjs'
+      - '.github/sentinel-fixtures/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/scripts/install_sentinel_hook.sh'
+      - '.githooks/pre-commit'
+      - '.github/workflows/ultra-sentinel-*.yml'
+      - 'docs/ULTRA_SENTINEL_LOCAL.md'
+      - '.github/sentinel-contracts/**'
+      - '.github/sentinel-evidence-ledger.json'
+      - 'app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGate.kt'
+      - 'app/src/main/java/com/cardenaspiero255/gamehubultra/voice/VoiceAssistantController.kt'
+      - 'app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceRecognitionRetryGateContractTest.kt'
+      - 'app/src/test/java/com/cardenaspiero255/gamehubultra/voice/VoiceAssistantControllerRobolectricTest.kt'
+  workflow_dispatch:
+concurrency:
+  group: ultra-sentinel-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  core-shard:
+    name: Sentinel Core / shard ${{ matrix.id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        id: [m00, m01, m02, m03, m04, m05, m06, m07, m08, m09, m10, m11, m12, b0, b1]
+    steps:
+      - name: Checkout tested PR in restricted runner
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install locked parser without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate JavaScript and shell before tests
+        run: |
+          set -euo pipefail
+          node --check .github/scripts/ultra_sentinel_core_shards.cjs
+          node --check .github/scripts/ultra_sentinel_150k_unique_matrix.test.cjs
+          node --check .github/scripts/ultra_sentinel_500k_advanced_matrix.test.cjs
+          sh -n .githooks/pre-commit
+          sh -n .github/scripts/install_sentinel_hook.sh
+      - name: Execute bounded 38500-case matrix or baseline partition
+        shell: bash
+        env:
+          SENTINEL_SHARD_ID: ${{ matrix.id }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/ultra_sentinel_core_shards.cjs run-env "$RUNNER_TEMP/sentinel-core"
+      - name: Upload compact evidence from this shard
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: sentinel-core-report-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sentinel-core/*.json
+          retention-days: 14
+          if-no-files-found: ignore
+  core-tests:
+    name: Sentinel Core / full regression suite
+    if: always()
+    needs: [core-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source for exact test-file inventory
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Download all shard reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: sentinel-core-report-*-${{ github.run_id }}-${{ github.run_attempt }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/sentinel-core-reports
+      - name: Fail closed on missing/duplicated reports, coverage gaps or failed shards
+        env:
+          CORE_MIN_TESTS: '500000'
+          SENTINEL_MATRIX_RESULT: ${{ needs.core-shard.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/scripts/ultra_sentinel_core_shards.cjs aggregate "$RUNNER_TEMP/sentinel-core-reports"
+      - name: Install locked parser for regression contracts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify OMEGA abstract voice-state contracts
+        run: |
+          node .github/scripts/ultra_sentinel_omega.cjs
+          node .github/scripts/ultra_sentinel_omega_access.cjs
+      - name: Score labeled adversarial cases
+        run: node .github/scripts/ultra_sentinel_benchmark.cjs

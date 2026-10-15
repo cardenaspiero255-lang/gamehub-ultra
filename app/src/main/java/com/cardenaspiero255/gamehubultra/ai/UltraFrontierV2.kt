@@ -75,16 +75,21 @@ class UltraFrontierV2HierarchicalPlanner {
             requiresFreshEvidence = request.query.requiresFreshData
         )
 
+        val phases = if (
+            orderedPhases.firstOrNull()?.phase == UltraFrontierV2Phase.ROUTING
+        ) {
+            orderedPhases
+        } else {
+            listOf(
+                UltraFrontierV2PlanPhase(
+                    phase = UltraFrontierV2Phase.ROUTING,
+                    taskIds = setOf("route")
+                )
+            ) + orderedPhases
+        }
         return UltraFrontierV2HierarchicalPlan(
             objective = objective,
-            phases = orderedPhases.ifEmpty {
-                listOf(
-                    UltraFrontierV2PlanPhase(
-                        phase = UltraFrontierV2Phase.ROUTING,
-                        taskIds = setOf("route")
-                    )
-                )
-            }
+            phases = phases
         )
     }
 
