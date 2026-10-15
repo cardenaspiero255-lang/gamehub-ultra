@@ -2600,7 +2600,10 @@ function matchingVerifiedDeviceRecord(product: string, record: JsonObject): bool
   const requested = compact(product);
   const found = compact(name);
   const brand = compact(stringValue(record.brand) ?? "");
-  return found === requested || (brand.length > 0 && found === brand + requested);
+  // Device catalogs may store only "11S Pro" in name and "RedMagic"
+  // separately in brand; also support full names without the brand field.
+  return found === requested ||
+    (brand.length > 0 && (brand + found === requested || found === brand + requested));
 }
 
 async function specificationEvidenceForProduct(
@@ -2674,7 +2677,17 @@ function extractComparisonProducts(query: string): [string, string] | null {
     /(?:compara|compare)\s+(?:el\s+|la\s+)?(.+?)\s+(?:con|vs\.?|versus)\s+(?:el\s+|la\s+)?([^\n?!]+)/i,
   );
   if (!match?.[1] || !match[2]) return null;
-  return [match[1].trim(), match[2].trim()];
+  // Do not mistake a conversational instruction for part of the second
+  // device name (e.g. "... 12 Pro y dime cuál es mejor para jugar").
+  const second = match[2]
+    .replace(
+      /(?:[,;]\s*|\s+y\s+)(?:(?:dime|explicame|explícame|cuentame|cuéntame|indicame|indícame|recomiendame|recomiéndame)\b|(?:cual|cuál|que|qué)\s+(?:es|me)\b).*$/i,
+      "",
+    )
+    .replace(/[.,;:]\s*$/, "")
+    .trim();
+  if (!second) return null;
+  return [match[1].trim(), second];
 }
 
 async function comparisonEvidence(
