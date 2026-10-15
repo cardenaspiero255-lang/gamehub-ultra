@@ -26,6 +26,20 @@ class UltraWakeRecoveryPolicyTest {
     }
 
     @Test
+    fun onlyMeaningfulASRResultsResetBackoffForLegacyAndSegmentedModes() {
+        val policy = UltraWakeRecoveryPolicy()
+        assertEquals(500L, policy.nextDelayMillis())
+        assertEquals(1_000L, policy.nextDelayMillis())
+        assertEquals(2_000L, policy.nextDelayMillis())
+        policy.onRecognitionResult(null)
+        assertEquals(4_000L, policy.nextDelayMillis())
+        policy.onRecognitionResult(listOf("", " ", "\t"))
+        assertEquals(8_000L, policy.nextDelayMillis())
+        policy.onRecognitionResult(listOf(" ", "Ultra, compara los teléfonos"))
+        assertEquals(500L, policy.nextDelayMillis())
+    }
+
+    @Test
     fun failurePolicyRejectsInvalidConfiguration() {
         kotlin.test.assertFailsWith<IllegalArgumentException> {
             UltraWakeRecoveryPolicy(initialDelayMillis = 0L)
