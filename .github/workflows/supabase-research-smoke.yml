@@ -94,7 +94,12 @@ jobs:
           echo "ULTRA_RESEARCH_API_KEY=ci-smoke-key" >> "$GITHUB_ENV"
 
           for attempt in $(seq 1 60); do
-            status="$(curl -sS -o /dev/null -w '%{http_code}'               http://127.0.0.1:8000 || true)"
+            if status="$(curl -sS -o /dev/null -w '%{http_code}' \
+              http://127.0.0.1:8000)"; then
+              :
+            else
+              status="000"
+            fi
             if [ "$status" = "405" ]; then
               echo "Branch-local Ultra research server is ready."
               exit 0
