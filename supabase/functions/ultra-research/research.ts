@@ -2593,19 +2593,37 @@ function specsDisplay(record: JsonObject): string {
   return `${name}: ${parts.length ? parts.join(", ") : "ficha verificada disponible"}.`;
 }
 
+function matchingVerifiedDeviceRecord(product: string, record: JsonObject): boolean {
+  const name = stringValue(record.name);
+  if (!name) return false;
+  const compact = (value: string) => normalize(value).replace(/[^a-z0-9]+/g, "");
+  const requested = compact(product);
+  const found = compact(name);
+  const brand = compact(stringValue(record.brand) ?? "");
+  return found === requested || (brand.length > 0 && found === brand + requested);
+}
+
 async function specificationEvidenceForProduct(
   product: string,
   deps: ResearchDependencies,
 ): Promise<ResearchResult> {
-  const path = await searchTechApiPath(product, deps);
+  // Missing catalog entries and transient GitHub failures are recoverable:
+  // the comparison planner can try independently corroborated web evidence.
+  const path = await searchTechApiPath(product, deps).catch(() => null);
   if (!path) {
     return abstain("No encontré una ficha verificable para ese producto.");
   }
 
-  const record = await fetchTechApiRecord(path, deps);
+  const record = await fetchTechApiRecord(path, deps).catch(() => null);
   if (!record || record.verified !== true) {
     return abstain(
       "Encontré una ficha, pero todavía no está marcada como verificada.",
+    );
+  }
+  if (!matchingVerifiedDeviceRecord(product, record)) {
+    return abstain(
+      "La ficha encontrada corresponde a un modelo diferente.",
+      { reasonCode: "SPEC_MODEL_MISMATCH", stage: "specifications" },
     );
   }
 
