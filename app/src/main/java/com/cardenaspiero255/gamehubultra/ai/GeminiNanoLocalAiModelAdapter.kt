@@ -2,8 +2,17 @@ package com.cardenaspiero255.gamehubultra.ai
 
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.prompt.Generation
+import android.os.Looper
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /**
  * Best-effort Gemini Nano adapter.
@@ -13,24 +22,65 @@ import kotlinx.coroutines.runBlocking
  */
 class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
     private val model = lazy { runCatching { Generation.getClient() }.getOrNull() }
+    private val nanoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val closed = AtomicBoolean(false)
+
+    /**
+     * Legacy LocalAiModelAdapter methods are synchronous. Never wait from
+     * Android's main looper: return null so the caller uses its deterministic
+     * fallback. Off-main calls have an explicit deadline and run model
+     * suspend functions only inside the IO coroutine, never on the caller.
+     *
+     * This bounds worker waiting; moving the full interface to suspend APIs
+     * remains a future API migration, not a prerequisite for UI safety.
+     */
+    private fun <T> boundedNanoCall(block: suspend () -> T): T? {
+        if (closed.get()) return null
+        val mainLooper = Looper.getMainLooper()
+        if (mainLooper != null && Looper.myLooper() == mainLooper) return null
+
+        val result = AtomicReference<T?>(null)
+        val completion = CountDownLatch(1)
+        val job = nanoScope.launch {
+            try {
+                result.set(withTimeout(NANO_CALL_TIMEOUT_MS) { block() })
+            } catch (_: Exception) {
+                // Model unavailable, interrupted, or timed out: fail closed.
+            } finally {
+                completion.countDown()
+            }
+        }
+        val completed = try {
+            completion.await(NANO_CALL_TIMEOUT_MS + 500L, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!completed) job.cancel()
+        return if (completed && !closed.get()) result.get() else null
+    }
+
+    private companion object {
+        const val NANO_CALL_TIMEOUT_MS = 5_000L
+    }
 
     override fun isAvailable(): Boolean =
         runCatching {
-            runBlocking(Dispatchers.IO) {
-                val client = model.value ?: return@runBlocking false
+            boundedNanoCall {
+                val client = model.value ?: return@boundedNanoCall false
                 client.checkStatus() == FeatureStatus.AVAILABLE
             }
-        }.getOrDefault(false)
+        }.getOrNull() == true
 
     override fun advise(
         question: String,
         context: GameHubAiContext
     ): LocalAiActionCandidate? =
         runCatching {
-            runBlocking(Dispatchers.IO) {
-                val client = model.value ?: return@runBlocking null
+            boundedNanoCall {
+                val client = model.value ?: return@boundedNanoCall null
                 if (client.checkStatus() != FeatureStatus.AVAILABLE) {
-                    return@runBlocking null
+                    return@boundedNanoCall null
                 }
 
                 val response = client.generateContent(buildPrompt(question, context))
@@ -42,7 +92,7 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
                     ?.firstOrNull()
                     ?.trim()
                     ?.uppercase()
-                    ?: return@runBlocking null
+                    ?: return@boundedNanoCall null
 
                 LocalAiActionCandidate(action = raw)
             }
@@ -51,9 +101,9 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
     override fun interpretVoiceIntent(transcript: String): LocalVoiceIntentCandidate? =
         runCatching {
             if (transcript.length !in 4..300) return@runCatching null
-            runBlocking(Dispatchers.IO) {
-                val client = model.value ?: return@runBlocking null
-                if (client.checkStatus() != FeatureStatus.AVAILABLE) return@runBlocking null
+            boundedNanoCall {
+                val client = model.value ?: return@boundedNanoCall null
+                if (client.checkStatus() != FeatureStatus.AVAILABLE) return@boundedNanoCall null
                 val prompt = buildString {
                     appendLine("Classify an explicit gaming voice command as one of:")
                     appendLine("PROFILE_BALANCED, PROFILE_X4, PROFILE_INTERPOLATION")
@@ -64,16 +114,18 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
                     appendLine("Voice input: " + transcript.take(300))
                 }
                 val raw = client.generateContent(prompt).candidates
-                    .firstOrNull()?.text?.trim() ?: return@runBlocking null
-                if (raw.length > 100 || raw.contains('\n')) return@runBlocking null
+                    .firstOrNull()?.text?.trim() ?: return@boundedNanoCall null
+                if (raw.length > 100 || raw.contains('\n')) return@boundedNanoCall null
                 val parts = raw.split('|', limit = 2)
                 LocalVoiceIntentCandidate(parts.first().trim(), parts.getOrNull(1)?.trim())
             }
         }.getOrNull()
 
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        nanoScope.cancel()
         if (model.isInitialized()) {
-            model.value?.close()
+            runCatching { model.value?.close() }
         }
     }
 
@@ -83,9 +135,9 @@ class GeminiNanoLocalAiModelAdapter : LocalAiModelAdapter {
         conversation: List<String>
     ): String? =
         runCatching {
-            runBlocking(Dispatchers.IO) {
-                val client = model.value ?: return@runBlocking null
-                if (client.checkStatus() != FeatureStatus.AVAILABLE) return@runBlocking null
+            boundedNanoCall {
+                val client = model.value ?: return@boundedNanoCall null
+                if (client.checkStatus() != FeatureStatus.AVAILABLE) return@boundedNanoCall null
                 val prompt = buildGeminiChatPrompt(message, context, conversation)
                 client.generateContent(prompt).candidates.firstOrNull()?.text?.trim()
                     ?.takeIf { it.isNotBlank() }
