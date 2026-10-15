@@ -84,6 +84,66 @@ class UltraPersistentSpeechSourcePhase2RobolectricTest {
     }
 
     @Test
+    fun capturedPcmIsWrittenAndReadErrorsEndTheCaptureCleanly() {
+        val pipe = ParcelFileDescriptor.createPipe()
+        val recorder = Mockito.mock(AudioRecord::class.java)
+        Mockito.`when`(recorder.recordingState).thenReturn(AudioRecord.RECORDSTATE_RECORDING)
+        Mockito.`when`(
+            recorder.read(
+                Mockito.any(ByteArray::class.java),
+                Mockito.eq(0),
+                Mockito.eq(4096),
+                Mockito.eq(AudioRecord.READ_BLOCKING)
+            )
+        ).thenReturn(64, -1)
+        val constructor = UltraPersistentSpeechSource::class.java.getDeclaredConstructor(
+            ParcelFileDescriptor::class.java,
+            ParcelFileDescriptor::class.java,
+            AudioRecord::class.java,
+            ExecutorService::class.java,
+            Integer.TYPE
+        )
+        constructor.isAccessible = true
+        val source = constructor.newInstance(pipe[0], pipe[1], recorder, InlineWorker(), 4096)
+        assertTrue(source.start())
+        Mockito.verify(recorder, Mockito.times(2)).read(
+            Mockito.any(ByteArray::class.java),
+            Mockito.eq(0),
+            Mockito.eq(4096),
+            Mockito.eq(AudioRecord.READ_BLOCKING)
+        )
+        source.close()
+        Mockito.verify(recorder).release()
+    }
+
+    @Test
+    fun captureReadExceptionClosesPipeWithoutPropagatingToService() {
+        val pipe = ParcelFileDescriptor.createPipe()
+        val recorder = Mockito.mock(AudioRecord::class.java)
+        Mockito.`when`(recorder.recordingState).thenReturn(AudioRecord.RECORDSTATE_RECORDING)
+        Mockito.`when`(
+            recorder.read(
+                Mockito.any(ByteArray::class.java),
+                Mockito.eq(0),
+                Mockito.eq(4096),
+                Mockito.eq(AudioRecord.READ_BLOCKING)
+            )
+        ).thenThrow(IllegalStateException("Microphone unplugged"))
+        val constructor = UltraPersistentSpeechSource::class.java.getDeclaredConstructor(
+            ParcelFileDescriptor::class.java,
+            ParcelFileDescriptor::class.java,
+            AudioRecord::class.java,
+            ExecutorService::class.java,
+            Integer.TYPE
+        )
+        constructor.isAccessible = true
+        val source = constructor.newInstance(pipe[0], pipe[1], recorder, InlineWorker(), 4096)
+        assertTrue(source.start())
+        source.close()
+        Mockito.verify(recorder).release()
+    }
+
+    @Test
     fun rejectedCaptureWorkerDoesNotCrashAndClosesAudioRecord() {
         val pipe = ParcelFileDescriptor.createPipe()
         val audioRecord = Mockito.mock(AudioRecord::class.java)
