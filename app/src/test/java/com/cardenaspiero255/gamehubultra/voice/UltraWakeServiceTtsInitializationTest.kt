@@ -48,6 +48,25 @@ class UltraWakeServiceTtsInitializationTest {
     }
 
     @Test
+    fun stopBeforeTtsIsReadyNeverReplaysCancelledResponse() {
+        val service = UltraWakeService()
+        val tts = Mockito.mock(TextToSpeech::class.java)
+        val playback = speechController(service)
+        playback.attach(tts)
+        call(service, "speakAndResume", "Esta respuesta debe cancelarse.")
+        call(service, "cancelPendingSpeechAndResume")
+        call(service, "handleTtsInitialization", TextToSpeech.SUCCESS)
+        assertEquals(0, Mockito.mockingDetails(tts).invocations.count {
+            it.method.name == "speak"
+        })
+        call(service, "speakAndResume", "Respuesta nueva después de cancelar.")
+        assertEquals(1, Mockito.mockingDetails(tts).invocations.count {
+            it.method.name == "speak"
+        })
+        playback.shutdown()
+    }
+
+    @Test
     fun failedBackgroundTtsInitializationReleasesPendingPlayback() {
         val service = UltraWakeService()
         val playback = speechController(service)
