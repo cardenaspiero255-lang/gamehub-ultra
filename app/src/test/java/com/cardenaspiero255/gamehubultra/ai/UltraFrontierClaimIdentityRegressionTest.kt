@@ -116,4 +116,89 @@ class UltraFrontierClaimIdentityRegressionTest {
         assertFalse(result.abstained)
         assertEquals(null, result.reasonCode)
     }
+
+    @Test
+    fun contradictoryAttachedBatteryCapacitiesAreNotAcceptedAsVerified() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("La batería tiene 5000mAh.", "battery-a") to 100L,
+                checked("La batería tiene 6000mAh.", "battery-b") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", result.reasonCode)
+        assertFalse(result.verified)
+        assertEquals(true, result.abstained)
+    }
+
+    @Test
+    fun attachedAndSpacedUnitsRepresentSameClaimAndValue() {
+        listOf(
+            "5000mAh" to "5000 mAh",
+            "3,5GHz" to "3.5 GHz",
+            "120Hz" to "120 Hz"
+        ).forEach { (attached, spaced) ->
+            val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    checked("La batería tiene $attached.", "source-a") to 100L,
+                    checked("La batería tiene $spaced.", "source-b") to 110L
+                )
+            ))
+            assertFalse(result.abstained, "Equivalent $attached and $spaced must agree")
+            assertEquals(null, result.reasonCode)
+        }
+    }
+
+    @Test
+    fun differentAttachedUnitsAreNotMistakenForContradictoryMeasurements() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("La batería tiene 5000mAh.", "source-a") to 100L,
+                checked("La batería tiene 5000Wh.", "source-b") to 110L
+            )
+        ))
+        assertFalse(result.abstained)
+        assertEquals(null, result.reasonCode)
+    }
+
+    @Test
+    fun byteAndBitMeasurementsMustNotBeReportedAsConflictingValues() {
+        val examples = listOf(
+            "8GB" to "64Gb",
+            "8 GB" to "64 Gb",
+            "10MW" to "10000mW",
+            "5MHz" to "5000mHz"
+        )
+        examples.forEach { (first, second) ->
+            val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+                listOf(
+                    checked("El enlace tiene $first.", "source-a") to 100L,
+                    checked("El enlace tiene $second.", "source-b") to 110L
+                )
+            ))
+            assertFalse(result.abstained, "Case-sensitive units $first and $second are not the same unit")
+            assertEquals(null, result.reasonCode)
+        }
+    }
+
+    @Test
+    fun sameCaseSensitiveUnitWithDifferentNumbersStillConflicts() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("La memoria tiene 8GB.", "source-a") to 100L,
+                checked("La memoria tiene 12 GB.", "source-b") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", result.reasonCode)
+    }
+
+    @Test
+    fun differentMeasurementsWithSameAttachedUnitTriggerConflict() {
+        val result = assertNotNull(UltraFrontierEvolutionController().synthesizeResearch(
+            listOf(
+                checked("El procesador tiene 3.5GHz.", "source-a") to 100L,
+                checked("El procesador tiene 4.2GHz.", "source-b") to 110L
+            )
+        ))
+        assertEquals("FRONTIER_CLAIM_PROVENANCE_CONFLICT", result.reasonCode)
+    }
 }

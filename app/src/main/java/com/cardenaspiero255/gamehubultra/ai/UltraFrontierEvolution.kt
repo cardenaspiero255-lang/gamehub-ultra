@@ -1095,15 +1095,17 @@ class UltraFrontierEvolutionController(
      * a semantic decision without a structured claim.
      */
     private fun researchClaimIdentity(message: String): Pair<String, String> {
-        val normalized = java.text.Normalizer.normalize(
+        // Case-sensitive unit symbols must survive normalization (GB != Gb,
+        // MW != mW, MHz != mHz). Only normalize prose to lowercase.
+        val normalizedWithCase = java.text.Normalizer.normalize(
             message,
             java.text.Normalizer.Form.NFD
         )
             .replace(Regex("""\p{M}+"""), "")
             .trim()
-            .lowercase(Locale.ROOT)
             .replace(Regex("""\s+"""), " ")
             .trimEnd('.', '!', '?')
+        val normalized = normalizedWithCase.lowercase(Locale.ROOT)
 
         // Numeric model identifiers belong to the subject; numeric values
         // *after* the factual predicate belong to the assertion. Never
@@ -1119,16 +1121,32 @@ class UltraFrontierEvolutionController(
         val predicate = predicates.single()
 
         val subject = normalized.substring(0, predicate.range.first)
-        val assertion = normalized.substring(predicate.range.first)
+        val assertion = normalizedWithCase.substring(predicate.range.first)
+        // Preserve measurement unit case in both attached and spaced forms.
+        // A digit next to an unknown identifier is NOT automatically a value.
         val numericValue = Regex(
-            """(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)*(?![\p{L}\d])"""
+            """(?<![\p{L}\d])([+-]?\d+(?:[.,]\d+)*)(\s*)(mah|mwh|kwh|mbps|gbps|ghz|mhz|khz|gib|mib|kib|fps|wh|hz|ah|kw|mw|mv|gb|tb|mb|kg|km|mm|cm|ms|ma|°c|°f|w|v|g|m|s)?(?![\p{L}\d])""",
+            RegexOption.IGNORE_CASE
         )
-        val values = numericValue.findAll(assertion)
-            .map { canonicalResearchNumber(it.value) }.toList()
-        if (values.isEmpty()) {
+        val matches = numericValue.findAll(assertion).toList()
+        if (matches.isEmpty()) {
             return "research-answer:$normalized" to normalized
         }
-        val skeleton = numericValue.replace(assertion, "valor-numerico")
+        val values = matches.map { canonicalResearchNumber(it.groupValues[1]) }
+        val skeleton = buildString {
+            var cursor = 0
+            matches.forEach { match ->
+                append(assertion.substring(cursor, match.range.first).lowercase(Locale.ROOT))
+                append("valor-numerico")
+                val unit = match.groupValues[3]
+                if (unit.isNotEmpty()) {
+                    append(" ")
+                    append(unit)
+                }
+                cursor = match.range.last + 1
+            }
+            append(assertion.substring(cursor).lowercase(Locale.ROOT))
+        }.replace(Regex("""\s+"""), " ")
         return "research-answer:$subject$skeleton" to values.joinToString("|")
     }
 

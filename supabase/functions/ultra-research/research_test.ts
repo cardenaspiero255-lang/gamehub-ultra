@@ -514,6 +514,102 @@ Deno.test("stable concepts from smoke tests survive provider throttling without 
   }
 });
 
+Deno.test("person identity rejects a TV episode with matching surname", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                title: "The Musk Who Fell to Earth",
+                index: 1,
+                extract:
+                  "The Musk Who Fell to Earth es un episodio de Los Simpson donde aparece Elon Musk.",
+              },
+              "2": {
+                title: "Elon Musk",
+                index: 2,
+                extract:
+                  "Elon Musk es un empresario que dirige Tesla y SpaceX.",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "es.wikipedia.org") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "www.wikidata.org") {
+        return jsonResponse({ search: [] });
+      }
+      return jsonResponse({ results: [] });
+    },
+    env: () => undefined,
+  };
+
+  const result = await routeResearchQuery(
+    "¿Quién es Elon Musk?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+    "REQUIRED",
+  );
+  if (result.abstained || !result.displayText?.includes("Tesla")) {
+    throw new Error("Expected verified person biography instead of TV episode");
+  }
+  if (/simpson|episodio/i.test(result.displayText)) {
+    throw new Error("A related television episode is not the requested person");
+  }
+});
+
+Deno.test("person identity does not accept a similarly titled media result", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input) => {
+      const url = new URL(String(input));
+      if (
+        url.hostname === "es.wikipedia.org" &&
+        url.searchParams.get("generator") === "search"
+      ) {
+        return jsonResponse({
+          query: {
+            pages: {
+              "1": {
+                title: "The Musk Who Fell to Earth",
+                index: 1,
+                extract:
+                  "The Musk Who Fell to Earth es un episodio de Los Simpson con Elon Musk.",
+              },
+            },
+          },
+        });
+      }
+      if (url.hostname === "es.wikipedia.org") {
+        return jsonResponse({ query: { search: [] } });
+      }
+      if (url.hostname === "www.wikidata.org") {
+        return jsonResponse({ search: [] });
+      }
+      return jsonResponse({ results: [] });
+    },
+    env: () => undefined,
+  };
+  const result = await routeResearchQuery(
+    "¿Quién es Elon Musk?",
+    deps,
+    "",
+    "GENERAL_KNOWLEDGE",
+    "REQUIRED",
+  );
+  if (!result.abstained) {
+    throw new Error("Unrelated title must not be promoted as a person answer");
+  }
+});
+
 Deno.test("generic topic rejects narrower names even when search ranks them first", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input) => {
