@@ -86,7 +86,26 @@ class GameHubAiAdvisor(
     ): String? {
         val provider = gameSessionHistory ?: return null
         val history = runCatching { provider.invoke() }.getOrDefault(emptyList())
-        val game = context.selectedGamePackage
+        // An explicit package name in a history question overrides the
+        // selected game. Never attribute one game's private measurements to
+        // a different game, or guess when the target is unknown/ambiguous.
+        val spokenTokens = message.lowercase(Locale.ROOT)
+            .split(Regex("""[^\\p{L}\\d._]+"""))
+            .filter(String::isNotBlank)
+        val knownPackages = history.map { it.packageName }.distinct()
+        val mentioned = knownPackages.filter { packageName ->
+            packageName.lowercase(Locale.ROOT) in spokenTokens
+        }
+        val explicitPackage = Regex(
+            """^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){2,}$"""
+        )
+        if (mentioned.size > 1 || spokenTokens.any { token ->
+                explicitPackage.matches(token) &&
+                    knownPackages.none { it.equals(token, ignoreCase = true) }
+            }
+        ) return null
+        val game = mentioned.singleOrNull()
+            ?: context.selectedGamePackage
             ?: history.maxByOrNull { it.endedAtMillis }?.packageName
         return UltraSessionHistoryIntelligence.response(
             query = message,
