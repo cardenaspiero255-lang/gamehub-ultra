@@ -51,6 +51,34 @@ class UltraWakePlaybackGuardTest {
     }
 
     @Test
+    fun longComparisonsCanSpeakBeyondTheShortCommandWatchdog() {
+        val guard = UltraWakePlaybackGuard(hardTimeoutMillis = 90_000L)
+        guard.onPlaybackStarted("Comparación detallada con fuentes. ".repeat(120))
+
+        assertEquals(
+            UltraWakeSpeechTimeoutAction.WAIT,
+            guard.timeoutAction(isSpeaking = true, elapsedMillis = 95_000L)
+        )
+        assertEquals(
+            UltraWakeSpeechTimeoutAction.STOP_AND_FINISH,
+            guard.timeoutAction(isSpeaking = true, elapsedMillis = 600_000L)
+        )
+    }
+
+    @Test
+    fun shortSpeechStillStopsAtOriginalHardTimeoutAfterLongSpeech() {
+        val guard = UltraWakePlaybackGuard(hardTimeoutMillis = 90_000L)
+        guard.onPlaybackStarted("Comparación extensa. ".repeat(120))
+        guard.onPlaybackFinished(nowMillis = 130_000L)
+        guard.onPlaybackStarted("Hola.")
+
+        assertEquals(
+            UltraWakeSpeechTimeoutAction.STOP_AND_FINISH,
+            guard.timeoutAction(isSpeaking = true, elapsedMillis = 90_000L)
+        )
+    }
+
+    @Test
     fun stoppedServiceRejectsLateRecognitionCallbacks() {
         val gate = UltraWakeLifecycleGate()
 

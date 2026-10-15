@@ -180,10 +180,15 @@ internal class UltraWakePlaybackGuard(
     private val drainWindowMillis: Long = 1_200L,
     private val hardTimeoutMillis: Long = 90_000L
 ) {
+    private companion object {
+        const val MILLIS_PER_SPOKEN_CHARACTER = 100L
+        const val MAX_LONG_SPEECH_TIMEOUT_MILLIS = 600_000L
+    }
     private val lock = Any()
     private var playbackActive = false
     private var suppressUntilMillis = 0L
     private var playbackText: String = ""
+    private var activeSpeechTimeoutMillis: Long = hardTimeoutMillis
 
     init {
         require(drainWindowMillis >= 0L)
@@ -196,6 +201,15 @@ internal class UltraWakePlaybackGuard(
             playbackText = spokenText
                 ?.let(VoiceCommandParser::normalize)
                 .orEmpty()
+            // A detailed comparison can take minutes to read aloud. Preserve
+            // the short-command timeout, but extend it proportionally to the
+            // queued answer while retaining a bounded upper limit.
+            activeSpeechTimeoutMillis = maxOf(
+                hardTimeoutMillis,
+                (spokenText?.length?.toLong() ?: 0L)
+                    .times(MILLIS_PER_SPOKEN_CHARACTER)
+                    .coerceAtMost(MAX_LONG_SPEECH_TIMEOUT_MILLIS)
+            )
         }
     }
 
@@ -203,6 +217,7 @@ internal class UltraWakePlaybackGuard(
         synchronized(lock) {
             playbackActive = false
             playbackText = ""
+            activeSpeechTimeoutMillis = hardTimeoutMillis
             suppressUntilMillis = maxOf(
                 suppressUntilMillis,
                 nowMillis + drainWindowMillis
@@ -236,18 +251,21 @@ internal class UltraWakePlaybackGuard(
     fun timeoutAction(
         isSpeaking: Boolean,
         elapsedMillis: Long
-    ): UltraWakeSpeechTimeoutAction =
-        when {
+    ): UltraWakeSpeechTimeoutAction {
+        val activeTimeout = synchronized(lock) { activeSpeechTimeoutMillis }
+        return when {
             !isSpeaking -> UltraWakeSpeechTimeoutAction.FINISH
-            elapsedMillis >= hardTimeoutMillis ->
+            elapsedMillis >= activeTimeout ->
                 UltraWakeSpeechTimeoutAction.STOP_AND_FINISH
             else -> UltraWakeSpeechTimeoutAction.WAIT
         }
+    }
 
     fun clear() {
         synchronized(lock) {
             playbackActive = false
             playbackText = ""
+            activeSpeechTimeoutMillis = hardTimeoutMillis
             suppressUntilMillis = 0L
         }
     }
