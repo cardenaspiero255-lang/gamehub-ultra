@@ -95,29 +95,38 @@ internal class UltraPersistentSpeechSource private constructor(
             return false
         }
 
-        worker.execute {
-            val buffer = ByteArray(bufferSize)
-            val output = ParcelFileDescriptor.AutoCloseOutputStream(writeDescriptor)
-            try {
-                while (!closed.get()) {
-                    val read = audioRecord.read(
-                        buffer,
-                        0,
-                        buffer.size,
-                        AudioRecord.READ_BLOCKING
-                    )
-                    if (read > 0) {
-                        output.write(buffer, 0, read)
-                        output.flush()
-                    } else if (read < 0) {
-                        break
+        // Closing the service can race with worker submission. A rejected
+        // executor must not crash the microphone foreground service or leak
+        // the already-started AudioRecord and pipe descriptors.
+        val submitted = runCatching {
+            worker.execute {
+                val buffer = ByteArray(bufferSize)
+                val output = ParcelFileDescriptor.AutoCloseOutputStream(writeDescriptor)
+                try {
+                    while (!closed.get()) {
+                        val read = audioRecord.read(
+                            buffer,
+                            0,
+                            buffer.size,
+                            AudioRecord.READ_BLOCKING
+                        )
+                        if (read > 0) {
+                            output.write(buffer, 0, read)
+                            output.flush()
+                        } else if (read < 0) {
+                            break
+                        }
                     }
+                } catch (_: Exception) {
+                    // Closing the pipe/recorder intentionally interrupts this loop.
+                } finally {
+                    runCatching { output.close() }
                 }
-            } catch (_: Exception) {
-                // Closing the pipe/recorder intentionally interrupts this loop.
-            } finally {
-                runCatching { output.close() }
             }
+        }.isSuccess
+        if (!submitted) {
+            close()
+            return false
         }
         return true
     }
