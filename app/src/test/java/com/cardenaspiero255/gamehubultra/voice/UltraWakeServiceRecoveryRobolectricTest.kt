@@ -22,16 +22,43 @@ class UltraWakeServiceRecoveryRobolectricTest {
             .get(service) as UltraWakeRecoveryPolicy
 
     @Test
-    fun busyRecognizerFailureUsesBackoffAndHealthyCallbackResetsIt() {
+    fun readyThenErrorRepeatedlyDoesNotResetBackoff() {
         val service = UltraWakeService()
         val listener = listener(service)
         val recovery = recovery(service)
 
+        listener.onReadyForSpeech(null)
         listener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+        listener.onReadyForSpeech(null)
         listener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
         assertEquals(2_000L, recovery.nextDelayMillis())
+    }
 
+    @Test
+    fun emptyRecognitionIsNotProofOfHealthyMicAndDoesNotResetBackoff() {
+        val service = UltraWakeService()
+        val listener = listener(service)
+        val recovery = recovery(service)
+        listener.onError(SpeechRecognizer.ERROR_NETWORK)
+        listener.onResults(android.os.Bundle())
+        assertEquals(1_000L, recovery.nextDelayMillis())
+    }
+
+    @Test
+    fun meaningfulRecognitionResultResetsAfterFailures() {
+        val service = UltraWakeService()
+        val listener = listener(service)
+        val recovery = recovery(service)
+        listener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+        listener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
         listener.onReadyForSpeech(null)
+        val results = android.os.Bundle().apply {
+            putStringArrayList(
+                SpeechRecognizer.RESULTS_RECOGNITION,
+                arrayListOf("hola, estoy aquí")
+            )
+        }
+        listener.onResults(results)
         assertEquals(500L, recovery.nextDelayMillis())
     }
 
