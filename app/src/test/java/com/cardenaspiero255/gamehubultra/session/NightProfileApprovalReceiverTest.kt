@@ -174,6 +174,46 @@ class NightProfileApprovalReceiverTest {
         assertFalse(store.isNightProfileProposalPending(game))
     }
 
+
+    @Test
+    fun mutedNotificationsCannotConsumeOneTimeNightApproval() {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val store = SessionCoachSessionStore(context)
+        val game = "com.test.night.muted"
+        val startAt = ZonedDateTime.of(
+            2026, 10, 15, 23, 15, 0, 0, ZoneId.systemDefault()
+        ).toInstant().toEpochMilli()
+        var last: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession? = null
+        repeat(3) { index ->
+            val start = startAt + index * 10L * 60_000L
+            val id = "night-muted-$index"
+            assertTrue(store.beginSession(id, game, start))
+            repeat(4) { frame ->
+                store.appendSnapshot(id, SessionCoachSnapshot(
+                    timestampMillis = start + frame * 5_000L,
+                    batteryPercent = 18,
+                    thermalStatus = 2,
+                    thermalHeadroom = 0.8f,
+                    refreshRateHz = 90f,
+                    latencyMs = null
+                ))
+            }
+            last = store.finishActiveSession(start + 30_000L, id)
+            assertTrue(last != null)
+        }
+        shadowOf(manager).setNotificationsEnabled(false)
+        assertFalse(NotificationManagerCompat.from(context).areNotificationsEnabled())
+        SessionCoachNotifications.postSummary(context, checkNotNull(last))
+        assertFalse(store.isNightProfileProposalPending(game),
+            "Approval must not be consumed when no notification can reach the user")
+
+        shadowOf(manager).setNotificationsEnabled(true)
+        assertTrue(NotificationManagerCompat.from(context).areNotificationsEnabled())
+        SessionCoachNotifications.postSummary(context, checkNotNull(last))
+        assertTrue(store.isNightProfileProposalPending(game),
+            "Enabling notifications must allow the previously unshown proposal")
+    }
+
     @Test
     fun noMeasuredNightHistoryNeverInventsAnApprovalAction() {
         val manager = context.getSystemService(NotificationManager::class.java)
