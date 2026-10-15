@@ -5101,6 +5101,26 @@ function candidateMatchesKnownMeaning(
       "",
     )
     .trim();
+  // An entity lookup ("¿Quién es Elon Musk?") is not answered by an
+  // episode, song, game or event merely mentioning that person's name.
+  // The complete requested name must identify the article itself; otherwise
+  // require another candidate or abstain instead of inventing a biography.
+  const personQuestion = cleanQuery.replace(/^[¿?¡!\s]+/, "").match(
+    /^(?:quien es|quien fue|quienes son|who is|who was|who are)\s+(.+)$/,
+  );
+  if (personQuestion) {
+    const namedEntity = normalize(extractGeneralKnowledgeQuery(query))
+      .replace(/^(?:el|la|los|las)\s+/, "");
+    const nameTokens = namedEntity.split(/\s+/).filter(Boolean);
+    if (nameTokens.length >= 2 && nameTokens.length <= 6) {
+      const subjectTitle = candidateTitle.replace(/\s*\([^)]*\)$/, "").trim();
+      if (subjectTitle !== namedEntity) return false;
+      const subjectQualifier = candidateTitle.slice(subjectTitle.length);
+      if (/\b(?:episodio|pelicula|serie|cancion|videojuego|personaje)\b/.test(subjectQualifier)) {
+        return false;
+      }
+    }
+  }
   if (
     /^(?:que es|que son|define|explicame que es)\b/.test(
       cleanQuery.replace(/^[¿?¡!\s]+/, ""),

@@ -198,6 +198,35 @@ class UltraFrontierV2Test {
     }
 
     @Test
+    fun researchClaimUnitCaseRemainsSignificantInProvenanceGraph() {
+        val graph = UltraFrontierV2ClaimProvenanceGraph()
+        graph.record(UltraFrontierV2ClaimEvidence(
+            claimId = "research-answer:el enlace tiene valor-numerico GB",
+            normalizedValue = "8",
+            sourceId = "memory-source",
+            providerId = "a",
+            authoritative = true
+        ))
+        graph.record(UltraFrontierV2ClaimEvidence(
+            claimId = "research-answer:el enlace tiene valor-numerico Gb",
+            normalizedValue = "64",
+            sourceId = "bandwidth-source",
+            providerId = "b",
+            authoritative = true
+        ))
+        val bytes = assertNotNull(
+            graph.snapshot("research-answer:el enlace tiene valor-numerico GB", "8")
+        )
+        val bits = assertNotNull(
+            graph.snapshot("research-answer:el enlace tiene valor-numerico Gb", "64")
+        )
+        assertFalse(bytes.hasConflict)
+        assertFalse(bits.hasConflict)
+        assertEquals(1, bytes.independentSources)
+        assertEquals(1, bits.independentSources)
+    }
+
+    @Test
     fun claimProvenanceDoesNotOverwriteDistinctEvidenceWhenIdsContainDelimiters() {
         val graph = UltraFrontierV2ClaimProvenanceGraph()
         graph.record(
