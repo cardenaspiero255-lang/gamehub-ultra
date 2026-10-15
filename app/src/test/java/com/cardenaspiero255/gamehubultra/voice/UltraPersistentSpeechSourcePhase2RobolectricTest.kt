@@ -58,6 +58,32 @@ class UltraPersistentSpeechSourcePhase2RobolectricTest {
     }
 
     @Test
+    fun closeNeverWaitsForCaptureWorkerTerminationOnCallingThread() {
+        val pipe = ParcelFileDescriptor.createPipe()
+        val recorder = Mockito.mock(AudioRecord::class.java)
+        val worker = Mockito.mock(ExecutorService::class.java)
+        Mockito.`when`(recorder.recordingState)
+            .thenReturn(AudioRecord.RECORDSTATE_RECORDING)
+        val constructor = UltraPersistentSpeechSource::class.java.getDeclaredConstructor(
+            ParcelFileDescriptor::class.java,
+            ParcelFileDescriptor::class.java,
+            AudioRecord::class.java,
+            ExecutorService::class.java,
+            Integer.TYPE
+        )
+        constructor.isAccessible = true
+        val source = constructor.newInstance(pipe[0], pipe[1], recorder, worker, 4096)
+
+        source.close()
+
+        Mockito.verify(worker).shutdownNow()
+        Mockito.verify(worker, Mockito.never()).awaitTermination(
+            Mockito.anyLong(), Mockito.any(TimeUnit::class.java)
+        )
+        Mockito.verify(recorder).release()
+    }
+
+    @Test
     fun rejectedCaptureWorkerDoesNotCrashAndClosesAudioRecord() {
         val pipe = ParcelFileDescriptor.createPipe()
         val audioRecord = Mockito.mock(AudioRecord::class.java)
