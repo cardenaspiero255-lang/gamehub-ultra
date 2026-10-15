@@ -32,7 +32,7 @@ internal class ContinuousVoiceController(
         if (!gateway.isEnabled()) return false
         if (!gateway.hasRecordAudioPermission() || !gateway.canRunContinuousVoice()) {
             gateway.setEnabled(false)
-            gateway.stopWakeService()
+            runCatching { gateway.stopWakeService() }
             return false
         }
         if (!startServiceSafely()) {
@@ -45,7 +45,7 @@ internal class ContinuousVoiceController(
     fun setEnabled(enabled: Boolean): ContinuousVoiceChange {
         if (!enabled) {
             gateway.setEnabled(false)
-            gateway.stopWakeService()
+            runCatching { gateway.stopWakeService() }
             return ContinuousVoiceChange.DISABLED
         }
 
@@ -54,7 +54,7 @@ internal class ContinuousVoiceController(
         }
         if (!gateway.canRunContinuousVoice()) {
             gateway.setEnabled(false)
-            gateway.stopWakeService()
+            runCatching { gateway.stopWakeService() }
             return ContinuousVoiceChange.SYSTEM_RESTRICTED
         }
 
