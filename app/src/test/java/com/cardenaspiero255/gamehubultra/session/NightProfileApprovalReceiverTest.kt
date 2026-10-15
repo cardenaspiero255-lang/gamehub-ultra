@@ -1,6 +1,11 @@
 package com.cardenaspiero255.gamehubultra.session
 
 import android.app.NotificationManager
+import androidx.core.app.NotificationManagerCompat
+import com.cardenaspiero255.gamehubultra.domain.SessionCoachSnapshot
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import org.robolectric.Shadows.shadowOf
 import android.content.Context
 import android.content.Intent
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
@@ -82,4 +87,73 @@ class NightProfileApprovalReceiverTest {
         assertFalse(applyPendingNightProfile(context, "com.test.other"))
         assertFalse(store.isNightProfileProposalPending(game))
     }
+    @Test
+    fun measuredNightSessionsProduceOneExplicitApprovalActionAndNeverRepeat() {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        shadowOf(manager).setNotificationsEnabled(true)
+        assertTrue(NotificationManagerCompat.from(context).areNotificationsEnabled())
+        val store = SessionCoachSessionStore(context)
+        val game = "com.test.night.evidence"
+        val startAt = ZonedDateTime.of(
+            2026, 10, 15, 22, 10, 0, 0, ZoneId.systemDefault()
+        ).toInstant().toEpochMilli()
+        var last: com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession? = null
+        repeat(3) { index ->
+            val start = startAt + index * 10L * 60_000L
+            val id = "night-evidence-$index"
+            assertTrue(store.beginSession(id, game, start))
+            repeat(4) { frame ->
+                store.appendSnapshot(id, SessionCoachSnapshot(
+                    timestampMillis = start + frame * 5_000L,
+                    batteryPercent = 18,
+                    thermalStatus = 2,
+                    thermalHeadroom = 0.8f,
+                    refreshRateHz = 90f,
+                    latencyMs = null
+                ))
+            }
+            last = store.finishActiveSession(start + 30_000L, id)
+            assertTrue(last != null)
+        }
+        assertEquals(3, store.readRecentGameSessions(packageName = game).size)
+        SessionCoachNotifications.postSummary(context, checkNotNull(last))
+        assertTrue(store.isNightProfileProposalPending(game))
+        val posted = manager.activeNotifications
+        assertTrue(posted.isNotEmpty(), "The summary notification should be posted")
+        assertTrue(posted.any { status ->
+            status.notification.actions?.any { action ->
+                action.title.toString().contains("Aplicar ajustes Noche")
+            } == true
+        }, "The user must see an explicit apply action")
+        // The persisted proposal is offered only once, even if a summary
+        // refreshes or another valid game session finishes.
+        SessionCoachNotifications.postSummary(context, checkNotNull(last))
+        assertTrue(store.isNightProfileProposalPending(game))
+        val after = manager.activeNotifications
+        assertTrue(after.any { notification ->
+            notification.notification.actions.isNullOrEmpty()
+        }, "Repeated summaries must not re-offer approval")
+    }
+
+    @Test
+    fun noMeasuredNightHistoryNeverInventsAnApprovalAction() {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        shadowOf(manager).setNotificationsEnabled(true)
+        val empty = com.cardenaspiero255.gamehubultra.data.SessionCoachStoredSession(
+            sessionId = "night-empty",
+            packageName = "com.test.empty",
+            startedAtMillis = 1_000L,
+            endedAtMillis = 2_000L,
+            samples = emptyList(),
+            preSessionMessage = null,
+            latestObservation = null
+        )
+        SessionCoachNotifications.postSummary(context, empty)
+        assertFalse(SessionCoachSessionStore(context)
+            .isNightProfileProposalPending("com.test.empty"))
+        assertTrue(manager.activeNotifications.any { notification ->
+            notification.notification.actions.isNullOrEmpty()
+        })
+    }
+
 }
