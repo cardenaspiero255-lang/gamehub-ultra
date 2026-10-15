@@ -108,7 +108,11 @@ class GeminiNanoLocalAiModelAdapterSafetyTest {
         assertFalse(windowed.contains("history-2-"))
         assertTrue(windowed.contains("history-3-"))
         assertTrue(windowed.contains("history-8-"))
-        assertTrue(windowed.contains("H".repeat(500)))
+        // Each conversation entry has a 500-character TOTAL budget.
+        // The 10-character history identifier consumes part of that limit.
+        val boundedEntry = "history-3-" + "H".repeat(490)
+        assertTrue(windowed.lineSequence().any { it == boundedEntry })
+        assertFalse(windowed.contains("history-3-" + "H".repeat(491)))
         assertFalse(windowed.contains("H".repeat(501)))
         assertTrue(windowed.contains("User: " + "Q".repeat(1000)))
         assertFalse(windowed.contains("Q".repeat(1001)))
