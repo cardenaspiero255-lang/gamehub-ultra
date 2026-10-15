@@ -8,6 +8,8 @@ import java.time.ZonedDateTime
 import org.robolectric.Shadows.shadowOf
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.Looper
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
@@ -15,7 +17,6 @@ import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
-import org.robolectric.Robolectric
 import kotlinx.coroutines.withTimeout
 import org.junit.Before
 import org.junit.Test
@@ -142,15 +143,24 @@ class NightProfileApprovalReceiverTest {
         val game = "com.test.night.broadcast"
         val store = SessionCoachSessionStore(context)
         assertTrue(store.takeNightProfileProposalToShow(game))
-        // Use Robolectric's receiver lifecycle so goAsync() has a real
-        // PendingResult, while the repository is exercised on Dispatchers.IO.
-        Robolectric.buildReceiver(NightProfileApprovalReceiver::class.java)
-            .create()
-            .receiveIntent(applyIntent(game))
-        withTimeout(12_000L) {
-            while (store.isNightProfileProposalPending(game)) {
-                delay(40L)
+        // Register a receiver and dispatch a real broadcast so goAsync()
+        // gets lifecycle state while Dispatchers.IO performs the write.
+        val receiver = NightProfileApprovalReceiver()
+        context.registerReceiver(
+            receiver,
+            IntentFilter(NightProfileApprovalReceiver.ACTION_APPLY),
+            Context.RECEIVER_NOT_EXPORTED
+        )
+        try {
+            context.sendBroadcast(applyIntent(game))
+            shadowOf(Looper.getMainLooper()).idle()
+            withTimeout(12_000L) {
+                while (store.isNightProfileProposalPending(game)) {
+                    delay(40L)
+                }
             }
+        } finally {
+            context.unregisterReceiver(receiver)
         }
         val profile = GameHubProductionComposition.selectionRepository(context)
             .gameProfileConfigFlow(game).first()
