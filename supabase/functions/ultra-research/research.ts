@@ -4786,7 +4786,26 @@ function searchResultMentionsExactProduct(
       .trim();
   const expected = model(product);
   const candidate = model(candidateText);
-  return expected.length > 0 && (` ${candidate} `).includes(` ${expected} `);
+  if (!expected || !candidate) return false;
+  const padded = ` ${candidate} `;
+  const phrase = ` ${expected}`;
+  // "iPhone 16 Pro" must never be used as evidence for "iPhone 16".
+  // Equally, "RedMagic 12 Pro+" is not the requested "12 Pro".
+  // Reject a candidate containing a mismatched variant even when another
+  // sentence happens to mention the base model.
+  const variantSuffix = /^(?:\\+|(?:pro|plus|max|ultra|mini|lite|fe|se|air|neo|edge|promax)(?=\\s|\\+|$))/;
+  let start = 0;
+  let exact = false;
+  while ((start = padded.indexOf(phrase, start)) >= 0) {
+    const following = padded.slice(start + phrase.length);
+    if (following[0] === " " && variantSuffix.test(following.trimStart())) {
+      return false;
+    }
+    if (following.startsWith("+")) return false;
+    if (following.startsWith(" ") || following.length === 0) exact = true;
+    start += phrase.length;
+  }
+  return exact;
 }
 
 async function tavilyEvidence(
