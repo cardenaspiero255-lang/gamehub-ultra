@@ -30,6 +30,7 @@ import com.cardenaspiero255.gamehubultra.R
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.ai.AiAdviceFormatter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
+import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.platform.DeviceCapabilitiesProvider
 import com.cardenaspiero255.gamehubultra.platform.DeviceInfoProvider
@@ -62,7 +63,12 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
-    private val aiAdvisor = GameHubAiAdvisor(GeminiNanoLocalAiModelAdapter())
+    private val aiAdvisor = GameHubAiAdvisor(
+        modelAdapter = GeminiNanoLocalAiModelAdapter(),
+        gameSessionHistory = {
+            SessionCoachSessionStore(getContext().applicationContext).readRecentGameSessions()
+        }
+    )
     private val aliasRepository by lazy {
         GameHubProductionComposition.aliasRepository(getContext().applicationContext)
     }

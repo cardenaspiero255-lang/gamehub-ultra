@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.activity.ComponentActivity
 import com.cardenaspiero255.gamehubultra.UltraConversationSessionMemoryAdapter
 import com.cardenaspiero255.gamehubultra.ai.GameHubAiAdvisor
+import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
 import com.cardenaspiero255.gamehubultra.ai.GeminiNanoLocalAiModelAdapter
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoutingGateway
 import com.cardenaspiero255.gamehubultra.ai.UltraAgentRoutingRequest
@@ -102,7 +103,10 @@ internal object GameHubProductionComposition {
             queryExecutor = UltraProductionQueryExecutor,
             assistant = GameHubAiAdvisor(
                 modelAdapter = GeminiNanoLocalAiModelAdapter(),
-                memoryGateway = memoryStore
+                memoryGateway = memoryStore,
+                gameSessionHistory = {
+                    SessionCoachSessionStore(appContext).readRecentGameSessions()
+                }
             ),
             sessionMemory = UltraConversationSessionMemoryAdapter(memoryStore),
             agentRouter = UltraAgentRoutingGateway { request ->
