@@ -226,9 +226,9 @@ class UltraWakeService : Service() {
     }
 
     private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {
-            recoveryPolicy.onRecognitionHealthy()
-        }
+        // Android can emit READY immediately before ERROR_RECOGNIZER_BUSY.
+        // Readiness alone is not evidence that recognition recovered.
+        override fun onReadyForSpeech(params: Bundle?) = Unit
         override fun onBeginningOfSpeech() = Unit
         override fun onRmsChanged(rmsdB: Float) = Unit
         override fun onBufferReceived(buffer: ByteArray?) = Unit
@@ -237,8 +237,10 @@ class UltraWakeService : Service() {
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
         override fun onSegmentResults(segmentResults: Bundle) {
-            recoveryPolicy.onRecognitionHealthy()
             if (persistentSessionActive) {
+                if (hasMeaningfulRecognition(segmentResults)) {
+                    recoveryPolicy.onRecognitionHealthy()
+                }
                 handleRecognitionBundle(
                     results = segmentResults,
                     keepRecognitionActive = true
@@ -257,7 +259,9 @@ class UltraWakeService : Service() {
         }
 
         override fun onResults(results: Bundle?) {
-            recoveryPolicy.onRecognitionHealthy()
+            if (hasMeaningfulRecognition(results)) {
+                recoveryPolicy.onRecognitionHealthy()
+            }
             val wasPersistent = persistentSessionActive
             if (wasPersistent) {
                 sessionPolicy.onPersistentSessionFailure()
@@ -294,6 +298,10 @@ class UltraWakeService : Service() {
             scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
+
+    private fun hasMeaningfulRecognition(results: Bundle?): Boolean =
+        results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            ?.any { it.isNotBlank() } == true
 
     private fun handleRecognitionBundle(
         results: Bundle?,
