@@ -172,14 +172,22 @@ class NightProfileApprovalReceiverTest {
                 action.title.toString().contains("Aplicar ajustes Noche")
             } == true
         }, "The user must see an explicit apply action")
-        // The persisted proposal is offered only once, even if a summary
-        // refreshes or another valid game session finishes.
+        // A repeated summary must NOT repeat the suggestion text, but the
+        // unaccepted PendingIntent must stay usable after notify(SUMMARY_ID)
+        // replaces the previous summary notification.
         SessionCoachNotifications.postSummary(context, checkNotNull(last))
         assertTrue(store.isNightProfileProposalPending(game))
         val after = manager.activeNotifications
         assertTrue(after.any { notification ->
-            notification.notification.actions.isNullOrEmpty()
-        }, "Repeated summaries must not re-offer approval")
+            notification.notification.actions?.any { action ->
+                action.title.toString().contains("Aplicar ajustes Noche")
+            } == true
+        }, "A pending Night approval must remain actionable after summary refresh")
+        assertTrue(after.any { notification ->
+            notification.notification.extras
+                .getCharSequence(android.app.Notification.EXTRA_BIG_TEXT)
+                ?.toString()?.contains("¿Quieres que te proponga un perfil Noche?") != true
+        }, "The proposal text must not be re-announced on every session")
     }
 
     @Test
