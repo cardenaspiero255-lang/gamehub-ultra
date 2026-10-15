@@ -96,6 +96,57 @@ class UltraWakeSpeechPlaybackControllerRobolectricTest {
     }
 
     @Test
+    fun engineErrorStopsQueuedPartsAndCompletesCurrentWakeTurn() {
+        val generation = UltraWakeSpeechGeneration()
+        val completions = mutableListOf<Long>()
+        val guard = UltraWakePlaybackGuard()
+        val controller = UltraWakeSpeechPlaybackController(
+            Handler(Looper.getMainLooper()), generation, guard
+        ) { token ->
+            completions += token
+            generation.complete(token)
+            guard.onPlaybackFinished(System.currentTimeMillis())
+        }
+        val tts = Mockito.mock(TextToSpeech::class.java)
+        Mockito.doReturn(TextToSpeech.ERROR).`when`(tts).speak(
+            Mockito.anyString(), Mockito.anyInt(), Mockito.isNull(),
+            Mockito.anyString()
+        )
+        controller.attach(tts)
+        controller.speak("La comparación abarca batería y rendimiento. ".repeat(90))
+        assertEquals(1, spoken(tts).size)
+        Mockito.verify(tts).stop()
+        assertEquals(1, completions.size)
+        assertFalse(generation.isActive())
+        assertFalse(guard.isPlaybackActive())
+        controller.shutdown()
+    }
+
+    @Test
+    fun synthesisCallbackErrorCompletesTheActiveUtteranceWithoutRestartingOldTurn() {
+        val generation = UltraWakeSpeechGeneration()
+        val done = mutableListOf<Long>()
+        val controller = UltraWakeSpeechPlaybackController(
+            Handler(Looper.getMainLooper()), generation, UltraWakePlaybackGuard()
+        ) { token ->
+            if (generation.complete(token)) done += token
+        }
+        val tts = Mockito.mock(TextToSpeech::class.java)
+        controller.attach(tts)
+        controller.speak("Primera respuesta")
+        val oldId = spoken(tts).last().arguments[3] as String
+        controller.speak("Segunda respuesta")
+        val latestId = spoken(tts).last().arguments[3] as String
+        listener(tts).onError(oldId, TextToSpeech.ERROR)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(done.isEmpty())
+        listener(tts).onError(latestId, TextToSpeech.ERROR)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, done.size)
+        controller.shutdown()
+    }
+
+    @Test
     fun delayedCompletionFromOldAnswerCannotCompleteNewAnswer() {
         val generation = UltraWakeSpeechGeneration()
         val completed = mutableListOf<Long>()
