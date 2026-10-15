@@ -300,7 +300,12 @@ class UltraWakeService : Service() {
         ) {
             UltraWakeRecognitionDisposition.SUPPRESS -> return
 
-            UltraWakeRecognitionDisposition.STOP_TTS -> return stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) { finishCommandAndResume(it, playbackEnded = true) }
+            UltraWakeRecognitionDisposition.STOP_TTS -> {
+                if (cancelPendingSpeechAndResume()) return
+                return stopActiveUltraSpeech(speechPlayback::stop, speechGeneration::activeToken) {
+                    finishCommandAndResume(it, playbackEnded = true)
+                }
+            }
 
             UltraWakeRecognitionDisposition.INTERRUPT_TTS -> {
                 val now = System.currentTimeMillis()
@@ -406,6 +411,19 @@ class UltraWakeService : Service() {
             response.isNotBlank() -> waitingForSpeechEngine = true
             else -> speechPlayback.speak("")
         }
+    }
+
+    /**
+     * The recognizer can hear "Ultra, para" before the TTS engine is ready.
+     * No speech generation token exists yet in that state, so release the
+     * pending answer explicitly and finish its command exactly once.
+     */
+    private fun cancelPendingSpeechAndResume(): Boolean {
+        if (!waitingForSpeechEngine) return false
+        waitingForSpeechEngine = false
+        speechInitGate.cancelPending()
+        finishCommandAndResume(speechGeneration.begin(), playbackEnded = false)
+        return true
     }
 
     private fun finishCommandAndResume(
