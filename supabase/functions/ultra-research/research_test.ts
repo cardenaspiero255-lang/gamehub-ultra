@@ -904,7 +904,8 @@ Deno.test(
                   title: "Microarquitectura",
                   extract:
                     "La microarquitectura describe la organización interna de un procesador. Un diseño omite algunas de las instrucciones del procesador al describir ciertas rutas de ejecución.",
-                  canonicalurl: "https://es.wikipedia.org/wiki/Microarquitectura",
+                  canonicalurl:
+                    "https://es.wikipedia.org/wiki/Microarquitectura",
                 },
               },
             },
