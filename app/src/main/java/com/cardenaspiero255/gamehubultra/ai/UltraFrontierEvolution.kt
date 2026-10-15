@@ -1120,15 +1120,25 @@ class UltraFrontierEvolutionController(
 
         val subject = normalized.substring(0, predicate.range.first)
         val assertion = normalized.substring(predicate.range.first)
+        // A unit may be attached without whitespace (5000mAh, 3.5GHz).
+        // Parse the number and the known unit separately, preserving the unit
+        // in the claim skeleton: 5000mAh and 5000 mAh must compare as the
+        // same assertion, but 5000mAh and 5000Wh must not.
+        // Restrict attached suffixes to measured units instead of treating
+        // arbitrary alphanumeric identifiers as measurements.
         val numericValue = Regex(
-            """(?<![\p{L}\d])[+-]?\d+(?:[.,]\d+)*(?![\p{L}\d])"""
+            """(?<![\p{L}\d])([+-]?\d+(?:[.,]\d+)*)(mah|mwh|kwh|mbps|gbps|ghz|mhz|khz|gib|mib|kib|fps|wh|hz|ah|kw|mw|mv|gb|tb|mb|kg|km|mm|cm|ms|ma|°c|°f|w|v|g|m|s)?(?![\p{L}\d])"""
         )
         val values = numericValue.findAll(assertion)
-            .map { canonicalResearchNumber(it.value) }.toList()
+            .map { canonicalResearchNumber(it.groupValues[1]) }.toList()
         if (values.isEmpty()) {
             return "research-answer:$normalized" to normalized
         }
-        val skeleton = numericValue.replace(assertion, "valor-numerico")
+        val skeleton = numericValue.replace(assertion) { match ->
+            "valor-numerico" + match.groupValues[2]
+                .takeIf(String::isNotEmpty)
+                ?.let { " $it" }.orEmpty()
+        }.replace(Regex("""\s+"""), " ")
         return "research-answer:$subject$skeleton" to values.joinToString("|")
     }
 
