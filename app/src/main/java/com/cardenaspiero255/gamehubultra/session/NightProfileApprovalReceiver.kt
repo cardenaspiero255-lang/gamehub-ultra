@@ -22,6 +22,29 @@ import kotlinx.coroutines.launch
  * non-exported receiver also checks a persisted pending proposal, preventing
  * arbitrary notifications from changing a game profile.
  */
+/**
+ * Persist only after a real pending notification approval.
+ * This suspend boundary is exercised directly in Robolectric tests; the
+ * BroadcastReceiver separately supplies the asynchronous Android lifecycle.
+ * Repeated or forged requests cannot create a new approval.
+ */
+internal suspend fun applyPendingNightProfile(context: Context, game: String): Boolean {
+    val target = game.trim()
+    if (target.isBlank()) return false
+    val app = context.applicationContext
+    val store = SessionCoachSessionStore(app)
+    if (!store.isNightProfileProposalPending(target)) return false
+    val repository = GameHubProductionComposition.selectionRepository(app)
+    val previous = repository.gameProfileConfigFlow(target).first()
+        ?: GameProfileConfig()
+    val proposed = previous.copy(
+        performanceProfile = PerformanceProfile.BALANCED,
+        thermalPreference = ThermalPreference.COOLER
+    )
+    repository.saveGameProfileConfig(target, proposed)
+    return store.markNightProfileProposalApplied(target)
+}
+
 class NightProfileApprovalReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent?.action != ACTION_APPLY) return
@@ -35,25 +58,18 @@ class NightProfileApprovalReceiver : BroadcastReceiver() {
             try {
                 // The user opted in to safer balanced/cooler settings. Do not
                 // set a refresh-rate target without device capability proof.
-                val repository = GameHubProductionComposition.selectionRepository(app)
-                val previous = repository.gameProfileConfigFlow(game).first()
-                    ?: GameProfileConfig()
-                val proposed = previous.copy(
-                    performanceProfile = PerformanceProfile.BALANCED,
-                    thermalPreference = ThermalPreference.COOLER
-                )
-                repository.saveGameProfileConfig(game, proposed)
-                store.markNightProfileProposalApplied(game)
-                SessionCoachNotifications.postAction(
-                    app,
-                    SessionCoachMessage(
-                        signal = SessionCoachSignal.GENERAL,
-                        priority = SessionCoachPriority.INFO,
-                        title = "Propuesta Noche aplicada",
-                        detail = "Perfil equilibrado y preferencia térmica fría guardados para el juego.",
-                        action = "Puedes editar los ajustes del juego cuando quieras."
+                if (applyPendingNightProfile(app, game)) {
+                    SessionCoachNotifications.postAction(
+                        app,
+                        SessionCoachMessage(
+                            signal = SessionCoachSignal.GENERAL,
+                            priority = SessionCoachPriority.INFO,
+                            title = "Propuesta Noche aplicada",
+                            detail = "Perfil equilibrado y preferencia térmica fría guardados para el juego.",
+                            action = "Puedes editar los ajustes del juego cuando quieras."
+                        )
                     )
-                )
+                }
             } catch (_: Exception) {
                 SessionCoachNotifications.postAction(
                     app,
