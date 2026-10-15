@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <permission
+        android:name="com.cardenaspiero255.gamehubultra.permission.JARVIS_READ_STATUS"
+        android:protectionLevel="signature" />
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -104,5 +107,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <provider
+            android:name=".integration.JarvisStatusProvider"
+            android:authorities="com.cardenaspiero255.gamehubultra.jarvis.status"
+            android:exported="true"
+            android:readPermission="com.cardenaspiero255.gamehubultra.permission.JARVIS_READ_STATUS"
+            android:grantUriPermissions="false" />
     </application>
 </manifest>
