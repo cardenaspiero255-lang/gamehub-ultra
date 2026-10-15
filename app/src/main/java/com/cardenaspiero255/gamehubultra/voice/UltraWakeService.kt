@@ -302,10 +302,7 @@ class UltraWakeService : Service() {
                 closePersistentSpeechSource()
             }
             commandCoordinator.onRecognitionFinished()
-            if (
-                error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ||
-                error == SpeechRecognizer.ERROR_CLIENT
-            ) {
+            if (UltraWakeRecognitionHealth.shouldRebuildRecognizer(error)) {
                 runCatching { recognizer?.destroy() }
                 recognizer = null
             }
