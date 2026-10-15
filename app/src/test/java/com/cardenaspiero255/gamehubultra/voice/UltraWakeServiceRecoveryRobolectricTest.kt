@@ -74,6 +74,36 @@ class UltraWakeServiceRecoveryRobolectricTest {
     }
 
     @Test
+    fun validSegmentedTranscriptionResetsBackoffAfterNetworkFailure() {
+        val service = UltraWakeService()
+        val recovery = recovery(service)
+        listener(service).onError(SpeechRecognizer.ERROR_NETWORK)
+        UltraWakeService::class.java.getDeclaredField("persistentSessionActive")
+            .apply { isAccessible = true }
+            .setBoolean(service, true)
+        val segment = android.os.Bundle().apply {
+            putStringArrayList(
+                SpeechRecognizer.RESULTS_RECOGNITION,
+                arrayListOf("sin comando de activación")
+            )
+        }
+        listener(service).onSegmentResults(segment)
+        assertEquals(500L, recovery.nextDelayMillis())
+    }
+
+    @Test
+    fun busyRecognizerIsDestroyedBeforeNextRecoveryAttempt() {
+        val service = UltraWakeService()
+        val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        val field = UltraWakeService::class.java.getDeclaredField("recognizer")
+            .apply { isAccessible = true }
+        field.set(service, recognizer)
+        listener(service).onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+        org.mockito.Mockito.verify(recognizer).destroy()
+        kotlin.test.assertNull(field.get(service))
+    }
+
+    @Test
     fun shutdownBeforeStartupDoesNotInitializeUnusedAiAdvisor() {
         val service = UltraWakeService()
         val advisor = UltraWakeService::class.java.getDeclaredField("aiAdvisorLazy")
