@@ -113,7 +113,11 @@ internal class AndroidContinuousVoiceGateway(
         ) == PackageManager.PERMISSION_GRANTED
 
     override fun startWakeService() {
-        if (!hasRecordAudioPermission()) return
+        // Permission can be revoked between the controller's initial check
+        // and this call. A silent return would falsely persist "enabled".
+        if (!hasRecordAudioPermission()) {
+            throw SecurityException("RECORD_AUDIO permission was revoked before service start")
+        }
 
         val intent = Intent(appContext, UltraWakeService::class.java)
             .setAction(UltraWakeService.ACTION_START)
