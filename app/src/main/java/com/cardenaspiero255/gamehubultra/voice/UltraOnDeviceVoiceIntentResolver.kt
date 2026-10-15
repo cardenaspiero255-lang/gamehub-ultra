@@ -8,6 +8,25 @@ import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
  * names must match the original spoken target at whole-word boundaries.
  */
 object UltraOnDeviceVoiceIntentResolver {
+    private const val LAUNCH_IMPERATIVE =
+        """(?:abre|abrir|abreme|lanza|lanzar|inicia|iniciar|ejecuta|juega|open|launch|play|start)\s+(?:el juego\s+|al juego\s+)?(.+?)(?:\s+por favor)?$"""
+    private const val PROFILE_IMPERATIVE =
+        """(?:pon|poner|activa|activar|selecciona|seleccionar|cambia|cambiar|usa|usar|aplica|configura|set|switch|activate)\s+.+$"""
+
+    private fun validateGameLaunch(argument: String?, explicitLaunch: MatchResult?): VoiceCommand? {
+        val name = argument?.trim().orEmpty()
+        val normalizedName = VoiceCommandParser.normalize(name)
+        val spokenTarget = explicitLaunch?.groupValues?.getOrNull(1)?.trim()
+        return if (
+            name.length in 2..60 &&
+            normalizedName.length >= 2 &&
+            spokenTarget != null &&
+            normalizedName == spokenTarget &&
+            !normalizedName.startsWith("com ") &&
+            !normalizedName.contains("android")
+        ) VoiceCommand.OpenGame(name) else null
+    }
+
     fun validate(
         transcript: String,
         candidate: LocalVoiceIntentCandidate
@@ -24,12 +43,8 @@ object UltraOnDeviceVoiceIntentResolver {
         ) return null
 
         val polite = """(?:(?:por favor|oye)\s+)?(?:(?:podrias|puedes|quiero que|necesito que)\s+)?"""
-        val explicitLaunchPattern = "^" + polite +
-            """(?:abre|abrir|abreme|lanza|lanzar|inicia|iniciar|ejecuta|juega|open|launch|play|start)\s+(?:el juego\s+|al juego\s+)?(.+?)(?:\s+por favor)?$"""
-        val explicitLaunch = Regex(explicitLaunchPattern).matchEntire(clean)
-        val explicitProfilePattern = "^" + polite +
-            """(?:pon|poner|activa|activar|selecciona|seleccionar|cambia|cambiar|usa|usar|aplica|configura|set|switch|activate)\s+.+$"""
-        val explicitProfile = Regex(explicitProfilePattern).matches(clean)
+        val explicitLaunch = Regex("^" + polite + LAUNCH_IMPERATIVE).matchEntire(clean)
+        val explicitProfile = Regex("^" + polite + PROFILE_IMPERATIVE).matches(clean)
 
         return when (candidate.command.trim().uppercase(java.util.Locale.ROOT)) {
             "PROFILE_BALANCED" -> if (explicitProfile &&
@@ -41,19 +56,7 @@ object UltraOnDeviceVoiceIntentResolver {
             "PROFILE_INTERPOLATION" -> if (explicitProfile &&
                 listOf("interpolacion", "interpolar", "interpolation").any(clean::contains)
             ) VoiceCommand.SelectProfile(PerformanceProfile.FRAME_INTERPOLATION) else null
-            "OPEN_GAME" -> {
-                val name = candidate.argument?.trim().orEmpty()
-                val normalizedName = VoiceCommandParser.normalize(name)
-                val spokenTarget = explicitLaunch?.groupValues?.getOrNull(1)?.trim()
-                if (
-                    name.length in 2..60 &&
-                    normalizedName.length >= 2 &&
-                    spokenTarget != null &&
-                    normalizedName == spokenTarget &&
-                    !normalizedName.startsWith("com ") &&
-                    !normalizedName.contains("android")
-                ) VoiceCommand.OpenGame(name) else null
-            }
+            "OPEN_GAME" -> validateGameLaunch(candidate.argument, explicitLaunch)
             "DEVICE_STATUS" -> if (listOf(
                 "bateria", "temperatura", "estado del dispositivo",
                 "device status", "battery", "thermal"
