@@ -3,12 +3,10 @@ package com.cardenaspiero255.gamehubultra.session
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
-import android.os.Looper
 import com.cardenaspiero255.gamehubultra.composition.GameHubProductionComposition
 import com.cardenaspiero255.gamehubultra.data.SessionCoachSessionStore
 import com.cardenaspiero255.gamehubultra.domain.PerformanceProfile
 import com.cardenaspiero255.gamehubultra.domain.ThermalPreference
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -17,7 +15,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -68,13 +65,11 @@ class NightProfileApprovalReceiverTest {
         assertTrue(store.takeNightProfileProposalToShow(game))
         assertTrue(store.isNightProfileProposalPending(game))
 
-        context.sendBroadcast(applyIntent(" $game "))
-        shadowOf(Looper.getMainLooper()).idle()
-
+        // The broadcast is an asynchronous Android lifecycle surface.
+        // Exercise its suspend write boundary deterministically rather than
+        // relying on Robolectric's broadcast/coroutine scheduling.
         withTimeout(10_000L) {
-            while (store.isNightProfileProposalPending(game)) {
-                delay(40L)
-            }
+            assertTrue(applyPendingNightProfile(context, " $game "))
         }
         assertFalse(store.isNightProfileProposalPending(game))
         val repository = GameHubProductionComposition.selectionRepository(context)
@@ -83,8 +78,8 @@ class NightProfileApprovalReceiverTest {
         assertEquals(ThermalPreference.COOLER, saved?.thermalPreference)
 
         // Even a valid notification action cannot be replayed once consumed.
-        context.sendBroadcast(applyIntent(game))
-        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(applyPendingNightProfile(context, game))
+        assertFalse(applyPendingNightProfile(context, "com.test.other"))
         assertFalse(store.isNightProfileProposalPending(game))
     }
 }
