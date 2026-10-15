@@ -248,11 +248,9 @@ class UltraWakeService : Service() {
 
         override fun onSegmentResults(segmentResults: Bundle) {
             if (persistentSessionActive) {
-                if (UltraWakeRecognitionHealth.hasTranscript(
+                recoveryPolicy.onRecognitionResult(
                     segmentResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                )) {
-                    recoveryPolicy.onRecognitionHealthy()
-                }
+                )
                 handleRecognitionBundle(
                     results = segmentResults,
                     keepRecognitionActive = true
