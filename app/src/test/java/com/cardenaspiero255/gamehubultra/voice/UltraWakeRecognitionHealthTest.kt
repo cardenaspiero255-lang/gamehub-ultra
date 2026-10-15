@@ -17,6 +17,25 @@ class UltraWakeRecognitionHealthTest {
     }
 
     @Test
+    fun busyOrClientRecognizerErrorNeedsFreshSpeechRecognizer() {
+        assertTrue(
+            UltraWakeRecognitionHealth.shouldRebuildRecognizer(
+                android.speech.SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+            )
+        )
+        assertTrue(
+            UltraWakeRecognitionHealth.shouldRebuildRecognizer(
+                android.speech.SpeechRecognizer.ERROR_CLIENT
+            )
+        )
+        assertFalse(
+            UltraWakeRecognitionHealth.shouldRebuildRecognizer(
+                android.speech.SpeechRecognizer.ERROR_NETWORK
+            )
+        )
+    }
+
+    @Test
     fun anyActualTranscriptionCountsAsHealthy() {
         assertTrue(UltraWakeRecognitionHealth.hasTranscript(listOf(" ", "hola Ultra")))
     }
