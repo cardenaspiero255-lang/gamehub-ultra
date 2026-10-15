@@ -54,6 +54,30 @@ class UltraWakeForegroundSafetyTest {
     }
 
     @Test
+    fun foregroundRejectionStillStopsWhenDisablingPersistentStateThrows() {
+        var stopCalls = 0
+        val started = UltraWakeForegroundSafety.tryStart(
+            ensureForeground = { throw SecurityException("Permission revoked") },
+            stop = { stopCalls++ },
+            disableContinuousVoice = { throw IllegalStateException("Storage unavailable") }
+        )
+        assertFalse(started)
+        assertEquals(1, stopCalls)
+    }
+
+    @Test
+    fun foregroundRejectionStillDisablesListeningWhenStopThrows() {
+        var disabled = false
+        val started = UltraWakeForegroundSafety.tryStart(
+            ensureForeground = { throw IllegalStateException("Foreground start restricted") },
+            stop = { throw IllegalStateException("Already stopped") },
+            disableContinuousVoice = { disabled = true }
+        )
+        assertFalse(started)
+        assertTrue(disabled)
+    }
+
+    @Test
     fun stoppingAlreadyDestroyedServiceDoesNotCrashRecovery() {
         val started = UltraWakeForegroundSafety.tryStart(
             ensureForeground = { throw SecurityException("Microphone revoked") },
