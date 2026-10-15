@@ -1468,7 +1468,7 @@ Deno.test("comparison combines two verified specification records", async () => 
   }
 });
 
-Deno.test("comparison uses two corroborated web sources per phone when TechAPI is unavailable", async () => {
+Deno.test("phone comparison uses corroborated web fallback", async () => {
   const requests: string[] = [];
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
@@ -1476,7 +1476,9 @@ Deno.test("comparison uses two corroborated web sources per phone when TechAPI i
       if (url.includes("api.github.com/search/code")) {
         return jsonResponse({ items: [] });
       }
-      if (url.includes("api.github.com/repos/GetTechAPI/TechAPI/git/trees")) {
+      if (
+        url.includes("api.github.com/repos/GetTechAPI/TechAPI/git/trees")
+      ) {
         return jsonResponse({ tree: [] });
       }
       if (url === "https://api.tavily.com/search") {
@@ -1512,33 +1514,43 @@ Deno.test("comparison uses two corroborated web sources per phone when TechAPI i
     "",
     "COMPARISON_RESEARCH",
   );
-  if (answer.abstained) throw new Error("Expected sourced comparison fallback");
-  if (!answer.displayText?.includes("RedMagic 11S Pro") ||
-      !answer.displayText?.includes("RedMagic 12 Pro")) {
+  if (answer.abstained) {
+    throw new Error("Expected sourced comparison fallback");
+  }
+  if (
+    !answer.displayText?.includes("RedMagic 11S Pro") ||
+    !answer.displayText?.includes("RedMagic 12 Pro")
+  ) {
     throw new Error("Comparison must name both phones");
   }
   if ((answer.sourceIds?.length ?? 0) !== 4) {
     throw new Error("Comparison must cite four independent references");
   }
   if (answer.authoritative) {
-    throw new Error("Search summaries must not be marked as authoritative specification records");
+    throw new Error("Web summaries must not be authoritative");
   }
   if (requests.length !== 2) {
     throw new Error("Web fallback must search each phone independently");
   }
 });
 
-Deno.test("comparison never invents a second phone when its sources cannot be corroborated", async () => {
+Deno.test("phone comparison rejects one unsupported web result", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
       const url = String(input);
-      if (url.includes("api.github.com/search/code")) return jsonResponse({ items: [] });
-      if (url.includes("api.github.com/repos/GetTechAPI/TechAPI/git/trees")) {
+      if (url.includes("api.github.com/search/code")) {
+        return jsonResponse({ items: [] });
+      }
+      if (
+        url.includes("api.github.com/repos/GetTechAPI/TechAPI/git/trees")
+      ) {
         return jsonResponse({ tree: [] });
       }
       if (url === "https://api.tavily.com/search") {
         const query = JSON.parse(String(init?.body)).query as string;
-        const name = query.includes("11S Pro") ? "RedMagic 11S Pro" : "RedMagic 12 Pro";
+        const name = query.includes("11S Pro")
+          ? "RedMagic 11S Pro"
+          : "RedMagic 12 Pro";
         return jsonResponse({
           results: [{
             title: name + " technical review",
@@ -1559,7 +1571,7 @@ Deno.test("comparison never invents a second phone when its sources cannot be co
     "COMPARISON_RESEARCH",
   );
   if (!answer.abstained) {
-    throw new Error("A single unsupported search hit must not become a verified comparison");
+    throw new Error("One web hit cannot verify a comparison");
   }
 });
 
