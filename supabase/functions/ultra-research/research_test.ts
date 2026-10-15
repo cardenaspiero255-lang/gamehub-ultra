@@ -1905,6 +1905,76 @@ Deno.test("phone comparison rejects a verified record for the wrong model", asyn
   }
 });
 
+Deno.test("base phone model never inherits Pro or Plus web specifications", async () => {
+  const deps: ResearchDependencies = {
+    fetcher: (input, init) => {
+      const url = String(input);
+      if (url.includes("api.github.com/search/code")) return jsonResponse({ items: [] });
+      if (url.includes("/git/trees/develop")) return jsonResponse({ tree: [] });
+      if (url === "https://api.tavily.com/search") {
+        const query = JSON.parse(String(init?.body)).query as string;
+        const name = query.includes("iPhone 16")
+          ? "iPhone 16 Pro"
+          : "RedMagic 12 Pro";
+        return jsonResponse({
+          results: [
+            { title: name + " ficha técnica",
+              content: name + " pantalla y batería.", url: "https://first.example/specs", score: 0.99 },
+            { title: name + " reseña",
+              content: name + " procesador y rendimiento.", url: "https://second.example/review", score: 0.96 },
+          ],
+        });
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+    env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+  };
+  const result = await routeResearchQuery(
+    "Ultra, compara el iPhone 16 con el RedMagic 12 Pro",
+    deps, "", "COMPARISON_RESEARCH",
+  );
+  if (!result.abstained) {
+    throw new Error("iPhone 16 Pro cannot verify specifications of base iPhone 16");
+  }
+});
+
+Deno.test("phone comparisons distinguish Pro Plus and Pro+ variant suffixes", async () => {
+  for (const [requested, different] of [
+    ["iPhone 16", "iPhone 16 Plus"],
+    ["RedMagic 12 Pro", "RedMagic 12 Pro+"],
+    ["Galaxy S25", "Galaxy S25 Ultra"],
+  ]) {
+    const deps: ResearchDependencies = {
+      fetcher: (input, init) => {
+        const url = String(input);
+        if (url.includes("api.github.com/search/code")) return jsonResponse({ items: [] });
+        if (url.includes("/git/trees/develop")) return jsonResponse({ tree: [] });
+        if (url === "https://api.tavily.com/search") {
+          const query = JSON.parse(String(init?.body)).query as string;
+          const name = query.includes(requested) ? different : "Moto G85";
+          return jsonResponse({
+            results: [
+              { title: name + " specifications", content: name + " specs",
+                url: "https://one.example/specs", score: 0.9 },
+              { title: name + " review", content: name + " performance",
+                url: "https://two.example/review", score: 0.8 },
+            ],
+          });
+        }
+        throw new Error("Unexpected URL: " + url);
+      },
+      env: (name) => name === "TAVILY_API_KEY" ? "test-key" : undefined,
+    };
+    const result = await routeResearchQuery(
+      "Ultra, compara el " + requested + " con el Moto G85",
+      deps, "", "COMPARISON_RESEARCH",
+    );
+    if (!result.abstained) {
+      throw new Error("Wrong variant accepted: " + different + " for " + requested);
+    }
+  }
+});
+
 Deno.test("comparison web evidence rejects a different phone variant", async () => {
   const deps: ResearchDependencies = {
     fetcher: (input, init) => {
