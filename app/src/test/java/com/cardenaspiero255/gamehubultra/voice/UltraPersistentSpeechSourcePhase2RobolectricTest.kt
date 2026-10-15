@@ -25,7 +25,7 @@ class UltraPersistentSpeechSourcePhase2RobolectricTest {
             ParcelFileDescriptor::class.java,
             AudioRecord::class.java,
             ExecutorService::class.java,
-            Int::class.javaPrimitiveType
+            Integer.TYPE
         )
         constructor.isAccessible = true
         val source = constructor.newInstance(pipe[0], pipe[1], audioRecord, worker, 4096)
