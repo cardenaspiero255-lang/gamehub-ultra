@@ -148,6 +148,7 @@ class UltraReportedVoiceAndKnowledgeRegressionTest {
             "Ultra, no quites X4",
             "Ultra, ¿cómo desactivar X4?",
             "Ultra, ¿cómo apagar X4?",
+            "Ultra, ¿qué era el modo X4?",
             "Ultra, ¿qué pasaría si desactivara X4?"
         ).forEach { utterance ->
             assertIs<VoiceCommand.Unknown>(VoiceCommandParser.parse(utterance), utterance)
