@@ -90,6 +90,9 @@ class UltraWakeService : Service() {
         GameHubProductionComposition.aliasRepository(applicationContext)
     }
     private val restartRecognition = Runnable { startRecognition() }
+    // A new generation is bound to every listening attempt. Late callbacks from
+    // destroyed/replaced recognizers must not mutate the current session.
+    private var recognitionGeneration = 0L
     private var recognizer: SpeechRecognizer? = null
     private var persistentSpeechSource: UltraPersistentSpeechSource? = null
     private var persistentSessionActive = false
@@ -190,9 +193,10 @@ class UltraWakeService : Service() {
         var requestedMode = sessionPolicy.preferredMode()
         val started = runCatching {
             val speech = recognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also {
-                it.setRecognitionListener(listener)
                 recognizer = it
             }
+            val sessionGeneration = ++recognitionGeneration
+            speech.setRecognitionListener(listenerForGeneration(sessionGeneration))
 
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 val source = UltraPersistentSpeechSource.create()
@@ -222,6 +226,7 @@ class UltraWakeService : Service() {
         recognitionStarting = false
 
         if (!started) {
+            recognitionGeneration++ // Invalidate queued callbacks before teardown.
             // A failed recognizer may be poisoned/busy. Rebuild it on the next
             // attempt rather than repeatedly restarting the same instance.
             runCatching { recognizer?.cancel() }
@@ -296,12 +301,46 @@ class UltraWakeService : Service() {
             }
             commandCoordinator.onRecognitionFinished()
             if (UltraWakeRecognitionHealth.shouldRebuildRecognizer(error)) {
+                recognitionGeneration++ // Reject delayed callbacks from this poisoned instance.
                 runCatching { recognizer?.destroy() }
                 recognizer = null
             }
             scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
+
+    /**
+     * SpeechRecognizer callbacks can arrive after destroy() or a new startListening().
+     * Bind each registration to its session generation, not the mutable recognizer field.
+     */
+    private fun listenerForGeneration(generation: Long): RecognitionListener =
+        object : RecognitionListener {
+            private fun isCurrent() = generation == recognitionGeneration && !stopped
+
+            override fun onReadyForSpeech(params: Bundle?) = Unit
+            override fun onBeginningOfSpeech() = Unit
+            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+            override fun onEndOfSpeech() = Unit
+            override fun onPartialResults(partialResults: Bundle?) = Unit
+            override fun onEvent(eventType: Int, params: Bundle?) = Unit
+
+            override fun onSegmentResults(segmentResults: Bundle) {
+                if (isCurrent()) listener.onSegmentResults(segmentResults)
+            }
+
+            override fun onEndOfSegmentedSession() {
+                if (isCurrent()) listener.onEndOfSegmentedSession()
+            }
+
+            override fun onResults(results: Bundle?) {
+                if (isCurrent()) listener.onResults(results)
+            }
+
+            override fun onError(error: Int) {
+                if (isCurrent()) listener.onError(error)
+            }
+        }
 
     private fun handleRecognitionBundle(
         results: Bundle?,
@@ -501,6 +540,7 @@ class UltraWakeService : Service() {
 
     override fun onDestroy() {
         stopped = true
+        recognitionGeneration++ // Retire any callbacks already queued before destruction.
         waitingForSpeechEngine = false
         speechInitGate.close()
         lifecycleGate.stop()
