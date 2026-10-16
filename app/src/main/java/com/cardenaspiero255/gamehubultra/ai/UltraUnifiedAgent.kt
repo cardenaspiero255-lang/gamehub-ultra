@@ -1,6 +1,7 @@
 package com.cardenaspiero255.gamehubultra.ai
 
 import com.cardenaspiero255.gamehubultra.voice.NaturalLanguageIntentResolver
+import com.cardenaspiero255.gamehubultra.voice.UltraCognitionIntentPolicy
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommand
 import com.cardenaspiero255.gamehubultra.voice.VoiceCommandParser
 import java.time.Clock
@@ -61,6 +62,19 @@ object UltraUnifiedAgentRouter {
         // conversational memory operations, not launch/profile commands.
         if (UltraMemoryCommandParser.parse(transcript) != null) {
             return UltraAgentRoute.Chat(transcript.trim())
+        }
+
+        // Questions and negations ABOUT commands must remain conversational,
+        // before utilities or game/profile resolvers can produce side effects.
+        // Typed and spoken turns both pass through this shared router.
+        if (UltraCognitionIntentPolicy.isNonExecutableDiscussion(transcript)) {
+            return UltraAgentRoute.Chat(
+                message = transcript.trim(),
+                query = UltraContextualQueryPlanner.plan(
+                    message = transcript,
+                    conversationHistory = conversationHistory
+                )
+            )
         }
 
         val command = VoiceCommandParser.parse(
