@@ -87,6 +87,26 @@ object UltraGeneralQueryRouter {
     private val conversationalFreshTopicPattern = Regex(
         """\b(noticias|news|novedades|updates?|latest|newest|precio|precios|price|prices|cuanto cuesta|cuanto cuestan|how much|actual|actualmente|ahora|hoy|current|currently|today|release date|fecha de lanzamiento|fecha de salida|cuando sale|cuando se lanza)\b"""
     )
+    /**
+     * Everyday factual questions not covered by a dictionary entry must reach
+     * optional evidence instead of getting the generic local chat greeting.
+     * Anchoring the expressions prevents incidental verbs in game titles from
+     * triggering needless network research.
+     */
+    private val openFactualQuestionPattern = Regex(
+        """^(?:(?:por favor|please)\s+)?(?:quien(?:es)?\s+(?:descubrio|descubrieron|invento|inventaron|escribio|escribieron|creo|crearon|fue|era)\b|cuant[oa]\s+(?:mide|miden|pesa|pesan|dura|duran)\b|donde\s+(?:nacio|vivio|murio|queda|se encuentra|esta ubicado|ocurrio)\b|cuando\s+(?:se\s+(?:invento|descubrio|creo|origino)|nacio|murio|ocurrio|sucedio)\b|como\s+(?:surgio|se\s+(?:formo|origino|descubrio|invento|creo|produce))\b|que\s+(?:causo|provoco|ocurrio|sucedio|produce)\b|en\s+que\s+consiste\b|who\s+(?:invented|discovered|wrote|founded|created)\b|where\s+(?:was|were|is)\b|when\s+(?:was|were|did)\b|how\s+(?:was|were|did)\b|what\s+(?:caused|created|happened)\b)"""
+    )
+
+    /** Market prices and exchange rates change; they must never be invented offline. */
+    private val explicitMarketValuePattern = Regex(
+        """\b(?:cuanto\s+valen?|a\s+cuanto\s+estan?|cotizacion\s+(?:de|del)|tipo\s+de\s+cambio\s+(?:de|del|entre)|exchange\s+rate)\b"""
+    )
+
+    /** Conceptual economics is a definition, not a request for a live quote. */
+    private val stableEconomicsDefinitionPattern = Regex(
+        """^(?:que\s+es|que\s+significa|what\s+is)\s+(?:(?:el|la|un|una|the|a|an)\s+)?(?:precio\s+de\s+equilibrio|equilibrium\s+price)\b"""
+    )
+
     private val broadFactualPattern = Regex(
         """\b(cuantos|cuantas|como se llama|como se llaman|how many|how old|what year|which country)\b"""
     )
@@ -172,7 +192,18 @@ object UltraGeneralQueryRouter {
                     timeoutMillis = FAST_QUERY_TIMEOUT_MS
                 )
 
+            stableEconomicsDefinitionPattern.containsMatchIn(clean) &&
+                !currentQualifierPattern.containsMatchIn(clean) ->
+                request(
+                    transcript = transcript,
+                    kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                    verificationMode = UltraVerificationMode.OPTIONAL,
+                    requiresFreshData = false,
+                    timeoutMillis = FAST_QUERY_TIMEOUT_MS
+                )
+
             explicitCurrentValuePattern.containsMatchIn(clean) ||
+                explicitMarketValuePattern.containsMatchIn(clean) ||
                 explicitWeatherValuePattern.containsMatchIn(clean) ||
                 (
                     explicitFreshUpdatePattern.containsMatchIn(clean) &&
@@ -224,7 +255,8 @@ object UltraGeneralQueryRouter {
                         technicalSubjectPattern.containsMatchIn(clean)
                     ) ||
                 generalKnowledgePattern.containsMatchIn(clean) ||
-                broadFactualPattern.containsMatchIn(clean) ->
+                broadFactualPattern.containsMatchIn(clean) ||
+                openFactualQuestionPattern.containsMatchIn(clean) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,

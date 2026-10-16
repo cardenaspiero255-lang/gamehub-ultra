@@ -65,6 +65,7 @@ private class GameHubVoiceInteractionSession(context: Context) :
     private var recognitionLanguageTag = UltraSpeechLocalePolicy.PREFERRED_TAG
     private val aiAdvisor = GameHubAiAdvisor(
         modelAdapter = GeminiNanoLocalAiModelAdapter(),
+        preferFastStableDefinitions = true,
         gameSessionHistory = {
             SessionCoachSessionStore(getContext().applicationContext).readRecentGameSessions()
         }

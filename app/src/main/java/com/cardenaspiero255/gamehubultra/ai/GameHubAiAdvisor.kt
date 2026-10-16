@@ -14,7 +14,10 @@ class GameHubAiAdvisor(
     private val modelAdapter: LocalAiModelAdapter? = null,
     private val memoryGateway: UltraLongTermMemoryGateway? = null,
     private val aiCore: UltraAiCoreGateway = UltraAiCore2(),
-    private val gameSessionHistory: (() -> List<UltraRecordedGameSession>)? = null
+    private val gameSessionHistory: (() -> List<UltraRecordedGameSession>)? = null,
+    // Opt in only in production: preserve model-first semantics for existing
+    // embeddings until their caller explicitly accepts concise fast answers.
+    private val preferFastStableDefinitions: Boolean = false
 ) : UltraAssistantGateway {
 
     override fun hasLocalModelProvider(): Boolean = modelAdapter != null
@@ -33,6 +36,13 @@ class GameHubAiAdvisor(
     ): String? {
         UltraFrontierWorldStateRegistry.update(context)
         sessionMemoryAnswerOrNull(message, context)?.let { return it }
+
+        // A short, textbook-style definition already in the reviewed local
+        // corpus does not need Gemini Nano's availability handshake/generation.
+        // Preserve model-first behavior for detailed, contextual questions.
+        if (preferFastStableDefinitions && isConciseStableDefinition(message)) {
+            deterministicStableKnowledgeOrNull(message)?.let { return it }
+        }
         val modelAnswer = runCatching {
             modelAdapter
                 ?.takeIf { it.isAvailable() }
@@ -254,6 +264,16 @@ class GameHubAiAdvisor(
             else ->
                 "Soy Ultra. Puedo ayudarte en español con rendimiento, FPS, temperatura, batería, red, perfiles de GameHub Ultra y consultas generales. Si una respuesta necesita datos externos, intentaré usar información verificada."
         }
+    }
+
+    private fun isConciseStableDefinition(message: String): Boolean {
+        val query = normalize(message)
+            .removePrefix("gamehub ultra ")
+            .removePrefix("gamehub ")
+            .removePrefix("ultra ")
+            .trim()
+        return query.length <= 100 &&
+            CONCISE_STABLE_DEFINITION_PATTERN.matches(query)
     }
 
     private fun deterministicStableKnowledgeOrNull(message: String): String? {
@@ -1031,6 +1051,10 @@ class GameHubAiAdvisor(
         patterns.any(value::contains)
 
     private companion object {
+        // Compile once, rather than on every voice turn.
+        val CONCISE_STABLE_DEFINITION_PATTERN = Regex(
+            """^(?:que es|que era|que son|what is|what are)\s+(?:(?:el|la|los|las|un|una|the|a|an)\s+)?[a-z0-9][a-z0-9 ]{1,85}$"""
+        )
         const val MEMORY_RECALL_LIMIT = 6
         val PROFILE_RECOMMENDATION_TOKENS = setOf("modo", "perfil", "mode", "profile")
         val PROFILE_GAMING_SIGNAL_TOKENS = setOf(
