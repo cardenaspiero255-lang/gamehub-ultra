@@ -32,4 +32,23 @@ class AndroidContinuousVoiceGatewayRobolectricTest {
         assertFailsWith<SecurityException> { gateway.startWakeService() }
         Mockito.verify(context, Mockito.never()).startForegroundService(Mockito.any())
     }
+
+    @Test
+    fun externalServiceRejectionNotifiesUiStateAndUnregistersOnDispose() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        val uiGateway = AndroidContinuousVoiceGateway(app)
+        val serviceGateway = AndroidContinuousVoiceGateway(app)
+        serviceGateway.setEnabled(true)
+        val observed = mutableListOf<Boolean>()
+        val unsubscribe = uiGateway.observeEnabled { observed += it }
+
+        kotlin.test.assertEquals(listOf(true), observed)
+        serviceGateway.setEnabled(false)
+        kotlin.test.assertEquals(listOf(true, false), observed)
+
+        unsubscribe()
+        serviceGateway.setEnabled(true)
+        kotlin.test.assertEquals(listOf(true, false), observed)
+    }
+
 }
