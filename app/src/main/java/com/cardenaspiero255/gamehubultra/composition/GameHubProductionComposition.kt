@@ -103,6 +103,7 @@ internal object GameHubProductionComposition {
             queryExecutor = UltraProductionQueryExecutor,
             assistant = GameHubAiAdvisor(
                 modelAdapter = GeminiNanoLocalAiModelAdapter(),
+                preferFastStableDefinitions = true,
                 memoryGateway = memoryStore,
                 gameSessionHistory = {
                     SessionCoachSessionStore(appContext).readRecentGameSessions()

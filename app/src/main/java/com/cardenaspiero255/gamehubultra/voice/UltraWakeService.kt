@@ -107,6 +107,7 @@ class UltraWakeService : Service() {
     private val aiAdvisorLazy = lazy {
         GameHubAiAdvisor(
             modelAdapter = GeminiNanoLocalAiModelAdapter(),
+            preferFastStableDefinitions = true,
             memoryGateway = ultraMemoryStore,
             gameSessionHistory = {
                 SessionCoachSessionStore(applicationContext).readRecentGameSessions()
