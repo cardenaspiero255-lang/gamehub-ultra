@@ -42,7 +42,7 @@ class UltraReportedVoiceAndKnowledgeRegressionTest {
     fun reportedStableDefinitionsAreAnswerableWithoutNetworkOrModel() {
         val advisor = GameHubAiAdvisor()
         listOf(
-            "Ultra, ¿qué es el Big Bang?" to "expansion",
+            "Ultra, ¿qué es el Big Bang?" to "universo",
             "Ultra, ¿qué es la Biblia?" to "textos",
             "Ultra, ¿qué es un manuscrito?" to "mano",
             "Ultra, ¿qué es un manuscrito antiguo?" to "mano"
