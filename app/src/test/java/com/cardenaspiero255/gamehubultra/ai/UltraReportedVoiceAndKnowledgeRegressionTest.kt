@@ -44,7 +44,9 @@ class UltraReportedVoiceAndKnowledgeRegressionTest {
         listOf(
             "Ultra, ¿qué es el Big Bang?" to "universo",
             "Ultra, ¿qué es la Biblia?" to "textos",
+            "Ultra, ¿qué era la Biblia?" to "textos",
             "Ultra, ¿qué es un manuscrito?" to "mano",
+            "Ultra, ¿qué era un manuscrito?" to "mano",
             "Ultra, ¿qué es un manuscrito antiguo?" to "mano"
         ).forEach { (utterance, distinctiveWord) ->
             val route = assertIs<UltraAgentRoute.Chat>(
@@ -73,7 +75,7 @@ class UltraReportedVoiceAndKnowledgeRegressionTest {
                 }
             })
         )
-        listOf("¿Qué es el Big Bang?", "¿Qué es la Biblia?", "¿Qué es un manuscrito?").forEach {
+        listOf("¿Qué es el Big Bang?", "¿Qué es la Biblia?", "¿Qué era la Biblia?", "¿Qué es un manuscrito?").forEach {
             val answer = executor.answer(
                 route = assertIs<UltraAgentRoute.Chat>(UltraUnifiedAgentRouter.route(it)),
                 stableKnowledgeFallback = {
