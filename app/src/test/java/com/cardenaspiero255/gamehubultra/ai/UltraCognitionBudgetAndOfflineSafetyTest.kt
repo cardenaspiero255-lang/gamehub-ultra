@@ -152,6 +152,29 @@ class UltraCognitionBudgetAndOfflineSafetyTest {
     }
 
     @Test
+    fun verifiedResearchUsesVerifiedBudgetsEvenWhenRequestModeIsIncorrect() {
+        val policy = UltraFrontierPolicy()
+        val budget = UltraAdaptiveComputeBudgeter().budget(
+            request = UltraGeneralQueryRequest(
+                originalText = "que version existe hoy",
+                kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+                requiresInternet = true,
+                requiresFreshData = true,
+                timeoutMillis = 10_000L,
+                verificationMode = UltraVerificationMode.LOCAL
+            ),
+            policy = policy,
+            failurePressure = 0,
+            worldState = null
+        )
+
+        assertEquals(policy.verifiedSourceBudget, budget.sourceBudget)
+        assertEquals(policy.verifiedResearchPassBudget, budget.passBudget)
+        assertEquals(policy.verifiedResearchTimeBudgetMillis, budget.timeBudgetMillis)
+        assertEquals(policy.minimumFreshSources, budget.minimumIndependentSources)
+    }
+
+    @Test
     fun offlineFrontierBlocksInconsistentFreshKnowledgeRequestBeforeResearch() {
         var providerCalls = 0
         var localCalls = 0
