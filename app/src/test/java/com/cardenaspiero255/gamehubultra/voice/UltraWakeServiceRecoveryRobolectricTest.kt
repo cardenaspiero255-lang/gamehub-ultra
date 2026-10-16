@@ -269,7 +269,7 @@ class UltraWakeServiceRecoveryRobolectricTest {
 
     @Test
     @Config(sdk = [30])
-    fun aLateCallbackFromRealRecognizerAIsIgnoredAfterRecognizerBStarts() {
+    fun aLateCallbackFromFailedRecognizerAIsIgnoredAfterRecognizerBStarts() {
         val app = org.robolectric.RuntimeEnvironment.getApplication()
         org.robolectric.Shadows.shadowOf(app)
             .grantPermissions(android.Manifest.permission.RECORD_AUDIO)
@@ -277,6 +277,10 @@ class UltraWakeServiceRecoveryRobolectricTest {
         val service = controller.create().get()
         val recognizerA = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
         val recognizerB = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        org.mockito.Mockito.doThrow(IllegalStateException("Recognizer start was rejected"))
+            .`when`(recognizerA).startListening(
+                org.mockito.Mockito.any(android.content.Intent::class.java)
+            )
         val speechApi = org.mockito.Mockito.mockStatic(SpeechRecognizer::class.java)
         try {
             speechApi.`when`<Boolean> { SpeechRecognizer.isRecognitionAvailable(service) }
@@ -290,7 +294,9 @@ class UltraWakeServiceRecoveryRobolectricTest {
             start.invoke(service)
             org.mockito.Mockito.verify(recognizerA).setRecognitionListener(listenerCaptor.capture())
             val firstListener = listenerCaptor.value
-            firstListener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+            // A failed during startListening; the service must retire/destroy
+            // its recognizer before installing B on the next retry.
+            org.mockito.Mockito.verify(recognizerA).destroy()
 
             start.invoke(service)
             org.mockito.Mockito.verify(recognizerB).setRecognitionListener(listenerCaptor.capture())
