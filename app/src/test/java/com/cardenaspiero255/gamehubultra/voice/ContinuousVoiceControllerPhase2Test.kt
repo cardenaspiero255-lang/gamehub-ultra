@@ -1,0 +1,89 @@
+package com.cardenaspiero255.gamehubultra.voice
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+
+class ContinuousVoiceControllerPhase2Test {
+    @Test
+    fun microphoneServiceStartDeniedByAndroidDoesNotCrashOrRemainEnabled() {
+        val gateway = RestrictedGateway()
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.SYSTEM_RESTRICTED, controller.setEnabled(true))
+        assertFalse(controller.isEnabled())
+        assertEquals(1, gateway.stopCalls)
+    }
+
+    @Test
+    fun microphonePermissionSecurityExceptionDisablesContinuousModeSafely() {
+        val gateway = RestrictedGateway()
+        gateway.failure = SecurityException("RECORD_AUDIO denied by Android")
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.SYSTEM_RESTRICTED, controller.setEnabled(true))
+        assertFalse(controller.isEnabled())
+        assertEquals(1, gateway.stopCalls)
+    }
+
+    @Test
+    fun restoreAfterBackgroundRestrictionClearsMisleadingPersistentSetting() {
+        val gateway = RestrictedGateway()
+        gateway.storedEnabled = true
+        val controller = ContinuousVoiceController(gateway)
+        assertFalse(controller.resumeIfEnabled())
+        assertFalse(controller.isEnabled())
+        assertEquals(1, gateway.stopCalls)
+    }
+
+    @Test
+    fun disablingContinuesEvenIfAndroidCannotStopAnAlreadyDeadService() {
+        val gateway = RestrictedGateway()
+        gateway.storedEnabled = true
+        gateway.failStop = true
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.DISABLED, controller.setEnabled(false))
+        assertFalse(controller.isEnabled())
+        assertEquals(1, gateway.stopCalls)
+    }
+
+    @Test
+    fun authorizedMicStartSetsEnabledOnlyAfterAcceptedSubmission() {
+        val gateway = RestrictedGateway()
+        gateway.failure = null
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.ENABLED, controller.setEnabled(true))
+        kotlin.test.assertTrue(controller.isEnabled())
+        assertEquals(1, gateway.startCalls)
+        assertEquals(0, gateway.stopCalls)
+    }
+
+    @Test
+    fun permissionGrantDoesNotBypassSystemSupportCheck() {
+        val gateway = RestrictedGateway()
+        gateway.supported = false
+        val controller = ContinuousVoiceController(gateway)
+        assertEquals(ContinuousVoiceChange.SYSTEM_RESTRICTED, controller.enableAfterPermissionGranted())
+        assertFalse(gateway.storedEnabled)
+        assertEquals(0, gateway.startCalls)
+    }
+
+    private class RestrictedGateway : ContinuousVoiceGateway {
+        var storedEnabled = false
+        var supported = true
+        var failure: RuntimeException? = IllegalStateException("Foreground microphone service start denied")
+        var startCalls = 0
+        var stopCalls = 0
+        var failStop = false
+        override fun isEnabled() = storedEnabled
+        override fun setEnabled(enabled: Boolean) { storedEnabled = enabled }
+        override fun hasRecordAudioPermission() = true
+        override fun canRunContinuousVoice() = supported
+        override fun startWakeService() {
+            startCalls += 1
+            failure?.let { throw it }
+        }
+        override fun stopWakeService() {
+            stopCalls += 1
+            if (failStop) throw SecurityException("service no longer registered")
+        }
+    }
+}

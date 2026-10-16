@@ -34,6 +34,23 @@ internal fun presentVoiceTranscript(value: String): String =
         .replace(Regex("""(?i)\byou\s*tube\b"""), "YouTube")
         .replace(Regex("""(?i)\bwhats\s*app\b"""), "WhatsApp")
 
+/**
+ * Share one lifecycle-bound listener with any Compose host that displays
+ * continuous microphone state. Keeping it separate permits real Compose
+ * regression tests without instantiating the entire assistant card.
+ */
+@Composable
+internal fun ContinuousVoiceStateObserver(
+    gateway: AndroidContinuousVoiceGateway,
+    onChanged: (Boolean) -> Unit
+) {
+    val latestOnChanged by rememberUpdatedState(onChanged)
+    DisposableEffect(gateway) {
+        val unsubscribe = gateway.observeEnabled { latestOnChanged(it) }
+        onDispose { unsubscribe() }
+    }
+}
+
 @Composable
 internal fun VoiceAssistantCard(
     selectedProfileName: String,
@@ -57,12 +74,11 @@ internal fun VoiceAssistantCard(
     val queryExecutor = ultraRuntime.queryExecutor
     val agentRouter = ultraRuntime.agentRouter
     val networkGaming = ultraRuntime.networkGaming
-    val continuousVoiceController = remember(context) {
-        ContinuousVoiceController(
-            AndroidContinuousVoiceGateway(context)
-        )
+    val continuousVoiceGateway = remember(context) { AndroidContinuousVoiceGateway(context) }
+    val continuousVoiceController = remember(continuousVoiceGateway) {
+        ContinuousVoiceController(continuousVoiceGateway)
     }
-    var continuousListeningEnabled by remember {
+    var continuousListeningEnabled by remember(continuousVoiceController) {
         mutableStateOf(continuousVoiceController.isEnabled())
     }
     val aiIntentResolver = remember(aiAdvisor) { aiAdvisor.intentResolver() }
@@ -73,6 +89,17 @@ internal fun VoiceAssistantCard(
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Android may reject startForeground after startForegroundService succeeded.
+    // Observe the service-owned preference rather than treating the initial tap
+    // result as permanent proof that microphone capture is running.
+    ContinuousVoiceStateObserver(continuousVoiceGateway) { enabled ->
+        val previouslyEnabled = continuousListeningEnabled
+        continuousListeningEnabled = enabled
+        if (previouslyEnabled && !enabled) {
+            response = "La escucha continua se detuvo. Revisa los permisos del micrófono y las restricciones del sistema."
+        }
+    }
     var recommendedProfile by remember(aiContext.selectedGamePackage) {
         mutableStateOf<UltraScopedProfileRecommendation?>(null)
     }

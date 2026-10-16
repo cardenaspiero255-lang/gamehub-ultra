@@ -16,6 +16,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.speech.RecognitionListener
 import android.speech.SpeechRecognizer
+import android.speech.SpeechRecognizer.RESULTS_RECOGNITION
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -82,12 +83,16 @@ class UltraWakeService : Service() {
         )
     }
     private val sessionPolicy = UltraWakeSessionPolicy(Build.VERSION.SDK_INT)
+    private val recoveryPolicy = UltraWakeRecoveryPolicy()
     private val commandExecutor = Executors.newSingleThreadExecutor()
     private val queryExecutor: UltraQueryExecutor = UltraProductionQueryExecutor
     private val aliasRepository by lazy {
         GameHubProductionComposition.aliasRepository(applicationContext)
     }
     private val restartRecognition = Runnable { startRecognition() }
+    // A new generation is bound to every listening attempt. Late callbacks from
+    // destroyed/replaced recognizers must not mutate the current session.
+    private var recognitionGeneration = 0L
     private var recognizer: SpeechRecognizer? = null
     private var persistentSpeechSource: UltraPersistentSpeechSource? = null
     private var persistentSessionActive = false
@@ -99,7 +104,7 @@ class UltraWakeService : Service() {
     private val ultraMemoryStore by lazy {
         GameHubProductionComposition.ultraConversationMemory(applicationContext)
     }
-    private val aiAdvisor by lazy {
+    private val aiAdvisorLazy = lazy {
         GameHubAiAdvisor(
             modelAdapter = GeminiNanoLocalAiModelAdapter(),
             memoryGateway = ultraMemoryStore,
@@ -108,13 +113,20 @@ class UltraWakeService : Service() {
             }
         )
     }
+    private val aiAdvisor by aiAdvisorLazy
 
     override fun onCreate() {
         super.onCreate()
         GameHubProductionComposition.configureUltraResearchPersistence(
             applicationContext
         )
-        foregroundController.ensureForeground()
+        if (!UltraWakeForegroundSafety.tryStart(
+                foregroundController::ensureForeground, this::stopSelf,
+                disableContinuousVoice = {
+                    AndroidContinuousVoiceGateway(this).setEnabled(false)
+                }
+            )
+        ) return
         tts = TextToSpeech(this) { status ->
             // The engine may initialize before the constructor assigns tts.
             mainHandler.post { handleTtsInitialization(status) }
@@ -145,7 +157,13 @@ class UltraWakeService : Service() {
             ACTION_START, null -> {
                 stopped = false
                 lifecycleGate.restart()
-                foregroundController.ensureForeground()
+                if (!UltraWakeForegroundSafety.tryStart(
+                        foregroundController::ensureForeground, this::stopSelf,
+                        disableContinuousVoice = {
+                            AndroidContinuousVoiceGateway(this).setEnabled(false)
+                        }
+                    )
+                ) return START_NOT_STICKY
                 mainHandler.post { startRecognition() }
             }
         }
@@ -167,7 +185,7 @@ class UltraWakeService : Service() {
 
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart()
+            scheduleRestart(recoveryPolicy.nextDelayMillis())
             return
         }
 
@@ -175,9 +193,10 @@ class UltraWakeService : Service() {
         var requestedMode = sessionPolicy.preferredMode()
         val started = runCatching {
             val speech = recognizer ?: SpeechRecognizer.createSpeechRecognizer(this).also {
-                it.setRecognitionListener(listener)
                 recognizer = it
             }
+            val sessionGeneration = ++recognitionGeneration
+            speech.setRecognitionListener(listenerForGeneration(sessionGeneration))
 
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 val source = UltraPersistentSpeechSource.create()
@@ -207,17 +226,24 @@ class UltraWakeService : Service() {
         recognitionStarting = false
 
         if (!started) {
-            recognizer?.cancel()
+            recognitionGeneration++ // Invalidate queued callbacks before teardown.
+            // A failed recognizer may be poisoned/busy. Rebuild it on the next
+            // attempt rather than repeatedly restarting the same instance.
+            runCatching { recognizer?.cancel() }
+            runCatching { recognizer?.destroy() }
+            recognizer = null
             if (requestedMode == UltraWakeRecognitionMode.PERSISTENT_SEGMENTED) {
                 sessionPolicy.onPersistentSessionFailure()
             }
             closePersistentSpeechSource()
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart()
+            scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
 
     private val listener = object : RecognitionListener {
+        // Android can emit READY immediately before ERROR_RECOGNIZER_BUSY.
+        // Readiness alone is not evidence that recognition recovered.
         override fun onReadyForSpeech(params: Bundle?) = Unit
         override fun onBeginningOfSpeech() = Unit
         override fun onRmsChanged(rmsdB: Float) = Unit
@@ -228,6 +254,7 @@ class UltraWakeService : Service() {
 
         override fun onSegmentResults(segmentResults: Bundle) {
             if (persistentSessionActive) {
+                recoveryPolicy.onRecognitionResult(segmentResults.getStringArrayList(RESULTS_RECOGNITION))
                 handleRecognitionBundle(
                     results = segmentResults,
                     keepRecognitionActive = true
@@ -246,6 +273,7 @@ class UltraWakeService : Service() {
         }
 
         override fun onResults(results: Bundle?) {
+            recoveryPolicy.onRecognitionResult(results?.getStringArrayList(RESULTS_RECOGNITION))
             val wasPersistent = persistentSessionActive
             if (wasPersistent) {
                 sessionPolicy.onPersistentSessionFailure()
@@ -259,6 +287,7 @@ class UltraWakeService : Service() {
         }
 
         override fun onError(error: Int) {
+            if (stopped || !lifecycleGate.canAcceptRecognition()) return
             val fallback = UltraSpeechLocalePolicy.fallbackRecognitionTag(
                 error = error,
                 currentTag = recognitionLanguageTag
@@ -271,9 +300,41 @@ class UltraWakeService : Service() {
                 closePersistentSpeechSource()
             }
             commandCoordinator.onRecognitionFinished()
-            scheduleRestart()
+            if (UltraWakeRecognitionHealth.shouldRebuildRecognizer(error)) {
+                recognitionGeneration++ // Reject delayed callbacks from this poisoned instance.
+                runCatching { recognizer?.destroy() }
+                recognizer = null
+            }
+            scheduleRestart(recoveryPolicy.nextDelayMillis())
         }
     }
+
+    /**
+     * SpeechRecognizer callbacks can arrive after destroy() or a new startListening().
+     * Bind each registration to its session generation, not the mutable recognizer field.
+     */
+    private fun listenerForGeneration(generation: Long): RecognitionListener =
+        object : RecognitionListener by listener {
+            // Non-actionable callbacks are delegated to the existing no-op handler.
+            // Every callback that changes recovery or session state is guarded below.
+            private fun isCurrent() = generation == recognitionGeneration && !stopped
+
+            override fun onSegmentResults(segmentResults: Bundle) {
+                if (isCurrent()) listener.onSegmentResults(segmentResults)
+            }
+
+            override fun onEndOfSegmentedSession() {
+                if (isCurrent()) listener.onEndOfSegmentedSession()
+            }
+
+            override fun onResults(results: Bundle?) {
+                if (isCurrent()) listener.onResults(results)
+            }
+
+            override fun onError(error: Int) {
+                if (isCurrent()) listener.onError(error)
+            }
+        }
 
     private fun handleRecognitionBundle(
         results: Bundle?,
@@ -462,10 +523,10 @@ class UltraWakeService : Service() {
         persistentSpeechSource = null
     }
 
-    private fun scheduleRestart() {
+    private fun scheduleRestart(delayMillis: Long = RESTART_DELAY_MS) {
         mainHandler.removeCallbacks(restartRecognition)
         if (!stopped && !commandCoordinator.isCommandRunning()) {
-            mainHandler.postDelayed(restartRecognition, RESTART_DELAY_MS)
+            mainHandler.postDelayed(restartRecognition, delayMillis)
         }
     }
 
@@ -473,6 +534,7 @@ class UltraWakeService : Service() {
 
     override fun onDestroy() {
         stopped = true
+        recognitionGeneration++ // Retire any callbacks already queued before destruction.
         waitingForSpeechEngine = false
         speechInitGate.close()
         lifecycleGate.stop()
@@ -486,12 +548,18 @@ class UltraWakeService : Service() {
         closePersistentSpeechSource()
         commandCoordinator.onRecognitionFinished()
         commandCoordinator.finishCommand()
-        recognizer?.cancel()
-        recognizer?.destroy()
+        // Android SpeechRecognizer can throw after the microphone service
+        // is revoked or the recognizer was invalidated by the system.
+        runCatching { recognizer?.cancel() }
+        runCatching { recognizer?.destroy() }
         recognizer = null
         speechPlayback.shutdown()
         tts = null
-        aiAdvisor.close()
+        // A denied foreground microphone startup may stop the service before
+        // any AI command ran. Do not initialize GeminiNano solely to close it.
+        if (aiAdvisorLazy.isInitialized()) {
+            aiAdvisor.close()
+        }
         super.onDestroy()
     }
 }

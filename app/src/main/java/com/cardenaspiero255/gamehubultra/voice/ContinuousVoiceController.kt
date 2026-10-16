@@ -32,17 +32,20 @@ internal class ContinuousVoiceController(
         if (!gateway.isEnabled()) return false
         if (!gateway.hasRecordAudioPermission() || !gateway.canRunContinuousVoice()) {
             gateway.setEnabled(false)
-            gateway.stopWakeService()
+            runCatching { gateway.stopWakeService() }
             return false
         }
-        gateway.startWakeService()
+        if (!startServiceSafely()) {
+            disableAfterStartFailure()
+            return false
+        }
         return true
     }
 
     fun setEnabled(enabled: Boolean): ContinuousVoiceChange {
         if (!enabled) {
             gateway.setEnabled(false)
-            gateway.stopWakeService()
+            runCatching { gateway.stopWakeService() }
             return ContinuousVoiceChange.DISABLED
         }
 
@@ -51,22 +54,36 @@ internal class ContinuousVoiceController(
         }
         if (!gateway.canRunContinuousVoice()) {
             gateway.setEnabled(false)
-            gateway.stopWakeService()
+            runCatching { gateway.stopWakeService() }
             return ContinuousVoiceChange.SYSTEM_RESTRICTED
         }
 
+        if (!startServiceSafely()) {
+            disableAfterStartFailure()
+            return ContinuousVoiceChange.SYSTEM_RESTRICTED
+        }
         gateway.setEnabled(true)
-        gateway.startWakeService()
         return ContinuousVoiceChange.ENABLED
     }
 
-    fun enableAfterPermissionGranted(): ContinuousVoiceChange {
-        if (!gateway.hasRecordAudioPermission()) {
-            return ContinuousVoiceChange.PERMISSION_REQUIRED
+    fun enableAfterPermissionGranted(): ContinuousVoiceChange =
+        setEnabled(true)
+
+    private fun startServiceSafely(): Boolean =
+        try {
+            gateway.startWakeService()
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: IllegalStateException) {
+            // Android may disallow foreground microphone capture while the app
+            // is backgrounded. Do not persist a mode that could not start.
+            false
         }
-        gateway.setEnabled(true)
-        gateway.startWakeService()
-        return ContinuousVoiceChange.ENABLED
+
+    private fun disableAfterStartFailure() {
+        gateway.setEnabled(false)
+        runCatching { gateway.stopWakeService() }
     }
 }
 
@@ -79,6 +96,21 @@ internal class AndroidContinuousVoiceGateway(
 
     override fun isEnabled(): Boolean =
         preferences.getBoolean(VOICE_CONTINUOUS_KEY, false)
+
+    /**
+     * The foreground service can reject microphone capture after the controller
+     * has returned ENABLED. Deliver subsequent persisted state changes to the UI
+     * so it never keeps a stale "microphone active" switch.
+     * The returned callback must be invoked when the observing UI is disposed.
+     */
+    fun observeEnabled(onChanged: (Boolean) -> Unit): () -> Unit {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == VOICE_CONTINUOUS_KEY) onChanged(isEnabled())
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onChanged(isEnabled())
+        return { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     override fun setEnabled(enabled: Boolean) {
         preferences.edit()
@@ -96,7 +128,11 @@ internal class AndroidContinuousVoiceGateway(
         ) == PackageManager.PERMISSION_GRANTED
 
     override fun startWakeService() {
-        if (!hasRecordAudioPermission()) return
+        // Permission can be revoked between the controller's initial check
+        // and this call. A silent return would falsely persist "enabled".
+        if (!hasRecordAudioPermission()) {
+            throw SecurityException("RECORD_AUDIO permission was revoked before service start")
+        }
 
         val intent = Intent(appContext, UltraWakeService::class.java)
             .setAction(UltraWakeService.ACTION_START)
