@@ -9,7 +9,7 @@ package com.cardenaspiero255.gamehubultra.voice
  */
 internal object UltraCognitionIntentPolicy {
     private val negatedCommand = Regex(
-        """^(?:(?:por favor|please)\s+)?(?:no|nunca|jamas|do not|dont|don t|never)\s+(?:me\s+)?(?:actives?|activas?|activar|habilites?|habilita|habilitar|pongas?|pon|poner|apliques?|aplica|aplicar|abras?|abre|abrir|lances?|lanza|lanzar|inicies?|inicia|iniciar|open|launch|start|enable|activate|set)\b"""
+        """^(?:(?:por favor|please)\s+)?(?:no|nunca|jamas|do not|dont|don t|never)\s+(?:me\s+)?(?:actives?|activas?|activar|habilites?|habilita|habilitar|pongas?|pon|poner|apliques?|aplica|aplicar|abras?|abre|abrir|lances?|lanza|lanzar|inicies?|inicia|iniciar|desactives?|desactiva|desactivar|deshabilites?|deshabilita|deshabilitar|quites?|quita|quitar|apagues?|apaga|apagar|disable|deactivate|turn off|switch off|open|launch|start|enable|activate|set)\b"""
     )
 
     private val indirectRefusal = Regex(
@@ -23,7 +23,7 @@ internal object UltraCognitionIntentPolicy {
     )
     // ASR removes punctuation: an ambiguous question is not action authorization.
     private val ambiguousActionQuestion = Regex(
-        """^(?:(?:por favor|please)\s+)?(?:puedes|podrias|can you|could you|would you)\s+(?:(?:me|please)\s+)?(?:activar|activa|habilitar|habilita|poner|pon|abrir|abre|lanzar|lanza|iniciar|inicia|open|launch|start|enable|activate|set)\b"""
+        """^(?:(?:por favor|please)\s+)?(?:puedes|podrias|can you|could you|would you)\s+(?:(?:me|please)\s+)?(?:activar|activa|habilitar|habilita|poner|pon|abrir|abre|lanzar|lanza|iniciar|inicia|desactiva|desactivar|deshabilita|deshabilitar|quita|quitar|apaga|apagar|disable|deactivate|turn off|switch off|open|launch|start|enable|activate|set)\b"""
     )
 
     private val hypotheticalStart = Regex(
@@ -31,7 +31,7 @@ internal object UltraCognitionIntentPolicy {
     )
 
     private val howToCommand = Regex(
-        """^(?:como|how (?:do i|can i|to|would i))\s+(?:(?:se|puedo|podria)\s+)?(?:activa|activar|habilita|habilitar|pon|pongo|poner|aplica|aplicar|abre|abro|abrir|open|launch|start|enable|activate|set)\b"""
+        """^(?:como|how (?:do i|can i|to|would i))\s+(?:(?:se|puedo|podria)\s+)?(?:activa|activar|habilita|habilitar|pon|pongo|poner|aplica|aplicar|abre|abro|abrir|desactiva|desactivar|deshabilita|deshabilitar|quita|quitar|apaga|apagar|disable|deactivate|turn off|switch off|open|launch|start|enable|activate|set)\b"""
     )
 
     private val recommendationRequest = Regex(
