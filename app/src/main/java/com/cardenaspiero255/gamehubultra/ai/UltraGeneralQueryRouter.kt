@@ -135,8 +135,12 @@ object UltraGeneralQueryRouter {
 
     fun classify(transcript: String): UltraGeneralQueryRequest {
         val clean = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
+        // "VS Code" is a proper product name, not an implicit "versus".
+        // An actual comparison such as "VS Code vs Android Studio" still
+        // contains its own independent comparison cue.
+        val comparisonText = clean.replace(Regex("""\bvs\s+code\b"""), "visual studio code")
         return when {
-            comparisonPattern.containsMatchIn(clean) ->
+            comparisonPattern.containsMatchIn(comparisonText) ->
                 request(
                     transcript = transcript,
                     kind = UltraGeneralQueryKind.COMPARISON_RESEARCH,
