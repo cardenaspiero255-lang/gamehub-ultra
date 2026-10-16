@@ -19,7 +19,7 @@ internal object UltraCognitionIntentPolicy {
         """^(?:quiero saber (?:si|como)|quisiera saber como|dime como|explicame como|me explicas como|(?:puedes|podrias) (?:explicar|decirme|mostrarme) como|(?:can|could) you (?:explain|tell me) how)\b"""
     )
     private val informationalDiscussion = Regex(
-        """^(?:que (?:es|ventajas tiene)|es seguro|no creo que|quiero saber sobre|explicame|como funciona|dime informacion|para que sirve|cual es|no me interesa)\b"""
+        """^(?:que (?:es|era|ventajas tiene)|es seguro|no creo que|quiero saber sobre|explicame|como funciona|dime informacion|para que sirve|cual es|no me interesa)\b"""
     )
     // ASR removes punctuation: an ambiguous question is not action authorization.
     private val ambiguousActionQuestion = Regex(
