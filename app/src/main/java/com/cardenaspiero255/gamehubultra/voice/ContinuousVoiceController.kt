@@ -97,6 +97,21 @@ internal class AndroidContinuousVoiceGateway(
     override fun isEnabled(): Boolean =
         preferences.getBoolean(VOICE_CONTINUOUS_KEY, false)
 
+    /**
+     * The foreground service can reject microphone capture after the controller
+     * has returned ENABLED. Deliver subsequent persisted state changes to the UI
+     * so it never keeps a stale "microphone active" switch.
+     * The returned callback must be invoked when the observing UI is disposed.
+     */
+    fun observeEnabled(onChanged: (Boolean) -> Unit): () -> Unit {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == VOICE_CONTINUOUS_KEY) onChanged(isEnabled())
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        onChanged(isEnabled())
+        return { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     override fun setEnabled(enabled: Boolean) {
         preferences.edit()
             .putBoolean(VOICE_CONTINUOUS_KEY, enabled)
