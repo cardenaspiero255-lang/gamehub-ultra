@@ -233,6 +233,55 @@ class UltraWakeServiceRecoveryRobolectricTest {
         org.mockito.Mockito.verify(recognizer).destroy()
     }
 
+
+    private fun sessionListener(service: UltraWakeService, generation: Long): RecognitionListener =
+        UltraWakeService::class.java.getDeclaredMethod(
+            "listenerForGeneration",
+            java.lang.Long.TYPE
+        ).apply { isAccessible = true }
+            .invoke(service, generation) as RecognitionListener
+
+    @Test
+    fun staleBusyCallbackCannotDestroyReplacementRecognizerOrAdvanceRetry() {
+        val service = UltraWakeService()
+        val generation = UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+            .apply { isAccessible = true }
+        generation.setLong(service, 2L)
+        val recognizer = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        val recognizerField = UltraWakeService::class.java.getDeclaredField("recognizer")
+            .apply { isAccessible = true }
+        recognizerField.set(service, recognizer)
+        val oldListener = sessionListener(service, 1L)
+        val currentListener = sessionListener(service, 2L)
+
+        oldListener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+        org.mockito.Mockito.verify(recognizer, org.mockito.Mockito.never()).destroy()
+        kotlin.test.assertSame(recognizer, recognizerField.get(service))
+        assertEquals(500L, recovery(service).nextDelayMillis())
+
+        currentListener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+        org.mockito.Mockito.verify(recognizer).destroy()
+        kotlin.test.assertNull(recognizerField.get(service))
+        assertEquals(1_000L, recovery(service).nextDelayMillis())
+    }
+
+    @Test
+    fun staleRecognitionResultsCannotResetCurrentSessionBackoff() {
+        val service = UltraWakeService()
+        val generation = UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+            .apply { isAccessible = true }
+        generation.setLong(service, 2L)
+        listener(service).onError(SpeechRecognizer.ERROR_NETWORK)
+        val obsolete = sessionListener(service, 1L)
+        val results = android.os.Bundle().apply {
+            putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf("Ultra hola"))
+        }
+
+        obsolete.onResults(results)
+
+        assertEquals(1_000L, recovery(service).nextDelayMillis())
+    }
+
     @Test
     fun nonBusySpeechErrorsAlsoUseBoundedRetryInsteadOfImmediateSpin() {
         val service = UltraWakeService()
