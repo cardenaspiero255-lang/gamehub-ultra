@@ -268,6 +268,41 @@ class UltraWakeServiceRecoveryRobolectricTest {
     }
 
     @Test
+    fun obsoleteSegmentCallbacksCannotEndTheActivePersistentSession() {
+        val service = UltraWakeService()
+        UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+            .apply { isAccessible = true }.setLong(service, 2L)
+        val persistent = UltraWakeService::class.java.getDeclaredField("persistentSessionActive")
+            .apply { isAccessible = true }
+        persistent.setBoolean(service, true)
+
+        sessionListener(service, 1L).onEndOfSegmentedSession()
+        kotlin.test.assertTrue(persistent.getBoolean(service))
+
+        sessionListener(service, 2L).onEndOfSegmentedSession()
+        kotlin.test.assertFalse(persistent.getBoolean(service))
+    }
+
+    @Test
+    fun onlyCurrentSegmentedResultsRestoreRecognitionBackoff() {
+        val service = UltraWakeService()
+        listener(service).onError(SpeechRecognizer.ERROR_NETWORK)
+        UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
+            .apply { isAccessible = true }.setLong(service, 2L)
+        UltraWakeService::class.java.getDeclaredField("persistentSessionActive")
+            .apply { isAccessible = true }.setBoolean(service, true)
+        val results = android.os.Bundle().apply {
+            putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf("sin orden de activación"))
+        }
+
+        sessionListener(service, 1L).onSegmentResults(results)
+        assertEquals(1_000L, recovery(service).nextDelayMillis())
+
+        sessionListener(service, 2L).onSegmentResults(results)
+        assertEquals(500L, recovery(service).nextDelayMillis())
+    }
+
+    @Test
     fun staleRecognitionResultsCannotResetCurrentSessionBackoff() {
         val service = UltraWakeService()
         val generation = UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
