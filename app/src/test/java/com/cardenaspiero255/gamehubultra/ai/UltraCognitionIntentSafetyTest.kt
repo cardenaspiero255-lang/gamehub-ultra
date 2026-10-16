@@ -34,7 +34,21 @@ class UltraCognitionIntentSafetyTest {
         "Ultra, quiero saber como activar X4",
         "Ultra, puedes explicar como activar X4",
         "Ultra, i don't want you to enable X4",
-        "Ultra, please don't open Minecraft"
+        "Ultra, please don't open Minecraft",
+        "Ultra, ¿qué es X4?",
+        "Ultra, ¿es seguro activar X4?",
+        "Ultra, ¿puedes activar X4?",
+        "Ultra, ¿podrías abrir Minecraft?",
+        "Ultra, could you please enable X4?",
+        "Ultra, no creo que debas activar X4",
+        "Ultra, quiero saber sobre X4",
+        "Ultra, explícame X4",
+        "Ultra, ¿cómo funciona X4?",
+        "Ultra, dime información sobre X4",
+        "Ultra, ¿qué ventajas tiene X4?",
+        "Ultra, ¿para qué sirve X4?",
+        "Ultra, ¿cuál es el modo X4?",
+        "Ultra, no me interesa activar X4"
     )
 
     @Test
