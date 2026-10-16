@@ -268,6 +268,44 @@ class UltraWakeServiceRecoveryRobolectricTest {
     }
 
     @Test
+    @Config(sdk = [30])
+    fun aLateCallbackFromRealRecognizerAIsIgnoredAfterRecognizerBStarts() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        org.robolectric.Shadows.shadowOf(app)
+            .grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        val controller = org.robolectric.Robolectric.buildService(UltraWakeService::class.java)
+        val service = controller.create().get()
+        val recognizerA = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        val recognizerB = org.mockito.Mockito.mock(SpeechRecognizer::class.java)
+        val speechApi = org.mockito.Mockito.mockStatic(SpeechRecognizer::class.java)
+        try {
+            speechApi.`when`<Boolean> { SpeechRecognizer.isRecognitionAvailable(service) }
+                .thenReturn(true)
+            speechApi.`when`<SpeechRecognizer> { SpeechRecognizer.createSpeechRecognizer(service) }
+                .thenReturn(recognizerA, recognizerB)
+            val start = UltraWakeService::class.java.getDeclaredMethod("startRecognition")
+                .apply { isAccessible = true }
+            val listenerCaptor = org.mockito.ArgumentCaptor.forClass(RecognitionListener::class.java)
+
+            start.invoke(service)
+            org.mockito.Mockito.verify(recognizerA).setRecognitionListener(listenerCaptor.capture())
+            val firstListener = listenerCaptor.value
+            firstListener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+
+            start.invoke(service)
+            org.mockito.Mockito.verify(recognizerB).setRecognitionListener(listenerCaptor.capture())
+            firstListener.onError(SpeechRecognizer.ERROR_CLIENT)
+            org.mockito.Mockito.verify(recognizerB, org.mockito.Mockito.never()).destroy()
+            kotlin.test.assertSame(recognizerB,
+                UltraWakeService::class.java.getDeclaredField("recognizer")
+                    .apply { isAccessible = true }.get(service))
+        } finally {
+            speechApi.close()
+            controller.destroy()
+        }
+    }
+
+    @Test
     fun obsoleteSegmentCallbacksCannotEndTheActivePersistentSession() {
         val service = UltraWakeService()
         UltraWakeService::class.java.getDeclaredField("recognitionGeneration")
