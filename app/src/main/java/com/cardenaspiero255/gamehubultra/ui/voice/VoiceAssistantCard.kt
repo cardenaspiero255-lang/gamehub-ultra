@@ -57,12 +57,11 @@ internal fun VoiceAssistantCard(
     val queryExecutor = ultraRuntime.queryExecutor
     val agentRouter = ultraRuntime.agentRouter
     val networkGaming = ultraRuntime.networkGaming
-    val continuousVoiceController = remember(context) {
-        ContinuousVoiceController(
-            AndroidContinuousVoiceGateway(context)
-        )
+    val continuousVoiceGateway = remember(context) { AndroidContinuousVoiceGateway(context) }
+    val continuousVoiceController = remember(continuousVoiceGateway) {
+        ContinuousVoiceController(continuousVoiceGateway)
     }
-    var continuousListeningEnabled by remember {
+    var continuousListeningEnabled by remember(continuousVoiceController) {
         mutableStateOf(continuousVoiceController.isEnabled())
     }
     val aiIntentResolver = remember(aiAdvisor) { aiAdvisor.intentResolver() }
@@ -73,6 +72,20 @@ internal fun VoiceAssistantCard(
     var listening by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf("") }
     var response by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // Android may reject startForeground after startForegroundService succeeded.
+    // Observe the service-owned preference rather than treating the initial tap
+    // result as permanent proof that microphone capture is running.
+    DisposableEffect(continuousVoiceGateway) {
+        val unsubscribe = continuousVoiceGateway.observeEnabled { enabled ->
+            val previouslyEnabled = continuousListeningEnabled
+            continuousListeningEnabled = enabled
+            if (previouslyEnabled && !enabled) {
+                response = "La escucha continua se detuvo. Revisa los permisos del micrófono y las restricciones del sistema."
+            }
+        }
+        onDispose { unsubscribe() }
+    }
     var recommendedProfile by remember(aiContext.selectedGamePackage) {
         mutableStateOf<UltraScopedProfileRecommendation?>(null)
     }
