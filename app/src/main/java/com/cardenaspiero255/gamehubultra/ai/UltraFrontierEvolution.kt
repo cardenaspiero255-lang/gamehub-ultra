@@ -778,10 +778,15 @@ class UltraAdaptiveComputeBudgeter {
         val hard = request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH
         val fresh = request.requiresFreshData ||
             request.kind == UltraGeneralQueryKind.CURRENT_DATA
+        // Mode flags from older routing adapters can disagree. Never allocate
+        // local-only source/pass budgets to a request requiring fresh research.
+        val mustVerify = fresh ||
+            hard ||
+            request.requiresInternet ||
+            request.verificationMode == UltraVerificationMode.REQUIRED
         val baseSource = when {
             hard -> policy.deepSourceBudget
-            request.verificationMode == UltraVerificationMode.REQUIRED ->
-                policy.verifiedSourceBudget
+            mustVerify -> policy.verifiedSourceBudget
             else -> policy.fastSourceBudget
         }
         val maxSource = policy.deepSourceBudget
@@ -790,14 +795,12 @@ class UltraAdaptiveComputeBudgeter {
                 .coerceAtMost(maxSource)
         val passBudget = when {
             hard -> policy.deepResearchPassBudget
-            request.verificationMode == UltraVerificationMode.REQUIRED ->
-                policy.verifiedResearchPassBudget
+            mustVerify -> policy.verifiedResearchPassBudget
             else -> 1
         }
         val timeBudget = when {
             hard -> policy.deepResearchTimeBudgetMillis
-            request.verificationMode == UltraVerificationMode.REQUIRED ->
-                policy.verifiedResearchTimeBudgetMillis
+            mustVerify -> policy.verifiedResearchTimeBudgetMillis
             else -> minOf(
                 request.timeoutMillis,
                 policy.verifiedResearchTimeBudgetMillis
@@ -985,7 +988,10 @@ class UltraFrontierEvolutionController(
         networkAvailable: Boolean
     ): Boolean {
         if (!networkAvailable) return false
-        if (request.verificationMode != UltraVerificationMode.OPTIONAL) {
+        if (request.requiresFreshData || request.requiresInternet ||
+            request.kind != UltraGeneralQueryKind.GENERAL_KNOWLEDGE ||
+            request.verificationMode != UltraVerificationMode.OPTIONAL
+        ) {
             return false
         }
         if (
