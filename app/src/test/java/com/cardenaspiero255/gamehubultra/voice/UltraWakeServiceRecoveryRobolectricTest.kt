@@ -262,7 +262,9 @@ class UltraWakeServiceRecoveryRobolectricTest {
         currentListener.onError(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
         org.mockito.Mockito.verify(recognizer).destroy()
         kotlin.test.assertNull(recognizerField.get(service))
-        assertEquals(1_000L, recovery(service).nextDelayMillis())
+        // The earlier assertion consumed the 500ms slot; the active error
+        // consumes 1000ms, so the following retry must be 2000ms.
+        assertEquals(2_000L, recovery(service).nextDelayMillis())
     }
 
     @Test
