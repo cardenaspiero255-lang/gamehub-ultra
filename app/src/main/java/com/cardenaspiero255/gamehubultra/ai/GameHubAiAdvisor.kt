@@ -266,6 +266,7 @@ class GameHubAiAdvisor(
 
         val asksStableQuestion = listOf(
             "que es ",
+            "que era ",
             "que son ",
             "que significa ",
             "define ",
