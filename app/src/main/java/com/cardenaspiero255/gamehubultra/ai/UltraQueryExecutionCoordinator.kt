@@ -42,18 +42,35 @@ class UltraQueryExecutionCoordinator(
             null
         }
 
+    /**
+     * Never trust a manually supplied verificationMode to downgrade fresh,
+     * internet-required or comparison queries. The effective mode is derived
+     * from all request constraints before allowing any local answer.
+     */
     fun answer(
         request: UltraGeneralQueryRequest,
         localChat: () -> String?
-    ): UltraQueryExecutionAnswer =
-        when (request.verificationMode) {
-            UltraVerificationMode.LOCAL -> localOnly(localChat)
-            UltraVerificationMode.OPTIONAL -> optionalVerification(
-                request = request,
-                localChat = localChat
-            )
-            UltraVerificationMode.REQUIRED -> researchOnly(request)
+    ): UltraQueryExecutionAnswer {
+        val mandatoryResearch =
+            request.requiresFreshData ||
+                request.requiresInternet ||
+                request.kind == UltraGeneralQueryKind.CURRENT_DATA ||
+                request.kind == UltraGeneralQueryKind.COMPARISON_RESEARCH ||
+                request.verificationMode == UltraVerificationMode.REQUIRED
+
+        return when {
+            mandatoryResearch ->
+                researchOnly(
+                    request.copy(
+                        verificationMode = UltraVerificationMode.REQUIRED,
+                        requiresInternet = true
+                    )
+                )
+            request.verificationMode == UltraVerificationMode.LOCAL ->
+                localOnly(localChat)
+            else -> optionalVerification(request, localChat)
         }
+    }
 
     private fun localOnly(
         localChat: () -> String?
@@ -82,12 +99,13 @@ class UltraQueryExecutionCoordinator(
                 message = localAnswer,
                 verified = false,
                 fallbackUsed = true,
-                abstained = false
+                abstained = false,
+                reasonCode = "LOCAL_STABLE_UNVERIFIED",
+                stage = "offline-stable"
             )
         }
 
-        val research = researchGateway.answer(request)
-        val answer = toExecutionAnswer(research)
+        val answer = safeResearchAnswer(request)
         if (!answer.abstained) return answer
 
         return answer.copy(
@@ -101,7 +119,30 @@ class UltraQueryExecutionCoordinator(
     private fun researchOnly(
         request: UltraGeneralQueryRequest
     ): UltraQueryExecutionAnswer =
-        toExecutionAnswer(researchGateway.answer(request))
+        safeResearchAnswer(request)
+
+    /**
+     * A faulty research adapter must not cause a stale local answer to be
+     * presented as verified. Do not retry an uncontrolled exception here:
+     * the Frontier layer is the only owner of bounded research retries.
+     */
+    private fun safeResearchAnswer(
+        request: UltraGeneralQueryRequest
+    ): UltraQueryExecutionAnswer =
+        try {
+            toExecutionAnswer(researchGateway.answer(request))
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            UltraQueryExecutionAnswer(
+                message = "No pude completar la consulta con fuentes verificables.",
+                verified = false,
+                abstained = true,
+                retryable = false,
+                reasonCode = "RESEARCH_PROVIDER_ERROR",
+                stage = "research"
+            )
+        }
 
     private fun toExecutionAnswer(
         research: UltraVerifiedResearchResult
