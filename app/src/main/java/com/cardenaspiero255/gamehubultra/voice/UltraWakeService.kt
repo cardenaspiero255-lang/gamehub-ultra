@@ -314,16 +314,10 @@ class UltraWakeService : Service() {
      * Bind each registration to its session generation, not the mutable recognizer field.
      */
     private fun listenerForGeneration(generation: Long): RecognitionListener =
-        object : RecognitionListener {
+        object : RecognitionListener by listener {
+            // Non-actionable callbacks are delegated to the existing no-op handler.
+            // Every callback that changes recovery or session state is guarded below.
             private fun isCurrent() = generation == recognitionGeneration && !stopped
-
-            override fun onReadyForSpeech(params: Bundle?) = Unit
-            override fun onBeginningOfSpeech() = Unit
-            override fun onRmsChanged(rmsdB: Float) = Unit
-            override fun onBufferReceived(buffer: ByteArray?) = Unit
-            override fun onEndOfSpeech() = Unit
-            override fun onPartialResults(partialResults: Bundle?) = Unit
-            override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
             override fun onSegmentResults(segmentResults: Bundle) {
                 if (isCurrent()) listener.onSegmentResults(segmentResults)
