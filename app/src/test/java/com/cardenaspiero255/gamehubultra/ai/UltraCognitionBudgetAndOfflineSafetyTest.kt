@@ -152,6 +152,41 @@ class UltraCognitionBudgetAndOfflineSafetyTest {
     }
 
     @Test
+    fun offlineFrontierBlocksInconsistentFreshKnowledgeRequestBeforeResearch() {
+        var providerCalls = 0
+        var localCalls = 0
+        val coordinator = UltraQueryExecutionCoordinator(object : UltraResearchGateway {
+            override fun answer(request: UltraGeneralQueryRequest): UltraVerifiedResearchResult {
+                providerCalls++
+                error("research unavailable")
+            }
+        })
+        val engine = UltraFrontierExecutionEngine(
+            coordinator = coordinator,
+            networkAvailable = { false }
+        )
+        val query = UltraGeneralQueryRequest(
+            originalText = "version actual de una plataforma",
+            kind = UltraGeneralQueryKind.GENERAL_KNOWLEDGE,
+            requiresInternet = false,
+            requiresFreshData = true,
+            timeoutMillis = 8_000L,
+            verificationMode = UltraVerificationMode.LOCAL
+        )
+
+        val answer = engine.answer(query) {
+            localCalls++
+            "version obsoleta"
+        }
+
+        assertEquals(0, providerCalls)
+        assertEquals(0, localCalls)
+        assertTrue(answer.abstained)
+        assertFalse(answer.verified)
+        assertEquals("FRONTIER_NETWORK_REQUIRED", answer.reasonCode)
+    }
+
+    @Test
     fun exhaustedGlobalResearchBudgetPreventsFirstProviderCall() {
         var nowNanos = 0L
         var providerCalls = 0
