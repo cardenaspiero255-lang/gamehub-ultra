@@ -9,11 +9,25 @@ package com.cardenaspiero255.gamehubultra.voice
  */
 internal object UltraCognitionIntentPolicy {
     private val negatedCommand = Regex(
-        """^(?:no|nunca|jamas|do not|dont|never)\s+(?:me\s+)?(?:actives?|activas?|activar|habilites?|habilita|habilitar|pongas?|pon|poner|apliques?|aplica|aplicar|abras?|abre|abrir|lances?|lanza|lanzar|inicies?|inicia|iniciar|open|launch|start|enable|activate|set)\b"""
+        """^(?:(?:por favor|please)\s+)?(?:no|nunca|jamas|do not|dont|don t|never)\s+(?:me\s+)?(?:actives?|activas?|activar|habilites?|habilita|habilitar|pongas?|pon|poner|apliques?|aplica|aplicar|abras?|abre|abrir|lances?|lanza|lanzar|inicies?|inicia|iniciar|open|launch|start|enable|activate|set)\b"""
+    )
+
+    private val indirectRefusal = Regex(
+        """^(?:(?:por favor|please)\s+)?(?:no (?:quiero|quisiera|deseo|me gustaria) (?:que|activar|abrir|poner|habilitar|iniciar|lanzar)|(?:prefiero|preferiria) que no|no (?:debes|deberias)|evita(?: que(?: se)?)?|i (?:do not|dont|don t) want (?:you to|to))\b"""
+    )
+    private val explanationRequest = Regex(
+        """^(?:quiero saber (?:si|como)|quisiera saber como|dime como|explicame como|me explicas como|(?:puedes|podrias) (?:explicar|decirme|mostrarme) como|(?:can|could) you (?:explain|tell me) how)\b"""
+    )
+    private val informationalDiscussion = Regex(
+        """^(?:que (?:es|ventajas tiene)|es seguro|no creo que|quiero saber sobre|explicame|como funciona|dime informacion|para que sirve|cual es|no me interesa)\b"""
+    )
+    // ASR removes punctuation: an ambiguous question is not action authorization.
+    private val ambiguousActionQuestion = Regex(
+        """^(?:(?:por favor|please)\s+)?(?:puedes|podrias|can you|could you|would you)\s+(?:(?:me|please)\s+)?(?:activar|activa|habilitar|habilita|poner|pon|abrir|abre|lanzar|lanza|iniciar|inicia|open|launch|start|enable|activate|set)\b"""
     )
 
     private val hypotheticalStart = Regex(
-        """^(?:que pasa si|que pasaria si|y si|what happens if|what would happen if)\b"""
+        """^(?:que pasa si|que pasaria si|que ocurre si|y si|what happens if|what would happen if)\b"""
     )
 
     private val howToCommand = Regex(
@@ -21,7 +35,7 @@ internal object UltraCognitionIntentPolicy {
     )
 
     private val recommendationRequest = Regex(
-        """^(?:deberia|me conviene|es recomendable|should i|is it safe to)\b"""
+        """^(?:deberia|seria bueno|me conviene|es recomendable|should i|is it safe to)\b"""
     )
 
     private val quoteExplanation = Regex(
@@ -32,6 +46,10 @@ internal object UltraCognitionIntentPolicy {
         val normalized = VoiceCommandParser.stripLeadingAssistantInvocation(transcript)
         if (normalized.isBlank()) return false
         return negatedCommand.containsMatchIn(normalized) ||
+            indirectRefusal.containsMatchIn(normalized) ||
+            explanationRequest.containsMatchIn(normalized) ||
+            informationalDiscussion.containsMatchIn(normalized) ||
+            ambiguousActionQuestion.containsMatchIn(normalized) ||
             hypotheticalStart.containsMatchIn(normalized) ||
             howToCommand.containsMatchIn(normalized) ||
             recommendationRequest.containsMatchIn(normalized) ||
